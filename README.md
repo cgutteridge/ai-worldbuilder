@@ -7,3 +7,11 @@ One checkout can address many world repos; exactly one world is **active**, sele
 System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
 
 See donor planning record in `Southampton Refine` (`docs/adr/002-worldbuilder-and-world-repos.md`) until extract completes.
+
+## Active world
+
+```bash
+python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT); print(gameworld_id())"
+```
+
+Override with env `AI_WORLDBUILDER_WORLD_ROOT`. Contract: `docs/active-world-contract.md`.
