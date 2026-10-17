@@ -261,6 +261,50 @@ class EndTest(Base):
         self.run_end('Q-001')
         self.assertIsNone(H.read_pending()['next'])
 
+    def test_feature_end_refuses_without_contact_sheet(self):
+        """FEATURE handoff must not tick when the evidence contact sheet is missing (#17)."""
+        from PIL import Image
+
+        feat = (
+            'SOUTHAMPTON REFINE — QUEUE\n\n'
+            '[ ] Q-010  CELL 1,1 (r=0) FEATURE Demo Hall. RULES: property.\n'
+            '           Non-house building: use scripts/feature_build.py — write site/builds/demo_hall.json\n\n'
+            '[ ] Q-011  CELL 1,1 (r=0) layered passes: ground, trees, decor. RULES: ground.\n'
+        )
+        H.QUEUE.write_text(feat)
+        (self.site / 'LOCK.json').write_text(
+            json.dumps({'owner': 'me', 'task': 'Q-010 FEATURE', 'heartbeat': time.time()}))
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err), \
+                mock.patch('site_archive.run'):
+            rc = H.main(['end', 'Q-010', '--summary', 's', '--skip-say', '--skip-view',
+                         '--build', 'demo_hall'])
+        self.assertEqual(rc, 2)
+        self.assertIn('contact sheet', err.getvalue().lower())
+        self.assertIn('[ ] Q-010', H.QUEUE.read_text())
+        self.assertTrue((self.site / 'LOCK.json').exists())
+
+        # With a recorded sheet, end succeeds and names the path.
+        vroot = Path(tempfile.mkdtemp())
+        out = vroot / 'verification' / 'site'
+        out.mkdir(parents=True)
+        sheet = out / 'demo_hall-contact.png'
+        Image.new('RGB', (40, 40), (10, 20, 30)).save(sheet)
+        (out / 'demo_hall-result.json').write_text(json.dumps({
+            'contact_sheet': 'verification/site/demo_hall-contact.png'}))
+        with mock.patch('evidence_sheet.ROOT', vroot), \
+                mock.patch('evidence_sheet.OUT', out), \
+                mock.patch.object(H, 'ROOT', vroot):
+            out_s = io.StringIO()
+            with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(io.StringIO()), \
+                    mock.patch('site_archive.run'):
+                rc = H.main(['end', 'Q-010', '--summary', 'built demo', '--skip-say', '--skip-view',
+                             '--build', 'demo_hall'])
+            self.assertEqual(rc, 0)
+            self.assertIn('CONTACT SHEET:', out_s.getvalue())
+            self.assertIn('demo_hall-contact.png', out_s.getvalue())
+        self.assertIn('[x] Q-010', H.QUEUE.read_text())
+
 
 class PlanCellItems(unittest.TestCase):
     FEATURE = {'bbox': [1, 2, 3, 4], 'label': 'L', 'kind': 'building', 'refs': ['w1'], 'portals': [], 'pictures': []}
@@ -313,6 +357,11 @@ class PlanCellItems(unittest.TestCase):
         self.assertIn('site/builds/', joined)
         self.assertNotIn('house_build.py', joined)
         self.assertNotIn('build_runner', joined)
+
+    def test_feature_template_names_evidence_sheet_command(self):
+        body = '\n'.join(H.plan_cell_items(1, 2, 0, self.gaps(features=[self.FEATURE]), [])[0][1])
+        self.assertIn('evidence_sheet.py', body)
+        self.assertIn('contact sheet', body.lower())
 
     def test_layered_passes_done_line_is_empty_world_not_geocraft_lumps(self):
         """Seam: queue copy defines done as evidence + layers + masks, not clearing Geocraft."""

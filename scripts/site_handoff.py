@@ -481,6 +481,9 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
                 'Do not extend house_build for odd shapes; do not copy a peer spec or a build script.'
             ),
             f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.',
+            'Evidence contact sheet after apply (frontage-and-evidence §4): '
+            'python3 scripts/evidence_sheet.py <name>  '
+            '(portal-facing cameras, top-down, aerial crop); end refuses FEATURE without it.',
         ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
           + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz}.'] if not items else [])))
     if gaps.get('trees_over_roof'):
@@ -581,6 +584,122 @@ def _cell_for_item(item):
     if m:
         return int(m.group(1)), int(m.group(2))
     return in_flight_cell()
+
+
+def is_feature_item(item) -> bool:
+    """Whether a queue item is a FEATURE build (needs an evidence contact sheet).
+
+    @param item: queue item dict
+    @returns: True when the head line contains FEATURE
+    """
+    if not item:
+        return False
+    text = item.get('text') or ''
+    return bool(re.search(r'\bFEATURE\b', text))
+
+
+def _flag_values(argv, name: str) -> list[str]:
+    """Collect every value following ``name`` in argv (repeatable flags).
+
+    @param argv: CLI args
+    @param name: flag string including leading dashes
+    @returns: list of values
+    """
+    out = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == name and i + 1 < len(argv):
+            out.append(argv[i + 1])
+            i += 2
+            continue
+        i += 1
+    return out
+
+
+def feature_build_names(item, builds: list[str] | None = None) -> list[str]:
+    """Build names tied to a FEATURE queue item (for contact-sheet lookup).
+
+    Order: explicit ``builds``, names from ``site/builds/<name>.json`` mentioned in
+    the item text, then ``feature-<name>`` stage plans on the item's cell (skipping
+    cell markers).
+
+    @param item: queue item dict
+    @param builds: optional explicit build names (e.g. from ``--build``)
+    @returns: unique build name strings
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(n: str) -> None:
+        if n and n not in seen:
+            seen.add(n)
+            names.append(n)
+
+    for n in builds or []:
+        add(n)
+    blob = ' '.join(item.get('lines') or []) + ' ' + (item.get('text') or '')
+    for m in re.finditer(r'site/builds/([A-Za-z0-9._-]+)\.json', blob):
+        add(m.group(1))
+    for m in re.finditer(r'verification/site/([A-Za-z0-9._-]+)-(?:cells|contact|shots)', blob):
+        add(m.group(1))
+    cell = _cell_for_item(item)
+    if cell is not None:
+        stages_path = SITE / 'cells' / f'{cell[0]}_{cell[1]}-STAGES.json'
+        if stages_path.is_file():
+            try:
+                stages = json.loads(stages_path.read_text()).get('stages') or {}
+            except (json.JSONDecodeError, OSError):
+                stages = {}
+            for key, row in stages.items():
+                if not str(key).startswith('feature-'):
+                    continue
+                plan = (row or {}).get('plan') or str(key)[len('feature-'):]
+                if str(plan).startswith('cell_marker'):
+                    continue
+                add(str(plan))
+    return names
+
+
+def feature_contact_sheets(item, builds: list[str] | None = None) -> list[tuple[str, Path]]:
+    """Contact sheets found for a FEATURE item's builds.
+
+    @param item: queue item dict
+    @param builds: optional explicit build names
+    @returns: list of (build_name, sheet_path)
+    """
+    from evidence_sheet import find_contact_sheet
+
+    found = []
+    for name in feature_build_names(item, builds=builds):
+        sheet = find_contact_sheet(name)
+        if sheet is not None:
+            found.append((name, sheet))
+    return found
+
+
+def require_feature_contact_sheet(item, builds: list[str] | None = None) -> str | None:
+    """Error text when a FEATURE item has no evidence contact sheet; else None.
+
+    @param item: queue item dict
+    @param builds: optional explicit build names from ``--build``
+    @returns: refusal message, or None when the sheet is present (or item is not FEATURE)
+    """
+    if not is_feature_item(item):
+        return None
+    sheets = feature_contact_sheets(item, builds=builds)
+    if sheets:
+        return None
+    names = feature_build_names(item, builds=builds)
+    hint = (
+        f"for build(s) {', '.join(names)}"
+        if names else
+        '(pass --build <name>, or run evidence_sheet after apply so stages/result record the path)'
+    )
+    return (
+        f'FEATURE item {item.get("id")} has no evidence contact sheet {hint}. '
+        'Run: python3 scripts/evidence_sheet.py <build>  '
+        '(frontage-and-evidence §4 / Q-202).'
+    )
 
 
 def next_chat_prompt_line():
@@ -1074,7 +1193,7 @@ def cmd_end(argv):
     An "AERIAL REVIEW cell X" item also sets that cell's row in site/AERIAL-REVIEW.txt to
     ``--review-status`` (look|features|ground|trees|done; default done), so advance_to_next_cell moves on.
 
-    @param argv: remaining CLI args (Q-nnn, --summary, --view, optional --skip-say/--skip-view/--review-status)
+    @param argv: remaining CLI args (Q-nnn, --summary, --view, optional --skip-say/--skip-view/--review-status/--build)
     @returns: exit code
     """
     done = None
@@ -1085,12 +1204,15 @@ def cmd_end(argv):
     view_spec = _flag_value(argv, '--view')
     skip_say = '--skip-say' in argv
     skip_view = '--skip-view' in argv
+    build_names = _flag_values(argv, '--build')
     if not summary:
         print(
             'Usage: site_handoff.py end Q-nnn --summary "area + task; what you did" '
             '--view x,y,z[,lx,ly,lz]\n'
             '  Speaks "ready for handoff", prints QUEUE area/task + summary, '
             'moves the player in creative to the main change area.\n'
+            '  FEATURE items need an evidence contact sheet '
+            '(python3 scripts/evidence_sheet.py <build>; optional --build <name>).\n'
             '  Run outside any command sandbox (a sandbox mutes say).',
             file=sys.stderr,
         )
@@ -1125,6 +1247,18 @@ def cmd_end(argv):
         area_line = done_item['text']
         if len(area_line) > 160:
             area_line = area_line[:157].rstrip() + '…'
+
+    if done_item and is_feature_item(done_item):
+        err = require_feature_contact_sheet(done_item, builds=build_names or None)
+        if err:
+            print(f'ERROR: {err}', file=sys.stderr)
+            return 2
+        for _name, sheet in feature_contact_sheets(done_item, builds=build_names or None):
+            try:
+                shown = sheet.relative_to(ROOT)
+            except ValueError:
+                shown = sheet
+            print(f'CONTACT SHEET: {shown}')
 
     rc_cell = google_review_cell(done_item) if done_item else None
     if rc_cell:

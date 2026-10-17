@@ -29,7 +29,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  Dry run prints glazed share per storey per face.
 
-Greeblies / path-in-footprint / contact sheet: separate system tickets.
+Greeblies / path-in-footprint: separate system tickets.
+Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
+(portal-facing + top-down + aerial; records path on ``*-result.json``; handoff
+``end`` refuses FEATURE without it).
 
 Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply]
 """

@@ -135,6 +135,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 17,
+      "title": "Evidence contact sheet in the build run",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "scripts/evidence_sheet.py: portal-facing + top-down + aerial contact sheet; records path on *-result.json. site_handoff.cmd_end names the sheet and refuses FEATURE without it; plan_cell_items templates the command. Tests: test_evidence_sheet + EndTest FEATURE refusal. World Q-203 still waits on sibling tasks."
     }
   ]
 }
