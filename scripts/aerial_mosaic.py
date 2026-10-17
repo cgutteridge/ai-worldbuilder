@@ -404,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument('--osgb', help='OSGB easting,northing → centre tile at --zoom')
     p.add_argument('--zoom', type=int, default=18, help='WM zoom when using --at/--osgb (default 18)')
     p.add_argument('--size', type=int, default=3, help=f'odd N for N×N (default 3, max {MAX_SIZE})')
-    p.add_argument('--place', help='PLACES.txt id (required for --add; default dir aerial/<place.lower()>)')
+    p.add_argument('--place', help='place id slug (required for --add; default dir aerial/<place.lower()>)')
     p.add_argument('--dir', help='output dir under reference/ (e.g. aerial/so17-3sf)')
     p.add_argument('--dry-run', action='store_true', help='list tiles / paths only')
     p.add_argument('--no-fetch', action='store_true', help='only use local aer-zZ-X-Y.png tiles')

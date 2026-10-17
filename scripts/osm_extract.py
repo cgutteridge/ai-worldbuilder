@@ -546,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
         '--pbf', default=str(DEFAULT_PBF),
         help=f'source .osm.pbf (default {DEFAULT_PBF.relative_to(ROOT)})',
     )
-    p.add_argument('--place', help='PLACES.txt id (required for --add)')
+    p.add_argument('--place', help='place id slug (required for --add)')
     p.add_argument('--dir', help='output dir under reference/ (e.g. osm/portswood-x-broadlands)')
     p.add_argument('--dry-run', action='store_true', help='print plan only')
     p.add_argument('--force', action='store_true', help='overwrite existing GeoJSON')

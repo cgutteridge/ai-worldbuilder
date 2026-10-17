@@ -55,3 +55,11 @@ _Avoid_: origin (unless meaning the MC block origin), spawn (unless meaning the 
 **Y offset**:
 The constant added when mapping real elevation into Minecraft Y.
 _Avoid_: sea level (unless that is the explicit datum chosen)
+
+**Empty world**:
+A game save started without a prior city mesh from another generator. Refine means building from evidence and layered passes, not clearing leftover vendor lumps.
+_Avoid_: Geocraft refine (as the default workflow), lump sweep (as the definition of done)
+
+**Lidar ghost**:
+Placeholder ground and grey above-ground mass in a cell, taken only from DEFRA composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later.
+_Avoid_: finished ground pass, real feature build, Geocraft lump, pristine sketch

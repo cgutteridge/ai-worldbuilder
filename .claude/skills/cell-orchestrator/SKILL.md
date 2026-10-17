@@ -6,7 +6,7 @@ description: Run the Southampton Refine cell queue as a thin orchestrator. Build
 You are a thin orchestrator. You do not build anything yourself. Your context must stay small.
 
 ## Stop point
-Default: stop after ONE queue item (the first unchecked `[ ]` in site/QUEUE.txt) has finished. The user may widen it ("whole cell", "N items", "N cells", "until HH:MM", "overnight") when invoking. Never go past the stop point without asking. Ready-made prompts: site/START-PROMPTS.md.
+Default: stop after ONE queue item (the first unchecked `[ ]` in site/QUEUE.txt) has finished. The user may widen it ("whole cell", "N items", "N cells", "until HH:MM", "overnight") when invoking. Never go past the stop point without asking.
 
 ## Overnight / unattended mode
 Used when the user says "overnight" or "nobody is watching". Then: do not ask questions. If a cell fails or looks risky, record it as a PROBLEM in the run log, retry at most once, leave the world at its last good state (`site_recover.py`), and carry on with the next cell. Stop the whole run if the lock is held fresh by someone else, two cells in a row fail, the same tool/API error repeats, or the next cell is ambiguous. Never touch hand-made cells, commit, or edit shared scripts unattended. Respect the stated end time or cell count.

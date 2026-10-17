@@ -405,7 +405,7 @@ def party_pitch_report(bbox: str, street: str | None) -> list[dict]:
 
 
 def place_brief(name: str, record: dict) -> str:
-    """Render a PLACE-TEMPLATE fragment for one centre.
+    """Render a short place brief (coords + evidence stubs) for one centre.
 
     @param name: place label
     @param record: coord_triple dict
@@ -660,7 +660,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument('--street')
     pa.set_defaults(func=cmd_party)
 
-    pl = sub.add_parser('place', help='PLACE-TEMPLATE fragment')
+    pl = sub.add_parser('place', help='print a short place brief for one centre')
     pl.add_argument('--name', required=True)
     pl.add_argument('--mc')
     pl.add_argument('--osgb')
