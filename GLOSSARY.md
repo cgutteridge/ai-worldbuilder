@@ -21,7 +21,7 @@ A reference feed whose geographic scope is nationwide or wider (UK / England or 
 _Avoid_: global source, default source
 
 **Local provider**:
-A reference feed below national scope (city, campus, single site). Kept in that world’s repository. When adding a provider, ask local vs system; rule of thumb: below national → local.
+A reference feed below national scope (city, campus, single site). Kept in that world’s repository (`config/local-providers.json`; tools under `providers/<id>/` with a catalogue `package` field). When adding a provider, ask local vs system; rule of thumb: below national → local.
 _Avoid_: place source (as the only term)
 
 ## Trackers

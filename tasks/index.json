@@ -31,23 +31,13 @@
       "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put."
     },
     {
-      "id": 21,
-      "title": "Move local provider tools into world providers/",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Split from old #13. Local providers under southampton-build/providers/; local catalogue package field when code lives there. Can proceed in parallel with #20 once #19 is done."
-    },
-    {
       "id": 22,
       "title": "Loaders/skills/docs resolve system and world provider roots",
       "status": "blocked",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        20,
-        21
+        20
       ],
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
     }

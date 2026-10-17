@@ -2,7 +2,8 @@
 
 ``ROOT`` is the **active world** checkout (place memory, world frame, local
 providers). ``TOOL_ROOT`` is this worldbuilder repo (scripts, skills, system
-providers). Prefer ``from script_env import ROOT, TOOL_ROOT``.
+providers). Local provider packages live under ``ROOT / "providers"``.
+Prefer ``from script_env import ROOT, TOOL_ROOT``.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from active_world import WORLD_ROOT  # noqa: E402
 
 ROOT = WORLD_ROOT
 SCRIPTS = TOOL_ROOT / "scripts"
+WORLD_PROVIDERS = ROOT / "providers"
 
 
 def make_parser(doc: str | None, **kw) -> argparse.ArgumentParser:

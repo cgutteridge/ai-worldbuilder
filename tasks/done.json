@@ -198,6 +198,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "cell_marker --raise/--adopt calls lidar_ghost.on_cell_focus for unstarted neighbours (ring via --ghost-ring / LIDAR_GHOST_RING, default 1; --no-ghosts skips). site_handoff plan text mentions ghosts. Tests: TestFocusGhosts + OnCellFocus."
+    },
+    {
+      "id": 21,
+      "title": "Move local provider tools into world providers/",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Split from old #13. Moved local provider CLIs into worlds/southampton-build/providers/<id>/ (geofabrik-hampshire, uos-portals, uos-buildings, southampton-tpo, hampshire-hub). local-providers.json package fields set; world AGENTS/SOURCES/README pointers. Tool repo: scripts/ shims via world_provider.py; AGENTS/active-world-contract/GLOSSARY/add-data-source updated. Task #20 not done yet \u2014 #22 stays blocked."
     }
   ]
 }
