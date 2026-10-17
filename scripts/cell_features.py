@@ -46,7 +46,7 @@ MIN_COLUMNS = 12      # ignore slivers (kiosks, bin stores)
 
 LAYER_BUILD = re.compile(
     r'(_ground|_trees|_decor|_foliage|_canopy|_undo|_grounds_\w+)$|^cell_marker_|^clear_floating|'
-    r'^highfield_grounds_|_grounds$')
+    r'^highfield_grounds_|_grounds$|^ghost_')
 
 
 def is_feature_build(name: str) -> bool:

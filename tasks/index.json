@@ -52,23 +52,12 @@
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
     },
     {
-      "id": 26,
-      "title": "Lidar ghost tool: DTM ground + grey DSM\u2212DTM features",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Idempotent ghost apply (no per-cell .py): DEFRA composite DTM \u2192 ghost ground; composite last-return DSM \u2212 DTM \u2192 grey ghost features. Owners e.g. ghost_<tx>_<tz>_ground / _features; STAGES distinguishes ghost vs real. No trees/decor ghosts in v1. Neighbour ring depth configurable (default 1). CLI for dry run/tests. Real refine still uses ground_layer, trees_layer, decor_layer, house_build/feature_build to overwrite/refine."
-    },
-    {
       "id": 27,
       "title": "Wire lidar ghosts into cell focus / handoff raise",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        26
-      ],
+      "blockedBy": [],
       "notes": "On CURRENT-CELL focus (cell_marker --raise / handoff path): for each neighbour within configured ring with no real work started, ensure ghost ground + ghost features exist (idempotent). Calls #26 tool."
     }
   ]
