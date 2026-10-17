@@ -90,45 +90,30 @@
       "how": "browser: rightmove.co.uk/house-prices/<postcode>.html for a postcode on a named street in this cell; exteriors only, look-don't-hoard (reference/SOURCES.txt). Skip for non-residential cells."
     },
     {
-      "id": "ukdefra-dtm",
+      "id": "ukdefra-lidar",
       "types": [
         "lidar"
       ],
       "scope": {
         "level": "country",
-        "description": "England DEFRA 1 m composite DTM"
+        "description": "England DEFRA 1 m composite DTM + DSM (last return)"
       },
       "keep": true,
       "licence": "OGL v3",
       "tags": [
+        "ukdefra-lidar",
         "ukdefra-dtm",
-        "defra"
-      ],
-      "kind": null,
-      "checklist": false,
-      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dtm,ground_y"
-    },
-    {
-      "id": "ukdefra-dsm",
-      "types": [
-        "lidar"
-      ],
-      "scope": {
-        "level": "country",
-        "description": "England DEFRA 1 m composite DSM (last return)"
-      },
-      "keep": true,
-      "licence": "OGL v3",
-      "tags": [
         "ukdefra-dsm",
         "defra"
       ],
       "kind": null,
       "checklist": false,
-      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dsm,diff,top_y. Strip cars/trains; keep street furniture where practical."
+      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dtm,dsm,diff,ground_y,top_y. Strip cars/trains; keep street furniture where practical."
     }
   ],
   "aliases": {
-    "google": "google-satellite"
+    "google": "google-satellite",
+    "ukdefra-dtm": "ukdefra-lidar",
+    "ukdefra-dsm": "ukdefra-lidar"
   }
 }

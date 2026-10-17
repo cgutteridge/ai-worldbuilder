@@ -59,6 +59,37 @@ class TestAttempts(unittest.TestCase):
         self.assertEqual(cs.source_status(1, 2)['google-streetview']['state'], 'tried')
 
 
+class TestProviderAliases(unittest.TestCase):
+    """System catalogue aliases resolve legacy DEFRA product ids to ukdefra-lidar."""
+
+    def test_ukdefra_dtm_dsm_alias_to_lidar(self):
+        data = cs.load_place_sources()
+        self.assertEqual(cs.resolve_source_id('ukdefra-dtm', data), 'ukdefra-lidar')
+        self.assertEqual(cs.resolve_source_id('ukdefra-dsm', data), 'ukdefra-lidar')
+        self.assertEqual(cs.resolve_source_id('ukdefra-lidar', data), 'ukdefra-lidar')
+        row = cs.provider_by_id('ukdefra-dtm', data)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['id'], 'ukdefra-lidar')
+        self.assertEqual(cs.provider_by_id('ukdefra-dsm', data), row)
+        ids = [p['id'] for p in data.get('providers') or []]
+        self.assertIn('ukdefra-lidar', ids)
+        self.assertNotIn('ukdefra-dtm', ids)
+        self.assertNotIn('ukdefra-dsm', ids)
+
+    def test_google_providers_stay_separate(self):
+        data = cs.load_place_sources()
+        ids = {p['id'] for p in data.get('providers') or []}
+        self.assertIn('google-satellite', ids)
+        self.assertIn('google-streetview', ids)
+        self.assertEqual(cs.resolve_source_id('google', data), 'google-satellite')
+        self.assertEqual(cs.resolve_source_id('google-streetview', data), 'google-streetview')
+        sat = cs.provider_by_id('google-satellite', data)
+        sv = cs.provider_by_id('google-streetview', data)
+        self.assertIsNotNone(sat)
+        self.assertIsNotNone(sv)
+        self.assertNotEqual(sat['id'], sv['id'])
+
+
 class TestGoogleFamily(unittest.TestCase):
     """google-satellite aerial is looked at for every cell, as often as needed."""
 

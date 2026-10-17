@@ -49,34 +49,21 @@
       "notes": "From Q-202. One command: portal-facing cameras, top-down over footprint, aerial crop; build records path; handoff end names it and refuses FEATURE without sheet (frontage-and-evidence \u00a74). Done: sheet for a built feature; end refuses missing sheet. World Q-203 waits on this with tasks 11\u201312 and 14\u201316."
     },
     {
-      "id": 19,
-      "title": "Catalogue: merge ukdefra-dtm/dsm into ukdefra-lidar + aliases",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket."
-    },
-    {
       "id": 20,
       "title": "System providers/<id>/ folders + shims/ + package field",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [
-        19
-      ],
+      "blockedBy": [],
       "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put."
     },
     {
       "id": 21,
       "title": "Move local provider tools into world providers/",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [
-        19
-      ],
+      "blockedBy": [],
       "notes": "Split from old #13. Local providers under southampton-build/providers/; local catalogue package field when code lives there. Can proceed in parallel with #20 once #19 is done."
     },
     {

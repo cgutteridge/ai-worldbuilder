@@ -119,6 +119,9 @@ def _families_from_place_sources(data: dict | None = None) -> dict[str, dict]:
 def resolve_source_id(name: str, data: dict | None = None) -> str:
     """Map a checklist / --record key through aliases (e.g. google → google-satellite).
 
+    Also resolves legacy DEFRA product ids (``ukdefra-dtm`` / ``ukdefra-dsm`` →
+    ``ukdefra-lidar``).
+
     @param name: provider id or alias
     @param data: optional place-sources dict
     @returns: canonical provider id
@@ -126,6 +129,21 @@ def resolve_source_id(name: str, data: dict | None = None) -> str:
     data = data or load_place_sources()
     aliases = data.get('aliases') or {}
     return aliases.get(name, name)
+
+
+def provider_by_id(name: str, data: dict | None = None) -> dict | None:
+    """Return the catalogue provider row for an id or alias.
+
+    @param name: provider id or alias (e.g. ``ukdefra-dtm``)
+    @param data: optional place-sources dict
+    @returns: provider dict, or None if unknown
+    """
+    data = data or load_place_sources()
+    canonical = resolve_source_id(name, data)
+    for p in data.get('providers') or []:
+        if p.get('id') == canonical:
+            return p
+    return None
 
 
 # Source families to check when a cell opens. Loaded from config/place-sources.json
