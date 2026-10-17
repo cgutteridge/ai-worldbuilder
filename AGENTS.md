@@ -23,13 +23,23 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Active world pointer | `active_world.py` |
 | World checkouts | `worlds/<name>/` (gitignored; own git repos) |
 | System tracker | `tasks/` |
-| System providers | `config/system-providers.json` (code under `providers/<id>/` after #20) |
+| System providers | `config/system-providers.json` + `providers/<id>/` (tool root) |
+| World providers | active world `config/local-providers.json` + `providers/<id>/` |
+| Provider CLIs | `shims/` (system) and `scripts/` shims (world); code under each `providers/` tree |
 | Evidence types | `reference/TYPES.txt` |
-| Shared scripts | `scripts/` (cross-provider glue; local provider CLIs are shims into the active world) |
+| Place SOURCES | active world `reference/SOURCES.txt` (URLs / ToS / fetch how) |
+| Shared scripts | `scripts/` (cross-provider glue) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |
 
-Local (place) provider tools live in the **active world** under `providers/<id>/`,
-indexed by `config/local-providers.json` `package` fields. See that world’s
-`providers/README.md`.
+### Provider roots (dual)
+
+Catalogue rows may set `package` (e.g. `providers/ukdefra-lidar`). Resolve it with
+`cell_sources.provider_package_dir(id)` / `script_env.resolve_provider_package`:
+
+- **system** → `ai-worldbuilder/providers/<id>/` (`home: system`)
+- **world** → `<active-world>/providers/<id>/` (`home: world`)
+
+Merged load via `cell_sources.load_place_sources()` annotates each row with `home`.
+See the active world’s `providers/README.md` for local modules.

@@ -1,9 +1,11 @@
 """Load place-local provider modules from the active world's ``providers/``.
 
 Local catalogue entries use a ``package`` field (path relative to the world
-root, e.g. ``providers/uos-portals``). Until system task #22 wires catalogue
-loaders to that field, thin ``scripts/`` shims call :func:`load_world_provider`
-so ``import portals`` and ``python3 scripts/portals.py`` keep working.
+root, e.g. ``providers/uos-portals``). Catalogue-aware dual-root resolution
+lives in ``cell_sources.provider_package_dir`` /
+``script_env.resolve_provider_package`` (system + world). Thin ``scripts/``
+shims call :func:`load_world_provider` so ``import portals`` and
+``python3 scripts/portals.py`` keep working for world-home packages.
 """
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from script_env import ROOT
+from script_env import resolve_provider_package
 
 
 def world_provider_module_path(package: str, module_file: str) -> Path:
@@ -23,7 +25,7 @@ def world_provider_module_path(package: str, module_file: str) -> Path:
     @param module_file: Python filename inside that directory (e.g. ``portals.py``)
     @returns: absolute path to the module file
     """
-    return (ROOT / package / module_file).resolve()
+    return resolve_provider_package(package, home='world') / module_file
 
 
 def load_world_provider(package: str, module_file: str, module_name: str) -> ModuleType:
@@ -35,7 +37,13 @@ def load_world_provider(package: str, module_file: str, module_name: str) -> Mod
     @returns: the loaded module
     @raises ImportError: if the file is missing under the active world
     """
-    path = world_provider_module_path(package, module_file)
+    try:
+        path = world_provider_module_path(package, module_file)
+    except FileNotFoundError as exc:
+        raise ImportError(
+            f"local provider package missing: {package!r} "
+            f"(active world; see config/local-providers.json)"
+        ) from exc
     existing = sys.modules.get(module_name)
     if existing is not None and Path(getattr(existing, "__file__", "") or "").resolve() == path:
         return existing
@@ -59,7 +67,12 @@ def run_world_provider(package: str, module_file: str) -> None:
     @param package: catalogue ``package`` path relative to the active world root
     @param module_file: filename inside the package directory
     """
-    path = world_provider_module_path(package, module_file)
+    try:
+        path = world_provider_module_path(package, module_file)
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            f"local provider package missing: {package!r} (active world)"
+        ) from exc
     if not path.is_file():
         raise SystemExit(
             f"local provider module missing: {path} "
