@@ -40,7 +40,7 @@ Done when `world_frame.py info` prints the new place and anchor.
 2. Run highs/lows:
 
 ```bash
-.venv/bin/python scripts/lidar_extremes.py --bbox-mc x0,z0,x1,z1 --fetch
+.venv/bin/python shims/lidar_extremes.py --bbox-mc x0,z0,x1,z1 --fetch
 ```
 
 3. Talk through DTM/DSM min/max and suggested `y_offset` with the user. Lock only after they confirm.

@@ -21,7 +21,7 @@ blobs are not comparable). A lidar top and a live top within MATCH_R blocks are 
   python3 scripts/tree_review.py --zone ... --json
 
 Then look at the same area on the Google sheet:
-  python3 scripts/google_aerial.py sheet --at X,Z --radius 60 --marks out.json    (red missing, blue invented, orange height)
+  python3 shims/google_aerial.py sheet --at X,Z --radius 60 --marks out.json    (red missing, blue invented, orange height)
 and decide per crown: keep, add (extra crown in reference/trees-extra-crowns.json or trees_layer re-run), or remove.
 """
 from __future__ import annotations

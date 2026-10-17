@@ -20,7 +20,7 @@ the roof, and the OSM buildings under it (none = unmapped).
   python3 scripts/lidar_heightmap.py --cell 51,-41 --json     # machine-readable
   python3 scripts/lidar_heightmap.py --cell 51,-41 --write    # also keep verification/site/lidar/51_-41.npz
 
-Source: DEFRA LIDAR (scripts/defra_lidar.py, via defra_world.py) wherever its tiles are cached, else the pristine save,
+Source: DEFRA LIDAR (shims/defra_lidar.py, via defra_world.py) wherever its tiles are cached, else the pristine save,
 cell by cell. Force one with LIDAR_SOURCE=defra|pristine|auto (default auto). DEFRA matches the save on ground and roofs
 (defra_lidar.py compare); its trees are real crowns from first-return lidar, so there are more than Geocraft's procedural ones (defra_world.py).
 
@@ -357,7 +357,7 @@ class ReferenceWorld:
             return True
         if self.source == 'defra':
             raise LookupError(f'DEFRA tiles for cell {cell[0]},{cell[1]} are not cached: '
-                              f'python3 scripts/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
+                              f'python3 shims/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
         return False
 
     def source_of(self, cell: tuple[int, int]) -> str:

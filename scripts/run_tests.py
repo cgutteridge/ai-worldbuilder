@@ -18,6 +18,12 @@ def main() -> int:
     @returns: process exit code (0 success, 1 if any test failed)
     """
     scripts = Path(__file__).resolve().parent
+    root = scripts.parent
+    shims = root / 'shims'
+    for path in (shims, scripts):
+        text = str(path)
+        if text not in sys.path:
+            sys.path.insert(0, text)
     suite = unittest.TestLoader().discover(str(scripts), pattern='test_*.py')
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1

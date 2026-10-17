@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 from site_kit import Plan, door_frame_issues  # noqa: E402
 
 DOOR = 'dark_oak_door[facing=north,half={},hinge=left,open=false]'

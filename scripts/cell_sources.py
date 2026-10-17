@@ -464,7 +464,7 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
     cx, cz = rec['centre_mc']
     e, n = to_osgb(cx, cz)
     return [
-        f'python3 scripts/google_aerial.py sheet --cell {tx},{tz}   # ALWAYS: look-only, then --record google-satellite',
+        f'python3 shims/google_aerial.py sheet --cell {tx},{tz}   # ALWAYS: look-only, then --record google-satellite',
         f'python3 scripts/ref_manifest.py find --xz {cx},{cz}',
         f'python3 scripts/geo.py tiles --bbox {bbox} --zoom 18 --mosaic 3',
         f'# then: scripts/aerial_mosaic.py … → reference/aerial/<place>/{rec["mosaic_filename"]}',

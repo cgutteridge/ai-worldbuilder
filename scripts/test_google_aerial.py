@@ -7,6 +7,7 @@ from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 
 import google_aerial as ga  # noqa: E402
 

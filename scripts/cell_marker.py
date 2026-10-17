@@ -13,7 +13,7 @@ sets it, clear releases it. Raise refuses if the file names another cell or any
 other cell_marker_*-cells.json registry is on disk, so at most one ring exists.
 
 After a successful --raise / --adopt, unstarted neighbours within LIDAR_GHOST_RING
-(default 1) get idempotent lidar ghosts (scripts/lidar_ghost.py). Use --no-ghosts
+(default 1) get idempotent lidar ghosts (shims/lidar_ghost.py). Use --no-ghosts
 to skip; --ghost-ring N overrides the env default.
 
 Raise places one horizontal wool ring on the cell bbox at a single Y (~30 blocks

@@ -23,9 +23,10 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Active world pointer | `active_world.py` |
 | World checkouts | `worlds/<name>/` (gitignored; own git repos) |
 | System tracker | `tasks/` |
-| System providers | `config/system-providers.json` |
+| System providers | `config/system-providers.json` (+ `providers/<id>/` when code exists) |
+| Provider CLIs | `shims/` (thin wrappers; implementations under `providers/`) |
 | Evidence types | `reference/TYPES.txt` |
-| Shared scripts | `scripts/` |
+| Shared scripts | `scripts/` (cross-provider glue) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |

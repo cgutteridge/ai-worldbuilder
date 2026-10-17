@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Cropped, gridded Google satellite windows for reading trees by eye, and the same window with a trees plan drawn on it.
 
-Google is look-only (scripts/google_aerial.py): the page loads the tiles straight from Google in the browser pane, nothing is
+Google is look-only (shims/google_aerial.py): the page loads the tiles straight from Google in the browser pane, nothing is
 saved. The crop is exact in block coordinates (an affine fit of the tile pixels to the MC grid), 5-block grid, labelled.
 
-  python3 scripts/google_window.py crop --at 6240,-5664 --half 32x16 --ppb 13        # reading window
-  python3 scripts/google_window.py crop --at 6240,-5664 --half 32x16 --outlines      # + OSM building outlines (check registration)
-  python3 scripts/google_window.py plan --at 6240,-5664 --half 32x16 --plan p.json   # planned crowns (yellow) / skipped (red dashed)
+  python3 shims/google_window.py crop --at 6240,-5664 --half 32x16 --ppb 13        # reading window
+  python3 shims/google_window.py crop --at 6240,-5664 --half 32x16 --outlines      # + OSM building outlines (check registration)
+  python3 shims/google_window.py plan --at 6240,-5664 --half 32x16 --plan p.json   # planned crowns (yellow) / skipped (red dashed)
 
 A window must fit the browser pane (about 1100 x 600 css px): --half 32x16 --ppb 13 gives 64 x 32 blocks. Output:
 instance/google-aerial/w_<x>_<z>.html (crop) or p_<x>_<z>.html (plan); open it as file://... in the browser pane

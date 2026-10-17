@@ -9,12 +9,12 @@ plain-image endpoint, viewed in the browser pane, never downloaded, hashed, comm
 here). The page shows the tiles seamlessly, the bbox outline, and a MC block grid every 10 blocks (x green, z
 cyan, labelled) so a position on the picture reads straight off as a block coordinate.
 
-  python3 scripts/google_aerial.py sheet --cell 49,-42            # whole cell, z19
-  python3 scripts/google_aerial.py sheet --at 6379,-5277          # around a building, z20, radius 30 blocks
-  python3 scripts/google_aerial.py sheet --at 6379,-5277 --radius 60 --zoom 19
-  python3 scripts/google_aerial.py sheet --cell 49,-42 --outlines # + OSM building outlines (red, way-id tail) to compare at a glance
-  python3 scripts/google_aerial.py sheet --at 6180,-5606 --marks cells.json   # colour the listed MC cells: [[x, z, "#rrggbb"], ...]
-  python3 scripts/google_aerial.py url --at 6379,-5277 --zoom 19  # the single tile URL
+  python3 shims/google_aerial.py sheet --cell 49,-42            # whole cell, z19
+  python3 shims/google_aerial.py sheet --at 6379,-5277          # around a building, z20, radius 30 blocks
+  python3 shims/google_aerial.py sheet --at 6379,-5277 --radius 60 --zoom 19
+  python3 shims/google_aerial.py sheet --cell 49,-42 --outlines # + OSM building outlines (red, way-id tail) to compare at a glance
+  python3 shims/google_aerial.py sheet --at 6180,-5606 --marks cells.json   # colour the listed MC cells: [[x, z, "#rrggbb"], ...]
+  python3 shims/google_aerial.py url --at 6379,-5277 --zoom 19  # the single tile URL
 
 Sheet: instance/google-aerial/<name>.html (gitignored). Open it as file://... in the browser pane.
 After looking, record it once:  cell_sources.py --cell TX,TZ --record google-satellite --result found --note "what it shows"

@@ -28,7 +28,7 @@ Provider examples (Southampton): keepable aerial = hampshire-hub / CCO; look-onl
 - Aerial lean: a tall roof sits a few blocks off its ground footprint. Judge a
   roof on the roof, a wall on streetlevel.
 - Lidar heights come from DEFRA **composite** DTM + last-return DSM
-  (`scripts/defra_lidar.py`, `lidar_query.py` / `lidar_heightmap.py`). Unfiltered
+  (`shims/defra_lidar.py`, `lidar_query.py` / `lidar_heightmap.py`). Unfiltered
   DSM is noisier than a filtered product: ignore transitory returns (cars, trains)
   but keep street furniture where practical. DSM−DTM (`lidar_query.py --layers
   diff`) finds walls and other standing objects. Rim reads low; ground_y is too

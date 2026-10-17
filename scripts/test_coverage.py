@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import coverage as C  # noqa: E402
 from osm_footprints import _inside  # noqa: E402
 

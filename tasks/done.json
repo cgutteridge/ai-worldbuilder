@@ -198,6 +198,12 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "cell_marker --raise/--adopt calls lidar_ghost.on_cell_focus for unstarted neighbours (ring via --ghost-ring / LIDAR_GHOST_RING, default 1; --no-ghosts skips). site_handoff plan text mentions ghosts. Tests: TestFocusGhosts + OnCellFocus."
+    },
+    {
+      "id": 20,
+      "title": "System providers/<id>/ folders + shims/ + package field",
+      "status": "done",
+      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put. Done: providers/<id>/{get,review,manage} for system providers with code; CLIs in shims/; package field on catalogue rows; reference/ unchanged; cell_sources/defra/lidar/google tests pass."
     }
   ]
 }

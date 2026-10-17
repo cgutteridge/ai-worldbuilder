@@ -22,15 +22,6 @@
       "notes": "From Q-202. One command: portal-facing cameras, top-down over footprint, aerial crop; build records path; handoff end names it and refuses FEATURE without sheet (frontage-and-evidence \u00a74). Done: sheet for a built feature; end refuses missing sheet. World Q-203 waits on this with tasks 11\u201312 and 14\u201316."
     },
     {
-      "id": 20,
-      "title": "System providers/<id>/ folders + shims/ + package field",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put."
-    },
-    {
       "id": 21,
       "title": "Move local provider tools into world providers/",
       "status": "todo",
@@ -46,7 +37,6 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        20,
         21
       ],
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."

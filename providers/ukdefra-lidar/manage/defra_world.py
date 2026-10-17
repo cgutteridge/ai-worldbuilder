@@ -1,7 +1,7 @@
 """A read-only stand-in for the pristine Geocraft save, built from DEFRA LIDAR + OSM footprints.
 
 Everything that reads "the lidar" does so through a world with ``block(x, y, z)`` (lidar_heightmap, campus, geo probe).
-``DefraWorld`` answers those calls from scripts/defra_lidar.py instead of region files, using Geocraft's own block
+``DefraWorld`` answers those calls from shims/defra_lidar.py instead of region files, using Geocraft's own block
 rules (lib/Minecraft/Projection.pm render_xz), so callers cannot tell the difference:
 
   ground      solid up to SEA_LEVEL + int(DTM)
@@ -18,7 +18,7 @@ rules (lib/Minecraft/Projection.pm render_xz), so callers cannot tell the differ
   else        solid up to the top of the feature
 
 Unfiltered DSM noise: cars/trains are not built form; street furniture is often worth keeping
-(site/GEOCRAFT.txt §1a). Checked against the untouched save (scripts/defra_lidar.py compare): ground columns
+(site/GEOCRAFT.txt §1a). Checked against the untouched save (shims/defra_lidar.py compare): ground columns
 99% exact, roofs 100%. Footprints come from the OSMIndex (reference/osm clips); pass ``idx`` for another place.
 """
 from __future__ import annotations
@@ -130,7 +130,7 @@ class DefraWorld:
         if cell not in self._maps:
             if not self.covers(cell):
                 raise LookupError(f'DEFRA tiles for cell {cell[0]},{cell[1]} are not cached: '
-                                  f'python3 scripts/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
+                                  f'python3 shims/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
             self._maps[cell] = heightmap(cell, self.lidar, self.idx)
         return self._maps[cell]
 

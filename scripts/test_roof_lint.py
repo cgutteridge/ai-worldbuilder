@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 from roof_lint import OUT, ridge_jogs  # noqa: E402
 
 T = 'minecraft:deepslate_tile'

@@ -4,6 +4,7 @@
   "providers": [
     {
       "id": "google-satellite",
+      "package": "providers/google-satellite",
       "types": [
         "aerial"
       ],
@@ -17,10 +18,11 @@
       "kind": null,
       "repeat_ok": true,
       "checklist": true,
-      "how": "ALWAYS, every cell: google_aerial.py sheet --cell TX,TZ (look-only, often clearer than keepable aerial); then --record google-satellite --result found --note \"what it shows\""
+      "how": "ALWAYS, every cell: shims/google_aerial.py sheet --cell TX,TZ (look-only, often clearer than keepable aerial); then --record google-satellite --result found --note \"what it shows\""
     },
     {
       "id": "kartaview",
+      "package": "providers/kartaview",
       "types": [
         "streetlevel"
       ],
@@ -34,10 +36,11 @@
       ],
       "kind": "street",
       "checklist": true,
-      "how": "kartaview_fetch.py list --at CX,CZ --radius-m 80"
+      "how": "shims/kartaview_fetch.py list --at CX,CZ --radius-m 80"
     },
     {
       "id": "commons",
+      "package": "providers/commons",
       "types": [
         "streetlevel"
       ],
@@ -52,10 +55,11 @@
       ],
       "kind": "street",
       "checklist": true,
-      "how": "commons_fetch.py list --at CX,CZ --radius-m 250"
+      "how": "shims/commons_fetch.py list --at CX,CZ --radius-m 250"
     },
     {
       "id": "google-streetview",
+      "package": "providers/google-streetview",
       "types": [
         "streetlevel"
       ],
@@ -70,7 +74,7 @@
       ],
       "kind": "street",
       "checklist": true,
-      "how": "streetview_sample.py sample --cell TX,TZ (look-only; small grid)"
+      "how": "shims/streetview_sample.py sample --cell TX,TZ (look-only; small grid)"
     },
     {
       "id": "rightmove",
@@ -91,6 +95,7 @@
     },
     {
       "id": "ukdefra-lidar",
+      "package": "providers/ukdefra-lidar",
       "types": [
         "lidar"
       ],
@@ -108,7 +113,7 @@
       ],
       "kind": null,
       "checklist": false,
-      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dtm,dsm,diff,ground_y,top_y. Strip cars/trains; keep street furniture where practical."
+      "how": "shims/defra_lidar.py fetch --cell TX,TZ; shims/lidar_query.py --layers dtm,dsm,diff,ground_y,top_y. Strip cars/trains; keep street furniture where practical."
     }
   ],
   "aliases": {
