@@ -261,6 +261,45 @@ class EndTest(Base):
         self.run_end('Q-001')
         self.assertIsNone(H.read_pending()['next'])
 
+    FEATURE_QUEUE = '''SOUTHAMPTON REFINE — QUEUE
+
+[ ] Q-001  CELL 1,1 (r=0) FEATURE Test Building. RULES: property.
+           Auto-queued.
+
+[ ] Q-002  CELL 2,2 (r=1) layered passes: ground, trees, decor. RULES: ground.
+           Auto-queued.
+'''
+
+    def test_end_blocks_ungreebled_feature(self):
+        """FEATURE end without <name>-greeblies or escape phrase must not tick."""
+        H.QUEUE.write_text(self.FEATURE_QUEUE)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err), \
+                mock.patch('site_archive.run'):
+            rc = H.main(['end', 'Q-001', '--summary', 'built the shell only',
+                         '--skip-say', '--skip-view'])
+        self.assertEqual(rc, 2)
+        self.assertIn('greeblies', err.getvalue().lower())
+        self.assertIn('[ ] Q-001', H.QUEUE.read_text())
+
+    def test_end_allows_feature_when_summary_says_no_greeblies_seen(self):
+        H.QUEUE.write_text(self.FEATURE_QUEUE)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch('site_archive.run'):
+            rc = H.main(['end', 'Q-001', '--summary', 'shell done; no greeblies seen',
+                         '--skip-say', '--skip-view'])
+        self.assertEqual(rc, 0)
+        self.assertIn('[x] Q-001', H.QUEUE.read_text())
+
+    def test_end_allows_feature_with_greeblies_stage(self):
+        H.QUEUE.write_text(self.FEATURE_QUEUE)
+        self.stages((1, 1), **{'feature-test-greeblies': {
+            'status': 'applied', 'plan': 'test-greeblies'}})
+        rc, _ = self.run_end('Q-001')
+        self.assertEqual(rc, 0)
+        self.assertIn('[x] Q-001', H.QUEUE.read_text())
+
 
 class PlanCellItems(unittest.TestCase):
     FEATURE = {'bbox': [1, 2, 3, 4], 'label': 'L', 'kind': 'building', 'refs': ['w1'], 'portals': [], 'pictures': []}
@@ -313,6 +352,14 @@ class PlanCellItems(unittest.TestCase):
         self.assertIn('site/builds/', joined)
         self.assertNotIn('house_build.py', joined)
         self.assertNotIn('build_runner', joined)
+
+    def test_feature_template_includes_greeblies_line(self):
+        """Queue FEATURE body must name greeblies list + <name>-greeblies / escape."""
+        body = '\n'.join(H.plan_cell_items(1, 2, 0, self.gaps(features=[self.FEATURE]), [])[0][1])
+        self.assertIn('Greeblies:', body)
+        self.assertIn('plant, vents, skylights, panels, plant colour', body)
+        self.assertIn('<name>-greeblies', body)
+        self.assertIn('no greeblies seen', body)
 
     def test_layered_passes_done_line_is_empty_world_not_geocraft_lumps(self):
         """Seam: queue copy defines done as evidence + layers + masks, not clearing Geocraft."""

@@ -135,6 +135,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 15,
+      "title": "Greeblies gate on feature queue items",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "plan_cell_items FEATURE template lists aerial greeblies + <name>-greeblies / \"no greeblies seen\". cmd_end refuses FEATURE without that stage record unless summary escape; EndTest + PlanCellItems cover both. World Q-203 still waits on 12, 16\u201317."
     }
   ]
 }

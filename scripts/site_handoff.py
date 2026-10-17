@@ -480,6 +480,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
                 '(name, ways, storeys, roofs.kind/material, groups.front, modifies; see feature_build docstring). '
                 'Do not extend house_build for odd shapes; do not copy a peer spec or a build script.'
             ),
+            'Greeblies: list from the aerial sheet (plant, vents, skylights, panels, plant colour); '
+            'apply as <name>-greeblies (CRAFTSMANSHIP), or end summary must say "no greeblies seen".',
             f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.',
         ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
           + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz}.'] if not items else [])))
@@ -581,6 +583,58 @@ def _cell_for_item(item):
     if m:
         return int(m.group(1)), int(m.group(2))
     return in_flight_cell()
+
+
+NO_GREEBLIES_SEEN = 'no greeblies seen'
+
+
+def is_feature_queue_item(item):
+    """True when the queue head is a FEATURE build item (not layered passes / review).
+
+    @param item: queue item dict or None
+    @returns: bool
+    """
+    if not item:
+        return False
+    return bool(re.search(r'\)\s+FEATURE\s+', item.get('text') or '', re.I))
+
+
+def greeblies_record_present(stages):
+    """True when ``stages`` has a ``<name>-greeblies`` key or plan (site_kit apply record).
+
+    @param stages: stages dict from ``_cell_stages``, or None
+    @returns: bool
+    """
+    for key, entry in (stages or {}).items():
+        if str(key).endswith('-greeblies'):
+            return True
+        if isinstance(entry, dict) and str(entry.get('plan') or '').endswith('-greeblies'):
+            return True
+    return False
+
+
+def feature_greeblies_refusal(item, summary):
+    """Error message if FEATURE ``end`` lacks greeblies evidence; else None.
+
+    A FEATURE item may end only when the cell has a ``<name>-greeblies`` stage
+    record (key or plan), or ``summary`` contains ``no greeblies seen``.
+
+    @param item: queue item dict or None
+    @param summary: ``--summary`` text
+    @returns: refusal string or None
+    """
+    if not is_feature_queue_item(item):
+        return None
+    if NO_GREEBLIES_SEEN in (summary or '').lower():
+        return None
+    cell = _cell_for_item(item)
+    stages = _cell_stages(cell) if cell else None
+    if greeblies_record_present(stages):
+        return None
+    return (
+        'FEATURE end refused: no <name>-greeblies stage record '
+        f'(apply greeblies, or put "{NO_GREEBLIES_SEEN}" in --summary)'
+    )
 
 
 def next_chat_prompt_line():
@@ -1074,6 +1128,9 @@ def cmd_end(argv):
     An "AERIAL REVIEW cell X" item also sets that cell's row in site/AERIAL-REVIEW.txt to
     ``--review-status`` (look|features|ground|trees|done; default done), so advance_to_next_cell moves on.
 
+    A FEATURE item is refused (exit 2, queue unticked) unless the cell has a ``<name>-greeblies``
+    stage record or ``--summary`` contains ``no greeblies seen``.
+
     @param argv: remaining CLI args (Q-nnn, --summary, --view, optional --skip-say/--skip-view/--review-status)
     @returns: exit code
     """
@@ -1125,6 +1182,10 @@ def cmd_end(argv):
         area_line = done_item['text']
         if len(area_line) > 160:
             area_line = area_line[:157].rstrip() + '…'
+
+    if why := feature_greeblies_refusal(done_item, summary):
+        print(f'ERROR: {why}', file=sys.stderr)
+        return 2
 
     rc_cell = google_review_cell(done_item) if done_item else None
     if rc_cell:
