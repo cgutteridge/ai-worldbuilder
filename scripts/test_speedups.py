@@ -94,21 +94,24 @@ class TestTouchedMemo(unittest.TestCase):
         import json
         import tempfile
         from pathlib import Path
+
+        import touched_cells as tc
         with tempfile.TemporaryDirectory() as d:
-            old_out, old_cache = coverage.OUT, coverage.TOUCH_CACHE
-            coverage.OUT, coverage.TOUCH_CACHE = Path(d), Path(d) / 'cache.json'
+            old_out, old_cache = tc.OUT, tc.TOUCH_CACHE
+            tc.OUT, tc.TOUCH_CACHE = Path(d), Path(d) / 'cache.json'
             try:
                 f = Path(d) / 'demo_build-cells.json'
                 f.write_text(json.dumps({'1,50,2': 'minecraft:stone'}))
-                first = coverage.touched_by_build()
+                first = tc.touched_by_build()
                 self.assertEqual(first['demo_build'], {(1, 2)})
                 first['demo_build'].add((9, 9))                              # a caller scribbling on its copy
-                self.assertEqual(coverage.touched_by_build()['demo_build'], {(1, 2)})
+                self.assertEqual(tc.touched_by_build()['demo_build'], {(1, 2)})
                 f.write_text(json.dumps({'1,50,2': 'minecraft:stone', '3,50,4': 'minecraft:stone'}))
-                self.assertEqual(coverage.touched_by_build()['demo_build'], {(1, 2), (3, 4)})   # changed file, fresh answer
+                self.assertEqual(tc.touched_by_build()['demo_build'], {(1, 2), (3, 4)})   # changed file, fresh answer
+                self.assertEqual(coverage.touched_by_build()['demo_build'], {(1, 2), (3, 4)})  # coverage re-export
             finally:
-                coverage.OUT, coverage.TOUCH_CACHE = old_out, old_cache
-                coverage._TOUCHED_MEMO.clear()
+                tc.OUT, tc.TOUCH_CACHE = old_out, old_cache
+                tc._TOUCHED_MEMO.clear()
 
 
 if __name__ == '__main__':

@@ -19,7 +19,8 @@ Umbrella polygons (campus, school, landuse=residential/railway...) are not parce
 gaps on their edges ("edge of Highfield Campus").
 
 Parcels are drawn from OSM + the PRISTINE Geocraft save (street surface stops garden growth),
-so they do not move as the live world is refined. Touched = columns covered by
+so they do not move as the live world is refined. Touched columns / disk cache / ownership
+overlap live in scripts/touched_cells.py (re-exported here). Touched = columns covered by
 verification/site/*-cells.json, minus REVERTED builds. State per parcel:
   untouched / touched N% / done.
 Done needs 100% of columns touched AND a sign-off in site/COVERAGE-SIGNOFFS.jsonl.
@@ -64,6 +65,10 @@ from script_env import ROOT  # noqa: E402
 from osm_footprints import (PRISTINE, OSMIndex, _addr, _seg_dist, grow_plots,  # noqa: E402
                             osm_tags, street_surface)
 from site_kit import OUT, World  # noqa: E402
+from touched_cells import (  # noqa: E402
+    REVERTED, TOUCH_CACHE, decode_runs, encode_runs, ownership_overlap_issues,
+    touched_by_build, union,
+)
 
 from cellmath import CELL  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
@@ -73,7 +78,6 @@ SLIVER = 5            # residual components this small join a neighbour (ParcelB
 LEFTOVER_TOP = 160    # highest y scanned for leftover Geocraft structure (geocraft_leftovers)
 AREAS_FILE = ROOT / 'config/coverage-areas.json'
 STORE = OUT / 'coverage'
-TOUCH_CACHE = STORE / 'touched-cache.json'
 SIGNOFFS = ROOT / 'site/COVERAGE-SIGNOFFS.jsonl'
 HOLDS = ROOT / 'site/CELL-HOLDS.jsonl'
 COVERAGE_TXT = ROOT / 'site/COVERAGE.txt'
@@ -83,25 +87,6 @@ END = '<<< end generated (scripts/coverage.py) <<<'
 KINDS = ('property', 'road', 'path', 'open', 'gap', 'no_osm')
 GAPLIKE = ('gap', 'no_osm')
 STATES = ('untouched', 'touched', 'done')
-
-# Builds whose work was undone (I-009: façade shells on the pavement, reverted by
-# broadlands_facade_revert + region snap I-009-revert). Their archives still exist.
-REVERTED = frozenset({
-    'portswood_x_broadlands_terrace_facade_1', 'portswood_x_broadlands_terrace_facade_1b',
-    'portswood_x_broadlands_terrace_facade_2', 'portswood_x_broadlands_terrace_facade_2b',
-    'portswood_x_broadlands_terrace_facade_2c', 'broadlands_facade_revert',
-})
-
-
-def _touch_excluded(name: str) -> bool:
-    """Whether a build's columns are omitted from parcel touched stats.
-
-    @param name: build name (verification/site/<name>-cells.json)
-    @returns: True if the build should not count as touched ground
-    """
-    return name in REVERTED or name.startswith('cell_marker_')
-
-
 
 # highway=* -> (kind, [(half-width, Geocraft score), ...]); site/GEOCRAFT.txt §3. Higher score
 # wins where corridors overlap, then the nearer centreline.
@@ -189,37 +174,6 @@ def line_band(pts, half: float, bbox):
                 d = _seg_dist((x + 0.5, z + 0.5), a, b)[0]
                 if d <= half:
                     yield x, z, d
-
-
-def encode_runs(cells) -> list:
-    """Row run-length encoding of a column set.
-
-    @param cells: iterable of (x, z)
-    @returns: [[z, x_first, x_last], ...] sorted by z then x
-    """
-    rows = {}
-    for x, z in cells:
-        rows.setdefault(z, []).append(x)
-    out = []
-    for z in sorted(rows):
-        xs = sorted(rows[z])
-        start = prev = xs[0]
-        for x in xs[1:]:
-            if x != prev + 1:
-                out.append([z, start, prev])
-                start = x
-            prev = x
-        out.append([z, start, prev])
-    return out
-
-
-def decode_runs(runs) -> set:
-    """Inverse of encode_runs.
-
-    @param runs: [[z, x_first, x_last], ...]
-    @returns: {(x, z), ...}
-    """
-    return {(x, z) for z, a, b in runs for x in range(a, b + 1)}
 
 
 def components(cells: set, connect=N4) -> list:
@@ -727,63 +681,7 @@ def load_areas(name: str | None = None, built_only: bool = False) -> list:
     return [load_area(n) for n in names]
 
 
-# --- touched columns ----------------------------------------------------------------------
-_TOUCHED_MEMO: dict = {}
-
-
-def touched_by_build(exclude=REVERTED) -> dict:
-    """Same as ``_touched_by_build``, remembered for the life of the process while no *-cells.json changes.
-
-    The key is every cells file's name, mtime and size plus ``exclude``, so any apply/undo that writes a file
-    gives a fresh result. Callers get their own copies of the sets. (next --plan asks 68 times per run.)
-    """
-    key = (frozenset(exclude), tuple((f.name, st.st_mtime_ns, st.st_size)
-                                     for f in sorted(OUT.glob('*-cells.json')) for st in (f.stat(),)))
-    if key not in _TOUCHED_MEMO:
-        _TOUCHED_MEMO.clear()
-        _TOUCHED_MEMO[key] = _touched_by_build(exclude)
-    return {name: set(cols) for name, cols in _TOUCHED_MEMO[key].items()}
-
-
-def _touched_by_build(exclude=REVERTED) -> dict:
-    """Columns covered by each build's archived cells (verification/site/*-cells.json).
-
-    Cached per build by file mtime + size in verification/site/coverage/touched-cache.json.
-
-    @param exclude: build names to ignore (default: REVERTED); also skips cell_marker_*
-    @returns: {build name: set of (x, z)}
-    """
-    cache = json.loads(TOUCH_CACHE.read_text()) if TOUCH_CACHE.exists() else {}
-    out, dirty = {}, False
-    for f in sorted(OUT.glob('*-cells.json')):
-        name = f.name[:-len('-cells.json')]
-        st = f.stat()
-        key = [st.st_mtime, st.st_size]
-        if cache.get(name, {}).get('key') != key:
-            cols = set()
-            for k in json.loads(f.read_text()):
-                x, _y, z = k.split(',')
-                cols.add((int(x), int(z)))
-            cache[name] = {'key': key, 'runs': encode_runs(cols)}
-            dirty = True
-        if name not in exclude and not _touch_excluded(name):
-            out[name] = decode_runs(cache[name]['runs'])
-    for gone in set(cache) - {f.name[:-len('-cells.json')] for f in OUT.glob('*-cells.json')}:
-        del cache[gone]
-        dirty = True
-    if dirty:
-        STORE.mkdir(parents=True, exist_ok=True)
-        TOUCH_CACHE.write_text(json.dumps(cache, separators=(',', ':')))
-    return out
-
-
-def union(by_build: dict) -> set:
-    """@param by_build: {build: set of columns}
-    @returns: every touched column"""
-    out = set()
-    for cols in by_build.values():
-        out |= cols
-    return out
+# touched columns + ownership overlap: scripts/touched_cells.py (re-exported above)
 
 
 # --- sign-offs ----------------------------------------------------------------------------

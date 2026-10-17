@@ -63,6 +63,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Donor README marked RETIRED DONOR with pointers to ai-worldbuilder and southampton-build. Instance save may still live under donor until relocated."
+    },
+    {
+      "id": 9,
+      "title": "Extract coverage touched-cells / ownership module from coverage.py",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "scripts/touched_cells.py owns encode_runs, touched_by_build (+ disk/memo cache), union, ownership_overlap_issues (vs built_cells/owned_in). coverage.py re-exports; parcel model + CLI stay. test_touched_cells.py locks Q-195 overlap."
     }
   ]
 }

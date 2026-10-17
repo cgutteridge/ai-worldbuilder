@@ -22,15 +22,6 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 9,
-      "title": "Decide whether to split scripts/coverage.py",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From world QUEUE Q-195. System work only."
-    },
-    {
       "id": 10,
       "title": "Settle the build path (house_build vs build_runner) and align rules",
       "status": "todo",
