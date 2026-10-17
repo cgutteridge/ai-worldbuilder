@@ -137,6 +137,15 @@
       "notes": "From Q-201. Q-189 (w33830305) reports 32 path cells (footway/steps) inside the OSM footprint. scripts/footprint_overlap.py dry-run: path bands + optional open lidar + aerial ground share; feature_build prints the report. Test: synthetic footway through a polygon. World Q-203 waits on remaining 12, 15, 17."
     },
     {
+      "id": 17,
+      "title": "Evidence contact sheet in the build run",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "scripts/evidence_sheet.py: portal-facing + top-down + aerial contact sheet; records path on *-result.json. site_handoff.cmd_end names the sheet and refuses FEATURE without it; plan_cell_items templates the command. Tests: test_evidence_sheet + EndTest FEATURE refusal. World Q-203 still waits on sibling tasks."
+    },
+    {
       "id": 18,
       "title": "Move generic site process/craft docs from world site/ into rules/",
       "status": "done",

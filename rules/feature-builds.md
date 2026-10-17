@@ -36,8 +36,10 @@ not extend `house_build` for odd shapes.
 Acceptance fixture: Students' Union `site/builds/susu_42.json` (OSM
 `w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`).
 
-Greeblies, path-in-footprint, and evidence contact sheet are separate
-system tickets — not this module.
+Greeblies and path-in-footprint are separate system tickets. After apply, run
+`python3 scripts/evidence_sheet.py <name>` (portal-facing cameras, top-down,
+aerial crop); the build records the sheet path and `site_handoff.py end`
+refuses a FEATURE item without it (`rules/frontage-and-evidence.md` §4).
 
 If something looks wrong, fix the **spec** (or `feature_build.py` if the bug
 is shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.

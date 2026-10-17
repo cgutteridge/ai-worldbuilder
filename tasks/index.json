@@ -13,15 +13,6 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 17,
-      "title": "Evidence contact sheet in the build run",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From Q-202. One command: portal-facing cameras, top-down over footprint, aerial crop; build records path; handoff end names it and refuses FEATURE without sheet (frontage-and-evidence \u00a74). Done: sheet for a built feature; end refuses missing sheet. World Q-203 waits on this with tasks 11\u201312 and 14\u201316."
-    },
-    {
       "id": 20,
       "title": "System providers/<id>/ folders + shims/ + package field",
       "status": "todo",

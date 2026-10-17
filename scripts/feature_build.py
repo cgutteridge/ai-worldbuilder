@@ -30,7 +30,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  Dry run prints glazed share per storey per face.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
-Greeblies / contact sheet: separate system tickets.
+Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
+(portal-facing + top-down + aerial; records path on ``*-result.json``; handoff
+``end`` refuses FEATURE without it).
 
 Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply]
 """
