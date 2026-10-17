@@ -36,7 +36,7 @@ and patrol all passed. All five were reverted.
   at "the last solid block before the pavement" (I-009).
 - Doors face the street they are numbered on.
 - DEFRA composite lidar Y is the massing authority (ground, eaves, ridge) via
-  `defra_lidar.py` / `lidar_heightmap.py` (`ukdefra-dtm` + `ukdefra-dsm`).
+  `defra_lidar.py` / `lidar_heightmap.py` (`ukdefra-lidar`; aliases `ukdefra-dtm` / `ukdefra-dsm`).
 - `site_kit.apply()` refuses building-like blocks far outside OSM footprints.
   Set `plan.outside_footprint_ok` only for a genuinely unmapped structure and
   name its evidence id. Never to shove a house onto the kerb.

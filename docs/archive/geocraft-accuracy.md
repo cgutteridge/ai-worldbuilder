@@ -2,7 +2,7 @@
 
 **Archived 2026-10-17 (task 24).** Not on the default reading list. Live
 evidence heights: DEFRA composites (`rules/evidence-order.md`, providers
-`ukdefra-dtm` / `ukdefra-dsm`). Full historical write-up: world
+`ukdefra-lidar`, aliases `ukdefra-dtm` / `ukdefra-dsm`). Full historical write-up: world
 `site/GEOCRAFT.txt`.
 
 **Trust (keep):**

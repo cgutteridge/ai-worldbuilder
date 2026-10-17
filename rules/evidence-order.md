@@ -22,7 +22,7 @@ below the first row `hint` or `estimate`.
 | Trees, canopy cover | `aerial` cover + `lidar` tree columns (kind 2, 3) | other `aerial` | none: never invent crowns |
 | Building missing from OSM or lidar | `streetlevel` or `aerial` show it: build it anyway | `lidar` standing height with no OSM polygon | |
 
-Provider examples (Southampton): keepable aerial = hampshire-hub / CCO; look-only aerial = google-satellite; streetlevel = kartaview, commons, google-streetview, rightmove, uos-buildings; lidar = ukdefra-dtm / ukdefra-dsm (DEFRA 1 m composites via `defra_lidar.py`). Full catalogue: `reference/SOURCES.txt` + system providers.
+Provider examples (Southampton): keepable aerial = hampshire-hub / CCO; look-only aerial = google-satellite; streetlevel = kartaview, commons, google-streetview, rightmove, uos-buildings; lidar = ukdefra-lidar (DEFRA 1 m DTM+DSM via `defra_lidar.py`; aliases `ukdefra-dtm` / `ukdefra-dsm`). Full catalogue: `reference/SOURCES.txt` + system providers.
 
 ## Cautions
 - Aerial lean: a tall roof sits a few blocks off its ground footprint. Judge a

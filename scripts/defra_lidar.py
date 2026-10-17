@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """DEFRA LIDAR composite DTM / DSM: our own source, same method as Geocraft (lib/Elevation/UKDEFRA.pm).
 
+Catalogue provider id: ``ukdefra-lidar`` (aliases ``ukdefra-dtm`` / ``ukdefra-dsm`` in
+``config/system-providers.json``). DTM and last-return DSM are one feed, two products.
+
 Why: Geocraft's heights are only readable back out of the pristine save. This fetches the open DEFRA
 (Environment Agency) 1 m LIDAR composites itself, so heights exist for any place the data covers, not just
 the Southampton2023 save. England only: Scotland and Wales publish their own LIDAR, which would be a second

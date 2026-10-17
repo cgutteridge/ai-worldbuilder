@@ -162,6 +162,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 19,
+      "title": "Catalogue: merge ukdefra-dtm/dsm into ukdefra-lidar + aliases",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket. Done: single ukdefra-lidar in system-providers.json; aliases ukdefra-dtm/ukdefra-dsm; provider_by_id + TestProviderAliases; google-satellite/streetview unchanged; no providers/ folders."
     }
   ]
 }
