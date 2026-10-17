@@ -54,6 +54,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Smoke: active_world + world_frame.info + site_handoff.next against southampton-build."
+    },
+    {
+      "id": 6,
+      "title": "Retire donor Southampton Refine",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Donor README marked RETIRED DONOR with pointers to ai-worldbuilder and southampton-build. Instance save may still live under donor until relocated."
     }
   ]
 }

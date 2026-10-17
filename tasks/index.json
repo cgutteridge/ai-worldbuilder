@@ -4,15 +4,6 @@
   "nextTaskId": 13,
   "tasks": [
     {
-      "id": 6,
-      "title": "Retire donor Southampton Refine",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Archive or mark read-only; leave pointer README to the two new repos."
-    },
-    {
       "id": 8,
       "title": "Deferred: auto stale-source refresh (~6 months)",
       "status": "todo",
