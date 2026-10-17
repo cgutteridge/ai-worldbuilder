@@ -8,7 +8,7 @@ This tree (“Southampton Refine”) is a **donor**, not the long-term home. We 
 
 1. **Worldbuilder** repo (`ai-worldbuilder`): generic AI worldbuilding — shared scripts, skills, evidence types, system providers, Matt **system tracker** (`tasks/`). No world QUEUE/ISSUES.
 2. **World** repos (first: `southampton-build`): game-world build only — `site/` (QUEUE, ISSUES, notes), world frame / offsets / gameworld id, feature/tree/decor build scripts, **local** providers. **World tracker** only.
-3. **N worlds, one active:** one worldbuilder checkout can address many world checkouts (sibling repos). Exactly one is active, selected by a **system-level Python** config (import-friendly) that points at the active world’s root and reads that world’s offsets and gameworld id.
+3. **N worlds, one active:** one worldbuilder checkout can address many world checkouts under a gitignored `worlds/` subfolder (each world remains its own git repo). Exactly one is active, selected by a **system-level Python** config (import-friendly) that points at the active world’s root and reads that world’s offsets and gameworld id. Nested layout (not peer folders) keeps tool + world files in one Cursor workspace.
 4. **Trackers are distinct:** if it is unclear whether work is tool or world, **ask** — do not auto-prefer system tasks over the world queue.
 5. **Providers:** on add, ask **local vs system**. Rule of thumb: below national (UK / England) → local. System catalogue holds nationwide+; each world extends with local feeds.
 6. **Extract timing:** record here and seed a holding system task list in this donor; create the two repos and move files in a **dedicated later session** (not mid dirty-tree).

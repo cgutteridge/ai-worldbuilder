@@ -9,7 +9,7 @@ The reusable AI tool for building and refining Minecraft worlds from real-place 
 _Avoid_: refine tool, Geocraft refine, Southampton Refine (as the tool name)
 
 **World**:
-One game place under construction (offsets, gameworld id, queue, issues, feature/tree build scripts, local providers). Lives in its own repository.
+One game place under construction (offsets, gameworld id, queue, issues, feature/tree build scripts, local providers). Lives in its own repository, checked out under the worldbuilder’s gitignored `worlds/` folder.
 _Avoid_: site (as the name of the whole place), project, instance (unless meaning the Minecraft launcher instance)
 
 **Active world**:

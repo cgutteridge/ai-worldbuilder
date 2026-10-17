@@ -12,7 +12,10 @@
 
 Scripts resolve place memory through `WORLD_ROOT`, never through “where the tool repo happens to sit”.
 
-## World (e.g. `southampton-build`)
+## World (e.g. `worlds/southampton-build`)
+
+World repos live under `worlds/<name>/` inside the worldbuilder checkout. That
+tree is `.gitignore`d; each subdirectory is its own git repo.
 
 | Path | Role |
 | --- | --- |
@@ -25,5 +28,5 @@ Offsets live only in the world frame. The system config does not duplicate them;
 
 ## Switch active world
 
-1. Point `WORLD_ROOT` at the other world checkout (edit `active_world.py` or set the env var).
+1. Point `WORLD_ROOT` at the other world checkout under `worlds/` (edit `active_world.py` or set the env var).
 2. Confirm: `python -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.

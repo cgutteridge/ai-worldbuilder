@@ -7,11 +7,11 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 
 1. Confirm active world: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
 2. System tracker first when work is **tool** engineering: read `tasks/index.json`.
-3. If work is **world** (QUEUE, ISSUES, place builds), open that world repo — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
+3. If work is **world** (QUEUE, ISSUES, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
 
 ## Always
 
-- Place memory lives under the active world's `site/` and `config/`, not in this repo.
+- Place memory lives under the active world's `site/` and `config/` (inside `worlds/`), not in the tool tracker.
 - Providers: on add, ask **local vs system** (below national → local). Skills: `evaluate-data-source`, `add-data-source`.
 - World frame: active world `config/world-frame.json` via `scripts/world_frame.py`.
 - Sound cues: `python3 ~/Projects/agent-soundboard/scripts/play.py <id>` (`done`, `need-you`, `error`).
@@ -21,6 +21,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Topic | Home |
 | --- | --- |
 | Active world pointer | `active_world.py` |
+| World checkouts | `worlds/<name>/` (gitignored; own git repos) |
 | System tracker | `tasks/` |
 | System providers | `config/system-providers.json` |
 | Evidence types | `reference/TYPES.txt` |

@@ -10,6 +10,7 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
 
 ## 0. Defaults
 
+- Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Point `active_world.py` at it before writing place files.
 - **Empty world** from `templates/empty-world/` (flat, structures off, weather off, MC 26.2 format; see its README.txt) + projection so 1 m ≈ 1 block NSEW. Never start from a generated or Geocraft save. Pristine Geocraft heightmap = Southampton legacy branch only.
 - **Anchor** at MC (0, 0) (name it: e.g. Bargate, campus centre).
 - Vanilla Overworld Y is **−64…319** — a Y-offset human checkpoint is mandatory.

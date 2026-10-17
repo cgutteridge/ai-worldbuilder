@@ -14,8 +14,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Default: sibling southampton-build next to this worldbuilder checkout.
-_DEFAULT_WORLD = Path(__file__).resolve().parent.parent / "southampton-build"
+# Default: nested checkout under worlds/ (gitignored; each world is its own repo).
+_DEFAULT_WORLD = Path(__file__).resolve().parent / "worlds" / "southampton-build"
 
 WORLD_ROOT: Path = Path(
     os.environ.get("AI_WORLDBUILDER_WORLD_ROOT", str(_DEFAULT_WORLD))

@@ -5,3 +5,7 @@
 .matplotlib-cache/
 .matplotlib-cache/
 .claude/settings.local.json
+
+# Nested world git repos (each checkout keeps its own .git)
+/worlds/*/
+!/worlds/README.md
