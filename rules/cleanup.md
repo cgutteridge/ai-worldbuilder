@@ -30,9 +30,10 @@ CLASSES
                  with the ground scripts).
 
 NEVER TOUCHED
- instance/saves (the live world), backups/pristine-geocraft (Geocraft baseline, lidar_heightmap reads it),
- backups/*.tar.gz, verification/site/*-cells.json (build records: owners db, roof_lint, audit drift)
- and *-backup.json (undo), reference useful yes/maybe, site/archive, downloads/ (source data).
+ instance/saves (the live world), backups/pristine-geocraft (Southampton legacy baseline only;
+ not the DEFRA evidence path), backups/*.tar.gz, verification/site/*-cells.json (build records:
+ owners db, roof_lint, audit drift) and *-backup.json (undo), reference useful yes/maybe,
+ site/archive, downloads/ (source data).
 
 WHEN
  Due when the last logged apply is 7+ days old, or the SAFE classes would free 1 GB+

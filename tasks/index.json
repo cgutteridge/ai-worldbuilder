@@ -92,15 +92,6 @@
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
     },
     {
-      "id": 25,
-      "title": "Rules/OS stale Geocraft-ref sweep",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "After #18 move and #23\u201324 behaviour/evidence changes: grep-driven pass over rules/ (including relocated OS docs) \u2014 remove/replace Geocraft-default, lump, and pristine-as-lidar wording. Docs/pointers only unless a leftover clearly contradicts #23\u201324."
-    },
-    {
       "id": 26,
       "title": "Lidar ghost tool: DTM ground + grey DSM\u2212DTM features",
       "status": "todo",

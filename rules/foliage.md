@@ -10,7 +10,7 @@ Rules
 ------------------------------------------------------------------------
  - NEVER place sapling blocks. They grow on random tick, so the world drifts after
    apply: builds stop being idempotent, readback and signoff lie, and ground work
-   gets undone. Strip Geocraft saplings in the ground pass; do not replant them.
+   gets undone. Strip stock/vendor saplings in the ground pass; do not replant them.
  - Canopy is static: log + leaves[persistent=true] massing (or hedge/wall), sized from
    the aerial. Allowlist: scripts/foliage.py (REFINE_FOLIAGE).
  - Trees and decor go only where the live block is air (or a grass stem/flower), so
@@ -38,11 +38,11 @@ columns near the cell edge.
 ------------------------------------------------------------------------
 Tree review (every cell redo: I-073 step 4, before the trees pass is called done)
 ------------------------------------------------------------------------
-CAUTION (2026-10-16, checked on 48,-45 x6208..6272 z-5696..-5632 with the lidar/live footprints drawn over aerial): the pristine lidar
+CAUTION (2026-10-16, checked on 48,-45 x6208..6272 z-5696..-5632 with the lidar/live footprints drawn over aerial): DEFRA lidar
 tree columns hold only about a third of the real crowns and sit ~3-4 blocks SOUTH of the crown seen in aerial; the live trees match aerial
 crowns poorly too. So lidar is a rough height hint and a cross-check, never the position source and never a complete inventory. Best aerial is the
 position source: read crowns by eye from a cropped, gridded aerial window (64 blocks, 12 px per block) and record them as explicit crowns.
-Lidar (pristine Geocraft, kind 2/3 columns) is measured heights for the crowns it has; google-satellite (look-only aerial) shows what is there now. Use both:
+Lidar (DEFRA DSM kind 2/3 columns) is measured heights for the crowns it has; google-satellite (look-only aerial) shows what is there now. Use both:
   python3 scripts/tree_review.py --cell tx,tz --marks <scratch>/m.json     # or --zone x0,z0,x1,z1
   python3 scripts/google_aerial.py sheet --cell tx,tz --marks <scratch>/m.json   # or --at X,Z --radius 60 --zoom 20
 Verdicts (crowns are matched by their tops, never by blob, because the live canopy merges crowns):
