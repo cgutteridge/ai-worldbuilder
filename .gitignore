@@ -3,3 +3,5 @@
 *.pyc
 .DS_Store
 .matplotlib-cache/
+.matplotlib-cache/
+.claude/settings.local.json

@@ -1,0 +1,30 @@
+# ai-worldbuilder: agent entry point
+
+Reusable AI tool for building Minecraft worlds from real-place evidence.
+Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WORLD_ROOT`).
+
+## Start
+
+1. Confirm active world: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
+2. System tracker first when work is **tool** engineering: read `tasks/index.json`.
+3. If work is **world** (QUEUE, ISSUES, place builds), open that world repo — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
+
+## Always
+
+- Place memory lives under the active world's `site/` and `config/`, not in this repo.
+- Providers: on add, ask **local vs system** (below national → local). Skills: `evaluate-data-source`, `add-data-source`.
+- World frame: active world `config/world-frame.json` via `scripts/world_frame.py`.
+- Sound cues: `python3 ~/Projects/agent-soundboard/scripts/play.py <id>` (`done`, `need-you`, `error`).
+
+## Where things live
+
+| Topic | Home |
+| --- | --- |
+| Active world pointer | `active_world.py` |
+| System tracker | `tasks/` |
+| System providers | `config/system-providers.json` |
+| Evidence types | `reference/TYPES.txt` |
+| Shared scripts | `scripts/` |
+| Craftsmanship rules | `rules/` |
+| Skills | `.claude/skills/` |
+| New world bootstrap | skill `new-world-build`, `templates/empty-world/` |

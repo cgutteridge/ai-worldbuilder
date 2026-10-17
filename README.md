@@ -2,16 +2,24 @@
 
 Reusable AI tool for building and refining Minecraft worlds from real-place evidence.
 
-One checkout can address many world repos; exactly one world is **active**, selected by system-level Python config (`active_world.py`).
+One checkout can address many world repos; exactly one world is **active**, selected by `active_world.py` (or env `AI_WORLDBUILDER_WORLD_ROOT`).
 
 System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
-
-See donor planning record in `Southampton Refine` (`docs/adr/002-worldbuilder-and-world-repos.md`) until extract completes.
 
 ## Active world
 
 ```bash
 python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT); print(gameworld_id())"
+python3 scripts/world_frame.py info
 ```
 
-Override with env `AI_WORLDBUILDER_WORLD_ROOT`. Contract: `docs/active-world-contract.md`.
+Contract: `docs/active-world-contract.md`. First world checkout: sibling `southampton-build`.
+
+## Layout
+
+- `active_world.py` — importable active-world pointer
+- `scripts/` — shared tooling (reads `WORLD_ROOT` for place files)
+- `config/system-providers.json` — nationwide+ feeds
+- `reference/TYPES.txt` — evidence types
+- `rules/`, `.claude/skills/`, `templates/` — shared craft and agent skills
+- `tasks/` — system tracker

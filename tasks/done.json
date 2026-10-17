@@ -1,0 +1,59 @@
+{
+  "_comment": "AGENT: completed tasks archive. Read via the task-index-manager skill. Do not add active tasks here.",
+  "tasks": [
+    {
+      "id": 7,
+      "title": "Land or explicitly park donor dirty world-frame WIP before file moves",
+      "status": "done",
+      "priority": "critical",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Landed as commit on donor main (world-frame + build reset). Deferred ADR 001 renames still out of scope. Local reference JPGs left untracked."
+    },
+    {
+      "id": 1,
+      "title": "Create empty ai-worldbuilder and southampton-build git repos",
+      "status": "done",
+      "priority": "critical",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Created empty sibling repos at ~/Projects/ai-worldbuilder and ~/Projects/southampton-build (initial README commits). Donor not renamed."
+    },
+    {
+      "id": 2,
+      "title": "Define active_world Python config + per-world config shape",
+      "status": "done",
+      "priority": "critical",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "active_world.py + docs/active-world-contract.md in ai-worldbuilder; example world.json / world-frame.json in southampton-build. Env AI_WORLDBUILDER_WORLD_ROOT overrides."
+    },
+    {
+      "id": 3,
+      "title": "Migrate reusable tool code into ai-worldbuilder",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Migrated scripts/skills/rules/templates/TYPES/system-providers/tasks into ai-worldbuilder; script_env uses WORLD_ROOT."
+    },
+    {
+      "id": 4,
+      "title": "Migrate Southampton place into southampton-build",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Migrated site/, world configs, local-providers, reference, verification into southampton-build."
+    },
+    {
+      "id": 5,
+      "title": "Point worldbuilder active world at southampton-build and smoke-test",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Smoke: active_world + world_frame.info + site_handoff.next against southampton-build."
+    }
+  ]
+}

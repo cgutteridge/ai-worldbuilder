@@ -1,0 +1,69 @@
+REFERENCE EVIDENCE TYPES
+Updated: 17 Oct 2026
+
+Types are stable classes of evidence question. Rules and queue language name
+types; providers live in config/system-providers.json (nationwide+) and each
+world's config/local-providers.json (below national), with the world catalogue
+in that world's reference/SOURCES.txt. A provider may fill more than one type.
+
+See GLOSSARY.md (Evidence / Provider / Streetlevel / Lidar / Aerial Review).
+
+------------------------------------------------------------------------
+THE FIVE TYPES
+------------------------------------------------------------------------
+
+vector_map
+  Footprints, roads, landuse, OSM tags, plan geometry.
+  Tendency: authoritative for plan; weak for materials and storeys.
+
+poi_register
+  Named entrances, protected trees, campus building ids, outline registers.
+  Tendency: exact where/what-is-called; look still needed for appearance.
+
+aerial
+  Roof colour/form, ground surface, canopy cover, greeblie layout, rear wings.
+  Tendency: strong for roofs and open ground; weak for wall detail and doors.
+  (Tendency, not a hard rule — oblique or sharp streetlevel can beat a muddy aerial.)
+
+streetlevel
+  Storeys, walls, openings, doors, materials, street decor, entrance look.
+  Tendency: strong for façades; weak for roof plan and back gardens.
+  (Opposite of aerial in speech; not the ground layer of lawn/paving.)
+
+lidar
+  Absolute Y / massing. Products: DTM (bare earth), DSM (surface), diff = DSM−DTM.
+  Tendency: heights only; never invent materials from it.
+
+------------------------------------------------------------------------
+PROVIDERS: SYSTEM VS LOCAL
+------------------------------------------------------------------------
+
+On add, ask **local vs system**. Rule of thumb: below national (UK / England)
+→ local (world repo). Nationwide+ → system (this tool repo).
+
+``config/system-providers.json`` holds system rows; the active world's
+``config/local-providers.json`` holds local rows. Each provider has
+``types: [...]``, licence (keep vs look-only), scope, and a cell checklist
+``how`` when ``checklist`` is true.
+
+Checklist / ``cell_sources.py --record`` keys are **provider ids**.
+Alias: ``google`` → ``google-satellite``.
+
+Adding a provider: skill ``add-data-source``. Scoring a candidate: ``evaluate-data-source``.
+
+------------------------------------------------------------------------
+CELL READINESS (intent)
+------------------------------------------------------------------------
+
+A cell is ready to build when every checklisted provider for that cell has been
+tried once (HAVE or TRIED in the cell SOURCES guide). Stale refresh after ~6
+months of source age is planned later; for now, agents re-check when evidence
+clearly disagrees with the live world.
+
+------------------------------------------------------------------------
+AERIAL REVIEW
+------------------------------------------------------------------------
+
+Ring-ordered revisit of built cells against the best aerial evidence
+(site/AERIAL-REVIEW.txt). Status: look → features → ground → trees → done.
+Not a vendor name.

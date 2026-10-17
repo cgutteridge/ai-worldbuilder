@@ -1,0 +1,61 @@
+{
+  "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
+  "doneRef": "tasks/done.json",
+  "nextTaskId": 13,
+  "tasks": [
+    {
+      "id": 6,
+      "title": "Retire donor Southampton Refine",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Archive or mark read-only; leave pointer README to the two new repos."
+    },
+    {
+      "id": 8,
+      "title": "Deferred: auto stale-source refresh (~6 months)",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
+    },
+    {
+      "id": 9,
+      "title": "Decide whether to split scripts/coverage.py",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From world QUEUE Q-195. System work only."
+    },
+    {
+      "id": 10,
+      "title": "Settle the build path (house_build vs build_runner) and align rules",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From world QUEUE Q-196."
+    },
+    {
+      "id": 11,
+      "title": "Builder for non-house building features",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From world QUEUE Q-197; after build-path settle."
+    },
+    {
+      "id": 12,
+      "title": "Facade spec: windows read from the photo",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From world QUEUE Q-198."
+    }
+  ]
+}

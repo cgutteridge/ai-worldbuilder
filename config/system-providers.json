@@ -1,0 +1,134 @@
+{
+  "catalogue": "system",
+  "types_doc": "reference/TYPES.txt",
+  "providers": [
+    {
+      "id": "google-satellite",
+      "types": [
+        "aerial"
+      ],
+      "scope": {
+        "level": "worldwide"
+      },
+      "keep": false,
+      "look_only": true,
+      "licence": "Google ToS (look-only)",
+      "tags": null,
+      "kind": null,
+      "repeat_ok": true,
+      "checklist": true,
+      "how": "ALWAYS, every cell: google_aerial.py sheet --cell TX,TZ (look-only, often clearer than keepable aerial); then --record google-satellite --result found --note \"what it shows\""
+    },
+    {
+      "id": "kartaview",
+      "types": [
+        "streetlevel"
+      ],
+      "scope": {
+        "level": "worldwide"
+      },
+      "keep": true,
+      "licence": "CC BY-SA (see KartaView terms)",
+      "tags": [
+        "kartaview"
+      ],
+      "kind": "street",
+      "checklist": true,
+      "how": "kartaview_fetch.py list --at CX,CZ --radius-m 80"
+    },
+    {
+      "id": "commons",
+      "types": [
+        "streetlevel"
+      ],
+      "scope": {
+        "level": "worldwide"
+      },
+      "keep": true,
+      "licence": "varies (Geograph CC BY-SA; Commons per file)",
+      "tags": [
+        "commons",
+        "geograph"
+      ],
+      "kind": "street",
+      "checklist": true,
+      "how": "commons_fetch.py list --at CX,CZ --radius-m 250"
+    },
+    {
+      "id": "google-streetview",
+      "types": [
+        "streetlevel"
+      ],
+      "scope": {
+        "level": "worldwide"
+      },
+      "keep": false,
+      "look_only": true,
+      "licence": "Google ToS (look-only; kept frames gitignored via streetview_sample)",
+      "tags": [
+        "google-streetview"
+      ],
+      "kind": "street",
+      "checklist": true,
+      "how": "streetview_sample.py sample --cell TX,TZ (look-only; small grid)"
+    },
+    {
+      "id": "rightmove",
+      "types": [
+        "streetlevel"
+      ],
+      "scope": {
+        "level": "country",
+        "description": "England & Wales residential listings"
+      },
+      "keep": false,
+      "look_only": true,
+      "licence": "commercial look-only",
+      "tags": null,
+      "kind": null,
+      "checklist": true,
+      "how": "browser: rightmove.co.uk/house-prices/<postcode>.html for a postcode on a named street in this cell; exteriors only, look-don't-hoard (reference/SOURCES.txt). Skip for non-residential cells."
+    },
+    {
+      "id": "ukdefra-dtm",
+      "types": [
+        "lidar"
+      ],
+      "scope": {
+        "level": "country",
+        "description": "England DEFRA 1 m composite DTM"
+      },
+      "keep": true,
+      "licence": "OGL v3",
+      "tags": [
+        "ukdefra-dtm",
+        "defra"
+      ],
+      "kind": null,
+      "checklist": false,
+      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dtm,ground_y"
+    },
+    {
+      "id": "ukdefra-dsm",
+      "types": [
+        "lidar"
+      ],
+      "scope": {
+        "level": "country",
+        "description": "England DEFRA 1 m composite DSM (last return)"
+      },
+      "keep": true,
+      "licence": "OGL v3",
+      "tags": [
+        "ukdefra-dsm",
+        "defra"
+      ],
+      "kind": null,
+      "checklist": false,
+      "how": "defra_lidar.py fetch --cell TX,TZ; lidar_query.py --layers dsm,diff,top_y. Strip cars/trains; keep street furniture where practical."
+    }
+  ],
+  "aliases": {
+    "google": "google-satellite"
+  }
+}
