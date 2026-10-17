@@ -124,11 +124,12 @@ class Feature:
 class Build:
     """Plan a non-house feature from a validated spec."""
 
-    def __init__(self, spec: dict, footprints: dict | None = None, world=None):
+    def __init__(self, spec: dict, footprints: dict | None = None, world=None, osm_root=None):
         """
         @param spec: validated feature spec
         @param footprints: optional ``{label: set[(x,z)]}`` (else OSMIndex from ways)
         @param world: optional ``World``-like with ``block(x,y,z)`` (else live ``World()``)
+        @param osm_root: optional OSM clip root for ``OSMIndex`` (tests / alternate trees)
         """
         self.spec = spec
         self.name = spec['name']
@@ -140,7 +141,7 @@ class Build:
         self.live = world if world is not None else World()
         by_no = {k: set(v) for k, v in (footprints or {}).items()}
         if footprints is None:
-            idx = osm_footprints.OSMIndex()
+            idx = osm_footprints.OSMIndex(root=osm_root) if osm_root is not None else osm_footprints.OSMIndex()
             for (x, z), i in idx.cells().items():
                 bp = idx.buildings[i][1]
                 n = self.spec['ways'].get(str(bp.get('osm_way_id') or bp.get('osm_id')))
@@ -510,28 +511,30 @@ class Build:
         return self.p
 
 
-def build(spec: dict, footprints: dict | None = None, world=None) -> Plan:
+def build(spec: dict, footprints: dict | None = None, world=None, osm_root=None) -> Plan:
     """Build a feature plan from a validated spec.
 
     @param spec: validated feature spec
     @param footprints: optional label→cells map (tests / offline)
     @param world: optional World-like
+    @param osm_root: optional OSM clip root
     @returns: Plan
     """
-    return Build(spec, footprints=footprints, world=world).build()
+    return Build(spec, footprints=footprints, world=world, osm_root=osm_root).build()
 
 
-def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world=None) -> Plan:
+def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world=None, osm_root=None) -> Plan:
     """Load spec, build plan, preview, and site_kit.apply (dry unless do_apply).
 
     @param spec_path: path to site/builds/<name>.json
     @param do_apply: when True, live apply; otherwise dry run
     @param footprints: optional label→cells map
     @param world: optional World-like
+    @param osm_root: optional OSM clip root
     @returns: Plan
     """
     spec = load_spec(spec_path)
-    plan = build(spec, footprints=footprints, world=world)
+    plan = build(spec, footprints=footprints, world=world, osm_root=osm_root)
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])

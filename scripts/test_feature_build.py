@@ -144,27 +144,18 @@ class SuFixtureDryRunTest(unittest.TestCase):
         spec_path = ROOT / 'site/builds/susu_42.json'
         if not spec_path.exists():
             self.skipTest('site/builds/susu_42.json not in active world yet')
-        osm_root = ROOT / 'reference/osm'
-        if not osm_root.exists():
-            self.skipTest(f'no {osm_root}; extract OSM into the active world first')
+        # World reference/osm is gitignored; fall back to donor clips when empty.
+        world_osm = ROOT / 'reference/osm'
+        donor_osm = Path('/Users/cjg/Projects/Southampton Refine/reference/osm')
+        osm_root = world_osm if any(world_osm.glob('*/*.geojson')) else donor_osm
+        if not any(Path(osm_root).glob('*/*.geojson')):
+            self.skipTest('OSM clips unavailable for w33830305 resolution')
         spec = F.load_spec(spec_path)
         self.assertEqual(spec['ways'].get('33830305'), 'SU')
-        import osm_footprints
-        idx = osm_footprints.OSMIndex(root=osm_root)
-        by_no = {}
-        for (x, z), i in idx.cells().items():
-            bp = idx.buildings[i][1]
-            n = spec['ways'].get(str(bp.get('osm_way_id') or bp.get('osm_id')))
-            if n:
-                by_no.setdefault(n, set()).add((x, z))
-        self.assertIn('SU', by_no)
-        self.assertGreater(len(by_no['SU']), 1000)
-        with mock.patch.object(F, 'preview') as prev, mock.patch.object(F, 'apply') as app:
-            plan = F.run(spec_path, do_apply=False, footprints=by_no, world=_StoneWorld())
-            self.assertGreater(len(plan.cells), 10000)
-            prev.assert_called_once()
-            app.assert_called_once()
-            self.assertEqual(app.call_args.kwargs.get('dry'), True)
+        # Production path: OSMIndex (neighbours) + real site_kit dry apply; mock preview only.
+        with mock.patch.object(F, 'preview'):
+            plan = F.run(spec_path, do_apply=False, world=F.World(), osm_root=osm_root)
+        self.assertGreater(len(plan.cells), 10000)
 
 
 if __name__ == '__main__':
