@@ -2,6 +2,14 @@
 """Unit tests for lidar_ghost (no Minecraft, mock height samples)."""
 from __future__ import annotations
 
+import sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parent.parent
+for _p in (_ROOT / "shims", _ROOT / "scripts"):
+    _s = str(_p)
+    if _s not in sys.path:
+        sys.path.insert(0, _s)
+
 import json
 import os
 import tempfile

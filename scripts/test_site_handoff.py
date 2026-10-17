@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import site_handoff as H  # noqa: E402
 
 QUEUE_TEXT = '''SOUTHAMPTON REFINE — QUEUE

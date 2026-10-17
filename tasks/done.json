@@ -164,6 +164,12 @@
       "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket. Done: single ukdefra-lidar in system-providers.json; aliases ukdefra-dtm/ukdefra-dsm; provider_by_id + TestProviderAliases; google-satellite/streetview unchanged; no providers/ folders."
     },
     {
+      "id": 20,
+      "title": "System providers/<id>/ folders + shims/ + package field",
+      "status": "done",
+      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put. Done: providers/<id>/{get,review,manage} for system providers with code; CLIs in shims/; package field on catalogue rows; reference/ unchanged; cell_sources/defra/lidar/google tests pass."
+    },
+    {
       "id": 23,
       "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
       "status": "done",

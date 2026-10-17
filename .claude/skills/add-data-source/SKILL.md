@@ -25,6 +25,7 @@ Add a provider object to `config/system-providers.json` (system) or the active w
 - `keep` / `look_only`, `licence`, `tags`, `kind` (manifest kind or null)
 - `checklist: true` only if every cell should attempt it; then `how` is required
 - Aliases only when migrating an old key
+- `package`: relative path under the tool or world repo (e.g. `providers/ukdefra-lidar`) when fetch/review/manage code lives there
 
 Done when `cell_sources.SOURCE_FAMILIES` (reload) would list it if checklisted:
 `.venv/bin/python -c "import cell_sources as c; print(sorted(c.SOURCE_FAMILIES))"`

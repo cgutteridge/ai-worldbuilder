@@ -18,6 +18,15 @@ from active_world import WORLD_ROOT  # noqa: E402
 
 ROOT = WORLD_ROOT
 SCRIPTS = TOOL_ROOT / "scripts"
+SHIMS = TOOL_ROOT / "shims"
+PROVIDERS = TOOL_ROOT / "providers"
+
+# Provider CLIs live under shims/; glue stays in scripts/. Prefer shims for
+# historical module names (defra_lidar, google_aerial, …).
+for _path in (SHIMS, SCRIPTS):
+    _text = str(_path)
+    if _text not in sys.path:
+        sys.path.insert(0, _text)
 
 
 def make_parser(doc: str | None, **kw) -> argparse.ArgumentParser:

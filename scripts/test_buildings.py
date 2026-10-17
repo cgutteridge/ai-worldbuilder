@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import buildings as B  # noqa: E402
 
 SQUARE = [[0, 0], [20, 0], [20, 20], [0, 20]]

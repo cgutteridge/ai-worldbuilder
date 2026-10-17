@@ -10,11 +10,11 @@ then saves ONLY those frames to reference/photos/streetview/<tx>_<tz>/<id>.jpg (
 gitignored, per user decision 2026-10-14), logs each in reference/manifest.jsonl, and
 records URL + params + note in a small committed JSON file.
 
-  python3 scripts/streetview_sample.py sample --cell 48,-44            # 3×3 points × 4 yaws
-  python3 scripts/streetview_sample.py sample --cell 48,-44 --grid 4 --yaws 0,90,180,270
-  python3 scripts/streetview_sample.py keep --cell 48,-44 --ids g01-y90,g11-y180 --note "brick frontage"
-  python3 scripts/streetview_sample.py show --cell 48,-44              # sheet of kept frames only
-  python3 scripts/streetview_sample.py list --cell 48,-44
+  python3 shims/streetview_sample.py sample --cell 48,-44            # 3×3 points × 4 yaws
+  python3 shims/streetview_sample.py sample --cell 48,-44 --grid 4 --yaws 0,90,180,270
+  python3 shims/streetview_sample.py keep --cell 48,-44 --ids g01-y90,g11-y180 --note "brick frontage"
+  python3 shims/streetview_sample.py show --cell 48,-44              # sheet of kept frames only
+  python3 shims/streetview_sample.py list --cell 48,-44
 
 Sheet: instance/streetview/<tx>_<tz>-sheet.html (gitignored). Kept: site/cells/<tx>_<tz>-STREETVIEW.json.
 Do not loop this over many cells/panos at once (ToS); keep grids small.
@@ -171,7 +171,7 @@ def write_sheet(tx: int, tz: int, frames: list[dict], title: str) -> Path:
 <pre id=cmd></pre><div class=g>{cards}</div>
 <script>
 const cmd=document.getElementById('cmd'),bs=[...document.querySelectorAll('input')];
-function up(){{cmd.textContent='python3 scripts/streetview_sample.py keep --cell {tx},{tz} --ids '+
+function up(){{cmd.textContent='python3 shims/streetview_sample.py keep --cell {tx},{tz} --ids '+
 bs.filter(b=>b.checked).map(b=>b.value).join(',')+' --note "..."'}}
 bs.forEach(b=>b.onchange=up);up();
 </script>"""

@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import lidar_heightmap as L  # noqa: E402
 import tree_review as T  # noqa: E402
 

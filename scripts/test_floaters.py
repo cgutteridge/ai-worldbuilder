@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import coverage as cov  # noqa: E402
 import floaters as fl  # noqa: E402
 import floater_scan as fs  # noqa: E402

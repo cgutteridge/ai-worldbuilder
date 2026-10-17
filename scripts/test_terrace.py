@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 from terrace import BROADLANDS_N_SLOPE, House, Terrace, line_x, passage_xs, snap_slope  # noqa: E402
 
 

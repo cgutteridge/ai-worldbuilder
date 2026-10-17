@@ -21,17 +21,17 @@ Method (matches Geocraft, so a column here equals the column Geocraft drew):
   blocks      ground Y = SEA_LEVEL + int(DTM); diff / feature height = int(DSM - DTM); top Y = ground Y + diff.
   noise       Unfiltered DSM can be noisy: strip cars/trains; keep street furniture where practical
               (rules/evidence-order.md). For maps of DTM, DSM or their difference use
-              scripts/lidar_query.py (--layers dtm,dsm,diff).
+              shims/lidar_query.py (--layers dtm,dsm,diff).
 
 CRS: DEFRA data is British National Grid, so this module speaks eastings/northings. The Minecraft frame is the
 only place that knows the world offsets (scripts/osgb.py, ``mc_heights`` below). A world elsewhere in the
 world needs its own source and frame; nothing here assumes Southampton.
 
-  python3 scripts/defra_lidar.py tiles --cell 48,-44          # which 5 km tiles, cached or not
-  python3 scripts/defra_lidar.py fetch --cell 48,-44          # download what is missing (large: ~75 MB a tile)
-  python3 scripts/defra_lidar.py probe 6140,-3760             # DTM, DSM, diff (DSM−DTM) and Y at one column
-  python3 scripts/defra_lidar.py compare --cell 48,-44        # check against the pristine Geocraft save
-  # Area maps / highs-lows: scripts/lidar_query.py --cell TX,TZ --layers dtm,dsm,diff
+  python3 shims/defra_lidar.py tiles --cell 48,-44          # which 5 km tiles, cached or not
+  python3 shims/defra_lidar.py fetch --cell 48,-44          # download what is missing (large: ~75 MB a tile)
+  python3 shims/defra_lidar.py probe 6140,-3760             # DTM, DSM, diff (DSM−DTM) and Y at one column
+  python3 shims/defra_lidar.py compare --cell 48,-44        # check against the pristine Geocraft save
+  # Area maps / highs-lows: shims/lidar_query.py --cell TX,TZ --layers dtm,dsm,diff
 
 Cached under downloads/defra-lidar/ (gitignored). Needs Pillow and numpy (already in .venv) and gdaltransform
 on PATH for the catalogue polygon. Open Government Licence v3: attribute "Contains Environment Agency

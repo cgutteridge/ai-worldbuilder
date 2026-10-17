@@ -4,10 +4,10 @@
 Talk through the result with the user before locking ``y_offset`` in
 ``config/world-frame.json`` (see skill ``new-world-build``). Bad offset is painful.
 
-  .venv/bin/python scripts/lidar_extremes.py --bbox-mc 0,-2000,8000,0
-  .venv/bin/python scripts/lidar_extremes.py --cell 48,-44
-  .venv/bin/python scripts/lidar_extremes.py --bbox-osgb 436248,107608,444248,109608
-  .venv/bin/python scripts/lidar_extremes.py --bbox-mc … --fetch   # ensure DEFRA tiles first
+  .venv/bin/python shims/lidar_extremes.py --bbox-mc 0,-2000,8000,0
+  .venv/bin/python shims/lidar_extremes.py --cell 48,-44
+  .venv/bin/python shims/lidar_extremes.py --bbox-osgb 436248,107608,444248,109608
+  .venv/bin/python shims/lidar_extremes.py --bbox-mc … --fetch   # ensure DEFRA tiles first
 
 Reports min/max metres AOD for DTM and DSM, and the Minecraft Y those map to
 with the current world-frame ``y_offset`` (and optionally a proposed offset).

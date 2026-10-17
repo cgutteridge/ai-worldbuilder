@@ -7,10 +7,10 @@ No per-cell generated Python — one tool plans and applies from DEFRA composite
   Owners:  ghost_<tx>_<tz>_ground / ghost_<tx>_<tz>_features
   STAGES:  ghost-ground / ghost-features  (meta kind=ghost; real layers stay ground-layer/…)
 
-  python3 scripts/lidar_ghost.py plan --cell 48,-44              # dry-run one cell (no Minecraft)
-  python3 scripts/lidar_ghost.py plan --cell 48,-44 --ring 1    # dry-run Chebyshev neighbours
-  python3 scripts/lidar_ghost.py status --cell 48,-44 --ring 1
-  SITE_OWNER=<owner> python3 scripts/lidar_ghost.py apply --cell 48,-44 --ring 1
+  python3 shims/lidar_ghost.py plan --cell 48,-44              # dry-run one cell (no Minecraft)
+  python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 1    # dry-run Chebyshev neighbours
+  python3 shims/lidar_ghost.py status --cell 48,-44 --ring 1
+  SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 1
 
 ``plan`` / unit tests inject height samples (no live server, no DEFRA download).
 Real refine still uses ground_layer / trees_layer / decor_layer / house_build / feature_build;

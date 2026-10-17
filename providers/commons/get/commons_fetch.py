@@ -4,8 +4,8 @@
 Most Highfield campus interiors-of-blocks have no KartaView (roads only); Commons carries
 many Geograph uploads (CC BY-SA) of named campus buildings.
 
-  python3 scripts/commons_fetch.py list --at 6435,-5543 [--radius-m 250] [--grep chem]
-  python3 scripts/commons_fetch.py get 12345,67890 --place UNI --dir photos/highfield-campus
+  python3 shims/commons_fetch.py list --at 6435,-5543 [--radius-m 250] [--grep chem]
+  python3 shims/commons_fetch.py get 12345,67890 --place UNI --dir photos/highfield-campus
 
 `list` prints pageid, distance, camera MC point (if geotagged) and title. `get` saves a
 1280 px thumbnail as commons-<pageid>.jpg and appends a manifest row whose notes carry

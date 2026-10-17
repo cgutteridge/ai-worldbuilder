@@ -1,0 +1,59 @@
+"""Load provider implementation modules for historical CLI / import names.
+
+System provider code lives under ``providers/<id>/{get,review,manage}/``.
+Shims in this directory keep the old module names (``defra_lidar``,
+``google_aerial``, …) importable and runnable as CLIs.
+
+Each shim loads the implementation and replaces ``sys.modules[shim_name]``
+with that module so ``mock.patch.object(defra_lidar, '_http', ...)`` and
+similar tests keep working.
+"""
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType
+
+TOOL_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = TOOL_ROOT / "scripts"
+SHIMS = TOOL_ROOT / "shims"
+
+
+def ensure_import_paths() -> None:
+    """Put ``shims/`` then ``scripts/`` on ``sys.path`` for provider + glue imports.
+
+    Shims win for historical provider module names; scripts hold cross-provider
+    glue (``script_env``, ``cell_sources``, ``coverage``, …).
+    """
+    for path in (SHIMS, SCRIPTS):
+        text = str(path)
+        if text not in sys.path:
+            sys.path.insert(0, text)
+
+
+def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:
+    """Load ``providers/<id>/<role>/<module_name>.py`` and cache it privately.
+
+    @param provider_id: catalogue provider id (may contain hyphens)
+    @param role: one of ``get``, ``review``, ``manage``
+    @param module_name: stem of the Python file (historical import name)
+    @returns: loaded module object
+    """
+    ensure_import_paths()
+    cache_key = (
+        f"_provider_impl.{provider_id}.{role}.{module_name}".replace("-", "_")
+    )
+    existing = sys.modules.get(cache_key)
+    if existing is not None:
+        return existing
+    path = TOOL_ROOT / "providers" / provider_id / role / f"{module_name}.py"
+    if not path.is_file():
+        raise FileNotFoundError(f"provider module not found: {path}")
+    spec = importlib.util.spec_from_file_location(cache_key, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load provider module: {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[cache_key] = mod
+    spec.loader.exec_module(mod)
+    return mod

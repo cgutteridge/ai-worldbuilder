@@ -3,15 +3,15 @@
 
 One command, one answer. Pick the area, the layers, and how much text you want back:
 
-  python3 scripts/lidar_query.py --cell 48,-44                          # summary (default): stats, no big arrays
-  python3 scripts/lidar_query.py --cell 48,-44 --format grid            # readable map of dtm + dsm, north at the top
-  python3 scripts/lidar_query.py --cell 48,-44 --layers dtm,dsm,diff    # bare earth, surface, standing height (walls etc.)
-  python3 scripts/lidar_query.py --bbox-mc 6140,-5640,6180,-5600 --layers diff --format grid --step 1
-  python3 scripts/lidar_query.py --bbox-mc 6140,-5640,6180,-5600 --format json --layers dtm,dsm
-  python3 scripts/lidar_query.py --bbox-osgb 442300,115200,442400,115300 --format json   # any place, no Minecraft frame
-  python3 scripts/lidar_query.py --cell 48,-44 --format png             # side-by-side colour maps (file path printed)
-  python3 scripts/lidar_query.py --cell 48,-44 --format npz --out /tmp/c.npz   # numpy arrays + metadata
-  python3 scripts/lidar_query.py --cell 48,-44 --fetch                  # download missing tiles first (~75 MB a tile and model)
+  python3 shims/lidar_query.py --cell 48,-44                          # summary (default): stats, no big arrays
+  python3 shims/lidar_query.py --cell 48,-44 --format grid            # readable map of dtm + dsm, north at the top
+  python3 shims/lidar_query.py --cell 48,-44 --layers dtm,dsm,diff    # bare earth, surface, standing height (walls etc.)
+  python3 shims/lidar_query.py --bbox-mc 6140,-5640,6180,-5600 --layers diff --format grid --step 1
+  python3 shims/lidar_query.py --bbox-mc 6140,-5640,6180,-5600 --format json --layers dtm,dsm
+  python3 shims/lidar_query.py --bbox-osgb 442300,115200,442400,115300 --format json   # any place, no Minecraft frame
+  python3 shims/lidar_query.py --cell 48,-44 --format png             # side-by-side colour maps (file path printed)
+  python3 shims/lidar_query.py --cell 48,-44 --format npz --out /tmp/c.npz   # numpy arrays + metadata
+  python3 shims/lidar_query.py --cell 48,-44 --fetch                  # download missing tiles first (~75 MB a tile and model)
 
 Area (one of): --cell tx,tz | --bbox-mc x0,z0,x1,z1 (inclusive blocks) | --bbox-osgb e0,n0,e1,n1 (metres, EPSG:27700).
   --margin N grows a --cell by N blocks.
@@ -314,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         r = query(spec, tuple(s.strip() for s in a.layers.split(',') if s.strip()), a.margin, not a.float, a.fetch,
                   1 if a.format == 'summary' else a.step, a.max_cells)
     except LookupError as exc:
-        print(f'{exc}\nrun again with --fetch (downloads ~75 MB per tile and model), or: python3 scripts/defra_lidar.py fetch --cell tx,tz',
+        print(f'{exc}\nrun again with --fetch (downloads ~75 MB per tile and model), or: python3 shims/defra_lidar.py fetch --cell tx,tz',
               file=sys.stderr)
         return 1
     except ValueError as exc:

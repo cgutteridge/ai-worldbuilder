@@ -3,10 +3,10 @@
 
 API: https://api.openstreetcam.org/2.0/photo/ (no token; see reference/SOURCES.txt).
 
-  python3 scripts/kartaview_fetch.py list --at 6435,-5543 --radius-m 80
-  python3 scripts/kartaview_fetch.py get 1519868249,1519868121 --place UNI \
+  python3 shims/kartaview_fetch.py list --at 6435,-5543 --radius-m 80
+  python3 shims/kartaview_fetch.py get 1519868249,1519868121 --place UNI \
       --dir photos/highfield-campus [--notes "..."]
-  python3 scripts/kartaview_fetch.py sheet photos/highfield-campus/kartaview-1.jpg,... out.png
+  python3 shims/kartaview_fetch.py sheet photos/highfield-campus/kartaview-1.jpg,... out.png
 
 `list` prints id, camera MC x,z, heading (deg, 0 = north = -Z), date and distance, nearest
 first, one per sequence position so a pass along a road is easy to pick from. `get` skips

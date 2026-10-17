@@ -44,7 +44,7 @@ crowns poorly too. So lidar is a rough height hint and a cross-check, never the 
 position source: read crowns by eye from a cropped, gridded aerial window (64 blocks, 12 px per block) and record them as explicit crowns.
 Lidar (DEFRA DSM kind 2/3 columns) is measured heights for the crowns it has; google-satellite (look-only aerial) shows what is there now. Use both:
   python3 scripts/tree_review.py --cell tx,tz --marks <scratch>/m.json     # or --zone x0,z0,x1,z1
-  python3 scripts/google_aerial.py sheet --cell tx,tz --marks <scratch>/m.json   # or --at X,Z --radius 60 --zoom 20
+  python3 shims/google_aerial.py sheet --cell tx,tz --marks <scratch>/m.json   # or --at X,Z --radius 60 --zoom 20
 Verdicts (crowns are matched by their tops, never by blob, because the live canopy merges crowns):
   MISSING  (red)    lidar crown, no live crown top within 4 blocks. Last column = blocks to the nearest live leaf: 0-4 means
                     a live crown stands there but its top is elsewhere (usually fine), >8 means nothing is there.
@@ -72,10 +72,10 @@ Inside a zone the detector's crowns are dropped and these replace them; outside,
 you cannot split into crowns). Aerial-read crowns may stand on paving, path colours, tarmac wool and slabs (trees_layer.GOOGLE_SURFACES;
 the ground block under a real tree is often wrong) and inside OSM footprints (courtyards); water, trunk blocked and the normal air-only
 rules still apply. Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
-  1 python3 scripts/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); open in the browser pane,
+  1 python3 shims/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); open in the browser pane,
                                                                               close old tabs first (tab cap). Read centre (px->block from the grid) and r (diameter/2).
   2 write the crowns into reference/trees-google-crowns.json (zones = the part you read).
-  3 python3 scripts/trees_replan.py --cell tx,tz --out plan.json ; python3 scripts/google_window.py plan --at X,Z --half 32x16 --plan plan.json
+  3 python3 scripts/trees_replan.py --cell tx,tz --out plan.json ; python3 shims/google_window.py plan --at X,Z --half 32x16 --plan plan.json
     yellow circles must sit on the real crowns; add the ones you missed, move the ones that are off; red dashed = skipped (water, blocked...).
   4 claim the lock; SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell tx,tz --pass trees [--skip-changed] [--apply]
     (--skip-changed leaves masked positions that are already air or that a later build replaced; without it any such

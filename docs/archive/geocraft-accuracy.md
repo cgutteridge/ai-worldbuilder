@@ -10,14 +10,14 @@ evidence heights: DEFRA composites (`rules/evidence-order.md`, providers
 - Road and path routes (OSM centrelines, junctions).
 - Heights and massing Y (UKDEFRA DTM ground + DSM−DTM extrusion): top height and the
   roof surface. Caveats (`site/GEOCRAFT.txt`, `scripts/lidar_heightmap.py`,
-  `scripts/defra_lidar.py`):
+  `shims/defra_lidar.py`):
   - **Geocraft pristine** heightmap is a dated, *filtered* snapshot: small returns
     (cars, street furniture) are already gone.
   - **Unfiltered DEFRA composites** (this project's own fetch) are noisier: strip
     *transitory* hits (cars, trains, temporary plant) before trusting a column as
     built form, but **keep street furniture** where practical (bollards, cabinets,
     bus shelters) — filtering them out with the vehicles loses decor evidence.
-  - DSM−DTM (`diff` / `feature` in `scripts/lidar_query.py`) is the standing-height
+  - DSM−DTM (`diff` / `feature` in `shims/lidar_query.py`) is the standing-height
     layer: useful for walls, hedges and other short solid objects as well as
     buildings.
   - Building rim often reads 3–6 blocks low; flat vs pitched is judged on interior
