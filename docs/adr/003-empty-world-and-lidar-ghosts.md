@@ -14,6 +14,7 @@ The tool formerly treated refine as clearing unrefined Geocraft (or similar) lum
 
 ## Consequences
 
-- System tasks 23–27 implement the strip and ghost path; task 25 sweeps stale Geocraft wording after OS docs move (task 18).
-- World QUEUE items that still speak of Geocraft lumps need updating when 23–24 land.
+- System tasks 23–24 landed (empty-world DoD + DEFRA evidence). Task 25 swept stale
+  Geocraft-default / pristine-as-lidar wording in rules/. Tasks 26–27 are the ghost path.
+- World QUEUE items that still speak of Geocraft lumps as DoD remain world work.
 - Ghost owners must be distinguishable in STAGES so redo and real applies can replace them safely.

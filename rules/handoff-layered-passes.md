@@ -142,7 +142,7 @@ Needs handling:
 GROUND STEP
   - Replace the top non-air block in each column with the surface block.
   - Treat flowers and grass stems (short grass, tall grass, fern) as AIR for this
-    step, since Geocraft placed them around. Grass BLOCK is not air.
+    step (stock stems are not ground surface). Grass BLOCK is not air.
   - Then clear the vertical column above the surface of all non-air blocks not owned by a neighbour, EXCEPT any
     block that belongs to a neighbouring cell's tree or decor mask. Those positions
     are protected even when they overhang our columns.

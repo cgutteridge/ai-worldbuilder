@@ -3,7 +3,7 @@ Tool-repo rules (ai-worldbuilder/rules/craftsmanship.md).
 Updated: 11 October 2026 (Europe/London)
 
 How to place blocks so houses read as careful Minecraft builds, not as
-jagged OSM extrusions or Geocraft LIDAR carpets. Accuracy still wins for
+jagged OSM extrusions or stock lidar carpet roofs. Accuracy still wins for
 *where* and *what*; this file is *how*.
 
 MATERIAL RULE (user, 2026-10-15): never PLACE plain minecraft:dirt in a build (it can turn into grass
@@ -12,7 +12,7 @@ over time); use coarse_dirt. Reading dirt as ground when scanning is fine.
 Sources distilled for this project (do not re-fetch every session):
   - Minecraft Wiki: Tutorial:Roof construction guidelines
   - MineSpecs: How to Build a Roof That Actually Looks Right (2026)
-  - Project fails: I-009 (pavement façades); Geocraft lattice/carpet roofs;
+  - Project fails: I-009 (pavement façades); lattice/carpet roofs (legacy generator);
     Q-014/Q-016/Q-017 stair roofs on shallow pitches (fixed Q-017b: 1:2
     slabs + envelope carpet clear)
 
@@ -100,9 +100,9 @@ rule-file copy.
   - Stairs on the skin are right only at ~45°; slabs only at ~22°. A stair
     skin on a shallow roof is the fault.
   - Full blocks are **wall-plate / gable / hip fill**, not the visible pitch.
-    A stepped pyramid of full blocks (or Geocraft stone/carpet stripes) is
+    A stepped pyramid of full blocks (or stone/carpet stripes from a generator) is
     the beginner / generator tell — replace it.
-  - Geocraft left on a processed column is a fault; who clears what is in
+  - Leftover generator blocks on a processed column are a fault; who clears what is in
     HANDOFF-LAYERED-PASSES §1 (a feature clears its whole volume, ground
     clears the rest).
   - One pitch per house (wings/bays match the main).
@@ -122,8 +122,8 @@ rule-file copy.
  Hips: stair auto-mitre only looks clean at 1:1. At 1:2 (slabs) cut the
  hip diagonal by hand with full blocks and die the slab courses into it.
 
- Clear Geocraft carpet/"stone roof" and undercroft where the real house
- replaces them (see GEOCRAFT.txt).
+ Clear leftover carpet/"stone roof" and undercroft where the real house
+ replaces them (legacy Southampton: site/GEOCRAFT.txt).
 
 ------------------------------------------------------------------------
 3a. STREETS — RULES OF THUMB, NO SURVEY (user, Q-044, 12 Oct 2026)
@@ -132,12 +132,12 @@ rule-file copy.
  unless a street plainly breaks these rules. Live ground/street apply is
  scripts/ground_layer.py (preview + --apply via site_kit). The rules below
  are the palette and corridor rules; parcel ids come from OSM / cell sources.
-  - Keep Geocraft's corridor (OSM route is trusted; house builds already sit
-    against its pristine edges). Every column at the PRISTINE surface Y.
+  - Keep the OSM corridor (route is trusted; house builds already sit against
+    footprint edges). Every column at DEFRA ground Y (`lidar_query` / DTM).
   - Stock gray_terracotta → gray_concrete; a terracotta cell with any
     non-terracotta N4 neighbour → smooth_stone kerb, flush. Junction and
     driveway mouths stay asphalt (dropped kerb).
-  - Stock polished_diorite, and Geocraft stone inside a road parcel →
+  - Stock polished_diorite, and leftover stone inside a road parcel →
     light_gray_concrete pavement at the adjoining street Y.
   - Rear lanes / alleys: gravel 60% / coarse_dirt 28% / dirt_path 12%
     within 1.5 of the OSM centreline, grass_block verge on the rest.
@@ -149,10 +149,10 @@ rule-file copy.
   - Same gray_concrete tarmac for campus car parks (OSM amenity=parking, bay markings
     white_concrete), parking aisles, and access roads — scripts/ground_layer.py
     (the live ground pass; this section is its palette).
-  - A column whose pristine top is not ground (carpet over brick) is the wall row of
-    an unrebuilt Geocraft building rasterised into the street: write it unchanged,
-    drop only the carpet, lay no street there (clearing holes the building).
-  - Clear unowned blocks above (Geocraft road-label signs, orphan posts);
+  - A column whose live top is not ground (carpet over brick / standing structure)
+    is an unrebuilt building in the street: write it unchanged, drop only the carpet,
+    lay no street there (clearing holes the building).
+  - Clear unowned blocks above (road-label signs, orphan posts);
     re-solidify the bed down to the lowest cell any superseded streetscape
     pass wrote (their trims left air: gravel falls, signoff sees "structure").
   - Never write cells owned by house builds; put old streetscape passes and
@@ -163,8 +163,8 @@ rule-file copy.
 ------------------------------------------------------------------------
   ✗ Walls on pavement or at "last solid before road" (I-009)
   ✗ Jagged 1:1 OSM wall trace with missing corner teeth
-  ✗ Geocraft lattice / carpet / striped full-block roof left in place
-  ✗ Any Geocraft block left on (or straddling) a processed plot
+  ✗ Lattice / carpet / striped full-block roof left in place
+  ✗ Any leftover generator block on (or straddling) a processed plot
   ✗ Stair skin where the aerial shows a shallow pitch, or slabs where it shows ~45°
   ✗ Full-block underlay pyramid reading as the roof surface
   ✗ Roof flush with walls (no overhang)
@@ -179,7 +179,7 @@ rule-file copy.
 ------------------------------------------------------------------------
  Add to the usual PROCESS done list:
   [ ] Shell airtight from street and aerial angles (no lattice/carpet roof)
-  [ ] No Geocraft left in the feature's volume (HANDOFF-LAYERED-PASSES §1)
+  [ ] No leftover generator blocks in the feature's volume (HANDOFF-LAYERED-PASSES §1)
   [ ] Roof pitch matches §3 (terrace stairs / shallow slabs); overhang ≥1
   [ ] Every window has sill, head, and solid L/R flanks
   [ ] Footprint squared for Minecraft, still on the plot (check OK)
@@ -195,13 +195,13 @@ Never copy a peer spec or a per-run build script. Write the spec from this run's
 
 NON-HOUSE FEATURE RUNS (campus / halls / sheds / odd masses): scripts/feature_build.py + site/builds/<name>.json is the only non-house building feature apply path (spec keys in its docstring; rules/feature-builds.md). Explicit storeys + flat|pitched roof. Do not extend house_build for odd shapes. List earlier builds in modifies.
 
-LIDAR LUMP REPORT (permanent): scripts/lidar_heightmap.py --cell tx,tz reads the PRISTINE Geocraft save, never the live world.
-Per column: h (lidar surface; carpet ignored, leaves/logs count, as Geocraft draws trees as log+leaf), base (ground under it),
-roof (carpet y), kind (ground/roof/tree/tree-over-roof). Lump report: footprint, ground, eave, ridge, storeys (estimate, 3
-blocks each), flat/pitched, ridge axis, trees over roof, OSM buildings under it (none = UNMAPPED). Read it before planning any
-feature and use it for storeys and roof instead of guessing. --write keeps verification/site/lidar/<tx>_<tz>.npz.
-Audit the live world against it: scripts/lidar_audit.py --cell tx,tz. Tables for touched cells: site/cells/<tx>_<tz>-LIDAR.txt.
-Storeys come from ridge height (eave is ~4 whatever the levels); OSM building:levels is shown as 'lvl' when mapped.
+LIDAR HEIGHT REPORT: scripts/lidar_heightmap.py --cell tx,tz — DEFRA composite DTM/DSM where cached
+(`rules/evidence-order.md`), never the live world. Diagnostic lump rows are not a queue driver (ADR 003).
+Per column: h (lidar surface), base (ground), kind (ground/roof/tree/tree-over-roof). Report: footprint, ground,
+eave, ridge, storeys (estimate, 3 blocks each), flat/pitched, ridge axis, trees over roof, OSM under it
+(none = UNMAPPED). Read before planning; use for storeys/roof instead of guessing. --write keeps
+verification/site/lidar/<tx>_<tz>.npz. Audit: scripts/lidar_audit.py --cell tx,tz. Tables: site/cells/<tx>_<tz>-LIDAR.txt.
+Storeys from ridge height (eave is ~4); OSM building:levels shows as 'lvl' when mapped.
 
 
 DOORS ARE FRAMED (user, 2026-10-16)

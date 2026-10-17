@@ -3,7 +3,7 @@
 Read when reviewing a built building (I-064 / I-069 items, or the user asks).
 One building per review. Skip any building that already has an open feature item on the QUEUE (it is rebuilt there; user, 2026-10-16). Worked example: Oakdene Court, `site/REVIEWS.txt` 2026-10-16.
 
-1. **Read the data, not the label.** Lump row (`site/cells/<cell>-LIDAR.txt`), `lidar_audit.py --cell`, and the raw
+1. **Read the data, not the label.** Lidar height row (`site/cells/<cell>-LIDAR.txt`), `lidar_audit.py --cell`, and the raw
    height grid of the building. Labels (flat/pitched, storeys) are estimates until the grid and a photo agree.
    Done when you can say what lidar shows for shape, top Y and floor level.
 2. **Gather evidence in `rules/evidence-order.md` order.** For a university building run `scripts/portals.py cell tx,tz` first: it

@@ -1,9 +1,9 @@
 ---
 name: new-world-build
 description: >-
-  Stand up a new Geocraft-style refine world: empty save, world-frame, place
-  sources, Y-offset human loop. Use when starting a new city/campus build, not
-  for refining the existing Southampton queue.
+  Stand up a new place-refine world: empty save, world-frame, place sources,
+  Y-offset human loop. Use when starting a new city/campus build, not for
+  refining the existing Southampton queue.
 ---
 
 Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you` when a prerequisite is missing.

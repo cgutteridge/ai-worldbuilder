@@ -58,7 +58,7 @@ Rule files in rules/ are not auto-loaded: read only what the brief lists.
    + committed site/cells/<tx>_<tz>-SOURCES.txt when CELL is set
 
  GROUND:
-   rules/handoff-layered-passes.md §1 (who clears Geocraft) and §10 (ground step)
+   rules/handoff-layered-passes.md §1 (who clears volume) and §10 (ground step)
    rules/craftsmanship.md §3a (palette) + good-enough only
    rules/foliage.md — skim; full read only for FOLIAGE context
    site/cells/*-SOURCES.txt — GROUND FINISH block when present for active cell

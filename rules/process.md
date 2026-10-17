@@ -52,7 +52,7 @@ BUILT plan in place to “fix” the world.
                      (contact sheet) → notes.
                      Craftsmanship (rules/craftsmanship.md): airtight shell,
                      flanked glass, squared footprint, roof pitch/overhang —
-                     reject Geocraft lattice roofs and jagged 1:1 OSM walls in
+                     reject lattice/carpet roofs and jagged 1:1 OSM walls in
                      preview, not after apply.
                      Readback/walk/patrol = blocks match the PLAN; only the
                      photo/footprint comparison shows they match SOUTHAMPTON.
@@ -124,10 +124,10 @@ BUILT plan in place to “fix” the world.
  Touched = columns in verification/site/*-cells.json (reverted I-009
  builds excluded). DONE = 100% touched + a sign-off in
  site/COVERAGE-SIGNOFFS.jsonl; signoff refuses below 100% and on leftover
- Geocraft: carpet roof, exposed stone band / undercroft, stock pavement in
- gardens, or any exposed block above the build floor that no build wrote and
- that is unchanged from pristine (walls, carpet, trees, floating pavement).
- No override — to keep a Geocraft block on purpose, write it in the plan.
+ leftover unowned structure: carpet roof, exposed stone band / undercroft, stock
+ pavement in gardens, or any exposed block above the build floor that no build
+ wrote (walls, carpet, trees, floating pavement). No override — to keep a leftover
+ vendor block on purpose, write it in the plan.
    After every build:  coverage.py signoff <parcel ids> --build <name>
                        coverage.py status --write      (regenerates COVERAGE)
                        coverage.py gaps --area <a>     (gaps + 1-3 wide seams)
@@ -229,9 +229,10 @@ BUILT plan in place to “fix” the world.
  default for ground / eaves / ridge Y; where a photo clearly shows a later change, follow
  the photo and record source + year and the lidar mismatch in the build docstring and the
  cell STAGES note. Do not "fix" the photo to match lidar.
- Geocraft's lidar is also filtered on non-grass columns: 1-2 m features (cars, street furniture,
- bins, signs, low walls) were dropped as noise. Absence from lidar proves nothing for them; add
- them in the decor phase when reference materials show them.
+ Some lidar products filter 1-2 m features (cars, street furniture, bins, signs, low walls)
+ as noise; DEFRA composites are noisier — strip transitory hits, keep street furniture where
+ practical (`rules/evidence-order.md`). Absence from lidar proves nothing for them; add them in
+ the decor phase when reference materials show them.
 
  PRIORITY RULE OF THUMB (user, 2026-10-16). Code / tooling changes come before most other
  tasks. Fixing existing things comes before new builds. Order a session's pick: code
@@ -243,18 +244,18 @@ BUILT plan in place to “fix” the world.
  Integrity   audit drift, readback holes, floating attachables, broken
              multi-block items (doors, beds).
  Footprint   plan matches surveyed / aerial outline within ~1–2 blocks after
-             Minecraft squaring (Geocraft OSM shape is a prior — GEOCRAFT.txt;
-             craftsmanship: rules/craftsmanship.md).
+             Minecraft squaring (OSM shape is a prior; craftsmanship:
+             rules/craftsmanship.md). Legacy Southampton notes: site/GEOCRAFT.txt.
  Frontage    house fronts on the OSM footprint line (osm_footprints.py
              check = OK); doors face their own street; names = real addr:street.
- Height      LIDAR/Geocraft Y for massing; photos for storeys / relative eaves.
+ Height      DEFRA lidar Y for massing; photos for storeys / relative eaves.
  Roads       centreline/route OK; width/kerbs vs aerial — not stock edges.
  Openings    doors and windows in the right places and sizes (street side);
              glass flanked L/R with sill + head (rules/craftsmanship.md).
  Roof        form from aerial; pitch per CRAFTSMANSHIP §3 (terrace stairs /
-             shallow slabs); overhang; sealed skin — not Geocraft lattice.
+             shallow slabs); overhang; sealed skin — not lattice/carpet.
  Materials   palette reads as the real elevations from the public street
-             (Geocraft brick/carpet is placeholder only).
+             (generator brick/carpet is placeholder only).
  Access      public routes stay walkable; no sealed dark voids on routes.
  Whole       every house: all elevations, roof form, floors + stair. Gardens
              and boundaries are ground/trees/decor (HANDOFF-LAYERED-PASSES §1).
@@ -275,7 +276,7 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
  - Anything built by this kit (verification/site/*-cells.json) may be
    repaired or replaced after a review. Record as a modification build
    with its own backup; log the reason in ISSUES.txt.
- - Geocraft-generated LIDAR/OSM terrain and buildings may be refined when
+ - Leftover vendor or generator terrain/buildings may be refined when
    evidence shows they are wrong. Back up first. Prefer local edits over
    regenerating wide areas.
  - Still careful with stocked containers (move contents, don’t destroy).

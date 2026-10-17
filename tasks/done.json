@@ -146,6 +146,15 @@
       "notes": "Moved PROCESS/CRAFTSMANSHIP/FOLIAGE/HANDOFF-LAYERED-PASSES/RULES-CONTEXT/CLEANUP into ai-worldbuilder rules/ as kebab-case .md. Updated rules_context (TOOL_ROOT), site_handoff/cleanup/pass_mask + callers, tests, AGENTS, new-world-build, templates/new-world-site/ + empty-world README. GEOCRAFT out of scope (23\u201325)."
     },
     {
+      "id": 19,
+      "title": "Catalogue: merge ukdefra-dtm/dsm into ukdefra-lidar + aliases",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket. Done: single ukdefra-lidar in system-providers.json; aliases ukdefra-dtm/ukdefra-dsm; provider_by_id + TestProviderAliases; google-satellite/streetview unchanged; no providers/ folders."
+    },
+    {
       "id": 23,
       "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
       "status": "done",
@@ -164,13 +173,13 @@
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
     },
     {
-      "id": 19,
-      "title": "Catalogue: merge ukdefra-dtm/dsm into ukdefra-lidar + aliases",
+      "id": 25,
+      "title": "Rules/OS stale Geocraft-ref sweep",
       "status": "done",
-      "priority": "medium",
+      "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket. Done: single ukdefra-lidar in system-providers.json; aliases ukdefra-dtm/ukdefra-dsm; provider_by_id + TestProviderAliases; google-satellite/streetview unchanged; no providers/ folders."
+      "notes": "Grep-driven sweep after #18/#23\u201324: replaced Geocraft-default, lump-as-DoD, and pristine-as-lidar wording in rules/ (craftsmanship streets/lidar report, foliage, process coverage/review, cleanup, terrace, rules-context, handoff, building-review) + new-world-build pointer and ADR 003 status. Intentional mentions kept: evidence-order guardrail, GEOCRAFT.txt legacy pointers, lump_scan diagnostic-only, GLOSSARY Avoid, docs/archive. Docs/pointers only."
     }
   ]
 }
