@@ -2,15 +2,6 @@
   "_comment": "AGENT: completed tasks archive. Read via the task-index-manager skill. Do not add active tasks here.",
   "tasks": [
     {
-      "id": 7,
-      "title": "Land or explicitly park donor dirty world-frame WIP before file moves",
-      "status": "done",
-      "priority": "critical",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Landed as commit on donor main (world-frame + build reset). Deferred ADR 001 renames still out of scope. Local reference JPGs left untracked."
-    },
-    {
       "id": 1,
       "title": "Create empty ai-worldbuilder and southampton-build git repos",
       "status": "done",
@@ -65,13 +56,13 @@
       "notes": "Donor README marked RETIRED DONOR with pointers to ai-worldbuilder and southampton-build. Instance save may still live under donor until relocated."
     },
     {
-      "id": 13,
-      "title": "Per-provider folders; local provider tools into the world repo",
+      "id": 7,
+      "title": "Land or explicitly park donor dirty world-frame WIP before file moves",
       "status": "done",
-      "priority": "medium",
-      "complexity": "l",
+      "priority": "critical",
+      "complexity": "m",
       "blockedBy": [],
-      "notes": "Superseded 2026-10-17: split into system tasks 19\u201322 (catalogue lidar merge, system providers/, local providers/, loader sweep)."
+      "notes": "Landed as commit on donor main (world-frame + build reset). Deferred ADR 001 renames still out of scope. Local reference JPGs left untracked."
     },
     {
       "id": 9,
@@ -101,13 +92,22 @@
       "notes": "feature_build.py + tests at seams (load_spec, build\u2192Plan, CLI dry-run, SU run()). site/builds/susu_42.json (w33830305) dry-runs via feature_build; rules/feature-builds.md + CRAFTSMANSHIP NON-HOUSE + handoff plan_cell_items route houses\u2192house_build / else\u2192feature_build. Facade/doors/greeblies/path/sheet remain #12 and #14\u201317 (world Q-203)."
     },
     {
-      "id": 23,
-      "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
+      "id": 12,
+      "title": "Facade spec: windows read from the photo",
       "status": "done",
       "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-198. feature_build facades map {label: {N|S|E|W: [{storey, glazed_h, pier, wall?, rhythm?}]}}; _validate_facades; windows() from photo table; dry-run glazed_share_report per storey/face; FacadeSpecTest + FacadeWindowsTest. Landed with #14 wiring; tracker closed here. World Q-203 still waits on 15\u201317."
+    },
+    {
+      "id": 13,
+      "title": "Per-provider folders; local provider tools into the world repo",
+      "status": "done",
+      "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Cell done = evidence + layer passes + masks \u2014 not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
+      "notes": "Superseded 2026-10-17: split into system tasks 19\u201322 (catalogue lidar merge, system providers/, local providers/, loader sweep)."
     },
     {
       "id": 14,
@@ -119,6 +119,15 @@
       "notes": "From Q-199. feature_build doors map {portal_id: {leaves:1|2, block}}; portal_doors mirrored hinges + door_cells keepout for facades; dry-run print; DoorSpecBuildTest hinge pairing + facade survival. World Q-203 still waits on 12, 15\u201317."
     },
     {
+      "id": 15,
+      "title": "Greeblies gate on feature queue items",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "plan_cell_items FEATURE template lists aerial greeblies + <name>-greeblies / \"no greeblies seen\". cmd_end refuses FEATURE without that stage record unless summary escape; EndTest + PlanCellItems cover both. World Q-203 still waits on 12, 16\u201317."
+    },
+    {
       "id": 18,
       "title": "Move generic site process/craft docs from world site/ into rules/",
       "status": "done",
@@ -128,6 +137,15 @@
       "notes": "Moved PROCESS/CRAFTSMANSHIP/FOLIAGE/HANDOFF-LAYERED-PASSES/RULES-CONTEXT/CLEANUP into ai-worldbuilder rules/ as kebab-case .md. Updated rules_context (TOOL_ROOT), site_handoff/cleanup/pass_mask + callers, tests, AGENTS, new-world-build, templates/new-world-site/ + empty-world README. GEOCRAFT out of scope (23\u201325)."
     },
     {
+      "id": 23,
+      "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Cell done = evidence + layer passes + masks \u2014 not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
+    },
+    {
       "id": 24,
       "title": "Evidence path: DEFRA composites only; remove geocraft-pristine",
       "status": "done",
@@ -135,15 +153,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
-    },
-    {
-      "id": 12,
-      "title": "Facade spec: windows read from the photo",
-      "status": "done",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From Q-198. feature_build facades map {label: {N|S|E|W: [{storey, glazed_h, pier, wall?, rhythm?}]}}; _validate_facades; windows() from photo table; dry-run glazed_share_report per storey/face; FacadeSpecTest + FacadeWindowsTest. Landed with #14 wiring; tracker closed here. World Q-203 still waits on 15\u201317."
     }
   ]
 }

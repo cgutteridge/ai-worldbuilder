@@ -13,15 +13,6 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 15,
-      "title": "Greeblies gate on feature queue items",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From Q-200. Template in site_handoff.plan_cell_items gets a greeblies line; cmd_end refuses FEATURE with no <name>-greeblies unless summary says 'no greeblies seen'. Done: end blocks un-greebled feature in a test; template line present. World Q-203 waits on this with tasks 11\u201312, 14, 16\u201317."
-    },
-    {
       "id": 16,
       "title": "Footprint overlap check (paths inside a footprint)",
       "status": "todo",
