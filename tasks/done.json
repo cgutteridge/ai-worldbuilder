@@ -135,6 +135,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 26,
+      "title": "Lidar ghost tool: DTM ground + grey DSM\u2212DTM features",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "scripts/lidar_ghost.py: idempotent DTM ground + grey DSM\u2212DTM features; owners ghost_<tx>_<tz>_ground/_features; STAGES ghost-ground/ghost-features kind=ghost; ring default 1; CLI plan/status/apply + dry-run fixtures; ground_layer.ignored_builds + cell_features treat ghosts as overwritable/non-features. test_lidar_ghost.py."
     }
   ]
 }
