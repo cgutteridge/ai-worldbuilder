@@ -126,28 +126,22 @@ def _cell_stages(cell):
 
 
 def residual_features(cell, idx=None):
-    """Unrefined original Geocraft in a cell, packaged as queue features.
+    """Mapped buildings no feature build covers, packaged as queue features.
 
-    Mapped buildings no feature build covers (cell_features.missing_features) plus any Geocraft
-    lumps still standing (lump_scan: unmapped / outside-OSM-clip buildings, or mapped ones a build
-    missed), minus recorded stages.lump_sweep.exceptions. One list, one meaning: what is left to refine.
+    Empty-world DoD (ADR 003): OSM footprints still missing a house/feature build. Does not scan
+    standing vendor lumps — ``lump_scan`` is diagnostic only and must not drive the queue.
 
     @param cell: (tx, tz)
     @param idx: optional shared OSMIndex
-    @returns: [{'kind': 'building'|'houses'|'lumps', 'label', 'street', 'refs', 'bbox'}]
+    @returns: [{'kind': 'building'|'houses', 'label', 'street', 'refs', 'bbox'}]
     """
     from cell_features import missing_features
-    from lump_scan import lump_features, scan_cell
     from osm_footprints import OSMIndex
     tx, tz = cell
     try:
-        idx = idx or OSMIndex()
-        feats = missing_features(tx, tz, idx)
-        lumps = scan_cell(tx, tz, idx=idx)
+        return missing_features(tx, tz, idx or OSMIndex())
     except (OSError, ValueError, KeyError, SystemExit):
         return []
-    taken = {r for f in feats for r in f['refs']}
-    return feats + lump_features(lumps, taken, idx.streets)
 
 
 AERIAL_REVIEW = SITE / 'AERIAL-REVIEW.txt'
@@ -298,7 +292,7 @@ def _portal_photo(p):
 def portal_facts(portals):
     """Entrance lines for a feature item: university portals (scripts/portals.py) on the feature's footprint.
 
-    @param portals: portal dicts from the feature (cell_features.missing_features / lump_features)
+    @param portals: portal dicts from the feature (cell_features.missing_features)
     @returns: queue-item lines ([] when none)
     """
     if not portals:
@@ -365,12 +359,12 @@ def cell_gaps(cell, features=True):
     """What keeps a cell from being done.
 
     A cell is done when ground, trees and decor are applied, the trees mask follows the current
-    overhang rule (pass_mask.TREES_RULE, I-061), no unrefined original Geocraft is left
-    (residual_features: every lidar lump built or excepted) and every lidar tree-over-roof is resolved
-    (trees_over_roof_open, I-071).
+    overhang rule (pass_mask.TREES_RULE, I-061), every mapped building has a feature build
+    (residual_features) and every lidar tree-over-roof is resolved (trees_over_roof_open, I-071).
+    Standing vendor lumps alone do not keep a cell open (ADR 003 / empty-world DoD).
 
     @param cell: (tx, tz)
-    @param features: also compute residual_features (slow: reads the world and OSM)
+    @param features: also compute residual_features (slow: reads OSM / missing builds)
     A stage left 'applying' (aborted run, site_stages) is never done: it is reported first as
     in_flight 'in-flight: <plan>' and recovered with scripts/site_recover.py.
 
@@ -394,7 +388,7 @@ def cell_gaps(cell, features=True):
 
 
 def layers_done(cell):
-    """True when the cell is done: layer passes applied, trees current, no unrefined Geocraft left.
+    """True when the cell is done: layer passes applied, trees current, no missing feature builds.
 
     @param cell: (tx, tz)
     @returns: bool
@@ -471,7 +465,6 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
         ]))
     for f in gaps['features']:
         x0, z0, x1, z1 = (int(v) for v in f['bbox'])
-        lump = f['kind'] == 'lumps'
         items.append((f'CELL {tx},{tz} (r={r}) FEATURE {f["label"]}. RULES: property.', [
             f'Major feature, pass 1 of the cell (HANDOFF-LAYERED-PASSES §1, §4): own build, region',
             f'snapshot + origin fingerprint before apply. bbox {x0},{z0},{x1},{z1}; OSM {",".join(f["refs"][:8])}'
@@ -487,11 +480,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
                 '(name, ways, storeys, roofs.kind/material, groups.front, modifies; see feature_build docstring). '
                 'Do not extend house_build for odd shapes; do not copy a peer spec or a build script.'
             ),
-        ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1)) + ([
-            'Original Geocraft still standing here (lump_scan). Not in OSM or outside its clip: trace the',
-            'footprint from the aerial, record source + year (PROCESS.txt 2d-i). Residual after the build must',
-            'be 0, or record an exception in the STAGES file (stages.lump_sweep.exceptions).',
-        ] if lump else [f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.'])
+            f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.',
+        ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
           + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz}.'] if not items else [])))
     if gaps.get('trees_over_roof'):
         items.append((f'CELL {tx},{tz} (r={r}) TREES OVER ROOF {len(gaps["trees_over_roof"])} lidar lump(s) (I-071). RULES: foliage.', [
@@ -505,7 +495,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             f'patrol sweep; update site/cells/{tx}_{tz}-STAGES.json;',
-            'Done = no unrefined Geocraft left: feature items above cover it; unmapped buildings are built too (PROCESS.txt 2d-i).',
+            'Done = evidence-backed features plus layered passes and masks (empty-world DoD); not clearing vendor lumps.',
             f'Marker stays up after this run; clear it only when decor is done, checks',
             f'pass and all open issues for the cell are closed: cell_marker.py --clear {tx},{tz}.',
         ]))
@@ -534,13 +524,13 @@ def _append_queue_items(items):
 
 
 def advance_to_next_cell():
-    """Queue the next cell that is not done: its unrefined Geocraft as feature items, then passes.
+    """Queue the next cell that is not done: missing feature builds, then layered passes.
 
     Appends open items to QUEUE.txt (feature items above the layered-passes item, so the top open
     item is always a feature while any is missing). Features are mapped buildings no build covers
-    plus residual Geocraft lumps (unmapped / outside-clip buildings too), packaged per street
-    (residual_features). A finished cell regains items only for what is left: features, and a
-    trees re-run when its trees mask predates the overhang rule.
+    (residual_features). Vendor lump scan does not enqueue work. A finished cell regains items
+    only for what is left: missing features, and a trees re-run when its trees mask predates the
+    overhang rule.
 
     While site/AERIAL-REVIEW.txt has a row that is not done (I-073), only that row's review item is queued
     (user, 2026-10-16): it covers every part of the cell, so cell-gap, TREES re-run and new-cell items would

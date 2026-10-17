@@ -99,6 +99,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "feature_build.py + tests at seams (load_spec, build\u2192Plan, CLI dry-run, SU run()). site/builds/susu_42.json (w33830305) dry-runs via feature_build; rules/feature-builds.md + CRAFTSMANSHIP NON-HOUSE + handoff plan_cell_items route houses\u2192house_build / else\u2192feature_build. Facade/doors/greeblies/path/sheet remain #12 and #14\u201317 (world Q-203)."
+    },
+    {
+      "id": 23,
+      "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Cell done = evidence + layer passes + masks \u2014 not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
     }
   ]
 }

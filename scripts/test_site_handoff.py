@@ -61,17 +61,20 @@ APPLIED = {k: {'status': 'applied'} for k in ('ground', 'trees', 'decor')}
 
 
 class DoneTest(Base):
-    def test_done_needs_layers_current_trees_and_no_residue(self):
+    def test_done_needs_layers_current_trees_and_no_missing_features(self):
+        """Empty-world DoD: layers + trees mask; missing OSM feature builds still block done."""
         self.stages((1, 1), **APPLIED)
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
-                mock.patch.object(H, 'residual_features', return_value=[]):
+                mock.patch.object(H, 'residual_features', return_value=[]), \
+                mock.patch.object(H, 'trees_over_roof_open', return_value=[]):
             self.assertTrue(H.layers_done((1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
-                mock.patch.object(H, 'residual_features', return_value=[{'kind': 'lumps'}]):
-            self.assertFalse(H.layers_done((1, 1)))      # finished cell with a residual lump is re-queued
+                mock.patch.object(H, 'residual_features', return_value=[{'kind': 'building'}]), \
+                mock.patch.object(H, 'trees_over_roof_open', return_value=[]):
+            self.assertFalse(H.layers_done((1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=False), \
                 mock.patch.object(H, 'residual_features', return_value=[]):
-            self.assertFalse(H.layers_done((1, 1)))      # old tree mask
+            self.assertFalse(H.layers_done((1, 1)))
             self.assertTrue(H.cell_gaps((1, 1))['trees_stale'])
 
     def test_applying_stage_is_not_done_and_reported_first(self):
@@ -98,18 +101,19 @@ class DoneTest(Base):
             self.assertFalse(H.layers_done((1, 1)))
             self.assertEqual(H.cell_gaps((1, 1), features=False)['layers'], ['trees', 'decor'])
 
-    def test_next_cell_requeues_finished_cell_with_residue(self):
-        cells = {(48, -44): [], (48, -45): [{'kind': 'lumps', 'label': 'x', 'refs': ['unmapped'], 'bbox': (0, 0, 9, 9)}]}
+    def test_next_cell_requeues_finished_cell_with_missing_features(self):
+        cells = {(48, -44): [], (48, -45): [{'kind': 'building', 'label': 'x', 'refs': ['w1'], 'bbox': (0, 0, 9, 9)}]}
         for c in cells:
             self.stages(c, **APPLIED)
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
-                mock.patch.object(H, 'residual_features', side_effect=lambda c, idx=None: cells.get(c, [])):
+                mock.patch.object(H, 'residual_features', side_effect=lambda c, idx=None: cells.get(c, [])), \
+                mock.patch.object(H, 'trees_over_roof_open', return_value=[]):
             self.assertEqual(H.next_cell(max_ring=1), (48, -45, 1))
             plan = H.requeue_plan(max_ring=1)
         self.assertEqual([(t, z) for t, z, *_ in plan], [(48, -45)])
 
-    def test_queue_items_for_residue_and_stale_trees(self):
-        feat = {'kind': 'lumps', 'label': 'Hartley Avenue (2 unrefined Geocraft building(s), 1 not in OSM)',
+    def test_queue_items_for_missing_features_and_stale_trees(self):
+        feat = {'kind': 'building', 'label': 'Hartley Avenue (2 buildings)',
                 'street': 'Hartley Avenue', 'refs': ['w1'], 'bbox': (6400, -5500, 6430, -5480)}
         gaps = {'layers': [], 'trees_stale': True, 'features': [feat]}
         with mock.patch.object(H, 'next_cell', return_value=(48, -44, 0)), \
@@ -119,6 +123,18 @@ class DoneTest(Base):
         self.assertIn('FEATURE Hartley Avenue', first['text'])
         ids = [(i['id'], 'TREES re-run' in i['text']) for i in H._queue_items() if i['id'] > 'Q-002']
         self.assertEqual([t for _i, t in ids], [False, True])
+
+    def test_residual_features_is_missing_builds_only_not_lump_scan(self):
+        """Seam: residual_features never calls lump_scan; only OSM missing feature builds."""
+        mapped = [{'kind': 'houses', 'label': 'A', 'street': 'A', 'refs': ['w1'], 'bbox': (0, 0, 1, 1)}]
+        with mock.patch('cell_features.missing_features', return_value=mapped) as miss, \
+                mock.patch('lump_scan.scan_cell', side_effect=AssertionError('lump_scan must not drive residual')) as scan, \
+                mock.patch('lump_scan.lump_features', side_effect=AssertionError('lump_features unused')), \
+                mock.patch('osm_footprints.OSMIndex', return_value=mock.Mock(streets={})):
+            out = H.residual_features((48, -44))
+        self.assertEqual(out, mapped)
+        miss.assert_called_once()
+        scan.assert_not_called()
 
 
 REVIEW_TEXT = '''head
@@ -297,6 +313,22 @@ class PlanCellItems(unittest.TestCase):
         self.assertIn('site/builds/', joined)
         self.assertNotIn('house_build.py', joined)
         self.assertNotIn('build_runner', joined)
+
+    def test_layered_passes_done_line_is_empty_world_not_geocraft_lumps(self):
+        """Seam: queue copy defines done as evidence + layers + masks, not clearing Geocraft."""
+        body = '\n'.join(H.plan_cell_items(1, 2, 0, self.gaps(layers=True), [])[0][1])
+        self.assertNotIn('unrefined Geocraft', body)
+        self.assertNotIn('lump_scan', body)
+        self.assertNotIn('lump_sweep', body)
+        self.assertIn('evidence', body.lower())
+
+    def test_feature_item_does_not_instruct_lump_scan_exceptions(self):
+        """Seam: even a legacy kind=lumps payload must not revive lump_scan queue driver copy."""
+        lump = {**self.FEATURE, 'kind': 'lumps', 'label': 'X (unrefined)'}
+        body = '\n'.join(H.plan_cell_items(1, 2, 0, self.gaps(features=[lump]), [])[0][1])
+        self.assertNotIn('lump_scan', body)
+        self.assertNotIn('lump_sweep.exceptions', body)
+        self.assertNotIn('Original Geocraft still standing', body)
 
 
 class AppendQueueItems(unittest.TestCase):

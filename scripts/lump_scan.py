@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Residual Geocraft: find building blobs a cell still carries; they are part of "cell done" (I-047, I-057).
+"""Diagnostic: find standing Geocraft-style building blobs in a cell (I-047, I-057).
 
-site_handoff.cell_gaps calls scan_cell/lump_features, so a finished cell with lumps is re-queued as
-feature items automatically; running this CLI by hand is only a diagnostic.
+Empty-world DoD (ADR 003): this tool does **not** drive ``site_handoff`` cell_gaps or the queue.
+Cell done is evidence-backed features plus layered passes and masks — not “no vendor lumps left”.
+Run this CLI by hand when investigating a legacy Geocraft-derived save.
 
 A "lump" is a building the original Geocraft import generated (roof = light_gray_carpet in the
 untouched save at reference/pristine_region_path, walls/fill below it) that no *feature* build has
@@ -16,8 +17,7 @@ Detection, per column of the cell:
   open   no feature build (cell_features.feature_columns) wrote the column
 Open roof+intact columns are grouped (8-connected); groups under MIN_COLUMNS are ignored.
 Each lump reports bbox, centre, roof Y range, height over the surrounding ground, column count and the
-OSM building(s) under it; lumps with no OSM building are flagged unmapped (build them from the aerial /
-Street View, whatever year: see site/PROCESS.txt "Newer than OSM").
+OSM building(s) under it; lumps with no OSM building are flagged unmapped.
 
   python3 scripts/lump_scan.py --cell 49,-43            # report; exit 1 if unrecorded lumps remain
   python3 scripts/lump_scan.py --cell 49,-43 --bbox 6330,-5450,6420,-5380
