@@ -19,8 +19,17 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   ledge_stair    rising stair on 1-block ledges beyond 4 columns (default false)
   door_frame     framed doors on angled walls (default true)
   keep_edits     stoop/step cells survive earlier-build clash filter (default false)
+  doors          optional per-portal door map (university register ids):
+                   {"<portal id>": {"leaves": 1|2, "block": "<*_door>"}}
+                 leaves 2 = mirrored hinges; dry run prints each beside the portal name.
+                 Absent/empty → legacy front/rear single spruce doors.
+  facades        optional per-label per-face table of window rows (photo reading):
+                   {"<label>": {"N"|"S"|"E"|"W": [
+                     {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
+                      "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
+                 Dry run prints glazed share per storey per face.
 
-Facade table, double/coloured doors, greeblies: separate system tickets — not this module.
+Greeblies / path-in-footprint / contact sheet: separate system tickets.
 
 Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply]
 """
@@ -33,6 +42,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
+import portals  # noqa: E402
 from site_kit import Plan, World, apply, preview  # noqa: E402
 
 STOREY_H = 3
@@ -88,6 +98,8 @@ def load_spec(path) -> dict:
     spec.setdefault('door_frame', True)
     spec.setdefault('wall', 'bricks')
     spec.setdefault('floor', 'smooth_stone')
+    spec.setdefault('doors', {})
+    spec.setdefault('facades', {})
     labels = set(spec['ways'].values())
     for lab, n in spec['storeys'].items():
         if lab not in labels:
@@ -106,7 +118,81 @@ def load_spec(path) -> dict:
         for no in g['nos']:
             if no not in labels or no not in spec['storeys'] or no not in spec['roofs']:
                 raise SystemExit(f'{path}: label {no} needs a way, storeys and roof')
+    _validate_doors(path, spec)
+    _validate_facades(path, spec, labels)
     return spec
+
+
+def _validate_doors(path, spec: dict) -> None:
+    """Validate optional per-portal door map.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @raises SystemExit: on invalid door entries
+    """
+    doors = spec.get('doors') or {}
+    if not isinstance(doors, dict):
+        raise SystemExit(f'{path}: doors must be an object')
+    for pid, row in doors.items():
+        if not isinstance(row, dict):
+            raise SystemExit(f'{path}: doors[{pid}] must be an object')
+        leaves = row.get('leaves')
+        block = row.get('block')
+        if not isinstance(leaves, int) or leaves not in (1, 2):
+            raise SystemExit(f'{path}: doors[{pid}].leaves must be 1 or 2')
+        if not isinstance(block, str) or not block.endswith('_door') or 'trap' in block:
+            raise SystemExit(f'{path}: doors[{pid}].block must be a *_door id (not trapdoor)')
+
+
+def _validate_facades(path, spec: dict, labels: set) -> None:
+    """Validate optional per-face facade table rows.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: known way labels
+    @raises SystemExit: on invalid facade structure
+    """
+    facades = spec.get('facades') or {}
+    if not isinstance(facades, dict):
+        raise SystemExit(f'{path}: facades must be an object')
+    for lab, faces in facades.items():
+        if lab not in labels:
+            raise SystemExit(f'{path}: facades label {lab} has no way')
+        if not isinstance(faces, dict):
+            raise SystemExit(f'{path}: facades[{lab}] must be face→rows')
+        n_storeys = spec['storeys'][lab]
+        for face, rows in faces.items():
+            if face not in DIRS:
+                raise SystemExit(f'{path}: facades[{lab}] bad face {face}')
+            if not isinstance(rows, list) or not rows:
+                raise SystemExit(f'{path}: facades[{lab}][{face}] needs a non-empty row list')
+            seen = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise SystemExit(f'{path}: facades[{lab}][{face}] row must be an object')
+                storey = row.get('storey')
+                glazed_h = row.get('glazed_h')
+                pier = row.get('pier')
+                if not isinstance(storey, int) or storey < 1 or storey > n_storeys:
+                    raise SystemExit(
+                        f'{path}: facades[{lab}][{face}] storey must be int 1..{n_storeys}')
+                if storey in seen:
+                    raise SystemExit(f'{path}: facades[{lab}][{face}] duplicate storey {storey}')
+                seen.add(storey)
+                if not isinstance(glazed_h, int) or glazed_h < 1 or glazed_h > STOREY_H:
+                    raise SystemExit(
+                        f'{path}: facades[{lab}][{face}] glazed_h must be int 1..{STOREY_H}')
+                if not isinstance(pier, int) or pier < 0:
+                    raise SystemExit(f'{path}: facades[{lab}][{face}] pier must be int >= 0')
+                if 'rhythm' in row and row['rhythm'] is not None:
+                    if not isinstance(row['rhythm'], str) or not row['rhythm']:
+                        raise SystemExit(f'{path}: facades[{lab}][{face}] rhythm must be a non-empty string')
+                    bad = [c for c in row['rhythm'] if c not in 'WB_']
+                    if bad:
+                        raise SystemExit(
+                            f'{path}: facades[{lab}][{face}] rhythm chars must be W/B/_ (got {bad!r})')
+                if 'wall' in row and row['wall'] is not None and not isinstance(row['wall'], str):
+                    raise SystemExit(f'{path}: facades[{lab}][{face}] wall must be a string')
 
 
 class Feature:
@@ -312,14 +398,125 @@ class Build:
                 return
 
     def doors(self, k: int, f: Feature):
+        """Place doors: portal map from the spec when present, else front/rear spruce.
+
+        @param k: feature index
+        @param f: feature mass
+        """
+        door_specs = self.spec.get('doors') or {}
+        if door_specs:
+            self.portal_doors(f, door_specs)
+        else:
+            self.default_doors(k, f)
+
+    def _door_candidates(self, f: Feature, face: str) -> list:
+        """Framed wall cells on ``face`` with interior behind them.
+
+        @param f: feature mass
+        @param face: ``N``/``S``/``E``/``W``
+        @returns: candidate ``(x, z)`` cells
+        """
+        dx, dz = DIRS[face]
+        cand = [c for c in f.walls if self.exposed(c, face) and (c[0] - dx, c[1] - dz) in f.inner]
+        return self.framed(f, cand, face)
+
+    def _set_door_leaf(self, cell, face: str, block: str, hinge: str, b: int):
+        """Write one framed door leaf (lower+upper) and clear the stoop column.
+
+        @param cell: wall ``(x, z)``
+        @param face: facing letter
+        @param block: door block id (e.g. ``iron_door``)
+        @param hinge: ``left`` or ``right``
+        @param b: floor y
+        """
+        dx, dz = DIRS[face]
+        face_name = FACE[face]
+        for y, part in ((b + 1, 'lower'), (b + 2, 'upper')):
+            self.set(cell[0], y, cell[1],
+                     f'{block}[facing={face_name},half={part},hinge={hinge},open=false]')
+        st = (cell[0] + dx, cell[1] + dz)
+        self.set(st[0], b, st[1], 'smooth_stone')
+        for y in range(b + 1, b + 4):
+            self.set(st[0], y, st[1], 'air')
+
+    def portal_doors(self, f: Feature, door_specs: dict) -> None:
+        """Place per-portal doors from the spec; print each beside its portal name.
+
+        @param f: feature mass
+        @param door_specs: ``{portal_id: {leaves, block}}``
+        """
+        by_id = {p['id']: p for p in portals.load()}
+        placed: set = set()
+        f.door = None
+        f.rear = None
+        f.door_cells = set()
+        reach2 = portals.DOOR_REACH ** 2
+        for pid, row in sorted(door_specs.items()):
+            portal = by_id.get(pid)
+            if portal is None:
+                print(f'door {pid}: unknown portal: skipped')
+                continue
+            px, pz = portal['x'], portal['z']
+            leaves = row['leaves']
+            block = row['block']
+            best = None
+            for face in DIRS:
+                for c in self._door_candidates(f, face):
+                    if c in placed:
+                        continue
+                    d2 = (c[0] - px) ** 2 + (c[1] - pz) ** 2
+                    if best is None or d2 < best[0]:
+                        best = (d2, c, face)
+            if best is None or best[0] > reach2:
+                print(f'door {pid} "{portal["label"]}": no wall near {px},{pz}: skipped')
+                continue
+            _d2, c0, face = best
+            lat = (1, 0) if face in 'NS' else (0, 1)
+            cells = [c0]
+            if leaves == 2:
+                opts = [
+                    (c0[0] + lat[0], c0[1] + lat[1]),
+                    (c0[0] - lat[0], c0[1] - lat[1]),
+                ]
+                opts.sort(key=lambda c: (c[0] - px) ** 2 + (c[1] - pz) ** 2)
+                pair = next(
+                    (c for c in opts
+                     if c not in placed and c in self._door_candidates(f, face)),
+                    None,
+                )
+                if pair is None:
+                    print(f'door {pid} "{portal["label"]}": no pair cell; using 1-leaf')
+                    leaves = 1
+                else:
+                    cells = sorted([c0, pair], key=lambda c: c[0] * lat[0] + c[1] * lat[1])
+            hinges = ('left',) if leaves == 1 else ('left', 'right')
+            b = f.b
+            for cell, hinge in zip(cells, hinges):
+                self._set_door_leaf(cell, face, block, hinge, b)
+                placed.add(cell)
+                f.door_cells.add(cell)
+            dx, dz = DIRS[face]
+            self.step_out((cells[0][0] + dx, cells[0][1] + dz), face, b)
+            if f.door is None:
+                f.door = cells[0]
+            print(
+                f'door {pid} "{portal["label"]}" {leaves}-leaf {block} '
+                f'at {cells[0][0]},{b + 1},{cells[0][1]} facing {FACE[face]}'
+            )
+
+    def default_doors(self, k: int, f: Feature):
+        """Legacy front and rear single spruce doors when the spec has no ``doors`` map.
+
+        @param k: feature index (unused; kept for call-site parity)
+        @param f: feature mass
+        """
+        del k  # call-site parity with doors()
         b = f.b
         front = f.front
         r = OPP[front]
-        fx, fz = DIRS[front]
-        cand = [c for c in f.walls if self.exposed(c, front) and (c[0] - fx, c[1] - fz) in f.inner]
+        cand = self._door_candidates(f, front)
         if not cand:
             return
-        cand = self.framed(f, cand, front)
         if front == 'N':
             front_edge = min(c[1] for c in cand)
             cand = [c for c in cand if c[1] <= front_edge + 2]
@@ -339,17 +536,12 @@ class Build:
             mid = sum(c[1] for c in cand) / len(cand)
             c0 = min(cand, key=lambda c: abs(c[1] - mid))
         f.door = c0
-        face = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}[front]
-        for y, part in ((b + 1, 'lower'), (b + 2, 'upper')):
-            self.set(c0[0], y, c0[1], f'spruce_door[facing={face},half={part},hinge=left,open=false]')
-        st = (c0[0] + fx, c0[1] + fz)
-        self.set(st[0], b, st[1], 'smooth_stone')
-        for y in range(b + 1, b + 4):
-            self.set(st[0], y, st[1], 'air')
-        self.step_out(st, front, b)
-        cand = [c for c in f.walls if self.exposed(c, r) and (c[0] - DIRS[r][0], c[1] - DIRS[r][1]) in f.inner]
+        f.door_cells = {c0}
+        self._set_door_leaf(c0, front, 'spruce_door', 'left', b)
+        fx, fz = DIRS[front]
+        self.step_out((c0[0] + fx, c0[1] + fz), front, b)
+        cand = self._door_candidates(f, r)
         if cand:
-            cand = self.framed(f, cand, r)
             if r in 'NS':
                 e = min(c[1] for c in cand) if r == 'N' else max(c[1] for c in cand)
                 cc = [c for c in cand if (c[1] <= e + 2 if r == 'N' else c[1] >= e - 2)]
@@ -361,21 +553,141 @@ class Build:
                 m = sum(c[1] for c in cc) / len(cc)
                 c1 = min(cc, key=lambda c: abs(c[1] - m))
             f.rear = c1
-            rf = {'N': 'north', 'E': 'east', 'S': 'south', 'W': 'west'}[r]
-            for y, part in ((b + 1, 'lower'), (b + 2, 'upper')):
-                self.set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={part},hinge=right,open=false]')
+            f.door_cells.add(c1)
+            self._set_door_leaf(c1, r, 'spruce_door', 'right', b)
             sx, sz = c1[0] + DIRS[r][0], c1[1] + DIRS[r][1]
-            self.set(sx, b, sz, 'smooth_stone')
-            for y in range(b + 1, b + 4):
-                self.set(sx, y, sz, 'air')
             self.step_out((sx, sz), r, b)
         else:
             f.rear = None
 
+    def face_runs(self, f: Feature, face: str) -> list[list]:
+        """Contiguous straight wall runs exposed to ``face``, each sorted along the face.
+
+        An L-shaped or notched mass yields several runs (one per constant edge
+        coordinate), so pier rhythm applies per straight stretch — not across a
+        courtyard notch. Corner cells stay in their run (craftsmanship end piers).
+
+        @param f: feature mass
+        @param face: ``N``/``S``/``E``/``W``
+        @returns: list of ordered ``(x, z)`` runs
+        """
+        cand = [c for c in f.walls if self.exposed(c, face)]
+        if not cand:
+            return []
+        by_edge: dict = {}
+        if face in 'NS':
+            for c in cand:
+                by_edge.setdefault(c[1], []).append(c)
+            along = 0
+        else:
+            for c in cand:
+                by_edge.setdefault(c[0], []).append(c)
+            along = 1
+        runs = []
+        for _edge, cells in sorted(by_edge.items()):
+            cells = sorted(cells, key=lambda c: c[along])
+            run = [cells[0]]
+            for c in cells[1:]:
+                prev = run[-1]
+                if c[along] == prev[along] + 1:
+                    run.append(c)
+                else:
+                    runs.append(run)
+                    run = [c]
+            runs.append(run)
+        return runs
+
+    def face_run(self, f: Feature, face: str) -> list:
+        """All wall cells exposed to ``face`` (concat of ``face_runs``), for share totals.
+
+        @param f: feature mass
+        @param face: ``N``/``S``/``E``/``W``
+        @returns: ordered ``(x, z)`` cells
+        """
+        out = []
+        for run in self.face_runs(f, face):
+            out.extend(run)
+        return out
+
+    @staticmethod
+    def facade_roles(row: dict, n: int) -> list[str]:
+        """Expand a facade row into per-cell roles (``W`` glaze, ``B`` balcony, ``_`` pier).
+
+        Without ``rhythm``, uses 2-wide windows and ``pier`` solids; end cells are piers.
+
+        @param row: facade table row
+        @param n: face length in cells
+        @returns: list of length ``n``
+        """
+        if n <= 0:
+            return []
+        rhythm = row.get('rhythm')
+        if rhythm:
+            chars = list(rhythm)
+            roles = (chars * ((n // len(chars)) + 1))[:n]
+        else:
+            pier = row['pier']
+            win_w = 2
+            period = win_w + pier
+            roles = []
+            for i in range(n):
+                if period > 0 and (i % period) < win_w:
+                    roles.append('W')
+                else:
+                    roles.append('_')
+            roles[0] = '_'
+            if n > 1:
+                roles[-1] = '_'
+        return roles
+
+    def _door_keepout(self, f: Feature) -> set:
+        """Wall cells that must not become glass (every placed door leaf).
+
+        @param f: feature mass
+        @returns: set of ``(x, z)``
+        """
+        cells = set(getattr(f, 'door_cells', ()) or ())
+        for q in (getattr(f, 'door', None), getattr(f, 'rear', None)):
+            if q:
+                cells.add(q)
+        return cells
+
     def windows(self, f: Feature):
-        """Placeholder pier rhythm (facade table is ticket #12)."""
+        """Punch openings from the facade table, or placeholder pier rhythm if absent."""
+        facades = (self.spec.get('facades') or {}).get(f.no)
+        if not facades:
+            self._windows_placeholder(f)
+            return
+        door = self._door_keepout(f)
+        for face, rows in facades.items():
+            runs = self.face_runs(f, face)
+            if not runs:
+                continue
+            axis = 'z' if face in 'EW' else 'x'
+            by_storey = {r['storey']: r for r in rows}
+            for s in range(f.storeys):
+                row = by_storey.get(s + 1)
+                if not row:
+                    continue
+                wall_mat = row.get('wall') or self.wall
+                glazed_h = row['glazed_h']
+                base = f.b + s * STOREY_H
+                for run in runs:
+                    roles = self.facade_roles(row, len(run))
+                    for c, role in zip(run, roles):
+                        if c in door:
+                            continue
+                        for dy in range(STOREY_H):
+                            y = base + dy
+                            if role == 'W' and dy >= STOREY_H - glazed_h:
+                                self.set(c[0], y, c[1], pane(axis))
+                            elif wall_mat != self.wall:
+                                self.set(c[0], y, c[1], wall_mat)
+
+    def _windows_placeholder(self, f: Feature):
+        """Legacy pier rhythm when the spec has no facade table for this label."""
         b = f.b
-        door = {getattr(f, 'door', None), getattr(f, 'rear', None)}
+        door = self._door_keepout(f)
         for c in f.walls:
             exp = [d for d in 'NSEW' if self.exposed(c, d)]
             if not exp:
@@ -390,7 +702,7 @@ class Build:
                     ok = False
             if not ok:
                 continue
-            if any(abs(c[0] - q[0]) + abs(c[1] - q[1]) < 3 for q in door if q):
+            if c in door or any(abs(c[0] - q[0]) + abs(c[1] - q[1]) < 3 for q in door):
                 continue
             par = (c[0] + c[1]) if diag else (c[0] if d in 'NS' else c[1])
             if par % (3 if diag else 2):
@@ -398,6 +710,39 @@ class Build:
             axis = 'z' if d in 'EW' else 'x'
             for s in range(f.storeys):
                 self.set(c[0], b + s * STOREY_H + 2, c[1], pane(axis))
+
+    def glazed_share_report(self) -> list[str]:
+        """Glazed share of each storey per face (for dry-run photo compare).
+
+        @returns: human-readable lines ``<label> face <F> storey <n>: glazed a/b (p%)``
+        """
+        lines = []
+        for f in self.features:
+            facades = (self.spec.get('facades') or {}).get(f.no) or {}
+            if not facades:
+                continue
+            for face in sorted(facades):
+                run = self.face_run(f, face)
+                if not run:
+                    continue
+                for s in range(f.storeys):
+                    base = f.b + s * STOREY_H
+                    total = glazed = 0
+                    for c in run:
+                        for dy in range(STOREY_H):
+                            st = self.p.cells.get((c[0], base + dy, c[1]), '')
+                            name = st.split('[')[0]
+                            if name.endswith('_door') or name == 'air':
+                                continue
+                            total += 1
+                            if 'glass' in name:
+                                glazed += 1
+                    if total == 0:
+                        continue
+                    pct = 100 * glazed // total
+                    lines.append(
+                        f'{f.no} face {face} storey {s + 1}: glazed {glazed}/{total} ({pct}%)')
+        return lines
 
     def roof_flat(self, features: list[Feature], own: set):
         rm = features[0].roof['material']
@@ -508,6 +853,8 @@ class Build:
         for f in self.features:
             print(f.no, 'b', f.b, 'storeys', f.storeys, 'cells', len(f.cells),
                   'door', getattr(f, 'door', None), 'rear', getattr(f, 'rear', None))
+        for line in self.glazed_share_report():
+            print(line)
         return self.p
 
 

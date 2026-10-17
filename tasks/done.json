@@ -108,6 +108,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Cell done = evidence + layer passes + masks \u2014 not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
+    },
+    {
+      "id": 14,
+      "title": "Door spec: double doors and door colours",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-199. feature_build doors map {portal_id: {leaves:1|2, block}}; portal_doors mirrored hinges + door_cells keepout for facades; dry-run print; DoorSpecBuildTest hinge pairing + facade survival. World Q-203 still waits on 12, 15\u201317."
     }
   ]
 }

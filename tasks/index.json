@@ -22,15 +22,6 @@
       "notes": "From Q-198. Per-face facade table from photo evidence; dry-run glazed share per storey/face; test. World Q-203 waits on this with 11 and 14\u201317."
     },
     {
-      "id": 14,
-      "title": "Door spec: double doors and door colours",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From Q-199. Per-portal door spec (width 1|2 leaves, type, material/colour via block_reference.py); double = mirrored hinges, framed. Dry run prints each door beside portal name. Done: double and coloured doors plan, pass door_frame_issues and walk check; test covers hinge pairing. World Q-203 waits on this with tasks 11\u201312 and 15\u201317."
-    },
-    {
       "id": 15,
       "title": "Greeblies gate on feature queue items",
       "status": "todo",

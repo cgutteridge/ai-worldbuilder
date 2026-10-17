@@ -1,13 +1,16 @@
-"""Tests for feature_build at agreed seams: load_spec, build→Plan, CLI dry-run, SU fixture."""
+"""Tests for feature_build at agreed seams: load_spec, build→Plan, CLI dry-run, SU fixture, facades, doors."""
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
 import feature_build as F
+from site_kit import door_frame_issues
 
 
 class LoadSpecTest(unittest.TestCase):
@@ -38,6 +41,8 @@ class LoadSpecTest(unittest.TestCase):
         )
         self.assertEqual(spec['wall'], 'bricks')
         self.assertEqual(spec['floor'], 'smooth_stone')
+        self.assertEqual(spec['facades'], {})
+        self.assertEqual(spec['doors'], {})
 
     def test_missing_key_bad_front_unknown_label_bad_storeys_refused(self):
         good = self.good()
@@ -54,6 +59,21 @@ class LoadSpecTest(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
+
+    def test_doors_map_accepted_and_bad_leaves_or_block_refused(self):
+        good = self.good()
+        ok = {**good, 'doors': {'42-A': {'leaves': 2, 'block': 'iron_door'}}}
+        spec = F.load_spec(self.write(ok))
+        self.assertEqual(spec['doors']['42-A'], {'leaves': 2, 'block': 'iron_door'})
+        for bad_doors in (
+            {'42-A': {'leaves': 3, 'block': 'iron_door'}},
+            {'42-A': {'leaves': 2, 'block': 'iron_trapdoor'}},
+            {'42-A': {'leaves': 2, 'block': 'bricks'}},
+            {'42-A': 'iron_door'},
+        ):
+            with self.subTest(bad_doors=bad_doors):
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write({**good, 'doors': bad_doors}))
 
 
 class _StoneWorld:
@@ -156,6 +176,213 @@ class SuFixtureDryRunTest(unittest.TestCase):
         with mock.patch.object(F, 'preview'):
             plan = F.run(spec_path, do_apply=False, world=F.World(), osm_root=osm_root)
         self.assertGreater(len(plan.cells), 10000)
+
+
+class FacadeSpecTest(unittest.TestCase):
+    """Seam: load_spec accepts per-face facade rows; rejects bad storey/face/height."""
+
+    def write(self, spec: dict) -> Path:
+        path = Path(tempfile.mkdtemp()) / 's.json'
+        path.write_text(json.dumps(spec))
+        return path
+
+    def good(self) -> dict:
+        return {
+            'name': 'facade_demo',
+            'ways': {'1': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S'}],
+            'facades': {
+                'A': {
+                    'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1, 'wall': 'bricks'}],
+                    'N': [{'storey': 1, 'glazed_h': 2, 'pier': 1, 'rhythm': 'WW_WW'}],
+                }
+            },
+        }
+
+    def test_loads_facade_table(self):
+        spec = F.load_spec(self.write(self.good()))
+        self.assertEqual(spec['facades']['A']['S'][0]['glazed_h'], 3)
+        self.assertEqual(spec['facades']['A']['N'][0]['rhythm'], 'WW_WW')
+        self.assertEqual(spec['facades']['A']['S'][0]['pier'], 1)
+
+    def test_facades_optional_default_empty(self):
+        base = {k: v for k, v in self.good().items() if k != 'facades'}
+        spec = F.load_spec(self.write(base))
+        self.assertEqual(spec['facades'], {})
+
+    def test_bad_facade_rows_refused(self):
+        good = self.good()
+        cases = [
+            {**good, 'facades': {'B': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'X': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 0, 'glazed_h': 3, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 3, 'glazed_h': 3, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 4, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 0, 'pier': 1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': -1}]}}},
+            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 3}]}}},
+        ]
+        for bad in cases:
+            with self.subTest(bad=bad.get('facades')):
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write(bad))
+
+
+class FacadeWindowsTest(unittest.TestCase):
+    """Seam: facade table drives openings; door cells stay solid; glazed share reported."""
+
+    def setUp(self):
+        # 8×5 rectangle: long S face has 8 wall cells on the south edge.
+        self.cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+
+    def spec(self, facades):
+        return {
+            'name': 'unit_facade',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'facades': facades,
+        }
+
+    def test_storey1_glazed_3_pier_1_places_full_height_glass(self):
+        # Q-198 done criterion: "storey 1 glazed 3 high, pier 1"
+        facades = {
+            'A': {
+                'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1, 'wall': 'bricks'}],
+            }
+        }
+        plan = F.build(self.spec(facades), footprints={'A': self.cells}, world=_StoneWorld())
+        floor = 50
+        # South edge z=24, x=10..17. End cells are piers; pattern WW_ (period 3).
+        # x=11,12 glazed; x=14,15 glazed; x=10,13,16,17 pier (and ends).
+        glass_ys = [
+            y for (x, y, z), st in plan.cells.items()
+            if z == 24 and 'glass_pane' in st and floor <= y < floor + 3
+        ]
+        self.assertTrue(glass_ys, 'expected storey-1 glass on south face')
+        # Full storey height: glass at y 50, 51, 52 for glazed columns
+        glazed_cols = {
+            x for (x, y, z), st in plan.cells.items()
+            if z == 24 and 'glass_pane' in st and floor <= y < floor + 3
+        }
+        for x in glazed_cols:
+            for dy in range(3):
+                self.assertIn('glass_pane', plan.cells.get((x, floor + dy, 24), ''))
+        # Door on south mid stays solid (no glass at door column)
+        door_glass = [
+            st for (x, y, z), st in plan.cells.items()
+            if z == 24 and 'glass_pane' in st and 'door' in plan.cells.get((x, floor + 1, 24), '')
+        ]
+        self.assertEqual(door_glass, [])
+
+    def test_glazed_share_report_per_storey_face(self):
+        facades = {
+            'A': {
+                'S': [
+                    {'storey': 1, 'glazed_h': 3, 'pier': 1},
+                    {'storey': 2, 'glazed_h': 2, 'pier': 1},
+                ],
+            }
+        }
+        b = F.Build(self.spec(facades), footprints={'A': self.cells}, world=_StoneWorld())
+        b.build()
+        lines = b.glazed_share_report()
+        self.assertTrue(any('A' in ln and 'S' in ln and 'storey 1' in ln for ln in lines), lines)
+        self.assertTrue(any('A' in ln and 'S' in ln and 'storey 2' in ln for ln in lines), lines)
+        # Share is a percentage the dry-run can compare to the photo
+        self.assertTrue(any('%' in ln for ln in lines), lines)
+
+
+class DoorSpecBuildTest(unittest.TestCase):
+    """Seams: build→Plan with per-portal doors, hinge pairing, framing, dry-run print."""
+
+    def setUp(self):
+        # Wide enough for a 2-leaf door plus jambs on the south face.
+        self.cells = {(x, z) for x in range(10, 17) for z in range(20, 25)}
+
+    def spec(self, doors):
+        return {
+            'name': 'door_feature',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'doors': doors,
+            'facades': {},
+        }
+
+    def portals(self):
+        return [{
+            'id': 'T-A', 'label': 'Main', 'building': 'T',
+            'x': 13, 'z': 25, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
+            'in_map': True, 'uri': '',
+        }]
+
+    def build_with_portals(self, doors, portals=None):
+        portals = portals if portals is not None else self.portals()
+        buf = io.StringIO()
+        with mock.patch.object(F.portals, 'load', return_value=portals), redirect_stdout(buf):
+            plan = F.build(self.spec(doors), footprints={'A': self.cells}, world=_StoneWorld())
+        return plan, buf.getvalue()
+
+    def test_double_door_mirrored_hinges_framed_and_printed(self):
+        plan, out = self.build_with_portals({'T-A': {'leaves': 2, 'block': 'iron_door'}})
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 2, lowers)
+        hinges = sorted(st.split('hinge=')[1].split(',')[0] for _, st in lowers)
+        self.assertEqual(hinges, ['left', 'right'])
+        xs = sorted(pos[0] for pos, _ in lowers)
+        self.assertEqual(xs[1] - xs[0], 1)
+        self.assertEqual(door_frame_issues(plan, _StoneWorld().block), [])
+        self.assertIn('T-A', out)
+        self.assertIn('Main', out)
+        self.assertIn('iron_door', out)
+        self.assertIn('2-leaf', out)
+
+    def test_single_coloured_door_uses_block(self):
+        plan, out = self.build_with_portals({'T-A': {'leaves': 1, 'block': 'crimson_door'}})
+        lowers = [st for st in plan.cells.values() if 'crimson_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1)
+        self.assertEqual(door_frame_issues(plan, _StoneWorld().block), [])
+        self.assertIn('crimson_door', out)
+
+    def test_double_door_survives_facade_glazing(self):
+        """Both leaves stay doors when a facade table glazes the south face."""
+        spec = self.spec({'T-A': {'leaves': 2, 'block': 'iron_door'}})
+        spec['facades'] = {
+            'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]},
+        }
+        buf = io.StringIO()
+        with mock.patch.object(F.portals, 'load', return_value=self.portals()), redirect_stdout(buf):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        uppers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=upper' in st]
+        self.assertEqual(len(lowers), 2, lowers)
+        self.assertEqual(len(uppers), 2, uppers)
+        for (x, y, z), _ in lowers + uppers:
+            self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
 
 
 if __name__ == '__main__':
