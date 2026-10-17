@@ -484,7 +484,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'apply as <name>-greeblies (CRAFTSMANSHIP), or end summary must say "no greeblies seen".',
             f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.',
         ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
-          + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz}.'] if not items else [])))
+          + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz} '
+              f'(also ensures neighbour lidar ghosts; --no-ghosts to skip).'] if not items else [])))
     if gaps.get('trees_over_roof'):
         items.append((f'CELL {tx},{tz} (r={r}) TREES OVER ROOF {len(gaps["trees_over_roof"])} lidar lump(s) (I-071). RULES: foliage.', [
             'Lidar shows tree columns over these roofs; decide each (crown kept over the roof, or roof/crown rebuilt) and record',
@@ -493,7 +494,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
     if gaps['layers']:
         items.append((f'CELL {tx},{tz} (r={r}) layered passes: ground, trees, decor. RULES: ground.', [
             'Auto-queued: next in north-centre-then-clockwise order. The cell marker',
-            f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} if not already.',
+            f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} '
+            f'if not already (neighbour lidar ghosts come with raise).',
             'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             f'patrol sweep; update site/cells/{tx}_{tz}-STAGES.json;',

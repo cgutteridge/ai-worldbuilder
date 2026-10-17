@@ -50,15 +50,6 @@
         21
       ],
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
-    },
-    {
-      "id": 27,
-      "title": "Wire lidar ghosts into cell focus / handoff raise",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "On CURRENT-CELL focus (cell_marker --raise / handoff path): for each neighbour within configured ring with no real work started, ensure ghost ground + ghost features exist (idempotent). Calls #26 tool."
     }
   ]
 }

@@ -189,6 +189,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "scripts/lidar_ghost.py: idempotent DTM ground + grey DSM\u2212DTM features; owners ghost_<tx>_<tz>_ground/_features; STAGES ghost-ground/ghost-features kind=ghost; ring default 1; CLI plan/status/apply + dry-run fixtures; ground_layer.ignored_builds + cell_features treat ghosts as overwritable/non-features. test_lidar_ghost.py."
+    },
+    {
+      "id": 27,
+      "title": "Wire lidar ghosts into cell focus / handoff raise",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "cell_marker --raise/--adopt calls lidar_ghost.on_cell_focus for unstarted neighbours (ring via --ghost-ring / LIDAR_GHOST_RING, default 1; --no-ghosts skips). site_handoff plan text mentions ghosts. Tests: TestFocusGhosts + OnCellFocus."
     }
   ]
 }

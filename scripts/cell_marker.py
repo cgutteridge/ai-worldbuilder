@@ -12,6 +12,10 @@ Focus is tracked in site/CURRENT-CELL.json, written ONLY by this script: raise
 sets it, clear releases it. Raise refuses if the file names another cell or any
 other cell_marker_*-cells.json registry is on disk, so at most one ring exists.
 
+After a successful --raise / --adopt, unstarted neighbours within LIDAR_GHOST_RING
+(default 1) get idempotent lidar ghosts (scripts/lidar_ghost.py). Use --no-ghosts
+to skip; --ghost-ring N overrides the env default.
+
 Raise places one horizontal wool ring on the cell bbox at a single Y (~30 blocks
 above the highest sampled ground in the cell). Black and yellow wool alternate
 along the perimeter like hazard tape. Only minecraft:air (and cave/void air) is
@@ -414,10 +418,62 @@ def cmd_status() -> int:
     return 0
 
 
-def cmd_adopt(cell: tuple[int, int]) -> int:
+def _ghost_ring_arg(cli_ring: int | None) -> int:
+    """Resolve neighbour ghost depth from CLI or ``LIDAR_GHOST_RING``.
+
+    @param cli_ring: ``--ghost-ring`` value, or None
+    @returns: Chebyshev ring depth
+    """
+    import lidar_ghost as lg
+    if cli_ring is not None:
+        if cli_ring < 0:
+            raise ValueError(f'--ghost-ring must be >= 0, got {cli_ring}')
+        return cli_ring
+    return lg.ring_from_env()
+
+
+def ensure_neighbour_ghosts(focus: tuple[int, int], *, dry: bool,
+                            ring: int | None = None,
+                            skip: bool = False) -> list[dict] | None:
+    """Idempotent lidar ghosts for unstarted neighbours of the focus cell.
+
+    Called from ``--raise`` / ``--adopt`` (handoff CURRENT-CELL path). Skipped
+    when ``skip`` is true (``--no-ghosts``).
+
+    @param focus: focused cell (tx, tz)
+    @param dry: plan-only when True
+    @param ring: override depth; None → env / default 1
+    @param skip: do not run ghosts
+    @returns: per-neighbour reports, or None when skipped
+    """
+    if skip:
+        return None
+    import lidar_ghost as lg
+    depth = _ghost_ring_arg(ring)
+    reports = lg.on_cell_focus(focus, ring=depth, dry=dry)
+    planned = sum(1 for r in reports if 'skipped' not in r)
+    skipped = sum(1 for r in reports if 'skipped' in r)
+    mode = 'dry-run' if dry else 'apply'
+    print(f'lidar ghosts ({mode}, ring={depth}): {planned} to ensure, {skipped} skipped '
+          f'({len(reports)} neighbours)')
+    for r in reports:
+        cell = r.get('cell')
+        if 'skipped' in r:
+            print(f'  {cell[0]},{cell[1]}: skipped ({r["skipped"]})')
+        else:
+            g = r.get('ground', {}).get('blocks', 0)
+            f = r.get('features', {}).get('blocks', 0)
+            print(f'  {cell[0]},{cell[1]}: ground={g} features={f}')
+    return reports
+
+
+def cmd_adopt(cell: tuple[int, int], *, ghost_ring: int | None = None,
+              no_ghosts: bool = False) -> int:
     """One-off bootstrap: declare an already-raised ring as the focus.
 
     @param cell: cell whose ring is live
+    @param ghost_ring: optional neighbour ghost depth override
+    @param no_ghosts: skip lidar ghost ensure
     @returns: process exit code
     """
     cur = read_current()
@@ -426,15 +482,20 @@ def cmd_adopt(cell: tuple[int, int]) -> int:
         return 1
     write_current(cell)
     print(f'current: {cell[0]},{cell[1]}')
+    # Adopt records focus without placing wool; still need neighbour skyline.
+    ensure_neighbour_ghosts(cell, dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
 
 
-def cmd_raise(tx: int, tz: int, dry: bool) -> int:
+def cmd_raise(tx: int, tz: int, dry: bool, *, ghost_ring: int | None = None,
+              no_ghosts: bool = False) -> int:
     """Apply or preview a marker raise.
 
     @param tx: cell X index
     @param tz: cell Z index
     @param dry: preview only
+    @param ghost_ring: optional neighbour ghost depth override
+    @param no_ghosts: skip lidar ghost ensure
     @returns: process exit code
     """
     err = check_can_raise((tx, tz))
@@ -448,9 +509,11 @@ def cmd_raise(tx: int, tz: int, dry: bool) -> int:
         return 1
     if dry:
         print(f'dry-run: would place {len(plan.cells)} cells')
+        ensure_neighbour_ghosts((tx, tz), dry=True, ring=ghost_ring, skip=no_ghosts)
         return 0
     apply(plan, dry=False, protect=_protect_not_air)
     write_current((tx, tz))
+    ensure_neighbour_ghosts((tx, tz), dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
 
 
@@ -511,17 +574,23 @@ def main() -> int:
     g.add_argument('--status', action='store_true', help='show focus cell and stray registries')
     p.add_argument('--y', type=int, help='with --clear/--stray-clear: also sweep this exact ring Y')
     p.add_argument('--dry-run', action='store_true', help='plan only, no MCP apply')
+    p.add_argument('--ghost-ring', type=int, default=None, metavar='N',
+                   help='neighbour lidar-ghost depth on raise/adopt (default: LIDAR_GHOST_RING or 1)')
+    p.add_argument('--no-ghosts', action='store_true',
+                   help='skip neighbour lidar ghosts on raise/adopt')
     args = p.parse_args()
     if args.status:
         return cmd_status()
     if args.adopt_cell:
-        return cmd_adopt(parse_cell(args.adopt_cell))
+        return cmd_adopt(parse_cell(args.adopt_cell),
+                         ghost_ring=args.ghost_ring, no_ghosts=args.no_ghosts)
     if args.stray_cell:
         tx, tz = parse_cell(args.stray_cell)
         return cmd_clear(tx, tz, args.dry_run, stray=True, y=args.y)
     if args.raise_cell:
         tx, tz = parse_cell(args.raise_cell)
-        return cmd_raise(tx, tz, args.dry_run)
+        return cmd_raise(tx, tz, args.dry_run,
+                         ghost_ring=args.ghost_ring, no_ghosts=args.no_ghosts)
     tx, tz = parse_cell(args.clear_cell)
     return cmd_clear(tx, tz, args.dry_run, y=args.y)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -151,6 +152,45 @@ class StagesGhostVsReal(unittest.TestCase):
         self.assertNotIn('skipped', rep)
         self.assertEqual(rep['ground']['blocks'], 4 * 5)
         self.assertEqual(rep['features']['blocks'], 4 * 2)
+
+
+class OnCellFocus(unittest.TestCase):
+    """Focus handoff ensures neighbours, not the focus cell."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cells = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, cell, stages):
+        path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
+        path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
+
+    def test_on_cell_focus_skips_real_neighbours_and_focus(self):
+        focus = (0, 0)
+        self._write((1, 0), {'ground-layer': {'status': 'applied'}})
+        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LIDAR_GHOST_RING', None)
+            reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
+                                    heights_fn=lambda *b: _flat_heights(5, 1, *b))
+        cells = {tuple(r['cell']) for r in reps}
+        self.assertNotIn(focus, cells)
+        self.assertIn((1, 0), cells)
+        by = {tuple(r['cell']): r for r in reps}
+        self.assertEqual(by[(1, 0)]['skipped'], 'real-work')
+        # A neighbour with no stages should be planned
+        empty = next(r for r in reps if 'skipped' not in r)
+        self.assertIn('ground', empty)
+
+    def test_ring_from_env(self):
+        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '2'}):
+            self.assertEqual(lg.ring_from_env(), 2)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LIDAR_GHOST_RING', None)
+            self.assertEqual(lg.ring_from_env(), lg.DEFAULT_RING)
 
 
 class CliDryRun(unittest.TestCase):
