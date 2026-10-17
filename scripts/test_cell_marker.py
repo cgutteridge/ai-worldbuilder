@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cell_marker as cm
 
@@ -119,6 +120,53 @@ class TestFocusFile(unittest.TestCase):
     def test_clear_of_stray_refused_without_flag(self):
         cm.write_current((48, -46))
         self.assertEqual(cm.cmd_clear(47, -44, True), 2)
+
+
+class TestFocusGhosts(unittest.TestCase):
+    """Raise/adopt calls lidar_ghost.on_cell_focus for neighbour placeholders."""
+
+    def test_ensure_neighbour_ghosts_skips_when_no_ghosts(self):
+        self.assertIsNone(cm.ensure_neighbour_ghosts((48, -44), dry=True, skip=True))
+
+    def test_ensure_neighbour_ghosts_calls_on_cell_focus(self):
+        fake = [{'cell': [48, -43], 'ground': {'blocks': 1}, 'features': {'blocks': 0}}]
+        with mock.patch('lidar_ghost.on_cell_focus', return_value=fake) as fn:
+            out = cm.ensure_neighbour_ghosts((48, -44), dry=True, ring=1)
+        fn.assert_called_once_with((48, -44), ring=1, dry=True)
+        self.assertEqual(out, fake)
+
+    def test_cmd_raise_dry_run_requests_ghosts(self):
+        plan = cm.Plan('cell_marker_0_0')
+        plan.set(0, 64, 0, 'black_wool')
+        with mock.patch.object(cm, 'check_can_raise', return_value=None), \
+             mock.patch.object(cm, 'plan_raise', return_value=(plan, {'n': 1})), \
+             mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts:
+            code = cm.cmd_raise(0, 0, dry=True, ghost_ring=2)
+        self.assertEqual(code, 0)
+        ghosts.assert_called_once_with((0, 0), dry=True, ring=2, skip=False)
+
+    def test_cmd_raise_dry_run_honours_no_ghosts(self):
+        plan = cm.Plan('cell_marker_0_0')
+        plan.set(0, 64, 0, 'black_wool')
+        with mock.patch.object(cm, 'check_can_raise', return_value=None), \
+             mock.patch.object(cm, 'plan_raise', return_value=(plan, {'n': 1})), \
+             mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts:
+            code = cm.cmd_raise(0, 0, dry=True, no_ghosts=True)
+        self.assertEqual(code, 0)
+        ghosts.assert_called_once_with((0, 0), dry=True, ring=None, skip=True)
+
+    def test_cmd_adopt_requests_live_ghosts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = cm.CURRENT_FILE
+            cm.CURRENT_FILE = Path(tmp) / 'CURRENT-CELL.json'
+            try:
+                with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts:
+                    code = cm.cmd_adopt((48, -44), ghost_ring=1)
+                self.assertEqual(code, 0)
+                ghosts.assert_called_once_with((48, -44), dry=False, ring=1, skip=False)
+                self.assertEqual(cm.read_current(), (48, -44))
+            finally:
+                cm.CURRENT_FILE = old
 
 
 if __name__ == '__main__':

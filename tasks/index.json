@@ -99,15 +99,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "After #18 move and #23\u201324 behaviour/evidence changes: grep-driven pass over rules/ (including relocated OS docs) \u2014 remove/replace Geocraft-default, lump, and pristine-as-lidar wording. Docs/pointers only unless a leftover clearly contradicts #23\u201324."
-    },
-    {
-      "id": 27,
-      "title": "Wire lidar ghosts into cell focus / handoff raise",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "On CURRENT-CELL focus (cell_marker --raise / handoff path): for each neighbour within configured ring with no real work started, ensure ghost ground + ghost features exist (idempotent). Calls #26 tool."
     }
   ]
 }

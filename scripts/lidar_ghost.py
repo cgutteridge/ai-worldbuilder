@@ -332,6 +332,47 @@ def ensure_ring(focus: tuple[int, int], ring: int = DEFAULT_RING, *, dry: bool =
             for c in neighbour_cells(focus, ring, include_focus=include_focus)]
 
 
+def ring_from_env(default: int = DEFAULT_RING) -> int:
+    """Neighbour ring depth from ``LIDAR_GHOST_RING``, else ``default``.
+
+    @param default: fallback when the env var is unset
+    @returns: non-negative ring depth
+    """
+    raw = os.environ.get('LIDAR_GHOST_RING')
+    if raw is None or raw.strip() == '':
+        return default
+    try:
+        ring = int(raw)
+    except ValueError as e:
+        raise ValueError(f'LIDAR_GHOST_RING must be an int, got {raw!r}') from e
+    if ring < 0:
+        raise ValueError(f'LIDAR_GHOST_RING must be >= 0, got {ring}')
+    return ring
+
+
+def on_cell_focus(focus: tuple[int, int], ring: int | None = None, *, dry: bool = False,
+                  force: bool = False, heights_fn: HeightsFn | None = None,
+                  cells_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Ensure neighbour ghosts when CURRENT-CELL focus is set (raise / handoff).
+
+    Skips the focus cell itself and any neighbour that already has real refine.
+    Idempotent via ``ensure_cell``. Default ring is ``LIDAR_GHOST_RING`` or 1.
+
+    @param focus: newly focused cell
+    @param ring: Chebyshev depth; None → ``ring_from_env()``
+    @param dry: plan-only when True (marker ``--dry-run``)
+    @param force: re-apply even when ghosts already applied
+    @param heights_fn: injectable sampler (tests)
+    @param cells_dir: STAGES override (tests)
+    @returns: per-neighbour reports from ``ensure_ring``
+    """
+    depth = ring_from_env() if ring is None else ring
+    if depth < 0:
+        raise ValueError(f'ring must be >= 0, got {depth}')
+    return ensure_ring(focus, depth, dry=dry, force=force, include_focus=False,
+                       heights_fn=heights_fn, cells_dir=cells_dir, skip_if_real=True)
+
+
 def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
     """Load a fixture heights JSON, or None to use DEFRA defaults."""
     if heights_json is None:
