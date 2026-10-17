@@ -46,6 +46,15 @@ On add, ask **local vs system**. Rule of thumb: below national (UK / England)
 ``types: [...]``, licence (keep vs look-only), scope, and a cell checklist
 ``how`` when ``checklist`` is true.
 
+Code lives under dual roots when a row sets ``package`` (e.g. ``providers/<id>``):
+
+- system → ``ai-worldbuilder/providers/<id>/``
+- world → ``<active-world>/providers/<id>/``
+
+Resolve with ``cell_sources.provider_package_dir`` /
+``script_env.resolve_provider_package``. Place URLs / ToS / fetch how:
+active world ``reference/SOURCES.txt``.
+
 Checklist / ``cell_sources.py --record`` keys are **provider ids**.
 Alias: ``google`` → ``google-satellite``.
 

@@ -122,6 +122,87 @@ class TestGoogleFamily(unittest.TestCase):
         self.assertEqual(cs.source_status(1, 2)['google-satellite']['state'], 'have')
 
 
+class TestDualRootPackage(unittest.TestCase):
+    """Catalogue package fields resolve under system and world provider roots."""
+
+    def test_merged_rows_annotate_home(self):
+        data = cs.load_place_sources()
+        lidar = cs.provider_by_id('ukdefra-lidar', data)
+        self.assertIsNotNone(lidar)
+        self.assertEqual(lidar['home'], 'system')
+        self.assertEqual(cs.provider_home('ukdefra-lidar', data), 'system')
+        self.assertEqual(cs.provider_home('ukdefra-dtm', data), 'system')
+
+    def test_system_package_dir(self):
+        from script_env import TOOL_ROOT, resolve_provider_package
+
+        path = cs.provider_package_dir('ukdefra-lidar')
+        self.assertIsNotNone(path)
+        self.assertTrue(path.is_dir())
+        self.assertEqual(path, (TOOL_ROOT / 'providers' / 'ukdefra-lidar').resolve())
+        self.assertEqual(
+            resolve_provider_package('providers/ukdefra-lidar', home='system'),
+            path,
+        )
+
+    def test_world_package_dir_when_present(self):
+        from script_env import ROOT, resolve_provider_package
+
+        data = cs.load_place_sources()
+        local_with_pkg = [
+            p
+            for p in data.get('providers') or []
+            if p.get('home') == 'world' and p.get('package')
+        ]
+        if not local_with_pkg:
+            self.skipTest('active world has no local providers with package')
+        row = local_with_pkg[0]
+        path = cs.provider_package_dir(row['id'], data)
+        self.assertIsNotNone(path)
+        self.assertTrue(path.is_dir())
+        self.assertEqual(path, (ROOT / row['package']).resolve())
+        self.assertEqual(cs.provider_home(row['id'], data), 'world')
+        self.assertEqual(
+            resolve_provider_package(row['package'], home='world'),
+            path,
+        )
+
+    def test_no_package_returns_none(self):
+        self.assertIsNone(cs.provider_package_dir('rightmove'))
+        self.assertEqual(cs.provider_home('rightmove'), 'system')
+
+    def test_resolve_provider_package_search_order(self):
+        import script_env as se
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tool_root = Path(tmp) / 'tool'
+            world_root = Path(tmp) / 'world'
+            (tool_root / 'providers' / 'demo').mkdir(parents=True)
+            (world_root / 'providers' / 'demo').mkdir(parents=True)
+            old_tool, old_root = se.TOOL_ROOT, se.ROOT
+            try:
+                se.TOOL_ROOT = tool_root
+                se.ROOT = world_root
+                # home=None prefers system when both exist
+                self.assertEqual(
+                    se.resolve_provider_package('providers/demo', home=None),
+                    (tool_root / 'providers' / 'demo').resolve(),
+                )
+                self.assertEqual(
+                    se.resolve_provider_package('providers/demo', home='world'),
+                    (world_root / 'providers' / 'demo').resolve(),
+                )
+            finally:
+                se.TOOL_ROOT = old_tool
+                se.ROOT = old_root
+
+    def test_resolve_rejects_traversal(self):
+        from script_env import resolve_provider_package
+
+        with self.assertRaises(ValueError):
+            resolve_provider_package('../etc', home='system')
+
+
 class TestCellCoverage(unittest.TestCase):
     """An aerial counts for a cell only if it shows most of it, not just a clipped edge."""
 

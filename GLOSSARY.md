@@ -17,11 +17,11 @@ The single world the worldbuilder is pointed at right now. Chosen by system-leve
 _Avoid_: current cell, current queue item
 
 **System provider**:
-A reference feed whose geographic scope is nationwide or wider (UK / England or above), kept in the worldbuilder so every world can use it.
+A reference feed whose geographic scope is nationwide or wider (UK / England or above), kept in the worldbuilder so every world can use it (`config/system-providers.json`; code under tool `providers/<id>/` when `package` is set).
 _Avoid_: global source, default source
 
 **Local provider**:
-A reference feed below national scope (city, campus, single site). Kept in that world’s repository (`config/local-providers.json`; tools under `providers/<id>/` with a catalogue `package` field). When adding a provider, ask local vs system; rule of thumb: below national → local.
+A reference feed below national scope (city, campus, single site). Kept in that world’s repository (`config/local-providers.json`; tools under world `providers/<id>/` with a catalogue `package` field). When adding a provider, ask local vs system; rule of thumb: below national → local. Loaders resolve `package` against both system and world roots (`cell_sources.provider_package_dir`).
 _Avoid_: place source (as the only term)
 
 ## Trackers

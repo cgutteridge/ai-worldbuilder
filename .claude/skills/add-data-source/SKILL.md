@@ -24,20 +24,22 @@ Add a provider object to `config/system-providers.json` (system) or the active w
 - `id`, `types: [...]`, `scope` (`level` + `description` unless worldwide)
 - `keep` / `look_only`, `licence`, `tags`, `kind` (manifest kind or null)
 - `checklist: true` only if every cell should attempt it; then `how` is required
-- `package`: required when fetch/CLI code lives under `providers/<id>/` (system root or active world root)
+- `package`: relative path under the **matching** repo root when fetch/review/manage code lives there (e.g. `providers/ukdefra-lidar`). System → tool `providers/`; local → active-world `providers/`. Required when code exists under either tree.
 - Aliases only when migrating an old key
-- `package`: relative path under the tool or world repo (e.g. `providers/ukdefra-lidar`) when fetch/review/manage code lives there
 
-Done when `cell_sources.SOURCE_FAMILIES` (reload) would list it if checklisted:
-`.venv/bin/python -c "import cell_sources as c; print(sorted(c.SOURCE_FAMILIES))"`
+Done when `cell_sources.SOURCE_FAMILIES` (reload) would list it if checklisted, and package resolution works if set:
+
+```bash
+.venv/bin/python -c "import cell_sources as c; print(sorted(c.SOURCE_FAMILIES)); print(c.provider_home('<id>'), c.provider_package_dir('<id>'))"
+```
 
 ## 2. Catalogue + trail
 
-1. Add a section under the matching type in `reference/SOURCES.txt` (URL, ToS, fetch).
+1. Add a section under the matching type in the active world's `reference/SOURCES.txt` (URL, ToS, fetch). Point at the package path, not only a legacy shim.
 2. If keepable files: host allowlist entry the fetch script will use; pick a manifest `source` tag matching `tags`.
-3. Point at a template: system CLIs under tool `providers/<id>/` (or legacy `scripts/` / `shims/`); local CLIs under the active world’s `providers/<id>/` (e.g. `aerial_mosaic.py`, `tpo_fetch.py`, `osm_extract.py`). Thin `scripts/` shims may remain for old entrypoints.
+3. Put CLIs under the matching root: system → tool `providers/<id>/{get,review,manage}/` (thin entry in `shims/` if needed); local → active-world `providers/<id>/` (thin `scripts/` shim if an old import name must stay).
 
-Done when an agent can find the provider from TYPES → system/local providers → world SOURCES / `providers/` without chat history.
+Done when an agent can find the provider from TYPES → system/local catalogue → `provider_package_dir` / world SOURCES without chat history.
 
 ## 3. Dry-run record
 

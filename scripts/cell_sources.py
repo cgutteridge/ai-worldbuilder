@@ -22,7 +22,11 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from script_env import ROOT, TOOL_ROOT  # noqa: E402
+from script_env import (  # noqa: E402
+    ROOT,
+    TOOL_ROOT,
+    resolve_provider_package,
+)
 
 from coverage import (  # noqa: E402
     cell_bbox,
@@ -47,13 +51,30 @@ LOCAL_PROVIDERS = ROOT / 'config' / 'local-providers.json'
 PLACE_SOURCES = ROOT / 'config' / 'place-sources.json'
 
 
+def _annotate_home(providers: list | None, home: str) -> list[dict]:
+    """Copy provider rows and set ``home`` to ``system`` or ``world``.
+
+    @param providers: catalogue provider list (may be None)
+    @param home: catalogue origin (``system`` or ``world``)
+    @returns: new list of provider dicts with ``home`` set
+    """
+    out: list[dict] = []
+    for p in providers or []:
+        row = dict(p)
+        row['home'] = home
+        out.append(row)
+    return out
+
+
 def load_place_sources(path: Path | None = None) -> dict:
     """Load the merged provider map (system catalogue + local world feeds).
 
     Prefer ``config/system-providers.json`` (tool) plus
-    ``config/local-providers.json`` (active world). If ``path`` is given, load
-    that file alone (tests / legacy). If only legacy ``place-sources.json``
-    exists on the world, load that.
+    ``config/local-providers.json`` (active world). Each merged provider row
+    gets ``home``: ``system`` or ``world`` so ``package`` paths resolve to the
+    correct repo root. If ``path`` is given, load that file alone (tests /
+    legacy). If only legacy ``place-sources.json`` exists on the world, load
+    that.
 
     @param path: optional explicit JSON path
     @returns: dict with ``providers`` and ``aliases``
@@ -76,8 +97,10 @@ def load_place_sources(path: Path | None = None) -> dict:
         aliases.update(local.get('aliases') or {})
         return {
             'place': local.get('place') or system.get('place'),
-            'providers': list(system.get('providers') or [])
-            + list(local.get('providers') or []),
+            'providers': (
+                _annotate_home(system.get('providers'), 'system')
+                + _annotate_home(local.get('providers'), 'world')
+            ),
             'aliases': aliases,
         }
     if PLACE_SOURCES.is_file():
@@ -144,6 +167,59 @@ def provider_by_id(name: str, data: dict | None = None) -> dict | None:
         if p.get('id') == canonical:
             return p
     return None
+
+
+def provider_home(name: str, data: dict | None = None) -> str | None:
+    """Return ``system`` or ``world`` for a provider id/alias.
+
+    Prefers the ``home`` annotation from :func:`load_place_sources`. When
+    missing (legacy single-file catalogues), infers from which repo root
+    contains the ``package`` directory.
+
+    @param name: provider id or alias
+    @param data: optional place-sources dict
+    @returns: ``system``, ``world``, or None if unknown / no package on disk
+    """
+    row = provider_by_id(name, data)
+    if row is None:
+        return None
+    home = row.get('home')
+    if home in ('system', 'world'):
+        return home
+    package = row.get('package')
+    if not package:
+        return None
+    system_path = TOOL_ROOT / package
+    world_path = ROOT / package
+    if system_path.is_dir():
+        return 'system'
+    if world_path.is_dir():
+        return 'world'
+    return None
+
+
+def provider_package_dir(name: str, data: dict | None = None) -> Path | None:
+    """Absolute package directory for a provider id/alias.
+
+    Resolves the catalogue ``package`` field against the system tool root
+    and/or the active world root (see :func:`script_env.resolve_provider_package`).
+
+    @param name: provider id or alias
+    @param data: optional place-sources dict
+    @returns: absolute Path, or None if the provider has no ``package`` or the
+        directory is missing
+    """
+    row = provider_by_id(name, data)
+    if row is None:
+        return None
+    package = row.get('package')
+    if not package:
+        return None
+    home = row.get('home') if row.get('home') in ('system', 'world') else None
+    try:
+        return resolve_provider_package(package, home=home)
+    except (FileNotFoundError, ValueError):
+        return None
 
 
 # Source families to check when a cell opens. Loaded from config/place-sources.json

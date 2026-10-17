@@ -11,15 +11,6 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
-    },
-    {
-      "id": 22,
-      "title": "Loaders/skills/docs resolve system and world provider roots",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
     }
   ]
 }

@@ -222,6 +222,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "cell_marker --raise/--adopt calls lidar_ghost.on_cell_focus for unstarted neighbours (ring via --ghost-ring / LIDAR_GHOST_RING, default 1; --no-ghosts skips). site_handoff plan text mentions ghosts. Tests: TestFocusGhosts + OnCellFocus."
+    },
+    {
+      "id": 22,
+      "title": "Loaders/skills/docs resolve system and world provider roots",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Split from old #13. script_env.resolve_provider_package + cell_sources.provider_package_dir/provider_home; load_place_sources annotates home system|world; world_provider uses world-home resolve; AGENTS/TYPES/GLOSSARY/active-world-contract + evaluate/add-data-source skills point at both trees; TestDualRootPackage."
     }
   ]
 }
