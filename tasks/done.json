@@ -170,6 +170,15 @@
       "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put. Done: providers/<id>/{get,review,manage} for system providers with code; CLIs in shims/; package field on catalogue rows; reference/ unchanged; cell_sources/defra/lidar/google tests pass."
     },
     {
+      "id": 21,
+      "title": "Move local provider tools into world providers/",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Split from old #13. Moved local provider CLIs into worlds/southampton-build/providers/<id>/ (geofabrik-hampshire, uos-portals, uos-buildings, southampton-tpo, hampshire-hub). local-providers.json package fields set; world AGENTS/SOURCES/README pointers. Tool repo: scripts/ shims via world_provider.py; AGENTS/active-world-contract/GLOSSARY/add-data-source updated. Task #20 not done yet \u2014 #22 stays blocked."
+    },
+    {
       "id": 23,
       "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
       "status": "done",

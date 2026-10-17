@@ -13,23 +13,12 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 21,
-      "title": "Move local provider tools into world providers/",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Split from old #13. Local providers under southampton-build/providers/; local catalogue package field when code lives there. Can proceed in parallel with #20 once #19 is done."
-    },
-    {
       "id": 22,
       "title": "Loaders/skills/docs resolve system and world provider roots",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [
-        21
-      ],
+      "blockedBy": [],
       "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
     }
   ]

@@ -24,6 +24,7 @@ Add a provider object to `config/system-providers.json` (system) or the active w
 - `id`, `types: [...]`, `scope` (`level` + `description` unless worldwide)
 - `keep` / `look_only`, `licence`, `tags`, `kind` (manifest kind or null)
 - `checklist: true` only if every cell should attempt it; then `how` is required
+- `package`: required when fetch/CLI code lives under `providers/<id>/` (system root or active world root)
 - Aliases only when migrating an old key
 - `package`: relative path under the tool or world repo (e.g. `providers/ukdefra-lidar`) when fetch/review/manage code lives there
 
@@ -34,9 +35,9 @@ Done when `cell_sources.SOURCE_FAMILIES` (reload) would list it if checklisted:
 
 1. Add a section under the matching type in `reference/SOURCES.txt` (URL, ToS, fetch).
 2. If keepable files: host allowlist entry the fetch script will use; pick a manifest `source` tag matching `tags`.
-3. Point at a template script: `aerial_mosaic.py`, `kartaview_fetch.py`, `tpo_fetch.py`, `osm_extract.py`, `defra_lidar.py`.
+3. Point at a template: system CLIs under tool `providers/<id>/` (or legacy `scripts/` / `shims/`); local CLIs under the active world’s `providers/<id>/` (e.g. `aerial_mosaic.py`, `tpo_fetch.py`, `osm_extract.py`). Thin `scripts/` shims may remain for old entrypoints.
 
-Done when an agent can find the provider from TYPES → system/local providers → world SOURCES without chat history.
+Done when an agent can find the provider from TYPES → system/local providers → world SOURCES / `providers/` without chat history.
 
 ## 3. Dry-run record
 

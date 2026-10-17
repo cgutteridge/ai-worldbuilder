@@ -23,10 +23,13 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Active world pointer | `active_world.py` |
 | World checkouts | `worlds/<name>/` (gitignored; own git repos) |
 | System tracker | `tasks/` |
-| System providers | `config/system-providers.json` (+ `providers/<id>/` when code exists) |
-| Provider CLIs | `shims/` (thin wrappers; implementations under `providers/`) |
+| System providers | `config/system-providers.json` (code under `providers/<id>/` after #20) |
 | Evidence types | `reference/TYPES.txt` |
-| Shared scripts | `scripts/` (cross-provider glue) |
+| Shared scripts | `scripts/` (cross-provider glue; local provider CLIs are shims into the active world) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |
+
+Local (place) provider tools live in the **active world** under `providers/<id>/`,
+indexed by `config/local-providers.json` `package` fields. See that world’s
+`providers/README.md`.
