@@ -55,6 +55,7 @@ class RulesContextTests(unittest.TestCase):
         plan = plan_for_item(it)
         paths = {r.path for r in plan.readings}
         self.assertIn('rules/frontage-and-evidence.md', paths)
+        self.assertIn('rules/feature-builds.md', paths)
 
 
 if __name__ == '__main__':

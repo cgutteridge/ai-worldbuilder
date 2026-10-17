@@ -479,7 +479,14 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'Houses: one build for the whole run on the street (shared frontage, roofs, party walls).',
             'House only: no gardens. Lawn is GROUND; trees/shrubs TREES; fences, sheds, planting DECOR.',
             f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (DEFRA lidar, else pristine Geocraft: storeys, roof shape, ridge axis, trees over roof, unmapped lumps).',
-            'Use scripts/house_build.py: write site/builds/<name>.json (copy the nearest spec; ways, roofs, front), do not copy a build script.',
+            (
+                'Houses: use scripts/house_build.py — write site/builds/<name>.json from this feature\'s evidence '
+                '(name, ways, roofs, groups.front, modifies; see house_build docstring). Do not copy a peer spec or a build script.'
+                if f.get('kind') == 'houses' else
+                'Non-house building: use scripts/feature_build.py — write site/builds/<name>.json from this feature\'s evidence '
+                '(name, ways, storeys, roofs.kind/material, groups.front, modifies; see feature_build docstring). '
+                'Do not extend house_build for odd shapes; do not copy a peer spec or a build script.'
+            ),
         ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1)) + ([
             'Original Geocraft still standing here (lump_scan). Not in OSM or outside its clip: trace the',
             'footprint from the aerial, record source + year (PROCESS.txt 2d-i). Residual after the build must',

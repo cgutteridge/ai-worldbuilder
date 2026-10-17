@@ -1,17 +1,8 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 14,
+  "nextTaskId": 28,
   "tasks": [
-    {
-      "id": 13,
-      "title": "Per-provider folders; local provider tools into the world repo",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "One providers/<provider-id>/ folder per provider (get/review/manage). google-satellite and google-streetview stay two providers. Merge ukdefra-dtm + ukdefra-dsm into one system provider ukdefra-lidar (aliases for old ids). System providers under ai-worldbuilder/providers/; local providers under southampton-build/providers/. Cross-provider glue stays in scripts/. Old CLIs go in shims/ (not scripts/). Catalogue JSON stays the index (optional package field). reference/ data stays put. Do not start until taken as a job."
-    },
     {
       "id": 8,
       "title": "Deferred: auto stale-source refresh (~6 months)",
@@ -22,31 +13,155 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 10,
-      "title": "Settle the build path (house_build vs build_runner) and align rules",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From world QUEUE Q-196."
-    },
-    {
-      "id": 11,
-      "title": "Builder for non-house building features",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From world QUEUE Q-197; after build-path settle."
-    },
-    {
       "id": 12,
       "title": "Facade spec: windows read from the photo",
       "status": "todo",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "From world QUEUE Q-198."
+      "notes": "From Q-198. Per-face facade table from photo evidence; dry-run glazed share per storey/face; test. World Q-203 waits on this with 11 and 14\u201317."
+    },
+    {
+      "id": 14,
+      "title": "Door spec: double doors and door colours",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-199. Per-portal door spec (width 1|2 leaves, type, material/colour via block_reference.py); double = mirrored hinges, framed. Dry run prints each door beside portal name. Done: double and coloured doors plan, pass door_frame_issues and walk check; test covers hinge pairing. World Q-203 waits on this with tasks 11\u201312 and 15\u201317."
+    },
+    {
+      "id": 15,
+      "title": "Greeblies gate on feature queue items",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-200. Template in site_handoff.plan_cell_items gets a greeblies line; cmd_end refuses FEATURE with no <name>-greeblies unless summary says 'no greeblies seen'. Done: end blocks un-greebled feature in a test; template line present. World Q-203 waits on this with tasks 11\u201312, 14, 16\u201317."
+    },
+    {
+      "id": 16,
+      "title": "Footprint overlap check (paths inside a footprint)",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-201. Investigate Q-189 path-in-footprint first, then dry run lists footprint cells on OSM footway/steps/cycleway or open lidar columns, plus aerial ground share. Done: that footprint reports path cells; test with synthetic footway through a polygon. World Q-203 waits on this with tasks 11\u201312, 14\u201315, 17."
+    },
+    {
+      "id": 17,
+      "title": "Evidence contact sheet in the build run",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-202. One command: portal-facing cameras, top-down over footprint, aerial crop; build records path; handoff end names it and refuses FEATURE without sheet (frontage-and-evidence \u00a74). Done: sheet for a built feature; end refuses missing sheet. World Q-203 waits on this with tasks 11\u201312 and 14\u201316."
+    },
+    {
+      "id": 18,
+      "title": "Move generic site process/craft docs from world site/ into rules/",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Move PROCESS.txt, CRAFTSMANSHIP.txt, FOLIAGE.txt, HANDOFF-LAYERED-PASSES.txt, RULES-CONTEXT.txt, CLEANUP.txt from world site/ into ai-worldbuilder rules/. Update site_handoff, site_cleanup, pass_mask, tests, empty-world/new-world templates so worlds keep QUEUE/ISSUES/NOTES/COVERAGE/CURRENT-CELL/cells STAGES (+ thin stubs if needed). GEOCRAFT / geocraft-accuracy are out of this ticket (see 23\u201325)."
+    },
+    {
+      "id": 19,
+      "title": "Catalogue: merge ukdefra-dtm/dsm into ukdefra-lidar + aliases",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Split from old #13. One system provider ukdefra-lidar; aliases for ukdefra-dtm and ukdefra-dsm. google-satellite and google-streetview stay separate. Catalogue JSON remains the index. No providers/ folder move in this ticket."
+    },
+    {
+      "id": 20,
+      "title": "System providers/<id>/ folders + shims/ + package field",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        19
+      ],
+      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put."
+    },
+    {
+      "id": 21,
+      "title": "Move local provider tools into world providers/",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        19
+      ],
+      "notes": "Split from old #13. Local providers under southampton-build/providers/; local catalogue package field when code lives there. Can proceed in parallel with #20 once #19 is done."
+    },
+    {
+      "id": 22,
+      "title": "Loaders/skills/docs resolve system and world provider roots",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        20,
+        21
+      ],
+      "notes": "Split from old #13. cell_sources, evaluate/add-data-source, AGENTS, SOURCES pointers resolve both ai-worldbuilder/providers/ and active-world providers/."
+    },
+    {
+      "id": 23,
+      "title": "Empty-world DoD: strip Geocraft-lump cell-done and lump queue driver",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Cell done = evidence + layer passes + masks \u2014 not 'no unrefined Geocraft'. Strip lump_scan-as-queue-driver from site_handoff / cell-orchestrator; update tests. Empty-world refine must not be defined as clearing vendor lumps."
+    },
+    {
+      "id": 24,
+      "title": "Evidence path: DEFRA composites only; remove geocraft-pristine",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Stop treating pristine Geocraft as a normal evidence/lidar path. Update evidence-order, building-review, frontage-and-evidence; delete or archive rules/geocraft-accuracy.md so it is not on the default reading list. Remove geocraft-pristine from local catalogue and SOURCES/skills pointers. Heights via DEFRA composite DTM/DSM (defra_lidar)."
+    },
+    {
+      "id": 25,
+      "title": "Rules/OS stale Geocraft-ref sweep",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        18,
+        23,
+        24
+      ],
+      "notes": "After #18 move and #23\u201324 behaviour/evidence changes: grep-driven pass over rules/ (including relocated OS docs) \u2014 remove/replace Geocraft-default, lump, and pristine-as-lidar wording. Docs/pointers only unless a leftover clearly contradicts #23\u201324."
+    },
+    {
+      "id": 26,
+      "title": "Lidar ghost tool: DTM ground + grey DSM\u2212DTM features",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [
+        23,
+        24
+      ],
+      "notes": "Idempotent ghost apply (no per-cell .py): DEFRA composite DTM \u2192 ghost ground; composite last-return DSM \u2212 DTM \u2192 grey ghost features. Owners e.g. ghost_<tx>_<tz>_ground / _features; STAGES distinguishes ghost vs real. No trees/decor ghosts in v1. Neighbour ring depth configurable (default 1). CLI for dry run/tests. Real refine still uses ground_layer, trees_layer, decor_layer, house_build/feature_build to overwrite/refine."
+    },
+    {
+      "id": 27,
+      "title": "Wire lidar ghosts into cell focus / handoff raise",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        26
+      ],
+      "notes": "On CURRENT-CELL focus (cell_marker --raise / handoff path): for each neighbour within configured ring with no real work started, ensure ghost ground + ghost features exist (idempotent). Calls #26 tool."
     }
   ]
 }

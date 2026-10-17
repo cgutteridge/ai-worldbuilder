@@ -65,6 +65,15 @@
       "notes": "Donor README marked RETIRED DONOR with pointers to ai-worldbuilder and southampton-build. Instance save may still live under donor until relocated."
     },
     {
+      "id": 13,
+      "title": "Per-provider folders; local provider tools into the world repo",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Superseded 2026-10-17: split into system tasks 19\u201322 (catalogue lidar merge, system providers/, local providers/, loader sweep)."
+    },
+    {
       "id": 9,
       "title": "Extract coverage touched-cells / ownership module from coverage.py",
       "status": "done",
@@ -72,6 +81,24 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "scripts/touched_cells.py owns encode_runs, touched_by_build (+ disk/memo cache), union, ownership_overlap_issues (vs built_cells/owned_in). coverage.py re-exports; parcel model + CLI stay. test_touched_cells.py locks Q-195 overlap."
+    },
+    {
+      "id": 10,
+      "title": "Canonical house_build path; retire live build_runner / house_geometry; align rules",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Deleted build_runner.py + house_geometry.py (and their tests). house_build.py + site/builds/<name>.json is the sole house apply path; terrace.py kept for geo snap_slope. terrace-builds.md, CRAFTSMANSHIP \u00a73a / HOUSE-ONLY, plan_cell_items, and open QUEUE FEATURE lines no longer point at build_runner or say copy-the-nearest-spec. Unblocked #11."
+    },
+    {
+      "id": 11,
+      "title": "feature_build.py for non-house building features",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "feature_build.py + tests at seams (load_spec, build\u2192Plan, CLI dry-run, SU run()). site/builds/susu_42.json (w33830305) dry-runs via feature_build; rules/feature-builds.md + CRAFTSMANSHIP NON-HOUSE + handoff plan_cell_items route houses\u2192house_build / else\u2192feature_build. Facade/doors/greeblies/path/sheet remain #12 and #14\u201317 (world Q-203)."
     }
   ]
 }

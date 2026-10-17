@@ -279,6 +279,25 @@ class PlanCellItems(unittest.TestCase):
         self.assertEqual(len(both), 1)
         self.assertIn('layered passes', both[0][0])
 
+    def test_feature_points_at_house_build_spec_not_peer_copy(self):
+        house = {**self.FEATURE, 'kind': 'houses', 'label': 'Some Street (3 houses)'}
+        body = H.plan_cell_items(1, 2, 0, self.gaps(features=[house]), [])[0][1]
+        joined = '\n'.join(body)
+        self.assertIn('house_build.py', joined)
+        self.assertIn('site/builds/', joined)
+        self.assertNotIn('feature_build.py', joined)
+        self.assertNotIn('copy the nearest', joined)
+        self.assertNotIn('build_runner', joined)
+        self.assertNotIn('house_geometry', joined)
+
+    def test_non_house_feature_points_at_feature_build(self):
+        body = H.plan_cell_items(1, 2, 0, self.gaps(features=[self.FEATURE]), [])[0][1]
+        joined = '\n'.join(body)
+        self.assertIn('feature_build.py', joined)
+        self.assertIn('site/builds/', joined)
+        self.assertNotIn('house_build.py', joined)
+        self.assertNotIn('build_runner', joined)
+
 
 class AppendQueueItems(unittest.TestCase):
     def test_numbers_after_highest_and_fills_qid(self):
