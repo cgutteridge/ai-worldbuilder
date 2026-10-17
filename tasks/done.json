@@ -135,6 +135,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 12,
+      "title": "Facade spec: windows read from the photo",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-198. feature_build facades map {label: {N|S|E|W: [{storey, glazed_h, pier, wall?, rhythm?}]}}; _validate_facades; windows() from photo table; dry-run glazed_share_report per storey/face; FacadeSpecTest + FacadeWindowsTest. Landed with #14 wiring; tracker closed here. World Q-203 still waits on 15\u201317."
     }
   ]
 }
