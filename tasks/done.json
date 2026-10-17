@@ -135,6 +135,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+    },
+    {
+      "id": 16,
+      "title": "Footprint overlap check (paths inside a footprint)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-201. Q-189 (w33830305) reports 32 path cells (footway/steps) inside the OSM footprint. scripts/footprint_overlap.py dry-run: path bands + optional open lidar + aerial ground share; feature_build prints the report. Test: synthetic footway through a polygon. World Q-203 waits on remaining 12, 15, 17."
     }
   ]
 }
