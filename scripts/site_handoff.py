@@ -237,7 +237,7 @@ def google_review_item(row):
         'feature item on the QUEUE.',
         'Keep or redo per building, snapshot first, stop rule I-009. (3) GROUND applied ground vs aerial (I-068).',
         f'(4) TREES scripts/tree_review.py --cell {tx},{tz} (lidar crowns vs live) plus the aerial sheet with its marks; fix per',
-        'site/FOLIAGE.txt "Tree review" (missing real trees, invented ones over lawn/paving/roof), then trees pass dry run.',
+        'rules/foliage.md "Tree review" (missing real trees, invented ones over lawn/paving/roof), then trees pass dry run.',
         '(5) DECOR against aerial and streetlevel (fences, hedges, walls, cars, street furniture, plants, roof greeblies), then decor pass.',
         'WHOLE CELL: review ALL five parts even if the cell was signed off or hand-made before; never skip one as "done".',
         'Update the row in site/AERIAL-REVIEW.txt (look/features/ground/trees/done), note matches and mismatches in the cell',
@@ -247,7 +247,7 @@ def google_review_item(row):
 
 
 def lidar_lumps(cell):
-    """Lidar lumps of a cell (lidar_heightmap: DEFRA where cached, else the pristine save), [] when neither is available.
+    """Lidar lumps of a cell (lidar_heightmap: DEFRA composite where cached), [] when unavailable.
 
     @param cell: (tx, tz)
     @returns: lidar_heightmap.lumps() items
@@ -471,7 +471,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             + (' …' if len(f['refs']) > 8 else '') + '.',
             'Houses: one build for the whole run on the street (shared frontage, roofs, party walls).',
             'House only: no gardens. Lawn is GROUND; trees/shrubs TREES; fences, sheds, planting DECOR.',
-            f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (DEFRA lidar, else pristine Geocraft: storeys, roof shape, ridge axis, trees over roof, unmapped lumps).',
+            f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (DEFRA composite DTM/DSM via defra_lidar: storeys, roof shape, ridge axis, trees over roof).',
             (
                 'Houses: use scripts/house_build.py — write site/builds/<name>.json from this feature\'s evidence '
                 '(name, ways, roofs, groups.front, modifies; see house_build docstring). Do not copy a peer spec or a build script.'
@@ -616,10 +616,10 @@ def brief_hint(item):
     @returns: list of hint strings
     """
     hints = [
-        'site/RULES-CONTEXT.txt (what to read when; anti-reread)',
+        'rules/rules-context.md (what to read when; anti-reread)',
         'site/QUEUE.txt (top open item)',
-        'site/FOLIAGE.txt (foliage-last cadence + allowlist)',
-        'site/PROCESS.txt (slices only — see SESSION BRIEF RULES READING)',
+        'rules/foliage.md (foliage-last cadence + allowlist)',
+        'rules/process.md (slices only — see SESSION BRIEF RULES READING)',
         'site/COVERAGE.txt (focus + generated cells; coverage CLI in SESSION BRIEF)',
         'site/ISSUES.txt',
         'site/REVIEWS.txt',
@@ -683,7 +683,7 @@ def _coverage_cheatsheet_lines():
     src = path.read_text()
     m = re.search(r'^COVERAGE_CHEATSHEET = """(.*?)"""', src, re.DOTALL | re.MULTILINE)
     if not m:
-        return ['(see site/PROCESS.txt §2c)']
+        return ['(see rules/process.md §2c)']
     return [ln.rstrip() for ln in m.group(1).strip().splitlines()]
 
 
@@ -735,7 +735,7 @@ def brief_text(item):
             f'  Open source families: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --todo (TRIED ones: no retry without --retry-reason)',
             '  One-time sources pass per new cell (PROCESS §2e step 1b); build steps still obey',
             '  one primary aerial + one street Read per rules/reference-token-budget.md.',
-            '  Foliage cadence: site/FOLIAGE.txt.',
+            '  Foliage cadence: rules/foliage.md.',
         ]
         try:
             from cross_zone import cross_zone_report, format_report
@@ -1175,7 +1175,7 @@ def cmd_end(argv):
     try:
         import site_cleanup
         if why := site_cleanup.due_reason():
-            print(f'CLEANUP DUE ({why}): python3 scripts/site_cleanup.py apply, then report (site/CLEANUP.txt)')
+            print(f'CLEANUP DUE ({why}): python3 scripts/site_cleanup.py apply, then report (rules/cleanup.md)')
     except Exception as e:
         print(f'WARNING: site_cleanup check failed ({e})', file=sys.stderr)
 
@@ -1252,8 +1252,8 @@ def cmd_hook_start(_argv):
         out['additional_context'] = (
             f'Southampton Refine handoff: top open QUEUE item is {item["id"]} — {summary}. '
             f'Accuracy only (no fictional districts). Run `{NEXT_CHAT_CMD}` once; '
-            f'follow RULES READING in the SESSION BRIEF (site/RULES-CONTEXT.txt). '
-            f'Do not read the whole PROCESS.txt. '
+            f'follow RULES READING in the SESSION BRIEF (rules/rules-context.md). '
+            f'Do not read the whole rules/process.md. '
             f'{AUTO_START_RULE} '
             f'Prefer a fresh chat per queue item; files in site/ are the memory.'
         )

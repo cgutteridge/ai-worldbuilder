@@ -1,7 +1,7 @@
 # Houses and terraces
 
 Read before any house or Broadlands-type terrace build. Roof and fabric rules:
-`site/CRAFTSMANSHIP.txt`.
+`rules/craftsmanship.md`.
 
 ## Live path
 

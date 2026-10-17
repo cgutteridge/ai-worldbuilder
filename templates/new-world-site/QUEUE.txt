@@ -1,0 +1,5 @@
+QUEUE — ordered next work (one item per chat)
+Format: - [ ] Q-NNN  short title
+         detail lines indented
+
+(empty for a new world — do not import another place's queue)

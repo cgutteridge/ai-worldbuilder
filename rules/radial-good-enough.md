@@ -16,7 +16,7 @@ Read before choosing, planning or signing off build work.
   (origin cell 48,-44), finishing each Chebyshev ring before the next. One
   active cell at a time. Cell order: north centre of the ring, then clockwise
   (north is smaller tz).
-- Coverage, parcels and sign-off: `site/PROCESS.txt` §2c. The record is
+- Coverage, parcels and sign-off: `rules/process.md` §2c. The record is
   `coverage.py`, never chat, and never hand-edit PROCESSED CELLS.
 - Skip signed-off parcels in new-cell work. Where an area already has builds
   (Broadlands), keep them.

@@ -1,0 +1,89 @@
+FOLIAGE — STATIC VEGETATION ONLY
+Tool-repo rules (ai-worldbuilder/rules/foliage.md).
+Updated: 2026-10-15
+
+Trees are pass 3 of a cell (rules/handoff-layered-passes.md §1), after features and
+ground, before decor. This file is the single home for the vegetation rules.
+
+------------------------------------------------------------------------
+Rules
+------------------------------------------------------------------------
+ - NEVER place sapling blocks. They grow on random tick, so the world drifts after
+   apply: builds stop being idempotent, readback and signoff lie, and ground work
+   gets undone. Strip Geocraft saplings in the ground pass; do not replant them.
+ - Canopy is static: log + leaves[persistent=true] massing (or hedge/wall), sized from
+   the aerial. Allowlist: scripts/foliage.py (REFINE_FOLIAGE).
+ - Trees and decor go only where the live block is air (or a grass stem/flower), so
+   undo is exact (mask_undo.py).
+ - A tree is never ROOTED (crown centre) in a feature zone: a column the ground layer
+   did not surface (building footprint, structure build, bridge; read from
+   verification/site/<cell>_ground-cells.json plus OSM footprints). Trees inside a
+   feature are the feature build's own job, provided they do not overspill its zone.
+   Crowns rooted outside may overhang a feature.
+ - Crowns on a cell edge: HANDOFF-LAYERED-PASSES §6 (overhang into neighbour air or
+   neighbour leaves is kept, recorded in the planting cell's mask; nothing else is
+   overwritten).
+
+------------------------------------------------------------------------
+One cell
+------------------------------------------------------------------------
+  python3 scripts/trees_layer.py --cell tx,tz                          # dry run + crown review image
+  SITE_OWNER=<lock-owner> python3 scripts/trees_layer.py --cell tx,tz --apply
+
+Check the crown review image and the kinds against the aerial before apply. Undo for
+a re-run: scripts/mask_undo.py --cell tx,tz --pass trees (decor first, then trees).
+scripts/cross_zone.py report --cell tx,tz lists structure leftovers on open/gap/path
+columns near the cell edge.
+
+------------------------------------------------------------------------
+Tree review (every cell redo: I-073 step 4, before the trees pass is called done)
+------------------------------------------------------------------------
+CAUTION (2026-10-16, checked on 48,-45 x6208..6272 z-5696..-5632 with the lidar/live footprints drawn over aerial): the pristine lidar
+tree columns hold only about a third of the real crowns and sit ~3-4 blocks SOUTH of the crown seen in aerial; the live trees match aerial
+crowns poorly too. So lidar is a rough height hint and a cross-check, never the position source and never a complete inventory. Best aerial is the
+position source: read crowns by eye from a cropped, gridded aerial window (64 blocks, 12 px per block) and record them as explicit crowns.
+Lidar (pristine Geocraft, kind 2/3 columns) is measured heights for the crowns it has; google-satellite (look-only aerial) shows what is there now. Use both:
+  python3 scripts/tree_review.py --cell tx,tz --marks <scratch>/m.json     # or --zone x0,z0,x1,z1
+  python3 scripts/google_aerial.py sheet --cell tx,tz --marks <scratch>/m.json   # or --at X,Z --radius 60 --zoom 20
+Verdicts (crowns are matched by their tops, never by blob, because the live canopy merges crowns):
+  MISSING  (red)    lidar crown, no live crown top within 4 blocks. Last column = blocks to the nearest live leaf: 0-4 means
+                    a live crown stands there but its top is elsewhere (usually fine), >8 means nothing is there.
+  INVENTED (blue)   live crown with no lidar crown near it. Says nothing by itself (lidar misses most crowns): look at aerial, and
+                    expect the live crown to be misplaced as often as invented.
+  LOW/HIGH (orange) matched, top differs by >= 4 blocks (live plane crowns are 12-17 high, lidar often 4-10: look at
+                    aerial shadow length before correcting).
+  ROOF (purple)     lidar crown over a roof (kind 3): check aerial that it is a tree overhanging, not a mis-read roof.
+Decide each MISSING with aerial showing a real tree (check the distance column) and each INVENTED over lawn/paving/roof:
+  - real tree missing: add it to reference/trees-extra-crowns.json ({"tx,tz": [{"x","z","r","evidence"}]}, evidence names
+    the aerial sheet + lidar height), re-run the trees pass for that cell (dry run first, I-043 diff). The lidar height
+    gives the crown size (height 13 = r 6+ plane tree; 7-10 = r 3.5-5; 3-5 = bush).
+  - invented over non-tree ground: remove at the root (trees_layer detection), not by a one-off hand edit.
+  - lawn where lidar and aerial both show nothing: leave open (Library Square formal lawn, I-060).
+Record counts and decisions in the cell STAGES note (e.g. "tree review: lidar 12 crowns, 2 missing added, 0 invented over
+non-tree"). Cells whose neighbours' crowns overhang the edge: review them together (--zone across the edge).
+
+------------------------------------------------------------------------
+Redo from aerial (user, 2026-10-16: the trees pass reads the z19 mosaic; aerial is the position source)
+------------------------------------------------------------------------
+Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crops (google-satellite is look-only: never
+downloaded or processed by code) and stored in reference/trees-google-crowns.json:
+  {"tx,tz": {"evidence", "zones": [[x0,z0,x1,z1]], "crowns": [{"x","z","r","note"}]}}
+Inside a zone the detector's crowns are dropped and these replace them; outside, the detector is unchanged (use that for a woodland
+you cannot split into crowns). Aerial-read crowns may stand on paving, path colours, tarmac wool and slabs (trees_layer.GOOGLE_SURFACES;
+the ground block under a real tree is often wrong) and inside OSM footprints (courtyards); water, trunk blocked and the normal air-only
+rules still apply. Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
+  1 python3 scripts/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); open in the browser pane,
+                                                                              close old tabs first (tab cap). Read centre (px->block from the grid) and r (diameter/2).
+  2 write the crowns into reference/trees-google-crowns.json (zones = the part you read).
+  3 python3 scripts/trees_replan.py --cell tx,tz --out plan.json ; python3 scripts/google_window.py plan --at X,Z --half 32x16 --plan plan.json
+    yellow circles must sit on the real crowns; add the ones you missed, move the ones that are off; red dashed = skipped (water, blocked...).
+  4 claim the lock; SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell tx,tz --pass trees [--skip-changed] [--apply]
+    (--skip-changed leaves masked positions that are already air or that a later build replaced; without it any such
+    position stops the undo and an aborted run goes through site_recover.py);
+    then trees_layer.py --cell tx,tz (dry) and --apply; patrol sweep floating 0; release the lock; note in the cell STAGES.
+Do NOT snap to lidar: it holds ~1/3 of the crowns and sits 3-4 blocks south of them (checked 2026-10-16). Skipped-by-water crowns mean the
+ground layer drew water under a wooded bank: a ground-step issue to settle against aerial.
+
+Retired (do not use): build_cell_foliage.py, the "foliage last" cadence and the aerial
+canopy pass plant_cell_canopy.py with HAND_CROWNS (Q-064; its 48,-45 result was
+reverted 2026-10-14).

@@ -422,7 +422,7 @@ def reset_to_base(build, records):
     For every cell written by any name in ``records``, put back the state recorded in
     ``{build}-cells.json`` (or air if that cell was not in the base). Never uses
     built_cells(): an earlier step's air can cancel the roof there and leave holes
-    (FEATURE FOLLOW-UP STEPS in site/CRAFTSMANSHIP.txt). Apply with
+    (FEATURE FOLLOW-UP STEPS in rules/craftsmanship.md). Apply with
     ``modifies=(build, *records)``.
 
     @param build: base feature name (e.g. ``highfield_susu_west``)

@@ -1,6 +1,6 @@
 """Refine foliage palette, strip/replace helpers, and tree massing shared by cell passes.
 
-Static log + persistent leaves only — never saplings (see site/FOLIAGE.txt).
+Static log + persistent leaves only — never saplings (see rules/foliage.md).
 """
 from __future__ import annotations
 

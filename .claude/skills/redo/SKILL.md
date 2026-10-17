@@ -51,7 +51,7 @@ Done when they are hovering and looking down at the target.
    | Walls, openings, doors | portal + building photos (`portals.py`, `buildings.py`) |
    | Roof colour + **greeblies** | Google sheet (`google_aerial.py` / `google_window.py`) |
 
-   **Greeblies are mandatory** (`site/CRAFTSMANSHIP.txt` GREEBLIES; building-review). From the Google sheet, list every plant box, vent, louvre, skylight, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible`. A shell-only plan is not a finished redo. Place them with `campus.roof_greeblies` in the same script (same apply, or `--greeblies` before unlock). Heights of plinths/plant from lidar; colours and XY from Google.
+   **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the Google sheet, list every plant box, vent, louvre, skylight, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible`. A shell-only plan is not a finished redo. Place them with `campus.roof_greeblies` in the same script (same apply, or `--greeblies` before unlock). Heights of plinths/plant from lidar; colours and XY from Google.
 
    Google viewing: browser may refuse a new `file://` path — overwrite a sheet filename already opened under `instance/google-aerial/`, or serve that dir over `http://127.0.0.1` and open the http URL. Not seeing the sheet is not a reason to skip greeblies; stop and fix viewing.
 

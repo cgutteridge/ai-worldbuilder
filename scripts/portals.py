@@ -15,7 +15,7 @@ about a third, a photo of it. Stored normalised in reference/portals/portals.jso
 
 Photos: the register links 200 px thumbnails; photos()/image_url() give the same picture at PHOTO_SIZE (800 px wide).
 
-Use (feature builds, `site/CRAFTSMANSHIP.txt` "ENTRANCES"): a portal is the best evidence for WHERE a door goes and
+Use (feature builds, `rules/craftsmanship.md` "ENTRANCES"): a portal is the best evidence for WHERE a door goes and
 what it is called (Main, Rear, Lower ground entrance...). It does not say what the door looks like: for that open the
 portal's photo (look-only, `rules/evidence-order.md`). cell_features.missing_features lists the portals of each
 feature; Campus builds turn them into door anchors with door_specs().

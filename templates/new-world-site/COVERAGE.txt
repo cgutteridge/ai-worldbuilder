@@ -1,0 +1,2 @@
+COVERAGE — radial focus + generated per-cell table
+Regenerate with: python3 scripts/coverage.py (see rules/process.md §2c)

@@ -21,7 +21,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertEqual(ctx, WorkContext.FOLIAGE)
         plan = plan_for_item(it, 'site/cells/48_-44-SOURCES.txt')
         paths = {r.path for r in plan.readings}
-        self.assertIn('site/FOLIAGE.txt', paths)
+        self.assertIn('rules/foliage.md', paths)
         self.assertNotIn('rules/frontage-and-evidence.md', paths)
 
     def test_ground_paths(self) -> None:
@@ -33,6 +33,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertIn('rules/radial-good-enough.md', paths)
         self.assertIn('rules/evidence-order.md', paths)
         self.assertNotIn('rules/frontage-and-evidence.md', paths)
+        self.assertNotIn('rules/geocraft-accuracy.md', paths)
 
     def test_terrace(self) -> None:
         it = self._item('TERRACE Broadlands scripts/terrace.py broadlands_rd_14_24')

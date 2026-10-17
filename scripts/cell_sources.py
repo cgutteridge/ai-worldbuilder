@@ -527,7 +527,7 @@ def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
         'CHARACTER / LANDMARKS (edit by hand after light review)',
         '  - ',
         '',
-        'FOLIAGE INTENT (edit after aerial; site/FOLIAGE.txt)',
+        'FOLIAGE INTENT (edit after aerial; rules/foliage.md)',
         '  - ',
         '',
         'IF MANIFEST GAPS — run (fetch once, judge once, log manifest):',

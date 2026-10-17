@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find and remove files that will not be used again. Policy: site/CLEANUP.txt.
+"""Find and remove files that will not be used again. Policy: rules/cleanup.md.
 
   python3 scripts/site_cleanup.py report            # read-only: what each class would free
   python3 scripts/site_cleanup.py due               # exit 0 + one line if a cleanup is due, else exit 1
@@ -35,7 +35,7 @@ SITE = ROOT / 'site'
 LOG = SITE / 'CLEANUP-LOG.txt'
 MANIFEST = ROOT / 'reference' / 'manifest.jsonl'
 
-KEEP_SNAPS = 5            # newest region snaps kept (site/PROCESS.txt §2a)
+KEEP_SNAPS = 5            # newest region snaps kept (rules/process.md §2a)
 BUILD_DAYS = 14           # a build script untouched this long and imported nowhere is a retire candidate
 VIEW_DAYS = 7             # verification/site/views older than this and named in no live site file
 SHOT_DAYS = 7             # instance/screenshots

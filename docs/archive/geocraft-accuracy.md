@@ -1,7 +1,9 @@
-# Geocraft accuracy: what to trust
+# Geocraft accuracy: what to trust (ARCHIVED)
 
-Read before surveying or planning any world edit. Full write-up (generator
-widths, history): `site/GEOCRAFT.txt`.
+**Archived 2026-10-17 (task 24).** Not on the default reading list. Live
+evidence heights: DEFRA composites (`rules/evidence-order.md`, providers
+`ukdefra-dtm` / `ukdefra-dsm`). Full historical write-up: world
+`site/GEOCRAFT.txt`.
 
 **Trust (keep):**
 - Building plan footprints (OSM polygons rasterised 1:1).

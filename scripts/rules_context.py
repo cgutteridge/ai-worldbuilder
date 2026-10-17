@@ -1,6 +1,6 @@
 """Classify QUEUE items and format context-specific reading lists (token budget).
 
-Canonical prose lives in site/RULES-CONTEXT.txt; this module is what
+Canonical prose lives in rules/rules-context.md; this module is what
 site_handoff.py uses to inject RULES READING into the SESSION BRIEF.
 """
 from __future__ import annotations
@@ -9,8 +9,9 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from script_env import ROOT  # noqa: E402
-RULES_INDEX = ROOT / 'site' / 'RULES-CONTEXT.txt'
+from script_env import TOOL_ROOT  # noqa: E402
+
+RULES_INDEX = TOOL_ROOT / 'rules' / 'rules-context.md'
 
 # Explicit override in queue text: RULES: foliage
 RULES_TAG = re.compile(r'\bRULES:\s*([a-z]+)\b', re.I)
@@ -48,7 +49,6 @@ class ContextPlan:
 
 _ALWAYS = (
     ReadingItem('rules/radial-good-enough.md', 'every live edit'),
-    ReadingItem('rules/geocraft-accuracy.md', 'every live edit'),
 )
 _IMAGERY = (
     ReadingItem('rules/reference-token-budget.md', 'before any ref fetch/Read'),
@@ -123,7 +123,7 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
 
 
 def _process_slices(ctx: WorkContext) -> tuple[str, ...]:
-    """PROCESS.txt section ids to read for a context.
+    """rules/process.md section ids to read for a context.
 
     @param ctx: primary work context
     @returns: human-readable slice labels
@@ -163,15 +163,15 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
             out.append(it)
 
     if ctx == WorkContext.SESSION:
-        add(ReadingItem('site/RULES-CONTEXT.txt', '§0 anti-reread'))
+        add(ReadingItem('rules/rules-context.md', '§0 anti-reread'))
         return tuple(out)
 
     if ctx == WorkContext.TOOLING:
-        add(ReadingItem('site/RULES-CONTEXT.txt', '§0 anti-reread'))
+        add(ReadingItem('rules/rules-context.md', '§0 anti-reread'))
         return tuple(out)
 
     add(*_ALWAYS)
-    add(ReadingItem('site/RULES-CONTEXT.txt', '§0 anti-reread'))
+    add(ReadingItem('rules/rules-context.md', '§0 anti-reread'))
 
     if ctx == WorkContext.SOURCES:
         add(*_IMAGERY)
@@ -180,11 +180,11 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
         return tuple(out)
 
     if ctx in (WorkContext.GROUND, WorkContext.FOLIAGE):
-        add(ReadingItem('site/CRAFTSMANSHIP.txt', 'Processed ground + good-enough only'))
+        add(ReadingItem('rules/craftsmanship.md', 'Processed ground + good-enough only'))
         if ctx == WorkContext.FOLIAGE:
-            add(ReadingItem('site/FOLIAGE.txt', 'full'))
+            add(ReadingItem('rules/foliage.md', 'full'))
         else:
-            add(ReadingItem('site/FOLIAGE.txt', 'skim unless placing trees'))
+            add(ReadingItem('rules/foliage.md', 'skim unless placing trees'))
         add(*_IMAGERY)
         if cell_sources_rel:
             add(ReadingItem(cell_sources_rel, 'imagery ids; do not repeat sources pass'))
@@ -193,7 +193,7 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
     if ctx == WorkContext.PROPERTY:
         add(
             ReadingItem('rules/frontage-and-evidence.md', 'before house/plot plan'),
-            ReadingItem('site/CRAFTSMANSHIP.txt', 'full'),
+            ReadingItem('rules/craftsmanship.md', 'full'),
             ReadingItem('rules/feature-builds.md', 'non-house building features'),
             *_IMAGERY,
         )
@@ -204,7 +204,7 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
     if ctx == WorkContext.TERRACE:
         add(
             ReadingItem('rules/frontage-and-evidence.md', 'before plan'),
-            ReadingItem('site/CRAFTSMANSHIP.txt', 'full'),
+            ReadingItem('rules/craftsmanship.md', 'full'),
             ReadingItem('rules/terrace-builds.md', 'generator mandatory'),
             *_IMAGERY,
         )
@@ -254,9 +254,9 @@ def format_rules_brief(plan: ContextPlan) -> str:
     """
     lines = [
         f'RULES CONTEXT: {plan.context.value} ({plan.detect_note})',
-        '  Index: site/RULES-CONTEXT.txt — read each path below once this chat; grep slices later.',
+        '  Index: rules/rules-context.md — read each path below once this chat; grep slices later.',
         '',
-        '  PROCESS.txt slices (sed -n / grep — not the whole file):',
+        '  rules/process.md slices (sed -n / grep — not the whole file):',
     ]
     for sl in plan.process_slices:
         lines.append(f'    - {sl}')
@@ -281,11 +281,12 @@ def format_starter_rules_line(plan: ContextPlan) -> str:
     if not names:
         return (
             f'Rules: context={plan.context.value} — follow RULES READING in SESSION BRIEF '
-            f'(site/RULES-CONTEXT.txt). Read PROCESS slices listed there, not all of PROCESS.txt.'
+            f'(rules/rules-context.md). Read PROCESS slices listed there, not all of rules/process.md.'
         )
     head = ', '.join(Path(p).name for p in names[:4])
     extra = '…' if len(names) > 4 else ''
     return (
-        f'Rules: context={plan.context.value} — read {head}{extra} and any site/*.txt '
-        f'listed under RULES READING in the SESSION BRIEF (once per chat).'
+        f'Rules: context={plan.context.value} — read {head}{extra} and any other '
+        f'rules/*.md or site/ paths listed under RULES READING in the SESSION BRIEF '
+        f'(once per chat).'
     )

@@ -10,7 +10,7 @@ saved. The crop is exact in block coordinates (an affine fit of the tile pixels 
 
 A window must fit the browser pane (about 1100 x 600 css px): --half 32x16 --ppb 13 gives 64 x 32 blocks. Output:
 instance/google-aerial/w_<x>_<z>.html (crop) or p_<x>_<z>.html (plan); open it as file://... in the browser pane
-(close old tabs first: the pane has a tab cap). Method: site/FOLIAGE.txt "Redo from Google".
+(close old tabs first: the pane has a tab cap). Method: rules/foliage.md "Redo from Google".
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
                           wood), then the z19 aerial for anything OSM does not describe
                           (ground_sources.py). Shade and canopy hide the ground, so those
                           columns take the lawn/paving around them.
-  HOW HIGH?               The existing LIDAR-derived surface Y (trusted: NOTES / geocraft-accuracy).
+  HOW HIGH?               DEFRA composite lidar surface Y (rules/evidence-order.md).
                           Only single-column ±1 spikes on hard surfaces are levelled.
   WHAT BLOCK?             One palette, from CRAFTSMANSHIP §3a: tarmac gray_concrete (centre dashes
                           white_concrete, public-road edge smooth_stone), light paving

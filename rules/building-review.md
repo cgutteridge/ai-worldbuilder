@@ -14,19 +14,19 @@ One building per review. Skip any building that already has an open feature item
    aerial. List matches and mismatches. A build that matches lidar and OSM can still be wrong (Oakdene: right plan and height,
    wrong roof colour and windows). Done when each mismatch is named.
    A review run of buildings uses all three: Google (greeblies, roof colour), the university aerial (footprint, roof form) and
-   lidar (heights: plinth, plant and wing heights are read off the pristine lidar top, `lidar_heightmap.py`, never guessed).
-   Greeblies are the decor step of a feature (`site/CRAFTSMANSHIP.txt`): unusual blocks welcome, plants matched by colour and size.
+   lidar (heights: plinth, plant and wing heights from DEFRA composite DTM/DSM via `lidar_heightmap.py` / `defra_lidar.py`, never guessed).
+   Greeblies are the decor step of a feature (`rules/craftsmanship.md`): unusual blocks welcome, plants matched by colour and size.
    Roof levels and their extents come from the lidar cell by cell (3x3 majority filter, rim cells take their neighbour's level), never
    from boxes drawn on a picture; Google decides colours and greeblies, not heights (user, 2026-10-16: "you ignored the lidar").
    Before painting or adding to a roof, print the live columns (top block and Y per cell) and compare with the lidar grid; a
    later build can have left pits, holes or lidar-rim bands (SU retail: a 5-wide pit round the north edge, 2026-10-16).
    Google shows roof greeblies (user, 2026-10-16): plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets. List
-   them per roof in this step; lidar filters them out (`geocraft-lidar-filters-small-features`), so Google is the only source.
+   them per roof in this step; lidar often misses small roof plant — Google is the source for those.
 4. **Keep or rebuild.** Keep when nothing in the list matters at street scale (`rules/radial-good-enough.md`). Rebuild by
    reusing the cell's builder (`scripts/oakdene_court.py` is the pattern), clearing only the build's own recorded blocks, so
    trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and doors reach.
 5. **Check with the user.** Run the `human-confirm-fix` skill. Steering replies loop back to step 4 and become rules
-   (`site/CRAFTSMANSHIP.txt` §2). Only the user's "yes" closes the issue.
+   (`rules/craftsmanship.md` §2). Only the user's "yes" closes the issue.
    A feature build changes the building's own cells only: no landings, steps, paving or plants outside the footprint (ground,
    trees and decor are other passes); if a door needs steps, queue it for the ground pass (user, 2026-10-16).
    Fiddling a block or two to make a build sit well is fine (user, 2026-10-16); what is not fine is stacking follow-up fixes.
@@ -41,7 +41,7 @@ One building per review. Skip any building that already has an open feature item
    patches and membrane areas are defined by lidar cells of the feature's own part, so a colour cannot spill onto a neighbour and a
    rim cell cannot stand up as a pillar. Edge (coping) cells are never recoloured.
  - **Follow-up steps of a feature** (`--lower`, `--greeblies`, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
-   see FEATURE FOLLOW-UP STEPS in `site/CRAFTSMANSHIP.txt`. Re-run steps rather than patching by hand.
+   see FEATURE FOLLOW-UP STEPS in `rules/craftsmanship.md`. Re-run steps rather than patching by hand.
  - **One defect is a class.** When the user finds one (a door with no jamb, a trench from the door generator, a canopy from an OSM
    `building=roof` that Google does not show), fix it, then add the guard to `site_kit.apply` or the generator and run an audit over
    everything already built (`scripts/door_audit.py`: 142 of 700 doors unframed, QUEUE Q-182). No evidence in Google or lidar for an

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Air-only pass masks for layered cell builds (site/HANDOFF-LAYERED-PASSES.txt §3).
+"""Air-only pass masks for layered cell builds (rules/handoff-layered-passes.md §3).
 
 A tree or decor pass only writes into air, so its undo is exact: every placed
 position goes back to minecraft:air. A mask records those positions so the

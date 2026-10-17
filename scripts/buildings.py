@@ -17,7 +17,7 @@ works beside.
 
 Photos: the register links 200 px thumbnails; photos()/image_url() give the same picture at PHOTO_SIZE (800 px wide).
 
-Use (`rules/evidence-order.md`, `site/CRAFTSMANSHIP.txt` "BUILDING PICTURES"): the photo is a street-level view of the
+Use (`rules/evidence-order.md`, `rules/craftsmanship.md` "BUILDING PICTURES"): the photo is a street-level view of the
 whole building, the best source for walls, openings, storeys and roof edge where no Street View frame exists; look-only,
 look at it once and write down what it shows. The outline is the university's own footprint: use it to cross-check the OSM
 polygon (a wing OSM lacks, a wrong corner). It is not authority over lidar for heights. cell_features.missing_features

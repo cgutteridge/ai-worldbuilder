@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recover aborted live runs: one mechanism for every pass (PROCESS.txt, lock / apply protocol).
+"""Recover aborted live runs: one mechanism for every pass (rules/process.md, lock / apply protocol).
 
 site_kit.apply() records each live apply in site/cells/<tx>_<tz>-STAGES.json as 'applying'
 (plan, owner, structure backup, region snapshot, planned-cells file) and 'applied' after the

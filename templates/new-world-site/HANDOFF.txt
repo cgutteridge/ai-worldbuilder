@@ -1,0 +1,3 @@
+HANDOFF — last session state for the next builder
+Fill via: python3 scripts/site_handoff.py end
+Rules index: rules/rules-context.md (tool repo)

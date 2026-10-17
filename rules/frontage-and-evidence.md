@@ -3,10 +3,10 @@
 Read before planning or applying any house, plot or streetscape build.
 
 ## What a house build is
-A house feature (pass 1 of a cell, `site/HANDOFF-LAYERED-PASSES.txt` §1) is
+A house feature (pass 1 of a cell, `rules/handoff-layered-passes.md` §1) is
 the house only, built on every side:
 - Walls on the OSM footprint as a guide (Minecraft-readable, not a jagged 1:1
-  trace; see `site/CRAFTSMANSHIP.txt` §1), a real roof form (ridge direction
+  trace; see `rules/craftsmanship.md` §1), a real roof form (ridge direction
   and type from aerial, Y from LIDAR), windows and doors on all sides, bays,
   porches, chimney stacks as plain massing.
 - Inside: one floor per storey and one stair so it is walkable. No rooms,
@@ -35,7 +35,8 @@ and patrol all passed. All five were reverted.
 - Walls sit on the OSM footprint within about 1-2 blocks after squaring. Never
   at "the last solid block before the pavement" (I-009).
 - Doors face the street they are numbered on.
-- Geocraft/LIDAR Y is the massing authority (ground, eaves, ridge).
+- DEFRA composite lidar Y is the massing authority (ground, eaves, ridge) via
+  `defra_lidar.py` / `lidar_heightmap.py` (`ukdefra-dtm` + `ukdefra-dsm`).
 - `site_kit.apply()` refuses building-like blocks far outside OSM footprints.
   Set `plan.outside_footprint_ok` only for a genuinely unmapped structure and
   name its evidence id. Never to shove a house onto the kerb.
@@ -61,6 +62,6 @@ matches Southampton. Done needs:
 - 3 concrete matches or mismatches written in REVIEWS.
 
 ## 5. Stop instead of patching
-The stop rule is in `site/PROCESS.txt` §2: a geometry fix build means revert
+The stop rule is in `rules/process.md` §2: a geometry fix build means revert
 and re-survey, never _b/_c patches. If a QUEUE item tells you to repeat a
 method that contradicts the evidence, fix the queue item and log an ISSUE.

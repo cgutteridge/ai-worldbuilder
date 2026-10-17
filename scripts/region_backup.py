@@ -9,7 +9,7 @@ margin in regions). Does NOT snapshot the whole 1.6G world.
   python3 scripts/region_backup.py list
   python3 scripts/region_backup.py prune --keep 5
 
-Policy: site/PROCESS.txt § backups.
+Policy: rules/process.md § backups.
 """
 from __future__ import annotations
 

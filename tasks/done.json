@@ -117,6 +117,24 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From Q-199. feature_build doors map {portal_id: {leaves:1|2, block}}; portal_doors mirrored hinges + door_cells keepout for facades; dry-run print; DoorSpecBuildTest hinge pairing + facade survival. World Q-203 still waits on 12, 15\u201317."
+    },
+    {
+      "id": 18,
+      "title": "Move generic site process/craft docs from world site/ into rules/",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Moved PROCESS/CRAFTSMANSHIP/FOLIAGE/HANDOFF-LAYERED-PASSES/RULES-CONTEXT/CLEANUP into ai-worldbuilder rules/ as kebab-case .md. Updated rules_context (TOOL_ROOT), site_handoff/cleanup/pass_mask + callers, tests, AGENTS, new-world-build, templates/new-world-site/ + empty-world README. GEOCRAFT out of scope (23\u201325)."
+    },
+    {
+      "id": 24,
+      "title": "Evidence path: DEFRA composites only; remove geocraft-pristine",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
     }
   ]
 }

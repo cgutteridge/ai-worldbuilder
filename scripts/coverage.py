@@ -30,7 +30,7 @@ build wrote and is unchanged from pristine). There is no override: to keep a Geo
 purpose, write it in the build plan.
 
 CLI (do not rely on ``--help`` in agent sessions — use COVERAGE_CHEATSHEET /
-site_handoff SESSION BRIEF / site/PROCESS.txt §2c):
+site_handoff SESSION BRIEF / rules/process.md §2c):
 
 build and signoff regenerate the PROCESSED CELLS section of site/COVERAGE.txt (between the
 generated markers); FOCUS and the rules above it stay hand-edited.
@@ -1422,7 +1422,7 @@ def main() -> int:
     @returns: exit code
     """
     ap = argparse.ArgumentParser(
-        description='Parcel-level coverage tracker (Q-038). Model: site/PROCESS.txt §2c.',
+        description='Parcel-level coverage tracker (Q-038). Model: rules/process.md §2c.',
         epilog=COVERAGE_CHEATSHEET,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

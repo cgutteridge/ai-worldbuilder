@@ -16,9 +16,9 @@ Method (matches Geocraft, so a column here equals the column Geocraft drew):
               Anything below 0 (including no-data) becomes 0. ``geocraft=True`` (default) does exactly that;
               ``geocraft=False`` keeps float heights and NaN for no-data.
   blocks      ground Y = SEA_LEVEL + int(DTM); diff / feature height = int(DSM - DTM); top Y = ground Y + diff.
-  noise       Unfiltered DSM is noisier than Geocraft's filtered heightmap: strip cars/trains; keep street
-              furniture where practical. For maps of DTM, DSM or their difference use scripts/lidar_query.py
-              (--layers dtm,dsm,diff). See site/GEOCRAFT.txt §1a.
+  noise       Unfiltered DSM can be noisy: strip cars/trains; keep street furniture where practical
+              (rules/evidence-order.md). For maps of DTM, DSM or their difference use
+              scripts/lidar_query.py (--layers dtm,dsm,diff).
 
 CRS: DEFRA data is British National Grid, so this module speaks eastings/northings. The Minecraft frame is the
 only place that knows the world offsets (scripts/osgb.py, ``mc_heights`` below). A world elsewhere in the

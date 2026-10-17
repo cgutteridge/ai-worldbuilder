@@ -3,7 +3,7 @@
 site_kit.apply() calls begin() before its first live block write (status 'applying') and
 finish() after the readback ('applied' / 'applied-with-mismatches'). An aborted run therefore
 leaves 'applying', which site_handoff.cell_gaps reports as 'in-flight: <plan>' and
-site_recover.py can resolve (PROCESS.txt, lock / apply protocol).
+site_recover.py can resolve (rules/process.md, lock / apply protocol).
 
 An 'applying' entry records: plan, owner (SITE_OWNER), started, structure backup
 {name, from, to}, region snapshot dir, the planned-cells file and any `meta` (kind 'undo' ...).

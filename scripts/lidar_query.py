@@ -28,8 +28,8 @@ Layers (comma list; default dtm,dsm):
   ground_y   Minecraft block Y of the ground = SEA_LEVEL + int(dtm)           (--bbox-mc / --cell only)
   top_y      Minecraft block Y of the top  = ground_y + diff                 (--bbox-mc / --cell only)
 
-Unfiltered DEFRA DSM is noisier than Geocraft's filtered heightmap: ignore cars/trains; keep street furniture
-where practical (rules/geocraft-accuracy.md, site/GEOCRAFT.txt §1a).
+Unfiltered DEFRA DSM can be noisy: ignore cars/trains; keep street furniture where practical
+(rules/evidence-order.md).
 
 Formats:
   summary    JSON: area in both frames, per-layer min/median/mean/max, no-data count, tile status. Small. Start here.

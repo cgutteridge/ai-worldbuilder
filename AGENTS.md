@@ -26,6 +26,6 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | System providers | `config/system-providers.json` |
 | Evidence types | `reference/TYPES.txt` |
 | Shared scripts | `scripts/` |
-| Craftsmanship rules | `rules/` |
+| Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
-| New world bootstrap | skill `new-world-build`, `templates/empty-world/` |
+| New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |

@@ -52,7 +52,7 @@ Play `need-you` and **stop** until the user confirms the offset. Do not apply wo
 
 1. Author `config/local-providers.json` for the place (required types covered by system + local together: at least `vector_map`, `lidar`, one `aerial`). Reuse system providers; do not copy nationwide feeds into the world repo.
 2. Point at worldbuilder `reference/TYPES.txt` and start a place `reference/SOURCES.txt` catalogue.
-3. Empty `site/QUEUE.txt` / coverage as for a new refine — do not import Southampton Aerial Review rows.
+3. Scaffold place memory from `templates/new-world-site/` into the world checkout `site/` (QUEUE, ISSUES, NOTES, COVERAGE, CURRENT-CELL, cells/, thin stubs for process docs). Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do not import Southampton Aerial Review rows or Southampton QUEUE items.
 
 Done when checklist providers have `how` strings and `evaluate-data-source` would not flag an empty type slot that the place needs.
 
