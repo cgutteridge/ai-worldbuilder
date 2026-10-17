@@ -128,6 +128,15 @@
       "notes": "plan_cell_items FEATURE template lists aerial greeblies + <name>-greeblies / \"no greeblies seen\". cmd_end refuses FEATURE without that stage record unless summary escape; EndTest + PlanCellItems cover both. World Q-203 still waits on 12, 16\u201317."
     },
     {
+      "id": 16,
+      "title": "Footprint overlap check (paths inside a footprint)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From Q-201. Q-189 (w33830305) reports 32 path cells (footway/steps) inside the OSM footprint. scripts/footprint_overlap.py dry-run: path bands + optional open lidar + aerial ground share; feature_build prints the report. Test: synthetic footway through a polygon. World Q-203 waits on remaining 12, 15, 17."
+    },
+    {
       "id": 18,
       "title": "Move generic site process/craft docs from world site/ into rules/",
       "status": "done",

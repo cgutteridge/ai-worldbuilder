@@ -29,7 +29,8 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  Dry run prints glazed share per storey per face.
 
-Greeblies / path-in-footprint / contact sheet: separate system tickets.
+Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
+Greeblies / contact sheet: separate system tickets.
 
 Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply]
 """
@@ -41,6 +42,7 @@ import statistics
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
+import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
 from site_kit import Plan, World, apply, preview  # noqa: E402
@@ -855,7 +857,29 @@ class Build:
                   'door', getattr(f, 'door', None), 'rear', getattr(f, 'rear', None))
         for line in self.glazed_share_report():
             print(line)
+        for line in self.footprint_overlap_report():
+            print(line)
         return self.p
+
+    def footprint_overlap_report(self) -> list[str]:
+        """Path / open-lidar / aerial overlap lines for each feature mass (dry-run).
+
+        Uses the live OSM index when present. Synthetic ``footprints=`` builds (unit
+        tests) skip unless streets were injected via ``self._overlap_streets``.
+
+        @returns: printable report lines (may be empty)
+        """
+        streets = getattr(self, '_overlap_streets', None)
+        if streets is None and self.idx is not None:
+            streets = footprint_overlap.streets_from_index(self.idx)
+        if streets is None:
+            return []
+        lines: list[str] = []
+        for f in self.features:
+            lines.extend(footprint_overlap.report_for_cells(
+                set(f.cells), streets=streets, label=str(f.no),
+            ))
+        return lines
 
 
 def build(spec: dict, footprints: dict | None = None, world=None, osm_root=None) -> Plan:

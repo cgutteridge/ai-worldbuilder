@@ -13,15 +13,6 @@
       "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
     },
     {
-      "id": 16,
-      "title": "Footprint overlap check (paths inside a footprint)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From Q-201. Investigate Q-189 path-in-footprint first, then dry run lists footprint cells on OSM footway/steps/cycleway or open lidar columns, plus aerial ground share. Done: that footprint reports path cells; test with synthetic footway through a polygon. World Q-203 waits on this with tasks 11\u201312, 14\u201315, 17."
-    },
-    {
       "id": 17,
       "title": "Evidence contact sheet in the build run",
       "status": "todo",
