@@ -1,8 +1,17 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 13,
+  "nextTaskId": 14,
   "tasks": [
+    {
+      "id": 13,
+      "title": "Per-provider folders; local provider tools into the world repo",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "One providers/<provider-id>/ folder per provider (get/review/manage). google-satellite and google-streetview stay two providers. Merge ukdefra-dtm + ukdefra-dsm into one system provider ukdefra-lidar (aliases for old ids). System providers under ai-worldbuilder/providers/; local providers under southampton-build/providers/. Cross-provider glue stays in scripts/. Old CLIs go in shims/ (not scripts/). Catalogue JSON stays the index (optional package field). reference/ data stays put. Do not start until taken as a job."
+    },
     {
       "id": 8,
       "title": "Deferred: auto stale-source refresh (~6 months)",
