@@ -37,14 +37,17 @@ def is_worker_branch(branch: str) -> bool:
     return branch.startswith('task/')
 
 
-def forbidden_tracker_paths(branch: str, paths: Iterable[str]) -> list[str]:
-    """Return staged tracker paths that a worker branch must not commit.
+def forbidden_tracker_paths(branch_names: Iterable[str], paths: Iterable[str]) -> list[str]:
+    """Return staged tracker paths that a worker checkout must not commit.
 
-    @param branch: current git branch name
+    Any matching ``task/…`` name among ``branch_names`` counts (covers detached
+    HEAD when a worker branch still points at the commit).
+
+    @param branch_names: candidate branch names for this checkout
     @param paths: staged file paths relative to the repo root
     @returns: sorted list of forbidden paths present in ``paths``
     """
-    if not is_worker_branch(branch):
+    if not any(is_worker_branch(name) for name in branch_names):
         return []
     hit = {p for p in paths if p in TRACKER_PATHS}
     return sorted(hit)
@@ -58,7 +61,8 @@ def acquire_wave_lock(
 ) -> Path:
     """Create or refresh ``.wave-lock`` for this orchestrator.
 
-    Same ``holder`` may re-acquire (crash recovery). A different holder fails.
+    Same ``holder`` may re-acquire (crash recovery) and refreshes ``wave_id``.
+    A different holder fails.
 
     @param repo_root: repository root
     @param wave_id: short id for this wave
@@ -74,7 +78,6 @@ def acquire_wave_lock(
                 f"wave lock held by {data.get('holder')!r} "
                 f"(wave_id={data.get('wave_id')!r}); refuse second orchestrator"
             )
-        return path
     payload = {
         'wave_id': wave_id,
         'holder': holder,
@@ -84,14 +87,23 @@ def acquire_wave_lock(
     return path
 
 
-def release_wave_lock(repo_root: Path) -> None:
-    """Remove ``.wave-lock`` if present.
+def release_wave_lock(repo_root: Path, *, holder: str) -> None:
+    """Remove ``.wave-lock`` when ``holder`` owns it.
 
     @param repo_root: repository root
+    @param holder: orchestrator identity that must match the lock
+    @raises WaveLockError: when the lock is missing or held by someone else
     """
     path = repo_root / WAVE_LOCK_NAME
-    if path.is_file():
-        path.unlink()
+    if not path.is_file():
+        raise WaveLockError('no .wave-lock to release')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if data.get('holder') != holder:
+        raise WaveLockError(
+            f"wave lock held by {data.get('holder')!r}; "
+            f"refusing release by {holder!r}"
+        )
+    path.unlink()
 
 
 def _git(repo_root: Path, *args: str) -> str:
@@ -129,6 +141,35 @@ def current_branch(repo_root: Path) -> str:
         return ''
 
 
+def checkout_branch_names(repo_root: Path) -> list[str]:
+    """Branch names that apply to this checkout (current + tips at HEAD).
+
+    Detached HEAD still returns local branches that point at HEAD, so a
+    ``task/…`` worktree cannot bypass the tracker rule by detaching.
+
+    @param repo_root: repository root
+    @returns: unique branch names, current first when set
+    """
+    names: list[str] = []
+    current = current_branch(repo_root)
+    if current:
+        names.append(current)
+    try:
+        pointed = _git(
+            repo_root,
+            'branch',
+            '--points-at',
+            'HEAD',
+            '--format=%(refname:short)',
+        )
+    except subprocess.CalledProcessError:
+        pointed = ''
+    for name in pointed.splitlines():
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def run_unit_tests(repo_root: Path) -> int:
     """Run the repo's stdlib unit test suite.
 
@@ -146,13 +187,13 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     @param skip_tests: when True, skip the unit suite (ownership only)
     @returns: 0 on success, 1 on failure
     """
-    branch = current_branch(repo_root)
+    branches = checkout_branch_names(repo_root)
     paths = staged_paths(repo_root)
-    bad = forbidden_tracker_paths(branch, paths)
-    if bad:
+    forbidden = forbidden_tracker_paths(branches, paths)
+    if forbidden:
         print(
             'pre-commit: worker branch must not edit the system tracker:\n  '
-            + '\n  '.join(bad)
+            + '\n  '.join(forbidden)
             + '\nOrchestrator archives tasks after merge (parallel-task-wave).',
             file=sys.stderr,
         )
@@ -193,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     acq.add_argument('--repo-root', type=Path, default=None)
 
     rel = sub.add_parser('wave-lock-release', help='release .wave-lock')
+    rel.add_argument('--holder', required=True)
     rel.add_argument('--repo-root', type=Path, default=None)
 
     args = parser.parse_args(argv)
@@ -212,7 +254,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(path)
         return 0
     if args.cmd == 'wave-lock-release':
-        release_wave_lock(root)
+        try:
+            release_wave_lock(root, holder=args.holder)
+        except WaveLockError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         return 0
     return 2
 
