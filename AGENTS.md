@@ -15,6 +15,8 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 - Providers: on add, ask **local vs system** (below national → local). Skills: `evaluate-data-source`, `add-data-source`.
 - World frame: active world `config/world-frame.json` via `scripts/world_frame.py`.
 - Sound cues: `python3 ~/Projects/agent-soundboard/scripts/play.py <id>` (`done`, `need-you`, `error`).
+- Once per clone: `python3 scripts/install_git_hooks.py` (blocks system-tracker edits on `task/*` branches; runs `scripts/run_tests.py`).
+- Review judgement: `CODING_STANDARDS.md` (mechanical rules live in the hook).
 
 ## Where things live
 

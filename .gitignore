@@ -5,6 +5,7 @@
 .matplotlib-cache/
 .matplotlib-cache/
 .claude/settings.local.json
+.wave-lock
 
 # Nested world git repos (each checkout keeps its own .git)
 /worlds/*/
