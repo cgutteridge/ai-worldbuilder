@@ -905,7 +905,8 @@ def brief_text(item):
             f'CELL SOURCES ({cell[0]},{cell[1]}):',
             f'  Read {rel} before fetching or viewing reference imagery.',
             f'  Missing or stale: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --write',
-            f'  Open source families: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --todo (TRIED ones: no retry without --retry-reason)',
+            f'  Open source families: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --todo '
+            f'(TODO + STALE; fresh TRIED: no retry without --retry-reason)',
             '  One-time sources pass per new cell (PROCESS §2e step 1b); build steps still obey',
             '  one primary aerial + one street Read per rules/reference-token-budget.md.',
             '  Foliage cadence: rules/foliage.md.',

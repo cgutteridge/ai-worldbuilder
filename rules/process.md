@@ -164,9 +164,10 @@ BUILT plan in place to “fix” the world.
      SOURCE CHECKLIST in that file: hampshire-hub, google-satellite (every cell, look-only sheet),
      KartaView, Commons/Geograph, Street View, Rightmove (exteriors, residential cells). Log each attempt, hit or miss:
        python3 scripts/cell_sources.py --cell tx,tz --record SOURCE --result found|partial|none|blocked --note "..."
-     Never retry a TRIED source for the same cell without good cause (the script
-     refuses unless --retry-reason is given). `cell_sources.py --cell tx,tz --todo`
-     lists what is still open (exit 1 if any).
+     Never retry a fresh TRIED source for the same cell without good cause (the
+     script refuses unless --retry-reason is given). Evidence older than ~6 months
+     is STALE: `--todo` lists it and `--record` may refresh without --retry-reason.
+     `cell_sources.py --cell tx,tz --todo` lists TODO + STALE (exit 1 if any).
  2. Review neighbours — ground, trees and decor read evidence across the cell edge
     (paths, roads, hedges, canopy), so first check the neighbours' STAGES files, masks
     and the aerial across the edge for continuity. Every cell restarts from scratch

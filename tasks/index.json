@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 28,
-  "tasks": [
-    {
-      "id": 8,
-      "title": "Deferred: auto stale-source refresh (~6 months)",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "From ADR 001; system tracker only. Not part of the extract minimum."
-    }
-  ]
+  "tasks": []
 }

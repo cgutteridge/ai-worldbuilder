@@ -19,7 +19,7 @@ import json
 import re
 import sys
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from script_env import (  # noqa: E402
@@ -407,6 +407,8 @@ def manifest_summary(tx: int, tz: int) -> list[str]:
 
 RESULTS = ('found', 'partial', 'none', 'blocked')
 MIN_AERIAL_COVERAGE = 0.5   # an aerial counts for a cell only if it shows at least this share of it (not just a clipped edge)
+# Re-check HAVE/TRIED evidence older than this (manifest ``added`` or attempt ``date``).
+STALE_DAYS = 183  # ~6 months
 
 # Legacy attempt-ledger keys that predate provider ids. When scoring ``have``, treat
 # these as the same provider so old JSONL rows still count.
@@ -415,6 +417,44 @@ _LEDGER_ALIASES: dict[str, tuple[str, ...]] = {
     'hampshire-hub': ('aerial',),
     'google-streetview': ('streetview',),
 }
+
+
+def parse_iso_day(value: str | date | None) -> date | None:
+    """Parse a calendar day from an ISO date string or ``date``.
+
+    @param value: ``YYYY-MM-DD`` (optionally longer), a ``date``, or None
+    @returns: date or None if missing/unparseable
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def is_stale(
+    when: str | date | None,
+    *,
+    today: date | None = None,
+    days: int = STALE_DAYS,
+) -> bool:
+    """True when ``when`` is at least ``days`` before ``today``.
+
+    Missing/unparseable dates are not treated as stale.
+
+    @param when: evidence day (attempt ``date`` or manifest ``added``)
+    @param today: reference day (default: ``date.today()``)
+    @param days: age threshold in days
+    @returns: whether the evidence is stale
+    """
+    day = parse_iso_day(when)
+    if day is None:
+        return False
+    ref = today or date.today()
+    return (ref - day) >= timedelta(days=days)
 
 
 def attempts_path(tx: int, tz: int) -> Path:
@@ -441,9 +481,19 @@ def load_attempts(tx: int, tz: int) -> list[dict]:
 
 
 def record_attempt(
-    tx: int, tz: int, source: str, result: str, note: str = '', retry_reason: str = '',
+    tx: int,
+    tz: int,
+    source: str,
+    result: str,
+    note: str = '',
+    retry_reason: str = '',
+    *,
+    today: date | None = None,
 ) -> dict:
     """Append an attempt; refuse a repeat of the same source without a retry reason.
+
+    A prior attempt older than ``STALE_DAYS`` is good cause: the refresh is allowed
+    without ``--retry-reason`` (an automatic reason is recorded).
 
     @param tx: cell X
     @param tz: cell Z
@@ -451,6 +501,8 @@ def record_attempt(
     @param result: one of RESULTS
     @param note: what was searched / found
     @param retry_reason: required when ``source`` was already attempted for this cell
+        (unless that attempt is stale or the family has ``repeat_ok``)
+    @param today: reference day for stale checks (default: ``date.today()``)
     @returns: the row written
     """
     source = resolve_source_id(source)
@@ -461,32 +513,58 @@ def record_attempt(
                          + (f' (aliases: {aliases})' if aliases else ''))
     if result not in RESULTS:
         raise SystemExit(f'result must be one of {", ".join(RESULTS)}')
+    ref_day = today or date.today()
     ledger_names = {source, *_LEDGER_ALIASES.get(source, ())}
     prior = [a for a in load_attempts(tx, tz) if a['source'] in ledger_names]
-    if prior and not retry_reason.strip() and not SOURCE_FAMILIES[source].get('repeat_ok'):
+    reason = retry_reason.strip()
+    if prior and not reason and not SOURCE_FAMILIES[source].get('repeat_ok'):
         last = prior[-1]
-        raise SystemExit(
-            f'{source} already tried for {tx},{tz} on {last["date"]} ({last["result"]}: '
-            f'{last.get("note", "")}). Do not repeat without good cause: pass --retry-reason.'
-        )
-    row = {'date': date.today().isoformat(), 'source': source, 'result': result, 'note': note}
-    if retry_reason.strip():
-        row['retry_reason'] = retry_reason.strip()
+        if is_stale(last.get('date'), today=ref_day):
+            reason = f'stale ({STALE_DAYS}+ days since {last["date"]})'
+        else:
+            raise SystemExit(
+                f'{source} already tried for {tx},{tz} on {last["date"]} ({last["result"]}: '
+                f'{last.get("note", "")}). Do not repeat without good cause: pass --retry-reason.'
+            )
+    row = {'date': ref_day.isoformat(), 'source': source, 'result': result, 'note': note}
+    if reason:
+        row['retry_reason'] = reason
     CELLS.mkdir(parents=True, exist_ok=True)
     with attempts_path(tx, tz).open('a') as fh:
         fh.write(json.dumps(row) + '\n')
     return row
 
 
-def source_status(tx: int, tz: int) -> dict[str, dict]:
-    """Per source family: ``have`` (manifest/ledger evidence), ``tried`` (no luck) or ``todo``.
+def _newest_day(values: list[str | date | None]) -> date | None:
+    """Return the latest parseable day among ``values``, or None.
+
+    @param values: candidate ISO dates / ``date`` values
+    @returns: newest day or None
+    """
+    days = [d for d in (parse_iso_day(v) for v in values) if d is not None]
+    return max(days) if days else None
+
+
+def source_status(
+    tx: int,
+    tz: int,
+    *,
+    today: date | None = None,
+) -> dict[str, dict]:
+    """Per source family: ``have``, ``tried``, ``todo``, or ``stale``.
+
+    ``stale`` means prior HAVE/TRIED evidence is at least ``STALE_DAYS`` old
+    (newest manifest ``added`` among hits, else last attempt ``date``). Agents
+    should re-check; ``--todo`` and ``--record`` treat stale as open work.
 
     @param tx: cell X
     @param tz: cell Z
-    @returns: {family: {state, detail}}
+    @param today: reference day for stale checks (default: ``date.today()``)
+    @returns: {family: {state, detail, ...}}
     """
     refs = references_for_cell(tx, tz, useful_only=True)
     attempts = load_attempts(tx, tz)
+    ref_day = today or date.today()
     out: dict[str, dict] = {}
     for name, fam in SOURCE_FAMILIES.items():
         kinds = {fam['kind']} | ({'facade'} if fam['kind'] == 'street' else set())
@@ -494,35 +572,75 @@ def source_status(tx: int, tz: int) -> dict[str, dict]:
                 and (fam['kind'] != 'aerial' or cell_coverage(r, tx, tz) >= MIN_AERIAL_COVERAGE)]
         ledger_names = {name, *_LEDGER_ALIASES.get(name, ())}
         mine = [a for a in attempts if a['source'] in ledger_names]
+        as_of: date | None = None
         if hits:
-            out[name] = {'state': 'have', 'detail': f'{len(hits)} manifest row(s), e.g. {hits[0]["id"]}'}
+            as_of = _newest_day([h.get('added') for h in hits])
+            row = {
+                'state': 'have',
+                'detail': f'{len(hits)} manifest row(s), e.g. {hits[0]["id"]}',
+            }
         elif mine and mine[-1]['result'] in ('found', 'partial'):
-            out[name] = {'state': 'have', 'detail': f'{mine[-1]["date"]} {mine[-1]["result"]}: {mine[-1].get("note", "")}'}
+            as_of = parse_iso_day(mine[-1].get('date'))
+            row = {
+                'state': 'have',
+                'detail': f'{mine[-1]["date"]} {mine[-1]["result"]}: {mine[-1].get("note", "")}',
+            }
         elif mine:
             m = mine[-1]
-            out[name] = {'state': 'tried', 'detail': f'{m["date"]} {m["result"]}: {m.get("note", "")}'}
+            as_of = parse_iso_day(m.get('date'))
+            row = {
+                'state': 'tried',
+                'detail': f'{m["date"]} {m["result"]}: {m.get("note", "")}',
+            }
         else:
             out[name] = {'state': 'todo', 'detail': fam['how']}
+            continue
+        if is_stale(as_of, today=ref_day):
+            was = row['state']
+            as_of_s = as_of.isoformat() if as_of else '?'
+            out[name] = {
+                'state': 'stale',
+                'was': was,
+                'as_of': as_of_s,
+                'detail': (
+                    f'{was} since {as_of_s} (≥{STALE_DAYS}d) — re-check; '
+                    f'{row["detail"]}'
+                ),
+            }
+        else:
+            out[name] = row
     return out
 
 
-def source_checklist(tx: int, tz: int) -> list[str]:
+def source_checklist(tx: int, tz: int, *, today: date | None = None) -> list[str]:
     """Guide lines: what is covered, what is still to find, what not to retry.
 
     @param tx: cell X
     @param tz: cell Z
+    @param today: reference day for stale checks (default: ``date.today()``)
     @returns: lines
     """
     lines = []
-    for name, st in source_status(tx, tz).items():
-        tag = {'have': 'HAVE ', 'tried': 'TRIED', 'todo': 'TODO '}[st['state']]
+    for name, st in source_status(tx, tz, today=today).items():
+        tag = {
+            'have': 'HAVE ',
+            'tried': 'TRIED',
+            'todo': 'TODO ',
+            'stale': 'STALE',
+        }[st['state']]
         lines.append(f'  [{tag}] {name:<10} {st["detail"]}')
         if st['state'] == 'tried':
             lines.append('              do NOT retry without good cause (--retry-reason)')
+        elif st['state'] == 'stale':
+            lines.append(
+                f'              re-check (evidence ≥{STALE_DAYS}d old); '
+                '--record allowed without --retry-reason'
+            )
     lines += [
         '  Record each attempt, hit or miss, once:',
         f'    python3 scripts/cell_sources.py --cell {tx},{tz} --record SOURCE --result found|partial|none|blocked --note "..."',
-        '  A second attempt on the same source needs --retry-reason (new area, new date, tool fixed).',
+        '  A second attempt on the same source needs --retry-reason (new area, new date, tool fixed),',
+        f'  unless the prior evidence is stale (≥{STALE_DAYS} days) — then refresh freely.',
     ]
     return lines
 
@@ -615,7 +733,11 @@ def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
             parts.append(f'    {label} ×{n}')
     parts += ['', 'COVERAGE PARCELS', *coverage_summary(tx, tz)]
     parts += ['', 'CROSS-ZONE (generated on --write)', *_cross_zone_lines(tx, tz)]
-    parts += ['', 'SOURCE CHECKLIST (find what is TODO once; never re-try TRIED ones)', *source_checklist(tx, tz)]
+    parts += [
+        '',
+        f'SOURCE CHECKLIST (find TODO once; re-check STALE after ~{STALE_DAYS}d; never re-try fresh TRIED)',
+        *source_checklist(tx, tz),
+    ]
     parts += [
         '',
         'CHARACTER / LANDMARKS (edit by hand after light review)',
@@ -658,12 +780,20 @@ def main() -> int:
     ap.add_argument('--cell', help='tx,tz (default: IN FLIGHT from COVERAGE.txt)')
     ap.add_argument('--in-flight', action='store_true', help='use IN FLIGHT cell (same as default)')
     ap.add_argument('--write', action='store_true', help='write site/cells/<tx>_<tz>-SOURCES.txt')
-    ap.add_argument('--todo', action='store_true', help='print only TODO source families; exit 1 if any')
+    ap.add_argument(
+        '--todo',
+        action='store_true',
+        help='print TODO and STALE source families; exit 1 if any',
+    )
     record_choices = sorted(set(SOURCE_FAMILIES) | set(SOURCE_ALIASES))
     ap.add_argument('--record', choices=record_choices, help='log an attempt for this provider id (or alias)')
     ap.add_argument('--result', choices=list(RESULTS), help='outcome for --record')
     ap.add_argument('--note', default='', help='what was searched / found (for --record)')
-    ap.add_argument('--retry-reason', default='', help='why a repeat attempt is justified')
+    ap.add_argument(
+        '--retry-reason',
+        default='',
+        help='why a repeat attempt is justified (not needed when prior evidence is stale)',
+    )
     args = ap.parse_args()
     if args.cell:
         tx, tz = parse_cell(args.cell)
@@ -681,10 +811,15 @@ def main() -> int:
             write_cell_sources(tx, tz)
         return 0
     if args.todo:
-        todo = [n for n, st in source_status(tx, tz).items() if st['state'] == 'todo']
-        for n in todo:
-            print(f'{n}: {SOURCE_FAMILIES[n]["how"]}')
-        return 1 if todo else 0
+        open_ = [
+            (n, st)
+            for n, st in source_status(tx, tz).items()
+            if st['state'] in ('todo', 'stale')
+        ]
+        for n, st in open_:
+            prefix = 'STALE' if st['state'] == 'stale' else 'TODO'
+            print(f'{prefix} {n}: {st["detail"]}')
+        return 1 if open_ else 0
     text = render_guide(tx, tz)
     if args.write:
         out = write_cell_sources(tx, tz)

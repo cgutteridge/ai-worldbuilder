@@ -65,9 +65,13 @@ CELL READINESS (intent)
 ------------------------------------------------------------------------
 
 A cell is ready to build when every checklisted provider for that cell has been
-tried once (HAVE or TRIED in the cell SOURCES guide). Stale refresh after ~6
-months of source age is planned later; for now, agents re-check when evidence
-clearly disagrees with the live world.
+tried once (HAVE or TRIED in the cell SOURCES guide) and none are STALE.
+``cell_sources.source_status`` marks HAVE/TRIED evidence as STALE after
+``STALE_DAYS`` (~6 months) from the newest manifest ``added`` date among hits,
+or the last attempt ``date`` when there are no hits. ``--todo`` lists TODO and
+STALE; ``--record`` allows a refresh without ``--retry-reason`` when the prior
+attempt is stale. Still re-check earlier when evidence clearly disagrees with
+the live world.
 
 ------------------------------------------------------------------------
 AERIAL REVIEW

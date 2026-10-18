@@ -1,10 +1,13 @@
 """Unit tests for cell_sources helpers."""
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -58,6 +61,119 @@ class TestAttempts(unittest.TestCase):
             '{"date":"2026-10-01","source":"streetview","result":"none","note":"old"}\n'
         )
         self.assertEqual(cs.source_status(1, 2)['google-streetview']['state'], 'tried')
+
+
+class TestStaleRefresh(unittest.TestCase):
+    """HAVE/TRIED older than STALE_DAYS reopen without --retry-reason."""
+
+    def setUp(self):
+        self._orig = cs.CELLS
+        self._tmp = tempfile.TemporaryDirectory()
+        cs.CELLS = Path(self._tmp.name)
+        self.today = date(2026, 10, 18)
+        self.fresh = (self.today - timedelta(days=cs.STALE_DAYS - 1)).isoformat()
+        self.old = (self.today - timedelta(days=cs.STALE_DAYS)).isoformat()
+
+    def tearDown(self):
+        cs.CELLS = self._orig
+        self._tmp.cleanup()
+
+    def test_is_stale_threshold(self):
+        self.assertFalse(cs.is_stale(self.fresh, today=self.today))
+        self.assertTrue(cs.is_stale(self.old, today=self.today))
+        self.assertFalse(cs.is_stale(None, today=self.today))
+        self.assertFalse(cs.is_stale('not-a-date', today=self.today))
+
+    def test_tried_becomes_stale(self):
+        path = cs.attempts_path(1, 2)
+        path.write_text(
+            json.dumps(
+                {
+                    'date': self.old,
+                    'source': 'rightmove',
+                    'result': 'none',
+                    'note': 'no exteriors',
+                }
+            )
+            + '\n'
+        )
+        st = cs.source_status(1, 2, today=self.today)['rightmove']
+        self.assertEqual(st['state'], 'stale')
+        self.assertEqual(st['was'], 'tried')
+        self.assertEqual(st['as_of'], self.old)
+
+    def test_fresh_tried_stays_tried(self):
+        path = cs.attempts_path(1, 2)
+        path.write_text(
+            json.dumps(
+                {
+                    'date': self.fresh,
+                    'source': 'rightmove',
+                    'result': 'none',
+                    'note': 'no exteriors',
+                }
+            )
+            + '\n'
+        )
+        self.assertEqual(
+            cs.source_status(1, 2, today=self.today)['rightmove']['state'],
+            'tried',
+        )
+
+    def test_stale_attempt_allows_record_without_reason(self):
+        path = cs.attempts_path(1, 2)
+        path.write_text(
+            json.dumps(
+                {
+                    'date': self.old,
+                    'source': 'rightmove',
+                    'result': 'none',
+                    'note': 'no exteriors',
+                }
+            )
+            + '\n'
+        )
+        row = cs.record_attempt(
+            1, 2, 'rightmove', 'found', 'new listing', today=self.today,
+        )
+        self.assertIn('stale', row['retry_reason'])
+        self.assertEqual(row['date'], self.today.isoformat())
+        self.assertEqual(len(cs.load_attempts(1, 2)), 2)
+
+    def test_manifest_have_stale_from_added(self):
+        hit = {
+            'id': 'aerial-old',
+            'source': 'hampshire-hub',
+            'kind': 'aerial',
+            'added': self.old,
+            'bbox_mc': [128, 256, 255, 383],  # covers cell 1,2 fully
+            'useful': 'yes',
+        }
+        with mock.patch('cell_sources.references_for_cell', return_value=[hit]):
+            with mock.patch('cell_sources.cell_coverage', return_value=1.0):
+                st = cs.source_status(1, 2, today=self.today)
+        hub = st.get('hampshire-hub')
+        if hub is None:
+            self.skipTest('hampshire-hub not in active SOURCE_FAMILIES')
+        self.assertEqual(hub['state'], 'stale')
+        self.assertEqual(hub['was'], 'have')
+
+    def test_checklist_marks_stale(self):
+        path = cs.attempts_path(1, 2)
+        path.write_text(
+            json.dumps(
+                {
+                    'date': self.old,
+                    'source': 'rightmove',
+                    'result': 'none',
+                    'note': 'gone',
+                }
+            )
+            + '\n'
+        )
+        text = '\n'.join(cs.source_checklist(1, 2, today=self.today))
+        self.assertIn('[STALE]', text)
+        self.assertIn('rightmove', text)
 
 
 class TestProviderAliases(unittest.TestCase):

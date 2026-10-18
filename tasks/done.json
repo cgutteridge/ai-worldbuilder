@@ -231,6 +231,16 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Split from old #13. script_env.resolve_provider_package + cell_sources.provider_package_dir/provider_home; load_place_sources annotates home system|world; world_provider uses world-home resolve; AGENTS/TYPES/GLOSSARY/active-world-contract + evaluate/add-data-source skills point at both trees; TestDualRootPackage."
+    },
+    {
+      "id": 8,
+      "title": "Deferred: auto stale-source refresh (~6 months)",
+      "status": "done",
+      "priority": "low",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "cell_sources.STALE_DAYS=183: HAVE/TRIED → STALE from newest manifest added or last attempt date; --todo lists TODO+STALE; --record refreshes without --retry-reason when prior attempt is stale. TYPES/ADR 001/process/handoff updated. TestStaleRefresh."
     }
   ]
 }
+
