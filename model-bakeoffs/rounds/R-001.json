@@ -1,0 +1,139 @@
+{
+  "id": "R-001",
+  "status": "scored",
+  "created": "2026-10-18T16:25:03Z",
+  "scored_at": "2026-10-18T17:40:33Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "low",
+  "tool": {
+    "id": "cursor",
+    "name": "Cursor"
+  },
+  "model": {
+    "id": "composer-2.5",
+    "label": "Composer 2.5",
+    "tier": "low",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": "fail",
+        "note": "Flat-roof building but AI used slopes. Outline includes path and stream (nearby ground, not the feature). Mystery blob where user standing."
+      },
+      "openings": {
+        "grade": "fail",
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": "fail",
+        "note": null
+      },
+      "materials": {
+        "grade": "pass",
+        "note": "weak pass"
+      },
+      "keep": {
+        "grade": "fail",
+        "note": "tear down"
+      }
+    },
+    "why": "Flat-roof building but AI used slopes. Outline includes path and stream (nearby ground). Mystery blob at stand point. Openings and roof/greeblies fail. Tear down. No repair.",
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "fail",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "verification/site/views/bakeoff-r001q029-sw.png",
+    "street_front": "verification/site/views/bakeoff-r001q029-photo-susu.png",
+    "aerial_top": "verification/site/views/bakeoff-r001q029-top.png",
+    "contact": "verification/site/views/bakeoff-r001contact.png",
+    "plan_preview": "worlds/southampton-build/verification/site/susu_42_r001-preview.png",
+    "real_refs_note": "Portals/building: worlds/southampton-build/verification/site/bakeoff-R-001-evidence/; agent mis-captured shots discarded",
+    "agent_shots_discarded": "worlds/southampton-build/verification/site/bakeoff-R-001-shots/ (wrong location \u2014 not used for interview)"
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": "R-001 predated usage logging; backfill from Cursor usage UI if recoverable"
+  },
+  "sitting": {
+    "checklist": [
+      "Restore 3\u00d73 ghost baseline",
+      "Use tool=cursor model=composer-2.5 only",
+      "Read v1/BRIEF.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Apply, capture fixed cameras, then score this round"
+    ]
+  },
+  "notes": "Interview 2026-10-18. materials=weak pass. User declined repair.",
+  "ghost_baseline_artefact": "bakeoff-ghost-3x3 (region snap; pre-sitting world state \u2014 not pure lidar ghosts)"
+}

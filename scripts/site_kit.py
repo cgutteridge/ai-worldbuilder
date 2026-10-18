@@ -35,6 +35,70 @@ def bid(s):
     return full(s).split('[')[0]
 
 
+# Wood slab short names → planks (stripping ``_slab`` alone yields invalid ids).
+_WOOD_SLAB = frozenset({
+    'oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove',
+    'cherry', 'bamboo', 'crimson', 'warped',
+})
+
+
+def is_bottom_slab(state: str) -> bool:
+    """True for bottom (or default) slabs — not top / double.
+
+    ``block_fill_batch`` often leaves bottom-slab cells unchanged (air stays
+    air). Top slabs are left alone.
+
+    @param state: block state string
+    @returns: whether this is a bottom/default slab
+    """
+    st = full(state)
+    name = bid(st)
+    if not name.endswith('_slab'):
+        return False
+    if 'type=top' in st or 'type=double' in st:
+        return False
+    return True
+
+
+def full_block_for_bottom_slab(state: str) -> str | None:
+    """Full-block twin for a bottom slab, or None if not a bottom slab.
+
+    @param state: block state string
+    @returns: full block id, or None
+    """
+    if not is_bottom_slab(state):
+        return None
+    name = bid(state)[len('minecraft:'):-len('_slab')]
+    if name in _WOOD_SLAB:
+        return f'minecraft:{name}_planks'
+    if name == 'brick':
+        return 'minecraft:bricks'
+    if name.endswith('_brick'):
+        return f'minecraft:{name}s'
+    return f'minecraft:{name}'
+
+
+def rewrite_bottom_slabs(plan: 'Plan') -> int:
+    """Replace bottom/default slabs with full blocks so ``block_fill`` can place them.
+
+    Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; expect readback
+    mismatches). Top/double slabs are unchanged.
+
+    @param plan: plan to mutate
+    @returns: number of cells rewritten
+    """
+    if getattr(plan, 'keep_bottom_slabs', False):
+        return 0
+    n = 0
+    for pos, st in list(plan.cells.items()):
+        twin = full_block_for_bottom_slab(st)
+        if twin is None or twin == st:
+            continue
+        plan.cells[pos] = twin
+        n += 1
+    return n
+
+
 class Plan:
     def __init__(self, name):
         self.name = name
@@ -622,6 +686,17 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         if hits:
             (OUT / f'{plan.name}-protect-hits.json').write_text(json.dumps(hits, indent=1))
             raise SystemExit(f'{len(hits)} protected cells would change; see {plan.name}-protect-hits.json')
+    # block_fill often cannot place bottom slabs (cell stays air → mass readback mismatch).
+    bottom_n = sum(1 for st in plan.cells.values() if is_bottom_slab(st))
+    if bottom_n:
+        if getattr(plan, 'keep_bottom_slabs', False):
+            print(f'{plan.name}: warning: {bottom_n} bottom slabs kept (keep_bottom_slabs); expect mismatches')
+        else:
+            rewritten = rewrite_bottom_slabs(plan)
+            print(
+                f'{plan.name}: rewrote {rewritten} bottom slabs → full blocks '
+                '(block_fill cannot place bottom slabs; set plan.keep_bottom_slabs to skip)'
+            )
     boxes = plan.boxes()
     print(f'{plan.name}: {len(plan.cells)} cells in {len(boxes)} boxes; bounds {lo}..{hi}; no clashes')
     if dry:

@@ -1,0 +1,15 @@
+{
+  "pack": "v1",
+  "cell": [48, -44],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [[47, -45], [48, -45], [49, -45], [47, -44], [48, -44], [49, -44], [47, -43], [48, -43], [49, -43]],
+  "ghost_snap": "2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+  "ghost_snap_note": "Pure lidar ghosts on 3x3 around (48,-44); SUSU trials erased. Restore before each sitting.",
+  "active_tiers": ["low", "mid"],
+  "tasks": ["feature_design", "look", "greeblies", "trees"],
+  "pilot_task": "feature_design",
+  "axes": ["massing", "openings", "roof_greeblies", "materials", "keep"],
+  "critical_axes": ["massing", "keep"],
+  "max_attempts": 3,
+  "grades": ["fail", "pass", "great"]
+}

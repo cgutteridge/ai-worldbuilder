@@ -1,0 +1,8 @@
+{
+  "id": "FS-002",
+  "osm_way_id": "33830236",
+  "require_reject": ["33830305", "93729745"],
+  "min_bbox_iou": 0.85,
+  "max_pad": 0,
+  "notes": "Students' Union Retail Centre / Union Shop, building 57"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "FS-003",
+  "osm_way_id": "34391673",
+  "require_reject": ["33830305", "33830236", "93729745"],
+  "min_bbox_iou": 0.85,
+  "max_pad": 0,
+  "notes": "West Building & Staff Social Centre, building 40"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "FS-003",
+  "title": "West Building from Stags / staff social cue",
+  "cell": [48, -44],
+  "cue": {
+    "text": "West Building & Staff Social Centre on University Road (building 40), including the Stags entrance. Not SUSU (42), not the Union Shop (57), not Jubilee Sports.",
+    "photos": []
+  },
+  "allowed": [
+    "scripts/osm_footprints.py / OSMIndex",
+    "scripts/cell_features.py --cell 48,-44",
+    "portals / buildings registers (entrance 40-A / 40-B Stags)"
+  ],
+  "forbidden": [
+    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Applying blocks or writing a build script",
+    "Dilating / padding the OSM footprint"
+  ]
+}

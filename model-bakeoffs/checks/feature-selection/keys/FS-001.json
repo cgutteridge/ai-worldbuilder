@@ -1,0 +1,8 @@
+{
+  "id": "FS-001",
+  "osm_way_id": "33830305",
+  "require_reject": ["33830236", "34391673"],
+  "min_bbox_iou": 0.85,
+  "max_pad": 0,
+  "notes": "University of Southampton Students' Union (SUSU), loc_ref 42"
+}

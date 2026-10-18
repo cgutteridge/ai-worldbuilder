@@ -1,0 +1,24 @@
+{
+  "id": "FS-001",
+  "title": "SUSU main mass from Library Square cue",
+  "cell": [48, -44],
+  "cue": {
+    "text": "South edge of Library Square: the Students' Union block with the terracotta SUSU wordmark / full-height glazed concourse (university building 42). Not the Union Shop retail box to the east, and not the West Building further south-west.",
+    "photos": [
+      "worlds/southampton-build/verification/site/bakeoff-R-001-evidence/42_2025.jpg",
+      "worlds/southampton-build/verification/site/bakeoff-R-001-evidence/42-A.jpg"
+    ]
+  },
+  "allowed": [
+    "scripts/osm_footprints.py / OSMIndex",
+    "scripts/cell_features.py --cell 48,-44",
+    "portals / buildings registers for names",
+    "lidar look-only if useful for height notes (not required)"
+  ],
+  "forbidden": [
+    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Applying blocks or writing a build script",
+    "Treating a previous Minecraft build as evidence",
+    "Dilating / padding the OSM footprint for 'readable' massing"
+  ]
+}

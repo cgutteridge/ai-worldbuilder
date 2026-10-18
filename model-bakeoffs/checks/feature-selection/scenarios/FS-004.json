@@ -1,0 +1,22 @@
+{
+  "id": "FS-004",
+  "title": "Standing at portal 42-A (concourse)",
+  "cell": [48, -44],
+  "cue": {
+    "text": "You are standing at Minecraft (6192, -5564) — university portal 42-A (SUSU concourse / Library Square south frontage). Name the OSM building feature under your feet / immediately in front. Exclude the Union Shop retail centre to the east and the West Building to the south-west.",
+    "photos": [
+      "worlds/southampton-build/verification/site/bakeoff-R-001-evidence/42-A.jpg"
+    ],
+    "stand_mc": [6192, -5564]
+  },
+  "allowed": [
+    "scripts/osm_footprints.py / OSMIndex",
+    "scripts/cell_features.py --cell 48,-44",
+    "portals / buildings registers for names"
+  ],
+  "forbidden": [
+    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Applying blocks or writing a build script",
+    "Dilating / padding the OSM footprint"
+  ]
+}

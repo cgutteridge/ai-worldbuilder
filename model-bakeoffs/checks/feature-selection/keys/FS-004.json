@@ -1,0 +1,8 @@
+{
+  "id": "FS-004",
+  "osm_way_id": "33830305",
+  "require_reject": ["33830236", "34391673"],
+  "min_bbox_iou": 0.85,
+  "max_pad": 0,
+  "notes": "Portal 42-A sits on SUSU way 33830305"
+}

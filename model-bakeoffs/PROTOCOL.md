@@ -1,0 +1,78 @@
+# Model bake-off protocol
+
+Agreed grill 2026-10-18; framework updated for **per-sitting** runs on tools you already have.
+
+## Goal
+
+Find the cheapest **bulk-work** model that is good enough for high-judgement place tasks. Publish portable **low / mid** tier advice (high / non-bulk out of scope for now — costs a bomb).
+
+## How we run (current)
+
+- **One model per sitting.** Open a round, restore ghost world, run, interview, score, stop. Next sitting can be days later.
+- **Catalogue first:** models available to you in each tool when you have tokens (`catalogue.json`).
+- **Ladder:** all `low` bulk models for the pilot task, then `mid` only if **any** low cold score was not `great`.
+- **No Azure matrix required** for v1; Azure remains optional later for controlled cross-checks.
+- Records are **self-contained** (`rounds/R-NNN.json`) so a round never depends on chat history.
+- **One apply owner** per sitting. Parent recovery must interrupt the model subagent before re-apply.
+
+CLI: `python3 scripts/model_bakeoff.py` — see [README.md](README.md).
+
+### Sitting sequence (world)
+
+Safe restore needs the world **closed**; apply needs MCP so the world must be **open**:
+
+1. Quit SouthamptonAI (title screen or close save).
+2. `python3 scripts/region_backup.py restore 2026-10-18-224358-bakeoff-ghost-3x3-lidar` (or `config.json` → `ghost_snap`; refuses if MCP is up unless `--force`).
+3. Rejoin; confirm chunks load (ghost may look sparse around the cell — expected).
+4. Claim lock → cold pack (BRIEF + [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md)) → apply → fixed cameras.
+5. Interview one axis at a time → `score` → paste `usage` when the tool UI shows counts.
+
+## Portable tiers
+
+| Tier | Meaning | Scheduled now? |
+|------|---------|----------------|
+| `low` | Haiku / mini / Flash / Composer-class | yes |
+| `mid` | Sonnet / GPT-mid / Pro-class | yes, after a non-great low |
+| `high` | Opus / Ultra-class | no (`bulk_ok: false`) |
+
+Primary advice uses **cold** attempt 1. Repairs (attempts 2–3) are logged separately.
+
+## Tasks
+
+**Pilot:** `feature_design` on cell **(48, -44)** — SUSU / south Library Square.
+
+Later: `look`, `greeblies`, `trees`. Soft tasks (orchestrator / apply plumbing) stay out.
+
+## World
+
+- Apply / wreck OK.
+- Freeze a **3×3 lidar-ghost baseline** around (48, -44): snap `2026-10-18-224358-bakeoff-ghost-3x3-lidar` (`config.json` `ghost_snap`). Restore between sittings with `region_backup.py restore` (not a hand-rolled `cp`).
+- Fixed interview cameras + real reference photos (see pack brief).
+
+## Fairness
+
+1. Frozen pack `v1` for cold attempts ([BRIEF.md](packs/v1/BRIEF.md)); interpret readable-massing pad via [FAIRNESS.md](packs/v1/FAIRNESS.md) — do not edit BRIEF mid-pilot (bump to `v2`).
+2. Optional mid-rung pack calibration once (unscored) before scoring starts.
+3. Repairs add a short recorded brief; do not silently edit pack `v1`.
+4. Contested cold **fail** → one identical rerun before it counts (still attempt 1).
+
+## Scoring
+
+- Mechanical gate fail → overall fail (no interview required).
+- Interview grades: **fail** / **pass** / **great** per axis.
+- Overall = worst of critical axes (`massing`, `keep` by default).
+- Why-block when not great → optional `repair` round.
+
+## Usage (tokens / cost)
+
+Each round has a `usage` block (`input_tokens`, `output_tokens`, `total_tokens`, optional `cost_usd`, `source`). Record after the sitting when the tool shows numbers — Cursor rarely exposes them to the agent, so paste from the usage UI:
+
+```bash
+python3 scripts/model_bakeoff.py usage R-002 --input 12000 --output 3000 --source cursor-ui
+```
+
+Leave nulls rather than inventing counts. `source` is one of: `cursor-ui`, `api`, `agent-report`, `estimate`, `unknown`.
+
+## Promote to hard routing?
+
+Only after clear, repeated winners. Until then: starting-place advice in round logs + future tier summary — not an agent mandate.

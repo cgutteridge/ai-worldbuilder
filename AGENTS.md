@@ -33,6 +33,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Shared scripts | `scripts/` (cross-provider glue) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
+| Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost restore: `scripts/region_backup.py restore` |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |
 
 ### Provider roots (dual)

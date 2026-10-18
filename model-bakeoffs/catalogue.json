@@ -1,0 +1,23 @@
+{
+  "_comment": "Models you can actually pick when a tool has quota. tier=low|mid|high; bulk_ok=false means skip for bake-offs (too dear for bulk). Add with: python3 scripts/model_bakeoff.py add-model ...",
+  "tools": [
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "models": [
+        {
+          "id": "composer-2.5",
+          "tier": "low",
+          "label": "Composer 2.5",
+          "bulk_ok": true
+        },
+        {
+          "id": "grok-4.7",
+          "tier": "mid",
+          "label": "Grok 4.7",
+          "bulk_ok": true
+        }
+      ]
+    }
+  ]
+}
