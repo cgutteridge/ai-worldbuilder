@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 28,
-  "tasks": []
+  "nextTaskId": 29,
+  "tasks": [
+    {
+      "id": 28,
+      "title": "Audit the whole system: code and docs must ask for a reference type, never name a provider",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "xl",
+      "blockedBy": [],
+      "notes": "Types and providers are two distinct layers (GLOSSARY: Type, Provider). Find every place that names a provider where it means a type, and move it behind the type: e.g. 'DEFRA' / 'defra_lidar' / 'UKDEFRA' where the need is a DTM or DSM (lidar height), 'google' / 'streetview' where the need is aerial or street-level photo, 'OSM' where the need is vector_map, 'Geocraft'/'pristine' where the need is a ground or height reference. Scope: scripts and tools (imports, hard-coded paths and cache dirs such as downloads/defra-lidar, function and module names), config (world-frame elevation_plugin, place-sources), rules, skills, AGENTS.md, briefs and docs (wording that tells a model to use a vendor). Method: grep for provider/vendor names outside providers/<id>/ and config/*providers*.json; classify each hit as (a) legitimate provider-internal, (b) should resolve a type to a provider per place via config, (c) wording only. Deliver: the hit list with classification, fixes for (b) and (c), and a check (test or lint script) that fails when a provider name appears outside provider packages and provider catalogues. Why: long-term flexibility, so any place can use its own national or local provider for the same type. Related: the lidar provider layer (scripts/lidar_provider.py in Southampton Refine) is the pattern to generalise; coordinate with that work before starting."
+    }
+  ]
 }
