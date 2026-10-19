@@ -153,6 +153,15 @@ BUILT plan in place to “fix” the world.
  Pass order and undo: rules/handoff-layered-passes.md (features, ground, trees, decor).
  Do not stack extra passes over the same ground (I-035).
 
+ Lidar ghosts (v2): docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
+ `cell_marker --raise`, ring-2 frontier cells may show grey feature mass. On every
+ **live feature apply**, the tool pre-strips ghost features inside the planned
+ volume (including columns in neighbour cells); do not delete grey blocks by hand
+ unless recovering from a failed apply. After apply, `lidar_ghost.py status`
+ must show `ghost-features` stripped/superseded on each cell the footprint
+ touched — not `applied` grey under the real building. `feature_build` dry-run
+ must still list full shell cells (it must not drop columns owned only by ghosts).
+
  1. Activate — record tx,tz in COVERAGE IN FLIGHT; raise the hazard-stripe marker
     (REQUIRED, first action on every new cell; it marks the project's current FOCUS
     cell, not a task run, and stays up across chats): `python3 scripts/cell_marker.py

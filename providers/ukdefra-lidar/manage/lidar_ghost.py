@@ -65,6 +65,16 @@ def owner_name(tx: int, tz: int, layer: str) -> str:
     return f'ghost_{tx}_{tz_token(tz)}_{layer}'
 
 
+def is_ghost_feature_owner(build: str) -> bool:
+    """True when ``build`` is a lidar ghost features owner (not ground).
+
+    @param build: verification/site build name
+    @returns: whether this owner is grey feature mass
+    """
+    name = str(build)
+    return name.startswith('ghost_') and name.endswith('_features')
+
+
 def ghost_owners_for(cell: tuple[int, int]) -> frozenset[str]:
     """Both ghost plan names for one cell (for ``modifies`` / ignored_builds).
 
@@ -73,6 +83,29 @@ def ghost_owners_for(cell: tuple[int, int]) -> frozenset[str]:
     """
     tx, tz = cell
     return frozenset({owner_name(tx, tz, 'ground'), owner_name(tx, tz, 'features')})
+
+
+def ghost_modifies_for_plan(volume_plan) -> frozenset[str]:
+    """Ghost owner names for every cell a feature plan touches (cross-cell footprints).
+
+    @param volume_plan: feature ``site_kit.Plan``
+    @returns: names to pass in ``site_kit.apply(..., modifies=...)``
+    """
+    out: set[str] = set()
+    for cell in cells_for_positions(volume_plan.cells.keys()):
+        out |= ghost_owners_for(cell)
+    return frozenset(out)
+
+
+def strip_ghost_features_before_feature_apply(volume_plan, *, cells_dir: Path | None = None) -> list[dict]:
+    """Remove grey ghost-feature blocks inside a planned feature volume before live fill.
+
+    @param volume_plan: offline feature plan about to apply
+    @param cells_dir: STAGES override (tests)
+    @returns: per-cell strip reports from ``apply_strip_plans``
+    """
+    strips = plan_strip_ghost_features(volume_plan, cells_dir=cells_dir)
+    return apply_strip_plans(strips, dry=False, cells_dir=cells_dir)
 
 
 def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
@@ -349,6 +382,26 @@ def supersede_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None,
         _write_ghost_stage(cell, STAGE_GROUND, 'superseded', cells_dir, note=note)
 
 
+def mark_ghost_features_stripped_for_volume(volume_plan, *, cells_dir: Path | None = None) -> list[tuple[int, int]]:
+    """Mark ghost-features stages stripped in every cell the volume touches.
+
+    Used after a real feature apply when blocks were overwritten in place (so
+    post-apply ``plan_strip_ghost_features`` finds no registry hits) but grey
+    mass may still be present in cross-cell columns until stripped or replaced.
+
+    @param volume_plan: applied feature plan
+    @param cells_dir: STAGES override (tests)
+    @returns: cells whose ghost-features stage was updated
+    """
+    touched: list[tuple[int, int]] = []
+    for cell in sorted(cells_for_positions(volume_plan.cells.keys())):
+        st = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
+        if st in GHOST_APPLIED:
+            mark_ghost_features_stripped(cell, partial=False, cells_dir=cells_dir)
+            touched.append(cell)
+    return touched
+
+
 def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False,
                                  cells_dir: Path | None = None,
                                  note: str = 'real feature overlap') -> None:
@@ -390,7 +443,7 @@ def plan_strip_ghost_features(volume_plan, *, cells_dir: Path | None = None):
     owned = built_cells(within=positions)
     by_cell: dict[tuple[int, int], dict] = {}
     for pos, (build, _st) in owned.items():
-        if not str(build).startswith('ghost_') or not str(build).endswith('_features'):
+        if not is_ghost_feature_owner(build):
             continue
         from site_stages import CELL_SHIFT
 
@@ -633,6 +686,9 @@ def reconcile_after_real_apply(plan, *, stage_key: str, cell: tuple[int, int],
     elif stage_key.startswith('feature-'):
         strips = plan_strip_ghost_features(plan, cells_dir=cells_dir)
         rep['strip'] = apply_strip_plans(strips, dry=False, cells_dir=cells_dir)
+        rep['ghost_features_marked'] = [
+            list(c) for c in mark_ghost_features_stripped_for_volume(plan, cells_dir=cells_dir)
+        ]
     frontier = ensure_frontier(dry=False, heights_fn=heights_fn, cells_dir=cells_dir)
     rep['frontier'] = {'seeds': frontier['seeds'], 'targets': frontier['targets'],
                         'planned': sum(1 for r in frontier['reports'] if 'skipped' not in r)}

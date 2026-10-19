@@ -576,9 +576,9 @@ def main() -> int:
     p.add_argument('--y', type=int, help='with --clear/--stray-clear: also sweep this exact ring Y')
     p.add_argument('--dry-run', action='store_true', help='plan only, no MCP apply')
     p.add_argument('--ghost-ring', type=int, default=None, metavar='N',
-                   help='neighbour lidar-ghost depth on raise/adopt (default: LIDAR_GHOST_RING or 1)')
+                   help='frontier lidar-ghost depth on raise/adopt (default: LIDAR_GHOST_RING or 2)')
     p.add_argument('--no-ghosts', action='store_true',
-                   help='skip neighbour lidar ghosts on raise/adopt')
+                   help='skip lidar ghost frontier ensure on raise/adopt')
     args = p.parse_args()
     if args.status:
         return cmd_status()

@@ -131,6 +131,14 @@ class BuildPlanTest(unittest.TestCase):
         self.assertTrue(roof_ys, 'expected pitched brick slabs')
         self.assertGreaterEqual(max(roof_ys), eave)
 
+    def test_ghost_feature_owner_does_not_drop_shell_cells(self):
+        """Grey lidar mass must not shrink the offline plan (live apply overwrites)."""
+        pos = (12, 50, 22)
+        ghost_owned = {pos: ('ghost_48_m44_features', 'minecraft:light_gray_concrete')}
+        with mock.patch('site_kit.built_cells', return_value=ghost_owned):
+            plan = F.build(self.spec(storeys=2), footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertIn(pos, plan.cells)
+
 
 class CliDryRunTest(unittest.TestCase):
     """Seam: run() previews and dry-applies (never live unless apply=True)."""

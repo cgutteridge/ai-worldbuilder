@@ -675,9 +675,23 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 'with the OSM rotation). Real offset roofs (evidence in hand): set '
                 'plan.roof_jog_ok = "<reason + evidence id>".')
         print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
+    stage_key = stage or f'feature-{plan.name}'
+    if not dry and stage_key.startswith('feature-'):
+        try:
+            import lidar_ghost as lg
+            rep = lg.strip_ghost_features_before_feature_apply(plan)
+            if rep:
+                print('lidar ghost pre-strip:', json.dumps(rep)[:600])
+        except Exception as exc:
+            print(f'lidar ghost pre-strip failed: {exc}', file=sys.stderr)
     owned = built_cells(exclude=set(modifies) | {plan.name}, within=plan.cells)
+    try:
+        import lidar_ghost as lg
+        ghost_ok = lg.is_ghost_feature_owner
+    except ImportError:
+        ghost_ok = lambda name: str(name).startswith('ghost_') and str(name).endswith('_features')
     clash = {str(q): [owned[q][0], owned[q][1], st] for q, st in plan.cells.items()
-             if q in owned and owned[q][1] != st}
+             if q in owned and owned[q][1] != st and not ghost_ok(owned[q][0])}
     if clash:
         (OUT / f'{plan.name}-clashes.json').write_text(json.dumps(clash, indent=1))
         raise SystemExit(f'{len(clash)} cells belong to earlier builds; see {plan.name}-clashes.json')

@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, SCRIPTS  # noqa: E402
 SITE = ROOT / 'site'
 QUEUE = SITE / 'QUEUE.txt'
 HANDOFF = SITE / 'HANDOFF.txt'
@@ -488,8 +488,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             '(portal-facing cameras, top-down, aerial crop); end refuses FEATURE without it.',
         ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
           + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz} '
-              f'(ensures lidar ghost frontier — ring around all worked cells, default LIDAR_GHOST_RING=2; '
-              f'--no-ghosts to skip). Real applies refresh ghosts automatically.'] if not items else [])))
+              f'(ensures lidar ghost frontier). {_LIDAR_GHOST_V2_FRONTIER} {_LIDAR_GHOST_V2_SPLIT}']
+             if not items else [])))
     if gaps.get('trees_over_roof'):
         items.append((f'CELL {tx},{tz} (r={r}) TREES OVER ROOF {len(gaps["trees_over_roof"])} lidar lump(s) (I-071). RULES: foliage.', [
             'Lidar shows tree columns over these roofs; decide each (crown kept over the roof, or roof/crown rebuilt) and record',
@@ -499,7 +499,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
         items.append((f'CELL {tx},{tz} (r={r}) layered passes: ground, trees, decor. RULES: ground.', [
             'Auto-queued: next in north-centre-then-clockwise order. The cell marker',
             f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} '
-            f'if not already (ghost frontier expands with raise and after each real apply).',
+            f'if not already. {_LIDAR_GHOST_V2_FRONTIER} Real ground here supersedes ghost ground; '
+            f'feature ghosts in this cell drop when real features overlap.',
             'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             f'patrol sweep; update site/cells/{tx}_{tz}-STAGES.json;',
@@ -592,6 +593,20 @@ def _cell_for_item(item):
 
 
 NO_GREEBLIES_SEEN = 'no greeblies seen'
+
+# Lidar ghost v2 handoff copy (docs/specs/lidar-ghost-v2-and-dryrun-reset.md).
+_LIDAR_GHOST_V2_SPLIT = (
+    'Split placeholders: DTM ghost ground until real ground-layer applies; DSM−DTM ghost features '
+    'until a real feature footprint overlaps that cell. Cross-cell footprints (home cell A, volume '
+    'into B): grey mass in B is stripped inside the planned volume immediately before live feature '
+    'fill (site_kit pre-strip); feature_build must not drop shell cells just because ghost features '
+    'owned the column. After apply, status on every touched cell should show ghost-features '
+    'stripped/superseded — not applied grey under the real shell.'
+)
+_LIDAR_GHOST_V2_FRONTIER = (
+    'Frontier = Chebyshev ring around every cell with real refine started (default LIDAR_GHOST_RING=2). '
+    'Refresh after cell_marker raise/adopt and after every real apply (--no-ghosts / --ghost-ring to override).'
+)
 
 
 def is_feature_queue_item(item):
@@ -853,7 +868,7 @@ def _coverage_cheatsheet_lines():
 
     @returns: non-empty stripped lines for the session brief
     """
-    path = ROOT / 'scripts' / 'coverage.py'
+    path = SCRIPTS / 'coverage.py'
     src = path.read_text()
     m = re.search(r'^COVERAGE_CHEATSHEET = """(.*?)"""', src, re.DOTALL | re.MULTILINE)
     if not m:
@@ -867,7 +882,7 @@ def _kit_api():
     @returns: list of formatted lines
     """
     import ast
-    tree = ast.parse((ROOT / 'scripts/site_kit.py').read_text())
+    tree = ast.parse((SCRIPTS / 'site_kit.py').read_text())
     out = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and not node.name.startswith('_'):
@@ -911,6 +926,11 @@ def brief_text(item):
             '  One-time sources pass per new cell (PROCESS §2e step 1b); build steps still obey',
             '  one primary aerial + one street Read per rules/reference-token-budget.md.',
             '  Foliage cadence: rules/foliage.md.',
+            '',
+            'LIDAR GHOSTS (v2 frontier — skyline placeholders, not real refine):',
+            f'  {_LIDAR_GHOST_V2_FRONTIER}',
+            f'  {_LIDAR_GHOST_V2_SPLIT}',
+            f'  Status: python3 shims/lidar_ghost.py status --cell {cell[0]},{cell[1]} --ring 2',
         ]
         try:
             from cross_zone import cross_zone_report, format_report
@@ -919,8 +939,9 @@ def brief_text(item):
             parts += ['', 'CROSS-ZONE (read-only):']
             for ln in format_report(cz).splitlines():
                 parts.append(f'  {ln}')
-        except Exception:
-            parts.append('  CROSS-ZONE: (unavailable — coverage built?)')
+        except (Exception, SystemExit):
+            # cross_zone_report uses SystemExit when coverage area is not built yet.
+            parts += ['', 'CROSS-ZONE (read-only):', '  (unavailable — run coverage build for highfield)']
     cell_rel = None
     if cell is not None:
         cell_rel = str(sources_path(*cell).relative_to(ROOT))

@@ -63,6 +63,20 @@ TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})
 
 
+def _ghost_feature_clash_ok(build: str) -> bool:
+    """True when an earlier owner is lidar ghost features (real shell may overwrite).
+
+    @param build: verification/site build name
+    @returns: whether the clash filter should keep the planned cell
+    """
+    try:
+        import lidar_ghost as lg
+        return lg.is_ghost_feature_owner(build)
+    except ImportError:
+        name = str(build)
+        return name.startswith('ghost_') and name.endswith('_features')
+
+
 def pane(axis: str) -> str:
     """Glass pane block state spanning the given horizontal axis.
 
@@ -852,7 +866,8 @@ class Build:
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
         from site_kit import built_cells
         owned = built_cells(exclude={self.name}, within=self.p.cells)
-        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
+        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep
+                  and not _ghost_feature_clash_ok(owned[q][0])]:
             del self.p.cells[q]
         for f in self.features:
             print(f.no, 'b', f.b, 'storeys', f.storeys, 'cells', len(f.cells),
@@ -911,7 +926,14 @@ def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
-    apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']))
+    modifies = set(spec['modifies'])
+    if do_apply:
+        try:
+            import lidar_ghost as lg
+            modifies |= lg.ghost_modifies_for_plan(plan)
+        except ImportError:
+            pass
+    apply(plan, dry=not do_apply, modifies=tuple(modifies))
     return plan
 
 

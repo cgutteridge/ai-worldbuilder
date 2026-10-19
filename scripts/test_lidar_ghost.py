@@ -291,6 +291,18 @@ class FrontierAndSplitLayers(unittest.TestCase):
         self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_FEATURES, self.cells), 'stripped')
         self.assertFalse(lg.ghosts_complete(cell, self.cells))
 
+    def test_mark_stripped_for_volume_touches_neighbour_cell(self):
+        from site_kit import Plan
+
+        self._write((1, 0), {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
+        self._write((2, 0), {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
+        plan = Plan('cross_cell_feature')
+        plan.set(130, 50, 0, 'minecraft:bricks')
+        plan.set(256, 50, 0, 'minecraft:bricks')
+        touched = lg.mark_ghost_features_stripped_for_volume(plan, cells_dir=self.cells)
+        self.assertEqual(set(touched), {(1, 0), (2, 0)})
+        self.assertEqual(lg.ghost_stage_status((1, 0), lg.STAGE_FEATURES, self.cells), 'stripped')
+
 
 class ReconcileHook(unittest.TestCase):
     """Post-apply reconcile updates stages without live MCP."""
@@ -312,6 +324,27 @@ class ReconcileHook(unittest.TestCase):
                                                 cells_dir=cells)
         self.assertEqual(rep['ghost_ground'], 'superseded')
         self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, cells), 'superseded')
+        tmp.cleanup()
+
+    def test_feature_reconcile_marks_cross_cell_ghost_stages(self):
+        tmp = tempfile.TemporaryDirectory()
+        cells = Path(tmp.name)
+        for cell in ((1, 0), (2, 0)):
+            path = cells / f'{cell[0]}_{cell[1]}-STAGES.json'
+            path.write_text(json.dumps({'stages': {
+                lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST},
+            }}))
+        from site_kit import Plan
+
+        plan = Plan('feat')
+        plan.set(130, 50, 0, 'minecraft:bricks')
+        plan.set(256, 50, 0, 'minecraft:bricks')
+        with mock.patch.object(lg, 'ensure_frontier', return_value={'seeds': [], 'targets': [], 'reports': []}), \
+             mock.patch.object(lg, 'plan_strip_ghost_features', return_value=[]), \
+             mock.patch.object(lg, 'apply_strip_plans', return_value=[]):
+            rep = lg.reconcile_after_real_apply(plan, stage_key='feature-feat', cell=(2, 0),
+                                                cells_dir=cells)
+        self.assertEqual(set(map(tuple, rep['ghost_features_marked'])), {(1, 0), (2, 0)})
         tmp.cleanup()
 
 

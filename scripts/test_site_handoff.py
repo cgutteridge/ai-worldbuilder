@@ -451,6 +451,37 @@ class PlanCellItems(unittest.TestCase):
         self.assertNotIn('lump_sweep.exceptions', body)
         self.assertNotIn('Original Geocraft still standing', body)
 
+    def test_first_feature_item_describes_v2_ghost_frontier(self):
+        body = '\n'.join(H.plan_cell_items(48, -44, 1, self.gaps(features=[self.FEATURE]), [])[0][1])
+        self.assertIn('lidar ghost frontier', body)
+        self.assertIn('LIDAR_GHOST_RING=2', body)
+        self.assertIn('DTM ghost ground', body)
+        self.assertIn('Cross-cell', body)
+        self.assertNotIn('neighbour lidar ghosts come with raise', body)
+
+    def test_layered_passes_describes_split_ghost_layers(self):
+        body = '\n'.join(H.plan_cell_items(48, -44, 1, self.gaps(layers=True), [])[0][1])
+        self.assertIn('supersedes ghost ground', body)
+        self.assertIn('real refine started', body)
+        self.assertNotIn('neighbour lidar ghosts come with raise', body)
+
+
+class BriefLidarGhost(Base):
+    def test_brief_lists_lidar_ghost_status_for_cell_item(self):
+        item = {
+            'id': 'Q-099',
+            'text': 'CELL 48,-44 (r=1) FEATURE Demo. RULES: property.',
+            'lines': ['CELL 48,-44 (r=1) FEATURE Demo. RULES: property.'],
+        }
+        with mock.patch('cross_zone.cross_zone_report', return_value={}), \
+                mock.patch('cross_zone.format_report', return_value='(none)'), \
+                mock.patch.object(H, '_kit_api', return_value=['  (mock)']), \
+                mock.patch.object(H, '_coverage_cheatsheet_lines', return_value=['  (mock)']):
+            brief = H.brief_text(item)
+        self.assertIn('LIDAR GHOSTS', brief)
+        self.assertIn('shims/lidar_ghost.py status --cell 48,-44', brief)
+        self.assertIn('DTM ghost ground', brief)
+
 
 class AppendQueueItems(unittest.TestCase):
     def test_numbers_after_highest_and_fills_qid(self):
