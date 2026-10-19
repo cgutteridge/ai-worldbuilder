@@ -242,7 +242,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool) -> dict:
     """Execute or preview dry-run reset.
 
     @param dry_run: print plan only
-    @param archive_site: move existing site tree to site/archive/<stamp> first
+    @param archive_site: move existing site tree to backups/<stamp>-dryrun-site first
     @param force: override lock / MCP refusal
     @returns: report dict
     """
@@ -266,10 +266,10 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool) -> dict:
     report['warnings'] = check_preconditions(force=force)
     stamp = time.strftime('%Y-%m-%d-%H%M%S')
     if archive_site and SITE.is_dir():
-        dest = SITE / 'archive' / f'{stamp}-dryrun-site'
+        dest = ROOT / 'backups' / f'{stamp}-dryrun-site'
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(SITE), str(dest))
-        report['archived_site'] = str(dest.relative_to(ROOT) if dest.is_relative_to(ROOT) else dest)
+        report['archived_site'] = str(dest.relative_to(ROOT))
         SITE.mkdir(parents=True, exist_ok=True)
     clear_place_artifacts()
     scaffold_site(keep_current=keep)
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--dry-run', action='store_true', help='print preserved vs wiped paths; no writes')
     ap.add_argument('--archive-site', action='store_true',
-                    help='move the current site/ tree to site/archive/<timestamp> before scaffold')
+                    help='move the current site/ tree to backups/<timestamp>-dryrun-site before scaffold')
     ap.add_argument('--force', action='store_true',
                     help='reset even if site lock is held or MCP is up (dangerous)')
     args = ap.parse_args(argv)
