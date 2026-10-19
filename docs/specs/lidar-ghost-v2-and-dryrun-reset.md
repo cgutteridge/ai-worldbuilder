@@ -48,7 +48,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 - ** Preconditions:** refuse by default if site lock is held or MCP reports the game world up; allow `--force` with explicit warning text.
 - **`--dry-run`:** print wipe list (regions, site paths to replace, paths preserved) without writes.
 - **Site merge policy:** copy new-world site template over place memory; **preserve** current-cell focus file content; **clear** lock file and cell-holds journal; **do not** touch world config, local providers, or reference trees.
-- **Optional:** `--archive-site` moves existing site directory to a timestamped archive folder under site archive before scaffold.
+- **Optional:** `--archive-site` moves the existing `site/` tree to `backups/<timestamp>-dryrun-site` before scaffold (not under `site/`, so the move is valid).
 - Document human steps: player must **leave the world** before region delete and **reopen** after so chunks regenerate empty.
 
 ### Lidar ghost v2 — frontier
