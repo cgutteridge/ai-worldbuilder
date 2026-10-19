@@ -782,7 +782,36 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         site_stages.finish(cell, key, 'applied-with-mismatches', readback=rep)
     else:
         site_stages.complete(cell, key, rep)
+    _reconcile_lidar_ghosts(plan, stage_key=key, cell=cell, meta=meta, dry=dry, rep=rep)
     return rep
+
+
+def _reconcile_lidar_ghosts(plan, *, stage_key: str, cell, meta, dry: bool, rep: dict) -> None:
+    """Invoke lidar ghost v2 frontier refresh after successful real applies.
+
+    @param plan: applied plan
+    @param stage_key: STAGES key for this apply
+    @param cell: primary cell tuple
+    @param meta: stage meta dict from apply()
+    @param dry: whether apply was dry-run
+    @param rep: readback report from apply()
+    """
+    if dry:
+        return
+    meta = meta or {}
+    if meta.get('kind') == 'ghost':
+        return
+    if stage_key in ('ghost-ground', 'ghost-features'):
+        return
+    try:
+        import lidar_ghost as lg
+        summary = lg.reconcile_after_real_apply(
+            plan, stage_key=stage_key, cell=tuple(cell), mismatches=rep.get('mismatches', 0))
+        print('lidar ghost reconcile:', json.dumps(summary)[:800])
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(f'lidar ghost reconcile failed: {exc}', file=sys.stderr)
 
 
 def _bring_player(m, lo, hi, reach=80):

@@ -17,8 +17,9 @@ import time
 from pathlib import Path
 
 from atomic_json import write_json
+from script_env import ROOT  # noqa: E402
 
-LOCK = Path(__file__).resolve().parent.parent / 'site/LOCK.json'
+LOCK = ROOT / 'site' / 'LOCK.json'
 STALE_MIN = 90
 
 

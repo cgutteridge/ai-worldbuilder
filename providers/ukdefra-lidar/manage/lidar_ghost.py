@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Idempotent lidar ghosts: DTM ground + grey DSM−DTM features (ADR 003, task #26).
+"""Idempotent lidar ghosts v2: frontier ring, split ground vs features (spec 2026-10).
 
-Placeholder massing for neighbour cells before real refine. No trees/decor ghosts in v1.
-No per-cell generated Python — one tool plans and applies from DEFRA composites.
+Placeholder massing near **worked** cells (real ground/trees/decor/features), not only
+focus-time neighbours. Default Chebyshev ring depth is 2 (``LIDAR_GHOST_RING``). No
+trees/decor ghosts. Real applies refresh the frontier and strip grey mass under features.
 
   Owners:  ghost_<tx>_<tz>_ground / ghost_<tx>_<tz>_features
   STAGES:  ghost-ground / ghost-features  (meta kind=ghost; real layers stay ground-layer/…)
 
-  python3 shims/lidar_ghost.py plan --cell 48,-44              # dry-run one cell (no Minecraft)
-  python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 1    # dry-run Chebyshev neighbours
-  python3 shims/lidar_ghost.py status --cell 48,-44 --ring 1
-  SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 1
+  python3 shims/lidar_ghost.py status --cell 48,-44 --ring 2
+  python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2
+  SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 2
 
 ``plan`` / unit tests inject height samples (no live server, no DEFRA download).
-Real refine still uses ground_layer / trees_layer / decor_layer / house_build / feature_build;
-those layers treat ghost owners as overwritable (see ground_layer.ignored_builds).
+Post-apply reconcile runs from ``site_kit.apply`` after successful real work.
 """
 from __future__ import annotations
 
@@ -31,7 +30,7 @@ import numpy as np
 import cellmath
 from script_env import ROOT, make_parser  # noqa: E402
 
-DEFAULT_RING = 1
+DEFAULT_RING = 2
 FILL_BOTTOM = 1                     # empty save has bedrock at y=0; fill solid above it
 GROUND_BLOCK = 'gray_concrete'      # DTM surface
 FILL_BLOCK = 'stone'                # under the surface
@@ -39,7 +38,11 @@ FEATURE_BLOCK = 'light_gray_concrete'  # DSM − DTM mass
 STAGE_GROUND = 'ghost-ground'
 STAGE_FEATURES = 'ghost-features'
 KIND_GHOST = 'ghost'
+REAL_GROUND_KEYS = ('ground', 'ground-layer')
+GHOST_APPLIED = frozenset({'applied', 'verified'})
+GHOST_TERMINAL = frozenset({'superseded', 'stripped', 'partial'})
 FOOTPRINT_OK = 'lidar ghost massing (ADR 003); not a real feature build'
+AIR = 'minecraft:air'
 
 HeightsFn = Callable[[int, int, int, int], dict[str, Any]]
 
@@ -169,9 +172,270 @@ def ghosts_complete(cell: tuple[int, int], cells_dir: Path | None = None) -> boo
     @param cells_dir: override (tests)
     @returns: whether ground + features ghosts are done
     """
-    good = ('applied', 'verified')
-    return (ghost_stage_status(cell, STAGE_GROUND, cells_dir) in good
-            and ghost_stage_status(cell, STAGE_FEATURES, cells_dir) in good)
+    return (ghost_stage_status(cell, STAGE_GROUND, cells_dir) in GHOST_APPLIED
+            and ghost_stage_status(cell, STAGE_FEATURES, cells_dir) in GHOST_APPLIED)
+
+
+def real_ground_applied(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
+    """True when the cell has a real ground layer stage in a finished state.
+
+    @param cell: (tx, tz)
+    @param cells_dir: STAGES directory override (tests)
+    @returns: whether real ground owns the surface reference
+    """
+    stages = read_stages(cell, cells_dir).get('stages') or {}
+    good = ('applying', 'applied', 'applied-with-mismatches', 'verified')
+    for key in REAL_GROUND_KEYS:
+        entry = stages.get(key)
+        if isinstance(entry, dict) and entry.get('status') in good:
+            return True
+    return False
+
+
+def list_stage_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
+    """Every cell that has a ``*-STAGES.json`` file.
+
+    @param cells_dir: override (tests)
+    @returns: sorted (tx, tz) list
+    """
+    from site_stages import CELLS
+
+    root = cells_dir or CELLS
+    if not root.is_dir():
+        return []
+    out: list[tuple[int, int]] = []
+    for path in root.glob('*-STAGES.json'):
+        stem = path.name[:-len('-STAGES.json')]
+        if '_' not in stem:
+            continue
+        tx_s, tz_s = stem.split('_', 1)
+        try:
+            out.append((int(tx_s), int(tz_s)))
+        except ValueError:
+            continue
+    return sorted(out)
+
+
+def seed_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
+    """Cells where real refine has started (non-ghost stages).
+
+    @param cells_dir: override (tests)
+    @returns: sorted seed cells
+    """
+    return [c for c in list_stage_cells(cells_dir) if real_work_started(c, cells_dir)]
+
+
+def frontier_targets(ring: int | None = None, cells_dir: Path | None = None) -> list[tuple[int, int]]:
+    """Union of Chebyshev ``ring`` neighbourhoods around every seed cell.
+
+    @param ring: depth; None → ``ring_from_env()``
+    @param cells_dir: STAGES override (tests)
+    @returns: sorted target cells (includes seeds)
+    """
+    depth = ring_from_env() if ring is None else ring
+    if depth < 0:
+        raise ValueError(f'ring must be >= 0, got {depth}')
+    seeds = seed_cells(cells_dir)
+    seen: set[tuple[int, int]] = set()
+    for s in seeds:
+        seen.update(neighbour_cells(s, depth, include_focus=True))
+    return sorted(seen)
+
+
+def real_feature_touches_cell(cell: tuple[int, int]) -> bool:
+    """True when a non-layer feature build touches this cell's columns.
+
+    @param cell: (tx, tz)
+    @returns: whether real feature volume overlaps the cell
+    """
+    from cell_features import is_feature_build
+    from touched_cells import touched_by_build
+
+    x0, z0, x1, z1 = cellmath.bounds(cell)
+    cols = {(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
+    for name, touched in touched_by_build().items():
+        if is_feature_build(name) and cols & touched:
+            return True
+    return False
+
+
+def ghost_ground_ready(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
+    """True when ghost ground is applied and not superseded.
+
+    @param cell: (tx, tz)
+    @param cells_dir: override (tests)
+    @returns: whether ghost ground blocks are expected in-world
+    """
+    st = ghost_stage_status(cell, STAGE_GROUND, cells_dir)
+    return st in GHOST_APPLIED
+
+
+def ghost_features_ready(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
+    """True when ghost features are applied and not stripped/superseded.
+
+    @param cell: (tx, tz)
+    @param cells_dir: override (tests)
+    @returns: whether ghost feature blocks are expected in-world
+    """
+    st = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
+    return st in GHOST_APPLIED
+
+
+def needs_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
+    """Whether ghost ground should be planned/applied for ``cell``.
+
+    @param cell: (tx, tz)
+    @param cells_dir: override (tests)
+    @returns: True when placeholders are still appropriate
+    """
+    if real_ground_applied(cell, cells_dir):
+        return False
+    if ghost_ground_ready(cell, cells_dir):
+        return False
+    return True
+
+
+def needs_ghost_features(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
+    """Whether ghost features should be planned/applied for ``cell``.
+
+    @param cell: (tx, tz)
+    @param cells_dir: override (tests)
+    @returns: True when grey mass is still appropriate
+    """
+    if real_feature_touches_cell(cell):
+        return False
+    if not (real_ground_applied(cell, cells_dir) or ghost_ground_ready(cell, cells_dir)):
+        return False
+    if ghost_features_ready(cell, cells_dir):
+        return False
+    return True
+
+
+def _write_ghost_stage(cell: tuple[int, int], key: str, status: str, cells_dir: Path | None,
+                       **fields) -> None:
+    """Update one ghost stage entry without a live apply.
+
+    @param cell: (tx, tz)
+    @param key: ghost stage key
+    @param status: new status string
+    @param cells_dir: STAGES override (tests)
+    @param fields: extra JSON fields on the entry
+    """
+    import site_stages
+
+    data = read_stages(cell, cells_dir)
+    entry = data['stages'].get(key)
+    if not isinstance(entry, dict):
+        entry = {'kind': KIND_GHOST}
+    entry.update({'status': status, **fields})
+    data['stages'][key] = entry
+    if cells_dir is not None:
+        path = stage_path(cell, cells_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + '\n')
+    else:
+        site_stages.write(cell, data)
+
+
+def supersede_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None, *,
+                           note: str = 'real ground layer applied') -> None:
+    """Mark ghost-ground superseded after real ground overwrites blocks.
+
+    @param cell: (tx, tz)
+    @param cells_dir: override (tests)
+    @param note: human reason stored on the stage entry
+    """
+    if ghost_stage_status(cell, STAGE_GROUND, cells_dir) in GHOST_APPLIED:
+        _write_ghost_stage(cell, STAGE_GROUND, 'superseded', cells_dir, note=note)
+
+
+def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False,
+                                 cells_dir: Path | None = None,
+                                 note: str = 'real feature overlap') -> None:
+    """Mark ghost-features terminal so idempotent ensure can re-run when needed.
+
+    @param cell: (tx, tz)
+    @param partial: use ``partial`` instead of ``stripped``
+    @param cells_dir: override (tests)
+    @param note: human reason stored on the stage entry
+    """
+    status = 'partial' if partial else 'stripped'
+    prev = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
+    if prev in GHOST_APPLIED | GHOST_TERMINAL:
+        _write_ghost_stage(cell, STAGE_FEATURES, status, cells_dir, note=note)
+
+
+def cells_for_positions(positions) -> set[tuple[int, int]]:
+    """Map block positions to 128² cells.
+
+    @param positions: iterable of (x, y, z)
+    @returns: set of (tx, tz)
+    """
+    from site_stages import CELL_SHIFT
+
+    return {(x >> CELL_SHIFT, z >> CELL_SHIFT) for x, _y, z in positions}
+
+
+def plan_strip_ghost_features(volume_plan, *, cells_dir: Path | None = None):
+    """Plan air cells for ghost-feature-owned blocks inside a real feature volume.
+
+    @param volume_plan: applied feature ``site_kit.Plan``
+    @param cells_dir: unused; reserved for tests
+    @returns: list of (cell, strip_plan) pairs (empty when nothing to strip)
+    """
+    from site_kit import Plan, built_cells
+
+    del cells_dir
+    positions = set(volume_plan.cells.keys())
+    owned = built_cells(within=positions)
+    by_cell: dict[tuple[int, int], dict] = {}
+    for pos, (build, _st) in owned.items():
+        if not str(build).startswith('ghost_') or not str(build).endswith('_features'):
+            continue
+        from site_stages import CELL_SHIFT
+
+        cell = (pos[0] >> CELL_SHIFT, pos[2] >> CELL_SHIFT)
+        by_cell.setdefault(cell, {})[pos] = build
+    out = []
+    for cell, hits in sorted(by_cell.items()):
+        tx, tz = cell
+        strip = Plan(f'ghost_strip_{tx}_{tz_token(tz)}_features')
+        strip.outside_footprint_ok = FOOTPRINT_OK
+        for pos in hits:
+            strip.set(*pos, AIR)
+        if strip.cells:
+            out.append((cell, strip))
+    return out
+
+
+def apply_strip_plans(strips, *, dry: bool = False, cells_dir: Path | None = None) -> list[dict]:
+    """Apply ghost-feature strip plans and update STAGES.
+
+    @param strips: output of ``plan_strip_ghost_features``
+    @param dry: plan-only
+    @param cells_dir: STAGES override (tests)
+    @returns: per-cell strip reports
+    """
+    reports: list[dict] = []
+    if not strips:
+        return reports
+    if not dry and not os.environ.get('SITE_OWNER'):
+        raise SystemExit('SITE_OWNER is not set; claim the lock before stripping ghost features')
+    from site_kit import apply
+
+    for cell, strip in strips:
+        rep = {'cell': list(cell), 'blocks': len(strip.cells), 'dry': dry}
+        if dry:
+            reports.append(rep)
+            continue
+        mods = {owner_name(cell[0], cell[1], 'features')}
+        apply(strip, dry=False, modifies=mods, stage=STAGE_FEATURES, cell=cell,
+              meta={'kind': KIND_GHOST, 'note': 'strip ghost features under real build'},
+              strict=False)
+        mark_ghost_features_stripped(cell, partial=False, cells_dir=cells_dir)
+        rep['stripped'] = True
+        reports.append(rep)
+    return reports
 
 
 def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
@@ -261,18 +525,15 @@ def plan_stats(plan) -> dict[str, int]:
 
 def ensure_cell(cell: tuple[int, int], *, dry: bool = True, force: bool = False,
                 heights_fn: HeightsFn | None = None, cells_dir: Path | None = None,
-                skip_if_real: bool = True) -> dict[str, Any]:
-    """Plan (and optionally apply) ghost ground + features for one cell.
-
-    Idempotent: when both ghost stages are already applied and ``force`` is false,
-    returns without rebuilding. When ``skip_if_real`` and real work has started, skips.
+                skip_if_real: bool = False) -> dict[str, Any]:
+    """Plan (and optionally apply) ghost ground and features for one cell (split lifecycle).
 
     @param cell: (tx, tz)
     @param dry: when True, do not write the world or STAGES (default)
-    @param force: re-plan/apply even if ghosts are already applied
+    @param force: re-plan/apply even if a layer is already applied
     @param heights_fn: injectable height sampler (tests / offline)
     @param cells_dir: STAGES directory override (tests)
-    @param skip_if_real: skip cells that already have real refine stages
+    @param skip_if_real: legacy whole-cell skip when any real work exists
     @returns: report dict
     """
     tx, tz = cell
@@ -280,8 +541,13 @@ def ensure_cell(cell: tuple[int, int], *, dry: bool = True, force: bool = False,
     if skip_if_real and real_work_started(cell, cells_dir):
         report['skipped'] = 'real-work'
         return report
-    if not force and ghosts_complete(cell, cells_dir):
-        report['skipped'] = 'already-applied'
+    want_ground = force or needs_ghost_ground(cell, cells_dir)
+    want_features = force or needs_ghost_features(cell, cells_dir)
+    if want_ground and not want_features and not real_ground_applied(cell, cells_dir):
+        # Ground and features are applied in one ensure pass; plan both together.
+        want_features = True
+    if not want_ground and not want_features:
+        report['skipped'] = 'layers-complete'
         return report
 
     h = None
@@ -289,11 +555,21 @@ def ensure_cell(cell: tuple[int, int], *, dry: bool = True, force: bool = False,
         x0, z0, x1, z1 = cellmath.bounds(cell)
         h = heights_fn(x0, z0, x1, z1)
 
-    ground_plan = plan_ghost_ground(cell, heights=h, heights_fn=heights_fn)
-    feature_plan = plan_ghost_features(cell, heights=h, heights_fn=heights_fn)
-    report['ground'] = plan_stats(ground_plan)
-    report['features'] = plan_stats(feature_plan)
-    report['actions'] = ['plan-ground', 'plan-features']
+    if want_ground:
+        ground_plan = plan_ghost_ground(cell, heights=h, heights_fn=heights_fn)
+        report['ground'] = plan_stats(ground_plan)
+        report['actions'].append('plan-ground')
+    else:
+        ground_plan = None
+        report['ground_skip'] = ghost_stage_status(cell, STAGE_GROUND, cells_dir) or 'real-ground'
+
+    if want_features:
+        feature_plan = plan_ghost_features(cell, heights=h, heights_fn=heights_fn)
+        report['features'] = plan_stats(feature_plan)
+        report['actions'].append('plan-features')
+    else:
+        feature_plan = None
+        report['features_skip'] = ghost_stage_status(cell, STAGE_FEATURES, cells_dir) or 'no-ground-or-overlap'
 
     if dry:
         return report
@@ -305,16 +581,68 @@ def ensure_cell(cell: tuple[int, int], *, dry: bool = True, force: bool = False,
 
     mods = ghost_owners_for(cell)
     meta = {'kind': KIND_GHOST, 'note': 'lidar ghost (DTM / DSM−DTM); real layers overwrite'}
-    apply(ground_plan, dry=False, modifies=mods, stage=STAGE_GROUND, cell=cell, meta=meta, strict=True)
-    apply(feature_plan, dry=False, modifies=mods, stage=STAGE_FEATURES, cell=cell, meta=meta, strict=True)
-    report['actions'].extend(['apply-ground', 'apply-features'])
+    if ground_plan is not None:
+        apply(ground_plan, dry=False, modifies=mods, stage=STAGE_GROUND, cell=cell, meta=meta, strict=True)
+        report['actions'].append('apply-ground')
+    if feature_plan is not None:
+        apply(feature_plan, dry=False, modifies=mods, stage=STAGE_FEATURES, cell=cell, meta=meta, strict=True)
+        report['actions'].append('apply-features')
     return report
+
+
+def ensure_frontier(*, ring: int | None = None, dry: bool = True, force: bool = False,
+                    heights_fn: HeightsFn | None = None,
+                    cells_dir: Path | None = None) -> dict[str, Any]:
+    """Ensure ghosts for every cell in the v2 frontier (all seeds + ring union).
+
+    @param ring: Chebyshev depth; None → env default (2)
+    @param dry: plan-only when True
+    @param force: re-apply layers even when applied
+    @param heights_fn: injectable sampler
+    @param cells_dir: STAGES override (tests)
+    @returns: summary with seeds, targets, and per-cell reports
+    """
+    depth = ring_from_env() if ring is None else ring
+    seeds = seed_cells(cells_dir)
+    targets = frontier_targets(depth, cells_dir)
+    reports = [ensure_cell(c, dry=dry, force=force, heights_fn=heights_fn, cells_dir=cells_dir)
+               for c in targets]
+    return {'ring': depth, 'seeds': [list(c) for c in seeds], 'targets': [list(c) for c in targets],
+            'dry': dry, 'reports': reports}
+
+
+def reconcile_after_real_apply(plan, *, stage_key: str, cell: tuple[int, int],
+                               mismatches: int = 0, cells_dir: Path | None = None,
+                               heights_fn: HeightsFn | None = None) -> dict[str, Any]:
+    """Refresh frontier ghosts after a successful real apply (not ghost applies).
+
+    @param plan: applied plan
+    @param stage_key: STAGES key written by the apply
+    @param cell: primary cell for the apply
+    @param mismatches: readback mismatch count (skip reconcile when non-zero)
+    @param cells_dir: STAGES override (tests)
+    @param heights_fn: injectable sampler for follow-up ensure
+    @returns: reconcile report
+    """
+    if mismatches:
+        return {'skipped': 'readback-mismatches', 'cell': list(cell)}
+    rep: dict[str, Any] = {'cell': list(cell), 'stage': stage_key}
+    if stage_key in REAL_GROUND_KEYS:
+        supersede_ghost_ground(cell, cells_dir)
+        rep['ghost_ground'] = 'superseded'
+    elif stage_key.startswith('feature-'):
+        strips = plan_strip_ghost_features(plan, cells_dir=cells_dir)
+        rep['strip'] = apply_strip_plans(strips, dry=False, cells_dir=cells_dir)
+    frontier = ensure_frontier(dry=False, heights_fn=heights_fn, cells_dir=cells_dir)
+    rep['frontier'] = {'seeds': frontier['seeds'], 'targets': frontier['targets'],
+                        'planned': sum(1 for r in frontier['reports'] if 'skipped' not in r)}
+    return rep
 
 
 def ensure_ring(focus: tuple[int, int], ring: int = DEFAULT_RING, *, dry: bool = True,
                 force: bool = False, include_focus: bool = False,
                 heights_fn: HeightsFn | None = None, cells_dir: Path | None = None,
-                skip_if_real: bool = True) -> list[dict[str, Any]]:
+                skip_if_real: bool = False) -> list[dict[str, Any]]:
     """Ensure ghosts for every cell in the Chebyshev ring around ``focus``.
 
     @param focus: centre cell
@@ -353,10 +681,11 @@ def ring_from_env(default: int = DEFAULT_RING) -> int:
 def on_cell_focus(focus: tuple[int, int], ring: int | None = None, *, dry: bool = False,
                   force: bool = False, heights_fn: HeightsFn | None = None,
                   cells_dir: Path | None = None) -> list[dict[str, Any]]:
-    """Ensure neighbour ghosts when CURRENT-CELL focus is set (raise / handoff).
+    """Ensure frontier ghosts when CURRENT-CELL focus is set (raise / handoff).
 
-    Skips the focus cell itself and any neighbour that already has real refine.
-    Idempotent via ``ensure_cell``. Default ring is ``LIDAR_GHOST_RING`` or 1.
+    Uses all worked cells as seeds (v2 frontier). When nothing is seeded yet,
+    falls back to a ring around ``focus`` so the first raise still shows neighbours.
+    Default ring is ``LIDAR_GHOST_RING`` or 2.
 
     @param focus: newly focused cell
     @param ring: Chebyshev depth; None → ``ring_from_env()``
@@ -364,13 +693,16 @@ def on_cell_focus(focus: tuple[int, int], ring: int | None = None, *, dry: bool 
     @param force: re-apply even when ghosts already applied
     @param heights_fn: injectable sampler (tests)
     @param cells_dir: STAGES override (tests)
-    @returns: per-neighbour reports from ``ensure_ring``
+    @returns: per-target reports
     """
     depth = ring_from_env() if ring is None else ring
     if depth < 0:
         raise ValueError(f'ring must be >= 0, got {depth}')
+    if seed_cells(cells_dir):
+        return ensure_frontier(ring=depth, dry=dry, force=force, heights_fn=heights_fn,
+                               cells_dir=cells_dir)['reports']
     return ensure_ring(focus, depth, dry=dry, force=force, include_focus=False,
-                       heights_fn=heights_fn, cells_dir=cells_dir, skip_if_real=True)
+                       heights_fn=heights_fn, cells_dir=cells_dir, skip_if_real=False)
 
 
 def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
@@ -420,18 +752,34 @@ def main(argv: list[str] | None = None) -> int:
     heights_fn = _mock_or_default(a.heights_json)
 
     if a.cmd == 'status':
-        cells = ([focus] if a.ring is None
-                 else neighbour_cells(focus, a.ring, include_focus=a.include_focus))
+        depth = a.ring if a.ring is not None else ring_from_env()
+        seeds = seed_cells()
+        if a.ring is None:
+            cells = [focus]
+        elif seed_cells():
+            cells = frontier_targets(depth)
+        else:
+            cells = neighbour_cells(focus, depth, include_focus=a.include_focus)
         rows = []
         for c in cells:
             rows.append({
                 'cell': list(c),
+                'in_frontier': c in set(frontier_targets(depth)) if seed_cells() else None,
                 'real_work': real_work_started(c),
+                'real_ground': real_ground_applied(c),
+                'feature_overlap': real_feature_touches_cell(c),
+                'needs_ghost_ground': needs_ghost_ground(c),
+                'needs_ghost_features': needs_ghost_features(c),
                 'ghost_ground': ghost_stage_status(c, STAGE_GROUND),
                 'ghost_features': ghost_stage_status(c, STAGE_FEATURES),
                 'ghosts_complete': ghosts_complete(c),
             })
-        print(json.dumps({'focus': list(focus), 'cells': rows}, indent=2))
+        print(json.dumps({
+            'focus': list(focus),
+            'ring': depth,
+            'seeds': [list(c) for c in seeds],
+            'cells': rows,
+        }, indent=2))
         return 0
 
     dry = a.cmd != 'apply'

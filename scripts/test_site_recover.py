@@ -112,6 +112,7 @@ class Base(unittest.TestCase):
             mock.patch('roof_lint.ridge_jogs', lambda cells: []),
             mock.patch('time.sleep', lambda s: None),
             mock.patch.dict(os.environ, {'SITE_OWNER': 'alice'}),
+            mock.patch.object(site_kit, '_reconcile_lidar_ghosts', lambda *a, **k: None),
         ]
         for p in patches:
             p.start()

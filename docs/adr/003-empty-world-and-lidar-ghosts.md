@@ -1,6 +1,6 @@
 # ADR 003: Empty-world refine and lidar ghosts
 
-**Status:** Accepted (2026-10-17)
+**Status:** Accepted (2026-10-17). Ghost **behaviour** in §3 is partially superseded by [spec: Lidar ghost v2 and dry-run reset](../specs/lidar-ghost-v2-and-dryrun-reset.md) (frontier ring, split layers, strip). Empty-world DoD and evidence heights in §1–2 remain authoritative here.
 
 ## Context
 

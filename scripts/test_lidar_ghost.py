@@ -143,14 +143,22 @@ class StagesGhostVsReal(unittest.TestCase):
         with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
             rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
                                  heights_fn=lambda *b: _flat_heights(5, 1, *b))
-        self.assertEqual(rep['skipped'], 'already-applied')
+        self.assertEqual(rep['skipped'], 'layers-complete')
 
-    def test_ensure_skips_real_work(self):
+    def test_ensure_skips_real_work_when_flagged(self):
         cell = (0, 0)
         self._write(cell, {'trees': {'status': 'applied'}})
-        rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
+        rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells, skip_if_real=True,
                              heights_fn=lambda *b: _flat_heights(5, 1, *b))
         self.assertEqual(rep['skipped'], 'real-work')
+
+    def test_trees_only_still_allows_ghost_ground(self):
+        cell = (0, 0)
+        self._write(cell, {'trees': {'status': 'applied'}})
+        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
+            rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
+                                 heights_fn=lambda *b: _flat_heights(5, 1, *b))
+        self.assertIn('ground', rep)
 
     def test_ensure_plans_when_empty(self):
         cell = (0, 0)
@@ -163,7 +171,7 @@ class StagesGhostVsReal(unittest.TestCase):
 
 
 class OnCellFocus(unittest.TestCase):
-    """Focus handoff ensures neighbours, not the focus cell."""
+    """Focus handoff ensures the v2 frontier (seed rings), or focus neighbours before seeds."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -176,7 +184,7 @@ class OnCellFocus(unittest.TestCase):
         path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
         path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
 
-    def test_on_cell_focus_skips_real_neighbours_and_focus(self):
+    def test_on_cell_focus_frontier_from_seeds_skips_real_ground(self):
         focus = (0, 0)
         self._write((1, 0), {'ground-layer': {'status': 'applied'}})
         with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
@@ -185,13 +193,24 @@ class OnCellFocus(unittest.TestCase):
             reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
                                     heights_fn=lambda *b: _flat_heights(5, 1, *b))
         cells = {tuple(r['cell']) for r in reps}
-        self.assertNotIn(focus, cells)
+        # Focus is inside the seed's ring-1 neighbourhood, so it is a frontier target.
+        self.assertIn(focus, cells)
         self.assertIn((1, 0), cells)
         by = {tuple(r['cell']): r for r in reps}
-        self.assertEqual(by[(1, 0)]['skipped'], 'real-work')
+        self.assertIn('ground_skip', by[(1, 0)])
         # A neighbour with no stages should be planned
-        empty = next(r for r in reps if 'skipped' not in r)
+        empty = next(r for r in reps if 'ground' in r and tuple(r['cell']) != focus)
         self.assertIn('ground', empty)
+
+    def test_on_cell_focus_before_seeds_skips_focus_cell(self):
+        focus = (0, 0)
+        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LIDAR_GHOST_RING', None)
+            reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
+                                    heights_fn=lambda *b: _flat_heights(5, 1, *b))
+        cells = {tuple(r['cell']) for r in reps}
+        self.assertNotIn(focus, cells)
 
     def test_ring_from_env(self):
         with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '2'}):
@@ -232,6 +251,68 @@ class CliDryRun(unittest.TestCase):
                                    if cell == (48, -44) else {'stages': {}}):
                 code = lg.main(['status', '--cell', '48,-44'])
             self.assertEqual(code, 0)
+
+
+class FrontierAndSplitLayers(unittest.TestCase):
+    """V2 frontier union and independent ground vs feature needs."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cells = Path(self.tmp.name)
+
+    def _write(self, cell, stages):
+        path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
+        path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
+
+    def test_frontier_unions_two_seeds(self):
+        self._write((0, 0), {'ground-layer': {'status': 'applied'}})
+        self._write((3, 0), {'trees': {'status': 'applied'}})
+        targets = set(lg.frontier_targets(ring=1, cells_dir=self.cells))
+        self.assertIn((0, 0), targets)
+        self.assertIn((3, 0), targets)
+        self.assertIn((1, 0), targets)
+        self.assertIn((2, 0), targets)
+
+    def test_real_ground_supersedes_ghost_ground_need(self):
+        cell = (5, 5)
+        self._write(cell, {
+            'ghost-ground': {'status': 'applied', 'kind': lg.KIND_GHOST},
+            'ground-layer': {'status': 'applied'},
+        })
+        self.assertFalse(lg.needs_ghost_ground(cell, self.cells))
+        lg.supersede_ghost_ground(cell, self.cells)
+        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, self.cells), 'superseded')
+
+    def test_mark_features_stripped_is_not_idempotent_complete(self):
+        cell = (2, 2)
+        self._write(cell, {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
+        lg.mark_ghost_features_stripped(cell, cells_dir=self.cells)
+        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_FEATURES, self.cells), 'stripped')
+        self.assertFalse(lg.ghosts_complete(cell, self.cells))
+
+
+class ReconcileHook(unittest.TestCase):
+    """Post-apply reconcile updates stages without live MCP."""
+
+    def test_ground_layer_supersedes_ghost_ground(self):
+        tmp = tempfile.TemporaryDirectory()
+        cells = Path(tmp.name)
+        cell = (0, 0)
+        path = cells / '0_0-STAGES.json'
+        path.write_text(json.dumps({'stages': {
+            lg.STAGE_GROUND: {'status': 'applied', 'kind': lg.KIND_GHOST},
+        }}))
+        from site_kit import Plan
+
+        plan = Plan('highfield_0_0_ground')
+        with mock.patch.object(lg, 'ensure_frontier', return_value={'seeds': [], 'targets': [], 'reports': []}), \
+             mock.patch.object(lg, 'plan_strip_ghost_features', return_value=[]):
+            rep = lg.reconcile_after_real_apply(plan, stage_key='ground-layer', cell=cell,
+                                                cells_dir=cells)
+        self.assertEqual(rep['ghost_ground'], 'superseded')
+        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, cells), 'superseded')
+        tmp.cleanup()
 
 
 class GroundLayerIgnoresGhosts(unittest.TestCase):

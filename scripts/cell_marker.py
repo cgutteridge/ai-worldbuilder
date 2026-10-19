@@ -12,9 +12,10 @@ Focus is tracked in site/CURRENT-CELL.json, written ONLY by this script: raise
 sets it, clear releases it. Raise refuses if the file names another cell or any
 other cell_marker_*-cells.json registry is on disk, so at most one ring exists.
 
-After a successful --raise / --adopt, unstarted neighbours within LIDAR_GHOST_RING
-(default 1) get idempotent lidar ghosts (shims/lidar_ghost.py). Use --no-ghosts
-to skip; --ghost-ring N overrides the env default.
+After a successful --raise / --adopt, the lidar ghost **frontier** is ensured
+(all worked cells seed a Chebyshev ring, default depth 2 via LIDAR_GHOST_RING;
+before any real work, neighbours of the focus cell are ghosted). Use --no-ghosts
+to skip; --ghost-ring N overrides the env default. Real applies also refresh ghosts.
 
 Raise places one horizontal wool ring on the cell bbox at a single Y (~30 blocks
 above the highest sampled ground in the cell). Black and yellow wool alternate
@@ -435,16 +436,16 @@ def _ghost_ring_arg(cli_ring: int | None) -> int:
 def ensure_neighbour_ghosts(focus: tuple[int, int], *, dry: bool,
                             ring: int | None = None,
                             skip: bool = False) -> list[dict] | None:
-    """Idempotent lidar ghosts for unstarted neighbours of the focus cell.
+    """Idempotent lidar ghost frontier ensure for the active world.
 
     Called from ``--raise`` / ``--adopt`` (handoff CURRENT-CELL path). Skipped
     when ``skip`` is true (``--no-ghosts``).
 
     @param focus: focused cell (tx, tz)
     @param dry: plan-only when True
-    @param ring: override depth; None → env / default 1
+    @param ring: override depth; None → env / default 2
     @param skip: do not run ghosts
-    @returns: per-neighbour reports, or None when skipped
+    @returns: per-target reports, or None when skipped
     """
     if skip:
         return None
@@ -455,7 +456,7 @@ def ensure_neighbour_ghosts(focus: tuple[int, int], *, dry: bool,
     skipped = sum(1 for r in reports if 'skipped' in r)
     mode = 'dry-run' if dry else 'apply'
     print(f'lidar ghosts ({mode}, ring={depth}): {planned} to ensure, {skipped} skipped '
-          f'({len(reports)} neighbours)')
+          f'({len(reports)} frontier cells)')
     for r in reports:
         cell = r.get('cell')
         if 'skipped' in r:
