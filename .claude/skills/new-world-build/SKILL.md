@@ -11,7 +11,7 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
 ## 0. Defaults
 
 - Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Point `active_world.py` at it before writing place files.
-- **Empty world** from `templates/empty-world/` (flat, structures off, weather off, MC 26.2 format; see its README.txt) + projection so 1 m ≈ 1 block NSEW. Never start from a generated or Geocraft save. Pristine Geocraft heightmap = Southampton legacy branch only.
+- **Empty world** from `templates/empty-world/` (flat, structures off, weather off, MC 26.2 format; see its README.txt) + projection so 1 m ≈ 1 block NSEW. Never start from a generated city-mesh save or a third-party heightmap export. Pristine heightmap-only saves = Southampton legacy branch only.
 - **Anchor** at MC (0, 0) (name it: e.g. Bargate, campus centre).
 - Vanilla Overworld Y is **−64…319** — a Y-offset human checkpoint is mandatory.
 - Ask bbox size; **recommend ≥ 5 km × 5 km**. Explain a bad offset is expensive to undo.
@@ -36,7 +36,7 @@ Done when `world_frame.py info` prints the new place and anchor.
 
 ## 2. Y-offset checkpoint (human)
 
-1. Ensure lidar coverage for the bbox (DEFRA or stated plugin).
+1. Ensure lidar coverage for the bbox (national composite plugin or whatever `world-frame.json` names).
 2. Run highs/lows:
 
 ```bash
@@ -59,4 +59,4 @@ Done when checklist providers have `how` strings and `evaluate-data-source` woul
 ## Out of scope (stop)
 
 - Non-OSGB CRS beyond what `world_frame.transform_epsg` + gdal already do — ask the user; do not invent a new projection stack.
-- Non-DEFRA elevation backends — document the gap and `need-you`.
+- Elevation backends other than the default national plugin — document the gap and `need-you`.

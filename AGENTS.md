@@ -39,7 +39,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 
 ### Provider roots (dual)
 
-Catalogue rows may set `package` (e.g. `providers/ukdefra-lidar`). Resolve it with
+Catalogue rows may set `package` (e.g. `providers/<id>`). Resolve it with
 `cell_sources.provider_package_dir(id)` / `script_env.resolve_provider_package`:
 
 - **system** → `ai-worldbuilder/providers/<id>/` (`home: system`)

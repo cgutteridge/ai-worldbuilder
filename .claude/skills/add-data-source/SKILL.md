@@ -24,7 +24,7 @@ Add a provider object to `config/system-providers.json` (system) or the active w
 - `id`, `types: [...]`, `scope` (`level` + `description` unless worldwide)
 - `keep` / `look_only`, `licence`, `tags`, `kind` (manifest kind or null)
 - `checklist: true` only if every cell should attempt it; then `how` is required
-- `package`: relative path under the **matching** repo root when fetch/review/manage code lives there (e.g. `providers/ukdefra-lidar`). System → tool `providers/`; local → active-world `providers/`. Required when code exists under either tree.
+- `package`: relative path under the **matching** repo root when fetch/review/manage code lives there (e.g. `providers/<id>`). System → tool `providers/`; local → active-world `providers/`. Required when code exists under either tree.
 - Aliases only when migrating an old key
 
 Done when `cell_sources.SOURCE_FAMILIES` (reload) would list it if checklisted, and package resolution works if set:

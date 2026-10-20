@@ -6,7 +6,7 @@ Domain language for the reusable worldbuilder tool. World-specific vocabulary li
 
 **Worldbuilder**:
 The reusable AI tool for building and refining Minecraft worlds from real-place evidence. One checkout; many worlds possible; exactly one world active at a time.
-_Avoid_: refine tool, Geocraft refine, Southampton Refine (as the tool name)
+_Avoid_: refine tool, legacy generator refine, Southampton Refine (as the tool name)
 
 **World**:
 One game place under construction (offsets, gameworld id, queue, issues, feature/tree build scripts, local providers). Lives in its own repository, checked out under the worldbuilder’s gitignored `worlds/` folder.
@@ -38,7 +38,7 @@ _Avoid_: TODO.txt, system tasks in QUEUE
 
 **Type**:
 A stable class of evidence question. Named without vendors. Documented in `reference/TYPES.txt`.
-_Avoid_: Source family, Google, aerial-as-vendor
+_Avoid_: Source family, vendor-as-type naming, aerial-as-vendor
 
 **Provider**:
 A feed that fills one or more types. Either a system provider or a local provider.
@@ -58,8 +58,8 @@ _Avoid_: sea level (unless that is the explicit datum chosen)
 
 **Empty world**:
 A game save started without a prior city mesh from another generator. Refine means building from evidence and layered passes, not clearing leftover vendor lumps.
-_Avoid_: Geocraft refine (as the default workflow), lump sweep (as the definition of done)
+_Avoid_: third-party generator refine (as the default workflow), lump sweep (as the definition of done)
 
 **Lidar ghost**:
-Placeholder ground and grey above-ground mass in a cell, taken only from DEFRA composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later.
-_Avoid_: finished ground pass, real feature build, Geocraft lump, pristine sketch
+Placeholder ground and grey above-ground mass in a cell, taken only from national lidar composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later.
+_Avoid_: finished ground pass, real feature build, vendor lump, pristine height sketch
