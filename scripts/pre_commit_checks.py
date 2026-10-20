@@ -5,6 +5,7 @@ Mechanical checks only:
 
 - On ``task/*`` worker branches, refuse staged edits to the system tracker
   (``tasks/index.json``, ``tasks/done.json``).
+- Provider-name audit (#28): no new line-level hits outside allowed homes.
 - Wave lock helpers for the parallel-task-wave orchestrator (one open wave).
 
 Invoked by ``.githooks/pre-commit``. Install with
@@ -170,6 +171,16 @@ def checkout_branch_names(repo_root: Path) -> list[str]:
     return names
 
 
+def run_provider_name_audit(repo_root: Path) -> int:
+    """Fail when new provider-id wording appears outside allowed homes (#28).
+
+    @param repo_root: repository root
+    @returns: process exit code from ``scripts/check_provider_names.py``
+    """
+    script = repo_root / 'scripts' / 'check_provider_names.py'
+    return subprocess.call([sys.executable, str(script)], cwd=repo_root / 'scripts')
+
+
 def run_unit_tests(repo_root: Path) -> int:
     """Run the repo's stdlib unit test suite.
 
@@ -184,7 +195,7 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     """Run all pre-commit checks; print failures to stderr.
 
     @param repo_root: repository root
-    @param skip_tests: when True, skip the unit suite (ownership only)
+    @param skip_tests: when True, skip provider audit and unit suite (ownership only)
     @returns: 0 on success, 1 on failure
     """
     branches = checkout_branch_names(repo_root)
@@ -200,6 +211,10 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
         return 1
     if skip_tests:
         return 0
+    code = run_provider_name_audit(repo_root)
+    if code != 0:
+        print('pre-commit: provider-name audit failed', file=sys.stderr)
+        return code
     code = run_unit_tests(repo_root)
     if code != 0:
         print('pre-commit: unit tests failed', file=sys.stderr)
@@ -219,7 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     check.add_argument(
         '--skip-tests',
         action='store_true',
-        help='only enforce tracker ownership (no unit suite)',
+        help='only enforce tracker ownership (no provider audit or unit suite)',
     )
     check.add_argument(
         '--repo-root',
