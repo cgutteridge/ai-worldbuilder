@@ -7,7 +7,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 1. WHERE THINGS LIVE
 ------------------------------------------------------------------------
  site/NOTES.txt         overview, accuracy rules (active world; read first)
- site/GEOCRAFT.txt      legacy Geocraft notes only (not the live lidar path; heights = DEFRA)
+ site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
  rules/rules-context.md which rules/docs to read per queue context (anti-reread)
  rules/*.md             craft and process rules in the tool repo (AGENTS.md entry)
@@ -52,7 +52,7 @@ BUILT plan in place to “fix” the world.
                      (contact sheet) → notes.
                      Craftsmanship (rules/craftsmanship.md): airtight shell,
                      flanked glass, squared footprint, roof pitch/overhang —
-                     reject lattice/carpet roofs and jagged 1:1 OSM walls in
+                     reject lattice/carpet roofs and jagged 1:1 footprint walls in
                      preview, not after apply.
                      Readback/walk/patrol = blocks match the PLAN; only the
                      photo/footprint comparison shows they match SOUTHAMPTON.
@@ -122,7 +122,7 @@ BUILT plan in place to “fix” the world.
  COVERAGE.txt.
 
  PARCEL COVERAGE (Q-038, scripts/coverage.py): every block column of an
- area (config/coverage-areas.json) is exactly one parcel — property (OSM
+ area (config/coverage-areas.json) is exactly one parcel — property (vector-map
  footprint + grown garden), road, path (rear lanes / alleys / twittens),
  open (landuse / leisure / amenity polygons), gap (residual: verges,
  corners, unlabelled ground, edges of special areas), no_osm (no clip).
@@ -138,7 +138,7 @@ BUILT plan in place to “fix” the world.
                        coverage.py gaps --area <a>     (gaps + 1-3 wide seams)
    Before planning:    coverage.py status --cell tx,tz --list
                        .venv/bin/python scripts/coverage.py map --area <a>
-   New ground / OSM:   coverage.py build [--area A --cells tx0,tz0,tx1,tz1]
+   New ground / map:   coverage.py build [--area A --cells tx0,tz0,tx1,tz1]
  PROCESSED CELLS in COVERAGE.txt is generated from that — never hand-edit
  it. A cell is done only when 100% of its columns are in done parcels.
  That record is how we prove ground was processed — chat memory is not enough.
@@ -175,8 +175,8 @@ BUILT plan in place to “fix” the world.
      sheet, not dozens of full-size photos). One good source is enough: use it and
      build; do not hunt for a perfect one. Street View via the fixed pano-URL +
      thumbnail-URL method (look-only, never download) is logged in reference/SOURCES.txt.
-     SOURCE CHECKLIST in that file: hampshire-hub, google-satellite (every cell, look-only sheet),
-     KartaView, Commons/Geograph, Street View, Rightmove (exteriors, residential cells). Log each attempt, hit or miss:
+     SOURCE CHECKLIST in that file lists checklisted provider ids for the cell (from place-sources).
+     Log each attempt, hit or miss:
        python3 scripts/cell_sources.py --cell tx,tz --record SOURCE --result found|partial|none|blocked --note "..."
      Never retry a fresh TRIED source for the same cell without good cause (the
      script refuses unless --retry-reason is given). Evidence older than ~6 months
@@ -229,14 +229,14 @@ BUILT plan in place to “fix” the world.
  polishing one property forever.
 
 ------------------------------------------------------------------------
-2d-i. NEWER THAN OSM / LIDAR (user rule, 2026-10-15, I-047)
+2d-i. NEWER THAN MAP / LIDAR (user rule, 2026-10-15, I-047)
 ------------------------------------------------------------------------
- OSM, lidar, aerial and Street View come from different years and can disagree. If ANY
- photo source (aerial, Street View look-only, Commons) shows a building that is absent
- from lidar or from OSM, build it anyway: house only, usual conventions, trace the
+ Vector map, lidar, aerial and street-level photos come from different years and can disagree. If ANY
+ photo source (aerial, look-only streetlevel, shared photo archives) shows a building that is absent
+ from lidar or from the footprint map, build it anyway: house only, usual conventions, trace the
  footprint from the aerial and record source + year in the build docstring and the cell
- STAGES note. Check osm_extract.py first for ways outside the OSM clip. Queue driving is
- missing OSM feature builds via residual_features — not lump_scan (diagnostic only;
+ STAGES note. Check osm_extract.py first for ways outside the map clip. Queue driving is
+ missing footprint feature builds via residual_features — not lump_scan (diagnostic only;
  empty-world DoD / ADR 003).
 
  LIDAR IS A DATED SNAPSHOT TOO (user, 2026-10-16). Lidar can disagree with newer (or older)
@@ -245,7 +245,7 @@ BUILT plan in place to “fix” the world.
  the photo and record source + year and the lidar mismatch in the build docstring and the
  cell STAGES note. Do not "fix" the photo to match lidar.
  Some lidar products filter 1-2 m features (cars, street furniture, bins, signs, low walls)
- as noise; DEFRA composites are noisier — strip transitory hits, keep street furniture where
+ as noise; national lidar composites are noisier — strip transitory hits, keep street furniture where
  practical (`rules/evidence-order.md`). Absence from lidar proves nothing for them; add them in
  the decor phase when reference materials show them.
 
@@ -259,11 +259,11 @@ BUILT plan in place to “fix” the world.
  Integrity   audit drift, readback holes, floating attachables, broken
              multi-block items (doors, beds).
  Footprint   plan matches surveyed / aerial outline within ~1–2 blocks after
-             Minecraft squaring (OSM shape is a prior; craftsmanship:
-             rules/craftsmanship.md). Legacy Southampton notes: site/GEOCRAFT.txt.
- Frontage    house fronts on the OSM footprint line (osm_footprints.py
+             Minecraft squaring (footprint-map shape is a prior; craftsmanship:
+             rules/craftsmanship.md). Legacy Southampton lump notes live in the active world site/.
+ Frontage    house fronts on the footprint line (osm_footprints.py
              check = OK); doors face their own street; names = real addr:street.
- Height      DEFRA lidar Y for massing; photos for storeys / relative eaves.
+ Height      lidar Y for massing; photos for storeys / relative eaves.
  Roads       centreline/route OK; width/kerbs vs aerial — not stock edges.
  Openings    doors and windows in the right places and sizes (street side);
              glass flanked L/R with sill + head (rules/craftsmanship.md).

@@ -20,7 +20,7 @@ docstring):
 - optional: `floor_min`, `step_max`, `ledge_stair`, `door_frame`, `keep_edits`,
   `notes`
 
-Write the spec from **this** run's evidence (OSM ways, lidar storeys/roof,
+Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial frontage). Do not copy a peer spec or a per-run build
 script. Old one-off scripts: `scripts/legacy/` if present.
 
@@ -32,10 +32,10 @@ planting DECOR.
 - One build for the whole run on the street (shared frontage, roofs, party
   walls), not a separate apply per pair.
 - Party walls: squared columns, pitch 4 or 5 so the row keeps the real ~4.5 m
-  frontage. Pick wall x's at the midpoints between OSM centroids and round;
-  each house centre should land within ~1.5 of its OSM centroid.
-- Front from evidence / OSM front edge; floor height from pavement at the
-  door (see DEFRA lidar ground Y).
+  frontage. Pick wall x's at the midpoints between map centroids and round;
+  each house centre should land within ~1.5 of its map centroid.
+- Front from evidence / map front edge; floor height from pavement at the
+  door (see lidar ground Y).
 - Door side alternates in pairs when the street photo shows it; label `hint`
   if unseen.
 - Per-house roof material from aerial colour (`roofs` in the spec).

@@ -18,7 +18,7 @@ centre and holds live in the active world's site/ (QUEUE, CELL-HOLDS, STAGES).
 
  DEFINITION OF DONE (I-057 / ADR 003 empty-world): a cell is done when evidence-backed feature
  builds cover mapped buildings, ground/trees/decor are applied, and the trees mask follows the
- overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined Geocraft left” — vendor
+ overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined vendor lump left” — vendor
  lumps alone do not keep a cell open. site_handoff.cell_gaps/next_cell test missing feature builds,
  layer passes, and trees-mask currency; a finished cell with an old tree mask is re-queued for a
  trees re-run. `site_handoff.py next --plan` shows what would be queued without writing.

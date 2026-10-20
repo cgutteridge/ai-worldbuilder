@@ -5,7 +5,7 @@ Read before planning or applying any house, plot or streetscape build.
 ## What a house build is
 A house feature (pass 1 of a cell, `rules/handoff-layered-passes.md` §1) is
 the house only, built on every side:
-- Walls on the OSM footprint as a guide (Minecraft-readable, not a jagged 1:1
+- Walls on the footprint map as a guide (Minecraft-readable, not a jagged 1:1
   trace; see `rules/craftsmanship.md` §1), a real roof form (ridge direction
   and type from aerial, Y from LIDAR), windows and doors on all sides, bays,
   porches, chimney stacks as plain massing.
@@ -14,7 +14,7 @@ the house only, built on every side:
 - No gardens in the house build. Gardens belong to the later passes: lawn and
   paving = ground, trees and shrubs = trees, fences, walls, hedges, sheds =
   decor. Garden layout comes from the aerial only (no peering photos).
-  Boundaries come from `scripts/garden_sources.py` (OSM barrier, then the
+  Boundaries come from `scripts/garden_sources.py` (map barrier tags, then the
   per-street convention `site/gardens/<street>.json`, then aerial hedge strip,
   then marked inference), read by `decor_layer.py`.
 
@@ -32,15 +32,15 @@ and patrol all passed. All five were reverted.
   so neighbours meet cleanly at party walls and roof steps.
 
 ## 2. Placement
-- Walls sit on the OSM footprint within about 1-2 blocks after squaring. Never
+- Walls sit on the footprint map within about 1-2 blocks after squaring. Never
   at "the last solid block before the pavement" (I-009).
 - Doors face the street they are numbered on.
-- DEFRA composite lidar Y is the massing authority (ground, eaves, ridge) via
-  `defra_lidar.py` / `lidar_heightmap.py` (`ukdefra-lidar`; aliases `ukdefra-dtm` / `ukdefra-dsm`).
-- `site_kit.apply()` refuses building-like blocks far outside OSM footprints.
+- Lidar composite Y is the massing authority (ground, eaves, ridge) via
+  `lidar_heightmap.py` and the active world's lidar provider in place-sources.
+- `site_kit.apply()` refuses building-like blocks far outside footprint-map polygons.
   Set `plan.outside_footprint_ok` only for a genuinely unmapped structure and
   name its evidence id. Never to shove a house onto the kerb.
-- A building visible in imagery but missing from OSM or lidar is built too
+- A building visible in imagery but missing from the vector map or lidar is built too
   (PROCESS §2d-i).
 - Lidar is a dated snapshot: if newer photos clearly show a change, follow the photo and
   record the mismatch (PROCESS §2d-i).
@@ -57,7 +57,7 @@ Readback, walk and patrol prove the blocks match the plan, not that the plan
 matches Southampton. Done needs:
 - `osm_footprints.py check --build <name>` passes.
 - A client view from the reference photo's camera (manifest `bbox_mc`) beside
-  the photo, and a top-down view beside the Google sheet (`google_aerial.py`; the university aerial too where it
+  the photo, and a top-down view beside the aerial sheet (`google_aerial.py`; the university aerial too where it
   helps), in the contact sheet.
 - 3 concrete matches or mismatches written in REVIEWS.
 

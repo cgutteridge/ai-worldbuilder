@@ -31,7 +31,7 @@ CLASSES
 
 NEVER TOUCHED
  instance/saves (the live world), backups/pristine-geocraft (Southampton legacy baseline only;
- not the DEFRA evidence path), backups/*.tar.gz, verification/site/*-cells.json (build records:
+ not the live lidar evidence path), backups/*.tar.gz, verification/site/*-cells.json (build records:
  owners db, roof_lint, audit drift) and *-backup.json (undo), reference useful yes/maybe,
  site/archive, downloads/ (source data).
 

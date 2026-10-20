@@ -26,7 +26,7 @@ Rule files in rules/ are not auto-loaded: read only what the brief lists.
  SOURCES       cell_sources.py --write; manifest + one imagery judge pass.
  GROUND        Layered passes: ground_layer, trees_layer, decor_layer; no new house shells.
  FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
- PROPERTY      House on its OSM footprint (all sides, roof, floors); gardens = ground/trees/decor.
+ PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
  TERRACE       Broadlands-type row; scripts/terrace.py generator.
 
  QUEUE text may include RULES: ground|foliage|property|terrace|sources|tooling
@@ -53,7 +53,7 @@ Rule files in rules/ are not auto-loaded: read only what the brief lists.
 
  Before fetch / Read of reference imagery (any context that opens photos/aerial):
    rules/reference-token-budget.md
-   rules/evidence-order.md (which type answers which question; lidar = DEFRA composites; look-only aerial every cell)
+   rules/evidence-order.md (which type answers which question; lidar composites; look-only aerial every cell)
    reference/TYPES.txt (when choosing or adding a provider)
    + committed site/cells/<tx>_<tz>-SOURCES.txt when CELL is set
 

@@ -29,11 +29,11 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   places mirrored hinges and stays framed (`door_frame_issues`). Dry run
   prints each beside the portal name. Absent → legacy front/rear spruce.
 
-Write the spec from **this** run's evidence (OSM ways, lidar storeys/roof,
+Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial). Do not copy a peer spec or a per-run build script. Do
 not extend `house_build` for odd shapes.
 
-Acceptance fixture: Students' Union `site/builds/susu_42.json` (OSM
+Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
 `w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`).
 
 **Lidar ghost v2 (cross-cell):** After `cell_marker --raise`, frontier cells may

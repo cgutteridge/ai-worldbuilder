@@ -14,7 +14,7 @@ One building per review. Skip any building that already has an open feature item
    aerial. List matches and mismatches. A build that matches lidar and the footprint map can still be wrong (Oakdene: right plan and height,
    wrong roof colour and windows). Done when each mismatch is named.
    A review run of buildings uses all three: aerial sheet (greeblies, roof colour), the university aerial (footprint, roof form) and
-   lidar (heights: plinth, plant and wing heights from national lidar composite DTM/DSM via `lidar_heightmap.py` / `defra_lidar.py`, never guessed).
+   lidar (heights: plinth, plant and wing heights from national lidar composite DTM/DSM via `lidar_heightmap.py`, never guessed).
    Greeblies are the decor step of a feature (`rules/craftsmanship.md`): unusual blocks welcome, plants matched by colour and size.
    Roof levels and their extents come from the lidar cell by cell (3x3 majority filter, rim cells take their neighbour's level), never
    from boxes drawn on a picture; the aerial sheet decides colours and greeblies, not heights (user, 2026-10-16: "you ignored the lidar").
