@@ -36,7 +36,7 @@ def plan_name(tx: int, tz: int) -> str:
 
 JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
 NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
-# Ground kinds the decor pass must not sit on or straddle (live surface, not only OSM way columns).
+# Ground kinds the decor pass must not sit on or straddle (live surface, not only map way columns).
 _CARRIAGE_KINDS = frozenset({'tarmac', 'paving', 'mark', 'kerb'})
 
 

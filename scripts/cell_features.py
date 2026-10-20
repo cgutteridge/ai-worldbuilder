@@ -5,7 +5,7 @@ Each feature also lists the university entrances ("portals", scripts/portals.py)
 and names for the build, with photos to look at.
 
 A feature is any build in verification/site/*-cells.json that is not a layer pass
-(ground, trees, decor, foliage, canopy, undo, markers). An OSM building is "in a
+(ground, trees, decor, foliage, canopy, undo, markers). A vector-map building is "in a
 feature" when at least COVERED_FRAC of its footprint columns are touched by one.
 
 Packaging: each non-home building (campus block, shop, church...) is its own feature.

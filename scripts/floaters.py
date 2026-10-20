@@ -115,7 +115,7 @@ def floating_leaves(
     owner: str | None = None,
     max_log_dist: int = 6,
 ) -> dict | None:
-    """Leaf blocks with no nearby log (Geocraft canopy remnants, not hedges on walls).
+    """Leaf blocks with no nearby log (import canopy remnants, not hedges on walls).
 
     Hedges and single-layer leaves on brick/fence are kept (solid non-leaf support below).
 

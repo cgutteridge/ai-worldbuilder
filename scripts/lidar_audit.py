@@ -153,7 +153,7 @@ def main(argv=None) -> int:
     if a.grid:
         bbox = parse_bbox(a.grid)
         live = L.Maps(World(), use_cache=False)
-        pri = L.Maps()                                          # lidar reference: DEFRA where cached, else pristine (.npz when present)
+        pri = L.Maps()                                          # lidar reference: composite where cached, else pristine (.npz when present)
         rows = grid_diff(live, pri, *bbox, min_abs=a.min_abs)
         if a.json:
             print(json.dumps({'bbox': list(bbox), 'min_abs': a.min_abs,

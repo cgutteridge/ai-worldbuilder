@@ -128,7 +128,7 @@ def _cell_stages(cell):
 def residual_features(cell, idx=None):
     """Mapped buildings no feature build covers, packaged as queue features.
 
-    Empty-world DoD (ADR 003): OSM footprints still missing a house/feature build. Does not scan
+    Empty-world DoD (ADR 003): vector-map footprints still missing a house/feature build. Does not scan
     standing vendor lumps — ``lump_scan`` is diagnostic only and must not drive the queue.
 
     @param cell: (tx, tz)
@@ -233,7 +233,7 @@ def google_review_item(row):
         f'Per I-073: (1) LOOK google_aerial.py sheet --cell {tx},{tz} --outlines, then --at for single buildings; record with',
         'cell_sources --record google-satellite. (2) FEATURES every building against aerial (roof form, ridge axis, roof greeblies, colour/',
         'material, rear wings, outbuildings, missing/extra) from best aerial (greeblies, colour), keepable aerial (footprint, roof form)',
-        'and lidar (heights); storeys streetlevel first, then OSM levels, then lidar. Skip buildings that already have an open',
+        'and lidar (heights); storeys streetlevel first, then vector-map levels, then lidar. Skip buildings that already have an open',
         'feature item on the QUEUE.',
         'Keep or redo per building, snapshot first, stop rule I-009. (3) GROUND applied ground vs aerial (I-068).',
         f'(4) TREES scripts/tree_review.py --cell {tx},{tz} (lidar crowns vs live) plus the aerial sheet with its marks; fix per',
@@ -247,7 +247,7 @@ def google_review_item(row):
 
 
 def lidar_lumps(cell):
-    """Lidar lumps of a cell (lidar_heightmap: DEFRA composite where cached), [] when unavailable.
+    """Lidar lumps of a cell (lidar_heightmap: national composite where cached), [] when unavailable.
 
     @param cell: (tx, tz)
     @returns: lidar_heightmap.lumps() items
@@ -327,7 +327,7 @@ def building_facts(pictures):
         return []
     from buildings import describe
     return (['University building (reference/buildings, maps.soton.ac.uk; photo is look-only evidence for walls, openings,'
-             ' storeys; the outline cross-checks OSM, lidar still decides heights):']
+             ' storeys; the outline cross-checks the vector map, lidar still decides heights):']
             + [f'  {describe(b)}' + (f'  {_building_photo(b)}' if b['image'] else '') for b in pictures[:6]])
 
 
@@ -364,7 +364,7 @@ def cell_gaps(cell, features=True):
     Standing vendor lumps alone do not keep a cell open (ADR 003 / empty-world DoD).
 
     @param cell: (tx, tz)
-    @param features: also compute residual_features (slow: reads OSM / missing builds)
+    @param features: also compute residual_features (slow: reads vector map / missing builds)
     A stage left 'applying' (aborted run, site_stages) is never done: it is reported first as
     in_flight 'in-flight: <plan>' and recovered with scripts/site_recover.py.
 
@@ -467,11 +467,11 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
         x0, z0, x1, z1 = (int(v) for v in f['bbox'])
         items.append((f'CELL {tx},{tz} (r={r}) FEATURE {f["label"]}. RULES: property.', [
             f'Major feature, pass 1 of the cell (HANDOFF-LAYERED-PASSES §1, §4): own build, region',
-            f'snapshot + origin fingerprint before apply. bbox {x0},{z0},{x1},{z1}; OSM {",".join(f["refs"][:8])}'
+            f'snapshot + origin fingerprint before apply. bbox {x0},{z0},{x1},{z1}; map refs {",".join(f["refs"][:8])}'
             + (' …' if len(f['refs']) > 8 else '') + '.',
             'Houses: one build for the whole run on the street (shared frontage, roofs, party walls).',
             'House only: no gardens. Lawn is GROUND; trees/shrubs TREES; fences, sheds, planting DECOR.',
-            f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (DEFRA composite DTM/DSM via defra_lidar: storeys, roof shape, ridge axis, trees over roof).',
+            f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (composite DTM/DSM via lidar provider: storeys, roof shape, ridge axis, trees over roof).',
             (
                 'Houses: use scripts/house_build.py — write site/builds/<name>.json from this feature\'s evidence '
                 '(name, ways, roofs, groups.front, modifies; see house_build docstring). Do not copy a peer spec or a build script.'
@@ -983,7 +983,7 @@ def starter_text(item, owner_placeholder='<unique-owner>'):
     cell = _cell_for_item(item)
     cell_rel = str(sources_path(*cell).relative_to(ROOT)) if cell else None
     rules_line = format_starter_rules_line(plan_for_item(item, cell_rel))
-    return f"""You are refining the Southampton Geocraft world in {ROOT}.
+    return f"""You are refining the Southampton world in {ROOT}.
 
 Accuracy to the real place only — no regions, themes or whimsy. Use the SESSION
 BRIEF below (from `{NEXT_CHAT_CMD}`) instead of reading every site file.

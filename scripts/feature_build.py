@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic OSM-footprint builder for non-house building features.
+"""Generic vector-map footprint builder for non-house building features.
 
 Use for odd masses (SU, halls, sheds, campus lumps) — not for houses/terraces
 (those stay on ``house_build.py``). Shares ``site_kit`` preview/apply.
@@ -9,7 +9,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   name           plan name (also verification/site/<name>-cells.json)
   notes          provenance (free text, never read by code)
   modifies       earlier builds this one may overwrite (default [])
-  ways           {"<osm way id>": "<label>"} footprints to build
+  ways           {"<map way id>": "<label>"} footprints to build
   storeys        {"<label>": <int >= 1>} clear storeys (each STOREY_H blocks high)
   roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>"}}
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
@@ -233,7 +233,7 @@ class Build:
         @param spec: validated feature spec
         @param footprints: optional ``{label: set[(x,z)]}`` (else OSMIndex from ways)
         @param world: optional ``World``-like with ``block(x,y,z)`` (else live ``World()``)
-        @param osm_root: optional OSM clip root for ``OSMIndex`` (tests / alternate trees)
+        @param osm_root: optional vector-map clip root for ``OSMIndex`` (tests / alternate trees)
         """
         self.spec = spec
         self.name = spec['name']
@@ -881,7 +881,7 @@ class Build:
     def footprint_overlap_report(self) -> list[str]:
         """Path / open-lidar / aerial overlap lines for each feature mass (dry-run).
 
-        Uses the live OSM index when present. Synthetic ``footprints=`` builds (unit
+        Uses the live vector-map index when present. Synthetic ``footprints=`` builds (unit
         tests) skip unless streets were injected via ``self._overlap_streets``.
 
         @returns: printable report lines (may be empty)
@@ -905,7 +905,7 @@ def build(spec: dict, footprints: dict | None = None, world=None, osm_root=None)
     @param spec: validated feature spec
     @param footprints: optional label→cells map (tests / offline)
     @param world: optional World-like
-    @param osm_root: optional OSM clip root
+    @param osm_root: optional vector-map clip root
     @returns: Plan
     """
     return Build(spec, footprints=footprints, world=world, osm_root=osm_root).build()
@@ -918,7 +918,7 @@ def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world
     @param do_apply: when True, live apply; otherwise dry run
     @param footprints: optional label→cells map
     @param world: optional World-like
-    @param osm_root: optional OSM clip root
+    @param osm_root: optional vector-map clip root
     @returns: Plan
     """
     spec = load_spec(spec_path)

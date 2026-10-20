@@ -103,7 +103,7 @@ class LumpTest(unittest.TestCase):
         it = items[0]
         self.assertEqual((it['kind'], it['refs'], it['bbox']), ('lumps', ['w1'], (0, 0, 16, 6)))
         self.assertIn('2 unrefined', it['label'])
-        self.assertIn('1 not in OSM', it['label'])
+        self.assertIn('1 not on vector map', it['label'])
         only_unmapped = L.lump_features([lp([0, 0, 6, 6], [])])
         self.assertEqual(only_unmapped[0]['refs'], ['unmapped'])
 

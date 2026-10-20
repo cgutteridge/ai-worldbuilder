@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generic OSM-footprint house builder (house only: walls, floors, doors, windows, slab roofs).
+"""Generic vector-map footprint house builder (house only: walls, floors, doors, windows, slab roofs).
 
 One module for every "house only" run (layered pass 1: Granby Grove, Merton Rd, Ripstone and Blenheim Gardens
 q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json instead of a 390-line script copy:
 
   name           plan name (also the verification/site/<name>-cells.json record)
-  notes          provenance: OSM ways, aerial/Street View evidence, date, queue item (free text, never read by code)
+  notes          provenance: map ways, aerial/streetlevel evidence, date, queue item (free text, never read by code)
   modifies       earlier builds this one may overwrite (default [])
-  ways           {"<osm way id>": "<label>"} the footprints to build
+  ways           {"<map way id>": "<label>"} the footprints to build
   roofs          {"<label>": "<slab material>"} e.g. brick, mud_brick, deepslate_tile, cobbled_deepslate
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
@@ -133,7 +133,7 @@ class Build:
         return None
 
     def floor_y(self, h):
-        # The old Geocraft building leaves gaps, so a scan from the bottom fails. Reference = untouched
+        # The old import building leaves gaps, so a scan from the bottom fails. Reference = untouched
         # plot-edge columns 4-7 from the footprint (stone / grass / dirt tops, not paving).
         ring = set()
         for (x, z) in h.cells:
@@ -287,7 +287,7 @@ class Build:
             h.rear = None
 
     def top_solid(self, x, z):
-        # natural/Geocraft ground only (ignores roof fringe slabs and earlier steps of this build)
+        # natural/pristine ground only (ignores roof fringe slabs and earlier steps of this build)
         for y in range(70, 40, -1):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
             if n in GROUND and n != 'minecraft:stone_stairs':
@@ -295,7 +295,7 @@ class Build:
         return None
 
     def step_out(self, st, d, b):
-        # walk outward from the stoop to the road: ground ABOVE the floor in the way (old Geocraft ledge) is
+        # walk outward from the stoop to the road: ground ABOVE the floor in the way (old import ledge) is
         # lowered to the floor level; at the first column BELOW the floor a stair rises toward the house
         # (a 1-block hop is not walkable in site_walk)
         dx, dz = DIRS[d]

@@ -638,7 +638,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if floats and not getattr(plan, 'allow_float', False):
         raise SystemExit(f'{len(floats)} posts would float over half-height blocks, e.g. {floats[:5]}; '
                          'extend them down or put a full block under them (or set plan.allow_float)')
-    # guard (I-009): building-like blocks standing >2 above Geocraft ground outside every OSM
+    # guard (I-009): building-like blocks standing >2 above pristine ground outside every vector-map
     # footprint are almost always a façade built on the pavement / front garden
     import osm_footprints
     fp = osm_footprints.guard(plan.cells)
@@ -649,9 +649,9 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         why = getattr(plan, 'outside_footprint_ok', None)
         if not why:
             raise SystemExit(
-                f'{len(fp["outside"])} building-like cells stand outside OSM footprints and '
-                f'{len(fp["blind"])} have no OSM clip; see {plan.name}-footprint-hits.json. House fronts '
-                'go on the OSM footprint line (scripts/osm_footprints.py frontage), not at the kerb. '
+                f'{len(fp["outside"])} building-like cells stand outside vector-map footprints and '
+                f'{len(fp["blind"])} have no map clip; see {plan.name}-footprint-hits.json. House fronts '
+                'go on the vector-map footprint line (scripts/osm_footprints.py frontage), not at the kerb. '
                 'Missing clip: osm_extract.py --layers buildings,highways. Genuinely unmapped structure '
                 '(evidence in hand): set plan.outside_footprint_ok = "<reason + evidence id>".')
         print(f'footprint guard overridden ({len(fp["outside"]) + len(fp["blind"])} cells): {why}')
@@ -672,7 +672,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
             raise SystemExit(
                 f'{len(jogs)} roof ridge(s) jog sideways between rows; see {plan.name}-roof-jogs.json. '
                 'Keep each roof on one straight ridge line (square the footprint, do not step it '
-                'with the OSM rotation). Real offset roofs (evidence in hand): set '
+                'with the vector-map rotation). Real offset roofs (evidence in hand): set '
                 'plan.roof_jog_ok = "<reason + evidence id>".')
         print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
     stage_key = stage or f'feature-{plan.name}'
@@ -731,7 +731,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         print('backup:', res)
         structure = {'name': name, 'from': a, 'to': b}
     else:
-        # the first-time backup above is the original Geocraft; recovery needs the state before THIS apply
+        # the first-time backup above is the original pristine import; recovery needs the state before THIS apply
         name = f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}'
         a = [lo[0] - 1, lo[1], lo[2] - 1]
         b = [hi[0] + 1, hi[1], hi[2] + 1]

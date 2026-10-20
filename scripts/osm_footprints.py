@@ -37,7 +37,7 @@ from script_env import ROOT  # noqa: E402
 OSM = ROOT / 'reference/osm'
 CACHE = ROOT / 'verification/site/osm27700'
 _CFG = json.loads((ROOT / 'config/world.json').read_text())
-# Untouched Geocraft output: ground reference for "how high above the street is this?"
+# Untouched pristine save: ground reference for "how high above the street is this?"
 PRISTINE = Path(_CFG.get('pristine_region_path', ''))
 
 # Blocks that may legitimately stand outside a building footprint and rise above
@@ -64,16 +64,16 @@ def _projected(src: Path) -> Path:
 
 
 class OSMIndex:
-    """All buildings and named highways from reference/osm, in MC float coords."""
+    """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 
     def __init__(self, root: Path = OSM):
         from world_frame import osgb_to_mc
         mc = lambda c: osgb_to_mc(c[0], c[1])
         self.buildings = []   # (rings[[(x,z)...]], props)
         self.streets = []     # (name, highway, [(x,z)...])
-        self.street_props = []  # OSM properties of each self.streets entry (same order)
+        self.street_props = []  # map properties of each self.streets entry (same order)
         self.areas = []       # (rings, props) of every non-building polygon (landuse/leisure/amenity/...)
-        self.extents = []     # (x0, z0, x1, z1) per clip — where OSM was actually checked
+        self.extents = []     # (x0, z0, x1, z1) per clip — where the map was actually checked
         seen = set()
         for src in sorted(root.glob('*/*.geojson')):
             d = json.loads(_projected(src).read_text())
@@ -123,7 +123,7 @@ class OSMIndex:
                    for dz in range(-margin, margin + 1))
 
     def covered(self, x: int, z: int) -> bool:
-        """True if (x, z) lies inside an OSM clip we actually have (else the check is blind)."""
+        """True if (x, z) lies inside a vector-map clip we actually have (else the check is blind)."""
         return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, z0, x1, z1 in self.extents)
 
     def setback(self, i: int) -> float:
@@ -212,10 +212,10 @@ def _addr(p) -> tuple[str, str]:
 
 # --- the guard used by site_kit.apply() ------------------------------------------
 def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
-    """Find building-like blocks standing in front of / outside every OSM footprint.
+    """Find building-like blocks standing in front of / outside every vector-map footprint.
 
     @param cells: {(x, y, z): state}
-    @param world: site_kit.World for the ground reference (default: pristine Geocraft)
+    @param world: site_kit.World for the ground reference (default: pristine save)
     Front zone (street side of the house line): max MAX_RISE. Back gardens: BACK_RISE.
     @returns: {'outside': {pos: [state, rise, zone, street, dist]}, 'blind': [pos...]}
     """
@@ -292,7 +292,7 @@ STREET_SURFACE = ('gray_terracotta', 'polished_diorite', 'smooth_stone', 'andesi
 def street_surface(world, x: int, z: int) -> bool:
     """True if the top surface block of column (x, z) is a road / pavement block.
 
-    @param world: site_kit.World to read (live save or pristine Geocraft)
+    @param world: site_kit.World to read (live save or pristine)
     @param x: MC block x
     @param z: MC block z
     @returns: whether the surface block id is in STREET_SURFACE
@@ -393,7 +393,7 @@ def plots(args):
         for k, v in rep.items():
             b = v['bbox']
             ax.text((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, k.rsplit(' ', 1)[-1], fontsize=7, ha='center')
-        ax.set_title('first-guess plots (dark = OSM house footprint)')
+        ax.set_title('first-guess plots (dark = vector-map house footprint)')
         png = out.with_suffix('.png')
         plt.savefig(png, dpi=90)
         print('preview:', png)
@@ -442,12 +442,12 @@ def check(args):
     for q, v in rep['outside'].items():
         by.setdefault(owner[q], []).append((q, v))
     for n, hits in sorted(by.items()):
-        print(f'{n}: {len(hits)} building-like cells outside OSM footprints, e.g. {hits[:3]}')
+        print(f'{n}: {len(hits)} building-like cells outside vector-map footprints, e.g. {hits[:3]}')
     if rep['blind']:
-        print(f'{len(rep["blind"])} cells outside every OSM clip (run osm_extract.py for the area), '
+        print(f'{len(rep["blind"])} cells outside every map clip (run osm_extract.py for the area), '
               f'e.g. {rep["blind"][:3]}')
     if not by and not rep['blind']:
-        print('OK: no building-like cells outside OSM footprints')
+        print('OK: no building-like cells outside vector-map footprints')
     return 1 if by else 0
 
 
@@ -460,7 +460,7 @@ def main() -> int:
     pl = sub.add_parser('plots', help='first-guess plot per house (house + front + back garden)')
     pl.add_argument('--bbox', required=True, help='x0,z0,x1,z1 (MC) — house centroids inside')
     pl.add_argument('--reach', type=int, default=45, help='max garden depth grown from a house')
-    c = sub.add_parser('check', help='building-like cells outside OSM footprints')
+    c = sub.add_parser('check', help='building-like cells outside vector-map footprints')
     g = c.add_mutually_exclusive_group(required=True)
     g.add_argument('--build')
     g.add_argument('--all', action='store_true')

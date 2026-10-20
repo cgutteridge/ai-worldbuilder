@@ -69,11 +69,11 @@ def surface(world, x: int, z: int, top: int = TOP) -> tuple[int, str]:
 
 
 def roof_columns(cols, live, pristine) -> dict:
-    """Columns still carrying a Geocraft roof volume.
+    """Columns still carrying an import roof volume.
 
     @param cols: iterable of (x, z)
     @param live: World over the live save
-    @param pristine: World over the untouched Geocraft save
+    @param pristine: World over the untouched pristine save
     @returns: {(x, z): roof_y}
     """
     out = {}
@@ -126,11 +126,11 @@ def ground_around(comp: set, live, reach: int = 2) -> int | None:
 
 
 def find_lumps(cols, live, pristine, covered: set | frozenset = frozenset(), min_columns: int = MIN_COLUMNS) -> list:
-    """Unrefined Geocraft building blobs among the given columns.
+    """Unrefined vendor-import building blobs among the given columns.
 
     @param cols: iterable of (x, z) to scan (e.g. one cell)
     @param live: World over the live save
-    @param pristine: World over the untouched Geocraft save
+    @param pristine: World over the untouched pristine save
     @param covered: columns a feature build wrote (these are never lumps)
     @param min_columns: smallest lump reported
     @returns: [{'bbox': [x0, z0, x1, z1], 'centre': [x, z], 'columns': n, 'roof_y': [lo, hi],
@@ -171,11 +171,11 @@ def apply_exceptions(lumps: list, exceptions: list) -> None:
 
 
 def osm_under(lump: dict, idx) -> list:
-    """OSM buildings sharing at least a quarter of the smaller footprint (min 4 columns) with the lump.
+    """Vector-map buildings sharing at least a quarter of the smaller footprint (min 4 columns) with the lump.
 
     @param lump: one find_lumps() item
     @param idx: osm_footprints.OSMIndex
-    @returns: [osm ref]
+    @returns: [map way ref]
     """
     from coverage import osm_ref, scan_polygon
     x0, z0, x1, z1 = lump['bbox']
@@ -194,12 +194,12 @@ def osm_under(lump: dict, idx) -> list:
 def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
     """Package residual lumps as queue features (same shape as cell_features.missing_features).
 
-    Excepted lumps and lumps whose OSM buildings a pending mapped feature already lists are dropped.
+    Excepted lumps and lumps whose vector-map buildings a pending mapped feature already lists are dropped.
     The rest are single-link clustered (cell_features.JOIN_GAP) and labelled by nearest street.
     Unmapped / outside-clip lumps get refs ['unmapped'] (footprint traced from aerial per PROCESS 2d-i).
 
-    @param lumps: scan_cell() output (with 'osm')
-    @param taken_refs: OSM refs already covered by missing_features items
+    @param lumps: scan_cell() output (with 'osm' map-ref key)
+    @param taken_refs: map way refs already covered by missing_features items
     @param streets: OSMIndex.streets for naming
     @returns: [{'kind': 'lumps', 'label', 'street', 'refs', 'bbox', 'portals'}]
     """
@@ -218,8 +218,8 @@ def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
         street = _street_of({}, bbox, streets)
         out.append({'kind': 'lumps', 'street': street, 'refs': refs or ['unmapped'], 'bbox': bbox,
                     'portals': in_bbox(*bbox, pad=3),
-                    'label': f'{street or "unnamed street"} ({len(run)} unrefined Geocraft building(s)'
-                             + (f', {unmapped} not in OSM' if unmapped else '') + ')'})
+                    'label': f'{street or "unnamed street"} ({len(run)} unrefined import building(s)'
+                             + (f', {unmapped} not on vector map' if unmapped else '') + ')'})
     return out
 
 
@@ -243,9 +243,9 @@ def scan_cell(tx: int, tz: int, bbox=None, with_osm: bool = True, idx=None) -> l
     @param tx: cell X
     @param tz: cell Z
     @param bbox: optional (x0, z0, x1, z1) inclusive clip
-    @param with_osm: also list the OSM buildings under each lump
+    @param with_osm: also list the vector-map buildings under each lump
     @param idx: optional shared osm_footprints.OSMIndex
-    @returns: find_lumps() items with 'osm' and exceptions applied
+    @returns: find_lumps() items with 'osm' map-ref key and exceptions applied
     """
     from cell_features import feature_columns
     from coverage import cell_bbox
@@ -266,7 +266,7 @@ def scan_cell(tx: int, tz: int, bbox=None, with_osm: bool = True, idx=None) -> l
 
 
 def summary(lumps: list) -> dict:
-    """@returns: {'remaining': n unrecorded, 'excepted': n, 'unmapped': n with no OSM building, 'no_clip': n outside any OSM clip}"""
+    """@returns: {'remaining': n unrecorded, 'excepted': n, 'unmapped': n with no vector-map building, 'no_clip': n outside any map clip}"""
     rem = [lp for lp in lumps if 'exception' not in lp]
     return {'remaining': len(rem), 'excepted': len(lumps) - len(rem),
             'unmapped': sum(1 for lp in rem if not lp.get('osm', [1])),
@@ -295,13 +295,13 @@ def main(argv=None) -> int:
         for i, lp in enumerate(lumps, 1):
             tag = f' EXCEPTION: {lp["exception"]}' if 'exception' in lp else ''
             osm = lp.get('osm')
-            where = ('OSM ' + ','.join(osm)) if osm else (
-                ('NO OSM CLIP here (osm_extract.py first)' if not lp.get('in_osm_clip', True)
-                 else 'no OSM building (unmapped: build from aerial/Street View)') if osm is not None else '')
+            where = ('map ' + ','.join(osm)) if osm else (
+                ('NO MAP CLIP here (osm_extract.py first)' if not lp.get('in_osm_clip', True)
+                 else 'no vector-map building (unmapped: build from aerial/streetlevel)') if osm is not None else '')
             print(f'lump {i}: bbox={lp["bbox"]} centre={lp["centre"]} cols={lp["columns"]} '
                   f'roof_y={lp["roof_y"][0]}..{lp["roof_y"][1]} height={lp["height"]} {where}{tag}')
         print(f'cell {tx},{tz}: {s["remaining"]} lump(s) remaining, {s["excepted"]} excepted, '
-              f'{s["unmapped"]} without an OSM building ({s["no_clip"]} outside any OSM clip)')
+              f'{s["unmapped"]} without a vector-map building ({s["no_clip"]} outside any map clip)')
     if a.record:
         from datetime import datetime
         path = stage_path(tx, tz)
@@ -311,7 +311,7 @@ def main(argv=None) -> int:
             'status': 'verified' if not s['remaining'] else 'open',
             'remaining': s['remaining'], 'checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'exceptions': old.get('exceptions', []),
-            'note': 'lump_scan.py: ' + (f'{s["excepted"]} recorded exception(s)' if s['excepted'] else 'no Geocraft lumps left')}
+            'note': 'lump_scan.py: ' + (f'{s["excepted"]} recorded exception(s)' if s['excepted'] else 'no import lumps left')}
         path.write_text(json.dumps(st, indent=1) + '\n')
     return 1 if s['remaining'] else 0
 

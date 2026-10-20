@@ -512,7 +512,7 @@ def nearest(rgb: tuple[int, int, int], k: int = 12, partial: bool = False, flat:
             group: str | None = None) -> list[tuple[str, tuple]]:
     """Blocks in reference/blocks/blocks.json whose average colour is closest to rgb (weighted RGB distance).
 
-    @param rgb: target colour, e.g. read off the Google sheet
+    @param rgb: target colour, e.g. read off the aerial sheet
     @param k: how many
     @param partial: also list slabs, stairs, walls, fences (same colour as their full block, so off by default)
     @param flat: only flat or subtle textures (not patterned/busy)

@@ -37,7 +37,7 @@ def wall_cell(cells, px, pz, width='single', world=None, facing=None):
     """Nearest straight stretch of wall to a point, of the width a door needs.
 
     Every cell of the stretch is in ``cells`` with open air outside the same way (and, with ``world``, a real wall block standing
-    at door height: the OSM footprint can be bigger than what was built, and a door must not hang in a gap).
+    at door height: the vector-map footprint can be bigger than what was built, and a door must not hang in a gap).
 
     @param cells: set of (x, z) cells of the building
     @param px: portal X
@@ -129,7 +129,7 @@ def entrances(plan, world, cells, found, notes, double=(), flat=(), style=None, 
     @param notes: list of report lines
     @param double: portal ids that are double doors (main entrances)
     @param flat: portal ids whose wall is made flush first (flatten) so a double door fits
-    @param check_walls: require a real built wall at door height (default); False where the OSM footprint is what was built
+    @param check_walls: require a real built wall at door height (default); False where the vector-map footprint is what was built
                         (B42), so the result does not depend on the doors a previous run left in the world
     @param facing: optional (dx, dz) every door must face (the building's front, from the references)
     @param wide: ids of 6-wide entrances (a shop front's automatic doors), the wall made flush over 8 cells

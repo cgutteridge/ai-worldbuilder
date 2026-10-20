@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CHECKS = ROOT / 'model-bakeoffs' / 'checks' / 'feature-selection'
 
 ANSWER_SCHEMA = {
-    'osm_way_id': 'string — OSM way id of the single feature the cue names',
-    'reject_ways': 'string[] — neighbouring OSM way ids that must NOT be included',
+    'osm_way_id': 'string — vector-map way id of the single feature the cue names',
+    'reject_ways': 'string[] — neighbouring map way ids that must NOT be included',
     'bbox_mc': '[x0, z0, x1, z1] inclusive Minecraft block bounds of that way only',
     'dilated': 'boolean — must be false (no readable-footprint pad)',
     'notes': 'string — optional short evidence trail',
@@ -99,7 +99,7 @@ def format_brief(scenario: dict) -> str:
     """
     cue = scenario.get('cue') or {}
     photos = cue.get('photos') or []
-    photo_lines = '\n'.join(f'- `{p}`' for p in photos) if photos else '- (none attached; use cue text + OSM/portals)'
+    photo_lines = '\n'.join(f'- `{p}`' for p in photos) if photos else '- (none attached; use cue text + vector map/portals)'
     photo_note = cue.get('photo_note')
     stand = cue.get('stand_mc')
     allowed = '\n'.join(f'- {a}' for a in scenario.get('allowed') or [])
@@ -143,16 +143,16 @@ def format_brief(scenario: dict) -> str:
         '',
         schema_lines,
         '',
-        'Bounds must be the **exclusive** OSM footprint of `osm_way_id` (inclusive bbox is fine).',
+        'Bounds must be the **exclusive** vector-map footprint of `osm_way_id` (inclusive bbox is fine).',
         'Do **not** grow a readable-massing fringe. Set `dilated` to `false`.',
     ])
     return '\n'.join(bits) + '\n'
 
 
 def osm_way_bbox(way_id: str) -> tuple[int, int, int, int]:
-    """Inclusive MC bbox of one OSM building way.
+    """Inclusive MC bbox of one vector-map building way.
 
-    @param way_id: OSM way id string
+    @param way_id: map way id string
     @returns: (x0, z0, x1, z1)
     """
     from osm_footprints import OSMIndex
@@ -166,7 +166,7 @@ def osm_way_bbox(way_id: str) -> tuple[int, int, int, int]:
         if wid == want:
             cells.append((x, z))
     if not cells:
-        raise SystemExit(f'no OSM cells for way {way_id}')
+        raise SystemExit(f'no vector-map cells for way {way_id}')
     xs = [c[0] for c in cells]
     zs = [c[1] for c in cells]
     return min(xs), min(zs), max(xs), max(zs)
@@ -199,7 +199,7 @@ def chebyshev_outer_pad(
     """How far the claimed bbox sticks out past gold on the worst side.
 
     @param claimed: agent bbox
-    @param gold: OSM bbox
+    @param gold: vector-map bbox
     @returns: max blocks of outer pad (0 if claimed ⊆ gold expanded by 0)
     """
     cx0, cz0, cx1, cz1 = claimed
@@ -214,7 +214,7 @@ def chebyshev_outer_pad(
 
 
 def normalize_way_id(value: Any) -> str:
-    """Normalize an OSM way id to digits-only string.
+    """Normalize a vector-map way id to digits-only string.
 
     @param value: raw answer field
     @returns: normalized id
@@ -256,11 +256,11 @@ def grade_answer(
     key: dict,
     gold_bbox: tuple[int, int, int, int],
 ) -> dict:
-    """Grade a normalized answer against a gold key and OSM bbox.
+    """Grade a normalized answer against a gold key and vector-map bbox.
 
     @param answer: normalized answer from ``parse_answer``
     @param key: gold key dict
-    @param gold_bbox: inclusive OSM bbox for the gold way
+    @param gold_bbox: inclusive map bbox for the gold way
     @returns: grade report with overall pass/fail
     """
     want = normalize_way_id(key['osm_way_id'])
@@ -345,7 +345,7 @@ def cmd_grade(
     @param scenario_id: FS-NNN
     @param answer_path: path to agent JSON
     @param root: checks root override
-    @param gold_bbox: optional bbox override (tests); else live OSM
+    @param gold_bbox: optional bbox override (tests); else live vector map
     @returns: exit code 0 on pass, 1 on fail
     """
     key = load_key(scenario_id, root)

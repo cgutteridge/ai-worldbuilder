@@ -3,7 +3,7 @@
 
 Reads ``config/world-frame.json`` (CRS, offsets, Y offset, bounds, anchor).
 Converts between WGS84, OSGB36 / other EPSG, Minecraft x/z(/y), coverage cells,
-and OSM web-mercator XYZ tiles. Prefer this module over scattered OFFSET_E /
+and web-mercator XYZ tiles. Prefer this module over scattered OFFSET_E /
 gdaltransform copies.
 
   .venv/bin/python scripts/world_frame.py info
@@ -58,12 +58,12 @@ class WorldFrame:
 
     @property
     def y_offset(self) -> int:
-        """Block Y of metres AOD 0 (same role as Geocraft SEA_LEVEL)."""
+        """Block Y of metres AOD 0 (same role as legacy SEA_LEVEL)."""
         return int(self.data.get('y_offset', self.data.get('sea_level', 11)))
 
     @property
     def sea_level(self) -> int:
-        """Alias of y_offset for Geocraft callers."""
+        """Alias of y_offset for legacy callers."""
         return self.y_offset
 
     @property
@@ -111,7 +111,7 @@ def _legacy_to_frame(o: dict) -> dict:
         'crs': 'EPSG:27700',
         'grid': o.get('GRID', 'OSGB36'),
         'anchor': {
-            'description': 'Geocraft map-maker origin (from legacy offsets)',
+            'description': 'Legacy map-maker origin (from offsets)',
             'osgb': {'easting': o['OFFSET_E'], 'northing': o['OFFSET_N']},
             'mc': {'x': 0, 'z': 0},
         },
@@ -352,7 +352,7 @@ def mc_batch_to_wgs84(
 # ---- elevation / Y -----------------------------------------------------------
 
 def metres_aod_to_y(metres: float, frame: WorldFrame | None = None) -> int:
-    """Map metres above datum to Minecraft Y (trunc toward −∞ like Geocraft).
+    """Map metres above datum to Minecraft Y (trunc toward −∞ like the legacy importer).
 
     @param metres: metres AOD
     @param frame: optional frame
@@ -413,7 +413,7 @@ def cell_bounds(cell: tuple[int, int], margin: int = 0, size: int = CELL) -> tup
     return x0 - margin, z0 - margin, x0 + size - 1 + margin, z0 + size - 1 + margin
 
 
-# ---- web-mercator / OSM XYZ --------------------------------------------------
+# ---- web-mercator / tile XYZ -------------------------------------------------
 
 def tile_float(lat: float, lon: float, zoom: int) -> tuple[float, float]:
     """Fractional web-mercator tile coordinate of a WGS84 point.

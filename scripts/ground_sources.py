@@ -3,10 +3,10 @@
 
 Two sources, both read-only, neither tied to any one place:
 
-  OSM    every ``*-mp / *-ln / *-pt`` extract in verification/site/osm27700 (EPSG:27700),
+  VECTOR_MAP  every ``*-mp / *-ln / *-pt`` extract in verification/site/osm27700 (EPSG:27700),
          projected to Minecraft columns. Roads, paths and areas become surface kinds.
   AERIAL the z19 mosaic, sampled per column. Colour says lawn / brick paving / light
-         paving / shade-or-canopy. It only fills columns OSM does not describe.
+         paving / shade-or-canopy. It only fills columns the map does not describe.
 
 Nothing here reads the Minecraft world, an earlier ground pass, a zone, or a campus polygon.
 
@@ -33,7 +33,7 @@ NO_DATA_LUM = 0.01                   # window mean below this is a blank mosaic 
 MOSAIC_TILE0 = (260101, 175662)      # z19 tile x,y of the mosaic's top-left corner
 ZOOM, TILE = 19, 256
 
-# OSM surface=* → ground kind. 'paving' is split brick / light by the aerial.
+# vector-map surface=* → ground kind. 'paving' is split brick / light by the aerial.
 SURFACE_KIND = {
     'asphalt': 'tarmac', 'paved': 'paving', 'paving_stones': 'paving', 'concrete': 'paving',
     'concrete:plates': 'paving', 'sett': 'brick', 'bricks': 'brick', 'cobblestone': 'brick',
@@ -131,12 +131,12 @@ def cell_box(cell: tuple[int, int], margin: int = 0) -> tuple[int, int, int, int
     return cellmath.bounds(cell, margin)
 
 
-# --- OSM ---------------------------------------------------------------------------------
+# --- vector_map ---------------------------------------------------------------------------
 def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict, str, list]]:
-    """OSM features touching the cell: [(tags, 'poly'|'line'|'point', geometry in MC)].
+    """Vector-map features touching the cell: [(tags, 'poly'|'line'|'point', geometry in MC)].
 
     poly geometry is [[outer, hole, ...], ...]; line is [(x, z), ...]; point is (x, z).
-    Duplicates across extracts (same osm id and tags) are dropped.
+    Duplicates across extracts (same map id and tags) are dropped.
     """
     from world_frame import osgb_to_mc
     mc = lambda c: osgb_to_mc(c[0], c[1])
@@ -171,17 +171,17 @@ def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict
     return out
 
 
-# Real carriageways missing from the OSM clips (aerial + the existing road surface show them).
+# Real carriageways missing from the map clips (aerial + the existing road surface show them).
 # (cell tx, tz, centreline in MC, tags). Added so the ground pass lays tarmac, not paving.
 SUPPLEMENT_ROADS = [
     (50, -42, [(6396, -5294), (6460, -5266), (6500, -5248), (6531, -5235)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road S of Welbeck Ave houses (unmapped in OSM clip)',
+     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road S of Welbeck Ave houses (unmapped in map clip)',
       'width': '9'}),
     (49, -42, [(6350, -5322), (6351, -5314), (6355, -5297), (6360, -5282), (6365, -5263), (6370, -5246)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'University Rd south of the junction (unmapped in OSM clip)',
+     {'highway': 'residential', 'surface': 'asphalt', 'name': 'University Rd south of the junction (unmapped in map clip)',
       'width': '9'}),
     (49, -42, [(6352, -5322), (6362, -5316), (6372, -5311), (6385, -5304), (6399, -5298)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road E from the junction toward Welbeck Ave (unmapped in OSM clip)',
+     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road E from the junction toward Welbeck Ave (unmapped in map clip)',
       'width': '9'}),
 ]
 
@@ -212,11 +212,11 @@ def road_width(t: dict) -> float:
 
 
 class OSMGround:
-    """OSM rasterised to one kind + priority per column, plus road/barrier extras."""
+    """Vector map rasterised to one kind + priority per column, plus road/barrier extras."""
 
     def __init__(self, cell: tuple[int, int]):
         self.cell = cell
-        self.kind: dict = {}          # (x, z) -> kind from OSM
+        self.kind: dict = {}          # (x, z) -> kind from vector map
         self.pri: dict = {}
         self.feat: dict = {}          # (x, z) -> id of the mapped line (path/road) that put the kind there
         self._fid = 0
@@ -325,7 +325,7 @@ def mosaic_px(pts: list[tuple[int, int]]) -> dict:
 
 
 class RegRGB(tuple):
-    """A colour sampled from a registered user aerial (Google 3D render), not the z19 mosaic.
+    """A colour sampled from a registered user aerial (3D render / screenshot), not the z19 mosaic.
 
     Same 0..1 RGB triple, but ``aerial_class`` reads it with the registered-source thresholds.
     """
@@ -334,7 +334,7 @@ class RegRGB(tuple):
 
 AERIAL_USER_GLOB = 'reference/aerial/**/*.registration.json'
 REG_HALF_BLOCKS = 0.5                # sample window half-width in blocks (median, so render speckle drops out)
-REG_EDGE_BLOCKS = 3.0                # skip columns this close to the image edge (Google watermark, attribution, UI chrome)
+REG_EDGE_BLOCKS = 3.0                # skip columns this close to the image edge (watermark, attribution, UI chrome)
 
 
 def registered_aerials() -> list[dict]:
@@ -415,7 +415,7 @@ def hsv(rgb) -> tuple[float, float, float]:
 
 
 def _registered_class(h: float, s: float, lum: float) -> str:
-    """Class of a registered user aerial colour (Google 3D render: true colour, neutral paving, blue roofs).
+    """Class of a registered user aerial colour (3D render: true colour, neutral paving, blue roofs).
 
     Calibrated on cell 47,-45 against the strip beside Building 2 and the promenade: lawn there is
     green (hue 80-165, s 0.24-0.36, lum 0.25-0.55, dark under shade) where the sun-bleached mosaic

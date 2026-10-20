@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Footprint overlap check: paths / open lidar / aerial ground inside a building mass.
 
-Coverage highway parcels stop at OSM footprints, so a footway that OSM draws *through*
-a building polygon never becomes a path parcel. The outside-footprint guard therefore
-misses pavement wrongly included in the mass (Q-189 Students' Union; Q-201 / task #16).
+Coverage highway parcels stop at vector-map footprints, so a footway that the map draws
+*through* a building polygon never becomes a path parcel. The outside-footprint guard
+therefore misses pavement wrongly included in the mass (Q-189 Students' Union; Q-201 / task #16).
 
-Dry run lists footprint cells that sit on OSM ``footway`` / ``steps`` / ``cycleway``
-bands (Geocraft half-widths), optional open lidar columns (DSM−DTM below a threshold),
+Dry run lists footprint cells that sit on map ``footway`` / ``steps`` / ``cycleway``
+bands (import half-widths), optional open lidar columns (DSM−DTM below a threshold),
 and the share of the footprint classified as ground on the aerial.
 
   python3 scripts/footprint_overlap.py --way 33830305
   python3 scripts/footprint_overlap.py --cells-json '[[10,20],[11,20]]' \\
       --street footway,10.0,22.5,20.0,22.5
 
-Pure helpers accept synthetic footprint + street polylines so tests need no OSM clips.
+Pure helpers accept synthetic footprint + street polylines so tests need no map clips.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ OPEN_LIDAR_M = 1.0
 def path_half_width(highway: str) -> float:
     """Band half-width in blocks for a path highway tag.
 
-    @param highway: OSM ``highway=*`` value
+    @param highway: vector-map ``highway=*`` value
     @returns: half-width used for centreline→column raster
     """
     if highway == 'steps':
@@ -234,10 +234,10 @@ def streets_from_index(idx) -> list[tuple[str, list[tuple[float, float]], dict]]
 
 
 def footprint_for_way(idx, way_id: str | int) -> set[tuple[int, int]]:
-    """Rasterised OSM building columns for one way id.
+    """Rasterised vector-map building columns for one way id.
 
     @param idx: ``OSMIndex``
-    @param way_id: OSM way id (string or int; leading ``w`` stripped)
+    @param way_id: map way id (string or int; leading ``w`` stripped)
     @returns: ``{(x, z)}``
     @raises SystemExit: when the way is missing or has no cells
     """
@@ -249,7 +249,7 @@ def footprint_for_way(idx, way_id: str | int) -> set[tuple[int, int]]:
         if wid == want:
             cells.add((x, z))
     if not cells:
-        raise SystemExit(f'no footprint cells for OSM way {want}')
+        raise SystemExit(f'no footprint cells for map way {want}')
     return cells
 
 
@@ -262,7 +262,7 @@ def report_for_cells(
     aerial=None,
     label: str | None = None,
 ) -> list[str]:
-    """Dry-run lines for a footprint (OSM index and/or synthetic streets).
+    """Dry-run lines for a footprint (vector-map index and/or synthetic streets).
 
     @param footprint: building mass
     @param idx: optional ``OSMIndex`` (streets taken from it when ``streets`` omitted)
@@ -278,10 +278,10 @@ def report_for_cells(
 
 
 def lidar_feature_lookup(footprint: set[tuple[int, int]]) -> dict[tuple[int, int], float] | None:
-    """Standing height (DSM−DTM metres) per footprint column from cached DEFRA tiles.
+    """Standing height (DSM−DTM metres) per footprint column from cached composite lidar tiles.
 
     Does not download tiles. Returns ``None`` when the DTM/DSM cache does not cover the
-    footprint (Geocraft sampling would otherwise report 0 and look falsely open).
+    footprint (pristine sampling would otherwise report 0 and look falsely open).
 
     @param footprint: building mass columns
     @returns: ``{(x, z): feature_m}`` or ``None`` when tiles / frame are unavailable
@@ -349,13 +349,13 @@ def main(argv: list[str] | None = None) -> int:
     """
     ap = make_parser(__doc__)
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument('--way', help='OSM building way id (e.g. 33830305)')
+    g.add_argument('--way', help='vector-map building way id (e.g. 33830305)')
     g.add_argument('--cells-json', help='JSON list of [x,z] footprint columns')
     ap.add_argument('--street', action='append', default=[],
-                    help='synthetic highway,x1,z1,x2,z2,... (repeatable; skips live OSM streets)')
-    ap.add_argument('--osm-root', type=Path, help='OSM clip root (default: world reference/osm)')
+                    help='synthetic highway,x1,z1,x2,z2,... (repeatable; skips live map streets)')
+    ap.add_argument('--osm-root', type=Path, help='vector-map clip root (default: world reference/osm)')
     ap.add_argument('--with-lidar', action='store_true',
-                    help='also list open lidar columns (cached DEFRA DSM−DTM)')
+                    help='also list open lidar columns (cached composite DSM−DTM)')
     ap.add_argument('--with-aerial', action='store_true',
                     help='also report aerial ground share (mosaic / registered)')
     ap.add_argument('--json', action='store_true', help='machine-readable summary on stdout')
@@ -398,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in rep.lines(label=label):
             print(line)
         if a.with_lidar and feature_m is None:
-            print(f'{label} open lidar: unavailable (no DEFRA cache / frame)')
+            print(f'{label} open lidar: unavailable (no composite lidar cache / frame)')
         if a.with_aerial and aerial is None:
             print(f'{label} aerial ground share: unavailable')
     return 0

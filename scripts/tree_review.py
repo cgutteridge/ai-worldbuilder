@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Tree review: the lidar crown inventory against the live world (I-067 method, I-073 per-cell check).
 
-Geocraft draws every lidar tree as log + leaf, so the PRISTINE save is a crown inventory (position, height,
-spread; lidar_heightmap kind 2 = tree, 3 = tree over a roof). Lidar filters small things (shrubs, cars,
-street furniture) and is blind to trees planted after the survey, so it is evidence, not truth: the Google
-sheet decides what is real. This tool lines the two up and says where to look.
+The pristine import draws every lidar tree as log + leaf, so the PRISTINE save is a crown inventory
+(position, height, spread; lidar_heightmap kind 2 = tree, 3 = tree over a roof). Lidar filters small
+things (shrubs, cars, street furniture) and is blind to trees planted after the survey, so it is
+evidence, not truth: the aerial sheet decides what is real. This tool lines the two up and says where
+to look.
 
 Per crown (connected tree columns): size, mean height above ground, and what the live world has there.
 Crowns are matched by their TOPS (highest tree column in a 3-block window; the live canopy merges crowns, so
 blobs are not comparable). A lidar top and a live top within MATCH_R blocks are the same tree.
   MISSING  lidar crown top with no live crown top near it                (never planted, or cleared)
   LOW/HIGH matched, but the live top is >= HEIGHT_TOL blocks lower/higher than the lidar
-  INVENTED live crown top with no lidar top near it                      (planted from the aerial only; check Google)
-  ROOF     lidar crown over a roof (kind 3), matched                     (a crown over a building: check Google)
+  INVENTED live crown top with no lidar top near it                      (planted from the aerial only; check aerial)
+  ROOF     lidar crown over a roof (kind 3), matched                     (a crown over a building: check aerial)
   ok       the rest (not listed unless --all)
 
   python3 scripts/tree_review.py --cell 48,-44                       # one cell
@@ -20,7 +21,7 @@ blobs are not comparable). A lidar top and a live top within MATCH_R blocks are 
   python3 scripts/tree_review.py --zone ... --marks out.json         # colours for google_aerial.py sheet --marks
   python3 scripts/tree_review.py --zone ... --json
 
-Then look at the same area on the Google sheet:
+Then look at the same area on the aerial sheet:
   python3 shims/google_aerial.py sheet --at X,Z --radius 60 --marks out.json    (red missing, blue invented, orange height)
 and decide per crown: keep, add (extra crown in reference/trees-extra-crowns.json or trees_layer re-run), or remove.
 """
@@ -130,7 +131,7 @@ def run(cells: list[tuple[int, int]], zone: tuple[int, int, int, int] | None = N
     from site_kit import World
     import os
     # Default stays the pristine save, the inventory this tool was calibrated on. LIDAR_SOURCE=defra opts in: trees are then
-    # real crowns (first-return minus last-return lidar) and number more than Geocraft's.
+    # real crowns (first-return minus last-return lidar) and number more than the import's.
     src = os.environ.get('LIDAR_SOURCE')
     live_w, pri_w = World(), L.reference_world('pristine' if src in (None, 'auto') else src)
     rows = []

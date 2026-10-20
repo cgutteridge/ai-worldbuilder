@@ -309,7 +309,7 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 # --- 2. what is on the ground ------------------------------------------------------------
 def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
              fp: set | None = None) -> tuple[dict, Counter]:
-    """Surface kind per free column: OSM first, aerial where OSM is silent, fill under shade."""
+    """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -636,7 +636,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     subprocess.run([sys.executable, str(ROOT / 'scripts/region_backup.py'), 'snap',
                     '--bbox', cell_bbox_str(cell), '--name', name], check=True)
     rb = apply(plan, modifies=ignored, stage='ground-layer', cell=cell,
-               strict=True, meta={'note': 'first-principles ground (OSM + aerial); verify: patrol, visuals; trees and decor re-run after'})
+               strict=True, meta={'note': 'first-principles ground (vector map + aerial); verify: patrol, visuals; trees and decor re-run after'})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 

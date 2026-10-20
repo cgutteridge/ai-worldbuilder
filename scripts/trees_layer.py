@@ -39,8 +39,8 @@ from site_kit import Plan, World, built_cells  # noqa: E402
 
 MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
 LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
-# Surfaces a Google-evidenced crown may stand on besides lawn and PAVED_SURFACES: the ground layer's path/plaza colours (granite, stone) and tarmac wool,
-# which are often wrong under a real tree (a brick plaza painted black); the evidence for the crown is the Google sheet, not the ground block.
+# Surfaces an aerial-evidenced crown may stand on besides lawn and PAVED_SURFACES: the ground layer's path/plaza colours (granite, stone) and tarmac wool,
+# which are often wrong under a real tree (a brick plaza painted black); the evidence for the crown is the aerial sheet, not the ground block.
 GOOGLE_SURFACES = frozenset({'granite', 'stone', 'black_wool', 'gray_concrete', 'polished_diorite', 'smooth_stone_slab'})
 LAWN_SURFACES = frozenset({'grass_block', 'dirt', 'podzol', 'coarse_dirt', 'moss_block'})
 # Hard ground a tree can stand in: the real pavement has a soil pit under the trunk that the aerial
@@ -231,8 +231,8 @@ def extra_crowns(cell: tuple[int, int], path: Path | None = None) -> list[tuple[
 
     Each entry is a tree read from other imagery (registered user aerial + LIDAR dome) where the mosaic shows no
     canopy. They are cell-local (dx, dz, r) like detected crowns and go through exactly the same planting rules
-    (lawn surface, trunk in cell, air only, mask); only the OSM-footprint 'feature zone' skip is waived, because
-    these sit where an OSM roof way was found to be a tree (I-055).
+    (lawn surface, trunk in cell, air only, mask); only the vector-map footprint 'feature zone' skip is waived, because
+    these sit where a mapped roof way was found to be a tree (I-055).
     """
     path = path or EXTRA_CROWNS
     if not path.exists():
@@ -250,14 +250,14 @@ GOOGLE_CROWNS = ROOT / 'reference/trees-google-crowns.json'
 
 
 def google_crowns(cell: tuple[int, int], path: Path | None = None):
-    """Crowns read by eye from the Google satellite sheet (look-only), from reference/trees-google-crowns.json.
+    """Crowns read by eye from the aerial satellite sheet (look-only), from reference/trees-google-crowns.json.
 
     {"tx,tz": {"evidence": "...", "zones": [[x0, z0, x1, z1]], "crowns": [{"x", "z", "r", "note"}]}}. Inside a zone the
-    detector's crowns (mosaic detection, dense fill, extra crowns) are DROPPED and these replace them: Google is the
-    position source there (the z19 mosaic and the lidar both put crowns blocks off, and the lidar holds ~1/3 of them).
-    Outside the zones the detector is unchanged. Google crowns go first (they win overlaps), are exempt from the OSM
-    feature-zone skip (a courtyard tree is real) and may stand on PAVED_SURFACES (a plaza tree has a soil pit); every
-    other rule (trunk in cell, air only, mask) is the normal one.
+    detector's crowns (mosaic detection, dense fill, extra crowns) are DROPPED and these replace them: the aerial sheet
+    is the position source there (the z19 mosaic and the lidar both put crowns blocks off, and the lidar holds ~1/3 of them).
+    Outside the zones the detector is unchanged. Aerial-sheet crowns go first (they win overlaps), are exempt from the
+    vector-map feature-zone skip (a courtyard tree is real) and may stand on PAVED_SURFACES (a plaza tree has a soil pit);
+    every other rule (trunk in cell, air only, mask) is the normal one.
 
     @returns: (zones, [(dx, dz, r) cell-local]) or None when the cell has no entry
     """

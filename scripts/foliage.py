@@ -50,7 +50,7 @@ def should_strip_above_surface(block: str) -> bool:
     """Whether to clear this block during a foliage strip pass above the ground skin.
 
     @param block: full block id from World
-    @returns: True for refine foliage and Geocraft procedural tree/plant junk
+    @returns: True for refine foliage and import procedural tree/plant junk
     """
     return is_refine_foliage(block) or is_tree_or_plant_block(block)
 
@@ -58,7 +58,7 @@ def should_strip_above_surface(block: str) -> bool:
 def should_strip_corridor_canopy(block: str) -> bool:
     """Whether to clear any tree/plant voxel above path/road surfaces (canopy overhang).
 
-    Geocraft leaves often carry ``persistent=true`` and ``distance=*`` after decay;
+    Import leaves often carry ``persistent=true`` and ``distance=*`` after decay;
     they must not be treated as intentional refine foliage on footways.
 
     @param block: full block id from World
@@ -305,7 +305,7 @@ def canopy_audit(
     """Compare live canopy above surface to planned strip (air) and replant (log/leaves).
 
     Used before ``build_cell_foliage.py --apply`` so a strip pass cannot silently
-    clear Geocraft procedural canopy without enough static replant (Q-062 lesson).
+    clear import procedural canopy without enough static replant (Q-062 lesson).
 
     @param plan: foliage plan after strip + features
     @param w: live world reader

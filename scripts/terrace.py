@@ -1,7 +1,7 @@
 """Victorian bay-fronted terrace generator: whole properties for site_kit Plans.
 
 Written 11 Oct 2026 (Claude) after the Q-014..Q-017 Cursor builds failed visual
-review (jagged OSM extrusions, slab roofs that read as flat, no bays). One
+review (jagged vector-map extrusions, slab roofs that read as flat, no bays). One
 module so every Broadlands-type terrace is built the same way.
 
 Model (Minecraft-squared, not diamond-traced):
@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-# Broadlands Road north side, nos 2–36. OSM long edges are 21.4–22.5° east of
+# Broadlands Road north side, nos 2–36. Vector-map long edges are 21.4–22.5° east of
 # north; aerial fence lines on q041-aerial-gardens.png run the same way.
 # Nearest even stair (not a 15° Bresenham) is 1 east per 3 north.
 BROADLANDS_N_SLOPE = (1, -3)

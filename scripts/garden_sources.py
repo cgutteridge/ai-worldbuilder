@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Garden boundary evidence for the decor layer: per-parcel fences, walls and hedges.
 
-OSM maps few garden boundaries, so the decor layer would leave every house garden bare. This
-module derives them, cheapest evidence first, and tags each segment with its source:
+The vector map has few garden boundaries, so the decor layer would leave every house garden bare.
+This module derives them, cheapest evidence first, and tags each segment with its source:
 
-  1. PLOTS     each OSM house footprint grows to a first-guess plot (osm_footprints.grow_plots,
+  1. PLOTS     each map house footprint grows to a first-guess plot (osm_footprints.grow_plots,
                approximate Voronoi, stops at street surface and neighbours).
   2. SEGMENTS  plot edge columns are classed by what lies beyond them:
                  front  street surface
                  side_front / side_back  neighbour plot, edge runs front-to-back, before / behind the house line
                  rear   neighbour plot, edge runs across the plot   (open edge: nothing, no evidence)
   3. CONVENTION  site/gardens/<street>.json says what each role is made of on that street
-               (one Street View look per street run; per-house overrides by house number).
+               (one streetlevel look per street run; per-house overrides by house number).
   4. AERIAL    a segment whose aerial colour is a continuous dark-green strip is a hedge, whatever
                the convention says (hedges are the one boundary the z19 aerial can see).
 
 No convention for a street = no fence/wall (accuracy over invention); only aerial hedges show.
-Reads OSM, the aerial and the live ground surface; never an earlier fence build.
+Reads the vector map, the aerial and the live ground surface; never an earlier fence build.
 
   python3 scripts/garden_sources.py --cell 47,-43 [--bbox x0,z0,x1,z1]     # report + overlay PNG
 """
