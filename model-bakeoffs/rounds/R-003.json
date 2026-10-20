@@ -1,0 +1,143 @@
+{
+  "id": "R-003",
+  "status": "scored",
+  "created": "2026-10-20T16:39:37Z",
+  "scored_at": "2026-10-20T17:09:12Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "low",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-haiku-5-5",
+    "label": "Claude Haiku 5.5",
+    "tier": "low",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "ghost_snap": "2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "fail",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": "fail",
+        "note": null
+      },
+      "openings": {
+        "grade": "fail",
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": "fail",
+        "note": null
+      },
+      "materials": {
+        "grade": "pass",
+        "note": null
+      },
+      "keep": {
+        "grade": "fail",
+        "note": null
+      }
+    },
+    "why": "Blobby flat footprint with a hole; generic unverified openings; no greeblies built; apply readback 35394/117092 mismatches uninvestigated.",
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "fail",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "worlds/southampton-build/verification/site/bakeoff_r003_susu-shots/square_south.png",
+    "street_front": "worlds/southampton-build/verification/site/bakeoff_r003_susu-shots/street_front.png",
+    "aerial_top": "worlds/southampton-build/verification/site/bakeoff_r003_susu-shots/aerial_top.png",
+    "real_refs_note": null
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": null
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Quit Minecraft world (title / close save)",
+      "Restore ghost: python3 scripts/region_backup.py restore 2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+      "Rejoin world (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=claude-code model=claude-haiku-5-5 only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ],
+    "ghost_snap_hint": "canonical: 2026-10-18-224358-bakeoff-ghost-3x3-lidar"
+  },
+  "notes": "pad line: footprint osm=3924 readable=3943 pad=19 cover=99.6%. Subagent read scripts/susu_42_r002.py docstring (R-002 evidence table) before designing: possible contamination, says nothing copied. Lidar 3 storeys used over OSM 4; aerial flat roof over lidar pitch flag. Script: model-bakeoffs/rounds/R-003-artifacts/bakeoff_r003_susu.py."
+}
