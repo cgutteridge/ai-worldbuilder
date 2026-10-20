@@ -307,7 +307,7 @@ def survey_bbox(x: int, z: int, preset: str) -> dict:
         'commands': {
             'osm_extract': (
                 f'python3 scripts/osm_extract.py --at {x},{z} --radius-m {p["radius_m"]} '
-                f'--place SURVEY --dir osm/survey'
+                f'--place SURVEY --dir vector_map/survey'
             ),
             'frontage': f'python3 scripts/osm_footprints.py frontage --bbox {bbox}',
             'plots': f'python3 scripts/osm_footprints.py plots --bbox {bbox}',

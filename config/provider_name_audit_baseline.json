@@ -1,13 +1,4 @@
 {
   "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here.",
-  "keys": [
-    "scripts/footprint_overlap.py:292",
-    "scripts/geo.py:310",
-    "scripts/lidar_heightmap.py:327",
-    "scripts/lidar_heightmap.py:342",
-    "scripts/lidar_heightmap.py:343",
-    "scripts/osm_footprints.py:38",
-    "scripts/site_handoff.py:153",
-    "scripts/site_handoff.py:214"
-  ]
+  "keys": []
 }

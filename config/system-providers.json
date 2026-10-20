@@ -99,6 +99,10 @@
       "types": [
         "lidar"
       ],
+      "modules": {
+        "world": "manage/defra_world",
+        "tiles": "get/defra_lidar"
+      },
       "scope": {
         "level": "country",
         "description": "England DEFRA 1 m composite DTM + DSM (last return)"

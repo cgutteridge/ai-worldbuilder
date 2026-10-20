@@ -216,18 +216,15 @@ class ReferenceWorldTest(unittest.TestCase):
         with self.assertRaises(LookupError):
             self.ref('composite').uses_composite((5, 5))
 
-    def test_legacy_defra_alias_means_composite(self):
-        r = self.ref('defra')
-        self.assertEqual(r.source, 'composite')
-        with self.assertRaises(LookupError):
-            r.uses_composite((5, 5))
-
     def test_unknown_source_is_an_error(self):
         with self.assertRaises(SystemExit):
             lh.ReferenceWorld('bogus')
 
     def test_heightmap_function_prefers_a_world_with_its_own_map(self):
-        self.assertEqual(lh.heightmap(self.ref('auto'), (0, 0)), {'cell': (0, 0), 'source': 'defra'})
+        self.assertEqual(
+            lh.heightmap(self.ref('auto'), (0, 0)),
+            {'cell': (0, 0), 'source': 'defra'},
+        )
 
 
 if __name__ == '__main__':

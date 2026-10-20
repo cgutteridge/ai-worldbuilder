@@ -96,6 +96,7 @@ def default_allow_prefixes(root: Path) -> frozenset[str]:
         'scripts/provider_name_audit.py',
         'scripts/check_provider_names.py',
         'scripts/test_provider_name_audit.py',
+        'scripts/legacy_reference_paths.py',
         'scripts/cell_sources.py',
         # Historical vendor write-ups; keep names, do not burn down.
         'docs/archive',

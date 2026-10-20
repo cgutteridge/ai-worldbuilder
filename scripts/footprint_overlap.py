@@ -289,7 +289,7 @@ def lidar_feature_lookup(footprint: set[tuple[int, int]]) -> dict[tuple[int, int
     if not footprint:
         return None
     try:
-        import defra_lidar as dl
+        import lidar_provider as lp
     except ImportError:
         return None
     x0 = min(x for x, _ in footprint)
@@ -297,11 +297,11 @@ def lidar_feature_lookup(footprint: set[tuple[int, int]]) -> dict[tuple[int, int
     x1 = max(x for x, _ in footprint)
     z1 = max(z for _, z in footprint)
     try:
-        lidar = dl.DefraLidar(download=False)
-        e0, n0, e1, n1 = dl.mc_box_en(x0, z0, x1, z1)
+        lidar = lp.tile_client(download=False)
+        e0, n0, e1, n1 = lp.mc_box_en(x0, z0, x1, z1)
         if lidar.missing('DTM', e0, n0, e1, n1) or lidar.missing('DSM', e0, n0, e1, n1):
             return None
-        h = dl.mc_heights(lidar, x0, z0, x1, z1)
+        h = lp.mc_heights(lidar, x0, z0, x1, z1)
     except Exception:
         return None
     feat = h['feature']

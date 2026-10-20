@@ -721,7 +721,7 @@ def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
     parts.extend(manifest_summary(tx, tz))
     parts += [
         '',
-        'OSM (reference/osm clips via osm_footprints.OSMIndex)',
+        'vector_map (reference/vector_map clips via osm_footprints.OSMIndex)',
         f'  named streets in cell: {", ".join(osm["streets"][:10]) or "(none named)"}',
         f'  building footprints overlapping: {osm["buildings"]}',
         f'  natural=tree / landuse=forest polygons (rare): {osm["osm_tree_or_forest_polygons"]}',

@@ -150,7 +150,7 @@ GOOGLE_REVIEW = AERIAL_REVIEW
 _REVIEW_ROW = re.compile(r'^(\s+)(r\d+)(\s+)(-?\d+),(-?\d+)(\s+)(\d+)(\s+)(\w+)\s*$')
 REVIEW_STATUSES = ('todo', 'look', 'features', 'ground', 'trees', 'done')
 _REVIEW_CELL_RE = re.compile(
-    r'(?:AERIAL|GOOGLE) REVIEW cell\s+(-?\d+)\s*,\s*(-?\d+)',
+    r'AERIAL REVIEW cell\s+(-?\d+)\s*,\s*(-?\d+)',
 )
 
 
@@ -211,7 +211,7 @@ def set_google_review_status(cell, status):
 
 
 def google_review_cell(item):
-    """Cell of an "AERIAL REVIEW cell X" (or legacy GOOGLE REVIEW) queue item.
+    """Cell of an "AERIAL REVIEW cell X" queue item.
 
     @param item: queue item dict
     @returns: (tx, tz) or None

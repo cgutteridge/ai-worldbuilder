@@ -239,8 +239,16 @@
       "priority": "low",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "cell_sources.STALE_DAYS=183: HAVE/TRIED → STALE from newest manifest added or last attempt date; --todo lists TODO+STALE; --record refreshes without --retry-reason when prior attempt is stale. TYPES/ADR 001/process/handoff updated. TestStaleRefresh."
+      "notes": "cell_sources.STALE_DAYS=183: HAVE/TRIED \u2192 STALE from newest manifest added or last attempt date; --todo lists TODO+STALE; --record refreshes without --retry-reason when prior attempt is stale. TYPES/ADR 001/process/handoff updated. TestStaleRefresh."
+    },
+    {
+      "id": 28,
+      "title": "Audit the whole system: code and docs must ask for a reference type, never name a provider",
+      "status": "done",
+      "priority": "high",
+      "complexity": "xl",
+      "blockedBy": [],
+      "notes": "2026-10-20: closed. Type-facing seams: scripts/lidar_provider.py (catalogue modules.world/tiles), scripts/vector_map_clips.py (reference/vector_map, legacy fallback), shims/lidar_world.py + lidar_tiles.py. Residual baseline burned 8\u21920. Callers no longer import defra_*; LIDAR_SOURCE=defra removed; AERIAL REVIEW only. Allowlist: legacy_reference_paths.py. World: vector_map symlink + osm_extract place_dir + SOURCES LIDAR_SOURCE=composite."
     }
   ]
 }
-

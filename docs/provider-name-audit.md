@@ -27,3 +27,13 @@ Pre-commit runs the check via `scripts/pre_commit_checks.py check`. The frozen k
 3. **ADRs** and archive docs: prefer type vocabulary; keep historical vendor mentions where the ADR is explicitly about the migration.
 
 After each batch: run tests, then `check_provider_names.py --update-baseline` so fixed lines drop off the frozen list.
+
+## Type-facing seams (post burn-down)
+
+| Need | Call |
+| --- | --- |
+| Composite lidar world | `lidar_provider.composite_world()` |
+| Lidar tile client / helpers | `lidar_provider.tile_client()`, `.mc_box_en`, `.mc_heights` |
+| Vector-map clip tree | `vector_map_clips.vector_map_clip_root()` (prefers `reference/vector_map`) |
+
+Catalogue rows that fill type `lidar` set `modules.world` / `modules.tiles` (paths under the provider package). Vendor filenames stay inside `providers/` and catalogues. Optional shims: `shims/lidar_world.py`, `shims/lidar_tiles.py`.

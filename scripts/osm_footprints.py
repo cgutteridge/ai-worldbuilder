@@ -34,8 +34,13 @@ from pathlib import Path
 import numpy as np
 
 from script_env import ROOT  # noqa: E402
-# Legacy on-disk folder name; callers ask for vector_map clips, not a vendor.
-VECTOR_MAP_CLIPS = ROOT / 'reference' / 'osm'
+from vector_map_clips import vector_map_clip_root  # noqa: E402
+
+# Resolved at import: prefers reference/vector_map, else the legacy clip folder.
+try:
+    VECTOR_MAP_CLIPS = vector_map_clip_root()
+except FileNotFoundError:
+    VECTOR_MAP_CLIPS = ROOT / 'reference' / 'vector_map'
 CACHE = ROOT / 'verification/site/osm27700'
 _CFG = json.loads((ROOT / 'config/world.json').read_text())
 # Untouched pristine save: ground reference for "how high above the street is this?"

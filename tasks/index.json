@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 29,
-  "tasks": [
-    {
-      "id": 28,
-      "title": "Audit the whole system: code and docs must ask for a reference type, never name a provider",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "xl",
-      "blockedBy": [],
-      "notes": "2026-10-20: provider_name_audit + check_provider_names.py + baseline; pre-commit guard for *new* violations. docs/provider-name-audit.md. Baseline 8 after fourth pass (56→8; was 446 start). Done this pass: LIDAR_SOURCE composite (+defra alias), ReferenceWorld.composite/uses_composite, trees_layer aerial_sheet, lp map_refs/map_levels, allowlist ADR001/ref_fetch/dryrun_reset. Residual 8 frozen (a)/(shim): import defra_world+DefraWorld, import defra_lidar, SOURCE_ALIASES defra, reference/osm path, geo osm/survey dir hint, site_handoff legacy GOOGLE REVIEW regex+doc. Close when lidar_provider seam renames shim modules / clip dir, or accept residual as done. Types vs providers (GLOSSARY). Method: scan outside providers/ and catalogues; classify a/b/c. Deliver: check + burn-down. Why: any place can swap providers for the same type."
-    }
-  ]
+  "tasks": []
 }

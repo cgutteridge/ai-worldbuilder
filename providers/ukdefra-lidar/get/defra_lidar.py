@@ -280,6 +280,10 @@ class DefraLidar:
         return h
 
 
+# Type-facing name for scripts/lidar_provider.py (catalogue modules.tiles).
+LidarTiles = DefraLidar
+
+
 # ---- the Minecraft frame (Southampton2023 offsets from scripts/osgb.py) ----------------------------------------
 
 def mc_box_en(x0: int, z0: int, x1: int, z1: int) -> tuple[float, float, float, float]:

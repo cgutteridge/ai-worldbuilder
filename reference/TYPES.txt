@@ -33,6 +33,10 @@ streetlevel
 lidar
   Absolute Y / massing. Products: DTM (bare earth), DSM (surface), diff = DSM−DTM.
   Tendency: heights only; never invent materials from it.
+  Glue: scripts/lidar_provider.py (composite_world / tile_client). Catalogue rows
+  that fill this type should set modules.world and modules.tiles (paths under the
+  package, e.g. manage/… and get/…). Prefer type-facing class names LidarWorld /
+  LidarTiles on those modules.
 
 ------------------------------------------------------------------------
 PROVIDERS: SYSTEM VS LOCAL

@@ -323,24 +323,22 @@ def pristine_world():
 
 
 SOURCES = ('auto', 'composite', 'pristine')
-# Legacy env / CLI value still accepted.
-SOURCE_ALIASES = {'defra': 'composite'}
 
 
 def normalize_lidar_source(source: str) -> str:
-    """Map legacy lidar source names onto the canonical set.
+    """Map a lidar source mode onto the canonical set.
 
     @param source: raw ``LIDAR_SOURCE`` / ``--source`` value
-    @returns: one of :data:`SOURCES`
+    @returns: one of :data:`SOURCES` (unchanged; unknown values fail later)
     """
-    return SOURCE_ALIASES.get(source, source)
+    import lidar_provider as lp
+    return lp.normalize_source(source)
 
 
 def _composite_world():
-    """Open the cached composite lidar world (provider package behind the shim)."""
-    # Import stays behind this helper so callers ask for composite, not a vendor module.
-    import defra_world  # noqa: WPS433 — provider package name until lidar_provider seam
-    return defra_world.DefraWorld()
+    """Open the cached composite lidar world via the type-facing lidar seam."""
+    import lidar_provider as lp
+    return lp.composite_world()
 
 
 class ReferenceWorld:

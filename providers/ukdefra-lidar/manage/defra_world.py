@@ -157,3 +157,8 @@ class DefraWorld:
 
     def ground(self, x: int, z: int, top: int = 140, bottom: int = 40) -> int:
         return max(bottom, min(top, self._col(x, z)[1]))
+
+
+# Type-facing names for scripts/lidar_provider.py (catalogue modules.world).
+LidarWorld = DefraWorld
+CompositeWorld = DefraWorld
