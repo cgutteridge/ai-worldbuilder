@@ -485,7 +485,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     from osm_footprints import OSMIndex
 
     ev = evidence or {}
-    vmap = ev.get('osm') or OSMGround(cell)
+    vmap = ev.get('vmap') or OSMGround(cell)
     rgb = ev.get('rgb') or aerial_rgb(cell)
     x0, z0, x1, z1 = cell_box(cell, 2)
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}

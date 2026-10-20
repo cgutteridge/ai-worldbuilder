@@ -41,7 +41,7 @@ MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-e
 LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
 # Surfaces an aerial-evidenced crown may stand on besides lawn and PAVED_SURFACES: the ground layer's path/plaza colours (granite, stone) and tarmac wool,
 # which are often wrong under a real tree (a brick plaza painted black); the evidence for the crown is the aerial sheet, not the ground block.
-GOOGLE_SURFACES = frozenset({'granite', 'stone', 'black_wool', 'gray_concrete', 'polished_diorite', 'smooth_stone_slab'})
+AERIAL_SHEET_SURFACES = frozenset({'granite', 'stone', 'black_wool', 'gray_concrete', 'polished_diorite', 'smooth_stone_slab'})
 LAWN_SURFACES = frozenset({'grass_block', 'dirt', 'podzol', 'coarse_dirt', 'moss_block'})
 # Hard ground a tree can stand in: the real pavement has a soil pit under the trunk that the aerial
 # never shows (user, 2026-10-14); the trunk hides the paving block, so nothing is placed below it.
@@ -294,7 +294,7 @@ class TreeInputs:
     crowns: list
     detected: int
     extra: set
-    google: set
+    aerial_sheet: set
     owned: set
     ground_cols: set | None
     masked: dict
@@ -316,20 +316,20 @@ def planning_inputs(cell):
     extra = {(x0 + i, z0 + j) for i, j, _r in extra_crowns(cell)}
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]
-    google = set()
+    aerial_sheet = set()
     g = google_crowns(cell)
     if g:
         zones, gc = g
         crowns = gc + [c for c in crowns
                        if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
-        google = {(x0 + i, z0 + j) for i, j, _r in gc}
+        aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
     owned = set(built_cells(exclude=ignored_builds(cell)))
     ground_file = ROOT / 'verification/site' / f"{ground_plan_name(tx, tz, 'ground')}-cells.json"
     ground_cols = ({tuple(map(int, k.split(',')))[::2] for k in json.loads(ground_file.read_text())}
                    if ground_file.exists() else None)
     from osm_footprints import OSMIndex
     fp = {q for q in OSMIndex().cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
-    return TreeInputs(crowns, n_detected, extra, google, owned, ground_cols, load_masked_positions(), fp)
+    return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp)
 
 
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInputs | None = None):
@@ -338,17 +338,19 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     x0, z0 = tx * CELL, tz * CELL
     cell_xz = _InCell(*cell_bounds(tx, tz))
     inputs = planning_inputs(cell) if inputs is None else inputs
-    crowns, extra, google = inputs.crowns, inputs.extra, inputs.google
+    crowns, extra, aerial_sheet = inputs.crowns, inputs.extra, inputs.aerial_sheet
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': []}
     for i, j, r in crowns:
         x, z = x0 + i, z0 + j
         surf = surface_y(world, x, z)
-        if (x, z) not in extra and (x, z) not in google and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
+        if (x, z) not in extra and (x, z) not in aerial_sheet and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
             report['skipped'].append((x, z, r, 'feature zone'))      # no tree-phase tree is rooted in a feature
             continue
-        if not surf or surf[1] not in (LAWN_SURFACES | PAVED_SURFACES | GOOGLE_SURFACES if (x, z) in google else LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES):
+        allowed = (LAWN_SURFACES | PAVED_SURFACES | AERIAL_SHEET_SURFACES if (x, z) in aerial_sheet
+                   else LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES)
+        if not surf or surf[1] not in allowed:
             report['skipped'].append((x, z, r, f'surface {surf[1] if surf else None}'))
             continue
         gy = surf[0]

@@ -198,23 +198,29 @@ class FakeDefra:
 
 class ReferenceWorldTest(unittest.TestCase):
     def ref(self, source):
-        return lh.ReferenceWorld(source, defra=FakeDefra({(0, 0)}), fallback=StubWorld())
+        return lh.ReferenceWorld(source, composite=FakeDefra({(0, 0)}), fallback=StubWorld())
 
-    def test_auto_uses_defra_per_cell_and_falls_back_elsewhere(self):
+    def test_auto_uses_composite_per_cell_and_falls_back_elsewhere(self):
         r = self.ref('auto')
         self.assertEqual((r.source_of((0, 0)), r.source_of((5, 5))), ('composite', 'pristine'))
         self.assertEqual(r.block(10, 5, 10), 'minecraft:bricks')            # cell (0, 0)
         self.assertEqual(r.block(300, 5, 300), 'minecraft:stone')           # cell (2, 2): the save
         self.assertEqual(r.ground(10, 10), 99)
 
-    def test_pristine_never_asks_defra(self):
+    def test_pristine_never_asks_composite(self):
         r = self.ref('pristine')
-        self.assertFalse(r.uses_defra((0, 0)))
+        self.assertFalse(r.uses_composite((0, 0)))
         self.assertEqual(r.block(10, 5, 10), 'minecraft:stone')
 
-    def test_defra_only_refuses_an_uncached_cell(self):
+    def test_composite_only_refuses_an_uncached_cell(self):
         with self.assertRaises(LookupError):
-            self.ref('defra').uses_defra((5, 5))
+            self.ref('composite').uses_composite((5, 5))
+
+    def test_legacy_defra_alias_means_composite(self):
+        r = self.ref('defra')
+        self.assertEqual(r.source, 'composite')
+        with self.assertRaises(LookupError):
+            r.uses_composite((5, 5))
 
     def test_unknown_source_is_an_error(self):
         with self.assertRaises(SystemExit):

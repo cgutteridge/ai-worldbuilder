@@ -170,7 +170,7 @@ def apply_exceptions(lumps: list, exceptions: list) -> None:
                 break
 
 
-def osm_under(lump: dict, idx) -> list:
+def map_refs_under(lump: dict, idx) -> list:
     """Vector-map buildings sharing at least a quarter of the smaller footprint (min 4 columns) with the lump.
 
     @param lump: one find_lumps() item
@@ -191,6 +191,10 @@ def osm_under(lump: dict, idx) -> list:
     return out
 
 
+# Back-compat alias for callers / tests that still import the old name.
+osm_under = map_refs_under
+
+
 def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
     """Package residual lumps as queue features (same shape as cell_features.missing_features).
 
@@ -198,7 +202,7 @@ def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
     The rest are single-link clustered (cell_features.JOIN_GAP) and labelled by nearest street.
     Unmapped / outside-clip lumps get refs ['unmapped'] (footprint traced from aerial per PROCESS 2d-i).
 
-    @param lumps: scan_cell() output (with 'osm' map-ref key)
+    @param lumps: scan_cell() output (with ``map_refs`` key)
     @param taken_refs: map way refs already covered by missing_features items
     @param streets: OSMIndex.streets for naming
     @returns: [{'kind': 'lumps', 'label', 'street', 'refs', 'bbox', 'portals'}]
@@ -206,9 +210,9 @@ def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
     from cell_features import _split_runs, _street_of
     from portals import in_bbox
     taken = set(taken_refs)
-    items = [{'bbox': tuple(lp['bbox']), 'refs': lp.get('osm') or [], 'cols': lp['columns']}
+    items = [{'bbox': tuple(lp['bbox']), 'refs': lp.get('map_refs') or [], 'cols': lp['columns']}
              for lp in lumps if 'exception' not in lp
-             and not (lp.get('osm') and set(lp['osm']) <= taken)]
+             and not (lp.get('map_refs') and set(lp['map_refs']) <= taken)]
     out = []
     for run in sorted(_split_runs(items), key=lambda g: min(o['bbox'][:2] for o in g)):
         bbox = (min(o['bbox'][0] for o in run), min(o['bbox'][1] for o in run),
@@ -245,7 +249,7 @@ def scan_cell(tx: int, tz: int, bbox=None, with_osm: bool = True, idx=None) -> l
     @param bbox: optional (x0, z0, x1, z1) inclusive clip
     @param with_osm: also list the vector-map buildings under each lump
     @param idx: optional shared osm_footprints.OSMIndex
-    @returns: find_lumps() items with 'osm' map-ref key and exceptions applied
+    @returns: find_lumps() items with ``map_refs`` and exceptions applied
     """
     from cell_features import feature_columns
     from coverage import cell_bbox
@@ -258,7 +262,7 @@ def scan_cell(tx: int, tz: int, bbox=None, with_osm: bool = True, idx=None) -> l
         from osm_footprints import OSMIndex
         idx = idx or OSMIndex()
         for lp in lumps:
-            lp['osm'] = osm_under(lp, idx)
+            lp['map_refs'] = map_refs_under(lp, idx)
             cx, cz = lp['centre']
             lp['in_osm_clip'] = any(e[0] <= cx <= e[2] and e[1] <= cz <= e[3] for e in idx.extents)
     apply_exceptions(lumps, recorded_exceptions(tx, tz))
@@ -269,7 +273,7 @@ def summary(lumps: list) -> dict:
     """@returns: {'remaining': n unrecorded, 'excepted': n, 'unmapped': n with no vector-map building, 'no_clip': n outside any map clip}"""
     rem = [lp for lp in lumps if 'exception' not in lp]
     return {'remaining': len(rem), 'excepted': len(lumps) - len(rem),
-            'unmapped': sum(1 for lp in rem if not lp.get('osm', [1])),
+            'unmapped': sum(1 for lp in rem if not lp.get('map_refs', [1])),
             'no_clip': sum(1 for lp in rem if not lp.get('in_osm_clip', True))}
 
 
@@ -294,7 +298,7 @@ def main(argv=None) -> int:
     else:
         for i, lp in enumerate(lumps, 1):
             tag = f' EXCEPTION: {lp["exception"]}' if 'exception' in lp else ''
-            refs = lp.get('osm')
+            refs = lp.get('map_refs')
             where = ('map ' + ','.join(refs)) if refs else (
                 ('NO MAP CLIP here (osm_extract.py first)' if not lp.get('in_osm_clip', True)
                  else 'no vector-map building (unmapped: build from aerial/streetlevel)') if refs is not None else '')

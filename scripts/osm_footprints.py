@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vector-map building footprints + named streets in Minecraft coords — the frontage authority.
 
-Reads every map clip under reference/osm/ (written by osm_extract.py, WGS84),
+Reads every map clip under the vector-map clip tree (written by osm_extract.py, WGS84),
 reprojects it once to OSGB (EPSG:27700, via ogr2ogr; cached under
 verification/site/osm27700/) and converts to MC X/Z with osgb.py.
 
@@ -34,7 +34,8 @@ from pathlib import Path
 import numpy as np
 
 from script_env import ROOT  # noqa: E402
-OSM = ROOT / 'reference/osm'
+# Legacy on-disk folder name; callers ask for vector_map clips, not a vendor.
+VECTOR_MAP_CLIPS = ROOT / 'reference' / 'osm'
 CACHE = ROOT / 'verification/site/osm27700'
 _CFG = json.loads((ROOT / 'config/world.json').read_text())
 # Untouched pristine save: ground reference for "how high above the street is this?"
@@ -66,7 +67,8 @@ def _projected(src: Path) -> Path:
 class OSMIndex:
     """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 
-    def __init__(self, root: Path = OSM):
+    def __init__(self, root: Path | None = None):
+        root = root or VECTOR_MAP_CLIPS
         from world_frame import osgb_to_mc
         mc = lambda c: osgb_to_mc(c[0], c[1])
         self.buildings = []   # (rings[[(x,z)...]], props)
@@ -365,7 +367,7 @@ def plots(args):
         house = [c for c in cs if c in fp]
         front = [c for c in cs if c not in fp and idx.front_zone(*c)]
         rep[f'{st or "?"} {num or "#" + str(i)}'] = {
-            'osm': p.get('osm_id') or p.get('osm_way_id'),
+            'map_ref': p.get('osm_id') or p.get('osm_way_id'),
             'house_cells': len(house), 'front_garden_cells': len(front),
             'back_garden_cells': len(cs) - len(house) - len(front),
             'bbox': [min(x for x, _ in cs), min(z for _, z in cs), max(x for x, _ in cs), max(z for _, z in cs)],

@@ -93,7 +93,7 @@ def plots_for(box: tuple[int, int, int, int], margin: int = 60):
         num, st = _addr(p)
         s = idx.nearest_street(cx, cz)
         info[i] = {'street': st or (s[1] if s else ''), 'number': num or '', 'centre': (cx, cz),
-                   'foot': s[3] if s else None, 'osm': p.get('osm_id') or p.get('osm_way_id')}
+                   'foot': s[3] if s else None, 'map_ref': p.get('osm_id') or p.get('osm_way_id')}
     return owner, info, street, idx
 
 

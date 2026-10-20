@@ -139,7 +139,7 @@ def _process_slices(ctx: WorkContext) -> tuple[str, ...]:
             extra = extra + ('§2e step 5 layered passes',)
         return base + extra
     if ctx == WorkContext.PROPERTY:
-        return base + ('§2b', '§2c', '§2d-i newer than OSM', '§3 checklist as needed')
+        return base + ('§2b', '§2c', '§2d-i newer than vector map', '§3 checklist as needed')
     if ctx == WorkContext.TERRACE:
         return base + ('§2b', '§2c', '§2d')
     return base

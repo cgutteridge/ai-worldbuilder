@@ -130,7 +130,7 @@ def cells_for_zone(x0: int, z0: int, x1: int, z1: int) -> list[tuple[int, int]]:
 def run(cells: list[tuple[int, int]], zone: tuple[int, int, int, int] | None = None) -> list[dict]:
     from site_kit import World
     import os
-    # Default stays the pristine save, the inventory this tool was calibrated on. LIDAR_SOURCE=defra opts in: trees are then
+    # Default stays the pristine save, the inventory this tool was calibrated on. LIDAR_SOURCE=composite opts in: trees are then
     # real crowns (first-return minus last-return lidar) and number more than the import's.
     src = os.environ.get('LIDAR_SOURCE')
     live_w, pri_w = World(), L.reference_world('pristine' if src in (None, 'auto') else src)

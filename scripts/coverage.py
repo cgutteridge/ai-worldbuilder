@@ -400,7 +400,7 @@ class ParcelBuilder:
                 tx, tz = cell_of(x, z)
                 pid = f'{kind}:{ref}@{tx},{tz}'
                 self.owner[(x, z)] = pid
-                self._register(pid, kind, label, osm=ref, cell=[tx, tz])
+                self._register(pid, kind, label, map_ref=ref, cell=[tx, tz])
 
     def street(self, x: int, z: int) -> bool:
         """@returns: whether the pristine import surface of (x, z) is road / pavement (cached)"""

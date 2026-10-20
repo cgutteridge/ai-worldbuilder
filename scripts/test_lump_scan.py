@@ -93,8 +93,8 @@ class LumpTest(unittest.TestCase):
         self.assertEqual(len(lumps), 2)
 
     def test_lump_features_cluster_skip_taken_and_excepted(self):
-        def lp(bbox, osm, **kw):
-            return {'bbox': bbox, 'columns': 30, 'osm': osm, **kw}
+        def lp(bbox, map_refs, **kw):
+            return {'bbox': bbox, 'columns': 30, 'map_refs': map_refs, **kw}
         lumps = [lp([0, 0, 6, 6], []), lp([10, 0, 16, 6], ['w1']),      # one run (gap 4), one unmapped
                  lp([100, 0, 106, 6], ['w2']),                          # far: its own item, ref taken below
                  lp([200, 0, 206, 6], [], exception='ruin kept')]

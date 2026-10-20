@@ -231,7 +231,7 @@ def google_review_item(row):
     tx, tz = row['cell']
     return (f'AERIAL REVIEW cell {tx},{tz} (first row of site/AERIAL-REVIEW.txt not done; I-073). RULES: property.', [
         f'Per I-073: (1) LOOK google_aerial.py sheet --cell {tx},{tz} --outlines, then --at for single buildings; record with',
-        'cell_sources --record google-satellite. (2) FEATURES every building against aerial (roof form, ridge axis, roof greeblies, colour/',
+        'cell_sources --record <aerial provider id from place-sources>. (2) FEATURES every building against aerial (roof form, ridge axis, roof greeblies, colour/',
         'material, rear wings, outbuildings, missing/extra) from best aerial (greeblies, colour), keepable aerial (footprint, roof form)',
         'and lidar (heights); storeys streetlevel first, then vector-map levels, then lidar. Skip buildings that already have an open',
         'feature item on the QUEUE.',

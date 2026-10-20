@@ -99,7 +99,7 @@ def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
 def heightmap(world, cell: tuple[int, int]) -> dict:
     """Height map of one cell.
 
-    @param world: World over the pristine save, or a world with its own ``heightmap(cell)`` (DefraWorld, ReferenceWorld)
+    @param world: World over the pristine save, or a world with its own ``heightmap(cell)`` (composite world, ReferenceWorld)
     @param cell: (tx, tz)
     @returns: {'cell', 'x0', 'z0', 'h', 'base', 'roof', 'kind'} with 128x128 int16 / uint8 arrays
     """
@@ -161,7 +161,7 @@ class Maps:
         if cell not in self._hm:
             if self.world is None:
                 ref = reference_world()
-                if ref.uses_defra(cell):
+                if ref.uses_composite(cell):
                     self._hm[cell] = ref.heightmap(cell)
                     return self._hm[cell]
                 if self.use_cache:
@@ -244,7 +244,7 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
 
     Each item: bbox, centre, columns, ground_y, eave_y (10th percentile of roof y; of the interior columns for a wide lump, see MIN_CORE, because
     lidar blurs the rim low), ridge_y, height (ridge - ground), storeys (estimate: (ridge - ground - RIDGE_BASE)
-    / STOREY, at least 1; osm_levels is added by report() when the map has building:levels), roof ('flat' | 'pitched'), ridge_axis ('x' | 'z' | None), trees_over (columns) and
+    / STOREY, at least 1; map_levels is added by report() when the map has building:levels), roof ('flat' | 'pitched'), ridge_axis ('x' | 'z' | None), trees_over (columns) and
     cols (the column set, for footprint-way matching).
     """
     x0, z0 = hm['x0'], hm['z0']
@@ -293,11 +293,11 @@ def report(hm: dict, with_osm: bool = True) -> list:
         import lump_scan
         from osm_footprints import OSMIndex
         idx = OSMIndex()
-        levels = osm_levels(idx)
+        levels = map_levels(idx)
         for lp in items:
-            lp['osm'] = lump_scan.osm_under(lp, idx)
-            lv = {levels[r] for r in lp['osm'] if r in levels}
-            lp['osm_levels'] = sorted(lv)
+            lp['map_refs'] = lump_scan.map_refs_under(lp, idx)
+            lv = {levels[r] for r in lp['map_refs'] if r in levels}
+            lp['map_levels'] = sorted(lv)
     return items
 
 
@@ -322,29 +322,48 @@ def pristine_world():
     return World(pristine_path())
 
 
-SOURCES = ('auto', 'defra', 'pristine')
+SOURCES = ('auto', 'composite', 'pristine')
+# Legacy env / CLI value still accepted.
+SOURCE_ALIASES = {'defra': 'composite'}
+
+
+def normalize_lidar_source(source: str) -> str:
+    """Map legacy lidar source names onto the canonical set.
+
+    @param source: raw ``LIDAR_SOURCE`` / ``--source`` value
+    @returns: one of :data:`SOURCES`
+    """
+    return SOURCE_ALIASES.get(source, source)
+
+
+def _composite_world():
+    """Open the cached composite lidar world (provider package behind the shim)."""
+    # Import stays behind this helper so callers ask for composite, not a vendor module.
+    import defra_world  # noqa: WPS433 — provider package name until lidar_provider seam
+    return defra_world.DefraWorld()
 
 
 class ReferenceWorld:
     """The lidar reference: composite tiles where cached, pristine save where not (per 128² cell).
 
-    @param source: 'auto' (that rule), composite-only (LookupError when a cell is not cached) or 'pristine'
-    @param defra: composite lidar world handle (default: shared cache, no downloads)
+    @param source: 'auto' (that rule), 'composite' (LookupError when a cell is not cached) or 'pristine'
+    @param composite: composite lidar world handle (default: shared cache, no downloads)
     @param fallback: world to use for the pristine path (default: pristine_world(), opened on first use)
     """
 
-    def __init__(self, source: str = 'auto', defra=None, fallback=None):
+    def __init__(self, source: str = 'auto', composite=None, fallback=None):
+        source = normalize_lidar_source(source)
         if source not in SOURCES:
             raise SystemExit(f'LIDAR_SOURCE must be one of {SOURCES}, got {source!r}')
         self.source = source
-        self._defra, self._fallback = defra, fallback
+        self._composite, self._fallback = composite, fallback
 
     @property
-    def defra(self):
-        if self._defra is None:
-            import defra_world
-            self._defra = defra_world.DefraWorld()
-        return self._defra
+    def composite(self):
+        """Composite lidar world (national tiles where cached)."""
+        if self._composite is None:
+            self._composite = _composite_world()
+        return self._composite
 
     @property
     def fallback(self):
@@ -352,25 +371,30 @@ class ReferenceWorld:
             self._fallback = pristine_world()
         return self._fallback
 
-    def uses_defra(self, cell: tuple[int, int]) -> bool:
-        """True when this cell is answered from composite lidar tiles."""
+    def uses_composite(self, cell: tuple[int, int]) -> bool:
+        """True when this cell is answered from composite lidar tiles.
+
+        @param cell: (tx, tz)
+        @returns: whether composite tiles cover the cell for this source mode
+        """
         if self.source == 'pristine':
             return False
-        if self.defra.covers(cell):
+        if self.composite.covers(cell):
             return True
-        if self.source == 'defra':
-            raise LookupError(f'Composite lidar tiles for cell {cell[0]},{cell[1]} are not cached: '
-                              f'python3 shims/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
+        if self.source == 'composite':
+            raise LookupError(
+                f'Composite lidar tiles for cell {cell[0]},{cell[1]} are not cached; '
+                f'fetch the lidar provider tiles for that cell first')
         return False
 
     def source_of(self, cell: tuple[int, int]) -> str:
-        return 'composite' if self.uses_defra(cell) else 'pristine'
+        return 'composite' if self.uses_composite(cell) else 'pristine'
 
     def heightmap(self, cell: tuple[int, int]) -> dict:
-        return self.defra.heightmap(cell) if self.uses_defra(cell) else heightmap(self.fallback, cell)
+        return self.composite.heightmap(cell) if self.uses_composite(cell) else heightmap(self.fallback, cell)
 
     def _world(self, x: int, z: int):
-        return self.defra if self.uses_defra(cellmath.cell_of(x, z)) else self.fallback
+        return self.composite if self.uses_composite(cellmath.cell_of(x, z)) else self.fallback
 
     def block(self, x, y, z):
         return self._world(x, z).block(x, y, z)
@@ -389,13 +413,13 @@ _REFERENCE: dict[str, ReferenceWorld] = {}
 def reference_world(source: str | None = None) -> ReferenceWorld:
     """The shared lidar reference world. ``source`` defaults to $LIDAR_SOURCE, else 'auto'."""
     import os
-    source = source or os.environ.get('LIDAR_SOURCE', 'auto')
+    source = normalize_lidar_source(source or os.environ.get('LIDAR_SOURCE', 'auto'))
     if source not in _REFERENCE:
         _REFERENCE[source] = ReferenceWorld(source)
     return _REFERENCE[source]
 
 
-def osm_levels(idx) -> dict:
+def map_levels(idx) -> dict:
     """{way ref: building:levels as int} for footprint polygons that carry the tag."""
     import re
     from coverage import osm_ref
@@ -407,17 +431,20 @@ def osm_levels(idx) -> dict:
     return out
 
 
+osm_levels = map_levels  # back-compat alias
+
+
 def format_report(cell, items: list, source: str | None = None) -> str:
     """Plain-text table of the lump report; ``source`` ('composite' | 'pristine') is named in the heading when given."""
     lines = [f'LIDAR LUMPS cell {cell[0]},{cell[1]}: {len(items)} building(s)' + (f' [{source}]' if source else ''),
              'bbox                       cols ground eave ridge st roof     axis trees lvl map']
     for lp in items:
-        refs = ','.join(lp.get('osm', [])[:3]) or ('UNMAPPED' if 'osm' in lp else '-')
+        refs = ','.join(lp.get('map_refs', [])[:3]) or ('UNMAPPED' if 'map_refs' in lp else '-')
         b = lp['bbox']
         lines.append(f'{b[0]},{b[1]}..{b[2]},{b[3]}'.ljust(27)
                      + f'{lp["columns"]:>4} {str(lp["ground_y"]):>6} {lp["eave_y"]:>4} {lp["ridge_y"]:>5} '
                      f'{str(lp["storeys"]):>2} {lp["roof"]:<8} {str(lp["ridge_axis"] or "-"):<4} {lp["trees_over"]:>5} '
-                     f'{",".join(map(str, lp.get("osm_levels", []))) or "-":>3} {refs}')
+                     f'{",".join(map(str, lp.get("map_levels", []))) or "-":>3} {refs}')
     return '\n'.join(lines)
 
 
@@ -447,7 +474,8 @@ def main(argv=None) -> int:
     ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with a STAGES file')
     ap.add_argument('--json', action='store_true', help='print JSON instead of a table')
     ap.add_argument('--write', action='store_true', help='keep the height map as .npz')
-    ap.add_argument('--source', choices=SOURCES, help='lidar source (default $LIDAR_SOURCE, else auto: composite when cached, else pristine)')
+    ap.add_argument('--source', type=normalize_lidar_source, choices=SOURCES,
+                    help='lidar source (default $LIDAR_SOURCE, else auto: composite when cached, else pristine)')
     ap.add_argument('--no-osm', action='store_true', help='skip footprint-map match (faster)')
     a = ap.parse_args(argv)
     if a.tables:
@@ -457,7 +485,7 @@ def main(argv=None) -> int:
     cell = cellmath.parse_cell(a.cell)
     ref = reference_world(a.source)
     hm = ref.heightmap(cell)
-    if a.write and ref.uses_defra(cell):
+    if a.write and ref.uses_composite(cell):
         print('--write skipped: the .npz cache holds pristine maps only; composite maps rebuild in about a second', file=sys.stderr)
     elif a.write:
         print(f'wrote {save(hm)}', file=sys.stderr)

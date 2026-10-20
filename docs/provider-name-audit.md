@@ -16,7 +16,7 @@ Pre-commit runs the check via `scripts/pre_commit_checks.py check`. The frozen k
 
 | Class | Meaning | Action |
 | --- | --- | --- |
-| **(a) Legitimate** | The line must name a provider id, shim, or catalogue field (examples in add-data-source, ADR history, `_Avoid_` glossary lines that forbid a vendor). `docs/archive/` is allowlisted (historical vendor write-ups). | Keep; stay on baseline or narrow wording without losing meaning. |
+| **(a) Legitimate** | The line must name a provider id, shim, or catalogue field (examples in add-data-source, ADR history, `_Avoid_` glossary lines that forbid a vendor). Allowlisted homes: `docs/archive/`, ADR 001, `scripts/ref_fetch_agent.py` (fetch hosts), `scripts/dryrun_reset.py` (wipe/preserve paths). | Keep; stay on baseline or narrow wording without losing meaning. |
 | **(b) Code** | Logic should resolve a **type** via `place-sources` / `cell_sources`, not hard-code a vendor path, import root, or cache dir. | Refactor to type-driven lookup; shrink baseline. |
 | **(c) Wording** | Docs, rules, or skills tell an agent to pick a vendor where they mean aerial, vector map, or lidar height. | Reword to type language; keep script filenames when pointing at tools. |
 

@@ -353,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument('--cells-json', help='JSON list of [x,z] footprint columns')
     ap.add_argument('--street', action='append', default=[],
                     help='synthetic highway,x1,z1,x2,z2,... (repeatable; skips live map streets)')
-    ap.add_argument('--osm-root', type=Path, help='vector-map clip root (default: world reference/osm)')
+    ap.add_argument('--osm-root', type=Path, help='vector-map clip root (default: world VECTOR_MAP_CLIPS)')
     ap.add_argument('--with-lidar', action='store_true',
                     help='also list open lidar columns (cached composite DSM−DTM)')
     ap.add_argument('--with-aerial', action='store_true',

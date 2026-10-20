@@ -117,7 +117,7 @@ def missing_features(tx: int, tz: int, idx: OSMIndex | None = None, covered: set
     @param idx: optional shared OSMIndex
     @param covered: optional precomputed feature_columns()
     @returns: [{'kind': 'building'|'houses', 'label': str, 'street': str|None,
-                'refs': [osm ref], 'bbox': (x0, z0, x1, z1), 'portals': [portal],
+                'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'portals': [portal],
                 'pictures': [university building (scripts/buildings.py: photo + outline)]}], buildings first, then streets
     """
     idx = idx or OSMIndex()

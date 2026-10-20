@@ -99,6 +99,12 @@ def default_allow_prefixes(root: Path) -> frozenset[str]:
         'scripts/cell_sources.py',
         # Historical vendor write-ups; keep names, do not burn down.
         'docs/archive',
+        # ADR that records the type/provider split and forbids vendor queue language.
+        'docs/adr/001-evidence-types-and-world-frame.md',
+        # Host allowlist for fetch (provider hostnames are the point of the file).
+        'scripts/ref_fetch_agent.py',
+        # Must name legacy wipe paths and preserved cache dir names.
+        'scripts/dryrun_reset.py',
     ]
     return frozenset(r.replace('\\', '/') for r in rel)
 
