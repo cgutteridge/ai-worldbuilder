@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Students' Union B42 (OSM w33830305) — bake-off R-001 evidence redesign.
+"""Students' Union B42 (vector-map way 33830305) — bake-off R-001 evidence redesign.
 
 Evidence table (sources only; not prior Minecraft build):
 
 | Fact | Source | Reading |
 | --- | --- | --- |
-| Footprint | OSM w33830305 (building=university, loc_ref=42); ~3924 cells | L-shaped mass south of Library Square; axis-aligned readable box, not 1:1 jagged OSM stairs |
-| Storeys | OSM building:levels=4; lidar bbox MC 6145..6240 × -5575..-5495 | ground_y min 42 / top_y max 64 → four 3-block storeys + pitched roof (feature_build STOREY_H=3) |
-| Roof form | lidar DSM/DTM PNG + Google sheet z19 at 6182,-5536 | Main ridge runs E–W on north wing; lower flat/green terraces south; spec pitched smooth_stone grey |
+| Footprint | vector-map way 33830305 (building=university, loc_ref=42); ~3924 cells | L-shaped mass south of Library Square; axis-aligned readable box, not 1:1 jagged map stairs |
+| Storeys | map building:levels=4; lidar bbox MC 6145..6240 × -5575..-5495 | ground_y min 42 / top_y max 64 → four 3-block storeys + pitched roof (feature_build STOREY_H=3) |
+| Roof form | lidar DSM/DTM PNG + aerial sheet z19 at 6182,-5536 | Main ridge runs E–W on north wing; lower flat/green terraces south; spec pitched smooth_stone grey |
 | N front (Library Square) | Portal 42-A photo; building 42_2025 | Recessed concourse: full-height glazing, white fascia band; terracotta SUSU panel on alternate entrance |
 | S front (University Road) | Portals 42-B, 42-C | Black-framed café storefronts (piazz@soton, Lattes); floor-to-ceiling glass ground floor |
 | W (steps / café) | Portal 42-D | White concrete plinth, brick mid, dark louvre band, dark-framed upper windows |
 | Doors | portals.py building 42 (42-A..D) | Four registered portals → iron_door map in spec |
-| Greeblies | Google aerial + 42-D streetlevel | Roof: small plant/HVAC boxes on rear flat roof (aerial); street: horizontal dark louvre above café (42-D) — placed in ``add_greeblies`` |
+| Greeblies | aerial + 42-D streetlevel | Roof: small plant/HVAC boxes on rear flat roof (aerial); street: horizontal dark louvre above café (42-D) — placed in ``add_greeblies`` |
 
 Greeblies list (street/aerial scale):
 - Dark louvre band on W/S café level (black_concrete slab row)

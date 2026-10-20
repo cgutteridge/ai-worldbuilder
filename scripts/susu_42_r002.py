@@ -5,11 +5,11 @@ Evidence table (real sources only; no previous Minecraft build):
 
 | Fact | Source |
 | --- | --- |
-| Footprint | OSM way 33830305 ``University of Southampton Students' Union (SUSU)``, ``loc_ref`` 42, ``building:levels`` 4, 84 vertices, raster 3924 cells, bbox MC 6142,-5582 .. 6226,-5492. University register outline for building 42 matches that bbox (6142,-5582 .. 6228,-5491). Neighbours kept out: way 33830236 (B57 retail), way 34391673 (West Building). |
-| Massing | Orthogonal boxes inside a 2-block OSM margin, so the outline is straight runs instead of the 84-vertex stair. Two open courts kept (west light well, east court). A short recess in front of portal 42-A so the concourse door sits on a wall. |
-| Heights | DEFRA lidar via ``shims/lidar_query.py`` over the footprint (Geocraft rounding, ``top_y`` / ``ground_y`` / ``diff``). Three absolute roof plates, not one 4-storey box: high north/east median top_y 59 (p90 61, ground ~49-51); mid centre/south median top_y 57 (ground ~45-48); low west wing median top_y 52 (ground 44, standing ~8 m). Plates from the build floor (surrounding surface, not the lowest bare earth): HIGH 4 storeys (slab ~59), MID 2 storeys (slab ~56), LOW 1 storey (slab ~52). |
+| Footprint | vector-map way 33830305 ``University of Southampton Students' Union (SUSU)``, ``loc_ref`` 42, ``building:levels`` 4, 84 vertices, raster 3924 cells, bbox MC 6142,-5582 .. 6226,-5492. University register outline for building 42 matches that bbox (6142,-5582 .. 6228,-5491). Neighbours kept out: way 33830236 (B57 retail), way 34391673 (West Building). |
+| Massing | Orthogonal boxes inside a 2-block map margin, so the outline is straight runs instead of the 84-vertex stair. Two open courts kept (west light well, east court). A short recess in front of portal 42-A so the concourse door sits on a wall. |
+| Heights | Composite lidar via ``shims/lidar_query.py`` over the footprint (import rounding, ``top_y`` / ``ground_y`` / ``diff``). Three absolute roof plates, not one 4-storey box: high north/east median top_y 59 (p90 61, ground ~49-51); mid centre/south median top_y 57 (ground ~45-48); low west wing median top_y 52 (ground 44, standing ~8 m). Plates from the build floor (surrounding surface, not the lowest bare earth): HIGH 4 storeys (slab ~59), MID 2 storeys (slab ~56), LOW 1 storey (slab ~52). |
 | Walls, openings | North is the public front (every portal snaps to a north-facing wall). 42_2025.jpg: salmon terracotta panel with the SUSU wordmark, white fascia, full-height glass doors (concourse, portal 42-A at 6192,-5564). 42-A.jpg is the same lobby before the 2025 rebrand. 42-B.jpg: dark-framed glass shopfront, double doors (Piazza, 6204,-5564). 42-C.jpg: black single-storey box, double glass doors (Latte's, 6224,-5555) — the east pavement is already ~Y 52, so the tall plate reads as one storey there. 42-D.jpg: white render, a brick pier, glazed bands, a narrower cafe door (6180,-5575). The outside stair is not in this build. Other faces are not in those photos: a quieter pier rhythm only, so the block is not a blank shell. |
-| Roof + greeblies | Google satellite sheet z19 ``at_6184_-5537`` and z20 ``at_6178_-5560`` (look-only). SUSU is flat grey membrane. The red pitched roof to the north is a different building. Street-scale bits on the grey roofs: a row of flat skylights along the north edge of the high roof; a cluster of round vents mid-roof; two large rectangular rooflights on the south of that roof; a row of dark plant boxes on the lower west roof; a row of pyramid skylights on the mid roof; a parapet upstand on the roof edge. |
+| Roof + greeblies | Aerial sheet z19 ``at_6184_-5537`` and z20 ``at_6178_-5560`` (look-only). SUSU is flat grey membrane. The red pitched roof to the north is a different building. Street-scale bits on the grey roofs: a row of flat skylights along the north edge of the high roof; a cluster of round vents mid-roof; two large rectangular rooflights on the south of that roof; a row of dark plant boxes on the lower west roof; a row of pyramid skylights on the mid roof; a parapet upstand on the roof edge. |
 
 Parts (same high plate, three facade colours along the north front):
 
@@ -63,9 +63,9 @@ FLOORS = {'HIGH_C': 48, 'HIGH_W': 48, 'HIGH_E': 48, 'MID': 51, 'LOW': 48}
 
 
 def osm_cells(way: str) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
-    """Raster cells of one OSM way, and cells of every other building.
+    """Raster cells of one vector-map way, and cells of every other building.
 
-    @param way: OSM way id string
+    @param way: map way id string
     @returns: (cells of ``way``, cells of all other buildings)
     """
     idx = osm_footprints.OSMIndex()
@@ -98,10 +98,10 @@ def _dilate(cells: set[tuple[int, int]], radius: int) -> set[tuple[int, int]]:
 
 
 def readable_footprint(orig: set[tuple[int, int]], other: set[tuple[int, int]]) -> set[tuple[int, int]]:
-    """Orthogonal mass inside the OSM margin, courts and the concourse recess kept open.
+    """Orthogonal mass inside the vector-map margin, courts and the concourse recess kept open.
 
     @param orig: raster of way 33830305
-    @param other: cells of neighbouring OSM buildings
+    @param other: cells of neighbouring map buildings
     @returns: cells to build
     """
     allow = _dilate(orig, 2) - other
@@ -342,7 +342,7 @@ def _roof_y(build: fb.Build, label: str) -> int:
 
 
 def add_greeblies(plan, build: fb.Build, parts: dict[str, set[tuple[int, int]]]) -> dict[str, int]:
-    """Parapet plus the street-scale roof bits read off the Google sheet.
+    """Parapet plus the street-scale roof bits read off the aerial sheet.
 
     Greeblies replace the roof slab with a full block (or sit on that block).
     They are not placed on slabs, and not on the edge upstand.

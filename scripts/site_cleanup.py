@@ -182,7 +182,7 @@ def plan_reference_junk(rows: list[dict] | None = None, check_blank: bool = True
 
 
 def plan_reference_unlogged(rows: list[dict] | None = None) -> list[Item]:
-    """Files under reference/aerial|photos|osm that the manifest does not list: log them or drop them."""
+    """Files under reference/aerial|photos|vector-map clips that the manifest does not list: log them or drop them."""
     rows = _manifest() if rows is None else rows
     known = {r.get('path') for r in rows}
     ref = ROOT / 'reference'

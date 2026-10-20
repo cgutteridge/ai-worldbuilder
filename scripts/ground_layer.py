@@ -131,14 +131,14 @@ def load_masked_positions() -> dict:
 
 
 # --- 1. which columns are ours -----------------------------------------------------------
-def free_columns(cell: tuple[int, int], world: World, osm: OSMGround, fp: set, owned_cols: set):
+def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set):
     """Columns this layer may surface, with their live surface (y, block).
 
     Returns (live: {(x,z): (y, short block)}, skipped: Counter of reasons).
     """
     x0, z0, x1, z1 = cell_box(cell)
     live, skipped = {}, Counter()
-    water = set(osm.water)
+    water = set(vmap.water)
     probed = {}
     for x in range(x0 - 1, x1 + 2):
         for z in range(z0 - 1, z1 + 2):
@@ -157,7 +157,7 @@ def free_columns(cell: tuple[int, int], world: World, osm: OSMGround, fp: set, o
                 skipped['structure build'] += 1
             elif q in bank:
                 skipped['water / bank'] += 1
-            elif q in osm.bridge:
+            elif q in vmap.bridge:
                 skipped['bridge / steps'] += 1
             elif top is None:
                 skipped['empty column'] += 1
@@ -307,7 +307,7 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 
 
 # --- 2. what is on the ground ------------------------------------------------------------
-def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
+def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
              fp: set | None = None) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade."""
     free = set(live)
@@ -319,22 +319,22 @@ def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
     soft_grass: set = set()                               # lawn guessed, not seen (orange far from paths, shade fill)
     for q in free:
         a = aer.get(q)
-        ok = osm.kind.get(q)
-        if ok and osm.pri[q] in (50, 70) and q in osm.soft and (a in ('lawn', 'brick', 'shade') or (
+        ok = vmap.kind.get(q)
+        if ok and vmap.pri[q] in (50, 70) and q in vmap.soft and (a in ('lawn', 'brick', 'shade') or (
                 a in ('light', 'dark') and q in rgb and hsv(rgb[q])[1] >= 0.07)):
             kind[q] = 'grass'                             # mapped car park, but the aerial shows open ground
             how['aerial lawn inside mapped car park'] += 1
-        elif ok and osm.pri[q] == PRI['pedestrian'] and a == 'lawn' and isinstance(rgb.get(q), RegRGB):
+        elif ok and vmap.pri[q] == PRI['pedestrian'] and a == 'lawn' and isinstance(rgb.get(q), RegRGB):
             kind[q] = 'grass'                             # lawn strip/planter inside a mapped plaza, seen in a sharp registered aerial
             how['registered aerial lawn inside mapped plaza'] += 1
-        elif ok and osm.pri[q] >= 40:                     # a mapped road, path, car park or plaza
+        elif ok and vmap.pri[q] >= 40:                     # a mapped road, path, car park or plaza
             kind[q] = ok
-            how['osm surface'] += 1
+            how['vector map surface'] += 1
         elif a == 'lawn':
             kind[q] = 'grass'
             how['aerial lawn'] += 1
         elif a == 'brick':
-            if any(osm.pri.get((q[0] + i, q[1] + j), 0) >= 40 for i in range(-4, 5) for j in range(-4, 5)):
+            if any(vmap.pri.get((q[0] + i, q[1] + j), 0) >= 40 for i in range(-4, 5) for j in range(-4, 5)):
                 kind[q] = 'brick'
                 how['aerial brick'] += 1
             else:                                         # orange far from any mapped path: shed roof / bed, not paving
@@ -352,8 +352,8 @@ def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
     # that goes under a tree takes the colour of the path on either side of it.
     by_feat: dict = {}
     for q in free:
-        if kind.get(q) == 'paving' and osm.pri.get(q, 0) >= 40:
-            by_feat.setdefault(osm.feat.get(q), []).append(q)
+        if kind.get(q) == 'paving' and vmap.pri.get(q, 0) >= 40:
+            by_feat.setdefault(vmap.feat.get(q), []).append(q)
     for f, cols in by_feat.items():
         votes = [(q, raw.get(q)) for q in (cols if f is not None else [])
                  if raw.get(q) in ('brick', 'light') and aer.get(q) in ('brick', 'light')]
@@ -375,9 +375,9 @@ def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
         how['path carried across shade'] += 1
     seen = {q: k for q, k in kind.items()}
     for q in sorted(free - set(kind)):
-        if osm.kind.get(q) == 'grass':                    # mapped lawn, hidden by canopy
+        if vmap.kind.get(q) == 'grass':                    # mapped lawn, hidden by canopy
             kind[q] = 'grass'
-            how['osm grass (under shade)'] += 1
+            how['vector map grass (under shade)'] += 1
             continue
         best = None
         for r in range(1, FILL_REACH + 1):
@@ -386,7 +386,7 @@ def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
             if ring:
                 best = Counter(seen[p] for p in ring).most_common(1)[0][0]
                 break
-        near_path = any(osm.pri.get((q[0] + a, q[1] + b), 0) >= 40 for a in range(-3, 4) for b in range(-3, 4))
+        near_path = any(vmap.pri.get((q[0] + a, q[1] + b), 0) >= 40 for a in range(-3, 4) for b in range(-3, 4))
         if best in ('paving', 'brick') and not near_path:
             best = 'grass'                                # unseen ground away from any mapped path: lawn/bed
         kind[q] = best or 'grass'
@@ -396,27 +396,27 @@ def classify(cell: tuple[int, int], live: dict, osm: OSMGround, rgb: dict,
     # A guessed lawn strip squeezed between a public road and a building front is pavement (shopfront
     # forecourts, shadowed by the buildings), not garden. Only guessed lawn is converted, never seen lawn.
     if fp:
-        road = {q for q in osm.kind if osm.kind[q] == 'tarmac' and osm.pri.get(q, 0) >= 40}
+        road = {q for q in vmap.kind if vmap.kind[q] == 'tarmac' and vmap.pri.get(q, 0) >= 40}
         for q in soft_grass:
             if kind.get(q) == 'grass' and any((q[0] + a, q[1] + b) in road for a in range(-8, 9) for b in range(-8, 9)) \
                     and any((q[0] + a, q[1] + b) in fp for a in range(-4, 5) for b in range(-4, 5)):
                 kind[q] = 'paving'
                 how['guessed lawn between road and building -> paving'] += 1
-    barrier = osm.hedge | osm.wall | osm.fence
+    barrier = vmap.hedge | vmap.wall | vmap.fence
     lawn_by_barrier = {q for q in kind if kind[q] == 'grass' and any(
         (q[0] + a, q[1] + b) in barrier for a in (-1, 0, 1) for b in (-1, 0, 1))}
-    kind = denoise(kind, {q for q in kind if osm.pri.get(q, 0) >= 40 and osm.kind.get(q) == 'tarmac'}
+    kind = denoise(kind, {q for q in kind if vmap.pri.get(q, 0) >= 40 and vmap.kind.get(q) == 'tarmac'}
                    | lawn_by_barrier, how)          # a hedge needs its strip of lawn: not noise
     # road furniture: dashed centre line, kerb along the public-road edge (dropped at crossings)
     out = dict(kind)
     for q in free:
-        if q in osm.road and kind.get(q) == 'tarmac' and q in osm.marks:
+        if q in vmap.road and kind.get(q) == 'tarmac' and q in vmap.marks:
             out[q] = 'mark'
     for q in free:
-        if q in osm.road and kind.get(q) == 'tarmac':
+        if q in vmap.road and kind.get(q) == 'tarmac':
             nb = [kind.get((q[0] + a, q[1] + b)) for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))]
             if any(k in ('grass', 'paving', 'brick') for k in nb) and not any(
-                    (q[0] + a, q[1] + b) in osm.kind and osm.pri[(q[0] + a, q[1] + b)] in (60, 70)
+                    (q[0] + a, q[1] + b) in vmap.kind and vmap.pri[(q[0] + a, q[1] + b)] in (60, 70)
                     for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
                 out[q] = 'kerb'
     return out, how
@@ -485,13 +485,13 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     from osm_footprints import OSMIndex
 
     ev = evidence or {}
-    osm = ev.get('osm') or OSMGround(cell)
+    vmap = ev.get('osm') or OSMGround(cell)
     rgb = ev.get('rgb') or aerial_rgb(cell)
     x0, z0, x1, z1 = cell_box(cell, 2)
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols = {(x, z) for x, _y, z in neighbour_owned}
-    live, skipped = free_columns(cell, world, osm, fp, owned_cols)
-    kind, how = classify(cell, live, osm, rgb, fp)
+    live, skipped = free_columns(cell, world, vmap, fp, owned_cols)
+    kind, how = classify(cell, live, vmap, rgb, fp)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     ys = level_spikes(live, kind, fp)
     stats = Counter({'columns': len(live), 'levelled': ys.pop('_levelled')})

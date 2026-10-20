@@ -294,10 +294,10 @@ def main(argv=None) -> int:
     else:
         for i, lp in enumerate(lumps, 1):
             tag = f' EXCEPTION: {lp["exception"]}' if 'exception' in lp else ''
-            osm = lp.get('osm')
-            where = ('map ' + ','.join(osm)) if osm else (
+            refs = lp.get('osm')
+            where = ('map ' + ','.join(refs)) if refs else (
                 ('NO MAP CLIP here (osm_extract.py first)' if not lp.get('in_osm_clip', True)
-                 else 'no vector-map building (unmapped: build from aerial/streetlevel)') if osm is not None else '')
+                 else 'no vector-map building (unmapped: build from aerial/streetlevel)') if refs is not None else '')
             print(f'lump {i}: bbox={lp["bbox"]} centre={lp["centre"]} cols={lp["columns"]} '
                   f'roof_y={lp["roof_y"][0]}..{lp["roof_y"][1]} height={lp["height"]} {where}{tag}')
         print(f'cell {tx},{tz}: {s["remaining"]} lump(s) remaining, {s["excepted"]} excepted, '

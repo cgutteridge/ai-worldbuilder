@@ -97,6 +97,8 @@ def default_allow_prefixes(root: Path) -> frozenset[str]:
         'scripts/check_provider_names.py',
         'scripts/test_provider_name_audit.py',
         'scripts/cell_sources.py',
+        # Historical vendor write-ups; keep names, do not burn down.
+        'docs/archive',
     ]
     return frozenset(r.replace('\\', '/') for r in rel)
 

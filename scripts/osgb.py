@@ -62,7 +62,7 @@ def to_osgb(x: float, z: float, offsets: dict | None = None) -> tuple[float, flo
 
 
 def in_bounds(x: int, z: int, offsets: dict | None = None) -> bool:
-    """True if (x, z) lies inside the Geocraft map rectangle.
+    """True if (x, z) lies inside the place map rectangle.
 
     @param x: Minecraft X
     @param z: Minecraft Z

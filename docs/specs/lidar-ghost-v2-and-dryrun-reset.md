@@ -11,7 +11,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 ## Solution
 
-1. **Dry-run reset** — A guarded CLI resets the active world for another rehearsal: delete overworld region chunks (after the player has left the world), re-scaffold place memory from the new-world site template while **preserving** world frame, providers, reference catalogue, downloaded caches, and default **current cell focus**; **clear** builder lock and holds; **drop** legacy Geocraft notes and all feature/build decisions.
+1. **Dry-run reset** — A guarded CLI resets the active world for another rehearsal: delete overworld region chunks (after the player has left the world), re-scaffold place memory from the new-world site template while **preserving** world frame, providers, reference catalogue, downloaded caches, and default **current cell focus**; **clear** builder lock and holds; **drop** legacy import notes and all feature/build decisions.
 2. **Lidar ghost v2** — Maintain a **frontier** of cells that should show placeholders: any cell with **real refine started** (ground, trees, decor, or feature apply) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** until **real ground** exists there, and **ghost features** until **real feature volume** overlaps that cell. **Strip** ghost-feature blocks in overlap volumes and **update STAGES** so bookkeeping matches blocks (no “visual off, stages still applied”). After **every successful apply** that counts as real work, **refresh** the frontier and reconcile ghosts.
 3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
 
@@ -19,7 +19,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 1. As a worldbuilder maintainer, I want a single reset command with a dry-run mode, so that agents and I do not drift on what gets deleted each rehearsal.
 2. As a worldbuilder maintainer, I want reset to refuse while the world is live or site-locked, so that we do not corrupt chunks or concurrent applies.
-3. As a worldbuilder maintainer, I want reset to preserve DEFRA and reference downloads, so that dry runs stay fast and reproducible.
+3. As a worldbuilder maintainer, I want reset to preserve lidar and reference downloads, so that dry runs stay fast and reproducible.
 4. As a worldbuilder maintainer, I want reset to preserve Y offset and projection, so that I never re-run the human offset checkpoint for the same world.
 5. As a worldbuilder maintainer, I want reset to clear feature specs and STAGES, so that wrong facade or massing decisions do not carry into the next run.
 6. As a worldbuilder maintainer, I want reset to empty the world queue, so that the next session re-queues from evidence rather than stale queue prose.
@@ -35,7 +35,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 16. As a test author, I want unit tests for frontier union, split lifecycles, and strip bookkeeping, so that regressions are caught without booting Minecraft.
 17. As the Southampton pilot user, I want dry run 001 to run all auto-queued features for cell 48,-44 then ground only, so that the path exercises real applies and ghost interaction without trees/decor duration.
 18. As the Southampton pilot user, I want a written checklist that includes quit world → reset → rejoin, so that chunk regeneration is reliable.
-19. As a worldbuilder maintainer, I want Geocraft legacy site notes removed on reset, so that agents are not steered toward lump-refine semantics.
+19. As a worldbuilder maintainer, I want legacy import site notes removed on reset, so that agents are not steered toward lump-refine semantics.
 20. As a refine agent, I want current cell focus retained across reset by default, so that dry runs do not re-negotiate 48,-44 every time.
 21. As a refine agent, I want builder lock cleared on reset, so that the next session can claim site ownership cleanly.
 22. As a worldbuilder maintainer, I want ADR 003 to point at this spec for ghost behaviour, so that rules and code stay aligned without rewriting the whole ADR immediately.

@@ -239,7 +239,7 @@ _DONE_HINTS: dict[WorkContext, str] = {
         'build_cell_foliage dry-run then SITE_OWNER --apply; script signs in-cell open/gap.'
     ),
     WorkContext.PROPERTY: (
-        'Whole property on OSM footprint; osm_footprints check; photo + aerial contact views.'
+        'Whole property on vector-map footprint; osm_footprints check; photo + aerial contact views.'
     ),
     WorkContext.TERRACE: 'terrace.py generator; re-apply same build name; no _b geometry patches.',
     WorkContext.SESSION: 'Lock + handoff only.',

@@ -21,8 +21,8 @@ footprint-map ways under it (none = unmapped).
   python3 scripts/lidar_heightmap.py --cell 51,-41 --json     # machine-readable
   python3 scripts/lidar_heightmap.py --cell 51,-41 --write    # also keep verification/site/lidar/51_-41.npz
 
-Source: national composite lidar (``defra_world.py`` + lidar shim) wherever tiles are cached, else the
-pristine save, cell by cell. Force one with ``LIDAR_SOURCE`` (``defra`` | ``pristine`` | ``auto``,
+Source: national composite lidar (composite world module + lidar shim) wherever tiles are cached, else the
+pristine save, cell by cell. Force one with ``LIDAR_SOURCE`` (``auto`` | ``pristine`` | composite-only;
 default ``auto``). Composite lidar matches the save on ground and roofs; its trees are first-return
 crowns, so there are usually more than the import's procedural ones.
 
@@ -287,7 +287,7 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
 
 
 def report(hm: dict, with_osm: bool = True) -> list:
-    """lumps() plus footprint-map ways under each (``osm`` key empty = not mapped)."""
+    """lumps() plus footprint-map ways under each (map-ref key empty = not mapped)."""
     items = lumps(hm)
     if with_osm:
         import lump_scan
@@ -328,8 +328,8 @@ SOURCES = ('auto', 'defra', 'pristine')
 class ReferenceWorld:
     """The lidar reference: composite tiles where cached, pristine save where not (per 128² cell).
 
-    @param source: 'auto' (that rule), 'defra' (composite only; LookupError when a cell is not cached) or 'pristine'
-    @param defra: composite lidar world (default: shared cache, no downloads)
+    @param source: 'auto' (that rule), composite-only (LookupError when a cell is not cached) or 'pristine'
+    @param defra: composite lidar world handle (default: shared cache, no downloads)
     @param fallback: world to use for the pristine path (default: pristine_world(), opened on first use)
     """
 
@@ -410,14 +410,14 @@ def osm_levels(idx) -> dict:
 def format_report(cell, items: list, source: str | None = None) -> str:
     """Plain-text table of the lump report; ``source`` ('composite' | 'pristine') is named in the heading when given."""
     lines = [f'LIDAR LUMPS cell {cell[0]},{cell[1]}: {len(items)} building(s)' + (f' [{source}]' if source else ''),
-             'bbox                       cols ground eave ridge st roof     axis trees lvl osm']
+             'bbox                       cols ground eave ridge st roof     axis trees lvl map']
     for lp in items:
-        osm = ','.join(lp.get('osm', [])[:3]) or ('UNMAPPED' if 'osm' in lp else '-')
+        refs = ','.join(lp.get('osm', [])[:3]) or ('UNMAPPED' if 'osm' in lp else '-')
         b = lp['bbox']
         lines.append(f'{b[0]},{b[1]}..{b[2]},{b[3]}'.ljust(27)
                      + f'{lp["columns"]:>4} {str(lp["ground_y"]):>6} {lp["eave_y"]:>4} {lp["ridge_y"]:>5} '
                      f'{str(lp["storeys"]):>2} {lp["roof"]:<8} {str(lp["ridge_axis"] or "-"):<4} {lp["trees_over"]:>5} '
-                     f'{",".join(map(str, lp.get("osm_levels", []))) or "-":>3} {osm}')
+                     f'{",".join(map(str, lp.get("osm_levels", []))) or "-":>3} {refs}')
     return '\n'.join(lines)
 
 

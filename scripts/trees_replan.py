@@ -3,7 +3,7 @@
 
 trees_layer.py's dry run plans against the live world, where the cell's own old trees block every column, so it cannot preview a
 redo. This plans as if scripts/mask_undo.py had run (the old crowns' blocks are air, their mask positions are not owned), prints the
-counts and skips, and writes the plan JSON that shims/google_window.py plan draws over Google.
+counts and skips, and writes the plan JSON that shims/google_window.py plan draws over the aerial sheet.
 
   python3 scripts/trees_replan.py --cell 48,-44 --out plan.json
 """

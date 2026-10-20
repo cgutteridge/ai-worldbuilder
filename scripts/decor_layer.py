@@ -141,21 +141,21 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     fp = set(OSMIndex().cells())
     near = fp | owned_cols
     near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
-    osm = OSMGround(cell)
+    vmap = OSMGround(cell)
     found: dict[tuple[int, int, int], str] = {}
     present: dict[tuple[int, int, int], str] = {}
     stats = Counter()
     from garden_sources import garden_barriers
-    groups = [(osm.hedge, 'oak_leaves[persistent=true]', 2), (osm.wall, 'brick_wall', 1),
-              (osm.fence, 'iron_bars', 1)]
+    groups = [(vmap.hedge, 'oak_leaves[persistent=true]', 2), (vmap.wall, 'brick_wall', 1),
+              (vmap.fence, 'iron_bars', 1)]
     mapped = {q for g in groups for q in g[0]}
     by_kind: dict = {}
     for q, (_t, blk, gh) in garden_barriers(cell).items():     # derived per-parcel garden boundaries
-        if q not in mapped:                                    # an OSM-mapped barrier wins
+        if q not in mapped:                                    # a mapped barrier wins
             by_kind.setdefault((blk, gh), set()).add(q)
     groups += [(cells, blk, gh) for (blk, gh), cells in sorted(by_kind.items())]
     stats['garden columns'] = sum(len(c) for c in by_kind.values())
-    way = set(osm.road) | set(osm.feat) | set(osm.water)        # mapped road, path or water columns
+    way = set(vmap.road) | set(vmap.feat) | set(vmap.water)      # mapped road, path or water columns
     for cells, mat, h in groups:
         for q in sorted(cells):
             if not cell_contains(cell, *q) or q in near1:

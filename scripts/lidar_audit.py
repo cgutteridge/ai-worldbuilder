@@ -3,7 +3,7 @@
 
 For one cell, take the height map of the live world (same rules as lidar_heightmap: carpet ignored, leaves
 and logs count) and compare it with the pristine one. The target for a column is the lidar roof top where
-Geocraft had a roof (carpet y), else the lidar surface h.
+the import had a roof (carpet y), else the lidar surface h.
 
 Per lump (building in the lidar): live vs lidar ridge, eave-free shape check (share of columns within 1 block),
 mean and worst difference. Per cell: share within tolerance, lidar tree columns with no live tree (missing),

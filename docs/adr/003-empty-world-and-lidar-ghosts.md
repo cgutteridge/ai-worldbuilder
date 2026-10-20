@@ -4,17 +4,17 @@
 
 ## Context
 
-The tool formerly treated refine as clearing unrefined Geocraft (or similar) lumps and often used a pristine heightmap as an evidence path. New worlds start from an **empty** save. Neighbours then have no skyline until their own queue turn, which slows judgement of massing and edges.
+The tool formerly treated refine as clearing unrefined vendor-import lumps and often used a pristine heightmap as an evidence path. New worlds start from an **empty** save. Neighbours then have no skyline until their own queue turn, which slows judgement of massing and edges.
 
 ## Decision
 
-1. **Empty-world DoD:** A cell is done when evidence-backed features and layered passes (ground, trees, decor) plus masks meet the craft rules — not when “no unrefined Geocraft” remains. Lump-scan must not drive the default queue.
-2. **Evidence heights:** DEFRA **composite** DTM/DSM (via `defra_lidar`) are the normal lidar path. Pristine Geocraft is not a catalogue provider and not on the default evidence reading list.
+1. **Empty-world DoD:** A cell is done when evidence-backed features and layered passes (ground, trees, decor) plus masks meet the craft rules — not when “no unrefined vendor import” remains. Lump-scan must not drive the default queue.
+2. **Evidence heights:** National **composite** DTM/DSM (lidar provider package) are the normal lidar path. A pristine import save is not a catalogue provider and not on the default evidence reading list.
 3. **Lidar ghosts:** When a cell is focused, unstarted neighbours within a configurable Chebyshev ring (default 1) get idempotent placeholder applies: composite DTM → ghost ground; composite DSM − DTM → grey ghost features. No trees/decor ghosts in v1. Real `ground_layer` / builders / trees / decor overwrite or refine ghosts later. No per-cell generated Python.
 
 ## Consequences
 
-- System tasks 23–24 landed (empty-world DoD + DEFRA evidence). Task 25 swept stale
-  Geocraft-default / pristine-as-lidar wording in rules/. Tasks 26–27 are the ghost path.
-- World QUEUE items that still speak of Geocraft lumps as DoD remain world work.
+- System tasks 23–24 landed (empty-world DoD + composite lidar evidence). Task 25 swept stale
+  import-default / pristine-as-lidar wording in rules/. Tasks 26–27 are the ghost path.
+- World QUEUE items that still speak of vendor-import lumps as DoD remain world work.
 - Ghost owners must be distinguishable in STAGES so redo and real applies can replace them safely.

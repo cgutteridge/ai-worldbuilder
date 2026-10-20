@@ -37,7 +37,7 @@ CAPTIONS = [
     ('-trees-crowns', 'Tree sites: magenta tree, cyan bush, red skipped.'),
     ('-preview', 'Plan preview of what the stage placed.'),
     ('cmp-', 'Comparison panels (aerial vs plan). The title inside the image says which panel is which.'),
-    ('-aerial-crop', 'Aerial crop with OSM outlines and a 10-block grid.'),
+    ('-aerial-crop', 'Aerial crop with vector-map outlines and a 10-block grid.'),
 ]
 STATUS_ORDER = ['In progress', 'Completed', 'Built, items remaining', 'Layers incomplete', 'Not started']
 

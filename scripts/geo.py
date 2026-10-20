@@ -185,7 +185,7 @@ def pitch_deg_to_slope(deg: float) -> dict:
 
 
 def lidar_top(world, x: int, z: int, ymax: int = 120, ymin: int = 30) -> int:
-    """Top solid block Y on pristine Geocraft, skipping vegetation/air.
+    """Top solid block Y on the pristine save, skipping vegetation/air.
 
     @param world: site_kit.World
     @param x: column X
@@ -399,7 +399,7 @@ def party_pitch_report(bbox: str, street: str | None) -> list[dict]:
                 mid = (a['along_street'] + b['along_street']) / 2
                 a['party_to_next'] = round(b['along_street'] - a['along_street'], 1)
                 a['suggested_party_mc_xz_hint'] = (
-                    f'midpoint along street ≈ {mid:.0f} (snap to integer column; check OSM centroids)'
+                    f'midpoint along street ≈ {mid:.0f} (snap to integer column; check map centroids)'
                 )
     return rows
 
@@ -623,7 +623,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     @returns: configured ArgumentParser
     """
-    p = argparse.ArgumentParser(description='Geocraft coordinate hub')
+    p = argparse.ArgumentParser(description='Place coordinate hub')
     p.add_argument('--json', action='store_true', help='machine-readable output')
     sub = p.add_subparsers(dest='cmd', required=True)
 
