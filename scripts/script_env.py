@@ -7,7 +7,7 @@ providers). Provider packages live under two roots:
 - ``SYSTEM_PROVIDERS`` — ``TOOL_ROOT / "providers"`` (nationwide+ catalogue)
 - ``WORLD_PROVIDERS`` — ``ROOT / "providers"`` (active-world catalogue)
 
-Catalogue ``package`` fields are relative paths (e.g. ``providers/ukdefra-lidar``);
+Catalogue ``package`` fields are relative paths (e.g. ``providers/<id>``);
 resolve them with :func:`resolve_provider_package`. Prefer
 ``from script_env import ROOT, TOOL_ROOT``.
 """

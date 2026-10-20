@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Diagnostic: find standing Geocraft-style building blobs in a cell (I-047, I-057).
+"""Diagnostic: find standing vendor-import building blobs in a cell (I-047, I-057).
 
 Empty-world DoD (ADR 003): this tool does **not** drive ``site_handoff`` cell_gaps or the queue.
 Cell done is evidence-backed features plus layered passes and masks — not “no vendor lumps left”.
-Run this CLI by hand when investigating a legacy Geocraft-derived save.
+Run this CLI by hand when investigating a legacy import-derived save.
 
-A "lump" is a building the original Geocraft import generated (roof = light_gray_carpet in the
+A "lump" is a building the original city import generated (roof = light_gray_carpet in the
 untouched save at reference/pristine_region_path, walls/fill below it) that no *feature* build has
 refined. Layer passes (ground, trees, decor) do NOT count as refining: the ground pass happily
 recolours a lump's roof (granite/concrete) and paints lawn round it, so a surface check alone passes
 while the blob stands (49,-43, 2026-10-15: every University Road house south of the road was a lump).
 
 Detection, per column of the cell:
-  roof   pristine surface block is *_carpet (Geocraft roof) at y = roof_y
+  roof   pristine surface block is *_carpet (import roof) at y = roof_y
   intact the live block just under roof_y is the pristine one and solid (wall / fill not yet cleared)
   open   no feature build (cell_features.feature_columns) wrote the column
 Open roof+intact columns are grouped (8-connected); groups under MIN_COLUMNS are ignored.
 Each lump reports bbox, centre, roof Y range, height over the surrounding ground, column count and the
-OSM building(s) under it; lumps with no OSM building are flagged unmapped.
+footprint-map building(s) under it; lumps with no mapped building are flagged unmapped.
 
   python3 scripts/lump_scan.py --cell 49,-43            # report; exit 1 if unrecorded lumps remain
   python3 scripts/lump_scan.py --cell 49,-43 --bbox 6330,-5450,6420,-5380

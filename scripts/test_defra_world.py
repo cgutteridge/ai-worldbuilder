@@ -202,7 +202,7 @@ class ReferenceWorldTest(unittest.TestCase):
 
     def test_auto_uses_defra_per_cell_and_falls_back_elsewhere(self):
         r = self.ref('auto')
-        self.assertEqual((r.source_of((0, 0)), r.source_of((5, 5))), ('DEFRA', 'pristine'))
+        self.assertEqual((r.source_of((0, 0)), r.source_of((5, 5))), ('composite', 'pristine'))
         self.assertEqual(r.block(10, 5, 10), 'minecraft:bricks')            # cell (0, 0)
         self.assertEqual(r.block(300, 5, 300), 'minecraft:stone')           # cell (2, 2): the save
         self.assertEqual(r.ground(10, 10), 99)

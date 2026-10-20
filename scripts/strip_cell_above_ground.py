@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 5a: strip Geocraft above-ground features across one whole cell (dry-run by default).
+"""Stage 5a: strip vendor-import above-ground features across one whole cell (dry-run by default).
 
 Plans air for every tree / plant / junk block directly above each column's surface, for
 every column inside the cell (no margin, so neighbours are not written). Records the stage

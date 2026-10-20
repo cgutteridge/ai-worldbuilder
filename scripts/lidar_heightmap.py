@@ -1,33 +1,35 @@
 #!/usr/bin/env python3
-"""Lidar height map of the pristine Geocraft save, and the lump report built from it.
+"""Lidar height map of the pristine reference save, and the lump report built from it.
 
-Geocraft is made from lidar: every column is a height. This reads the UNTOUCHED save (config/world.json
-pristine_region_path), never the live world, so it is the same before and after any build or reset.
+The untouched baseline save (``config/world.json`` ``pristine_region_path``) holds import geometry:
+every column is a height. This reads that save, never the live world, so the report is stable across
+builds and resets.
 
 Per column (cell = 128 x 128, arrays indexed [x - x0, z - z0]):
   h      top of the lidar surface: carpet is ignored (it sits ON the lidar), leaves and logs count, because
-         where there is no building Geocraft draws a tree as log + leaf. Grass tufts and flowers are ignored.
+         where there is no building the import draws a tree as log + leaf. Grass tufts and flowers are ignored.
   base   top of the solid ground under any carpet / leaves / logs (ground or wall top, no vegetation)
-  roof   y of the Geocraft roof carpet over the column, 0 if none
+  roof   y of the import roof carpet over the column, 0 if none
   kind   0 ground / paving, 1 roof (building lump), 2 tree, 3 tree overhanging a roof,
-         4 structure (DEFRA only: tall solid thing outside any OSM footprint, e.g. a wall or an unmapped building)
+         4 structure (composite lidar only: tall solid outside any footprint-map polygon)
 
-The lump report groups roof columns into buildings and gives what a feature build needs and used to
-guess: footprint, ground, eave and ridge height (so storeys), flat or pitched, ridge axis, trees over
-the roof, and the OSM buildings under it (none = unmapped).
+The lump report groups roof columns into buildings and gives what a feature build needs: footprint,
+ground, eave and ridge height (so storeys), flat or pitched, ridge axis, trees over the roof, and
+footprint-map ways under it (none = unmapped).
 
   python3 scripts/lidar_heightmap.py --cell 51,-41            # report
   python3 scripts/lidar_heightmap.py --cell 51,-41 --json     # machine-readable
   python3 scripts/lidar_heightmap.py --cell 51,-41 --write    # also keep verification/site/lidar/51_-41.npz
 
-Source: DEFRA LIDAR (shims/defra_lidar.py, via defra_world.py) wherever its tiles are cached, else the pristine save,
-cell by cell. Force one with LIDAR_SOURCE=defra|pristine|auto (default auto). DEFRA matches the save on ground and roofs
-(defra_lidar.py compare); its trees are real crowns from first-return lidar, so there are more than Geocraft's procedural ones (defra_world.py).
+Source: national composite lidar (``defra_world.py`` + lidar shim) wherever tiles are cached, else the
+pristine save, cell by cell. Force one with ``LIDAR_SOURCE`` (``defra`` | ``pristine`` | ``auto``,
+default ``auto``). Composite lidar matches the save on ground and roofs; its trees are first-return
+crowns, so there are usually more than the import's procedural ones.
 
 Lookups that may straddle a cell edge (B42 at z -5505):
 
   maps = Maps()                     # pristine by default; Maps(World()) for live
-  maps.top_at(x, z)                 # roof carpet y if Geocraft had a roof, else surface h
+  maps.top_at(x, z)                 # roof carpet y if the import had a roof, else surface h
   top_at(x, z)                      # same, with a module-level Maps cache
 """
 from __future__ import annotations
@@ -48,7 +50,7 @@ MIN_COLUMNS = 12                    # ignore slivers (bin stores, small sheds)
 MIN_CORE = 6                        # columns left after eroding a lump 3 times (~7+ blocks wide) before its interior may judge flat vs pitched
 STOREY = 3                          # blocks per storey
 RIDGE_BASE = 3                      # ridge height above ground minus this, / STOREY = storeys. Calibrated 2026-10-16 against
-                                    # OSM building:levels of 54 single-building lumps in the touched cells: 57% exact, 89%
+                                    # map building:levels on 54 single-building lumps in touched cells: 57% exact, 89%
                                     # within one level (eave height is useless: ~4 above ground whatever the levels)
 GROUND, ROOF, TREE, TREE_OVER_ROOF, STRUCTURE = 0, 1, 2, 3, 4
 OUT = ROOT / 'verification/site/lidar'
@@ -135,7 +137,7 @@ def load(cell: tuple[int, int]) -> dict | None:
 def top_of(hm: dict, x: int, z: int) -> int:
     """Lidar top Y of one column inside ``hm``: roof carpet where present, else surface h.
 
-    Same rule as lidar_audit.target: Geocraft paints a roof carpet on building tops.
+    Same rule as lidar_audit.target: the import paints a roof carpet on building tops.
     """
     i, j = x - hm['x0'], z - hm['z0']
     r = int(hm['roof'][i, j])
@@ -145,7 +147,7 @@ def top_of(hm: dict, x: int, z: int) -> int:
 class Maps:
     """Cached height maps keyed by cell, for lookups that may straddle cell edges.
 
-    @param world: object with block(x,y,z); defaults to the pristine Geocraft save
+    @param world: object with block(x,y,z); defaults to the pristine reference save
     @param use_cache: load from verification/site/lidar/*.npz when present (pristine only)
     """
 
@@ -173,7 +175,7 @@ class Maps:
         return self._hm[cell]
 
     def top_at(self, x: int, z: int) -> int:
-        """Lidar top Y at (x, z): roof carpet if Geocraft had a roof, else surface h.
+        """Lidar top Y at (x, z): roof carpet if the import had a roof, else surface h.
 
         Loads the cell containing the column (works across cell edges).
         """
@@ -242,8 +244,8 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
 
     Each item: bbox, centre, columns, ground_y, eave_y (10th percentile of roof y; of the interior columns for a wide lump, see MIN_CORE, because
     lidar blurs the rim low), ridge_y, height (ridge - ground), storeys (estimate: (ridge - ground - RIDGE_BASE)
-    / STOREY, at least 1; osm_levels is added by report() when OSM has building:levels), roof ('flat' | 'pitched'), ridge_axis ('x' | 'z' | None), trees_over (columns) and
-    cols (the column set, for OSM matching).
+    / STOREY, at least 1; osm_levels is added by report() when the map has building:levels), roof ('flat' | 'pitched'), ridge_axis ('x' | 'z' | None), trees_over (columns) and
+    cols (the column set, for footprint-way matching).
     """
     x0, z0 = hm['x0'], hm['z0']
     n = cellmath.CELL
@@ -285,7 +287,7 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
 
 
 def report(hm: dict, with_osm: bool = True) -> list:
-    """lumps() plus the OSM buildings under each (``osm`` empty = not mapped)."""
+    """lumps() plus footprint-map ways under each (``osm`` key empty = not mapped)."""
     items = lumps(hm)
     if with_osm:
         import lump_scan
@@ -300,21 +302,22 @@ def report(hm: dict, with_osm: bool = True) -> list:
 
 
 def pristine_path() -> Path:
-    """Region folder of the untouched Geocraft save; stops with a clear message when it is missing or empty.
+    """Region folder of the untouched reference save; stops with a clear message when missing or empty.
 
-    config/world.json pristine_region_path is outside the repo; a read-only clone is kept in
-    backups/pristine-geocraft/region (set pristine_region_path to it if the original moves).
+    ``config/world.json`` ``pristine_region_path`` is outside the repo; a read-only clone is kept
+    under ``backups/`` (see ``rules/cleanup.md``).
     """
     p = Path(json.loads((ROOT / 'config/world.json').read_text())['pristine_region_path'])
+    clone = ROOT / 'backups/pristine-geocraft/region'
     if not p.is_dir() or not any(p.glob('r.*.mca')):
-        raise SystemExit(f'pristine Geocraft save not found at {p}\n'
-                         f'  a clone lives in {ROOT / "backups/pristine-geocraft/region"}: point '
+        raise SystemExit(f'pristine reference save not found at {p}\n'
+                         f'  a clone lives in {clone}: point '
                          'config/world.json pristine_region_path there')
     return p
 
 
 def pristine_world():
-    """World over the untouched Geocraft save."""
+    """World over the untouched reference save."""
     from site_kit import World
     return World(pristine_path())
 
@@ -323,10 +326,10 @@ SOURCES = ('auto', 'defra', 'pristine')
 
 
 class ReferenceWorld:
-    """The lidar reference: DEFRA where its tiles are cached, the pristine save where not (per 128 x 128 cell).
+    """The lidar reference: composite tiles where cached, pristine save where not (per 128² cell).
 
-    @param source: 'auto' (that rule), 'defra' (never the save; LookupError when a cell is not cached) or 'pristine'
-    @param defra: DefraWorld (default: shared cache, no downloads)
+    @param source: 'auto' (that rule), 'defra' (composite only; LookupError when a cell is not cached) or 'pristine'
+    @param defra: composite lidar world (default: shared cache, no downloads)
     @param fallback: world to use for the pristine path (default: pristine_world(), opened on first use)
     """
 
@@ -350,18 +353,18 @@ class ReferenceWorld:
         return self._fallback
 
     def uses_defra(self, cell: tuple[int, int]) -> bool:
-        """True when this cell is answered from DEFRA."""
+        """True when this cell is answered from composite lidar tiles."""
         if self.source == 'pristine':
             return False
         if self.defra.covers(cell):
             return True
         if self.source == 'defra':
-            raise LookupError(f'DEFRA tiles for cell {cell[0]},{cell[1]} are not cached: '
+            raise LookupError(f'Composite lidar tiles for cell {cell[0]},{cell[1]} are not cached: '
                               f'python3 shims/defra_lidar.py fetch --cell {cell[0]},{cell[1]}')
         return False
 
     def source_of(self, cell: tuple[int, int]) -> str:
-        return 'DEFRA' if self.uses_defra(cell) else 'pristine'
+        return 'composite' if self.uses_defra(cell) else 'pristine'
 
     def heightmap(self, cell: tuple[int, int]) -> dict:
         return self.defra.heightmap(cell) if self.uses_defra(cell) else heightmap(self.fallback, cell)
@@ -393,7 +396,7 @@ def reference_world(source: str | None = None) -> ReferenceWorld:
 
 
 def osm_levels(idx) -> dict:
-    """{osm ref: building:levels as int} for OSM buildings that carry the tag."""
+    """{way ref: building:levels as int} for footprint polygons that carry the tag."""
     import re
     from coverage import osm_ref
     out = {}
@@ -405,7 +408,7 @@ def osm_levels(idx) -> dict:
 
 
 def format_report(cell, items: list, source: str | None = None) -> str:
-    """Plain-text table of the lump report; ``source`` ('DEFRA' | 'pristine') is named in the heading when given."""
+    """Plain-text table of the lump report; ``source`` ('composite' | 'pristine') is named in the heading when given."""
     lines = [f'LIDAR LUMPS cell {cell[0]},{cell[1]}: {len(items)} building(s)' + (f' [{source}]' if source else ''),
              'bbox                       cols ground eave ridge st roof     axis trees lvl osm']
     for lp in items:
@@ -444,8 +447,8 @@ def main(argv=None) -> int:
     ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with a STAGES file')
     ap.add_argument('--json', action='store_true', help='print JSON instead of a table')
     ap.add_argument('--write', action='store_true', help='keep the height map as .npz')
-    ap.add_argument('--source', choices=SOURCES, help='lidar source (default $LIDAR_SOURCE, else auto: DEFRA when cached, else pristine)')
-    ap.add_argument('--no-osm', action='store_true', help='skip the OSM match (faster)')
+    ap.add_argument('--source', choices=SOURCES, help='lidar source (default $LIDAR_SOURCE, else auto: composite when cached, else pristine)')
+    ap.add_argument('--no-osm', action='store_true', help='skip footprint-map match (faster)')
     a = ap.parse_args(argv)
     if a.tables:
         return write_tables()
@@ -455,7 +458,7 @@ def main(argv=None) -> int:
     ref = reference_world(a.source)
     hm = ref.heightmap(cell)
     if a.write and ref.uses_defra(cell):
-        print('--write skipped: the .npz cache holds pristine maps only; DEFRA maps are rebuilt in about a second', file=sys.stderr)
+        print('--write skipped: the .npz cache holds pristine maps only; composite maps rebuild in about a second', file=sys.stderr)
     elif a.write:
         print(f'wrote {save(hm)}', file=sys.stderr)
     items = report(hm, with_osm=not a.no_osm)

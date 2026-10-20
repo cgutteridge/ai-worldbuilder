@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Registered user aerials: image px <-> Minecraft x,z, and a crop by MC bbox with OSM outlines + 10-block grid.
+"""Registered user aerials: image px <-> Minecraft x,z, and a crop by MC bbox with footprint outlines + 10-block grid.
 
 A registration is <image>.registration.json next to the image: tie points (MC x,z <-> image px), a
 similarity fit px = A . [x, z, 1], and the residual in blocks. Make or refit one with `fit`; crop with `crop`.
@@ -8,7 +8,7 @@ similarity fit px = A . [x, z, 1], and the residual in blocks. Make or refit one
   .venv/bin/python scripts/aerial_registered.py crop reference/aerial/highfield-user/<img>.registration.json x0,z0,x1,z1 out.png [scale]
   .venv/bin/python scripts/aerial_registered.py at   <registration.json> x z      # prints image px
 
-Image is not true ortho (3D-tile render, tall roofs lean ~1-2 blocks), so ties are on OSM corners that coincide
+Image is not true ortho (3D-tile render, tall roofs lean ~1-2 blocks), so ties are on map corners that coincide
 with ground-level or low-roof features; treat accuracy as about 1 block near the ties, 2-3 away from them.
 """
 import json

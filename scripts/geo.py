@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Geocraft coordinate hub: convert, probe, slope, views, survey bboxes, party pitch, tiles.
+"""Place geometry hub: convert, probe, slope, views, survey bboxes, party pitch, tiles.
 
   python3 scripts/geo.py convert --mc 5652,-2492
   python3 scripts/geo.py convert --wgs84 50.903,-1.4044

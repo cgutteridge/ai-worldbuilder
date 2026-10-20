@@ -4,11 +4,11 @@
 Written from first principles. It knows nothing about any one place: no zones, no campus
 polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks three questions.
 
-  WHAT is on the ground?  OSM tags first (roads, paths, car parks, pedestrian areas, grass,
-                          wood), then the z19 aerial for anything OSM does not describe
+  WHAT is on the ground?  vector-map tags first (roads, paths, car parks, pedestrian areas, grass,
+                          wood), then the z19 aerial for anything the map does not describe
                           (ground_sources.py). Shade and canopy hide the ground, so those
                           columns take the lawn/paving around them.
-  HOW HIGH?               DEFRA composite lidar surface Y (rules/evidence-order.md).
+  HOW HIGH?               composite lidar surface Y (rules/evidence-order.md).
                           Only single-column ±1 spikes on hard surfaces are levelled.
   WHAT BLOCK?             One palette, from CRAFTSMANSHIP §3a: tarmac gray_concrete (centre dashes
                           white_concrete, public-road edge smooth_stone), light paving
@@ -17,7 +17,7 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
 Then, per §10: the top block becomes the surface block, raised columns get dirt beneath, and
 everything above the surface is cleared except blocks a neighbour owns or a tree/decor mask holds.
 
-Columns this layer never touches: OSM building footprints, columns any structure build owns,
+Columns this layer never touches: building footprint polygons, columns any structure build owns,
 water and its bank, mapped bridges/steps, and anything outside the cell. Trees and decor are
 separate later passes that write masks; a ground plan that lands on a masked position is a
 conflict and does not apply (undo that mask first: scripts/mask_undo.py).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""OSM building footprints + named streets in Minecraft coords — the frontage authority.
+"""Vector-map building footprints + named streets in Minecraft coords — the frontage authority.
 
-Reads every OSM clip under reference/osm/ (written by osm_extract.py, WGS84),
+Reads every map clip under reference/osm/ (written by osm_extract.py, WGS84),
 reprojects it once to OSGB (EPSG:27700, via ogr2ogr; cached under
 verification/site/osm27700/) and converts to MC X/Z with osgb.py.
 

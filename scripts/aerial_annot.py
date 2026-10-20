@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Annotated aerial crop: z18 portswood mosaic + OSM outlines (way-id tails) + 10-block MC grid.
+"""Annotated aerial crop: z18 portswood mosaic + footprint outlines (way-id tails) + 10-block MC grid.
 
   .venv/bin/python scripts/aerial_annot.py x0,z0,x1,z1 out.png [scale] [mosaic.png] [extra.geojson]
 

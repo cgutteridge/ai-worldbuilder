@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clear leaf blocks with no trunk (Geocraft canopy remnants) in a coverage cell.
+"""Clear leaf blocks with no trunk (import canopy remnants) in a coverage cell.
 
   python3 scripts/clear_floating_leaves.py --cell 48,-44
   python3 scripts/clear_floating_leaves.py --cell 48,-44 --apply
