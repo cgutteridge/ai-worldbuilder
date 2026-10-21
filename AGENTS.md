@@ -35,7 +35,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Skills | `.claude/skills/` |
 | Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](docs/specs/lidar-ghost-v2-and-dryrun-reset.md), [docs/plans/southampton-dryrun-001.md](docs/plans/southampton-dryrun-001.md) |
-| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / repair) |
+| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify; the repair path is being rebuilt, ADR 004, tasks 41-44) |
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; empty registry) |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/`, `templates/new-world-registry/` |
 

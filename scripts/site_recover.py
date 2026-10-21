@@ -17,14 +17,13 @@ Decision, per 'applying' stage (conservative: when unsure it reports and does no
   * flush the world, read the planned-cells file back from the region files (site_kit.readback):
       all planned blocks match -> stage 'applied' (recovered). An aborted mask undo also gets its
       bookkeeping finished (mask_undo.finish_undo).
-      otherwise -> restore the structure saved for THIS apply (restore_structure_backup), verify
-      the plan cells against the region snapshot when one was recorded, stage 'rolled-back' (not
-      done, so the work reappears). Trees/decor re-applied after a mask undo: the structure taken
-      before that undo is restored too (and the archived mask put back), so the cell is not left bare.
+      otherwise -> restore the structure saved for THIS apply (restore_structure_backup), stage
+      'rolled-back' (not done, so the work reappears). Trees/decor re-applied after a mask undo:
+      the structure taken before that undo is restored too (and the archived mask put back), so the cell is not left bare.
   * the stale lock is released only after a successful recovery and only when its owner is the
     owner recorded on the stage.
-Cannot verify: sign text / entities (readback never did); a rollback with no region snapshot
-recorded is reported 'unverified'; region-file snapshots are never copied back (server running).
+Cannot verify: sign text / entities (readback never did); a rollback is not compared against
+any earlier world state (region snapshots were removed, ADR 004; task 44 replaces this recovery).
 """
 from __future__ import annotations
 
@@ -93,21 +92,11 @@ def _load_planned(entry: dict):
     return plan
 
 
-def _matches_snapshot(snapshot: str, positions, world_factory) -> int | None:
-    """Mismatches between the live world and a region snapshot dir over positions (None: cannot read)."""
-    from site_kit import World
-    snap = Path(snapshot) if Path(snapshot).is_absolute() else ROOT / snapshot
-    if not snap.is_dir() or not any(snap.glob('r.*.mca')):
-        return None
-    live, old = world_factory(), World(snap)
-    return sum(1 for p in positions if live.block(*p) != old.block(*p))
-
-
-def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=None, snapshot_check=None) -> dict:
+def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=None) -> dict:
     """Resolve the 'applying' stage of one cell. Returns {'cell', 'action', 'detail'}.
 
     action: 'none' | 'applied' | 'rolled-back' | 'unsure' | 'failed' (prefixed 'would-' unless apply).
-    flush / world_factory / loader / snapshot_check are injectable for tests.
+    flush / world_factory / loader are injectable for tests.
     """
     import site_kit
     flush = flush or _flush
@@ -176,7 +165,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         res['action'] = 'unsure'
         say('world differs from the plan and no structure backup is recorded for this apply. Nothing done.')
         return res
-    steps.append(('apply', e['structure'], e.get('snapshot'), list(plan.cells)))
+    steps.append(('apply', e['structure'], list(plan.cells)))
     prev = e.get('previous') or {}
     undo = prev.get('undo_snapshot') if key in ('trees', 'decor') and prev.get('status') == 'undone' else None
     if undo:
@@ -187,7 +176,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         positions = []
         if undo.get('planned') and (ROOT / undo['planned']).exists():
             positions = [tuple(int(v) for v in k.split(',')) for k in json.loads((ROOT / undo['planned']).read_text())]
-        steps.append(('before-undo', undo['structure'], undo.get('snapshot'), positions))
+        steps.append(('before-undo', undo['structure'], positions))
     say('would restore: ' + ' then '.join(f'{n} {s["name"]}' for n, s, *_ in steps))
     if not apply:
         res['action'] = 'would-rolled-back'
@@ -199,16 +188,11 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         if loader is None:
             import restore_structure_backup
             loader = restore_structure_backup.load_structure
-        for name, struct, snapshot, positions in steps:
+        for name, struct, _positions in steps:
             loader(struct['name'], struct['from'])
             flush()
-            check = (snapshot_check or (lambda s, p: _matches_snapshot(s, p, world_factory)))
-            bad = check(snapshot, positions) if snapshot and positions else None
-            verified.append({'step': name, 'structure': struct['name'], 'snapshot': snapshot,
-                             'verified': None if bad is None else bad == 0, 'mismatches_vs_snapshot': bad})
-            say(f'restored {name}: {struct["name"]} ({"unverified: no readable snapshot" if bad is None else str(bad) + " mismatches vs snapshot"})')
-            if bad:
-                raise RuntimeError(f'{bad} blocks differ from snapshot {snapshot} after restoring {struct["name"]}')
+            verified.append({'step': name, 'structure': struct['name']})
+            say(f'restored {name}: {struct["name"]}')
     except (Exception, SystemExit) as exc:                # noqa: BLE001
         res['action'] = 'failed'
         say(f'rollback failed: {exc}. Stage stays "applying"; original lock restored. Report to the user.')

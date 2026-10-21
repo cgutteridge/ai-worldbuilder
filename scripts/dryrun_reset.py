@@ -99,9 +99,9 @@ def mcp_world_reachable() -> bool:
 
     @returns: True when the bridge responds
     """
-    import region_backup as rb
+    import mcp_probe
 
-    return rb.mcp_world_reachable()
+    return mcp_probe.mcp_world_reachable()
 
 
 def list_region_files(region_dir: Path) -> list[Path]:

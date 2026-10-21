@@ -91,12 +91,6 @@ def cell_contains(cell: tuple[int, int], x: int, z: int) -> bool:
     return x0 <= x <= x1 and z0 <= z <= z1
 
 
-def cell_bbox_str(cell: tuple[int, int], margin: int = 0) -> str:
-    """Region-backup bbox for the cell: x0,z0,x1,z1, grown by margin blocks (tree overhang)."""
-    x0, z0, x1, z1 = cell_box(cell)
-    return ','.join(str(v) for v in (x0 - margin, z0 - margin, x1 + margin, z1 + margin))
-
-
 def ignored_builds(cell: tuple[int, int]) -> frozenset:
     """Builds that do not count as owners for this cell's ground pass.
 
@@ -611,12 +605,11 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
-    """Live apply: lock held, region snapshot first, re-plan from the live world, readback.
+    """Live apply: lock held, re-plan from the live world, readback.
 
     Returns 0 on a clean readback, otherwise 1.
     """
     import os
-    import subprocess
     from site_kit import apply
 
     if not os.environ.get('SITE_OWNER'):
@@ -633,8 +626,6 @@ def apply_cell(cell: tuple[int, int]) -> int:
         print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
         return 1
     print(f'{name}: {len(plan.cells)} cells planned, stats {dict(stats)}')
-    subprocess.run([sys.executable, str(ROOT / 'scripts/region_backup.py'), 'snap',
-                    '--bbox', cell_bbox_str(cell), '--name', name], check=True)
     rb = apply(plan, modifies=ignored, stage='ground-layer', cell=cell,
                strict=True, meta={'note': 'first-principles ground (vector map + aerial); verify: patrol, visuals; trees and decor re-run after'})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')

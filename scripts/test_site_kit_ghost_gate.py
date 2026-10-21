@@ -81,7 +81,6 @@ class GhostGateBase(unittest.TestCase):
         patches = [
             mock.patch.object(site_kit, 'OUT', t / 'out'),
             mock.patch.object(site_stages, 'CELLS', t / 'cells'),
-            mock.patch.object(site_stages, 'SNAPSHOTS', t / 'snaps'),
             mock.patch.object(site_lock, 'LOCK', t / 'LOCK.json'),
             mock.patch.object(site_kit, 'World', lambda region=None: View(FakePaced.world)),
             mock.patch.object(site_kit, '_bring_player', lambda *a, **k: None),

@@ -30,9 +30,9 @@ import numpy as np
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import plan_name as ground_plan_name, bare, cell_bbox_str, ignored_builds, is_air, load_masked_positions  # noqa: E402
+from ground_layer import plan_name as ground_plan_name, bare, ignored_builds, is_air, load_masked_positions  # noqa: E402
 from surface_probe import short_id, surface_y  # noqa: E402
-from pass_mask import OVERHANG_MARGIN, build_mask, cell_bounds, clip_to_cell  # noqa: E402
+from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from plant_cell_canopy import MOSAIC_TILE0, RNG_SEED, bush_voxels, mosaic_px, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World, built_cells  # noqa: E402
@@ -426,9 +426,8 @@ def run(cell: tuple[int, int]) -> int:
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
-    """Live apply: lock + snapshot first, re-plan from the live world, readback, then the mask."""
+    """Live apply: lock first, re-plan from the live world, readback, then the mask."""
     import os
-    import subprocess
     from site_kit import apply
 
     if not os.environ.get('SITE_OWNER'):
@@ -444,8 +443,6 @@ def apply_cell(cell: tuple[int, int]) -> int:
     mask = build_mask('trees', cell, name, placed,
                       lambda p: is_air(world.block(*p)) or 'leaves' in bare(world.block(*p)))   # leaf-on-leaf merge
     print(f'{name}: {len(placed)} blocks, {len(rep["trees"])} crowns')
-    subprocess.run([sys.executable, str(ROOT / 'scripts/region_backup.py'), 'snap',
-                    '--bbox', cell_bbox_str(cell, OVERHANG_MARGIN), '--name', name], check=True)
     rb = apply(plan, modifies=ignored_builds(cell), stage='trees', cell=cell,
                strict=True, meta={'crowns': len(rep['trees'])}, mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')

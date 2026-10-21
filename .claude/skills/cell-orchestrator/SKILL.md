@@ -44,7 +44,7 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 
 0. Take the JSON from `cell_registry.py next`. Kinds: `issue`, `layer` (ground|trees|decor), or `feature`.
 1. Raise the marker for the target cell if needed (`cell_marker.py --raise tx,tz` under SITE_OWNER) — `next` does not.
-2. Build: ONE blocking general-purpose Agent per task, foreground, one at a time. Prompt names the task JSON, points at `rules/`, and says: claim the lock with a unique owner, region snapshot before apply, SITE_OWNER, readback 0 mismatches, patrol, registry hooks update flags on clean apply, release the lock, report in under 200 words.
+2. Build: ONE blocking general-purpose Agent per task, foreground, one at a time. Prompt names the task JSON, points at `rules/`, and says: claim the lock with a unique owner, SITE_OWNER, readback 0 mismatches, patrol, registry hooks update flags on clean apply, release the lock, report in under 200 words.
 3. When the agent returns: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
 4. Report to the user in a few lines. Then stop at the stop point.
 

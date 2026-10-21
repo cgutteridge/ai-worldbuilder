@@ -25,18 +25,6 @@ class CleanupTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _snaps(self, *names):
-        for n in names:
-            d = self.root / 'backups/regions' / n
-            d.mkdir(parents=True)
-            (d / 'r.0.0.mca').write_bytes(b'x' * 10)
-
-    def test_snaps_keep_newest_and_open_work(self):
-        self._snaps('2026-10-01-000001-Q-001', '2026-10-02-000001-Q-002', '2026-10-03-000001-Q-003',
-                    '2026-10-04-000001-Q-004')
-        got = {i.path.name for i in sc.plan_region_snaps(keep=1, text='Issue I-9 needs the Q-002 snap')}
-        self.assertEqual(got, {'2026-10-01-000001-Q-001', '2026-10-03-000001-Q-003'})
-
     def test_views_age_and_mention(self):
         v = self.root / 'verification/site/views'
         v.mkdir(parents=True)

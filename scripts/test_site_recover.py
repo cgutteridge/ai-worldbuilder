@@ -102,7 +102,6 @@ class Base(unittest.TestCase):
         patches = [
             mock.patch.object(site_kit, 'OUT', t / 'out'),
             mock.patch.object(site_stages, 'CELLS', t / 'cells'),
-            mock.patch.object(site_stages, 'SNAPSHOTS', t / 'snaps'),
             mock.patch.object(site_lock, 'LOCK', t / 'LOCK.json'),
             mock.patch.object(site_kit, 'World', lambda region=None: View(FakePaced.world)),
             mock.patch.object(site_kit, '_bring_player', lambda *a, **k: None),
@@ -302,7 +301,7 @@ class TestRecover(Aborted):
         def loader(struct_name, origin):
             loaded.append((struct_name, origin))
             return rsb.load_structure(struct_name, origin, m=FakePaced())
-        res = self.recover(loader=loader, snapshot_check=lambda s, p: 0)
+        res = self.recover(loader=loader)
         self.assertEqual(res['action'], 'rolled-back')
         self.assertEqual(loaded, [(name, [X0 - 1, 60, Z0 - 1])])
         self.assertEqual(FakePaced.world, before)
@@ -361,19 +360,6 @@ class TestRecover(Aborted):
         self.assertEqual(res['action'], 'unsure')
         self.assertEqual(self.stages()['trees']['status'], 'applying')
 
-    def test_snapshot_mismatch_after_restore_fails_closed(self):
-        self.abort(fill_limit=1)
-        data = json.loads(site_stages.stage_path(CELL).read_text())
-        data['stages']['trees']['snapshot'] = 'backups/regions/x'
-        site_stages.write(CELL, data)
-        self.set_lock('alice', age_min=200)
-        before = json.loads(site_lock.LOCK.read_text())
-        res = self.recover(loader=lambda n, o: rsb.load_structure(n, o, m=FakePaced()),
-                           snapshot_check=lambda s, p: 3)
-        self.assertEqual(res['action'], 'failed')
-        self.assertEqual(self.stages()['trees']['status'], 'applying')
-        self.assertEqual(json.loads(site_lock.LOCK.read_text()), before)      # original (stale) lock put back
-
     def test_status_lists_stale_lock_and_in_flight(self):
         self.abort(fill_limit=1)
         self.set_lock('alice', age_min=200)
@@ -412,7 +398,7 @@ class TestUndoPaths(Aborted):
             loaded.append(n)
             return rsb.load_structure(n, o, m=FakePaced())
         with mock.patch('pass_mask.mask_path', lambda p, c, d=None: self.t / 'masks' / f'{p}-{c[0]}_{c[1]}.mask.json'):
-            res = self.recover(loader=loader, snapshot_check=lambda s, p: 0)
+            res = self.recover(loader=loader)
         self.assertEqual(res['action'], 'rolled-back')
         self.assertEqual(loaded, ['southampton_refine:before_p', 'ns:before_undo'])    # apply first, then pre-undo
         self.assertEqual(FakePaced.world, trees)                                       # not left bare
@@ -478,9 +464,8 @@ class TestUndoFailsClosed(Base):
     def test_live_undo_readback_mismatch_raises_and_keeps_mask(self):
         FakePaced.world.update({(X0, 61, Z0): 'minecraft:oak_leaves', (X0 + 1, 61, Z0): 'minecraft:oak_leaves'})
         FakePaced.skip_fills = True
-        with mock.patch('subprocess.run'), mock.patch.object(site_lock, 'check', lambda owner=None: None), \
-                mock.patch.object(mask_undo, 'plan_name', lambda tx, tz, s: f'u_{s}', create=True), \
-                mock.patch('ground_layer.cell_bbox_str', lambda c, m=0: '0,0,1,1'):
+        with mock.patch.object(site_lock, 'check', lambda owner=None: None), \
+                mock.patch.object(mask_undo, 'plan_name', lambda tx, tz, s: f'u_{s}', create=True):
             with self.assertRaises(SystemExit):
                 mask_undo.run(CELL, 'trees', live=True)
         self.assertTrue(self.mpath.exists())
@@ -488,9 +473,8 @@ class TestUndoFailsClosed(Base):
 
     def test_clean_live_undo_archives_the_mask(self):
         FakePaced.world.update({(X0, 61, Z0): 'minecraft:oak_leaves', (X0 + 1, 61, Z0): 'minecraft:oak_leaves'})
-        with mock.patch('subprocess.run'), mock.patch.object(site_lock, 'check', lambda owner=None: None), \
-                mock.patch.object(mask_undo, 'plan_name', lambda tx, tz, s: f'u_{s}', create=True), \
-                mock.patch('ground_layer.cell_bbox_str', lambda c, m=0: '0,0,1,1'):
+        with mock.patch.object(site_lock, 'check', lambda owner=None: None), \
+                mock.patch.object(mask_undo, 'plan_name', lambda tx, tz, s: f'u_{s}', create=True):
             self.assertEqual(mask_undo.run(CELL, 'trees', live=True), 0)
         self.assertFalse(self.mpath.exists())
         self.assertEqual(self.stages()['trees']['status'], 'undone')

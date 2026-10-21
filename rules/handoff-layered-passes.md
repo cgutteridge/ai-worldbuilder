@@ -9,10 +9,10 @@ ring focus and holds live in the active world's **registry/** (marker + hold fie
 ------------------------------------------------------------------------
  1. MAJOR FEATURES — buildings, and anything large that gets its own thing:
     bridges, tunnels, other big structures. Each is its own build with its own
-    undo (region snapshot + origin check, see §4). Not mask-undone.
+    undo (see §4; the repair path is being rebuilt, ADR 004 and tasks 41-44). Not mask-undone.
  2. GROUND — redo every ground-level block not covered by a major feature.
     Includes the above-ground strip of all non-air blocks not owned by a neighbour, because trees and decor may only
-    go on air. Clipped to the cell bounds. Not mask-undone (rerun or snapshot).
+    go on air. Clipped to the cell bounds. Not mask-undone (rerun the pass).
  3. TREES — placed only on air. Writes a mask (§3).
  4. DECOR — hedges, street furniture and other minor things we are sure work.
     Placed only on air. Writes a mask (§3). Hedges live here, not in ground.
@@ -71,21 +71,20 @@ Undo passes run in reverse order of the passes that wrote them.
 ------------------------------------------------------------------------
 4. MAJOR FEATURES: UNDO IS NOT THE MASK
 ------------------------------------------------------------------------
-Buildings, bridges and tunnels are big and do not write masks. Their undo is a region
-snapshot taken before the build, with a fingerprint of a few known blocks inside the
-box recorded in the stage file. Before any restore:
-  - check the fingerprint at the planned origin (this is what the last restore lacked:
-    the structure file was 121x15x89 but the restore box was 94x15x85, and nothing
-    checked the origin);
-  - check the restore's bounds equal the snapshot's bounds;
-  - after the restore, compare the fingerprint again and look at the view.
+Buildings, bridges and tunnels are big and do not write masks. Region snapshots and restores
+no longer exist (ADR 004, task 40). Their undo is the planned undo pass or, later, the journal
+reconcile; the repair path is being rebuilt, see docs/adr/004-cell-journal.md and tasks 41-44.
+Until then, before any manual put-back of a feature:
+  - check a few known blocks (the fingerprint recorded in the stage file) at the planned origin
+    (an earlier restore used a box of the wrong size and nothing checked the origin);
+  - after the put-back, compare the fingerprint again and look at the view.
 
 ------------------------------------------------------------------------
 5. APPLY JOURNAL (not progress SoT)
 ------------------------------------------------------------------------
 site/cells/<tx>_<tz>-STAGES.json records in-flight applies for recovery:
   status      applying | applied | applied-with-mismatches | rolled-back | …
-  plan / mask file / snapshot path / fingerprint
+  plan / mask file / fingerprint
 Progress SoT is `registry/cells.json` + `registry/features.json`. A cell is done when
 the registry says DONE (layers + features + no open warnings/issues), readback was clean,
 patrol found no clashes, and a visual check against aerial/photos passed.
@@ -115,10 +114,10 @@ Needs handling:
     it must skip masked positions (decide when we first run it).
   - Trees rely on the ground under them. If ground is redone after trees, trunks can
     float. Hence the fixed order.
-  - Major features are not mask-undoable (§4). Keep their snapshots until the cell is
-    verified.
+  - Major features are not mask-undoable (§4). Keep their plan and stage records until the
+    cell is verified.
   - The air-only check happens at plan time and apply time; the world can change in
-    between (the lesson from the restore).
+    between (the lesson from an earlier restore).
 
 ------------------------------------------------------------------------
 8. OPEN QUESTIONS
@@ -126,7 +125,7 @@ Needs handling:
   - Should ground redo skip masked positions, or require undo first?
   - Keep old masks after a cell is verified, or delete them to save space?
   - Do bridges and tunnels need a separate pass type, or are they major features with
-    their own snapshots (current assumption: the latter)?
+    their own undo (current assumption: the latter)?
 
 ------------------------------------------------------------------------
 9. NEXT STEPS
@@ -238,11 +237,11 @@ CONFIRMED §10 (user, 2026-10-14)
 13. HANDOVER (2026-10-14, end of session) — HISTORICAL
 ------------------------------------------------------------------------
 Kept as a worked example of the first ground pass on 48,-44. Do not reopen
-QUEUE/CELL-HOLDS paths; use the registry. Snapshot path and footprint override
+QUEUE/CELL-HOLDS paths; use the registry. Footprint override
 notes below remain useful archaeology.
 
   - Ground layer APPLIED to cell 48,-44 (plan highfield_48_m44_ground).
-  - Region snapshot: backups/regions/2026-10-14-024133-highfield_48_m44_ground
+  - (A region snapshot was taken then; region backups no longer exist, ADR 004.)
   - Footprint guard overridden for THAT cell only (7 polished_diorite blocks);
     do not copy the override elsewhere.
 

@@ -100,7 +100,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 - New world repository per dry run (reuse active world checkout; optional dated archives only).
 - Full rewrite of ADR 003 (pointer amendment only).
 - Automating “player leave world / rejoin” in Minecraft.
-- Bake-off 3×3 region snap as the default reset baseline (orthogonal to lidar ghost tool).
+- Bake-off 3×3 region snap as the default reset baseline (orthogonal to lidar ghost tool). Superseded: region snaps were removed (ADR 004, task 40).
 - Stricter “any real pass clears all feature ghosts in cell” unless strip proves insufficient in practice.
 
 ## Further Notes

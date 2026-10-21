@@ -35,9 +35,9 @@ from terrace import snap_slope  # noqa: E402
 SKIP_LIDAR_TOP = ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
 
 SURVEY_PRESETS = {
-    'house': {'pad_w': 28, 'pad_e': 28, 'pad_n': 35, 'pad_s': 55, 'radius_m': 120, 'region_margin': 1},
-    'terrace': {'pad_w': 45, 'pad_e': 45, 'pad_n': 50, 'pad_s': 90, 'radius_m': 250, 'region_margin': 2},
-    'campus': {'pad_w': 90, 'pad_e': 90, 'pad_n': 90, 'pad_s': 90, 'radius_m': 400, 'region_margin': 2},
+    'house': {'pad_w': 28, 'pad_e': 28, 'pad_n': 35, 'pad_s': 55, 'radius_m': 120},
+    'terrace': {'pad_w': 45, 'pad_e': 45, 'pad_n': 50, 'pad_s': 90, 'radius_m': 250},
+    'campus': {'pad_w': 90, 'pad_e': 90, 'pad_n': 90, 'pad_s': 90, 'radius_m': 400},
 }
 
 def parse_xz(spec: str) -> tuple[int, int]:
@@ -311,10 +311,6 @@ def survey_bbox(x: int, z: int, preset: str) -> dict:
             ),
             'frontage': f'python3 scripts/osm_footprints.py frontage --bbox {bbox}',
             'plots': f'python3 scripts/osm_footprints.py plots --bbox {bbox}',
-            'region_snap': (
-                f'python3 scripts/region_backup.py snap --bbox {bbox} '
-                f'--margin {p["region_margin"]} --name survey'
-            ),
             'aerial_annot': f'python3 scripts/aerial_annot.py {bbox} reference/aerial/survey-annot.png',
         },
     }

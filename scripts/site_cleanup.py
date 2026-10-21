@@ -8,7 +8,7 @@
   python3 scripts/site_cleanup.py log               # the cleanup log
 
 Classes
-  SAFE (apply with no class name): region-snaps, views, screenshots, cells-cache, audits
+  SAFE (apply with no class name): views, screenshots, cells-cache, audits
   JUDGED (apply only when named): reference-junk
   REPORT-ONLY (never deleted here): reference-unlogged, build-scripts
 
@@ -35,7 +35,6 @@ SITE = ROOT / 'site'
 LOG = SITE / 'CLEANUP-LOG.txt'
 MANIFEST = ROOT / 'reference' / 'manifest.jsonl'
 
-KEEP_SNAPS = 5            # newest region snaps kept (rules/process.md §2a)
 BUILD_DAYS = 14           # a build script untouched this long and imported nowhere is a retire candidate
 VIEW_DAYS = 7             # verification/site/views older than this and named in no live site file
 SHOT_DAYS = 7             # instance/screenshots
@@ -44,7 +43,7 @@ DUE_DAYS = 7              # a cleanup is due when the last logged apply is this 
 DUE_BYTES = 1 << 30       # ... or the SAFE classes could free this much
 BLANK_STDDEV = 3.0        # grey-level spread below this on a 64px thumbnail = blank / uniform image
 
-SAFE = ('region-snaps', 'views', 'screenshots', 'cells-cache', 'audits')
+SAFE = ('views', 'screenshots', 'cells-cache', 'audits')
 JUDGED = ('reference-junk',)
 REPORT_ONLY = ('reference-unlogged', 'build-scripts')
 
@@ -69,11 +68,6 @@ def mb(n: int) -> str:
     return f'{n / 2**20:,.0f} MB'
 
 
-def open_work_text() -> str:
-    """Text of the open ISSUES and QUEUE files only: what can still need an old snap."""
-    return '\n'.join((SITE / n).read_text(errors='replace') for n in ('ISSUES.txt', 'QUEUE.txt') if (SITE / n).exists())
-
-
 def live_site_text() -> str:
     """Text of the live site/*.txt and *.md files (not site/archive): what open work can still mention."""
     return '\n'.join(p.read_text(errors='replace') for p in SITE.glob('*') if p.suffix in ('.txt', '.md'))
@@ -84,23 +78,6 @@ def _old(p: Path, days: float, now: float) -> bool:
 
 
 # ---------------------------------------------------------------- SAFE classes
-
-def plan_region_snaps(keep: int = KEEP_SNAPS, text: str | None = None) -> list[Item]:
-    """Region snaps beyond the newest ``keep``, except the newest snap of any name open ISSUES/QUEUE items mention."""
-    root = ROOT / 'backups' / 'regions'
-    if not root.exists():
-        return []
-    text = (open_work_text() if text is None else text).lower()
-    dirs = sorted((d for d in root.iterdir() if d.is_dir()), reverse=True)
-    out, held = [], set()
-    for d in dirs[keep:]:
-        label = re.sub(r'^\d{4}-\d\d-\d\d-\d{6}-?', '', d.name)
-        if label and label.lower() in text and label not in held:
-            held.add(label)
-            continue
-        out.append(Item(d, f'snap beyond newest {keep}', size_of(d)))
-    return out
-
 
 def plan_views(days: float = VIEW_DAYS, now: float | None = None, text: str | None = None) -> list[Item]:
     """View PNGs older than ``days`` that no live site file names (site_views.py regenerates them)."""
@@ -214,7 +191,7 @@ def plan_build_scripts(days: float = BUILD_DAYS, now: float | None = None) -> li
 
 
 PLANNERS = {
-    'region-snaps': plan_region_snaps, 'views': plan_views, 'screenshots': plan_screenshots,
+    'views': plan_views, 'screenshots': plan_screenshots,
     'cells-cache': plan_cells_cache, 'audits': plan_audits,
     'reference-junk': plan_reference_junk, 'reference-unlogged': plan_reference_unlogged,
     'build-scripts': plan_build_scripts,

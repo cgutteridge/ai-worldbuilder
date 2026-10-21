@@ -8,7 +8,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 ------------------------------------------------------------------------
  registry/cells.json    cell layers, marker, holds, coverage warnings (SoT)
  registry/features.json feature builds + cells they touch (SoT)
- scripts/cell_registry.py  next / status / issues / hold / verify / repair
+ scripts/cell_registry.py  next / status / issues / hold / verify
  site/NOTES.txt         overview, accuracy rules (active world; read first)
  site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
@@ -75,33 +75,19 @@ BUILT plan in place to “fix” the world.
                      Fix or schedule high issues before starting the next.
 
 ------------------------------------------------------------------------
-2a. REGION BACKUPS (disk-cheap undo for live edits)
+2a. UNDO (no region backups, ADR 004)
 ------------------------------------------------------------------------
- Do NOT copy the whole 1.6G world each time. Layered undo:
+ Region-file backup and restore were removed (ADR 004, task 40). Do not copy,
+ snap or restore .mca files by hand.
 
  1. Kit builds: site_kit structure backup (verification/site/*-backup.json)
-    — primary undo for planned kit applies.
- 2. Sparse region snap before a live apply that touches terrain outside a
-    tiny kit box, or before any hand edit / wide experiment:
-      python3 scripts/region_backup.py snap --bbox x0,z0,x1,z1 --name Q-nnn
-    Copies only intersecting .mca files (± optional --margin regions).
-    Lands in backups/regions/<stamp>-<name>/ (gitignored).
- 3. Restore a snap (bad apply rollback of a region set; whole-world only):
-      Quit the world first (title / close save).
-      python3 scripts/region_backup.py restore <stamp>-<name> --confirm-logged-out
-    Bake-off ghost: use `model_bakeoff.py restore-ghost --confirm-logged-out`
-    (or pass `--region` to the bakeoff save path) — bare restore writes into
-    the snapshot's recorded SouthamptonAI region. Do not hand-`cp` `.mca`
-    files — use these commands so checksums are verified.
- 4. Cold full copy: keep Downloads/Southampton2023.zip (or one rare
-    full save clone) — not per-queue-item.
+    stays the undo for planned kit applies; `site_recover.py` uses it.
+ 2. Mask undo for the layered passes (trees, decor): scripts/mask_undo.py.
+ 3. "Undo" for anything else means the planned undo pass or, later, the
+    journal reconcile. The repair path is being rebuilt, see ADR 004
+    (docs/adr/004-cell-journal.md) and tasks 41-44.
 
- Retention: keep the newest 5 snaps by default
-   (`region_backup.py prune --keep 5`). Keep longer only if an open
-   ISSUE still needs that snap. One region ≈ 3–4 MB; a street block is
-   usually 1–4 files.
-
- Always `server_save` / save the world before snapping so region files
+ Always `server_save` / save the world before reading region files so they
  match what you think you are editing.
 
 ------------------------------------------------------------------------
@@ -282,7 +268,7 @@ BUILT plan in place to “fix” the world.
              top-down view beside the aerial;
              3 written matches/mismatches in REVIEWS.
  Records     queue/issue notes and reference/manifest match the world.
- Backups     kit structure backup present; region snap if the edit was wide.
+ Backups     kit structure backup present.
 
 Outcome: each finding → ISSUES.txt (severity, place, location, action).
 “Replace what does not match evidence” is a valid action.

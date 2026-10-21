@@ -86,7 +86,7 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
             region.mkdir(parents=True)
             other.mkdir(parents=True)
             (bakeoff / 'session.lock').write_bytes(b'x')
-            with mock.patch('region_backup.mcp_world_reachable', return_value=True):
+            with mock.patch('mcp_probe.mcp_world_reachable', return_value=True):
                 self.assertEqual(
                     site_kit.mcp_reported_gameworld(region=region), 'bakeoff'
                 )
