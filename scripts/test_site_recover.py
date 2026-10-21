@@ -111,7 +111,10 @@ class Base(unittest.TestCase):
             mock.patch('osm_footprints.guard', lambda cells: {'outside': {}, 'blind': []}),
             mock.patch('roof_lint.ridge_jogs', lambda cells: []),
             mock.patch('time.sleep', lambda s: None),
-            mock.patch.dict(os.environ, {'SITE_OWNER': 'alice'}),
+            mock.patch.dict(os.environ, {
+                'SITE_OWNER': 'alice',
+                'AI_WORLDBUILDER_REGISTRY_ROOT': str(t),
+            }),
             mock.patch.object(site_kit, '_reconcile_lidar_ghosts', lambda *a, **k: None),
         ]
         for p in patches:
@@ -141,6 +144,29 @@ class TestStateMachine(Base):
         self.assertEqual(e['status'], 'applied')
         self.assertEqual(e['plan'], 'p')
         self.assertEqual(e['readback']['mismatches'], 0)
+
+    def test_clean_feature_apply_marks_registry_built(self):
+        import cell_registry as cr
+        self.run_apply()
+        store = cr.RegistryStore(self.t)
+        feat = store.feature('p')
+        self.assertIsNotNone(feat)
+        self.assertEqual(feat['status'], 'built')
+        self.assertIn('48,-44', feat['cells'])
+
+    def test_clean_ground_apply_sets_registry_generated(self):
+        import cell_registry as cr
+        self.run_apply(stage='ground-layer', cell=CELL)
+        store = cr.RegistryStore(self.t)
+        self.assertEqual(store.cell('48,-44')['ground'], 'generated')
+
+    def test_strict_mismatch_does_not_set_registry_flags(self):
+        import cell_registry as cr
+        FakePaced.skip_fills = True
+        with self.assertRaises(SystemExit):
+            self.run_apply(stage='ground-layer', cell=CELL, strict=True)
+        store = cr.RegistryStore(self.t)
+        self.assertEqual(store.cell('48,-44')['ground'], 'none')
 
     def test_entry_records_what_recovery_needs(self):
         FakePaced.abort_on_save = True

@@ -69,5 +69,12 @@ if __name__ == '__main__':
     apply(plan, dry=not args.apply, modifies=())
     if args.apply:
         stage_record(cell, 'applied', name, n)
+        try:
+            import registry_hooks
+            # Above-ground strip removes foliage/decor mass in the cell.
+            registry_hooks.on_layer_cleared(cell, 'trees')
+            registry_hooks.on_layer_cleared(cell, 'decor')
+        except Exception as exc:  # noqa: BLE001
+            print(f'registry strip clear failed: {exc}', file=sys.stderr)
     else:
         print('stage record not written (dry-run)')

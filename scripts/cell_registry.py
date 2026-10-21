@@ -324,23 +324,28 @@ class RegistryStore:
         cell['decor'] = bool(value)
         self._save(cells, features)
 
-    def set_marker(self, cid: str, marker: str) -> None:
+    def set_marker(self, cid: str, marker: str, *, replace_existing: bool = False) -> None:
         """Raise or clear the marker. At most one cell may have marker=up.
 
         @param cid: ``tx,tz``
         @param marker: ``up`` or ``none``
-        @raises RegistryError: if raising would create a second marker
+        @param replace_existing: when raising, clear any other marker first
+            (used by cell_marker writers; LLM CLI keeps the refuse-on-conflict rule)
+        @raises RegistryError: if raising would create a second marker and
+            ``replace_existing`` is false
         """
         if marker not in MARKER_VALUES:
             raise RegistryError(f'invalid marker {marker!r}; want up|none')
         cells = self._load_cells()
         features = self._load_features()
         if marker == 'up':
-            for other, rec in cells.items():
+            for other, rec in list(cells.items()):
                 if other != cid and rec.get('marker') == 'up':
-                    raise RegistryError(
-                        f'single marker: cell {other} already has marker=up'
-                    )
+                    if not replace_existing:
+                        raise RegistryError(
+                            f'single marker: cell {other} already has marker=up'
+                        )
+                    rec['marker'] = 'none'
         cell = self._ensure_cell(cells, cid)
         cell['marker'] = marker
         self._save(cells, features)

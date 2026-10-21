@@ -223,6 +223,17 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     site_stages.finish(cell, key, 'rolled-back', recovered={
         'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'restored': verified,
         'used_undo_snapshot': undo['structure'] if undo else None})
+    try:
+        import registry_hooks
+        if key in ('ground-layer', 'ground'):
+            registry_hooks.on_layer_cleared(cell, 'ground')
+        elif key in ('trees', 'decor'):
+            registry_hooks.on_layer_cleared(cell, key)
+        elif key.startswith('feature-'):
+            fid = e.get('plan') or key[len('feature-'):]
+            registry_hooks.on_feature_reopened(fid)
+    except Exception as exc:  # noqa: BLE001
+        say(f'registry rollback clear failed: {exc}')
     site_lock.LOCK.unlink(missing_ok=True)
     say('lock released; stage rolled-back (work reappears in cell_gaps)')
     res['action'] = 'rolled-back'

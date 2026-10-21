@@ -1,4 +1,5 @@
 """Unit tests for scripts/cell_marker.py (no Minecraft)."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -160,11 +161,14 @@ class TestFocusGhosts(unittest.TestCase):
             old = cm.CURRENT_FILE
             cm.CURRENT_FILE = Path(tmp) / 'CURRENT-CELL.json'
             try:
-                with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts:
+                with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts, \
+                     mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': tmp}):
                     code = cm.cmd_adopt((48, -44), ghost_ring=1)
                 self.assertEqual(code, 0)
                 ghosts.assert_called_once_with((48, -44), dry=False, ring=1, skip=False)
                 self.assertEqual(cm.read_current(), (48, -44))
+                import cell_registry as cr
+                self.assertEqual(cr.RegistryStore(Path(tmp)).current_cell(), (48, -44))
             finally:
                 cm.CURRENT_FILE = old
 

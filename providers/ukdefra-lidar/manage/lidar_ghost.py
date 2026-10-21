@@ -374,6 +374,10 @@ def supersede_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None,
                            note: str = 'real ground layer applied') -> None:
     """Mark ghost-ground superseded after real ground overwrites blocks.
 
+    Registry ground is set to ``generated`` by the real ground-layer apply hook;
+    this only updates STAGES. When called alone (tests), also clear ghost+features
+    demotion is handled by the ground-layer registry write.
+
     @param cell: (tx, tz)
     @param cells_dir: override (tests)
     @param note: human reason stored on the stage entry
@@ -407,6 +411,9 @@ def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False
                                  note: str = 'real feature overlap') -> None:
     """Mark ghost-features terminal so idempotent ensure can re-run when needed.
 
+    Also demotes registry ground ``ghost+features`` → ``ghost`` when features are
+    fully stripped (not partial).
+
     @param cell: (tx, tz)
     @param partial: use ``partial`` instead of ``stripped``
     @param cells_dir: override (tests)
@@ -416,6 +423,12 @@ def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False
     prev = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
     if prev in GHOST_APPLIED | GHOST_TERMINAL:
         _write_ghost_stage(cell, STAGE_FEATURES, status, cells_dir, note=note)
+    if not partial:
+        try:
+            import registry_hooks
+            registry_hooks.on_ghost_features_stripped([cell])
+        except Exception as exc:  # noqa: BLE001
+            print(f'registry ghost strip failed: {exc}', file=sys.stderr)
 
 
 def cells_for_positions(positions) -> set[tuple[int, int]]:

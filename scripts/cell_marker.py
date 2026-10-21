@@ -483,6 +483,11 @@ def cmd_adopt(cell: tuple[int, int], *, ghost_ring: int | None = None,
         return 1
     write_current(cell)
     print(f'current: {cell[0]},{cell[1]}')
+    try:
+        import registry_hooks
+        registry_hooks.on_marker_raise(cell)
+    except Exception as exc:  # noqa: BLE001
+        print(f'registry marker adopt failed: {exc}', file=sys.stderr)
     # Adopt records focus without placing wool; still need neighbour skyline.
     ensure_neighbour_ghosts(cell, dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
@@ -514,6 +519,11 @@ def cmd_raise(tx: int, tz: int, dry: bool, *, ghost_ring: int | None = None,
         return 0
     apply(plan, dry=False, protect=_protect_not_air)
     write_current((tx, tz))
+    try:
+        import registry_hooks
+        registry_hooks.on_marker_raise((tx, tz))
+    except Exception as exc:  # noqa: BLE001
+        print(f'registry marker raise failed: {exc}', file=sys.stderr)
     ensure_neighbour_ghosts((tx, tz), dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
 
@@ -539,6 +549,11 @@ def cmd_clear(tx: int, tz: int, dry: bool, stray: bool = False, y: int | None = 
         print('no marker registry on disk', file=sys.stderr)
         if cur == (tx, tz) and not dry:
             write_current(None)
+            try:
+                import registry_hooks
+                registry_hooks.on_marker_clear((tx, tz))
+            except Exception as exc:  # noqa: BLE001
+                print(f'registry marker clear failed: {exc}', file=sys.stderr)
             print('released focus (ring already gone)')
         return 1
     if not plan.cells:
@@ -548,6 +563,11 @@ def cmd_clear(tx: int, tz: int, dry: bool, stray: bool = False, y: int | None = 
             (OUT / f'{plan.name}-backup.json').unlink(missing_ok=True)
             if cur == (tx, tz):
                 write_current(None)
+                try:
+                    import registry_hooks
+                    registry_hooks.on_marker_clear((tx, tz))
+                except Exception as exc:  # noqa: BLE001
+                    print(f'registry marker clear failed: {exc}', file=sys.stderr)
         return 0
     if dry:
         print(f'dry-run: would clear {len(plan.cells)} cells')
@@ -558,6 +578,12 @@ def cmd_clear(tx: int, tz: int, dry: bool, stray: bool = False, y: int | None = 
         (OUT / f'{plan.name}-backup.json').unlink(missing_ok=True)
     if cur == (tx, tz):
         write_current(None)
+    if not stray:
+        try:
+            import registry_hooks
+            registry_hooks.on_marker_clear((tx, tz))
+        except Exception as exc:  # noqa: BLE001
+            print(f'registry marker clear failed: {exc}', file=sys.stderr)
     return 0
 
 

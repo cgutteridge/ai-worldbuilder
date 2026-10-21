@@ -54,6 +54,12 @@ def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path
     entry.pop('mask', None)
     data['stages'][pass_name] = entry
     site_stages.write(cell, data)
+    try:
+        import registry_hooks
+        if pass_name in ('trees', 'decor'):
+            registry_hooks.on_layer_cleared(cell, pass_name)
+    except Exception as exc:  # noqa: BLE001
+        print(f'registry undo clear failed: {exc}', file=sys.stderr)
 
 
 def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = False) -> int:

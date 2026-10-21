@@ -758,6 +758,15 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     site_stages.begin(cell, key, plan.name, blocks=len(plan.cells), structure=structure,
                       snapshot=site_stages.latest_snapshot(plan.name), planned=str(planned.relative_to(ROOT) if planned.is_relative_to(ROOT) else planned),
                       **(meta or {}), **completion)
+    if key.startswith('feature-') and (meta or {}).get('kind') not in ('ghost', 'undo'):
+        try:
+            import registry_hooks
+            registry_hooks.on_feature_begin(
+                plan.name,
+                cells=registry_hooks.cells_touched_by_positions(plan.cells.keys()),
+            )
+        except Exception as exc:  # noqa: BLE001 — never block a live apply on registry bookkeeping
+            print(f'registry begin failed: {exc}', file=sys.stderr)
     # fills into unloaded chunks silently do nothing: if the player is far from the build,
     # hop them (spectator) over it while filling, then put them back exactly
     restore = _bring_player(m, lo, hi)
@@ -796,8 +805,37 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         site_stages.finish(cell, key, 'applied-with-mismatches', readback=rep)
     else:
         site_stages.complete(cell, key, rep)
+    _update_registry_after_apply(
+        plan, stage_key=key, cell=cell, meta=meta, mismatches=rep.get('mismatches', 0),
+    )
     _reconcile_lidar_ghosts(plan, stage_key=key, cell=cell, meta=meta, dry=dry, rep=rep)
     return rep
+
+
+def _update_registry_after_apply(plan, *, stage_key: str, cell, meta, mismatches: int) -> None:
+    """Update the cell registry after a finished (non-aborted) apply.
+
+    Clean layer/feature applies set flags; mismatched feature applies stay
+    in-progress. Strict/mask failures never reach here (SystemExit first).
+
+    @param plan: applied plan
+    @param stage_key: STAGES key
+    @param cell: primary cell
+    @param meta: apply meta
+    @param mismatches: readback mismatch count
+    """
+    try:
+        import registry_hooks
+        registry_hooks.on_stage_key_clean(
+            tuple(cell),
+            stage_key,
+            plan_name=plan.name,
+            positions=plan.cells.keys(),
+            meta=meta or {},
+            mismatches=mismatches,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f'registry update failed: {exc}', file=sys.stderr)
 
 
 def _reconcile_lidar_ghosts(plan, *, stage_key: str, cell, meta, dry: bool, rep: dict) -> None:
