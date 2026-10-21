@@ -294,6 +294,24 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "MIGRATION: world data is volatile. Update dryrun_reset for the registry (delete region files, STAGES, QUEUE, CURRENT-CELL, handoff pending, holds, sign-offs, AERIAL-REVIEW, old verification/site build records), reset worlds/southampton-build through it, start with an empty registry that the tools populate, regenerate the ghost frontier around the origin cell, run verify clean. Update templates/new-world-site/ and skill new-world-build to scaffold the registry. Note: worlds/southampton-build config still points at the donor SouthamptonAI save and the bake-off save shares site records; make sure the registry paths are per active world. COMPLETION GATE (the work is not done until this audit is clean): hunt down and update every rule, script, skill, doc, ADR, template and test that the registry changes or invalidates - at minimum rules/process.md (s1, s2c, s2e, s5), handoff-layered-passes.md (also fix stage vocabulary and ghost ring docs), feature-builds.md, foliage.md, radial-good-enough.md, rules-context.md, building-review.md, craftsmanship.md; skills cell-orchestrator, redo, human-confirm-fix, new-world-build, model-bakeoff; docs/specs/lidar-ghost-v2-and-dryrun-reset.md, docs/adr/003, docs/model-bakeoffs.md; AGENTS.md, GLOSSARY.md (add cell, feature, registry terms); the ~58 scripts/test_*.py (test_lidar_ghost, test_site_handoff, test_site_status, test_site_recover, test_cell_marker, test_cell_features, test_touched_cells, test_dryrun_reset, test_coverage, test_world_frame, test_cellmath, test_region_backup, test_site_pages, test_site_archive, test_redo_here, test_model_bakeoff ...). Grep for removed names (STAGES, QUEUE, CURRENT-CELL, handoff, signoff, AERIAL, CELL-HOLDS, focus_cell, ORIGIN_CELL) must come back empty or justified. Run scripts/run_tests.py green. DONE 2026-10-21 on cell-registry-tickets: dryrun_reset empties registry + wipes QUEUE/CURRENT-CELL/holds/AERIAL/pending/HANDOFF/builds/STAGES/verification; templates/new-world-registry + site template without legacy progress; coverage.py write registry rollup; lump_scan --record -> *-lump.json; site_pages/recover docs (STAGES=apply journal); rules/docs/skills/AGENTS/GLOSSARY audit. Live world reset blocked by session.lock \u2014 user must quit Minecraft then: dryrun_reset.py --confirm-logged-out; reopen; cell_marker --raise origin; cell_registry verify."
+    },
+    {
+      "id": 34,
+      "title": "Ghost-feature readback gate in site_kit.apply",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Global rule, enforce in code. lidar_ghost.strip_ghost_features_before_feature_apply plans its strip from built_cells() ownership records, not the live world, so ghost grey (light_gray_concrete features, gray_concrete ground) with no record survives under a real feature; the pre-strip failure is swallowed to stderr (site_kit.py ~679-686). Add: after a live feature apply, read back footprint columns, plan cells and crossed neighbour-cell columns from the world; exit non-zero listing any leftover FEATURE_BLOCK the plan did not place. Make pre-strip failure raise. Test with a ghost that has no record. Then trim rules/process.md 156-163 and rules/feature-builds.md 39-46 ('the tool pre-strips') to match. Found in bake-off R-004 (aborted), 2026-10-21. DONE 2026-10-21: site_kit.apply raises on pre-strip failure; post-apply FEATURE_BLOCK leftover readback; rules/process.md + feature-builds.md trimmed. Commit 756d234."
+    },
+    {
+      "id": 35,
+      "title": "Bake-off restore: archive stale build records and target the bakeoff save",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Ghost restore (region_backup restore) does not reset verification/site build records, so built_cells() still reports erased builds (bakeoff_r003_susu, q001_university_road_42, cell_marker_48_m44) and the apply clash check refuses. R-004 needed them moved to verification/archive/stale-after-ghost-restore-2026-10-21/. Also site_kit.World defaults to the SouthamptonAI region (config/world.json) while sittings play in the bakeoff save; the R-004 agent had to monkeypatch World.__init__. Make the region explicit (env or flag) and refuse to apply when it does not match the world the MCP server reports. --region and ghost_region_path already exist on bakeoff-r004-haiku-high (6d17d53). DONE 2026-10-21: region_backup restore archives verification/site; World --region/AI_WORLDBUILDER_REGION + refuse-on-mismatch; bakeoff ghost_region_path wired. Commit 3d34d58."
     }
   ]
 }

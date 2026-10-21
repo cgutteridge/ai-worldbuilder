@@ -4,33 +4,12 @@
   "nextTaskId": 37,
   "tasks": [
     {
-      "id": 34,
-      "title": "Ghost-feature readback gate in site_kit.apply",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Global rule, enforce in code. lidar_ghost.strip_ghost_features_before_feature_apply plans its strip from built_cells() ownership records, not the live world, so ghost grey (light_gray_concrete features, gray_concrete ground) with no record survives under a real feature; the pre-strip failure is swallowed to stderr (site_kit.py ~679-686). Add: after a live feature apply, read back footprint columns, plan cells and crossed neighbour-cell columns from the world; exit non-zero listing any leftover FEATURE_BLOCK the plan did not place. Make pre-strip failure raise. Test with a ghost that has no record. Then trim rules/process.md 156-163 and rules/feature-builds.md 39-46 ('the tool pre-strips') to match. Found in bake-off R-004 (aborted), 2026-10-21."
-    },
-    {
-      "id": 35,
-      "title": "Bake-off restore: archive stale build records and target the bakeoff save",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Ghost restore (region_backup restore) does not reset verification/site build records, so built_cells() still reports erased builds (bakeoff_r003_susu, q001_university_road_42, cell_marker_48_m44) and the apply clash check refuses. R-004 needed them moved to verification/archive/stale-after-ghost-restore-2026-10-21/. Also site_kit.World defaults to the SouthamptonAI region (config/world.json) while sittings play in the bakeoff save; the R-004 agent had to monkeypatch World.__init__. Make the region explicit (env or flag) and refuse to apply when it does not match the world the MCP server reports. --region and ghost_region_path already exist on bakeoff-r004-haiku-high (6d17d53)."
-    },
-    {
       "id": 36,
       "title": "Point bake-off docs and skill at the --region restore command",
-      "status": "blocked",
+      "status": "todo",
       "priority": "low",
       "complexity": "xs",
-      "blockedBy": [
-        34,
-        35
-      ],
+      "blockedBy": [],
       "notes": "docs/model-bakeoffs.md line 18 and .claude/skills/model-bakeoff/SKILL.md step 3 still show 'region_backup.py restore <snap-dir>' with no --region, which restores into the snapshot's recorded SouthamptonAI path. Update after #35 settles the final form. Also: three restores into SouthamptonAI on 2026-10-21 were never diffed against its prior state; its four SUSU regions had the snapshot mtime beforehand, so probably no loss."
     }
   ]
