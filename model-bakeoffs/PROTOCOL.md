@@ -22,7 +22,7 @@ CLI: `python3 scripts/model_bakeoff.py` — see [README.md](README.md).
 Safe restore needs the world **closed**; apply needs MCP so the world must be **open**:
 
 1. Quit SouthamptonAI (title screen or close save).
-2. `python3 scripts/region_backup.py restore 2026-10-18-224358-bakeoff-ghost-3x3-lidar` (or `config.json` → `ghost_snap`; refuses if MCP is up unless `--force`).
+2. `python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out` (uses `config.json` → `ghost_snap` + `ghost_region_path`; or `region_backup.py restore <snap> --region <ghost_region_path> --confirm-logged-out`).
 3. Rejoin; confirm chunks load (ghost may look sparse around the cell — expected).
 4. Claim lock → cold pack (BRIEF + [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md)) → apply → fixed cameras.
 5. Interview one axis at a time → `score` → paste `usage` when the tool UI shows counts.
@@ -46,7 +46,7 @@ Later: `look`, `greeblies`, `trees`. Soft tasks (orchestrator / apply plumbing) 
 ## World
 
 - Apply / wreck OK.
-- Freeze a **3×3 lidar-ghost baseline** around (48, -44): snap `2026-10-18-224358-bakeoff-ghost-3x3-lidar` (`config.json` `ghost_snap`). Restore between sittings with `region_backup.py restore` (not a hand-rolled `cp`).
+- Freeze a **3×3 lidar-ghost baseline** around (48, -44): snap `2026-10-18-224358-bakeoff-ghost-3x3-lidar` (`config.json` `ghost_snap`). Restore between sittings with `model_bakeoff.py restore-ghost` (or `region_backup.py restore … --region` into `ghost_region_path`), not a hand-rolled `cp` and not into SouthamptonAI.
 - Fixed interview cameras + real reference photos (see pack brief).
 
 ## Fairness

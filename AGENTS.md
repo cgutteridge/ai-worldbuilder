@@ -33,7 +33,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Shared scripts | `scripts/` (cross-provider glue) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
-| Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost restore: `scripts/region_backup.py restore` |
+| Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost restore: `model_bakeoff.py restore-ghost` (or `region_backup.py restore … --region`) |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](docs/specs/lidar-ghost-v2-and-dryrun-reset.md), [docs/plans/southampton-dryrun-001.md](docs/plans/southampton-dryrun-001.md) |
 | Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / repair) |
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; empty registry) |
