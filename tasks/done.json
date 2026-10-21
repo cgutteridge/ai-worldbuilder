@@ -312,6 +312,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Ghost restore (region_backup restore) does not reset verification/site build records, so built_cells() still reports erased builds (bakeoff_r003_susu, q001_university_road_42, cell_marker_48_m44) and the apply clash check refuses. R-004 needed them moved to verification/archive/stale-after-ghost-restore-2026-10-21/. Also site_kit.World defaults to the SouthamptonAI region (config/world.json) while sittings play in the bakeoff save; the R-004 agent had to monkeypatch World.__init__. Make the region explicit (env or flag) and refuse to apply when it does not match the world the MCP server reports. --region and ghost_region_path already exist on bakeoff-r004-haiku-high (6d17d53). DONE 2026-10-21: region_backup restore archives verification/site; World --region/AI_WORLDBUILDER_REGION + refuse-on-mismatch; bakeoff ghost_region_path wired. Commit 3d34d58."
+    },
+    {
+      "id": 36,
+      "title": "Point bake-off docs and skill at the --region restore command",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "docs/model-bakeoffs.md, model-bakeoff skill, PROTOCOL, README, AGENTS, rules/process.md now point sittings at model_bakeoff.py restore-ghost (or region_backup restore --region into ghost_region_path), not bare restore into SouthamptonAI. Commit e6dd492."
     }
   ]
 }

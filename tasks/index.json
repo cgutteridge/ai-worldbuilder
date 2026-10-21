@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 37,
-  "tasks": [
-    {
-      "id": 36,
-      "title": "Point bake-off docs and skill at the --region restore command",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "docs/model-bakeoffs.md line 18 and .claude/skills/model-bakeoff/SKILL.md step 3 still show 'region_backup.py restore <snap-dir>' with no --region, which restores into the snapshot's recorded SouthamptonAI path. Update after #35 settles the final form. Also: three restores into SouthamptonAI on 2026-10-21 were never diffed against its prior state; its four SUSU regions had the snapshot mtime beforehand, so probably no loss."
-    }
-  ]
+  "tasks": []
 }
