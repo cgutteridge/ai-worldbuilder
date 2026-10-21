@@ -249,6 +249,15 @@
       "complexity": "xl",
       "blockedBy": [],
       "notes": "2026-10-20: closed. Type-facing seams: scripts/lidar_provider.py (catalogue modules.world/tiles), scripts/vector_map_clips.py (reference/vector_map, legacy fallback), shims/lidar_world.py + lidar_tiles.py. Residual baseline burned 8\u21920. Callers no longer import defra_*; LIDAR_SOURCE=defra removed; AERIAL REVIEW only. Allowlist: legacy_reference_paths.py. World: vector_map symlink + osm_extract place_dir + SOURCES LIDAR_SOURCE=composite."
+    },
+    {
+      "id": 29,
+      "title": "Cell registry 1/5: registry module, management CLI, single grid module",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Part of the cell-registry epic (tickets 29-33, one new branch off main, one PR; do NOT use the bakeoff-r004 branch). DESIGN (agreed in grilling session): world data lives in the active world: registry/cells.json + registry/features.json, sparse (absent cell = empty), written ONLY through one registry module (atomic write, sorted keys); LLM reads only via a documented management command. Cell record: ground none|ghost|ghost+features|generated; trees bool; decor bool; marker up|none; hold reason|null. Derived, never stored: empty, DONE, current cell (= marker cell), a cell's features. DONE = ground generated + trees + decor + every registered feature in the cell built + no marker + no open OSM-coverage warnings. Feature record: id = build slug (matches site/builds/<name>.json), name, cells touched, status planned|in-progress|built (one status per feature). Invariants enforced in code (refused write raises error naming the rule, nothing changes): single marker; ghost+features only on ghost ground; trees/decor only on generated ground; rebuilding ground clears trees+decor; reopening a feature clears trees+decor in every cell it touches. Management CLI with clear docs: query (is feature X built, what is left in cell C, status), register feature (explicit list; helper proposes OSM candidates), hold set/clear, dismiss OSM warning with reason. GRID: one cellmath module owns cell size, bounds, cell->region mapping, ring order, parse_cell and the id format; delete the other definitions (world_frame.CELL/cell_of/cell_bounds/parse_cell, coverage.cell_of/cell_bbox, pass_mask.CELL_SIZE, site_stages.CELL_SHIFT, ground_sources.mc_tile_for_cell, ref_manifest.mc_tile_id, lidar_ghost use of CELL_SHIFT). Cell id is always the string 'tx,tz' (e.g. 48,-44); 'm44' spelling only inside file names. Origin cell and cell size move into the world's world-frame.json (remove hard-coded ORIGIN_CELL in cellmath.py and CENTRE in site_status.py). Tests for all invariants. Done 2026-10-21 on cell-registry-tickets: scripts/cell_registry.py + CLI; cellmath owns grid (size/origin from world-frame cell); invariant tests; callers delegate. World checkout: config/world-frame.json cell block + empty registry/."
     }
   ]
 }

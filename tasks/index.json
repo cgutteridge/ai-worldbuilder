@@ -4,21 +4,12 @@
   "nextTaskId": 34,
   "tasks": [
     {
-      "id": 29,
-      "title": "Cell registry 1/5: registry module, management CLI, single grid module",
+      "id": 30,
+      "title": "Cell registry 2/5: make build commands update the registry automatically",
       "status": "todo",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Part of the cell-registry epic (tickets 29-33, one new branch off main, one PR; do NOT use the bakeoff-r004 branch). DESIGN (agreed in grilling session): world data lives in the active world: registry/cells.json + registry/features.json, sparse (absent cell = empty), written ONLY through one registry module (atomic write, sorted keys); LLM reads only via a documented management command. Cell record: ground none|ghost|ghost+features|generated; trees bool; decor bool; marker up|none; hold reason|null. Derived, never stored: empty, DONE, current cell (= marker cell), a cell's features. DONE = ground generated + trees + decor + every registered feature in the cell built + no marker + no open OSM-coverage warnings. Feature record: id = build slug (matches site/builds/<name>.json), name, cells touched, status planned|in-progress|built (one status per feature). Invariants enforced in code (refused write raises error naming the rule, nothing changes): single marker; ghost+features only on ghost ground; trees/decor only on generated ground; rebuilding ground clears trees+decor; reopening a feature clears trees+decor in every cell it touches. Management CLI with clear docs: query (is feature X built, what is left in cell C, status), register feature (explicit list; helper proposes OSM candidates), hold set/clear, dismiss OSM warning with reason. GRID: one cellmath module owns cell size, bounds, cell->region mapping, ring order, parse_cell and the id format; delete the other definitions (world_frame.CELL/cell_of/cell_bounds/parse_cell, coverage.cell_of/cell_bbox, pass_mask.CELL_SIZE, site_stages.CELL_SHIFT, ground_sources.mc_tile_for_cell, ref_manifest.mc_tile_id, lidar_ghost use of CELL_SHIFT). Cell id is always the string 'tx,tz' (e.g. 48,-44); 'm44' spelling only inside file names. Origin cell and cell size move into the world's world-frame.json (remove hard-coded ORIGIN_CELL in cellmath.py and CENTRE in site_status.py). Tests for all invariants."
-    },
-    {
-      "id": 30,
-      "title": "Cell registry 2/5: make build commands update the registry automatically",
-      "status": "blocked",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [29],
       "notes": "PRINCIPLE: the registry is updated by code as a side effect of build commands, not by LLM-followed rules. ground_layer/trees_layer/decor_layer set ground/trees/decor on a clean readback only. site_kit.apply: feature status in-progress on begin, built only on clean readback (zero mismatches; mismatches stay in-progress); cells touched overwritten from the real footprint. cell_marker raise/clear sets marker (marker no longer counts as work or as a STAGES entry). lidar_ghost keeps its state machine but writes only to the registry: ghost lay-down around the marker cell (default ring 2; ground none->ghost / ghost+features); real feature apply strips ghost features first (ghost+features -> ghost); real ground apply -> generated and drops ghost features; markers never count as real work. Every block-removing command clears the matching flags in the same step: mask_undo, strip_cell_above_ground, ghost supersede/strip, site_recover. A failed apply never sets flags. Feature specs stay in site/builds/<name>.json; *-cells.json ownership files stay as block-level evidence the registry points to (not a second status record). Per-run detail (readback, snapshot, structure/from/to) goes to the existing *-result.json / *-backup.json; masks stay under verification/site/masks. Tests per writer."
     },
     {
@@ -27,7 +18,9 @@
       "status": "blocked",
       "priority": "high",
       "complexity": "xl",
-      "blockedBy": [30],
+      "blockedBy": [
+        30
+      ],
       "notes": "DELETE: per-cell STAGES.json (all readers - cell_gaps, layers_done, requeue_plan, real_work_started, ground_done, site_status, site_pages, site_recover, lump_scan - read the registry instead); QUEUE.txt + Q-nnn ids + site_handoff queue writing/advance_to_next_cell + .handoff-pending.json + set_pending/clear_pending + the whole handoff system; COVERAGE-SIGNOFFS.jsonl and ALL sign-off code, rules, docs, tests (system runs unsupervised); CELL-HOLDS.jsonl (becomes cell hold field); AERIAL-REVIEW.txt and its code (site_handoff.py ~147-247); CURRENT-CELL.json and every other way of tracking the current cell (coverage.focus_cell, site_status centre, queue 'marker must be up' text); coverage.cell_rollup (COVERAGE.txt generated block now produced from the registry). KEEP/ADD: `next` registry command, read-only and deterministic (idempotent): open issues first, then next undone item. Cell choice: marker cell if not DONE, else nearest undone non-held cell to the configured origin ordered by distance then clockwise ring order from north (the build task raises the marker, next does not). Order inside a cell: ground, then features in registry order, then trees, then decor. ISSUES.txt = snagging backlog, one parsed line per issue with a registry target and reason, e.g. 'I-014  cell 48,-44 trees  <why>' / 'I-015  feature q001_university_road_42  <why>'; target is cell layer, feature id or whole cell; add-issue command reopens the target; auto-closes on clean rebuild and archives with date. Rewrite cell-orchestrator skill as a thin loop: run next, launch one subagent per task (a cell layer, a feature, or an issue), wait; a handoff is just a fresh session running next. Update human-confirm-fix and redo skills accordingly."
     },
     {
@@ -36,7 +29,9 @@
       "status": "blocked",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [31],
+      "blockedBy": [
+        31
+      ],
       "notes": "repair <cell>: back up ONLY the impacted region files (region holding the cell plus any region its features/trees/decor spill into, from *-cells.json footprints and masks) together with that cell's registry record; wipe only that cell's columns to air above bedrock; replay from the registry clipped to the cell bounds (ghost ground/features if ghost state, else ground, features in registry order, trees, decor; features from site/builds specs); re-raise marker if it was up; if any step fails, clear flags for that step and all later ones so next picks it up. 'undo repair' restores the region files and the saved registry record. Bake-off: wipe the WHOLE world each round, restore ONE whole-world backup paired with a whole-registry copy (no per-cell slices); update model_bakeoff.restore_ghost_step and region_backup. Raw region_backup restore of a partial snapshot is refused (error points at the proper undo/redo command) except via repair-undo and the full-world bake-off restore. LOGOUT GATE: every command that rewrites region files (repair, undo repair, bake-off wipe/restore, dryrun_reset) refuses without --confirm-logged-out, stops and plays the need-you sound asking the user to log out; second guard checks session.lock / a running server holding the save and refuses even with the flag. VERIFY (report only, exit non-zero on any error): invariants; marker rings vs registry (exactly the marked cell has a stripe ring); region files exist for cells with ground and no blocks in cells the registry calls empty; built features have ownership files and blocks still present; registered features have specs; OSM buildings no registered feature covers (warnings that block DONE until resolved or dismissed with a reason); leftover old-system files (STAGES, QUEUE, CURRENT-CELL, sign-offs). Hook verify into scripts/run_tests.py / dryrun_reset where sensible."
     },
     {
@@ -45,7 +40,9 @@
       "status": "blocked",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [32],
+      "blockedBy": [
+        32
+      ],
       "notes": "MIGRATION: world data is volatile. Update dryrun_reset for the registry (delete region files, STAGES, QUEUE, CURRENT-CELL, handoff pending, holds, sign-offs, AERIAL-REVIEW, old verification/site build records), reset worlds/southampton-build through it, start with an empty registry that the tools populate, regenerate the ghost frontier around the origin cell, run verify clean. Update templates/new-world-site/ and skill new-world-build to scaffold the registry. Note: worlds/southampton-build config still points at the donor SouthamptonAI save and the bake-off save shares site records; make sure the registry paths are per active world. COMPLETION GATE (the work is not done until this audit is clean): hunt down and update every rule, script, skill, doc, ADR, template and test that the registry changes or invalidates - at minimum rules/process.md (s1, s2c, s2e, s5), handoff-layered-passes.md (also fix stage vocabulary and ghost ring docs), feature-builds.md, foliage.md, radial-good-enough.md, rules-context.md, building-review.md, craftsmanship.md; skills cell-orchestrator, redo, human-confirm-fix, new-world-build, model-bakeoff; docs/specs/lidar-ghost-v2-and-dryrun-reset.md, docs/adr/003, docs/model-bakeoffs.md; AGENTS.md, GLOSSARY.md (add cell, feature, registry terms); the ~58 scripts/test_*.py (test_lidar_ghost, test_site_handoff, test_site_status, test_site_recover, test_cell_marker, test_cell_features, test_touched_cells, test_dryrun_reset, test_coverage, test_world_frame, test_cellmath, test_region_backup, test_site_pages, test_site_archive, test_redo_here, test_model_bakeoff ...). Grep for removed names (STAGES, QUEUE, CURRENT-CELL, handoff, signoff, AERIAL, CELL-HOLDS, focus_cell, ORIGIN_CELL) must come back empty or justified. Run scripts/run_tests.py green."
     }
   ]
