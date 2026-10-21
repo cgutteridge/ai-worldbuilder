@@ -1,7 +1,0 @@
-{
-  "osm_way_id": "33830236",
-  "reject_ways": ["33830305", "93729745"],
-  "bbox_mc": [6219, -5576, 6256, -5552],
-  "dilated": false,
-  "notes": "cell_features 48,-44 → Students' Union Retail Centre (portal 57 Union Shop). Reject west SUSU w33830305 (B42) and north Jubilee Sports w93729745. Bbox from OSMIndex footprint."
-}

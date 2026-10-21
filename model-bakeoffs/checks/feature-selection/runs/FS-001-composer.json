@@ -1,7 +1,0 @@
-{
-  "osm_way_id": "33830305",
-  "reject_ways": ["33830236", "34391673"],
-  "bbox_mc": [6142, -5582, 6226, -5492],
-  "dilated": false,
-  "notes": "OSM way 33830305 \"University of Southampton Students' Union (SUSU)\" (3924 footprint cells); uos-buildings register building 42 \"Students' Union\" at 6182,-5536; 42_2025.jpg shows B42 terracotta SUSU wordmark / glazed concourse on Library Square south edge. Rejects: w33830236 Students' Union Retail Centre (Union Shop, east); w34391673 West Building & Staff Social Centre (south-west). bbox from OSMIndex cell raster (exclusive footprint, no pad)."
-}
