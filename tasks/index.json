@@ -4,23 +4,12 @@
   "nextTaskId": 34,
   "tasks": [
     {
-      "id": 30,
-      "title": "Cell registry 2/5: make build commands update the registry automatically",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "PRINCIPLE: the registry is updated by code as a side effect of build commands, not by LLM-followed rules. ground_layer/trees_layer/decor_layer set ground/trees/decor on a clean readback only. site_kit.apply: feature status in-progress on begin, built only on clean readback (zero mismatches; mismatches stay in-progress); cells touched overwritten from the real footprint. cell_marker raise/clear sets marker (marker no longer counts as work or as a STAGES entry). lidar_ghost keeps its state machine but writes only to the registry: ghost lay-down around the marker cell (default ring 2; ground none->ghost / ghost+features); real feature apply strips ghost features first (ghost+features -> ghost); real ground apply -> generated and drops ghost features; markers never count as real work. Every block-removing command clears the matching flags in the same step: mask_undo, strip_cell_above_ground, ghost supersede/strip, site_recover. A failed apply never sets flags. Feature specs stay in site/builds/<name>.json; *-cells.json ownership files stay as block-level evidence the registry points to (not a second status record). Per-run detail (readback, snapshot, structure/from/to) goes to the existing *-result.json / *-backup.json; masks stay under verification/site/masks. Tests per writer."
-    },
-    {
       "id": 31,
       "title": "Cell registry 3/5: replace STAGES, QUEUE, handoff, sign-offs, holds, AERIAL-REVIEW, CURRENT-CELL; add next + issues; rewrite orchestrator",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "xl",
-      "blockedBy": [
-        30
-      ],
+      "blockedBy": [],
       "notes": "DELETE: per-cell STAGES.json (all readers - cell_gaps, layers_done, requeue_plan, real_work_started, ground_done, site_status, site_pages, site_recover, lump_scan - read the registry instead); QUEUE.txt + Q-nnn ids + site_handoff queue writing/advance_to_next_cell + .handoff-pending.json + set_pending/clear_pending + the whole handoff system; COVERAGE-SIGNOFFS.jsonl and ALL sign-off code, rules, docs, tests (system runs unsupervised); CELL-HOLDS.jsonl (becomes cell hold field); AERIAL-REVIEW.txt and its code (site_handoff.py ~147-247); CURRENT-CELL.json and every other way of tracking the current cell (coverage.focus_cell, site_status centre, queue 'marker must be up' text); coverage.cell_rollup (COVERAGE.txt generated block now produced from the registry). KEEP/ADD: `next` registry command, read-only and deterministic (idempotent): open issues first, then next undone item. Cell choice: marker cell if not DONE, else nearest undone non-held cell to the configured origin ordered by distance then clockwise ring order from north (the build task raises the marker, next does not). Order inside a cell: ground, then features in registry order, then trees, then decor. ISSUES.txt = snagging backlog, one parsed line per issue with a registry target and reason, e.g. 'I-014  cell 48,-44 trees  <why>' / 'I-015  feature q001_university_road_42  <why>'; target is cell layer, feature id or whole cell; add-issue command reopens the target; auto-closes on clean rebuild and archives with date. Rewrite cell-orchestrator skill as a thin loop: run next, launch one subagent per task (a cell layer, a feature, or an issue), wait; a handoff is just a fresh session running next. Update human-confirm-fix and redo skills accordingly."
     },
     {
