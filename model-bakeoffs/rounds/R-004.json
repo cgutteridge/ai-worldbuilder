@@ -1,0 +1,143 @@
+{
+  "id": "R-004",
+  "status": "ready",
+  "created": "2026-10-21T21:29:41Z",
+  "scored_at": null,
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "low",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-haiku-5-5-high",
+    "label": "Claude Haiku 5.5 (high effort)",
+    "tier": "low",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "ghost_snap": "2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": null,
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": null,
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": null,
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": null,
+    "street_front": null,
+    "aerial_top": null,
+    "real_refs_note": null
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": null
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Quit Minecraft world (title / close save)",
+      "Restore ghost (whole-world + registry): python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out  # cfg ghost_snap=2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+      "Rejoin world (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=claude-code model=claude-haiku-5-5-high only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ],
+    "ghost_snap_hint": "canonical whole-world snap: 2026-10-18-224358-bakeoff-ghost-3x3-lidar"
+  },
+  "notes": ""
+}
