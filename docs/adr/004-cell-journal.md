@@ -1,6 +1,6 @@
 # ADR 004: One cell journal; no region backup/restore
 
-**Status:** Accepted (2026-10-21). Supersedes ADR 003 §3 (ghost state) and the ghost bookkeeping in the lidar ghost v2 spec. Implementation: tasks 38-48.
+**Status:** Accepted (2026-10-21). Supersedes ADR 003 §3 (ghost state) and the ghost bookkeeping in the lidar ghost v2 spec. Implementation: tasks 38-48 (read path from task 39).
 
 ## Context
 
@@ -23,9 +23,9 @@ Three overlapping records describe one cell's state and routinely disagree: `STA
 - **(c) Phase-scoped:** worlds are volatile for this phase. Erase and recreate; no migration, no backward compatibility. This is not a permanent policy; revisit when a world must be kept.
 - **(d) Block read path:** see below.
 
-### Block read path - decided by task 39
+### Block read path (decided by task 39)
 
-Whether `BlockStore` reads come from region files or MCP reads is **pending task 39's audit**: [docs/audits/region-block-reads.md](../audits/region-block-reads.md) (written by that task). Until it lands, do not hard-wire either path; keep reads behind `BlockStore`. Writes always go over MCP.
+Audit: [docs/audits/region-block-reads.md](../audits/region-block-reads.md). **One guarded reader behind `BlockStore`** (`read`, `read_many`, `flush`), with `MemoryBlocks` for tests and a single `LiveBlocks`. Today `LiveBlocks` wraps the read-only region parser; it opens files `rb` only, accepts only the active or bake-off save, requires `flush()` (`server_save_all_worlds`) after any write before it will read, and checks the region matches the world MCP has open. Reads do not go through `logout_gate`. Pristine and snapshot constructors disappear with tasks 38 and 40. No MCP tool that returns block states is known to exist, and MCP is limited to 60 requests a minute, so per-position MCP reads are rejected; if a bulk box-read tool is confirmed, it becomes the `LiveBlocks` backend and callers do not change. Writes always go over MCP.
 
 ## Consequences
 
