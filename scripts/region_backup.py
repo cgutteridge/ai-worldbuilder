@@ -8,6 +8,7 @@ whole-world bake-off pair (regions + registry/).
   python3 scripts/region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out
   python3 scripts/region_backup.py list
   python3 scripts/region_backup.py restore 2026-10-18-172524-bakeoff-ghost --confirm-logged-out
+  python3 scripts/region_backup.py restore SNAP --region /path/to/bakeoff/.../region --confirm-logged-out
   python3 scripts/region_backup.py prune --keep 5
 
 Snap kinds in ``BACKUP.json``:
@@ -312,6 +313,62 @@ def mcp_world_reachable(timeout: float = 1.5) -> bool:
         return False
 
 
+# Build-record suffixes moved out of verification/site after a ghost restore.
+# Images (*-preview.png, *-shots/) stay put — ownership comes from *-cells.json.
+_STALE_RECORD_SUFFIXES = (
+    '-cells.json',
+    '-planned.json',
+    '-backup.json',
+    '-result.json',
+    '-clashes.json',
+    '-spec.json',
+    '-footprint.json',
+    '-footprint-hits.json',
+    '-door-frames.json',
+    '-protect-hits.json',
+    '-roof-jogs.json',
+)
+
+
+def archive_stale_site_records(
+    world_root: Path | None = None,
+    *,
+    stamp: str | None = None,
+) -> Path | None:
+    """Move verification/site build records aside after a ghost restore.
+
+    Ghost restore rewrites ``.mca`` files but leaves ``*-cells.json`` ownership
+    in place, so ``built_cells()`` still reports erased builds and apply clashes.
+    Records land under ``verification/archive/stale-after-ghost-restore-<date>/``.
+
+    @param world_root: world root holding ``verification/site`` (default active)
+    @param stamp: archive folder date (default today ``YYYY-MM-DD``)
+    @returns: archive directory when anything moved, else None
+    """
+    root = Path(world_root) if world_root else Path(ROOT)
+    site = root / 'verification' / 'site'
+    if not site.is_dir():
+        return None
+    day = stamp or time.strftime('%Y-%m-%d')
+    dest = root / 'verification' / 'archive' / f'stale-after-ghost-restore-{day}'
+    moved = 0
+    for path in sorted(site.iterdir()):
+        if not path.is_file():
+            continue
+        if not any(path.name.endswith(suf) for suf in _STALE_RECORD_SUFFIXES):
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        if moved == 0 and not (dest / 'README.txt').exists():
+            (dest / 'README.txt').write_text(
+                'Build records moved out of verification/site after a ghost restore '
+                f'on {day}. The restored region no longer matches these ownership '
+                'files; move them back to verification/site to undo.\n'
+            )
+        shutil.move(str(path), str(dest / path.name))
+        moved += 1
+    return dest if moved else None
+
+
 def restore_snap(
     snap_dir: Path,
     *,
@@ -319,7 +376,9 @@ def restore_snap(
     allow_partial: bool = False,
     restore_registry: bool = True,
     world_root: Path | None = None,
+    region_dir: Path | None = None,
     skip_logout_gate: bool = False,
+    archive_site_records: bool | None = None,
 ) -> list[str]:
     """Restore a snap's region files (and registry for whole-world).
 
@@ -327,8 +386,11 @@ def restore_snap(
     @param confirm_logged_out: logout gate flag
     @param allow_partial: permit kind=partial|repair (repair-undo only)
     @param restore_registry: also copy ``registry/`` when present (whole-world)
-    @param world_root: world root for registry restore
+    @param world_root: world root for registry restore and site-record archive
+    @param region_dir: override target region folder (bake-off ``--region``)
     @param skip_logout_gate: tests only
+    @param archive_site_records: move stale verification/site records (default:
+        True for whole-world restores)
     @returns: restored ``.mca`` names
     @raises ValueError: partial snap without allow_partial
     @raises logout_gate.LogoutGateError: world not idle
@@ -357,7 +419,7 @@ def restore_snap(
     files = list(meta.get('files') or [])
     if not files:
         raise FileNotFoundError(f'{snap_dir.name} lists no files')
-    region = Path(meta.get('region_path') or REGION)
+    region = Path(region_dir or meta.get('region_path') or REGION)
     if not region.is_dir():
         raise FileNotFoundError(f'region path missing: {region}')
     restored = []
@@ -370,12 +432,23 @@ def restore_snap(
     bad = [n for n in restored if sha256_file(snap_dir / n) != sha256_file(region / n)]
     if bad:
         raise RuntimeError(f'checksum mismatch after copy: {bad}')
+    root = Path(world_root) if world_root else Path(meta.get('world_root') or ROOT)
     if restore_registry and kind == KIND_WHOLE and (snap_dir / 'registry').is_dir():
-        root = Path(world_root) if world_root else Path(meta.get('world_root') or ROOT)
         dest_reg = registry_dir(root)
         if dest_reg.exists():
             shutil.rmtree(dest_reg)
         shutil.copytree(snap_dir / 'registry', dest_reg)
+    do_archive = archive_site_records if archive_site_records is not None else kind == KIND_WHOLE
+    if do_archive:
+        # Site build records live on the active world checkout (ROOT), not necessarily
+        # the snap's recorded world_root / Minecraft save.
+        archive_root = Path(world_root) if world_root else Path(ROOT)
+        archived = archive_stale_site_records(archive_root)
+        if archived is not None:
+            try:
+                print(f'archived stale site records → {archived.relative_to(archive_root)}')
+            except ValueError:
+                print(f'archived stale site records → {archived}')
     return restored
 
 
@@ -383,8 +456,10 @@ def cmd_restore(args: argparse.Namespace) -> int:
     """Copy a whole-world snap back into the live region folder (+ registry).
 
     Partial snaps are refused; use undo-repair. Logout gate required.
+    Optional ``--region`` restores into the bakeoff save instead of the
+    snapshot's recorded ``region_path``.
 
-    @param args: CLI args
+    @param args: CLI args (``snap``, ``force``, ``region``)
     @returns: exit code (0 ok, 2 refused / verify fail)
     """
     try:
@@ -393,11 +468,13 @@ def cmd_restore(args: argparse.Namespace) -> int:
         print(f'error: {exc}', file=sys.stderr)
         return 2
     confirm = bool(getattr(args, 'confirm_logged_out', False) or getattr(args, 'force', False))
+    region = getattr(args, 'region', None)
     try:
         restored = restore_snap(
             snap_dir,
             confirm_logged_out=confirm,
             allow_partial=False,
+            region_dir=Path(region) if region else None,
         )
     except Exception as exc:  # noqa: BLE001
         print(f'error: {exc}', file=sys.stderr)
@@ -434,6 +511,10 @@ def main(argv: list[str] | None = None) -> int:
         '--force',
         action='store_true',
         help=argparse.SUPPRESS,  # legacy alias for --confirm-logged-out (still not enough if lock/MCP up)
+    )
+    r.add_argument(
+        '--region',
+        help="restore into this region folder instead of the snapshot's own region_path",
     )
     r.set_defaults(func=cmd_restore)
     pr = sub.add_parser('prune', help='drop old snapshots')

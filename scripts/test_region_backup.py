@@ -43,9 +43,12 @@ class TestRegionBackup(unittest.TestCase):
             )
             with mock.patch.object(RB, 'BACKUP_ROOT', backup_root), mock.patch.object(
                 RB, 'REGION', region
-            ), mock.patch('logout_gate.require_logged_out'):
+            ), mock.patch.object(RB, 'ROOT', root), mock.patch(
+                'logout_gate.require_logged_out'
+            ):
                 code = RB.cmd_restore(argparse_ns(
                     snap='2026-01-01-120000-ghost', confirm_logged_out=True, force=False,
+                    region=None,
                 ))
             self.assertEqual(code, 2)
             self.assertFalse((region / 'r.0.0.mca').exists())
@@ -75,9 +78,12 @@ class TestRegionBackup(unittest.TestCase):
 
             with mock.patch.object(RB, 'BACKUP_ROOT', backup_root), mock.patch.object(
                 RB, 'REGION', region
-            ), mock.patch('logout_gate.require_logged_out') as gate:
+            ), mock.patch.object(RB, 'ROOT', root), mock.patch(
+                'logout_gate.require_logged_out'
+            ) as gate:
                 code = RB.cmd_restore(argparse_ns(
                     snap='2026-01-01-120000-ghost', confirm_logged_out=True, force=False,
+                    region=None,
                 ))
             gate.assert_called_once()
             self.assertEqual(code, 0)
@@ -104,12 +110,13 @@ class TestRegionBackup(unittest.TestCase):
             import logout_gate as LG
             with mock.patch.object(RB, 'BACKUP_ROOT', backup_root), mock.patch.object(
                 RB, 'REGION', region
-            ), mock.patch(
+            ), mock.patch.object(RB, 'ROOT', root), mock.patch(
                 'logout_gate.require_logged_out',
                 side_effect=LG.LogoutGateError('MCP up'),
             ):
                 code = RB.cmd_restore(argparse_ns(
                     snap='2026-01-01-120000-ghost', confirm_logged_out=True, force=False,
+                    region=None,
                 ))
             self.assertEqual(code, 2)
             self.assertFalse((region / 'r.0.0.mca').exists())
@@ -136,6 +143,82 @@ class TestRegionBackup(unittest.TestCase):
             self.assertEqual(meta['kind'], RB.KIND_WHOLE)
             self.assertEqual(meta['files'], ['r.1.2.mca'])
             self.assertTrue((dest / 'registry' / 'cells.json').is_file())
+
+    def test_restore_region_override_beats_snapshot_path(self):
+        """``--region`` restores into the bakeoff save, not the snap's recorded path."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            recorded = root / 'recorded'
+            target = root / 'target'
+            recorded.mkdir()
+            target.mkdir()
+            backup_root = root / 'backups' / 'regions'
+            snap = backup_root / '2026-01-01-120000-ghost'
+            snap.mkdir(parents=True)
+            (snap / 'r.0.0.mca').write_bytes(b'snap')
+            (snap / 'BACKUP.json').write_text(
+                json.dumps({
+                    'kind': RB.KIND_WHOLE,
+                    'files': ['r.0.0.mca'],
+                    'region_path': str(recorded),
+                    'world_root': str(root),
+                }) + '\n'
+            )
+            with mock.patch.object(RB, 'BACKUP_ROOT', backup_root), mock.patch.object(
+                RB, 'ROOT', root
+            ), mock.patch('logout_gate.require_logged_out'):
+                code = RB.cmd_restore(argparse_ns(
+                    snap='2026-01-01-120000-ghost',
+                    confirm_logged_out=True,
+                    force=False,
+                    region=str(target),
+                ))
+            self.assertEqual(code, 0)
+            self.assertEqual((target / 'r.0.0.mca').read_bytes(), b'snap')
+            self.assertFalse((recorded / 'r.0.0.mca').exists())
+
+    def test_restore_archives_stale_site_build_records(self):
+        """Whole-world restore moves verification/site build records so built_cells() is empty."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            region = root / 'region'
+            region.mkdir()
+            site = root / 'verification' / 'site'
+            site.mkdir(parents=True)
+            (site / 'bakeoff_r003_susu-cells.json').write_text('{}\n')
+            (site / 'bakeoff_r003_susu-planned.json').write_text('{}\n')
+            (site / 'bakeoff_r003_susu-preview.png').write_bytes(b'png')
+            (site / 'keep-me-notes.txt').write_text('stay\n')
+            backup_root = root / 'backups' / 'regions'
+            snap = backup_root / '2026-01-01-120000-ghost'
+            snap.mkdir(parents=True)
+            (snap / 'r.0.0.mca').write_bytes(b'x')
+            (snap / 'BACKUP.json').write_text(
+                json.dumps({
+                    'kind': RB.KIND_WHOLE,
+                    'files': ['r.0.0.mca'],
+                    'region_path': str(region),
+                    'world_root': str(root),
+                }) + '\n'
+            )
+            with mock.patch.object(RB, 'BACKUP_ROOT', backup_root), mock.patch.object(
+                RB, 'ROOT', root
+            ), mock.patch('logout_gate.require_logged_out'), mock.patch(
+                'region_backup.time.strftime', return_value='2026-10-21'
+            ):
+                restored = RB.restore_snap(
+                    snap,
+                    confirm_logged_out=True,
+                    skip_logout_gate=True,
+                    world_root=root,
+                )
+            self.assertEqual(restored, ['r.0.0.mca'])
+            archive = root / 'verification' / 'archive' / 'stale-after-ghost-restore-2026-10-21'
+            self.assertTrue((archive / 'bakeoff_r003_susu-cells.json').is_file())
+            self.assertTrue((archive / 'bakeoff_r003_susu-planned.json').is_file())
+            self.assertFalse((site / 'bakeoff_r003_susu-cells.json').exists())
+            self.assertTrue((site / 'bakeoff_r003_susu-preview.png').is_file())
+            self.assertTrue((site / 'keep-me-notes.txt').is_file())
 
 
 if __name__ == '__main__':
