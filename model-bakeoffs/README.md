@@ -37,8 +37,9 @@ python3 scripts/model_bakeoff.py add-model --tool cursor --id opus --tier high -
 python3 scripts/model_bakeoff.py status
 python3 scripts/model_bakeoff.py next
 python3 scripts/model_bakeoff.py open --tool cursor --model composer-2.5
-# quit world → restore ghost → rejoin → that model only → apply → photos
-python3 scripts/region_backup.py restore 2026-10-18-224358-bakeoff-ghost-3x3-lidar
+# quit world → restore ghost into bakeoff save (config ghost_region_path) → rejoin → apply
+python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out
+# or: region_backup.py restore <ghost_snap> --region <ghost_region_path> --confirm-logged-out
 python3 scripts/model_bakeoff.py score R-001 --mech-gate pass --overall pass \
   --axis massing=pass --axis openings=pass --axis roof_greeblies=pass \
   --axis materials=pass --axis keep=pass --why "ridge a bit low"

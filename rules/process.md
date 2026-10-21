@@ -86,11 +86,13 @@ BUILT plan in place to “fix” the world.
       python3 scripts/region_backup.py snap --bbox x0,z0,x1,z1 --name Q-nnn
     Copies only intersecting .mca files (± optional --margin regions).
     Lands in backups/regions/<stamp>-<name>/ (gitignored).
- 3. Restore a snap (bake-off ghost, bad apply rollback of a region set):
+ 3. Restore a snap (bad apply rollback of a region set; whole-world only):
       Quit the world first (title / close save).
-      python3 scripts/region_backup.py restore <stamp>-<name>
-    Refuses while the MCP bridge is reachable unless `--force`. Do not
-    hand-`cp` `.mca` files — use this command so checksums are verified.
+      python3 scripts/region_backup.py restore <stamp>-<name> --confirm-logged-out
+    Bake-off ghost: use `model_bakeoff.py restore-ghost --confirm-logged-out`
+    (or pass `--region` to the bakeoff save path) — bare restore writes into
+    the snapshot's recorded SouthamptonAI region. Do not hand-`cp` `.mca`
+    files — use these commands so checksums are verified.
  4. Cold full copy: keep Downloads/Southampton2023.zip (or one rare
     full save clone) — not per-queue-item.
 

@@ -17,7 +17,10 @@ One model per sitting. Records under `model-bakeoffs/`. CLI: `python3 scripts/mo
 
 1. **One apply owner** — if the parent takes over restore/re-apply, interrupt the model subagent first.
 2. Quit the Minecraft world (title / close save).
-3. `python3 scripts/region_backup.py restore <snap-dir>` (list via `region_backup.py list`).
+3. Restore into the bakeoff save (config `ghost_region_path`), not SouthamptonAI:
+   `python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out`
+   (or `region_backup.py restore <snap> --region <ghost_region_path> --confirm-logged-out`;
+   list snaps via `region_backup.py list`).
 4. Rejoin (MCP up). Ghost may look sparse around the cell — expected.
 5. Claim lock; run only the catalogue tool/model for this round.
 6. Evidence table → build → apply → fixed cameras → release lock.
