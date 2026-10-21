@@ -1,6 +1,6 @@
 # ADR 003: Empty-world refine and lidar ghosts
 
-**Status:** Accepted (2026-10-17). Ghost **behaviour** in §3 is partially superseded by [spec: Lidar ghost v2 and dry-run reset](../specs/lidar-ghost-v2-and-dryrun-reset.md) (frontier ring, split layers, strip). Empty-world DoD and evidence heights in §1–2 remain authoritative here.
+**Status:** Accepted (2026-10-17). **§3 is superseded** by [ADR 004](004-cell-journal.md) (ghost state is derived from the cell journal) and the [lidar ghost v2 spec](../specs/lidar-ghost-v2-and-dryrun-reset.md). Still valid from §3: placeholders come from composite DTM (ghost ground) and DSM minus DTM (ghost features), no tree/decor ghosts, real applies replace ghosts, no per-cell generated Python; ring depth is now 2 (not 1) via the v2 spec. Empty-world DoD and evidence heights in §1–2 remain authoritative here.
 
 ## Context
 
@@ -17,4 +17,4 @@ The tool formerly treated refine as clearing unrefined vendor-import lumps and o
 - System tasks 23–24 landed (empty-world DoD + composite lidar evidence). Task 25 swept stale
   import-default / pristine-as-lidar wording in rules/. Tasks 26–27 are the ghost path.
 - World QUEUE items that still speak of vendor-import lumps as DoD remain world work.
-- Ghost owners must be distinguishable in STAGES so redo and real applies can replace them safely.
+- (Superseded: STAGES is deleted; see ADR 004.) Ghost owners must be distinguishable in STAGES so redo and real applies can replace them safely.
