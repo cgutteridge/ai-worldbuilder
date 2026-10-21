@@ -161,12 +161,13 @@ BUILT plan in place to “fix” the world.
 
  Lidar ghosts (v2): docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
  `cell_marker --raise`, ring-2 frontier cells may show grey feature mass. On every
- **live feature apply**, the tool pre-strips ghost features inside the planned
- volume (including columns in neighbour cells); do not delete grey blocks by hand
- unless recovering from a failed apply. After apply, `lidar_ghost.py status`
- must show `ghost-features` stripped/superseded on each cell the footprint
- touched — not `applied` grey under the real building. `feature_build` dry-run
- must still list full shell cells (it must not drop columns owned only by ghosts).
+ **live feature apply**, the tool pre-strips recorded ghost features in the planned
+ volume, then readback-fails if any unplanned `light_gray_concrete` remains in
+ footprint / plan / cross-cell columns (ownership-less grey included). Do not
+ delete grey by hand unless recovering from a failed apply. After a clean apply,
+ `lidar_ghost.py status` must show `ghost-features` stripped/superseded on each
+ cell the footprint touched. `feature_build` dry-run must still list full shell
+ cells (it must not drop columns owned only by ghosts).
 
  1. Activate — raise the hazard-stripe marker (REQUIRED, first action on every new
     cell; it sets the registry marker = FOCUS, stays up across chats):

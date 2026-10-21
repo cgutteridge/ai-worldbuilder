@@ -424,6 +424,53 @@ def same(planned, actual):
     return True
 
 
+def _feature_block_id() -> str:
+    """Canonical block id for lidar ghost feature mass (``light_gray_concrete``).
+
+    @returns: ``minecraft:…`` id string
+    """
+    try:
+        import lidar_ghost as lg
+        return full(lg.FEATURE_BLOCK)
+    except ImportError:
+        return 'minecraft:light_gray_concrete'
+
+
+def find_ghost_feature_leftovers(plan, world=None) -> list[tuple[int, int, int]]:
+    """List live FEATURE_BLOCK cells the plan did not place.
+
+    Scans every footprint column implied by ``plan.cells`` (including columns in
+    neighbour cells a cross-cell volume crosses) across the plan's Y span. Grey
+    ghost mass with no ``built_cells`` ownership record is invisible to pre-strip;
+    this readback catches it after a live feature apply.
+
+    @param plan: applied feature ``Plan``
+    @param world: optional world view (defaults to ``World()``)
+    @returns: sorted ``(x, y, z)`` positions still holding unplanned feature grey
+    """
+    if not plan.cells:
+        return []
+    w = world or World()
+    feature = _feature_block_id()
+    lo, hi = plan.bounds()
+    y0, y1 = lo[1], hi[1]
+    columns = {(x, z) for (x, _y, z) in plan.cells}
+    planned_feature = {
+        pos for pos, st in plan.cells.items() if bid(st) == feature
+    }
+    leftovers: list[tuple[int, int, int]] = []
+    for x, z in columns:
+        for y in range(y0, y1 + 1):
+            pos = (x, y, z)
+            if pos in planned_feature:
+                continue
+            actual = w.block(x, y, z) or ''
+            if bid(actual) == feature:
+                leftovers.append(pos)
+    leftovers.sort()
+    return leftovers
+
+
 # --- live application ------------------------------------------------------
 CELLS_CACHE = ROOT / 'backups/cells-cache'      # git-ignored; one pickle per *-cells.json, rebuilt when its mtime/size change
 
@@ -679,11 +726,11 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if not dry and stage_key.startswith('feature-'):
         try:
             import lidar_ghost as lg
-            rep = lg.strip_ghost_features_before_feature_apply(plan)
-            if rep:
-                print('lidar ghost pre-strip:', json.dumps(rep)[:600])
+            strip_rep = lg.strip_ghost_features_before_feature_apply(plan)
+            if strip_rep:
+                print('lidar ghost pre-strip:', json.dumps(strip_rep)[:600])
         except Exception as exc:
-            print(f'lidar ghost pre-strip failed: {exc}', file=sys.stderr)
+            raise SystemExit(f'lidar ghost pre-strip failed: {exc}') from exc
     owned = built_cells(exclude=set(modifies) | {plan.name}, within=plan.cells)
     try:
         import lidar_ghost as lg
@@ -801,6 +848,18 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if rep['mismatches'] and (strict or mask is not None):
         raise SystemExit(f'{plan.name}: readback has {rep["mismatches"]} mismatches; stage {key} left '
                          "'applying' (python scripts/site_recover.py status)")
+    if (key.startswith('feature-') and (meta or {}).get('kind') not in ('ghost', 'undo')):
+        leftovers = find_ghost_feature_leftovers(plan)
+        if leftovers:
+            sample = leftovers[:40]
+            (OUT / f'{plan.name}-ghost-leftovers.json').write_text(
+                json.dumps({'leftovers': [list(p) for p in leftovers], 'sample': [list(p) for p in sample]},
+                           indent=1))
+            raise SystemExit(
+                f'{plan.name}: {len(leftovers)} ghost feature leftover(s) '
+                f'(unplanned {_feature_block_id()}), e.g. {sample[:5]}; '
+                f'see {plan.name}-ghost-leftovers.json; stage {key} left '
+                "'applying' (python scripts/site_recover.py status)")
     if rep['mismatches']:
         site_stages.finish(cell, key, 'applied-with-mismatches', readback=rep)
     else:
