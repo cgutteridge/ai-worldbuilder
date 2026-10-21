@@ -4,53 +4,21 @@
   "nextTaskId": 49,
   "tasks": [
     {
-      "id": 37,
-      "title": "ADR 004 and glossary: one cell journal; drop region backup/restore",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Write ADR 004: single append-only registry/journal.jsonl (begun->landed/mismatched); progress, ghost state, ownership, in-flight are views of it; site_kit.apply keeps signature/guards and is the only writer via change(). Decisions: NO region backup/restore anywhere; evidence is lidar only; worlds are volatile for this phase (erase and recreate, no migration). Update GLOSSARY ('Apply journal', 'Cell registry'). Mark ADR 003 s3 and docs/specs/lidar-ghost-v2-and-dryrun-reset.md superseded; delete the drifted .scratch/lidar-ghost-v2-dryrun copy. Design sources: merged A/B/C designs (design-A/B/C.md from the design session)."
-    },
-    {
-      "id": 38,
-      "title": "Remove pristine baseline reads; evidence is lidar only",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Delete every read of config/world.json pristine_region_path: scripts/lidar_heightmap.py (pristine Maps default), scripts/lump_scan.py, scripts/osm_footprints.py (PRISTINE World), config key, rules/docs/skills mentions, tests. Anything needing ground/surface heights uses the lidar provider only. Check rules/ and templates/ for 'pristine' wording."
-    },
-    {
-      "id": 39,
-      "title": "Decide and replace read-only region block reads (site_kit.World)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "site_kit.World parses r.X.Z.mca read-only; also used by lump_scan, osm_footprints, readback, site_recover. We are nervous about direct region-file reads. Audit every caller (including any shutil/open wb writers we missed), then decide: read blocks over MCP instead, or keep a single guarded reader behind the BlockStore seam (LiveBlocks + MemoryBlocks). Output: decision recorded in ADR 004 and the BlockStore interface."
-    },
-    {
       "id": 40,
       "title": "Remove region backup and restore entirely",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [
-        37
-      ],
+      "blockedBy": [],
       "notes": "Delete scripts/region_backup.py (snap, snap-world, restore, prune, kinds), registry_repair backup/undo-repair/export-import slice, model_bakeoff restore-ghost and ghost_snap/ghost_region_path config, dryrun_reset region wipe-by-file (reset becomes erase-and-recreate), site_recover region snapshot compare if it depends on it, logout_gate if nothing else needs it, rules/cleanup.md prune notes, process.md and handoff-layered-passes snapshot/restore advice, cell-orchestrator and model-bakeoff skills, and their tests. Replacement for 'mess in a cell': reconcile(fix) wipes/replays recorded plans over MCP (see task 44). Replacement for the bakeoff baseline: regenerate lidar ghosts via lidar_ghost apply (see task 48)."
     },
     {
       "id": 41,
       "title": "Journal-based cell registry core with MemoryBlocks",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [
-        37,
-        39
-      ],
+      "blockedBy": [],
       "notes": "Implement CellRegistry: change(intent) as the only writer (Build, Undo, Note), view() returning frozen per-cell CellView, reconcile(cells, fix=) comparing journal to blocks. BlockStore seam with LiveBlocks and MemoryBlocks adapters; ownership as a private rebuildable projection (replaces *-cells.json, pickle cache, owner index). Loud failures, no swallow-and-print. Tests at the interface only. No Snapshot/Restore intents (task 40)."
     },
     {
