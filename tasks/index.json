@@ -4,32 +4,12 @@
   "nextTaskId": 49,
   "tasks": [
     {
-      "id": 40,
-      "title": "Remove region backup and restore entirely",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Delete scripts/region_backup.py (snap, snap-world, restore, prune, kinds), registry_repair backup/undo-repair/export-import slice, model_bakeoff restore-ghost and ghost_snap/ghost_region_path config, dryrun_reset region wipe-by-file (reset becomes erase-and-recreate), site_recover region snapshot compare if it depends on it, logout_gate if nothing else needs it, rules/cleanup.md prune notes, process.md and handoff-layered-passes snapshot/restore advice, cell-orchestrator and model-bakeoff skills, and their tests. Replacement for 'mess in a cell': reconcile(fix) wipes/replays recorded plans over MCP (see task 44). Replacement for the bakeoff baseline: regenerate lidar ghosts via lidar_ghost apply (see task 48)."
-    },
-    {
-      "id": 41,
-      "title": "Journal-based cell registry core with MemoryBlocks",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Implement CellRegistry: change(intent) as the only writer (Build, Undo, Note), view() returning frozen per-cell CellView, reconcile(cells, fix=) comparing journal to blocks. BlockStore seam with LiveBlocks and MemoryBlocks adapters; ownership as a private rebuildable projection (replaces *-cells.json, pickle cache, owner index). Loud failures, no swallow-and-print. Tests at the interface only. No Snapshot/Restore intents (task 40)."
-    },
-    {
       "id": 42,
       "title": "Cut site_kit.apply over to the journal",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [
-        41
-      ],
+      "blockedBy": [],
       "notes": "apply keeps signature, guards and SystemExit messages; calls change(Build). Delete scripts/site_stages.py, scripts/registry_hooks.py, the swallow-and-print try blocks in site_kit, built_cells/owned_in/owner index/cache, touched_cells.py; reroute readers (feature_build, house_build, terrace, ground_layer, trees_layer, decor_layer, cell_marker, redo_here, coverage, site_status, site_handoff, registry_next). Delete old tests as each path goes."
     },
     {
@@ -61,8 +41,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        42,
-        40
+        42
       ],
       "notes": "dryrun_reset: empty world, fresh journal, rescaffold site/ from templates; no region file copying. Worlds are volatile this phase."
     },
@@ -98,7 +77,6 @@
       "complexity": "m",
       "blockedBy": [
         45,
-        40,
         47
       ],
       "notes": "Wipe and recreate southampton-build and the bakeoff world; regenerate the 3x3 (ring 2) ghosts with lidar_ghost apply; commit R-004 (open, Claude Haiku 5.5 high effort, feature_design) and run the sitting. Update model-bakeoffs PROTOCOL/README/SKILL to the no-restore flow."
