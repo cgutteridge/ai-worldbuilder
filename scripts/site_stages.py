@@ -19,10 +19,18 @@ from collections import Counter
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
+import cellmath  # noqa: E402
+
 CELLS = ROOT / 'site' / 'cells'
 SNAPSHOTS = ROOT / 'backups' / 'regions'
-CELL_SHIFT = 7                       # 128-block cells
 SNAPSHOT_MAX_AGE_H = 3
+
+
+def __getattr__(name: str):
+    """``CELL_SHIFT`` tracks the live configured cell size (log2)."""
+    if name == 'CELL_SHIFT':
+        return cellmath.cell_shift()
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
 def stage_path(cell, cells_dir: Path | None = None) -> Path:
@@ -44,7 +52,8 @@ def write(cell, data: dict) -> None:
 
 def primary_cell(positions) -> tuple[int, int]:
     """The cell holding most of the given (x, y, z) positions."""
-    counts = Counter((x >> CELL_SHIFT, z >> CELL_SHIFT) for x, _y, z in positions)
+    shift = cellmath.cell_shift()
+    counts = Counter((x >> shift, z >> shift) for x, _y, z in positions)
     return counts.most_common(1)[0][0]
 
 

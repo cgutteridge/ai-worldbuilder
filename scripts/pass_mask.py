@@ -24,7 +24,7 @@ import cellmath  # noqa: E402
 
 from script_env import ROOT  # noqa: E402
 MASK_DIR = ROOT / 'verification' / 'site' / 'masks'
-CELL_SIZE = 128
+CELL_SIZE = cellmath.CELL  # back-compat alias; cellmath owns the grid
 AIR = 'minecraft:air'
 PASSES = ('trees', 'decor')
 TREES_RULE = 'overhang-v1'   # trees: trunk's cell owns the tree, crowns overhang, tree-on-tree leaves merge (I-061)

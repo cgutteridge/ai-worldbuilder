@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ref_manifest import load_manifest, mc_tile_id
+from ref_manifest import load_manifest
 import cellmath  # noqa: E402
 
 from script_env import ROOT  # noqa: E402
@@ -467,18 +467,15 @@ def majority(grid: dict, free: set, passes: int = 2, need: int = 5) -> dict:
 
 
 # --- reference manifest ---------------------------------------------------------------------
-def mc_tile_for_cell(tx: int, tz: int, size: int = 128) -> str:
-    """Sparse manifest tile id for a coverage cell index.
+def mc_tile_for_cell(tx: int, tz: int, size: int | None = None) -> str:
+    """Sparse manifest tile id for a coverage cell index (delegates to cellmath).
 
     @param tx: cell X index (same as coverage tx)
     @param tz: cell Z index
     @param size: tile size in blocks
     @returns: e.g. ``128:48:-44``
     """
-    # Cell tx,tz maps to world tile index (origin at cell corner)
-    x0 = tx * size
-    z0 = tz * size
-    return mc_tile_id(x0 + size // 2, z0 + size // 2, size)
+    return cellmath.mc_tile_for_cell(tx, tz, size=size)
 
 
 def cell_coverage(row: dict, tx: int, tz: int, size: int = 128) -> float:

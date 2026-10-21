@@ -21,15 +21,21 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from cellmath import ring_distance
+from cellmath import origin_cell, ring_distance
 
 from script_env import ROOT  # noqa: E402
 CELLS = ROOT / 'site/cells'
 MARKER = ROOT / 'site/CURRENT-CELL.json'
 LOCK = ROOT / 'site/LOCK.json'
 RUN_LOG = ROOT / 'site/RUN-LOG.md'
-CENTRE = (48, -44)                    # ring 0, per rules/radial-good-enough.md
 STAMP = re.compile(r'(\d{4}-\d\d-\d\d)[ T](\d\d:\d\d)(?::(\d\d))?')
+
+
+def __getattr__(name: str):
+    """``CENTRE`` is the configured origin cell (no longer hard-coded)."""
+    if name == 'CENTRE':
+        return origin_cell()
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
 def cell_of(path: Path) -> tuple[int, int]:
@@ -38,7 +44,7 @@ def cell_of(path: Path) -> tuple[int, int]:
 
 
 def ring(cell: tuple[int, int]) -> int:
-    return ring_distance(cell, CENTRE)
+    return ring_distance(cell, origin_cell())
 
 
 def parse_stamp(s) -> datetime | None:

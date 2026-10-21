@@ -70,7 +70,7 @@ from touched_cells import (  # noqa: E402
     touched_by_build, union,
 )
 
-from cellmath import CELL  # noqa: E402,F401
+from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
 MARGIN = 48           # grid margin round the area's cells; > REACH so edge properties stay whole
 FRINGE = 3            # stock street surface this far past a parcel joins it (ParcelBuilder.fringe)
@@ -111,19 +111,19 @@ OPEN_KEYS = ('landuse', 'leisure', 'amenity', 'natural', 'man_made', 'highway', 
 from cellmath import N4  # noqa: E402,F401
 
 
-# --- geometry -----------------------------------------------------------------------------
+# --- geometry (cell grid owned by cellmath) ----------------------------------------------
 def cell_of(x: int, z: int) -> tuple[int, int]:
-    """128-cell key of a column (same grid as COVERAGE.txt and sparse mc_tiles).
+    """128-cell key of a column (delegates to cellmath).
 
     @param x: MC block x
     @param z: MC block z
-    @returns: (tx, tz) = (floor(x / 128), floor(z / 128))
+    @returns: (tx, tz)
     """
-    return x // CELL, z // CELL
+    return _cellmath_cell_of(x, z)
 
 
 def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int) -> tuple[int, int, int, int]:
-    """Inclusive block bbox of a rectangle of 128-cells.
+    """Inclusive block bbox of a rectangle of cells (delegates to cellmath).
 
     @param tx0: first cell x
     @param tz0: first cell z
@@ -131,7 +131,7 @@ def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int) -> tuple[int, int, int, in
     @param tz1: last cell z (inclusive)
     @returns: (x0, z0, x1, z1) inclusive block bounds
     """
-    return tx0 * CELL, tz0 * CELL, (tx1 + 1) * CELL - 1, (tz1 + 1) * CELL - 1
+    return _cellmath_cell_bbox(tx0, tz0, tx1, tz1)
 
 
 def scan_polygon(rings, bbox):

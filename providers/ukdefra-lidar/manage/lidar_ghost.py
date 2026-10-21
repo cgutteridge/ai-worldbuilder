@@ -419,14 +419,14 @@ def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False
 
 
 def cells_for_positions(positions) -> set[tuple[int, int]]:
-    """Map block positions to 128² cells.
+    """Map block positions to coverage cells.
 
     @param positions: iterable of (x, y, z)
     @returns: set of (tx, tz)
     """
-    from site_stages import CELL_SHIFT
+    import cellmath
 
-    return {(x >> CELL_SHIFT, z >> CELL_SHIFT) for x, _y, z in positions}
+    return {cellmath.cell_of(x, z) for x, _y, z in positions}
 
 
 def plan_strip_ghost_features(volume_plan, *, cells_dir: Path | None = None):
@@ -445,9 +445,9 @@ def plan_strip_ghost_features(volume_plan, *, cells_dir: Path | None = None):
     for pos, (build, _st) in owned.items():
         if not is_ghost_feature_owner(build):
             continue
-        from site_stages import CELL_SHIFT
+        import cellmath
 
-        cell = (pos[0] >> CELL_SHIFT, pos[2] >> CELL_SHIFT)
+        cell = cellmath.cell_of(pos[0], pos[2])
         by_cell.setdefault(cell, {})[pos] = build
     out = []
     for cell, hits in sorted(by_cell.items()):

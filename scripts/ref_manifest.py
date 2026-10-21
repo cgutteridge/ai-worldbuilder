@@ -36,10 +36,11 @@ from world_frame import (  # noqa: E402
     wgs84_to_osgb,
     wm_tile_bbox_mc,
 )
+import cellmath  # noqa: E402
 
 REF = ROOT / 'reference'
 MANIFEST = REF / 'manifest.jsonl'
-MC_TILE = 128
+MC_TILE = cellmath.CELL
 
 
 def sha256_file(path: Path) -> str:
@@ -55,20 +56,18 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def mc_tile_id(x: int, z: int, size: int = MC_TILE) -> str:
-    """Return sparse MC tile id covering block (x, z).
+def mc_tile_id(x: int, z: int, size: int | None = None) -> str:
+    """Return sparse MC tile id covering block (x, z) (delegates to cellmath).
 
     @param x: Minecraft X
     @param z: Minecraft Z
-    @param size: tile edge in blocks (default 128)
+    @param size: tile edge in blocks (default: configured cell size)
     @returns: e.g. \"128:54:-42\"
     """
-    tx = math.floor(x / size)
-    tz = math.floor(z / size)
-    return f'{size}:{tx}:{tz}'
+    return cellmath.mc_tile_id(x, z, size=size if size is not None else MC_TILE)
 
 
-def mc_tiles_for_bbox(x0: int, z0: int, x1: int, z1: int, size: int = MC_TILE) -> list[str]:
+def mc_tiles_for_bbox(x0: int, z0: int, x1: int, z1: int, size: int | None = None) -> list[str]:
     """All MC tile ids overlapping an inclusive XZ bbox.
 
     @param x0: min X
@@ -78,14 +77,15 @@ def mc_tiles_for_bbox(x0: int, z0: int, x1: int, z1: int, size: int = MC_TILE) -
     @param size: tile edge
     @returns: sorted unique tile ids
     """
+    s = MC_TILE if size is None else size
     if x0 > x1:
         x0, x1 = x1, x0
     if z0 > z1:
         z0, z1 = z1, z0
     out = []
-    for tx in range(math.floor(x0 / size), math.floor(x1 / size) + 1):
-        for tz in range(math.floor(z0 / size), math.floor(z1 / size) + 1):
-            out.append(f'{size}:{tx}:{tz}')
+    for tx in range(math.floor(x0 / s), math.floor(x1 / s) + 1):
+        for tz in range(math.floor(z0 / s), math.floor(z1 / s) + 1):
+            out.append(f'{s}:{tx}:{tz}')
     return out
 
 

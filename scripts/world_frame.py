@@ -26,10 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
+import cellmath  # noqa: E402
 
 FRAME_PATH = ROOT / 'config' / 'world-frame.json'
 LEGACY_OFFSETS = ROOT / 'config' / 'map-maker-offsets.json'
-CELL = 128
 
 
 @dataclass(frozen=True)
@@ -373,44 +373,39 @@ def y_to_metres_aod(y: int, frame: WorldFrame | None = None) -> float:
     return float(y - f.y_offset)
 
 
-# ---- cells -------------------------------------------------------------------
+# ---- cells (owned by cellmath) -----------------------------------------------
 
 def parse_cell(spec: str) -> tuple[int, int]:
-    """Parse ``tx,tz``.
+    """Parse ``tx,tz`` (delegates to cellmath).
 
     @param spec: comma-separated cell indices
     @returns: (tx, tz)
     """
-    parts = [p.strip() for p in str(spec).split(',')]
-    if len(parts) != 2:
-        raise SystemExit(f'expected tx,tz got {spec!r}')
-    try:
-        return int(parts[0]), int(parts[1])
-    except ValueError:
-        raise SystemExit(f'expected tx,tz got {spec!r}') from None
+    return cellmath.parse_cell(spec)
 
 
-def cell_of(x: int, z: int, size: int = CELL) -> tuple[int, int]:
-    """Coverage cell of a block column.
+def cell_of(x: int, z: int, size: int | None = None) -> tuple[int, int]:
+    """Coverage cell of a block column (delegates to cellmath).
 
     @param x: Minecraft X
     @param z: Minecraft Z
-    @param size: cell edge (default 128)
+    @param size: cell edge (default: configured cell size)
     @returns: (tx, tz)
     """
-    return x // size, z // size
+    return cellmath.cell_of(x, z, size=size)
 
 
-def cell_bounds(cell: tuple[int, int], margin: int = 0, size: int = CELL) -> tuple[int, int, int, int]:
-    """Inclusive (x0, z0, x1, z1) of a cell.
+def cell_bounds(
+    cell: tuple[int, int], margin: int = 0, size: int | None = None,
+) -> tuple[int, int, int, int]:
+    """Inclusive (x0, z0, x1, z1) of a cell (delegates to cellmath).
 
     @param cell: (tx, tz)
     @param margin: blocks grown on every side
-    @param size: cell edge
+    @param size: cell edge (default: configured cell size)
     @returns: bbox
     """
-    x0, z0 = cell[0] * size, cell[1] * size
-    return x0 - margin, z0 - margin, x0 + size - 1 + margin, z0 + size - 1 + margin
+    return cellmath.bounds(cell, margin=margin, size=size)
 
 
 # ---- web-mercator / tile XYZ -------------------------------------------------
@@ -562,6 +557,10 @@ def main(argv: list[str] | None = None) -> int:
             'anchor': f.anchor,
             'offsets': {'easting': f.offset_e, 'northing': f.offset_n},
             'bounds_mc': f.bounds_mc,
+            'cell': f.data.get('cell') or {
+                'size': cellmath.cell_size(),
+                'origin': list(cellmath.origin_cell()),
+            },
             'y_offset': f.y_offset,
             'elevation_plugin': f.data.get('elevation_plugin'),
         }, indent=2))
