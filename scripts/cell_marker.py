@@ -348,26 +348,30 @@ def plan_clear(tx: int, tz: int, world: World | None = None,
 
 
 def read_current() -> tuple[int, int] | None:
-    """Cell that currently owns the focus ring.
+    """Cell that currently owns the focus ring (registry marker — ticket #31).
 
-    @returns: (tx, tz) from CURRENT-CELL.json, or None when no ring is held
+    @returns: (tx, tz) or None when no ring is held
     """
-    if not CURRENT_FILE.exists():
-        return None
-    data = json.loads(CURRENT_FILE.read_text())
-    if not data or data.get('tx') is None:
-        return None
-    return int(data['tx']), int(data['tz'])
+    from cell_registry import RegistryStore
+    return RegistryStore().current_cell()
 
 
 def write_current(cell: tuple[int, int] | None) -> None:
-    """Record (or release) the focus cell. Only raise/clear/adopt call this.
+    """Record (or release) the focus cell in the registry. Only raise/clear/adopt call this.
+
+    Legacy ``site/CURRENT-CELL.json`` is removed (ticket #31).
 
     @param cell: (tx, tz) to hold, or None to release
     """
-    body = {'tx': None, 'tz': None} if cell is None else {'tx': cell[0], 'tz': cell[1]}
-    body['note'] = 'Written only by scripts/cell_marker.py (raise/clear/adopt). Do not edit.'
-    CURRENT_FILE.write_text(json.dumps(body, indent=2) + '\n')
+    CURRENT_FILE.unlink(missing_ok=True)
+    from cell_registry import RegistryStore, cell_id
+    store = RegistryStore()
+    if cell is None:
+        cur = store.current_cell()
+        if cur is not None:
+            store.set_marker(cell_id(*cur), 'none', replace_existing=True)
+        return
+    store.set_marker(cell_id(*cell), 'up', replace_existing=True)
 
 
 def registered_cells() -> list[tuple[int, int]]:

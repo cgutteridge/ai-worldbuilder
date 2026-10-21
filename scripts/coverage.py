@@ -686,52 +686,39 @@ def load_areas(name: str | None = None, built_only: bool = False) -> list:
 
 # --- sign-offs ----------------------------------------------------------------------------
 def load_signoffs() -> dict:
-    """Active sign-offs, latest record per parcel (a revoke record removes it).
+    """Sign-offs removed (ticket #31); always empty. Kept for call-site compatibility.
 
-    @returns: {parcel id: record}
+    @returns: {}
     """
-    active = {}
-    if SIGNOFFS.exists():
-        for line in SIGNOFFS.read_text().splitlines():
-            if not line.strip() or line.startswith('#'):
-                continue
-            r = json.loads(line)
-            if r.get('revoke'):
-                active.pop(r['parcel'], None)
-            else:
-                active[r['parcel']] = r
-    return active
+    return {}
 
 
 def load_holds() -> dict:
-    """Open holds per cell. A cell with an open hold can never report status=done.
-
-    A hold is {"cell": [tx, tz], "id": "Q-nnn", "reason": "..."}. A matching
-    {"cell": [tx, tz], "id": "Q-nnn", "release": true} record closes it.
+    """Open holds per cell from the registry ``hold`` field (ticket #31).
 
     @returns: {(tx, tz): {id: record}}
     """
-    open_holds: dict = {}
-    if HOLDS.exists():
-        for line in HOLDS.read_text().splitlines():
-            if not line.strip() or line.startswith('#'):
+    try:
+        from cell_registry import RegistryStore, parse_cell_id
+        store = RegistryStore()
+        out: dict = {}
+        for cid, rec in store._load_cells().items():
+            reason = rec.get('hold')
+            if not reason:
                 continue
-            r = json.loads(line)
-            cell = tuple(r['cell'])
-            if r.get('release'):
-                open_holds.get(cell, {}).pop(r['id'], None)
-            else:
-                open_holds.setdefault(cell, {})[r['id']] = r
-    return {c: h for c, h in open_holds.items() if h}
+            cell = parse_cell_id(cid)
+            out[cell] = {'registry': {'cell': list(cell), 'id': 'registry', 'reason': reason}}
+        return out
+    except Exception:
+        return {}
 
 
 def append_signoff(rec: dict):
-    """Append one sign-off / revoke record to site/COVERAGE-SIGNOFFS.jsonl.
+    """No-op: coverage sign-offs deleted (ticket #31).
 
-    @param rec: record dict (parcel, area, build|revoke, date, ...)
+    @param rec: ignored
     """
-    with SIGNOFFS.open('a') as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    del rec
 
 
 def pct(t: int, n: int) -> str:
@@ -749,14 +736,15 @@ def pct(t: int, n: int) -> str:
 
 
 def parcel_state(n: int, t: int, signed: bool) -> str:
-    """Coverage state of one parcel.
+    """Coverage state of one parcel (no sign-off gate — ticket #31).
 
     @param n: columns in the parcel
     @param t: touched columns
-    @param signed: an active sign-off exists
-    @returns: 'done' only at 100% with a sign-off; else 'touched' (t > 0) or 'untouched'
+    @param signed: ignored (sign-offs removed)
+    @returns: 'done' at 100% touched; else 'touched' (t > 0) or 'untouched'
     """
-    if signed and t == n:
+    del signed
+    if n and t == n:
         return 'done'
     return 'touched' if t else 'untouched'
 
@@ -888,29 +876,55 @@ def geocraft_leftovers(cells, kind: str, live: World, pristine: World, placed: d
 
 # --- COVERAGE.txt -------------------------------------------------------------------------
 def focus_cell() -> tuple[int, int]:
-    """Radial origin cell parsed from COVERAGE.txt ('Origin cell for current focus: tx=.. tz=..').
+    """Focus cell from the registry marker, else world-frame origin (ticket #31).
 
     @returns: (tx, tz)
-    @raises SystemExit: if the line is missing
     """
-    m = re.search(r'Origin cell for current focus:\s*tx=(-?\d+)\s+tz=(-?\d+)', COVERAGE_TXT.read_text())
-    if not m:
-        raise SystemExit('COVERAGE.txt: no "Origin cell for current focus: tx=.. tz=.." line')
-    return int(m.group(1)), int(m.group(2))
+    try:
+        from cell_registry import RegistryStore
+        cur = RegistryStore().current_cell()
+        if cur is not None:
+            return cur
+    except Exception:
+        pass
+    try:
+        from cellmath import origin_cell
+        return origin_cell()
+    except Exception:
+        pass
+    if COVERAGE_TXT.exists():
+        m = re.search(
+            r'Origin cell for current focus:\s*tx=(-?\d+)\s+tz=(-?\d+)',
+            COVERAGE_TXT.read_text(),
+        )
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    raise SystemExit('no registry marker, origin cell, or COVERAGE.txt focus line')
 
 
 def cell_rollup(areas: list, touched: set, signoffs: dict) -> list:
-    """Per-128-cell totals over every configured area (first area wins on overlap).
+    """Per-128-cell totals; ring distance uses registry focus (ticket #31).
+
+    Prefer registry DONE when a cell is registered; otherwise parcel touch stats.
 
     @param areas: [Area, ...]
     @param touched: touched columns
-    @param signoffs: load_signoffs()
+    @param signoffs: load_signoffs() (empty under #31)
     @returns: [{'cell', 'area', 'r', 'cols', 'touched', 'done', 'parcels': Counter(state),
                'gaps', 'open_gaps', 'status'}, ...] sorted by ring, then cell
     """
     fx, fz = focus_cell()
     seen, rows = set(), []
     holds = load_holds()
+    reg_done: set[tuple[int, int]] = set()
+    try:
+        from cell_registry import RegistryStore, parse_cell_id
+        store = RegistryStore()
+        for cid in store._load_cells():
+            if store.is_done(cid):
+                reg_done.add(parse_cell_id(cid))
+    except Exception:
+        pass
     for a in areas:
         st = stats(a, touched, signoffs)
         own = a.owner()
@@ -930,7 +944,10 @@ def cell_rollup(areas: list, touched: set, signoffs: dict) -> list:
                     d += st[pid]['state'] == 'done'
             states = Counter(st[p]['state'] for p in pids)
             gaps = [p for p in pids if a.parcels[p]['kind'] in GAPLIKE]
-            status = 'done' if d == cols else 'partial' if t else 'untouched'
+            if (tx, tz) in reg_done:
+                status = 'done'
+            else:
+                status = 'done' if d == cols else 'partial' if t else 'untouched'
             if holds.get((tx, tz)):
                 status = 'held'
             rows.append({'cell': (tx, tz), 'area': a.name, 'r': max(abs(tx - fx), abs(tz - fz)),
@@ -948,7 +965,7 @@ def rollup_text(rows: list, n_builds: int) -> str:
     @returns: text between the BEGIN / END markers (no markers)
     """
     lines = [f'generated {datetime.now().strftime("%Y-%m-%d %H:%M")} from {n_builds} builds '
-             f'(reverted excluded); done = 100% of columns in signed-off parcels',
+             f'(reverted excluded); done = 100% columns touched or registry DONE',
              'tx,tz  |  r  |  area  |  status  |  columns done / touched  |  '
              'parcels done/touched/untouched  |  gaps open/all']
     for r in rows:
@@ -1220,127 +1237,15 @@ def signoff_parcels(
 
 
 def cmd_signoff(args) -> int:
-    """Record sign-offs (refused below 100% or on leftover import mass), backfill, or revoke.
+    """Sign-offs removed (ticket #31). Prints a deprecation notice and exits 0.
 
-    @param args: argparse namespace
-    @returns: exit code (1 if any requested sign-off was refused)
+    @param args: argparse namespace (ignored)
+    @returns: 0
     """
-    areas = load_areas()
-    by_build = touched_by_build()
-    touched, signoffs = union(by_build), load_signoffs()
-    today = args.date or date.today().isoformat()
-    if args.revoke:
-        if not args.reason:
-            raise SystemExit('--revoke needs --reason')
-        for pid in args.ids:
-            if pid not in signoffs:
-                print(f'{pid}: no active sign-off')
-                continue
-            append_signoff({'parcel': pid, 'revoke': True, 'date': today, 'reason': args.reason})
-            print(f'{pid}: sign-off revoked')
-        write_coverage(areas, by_build)
-        return 0
-    live, pristine = World(), World(PRISTINE)
-    placed, primed = {}, set()
-
-    def prime(cols):
-        todo = set(cols) - primed
-        if todo:
-            placed.update(placed_heights(todo, by_build))
-            primed.update(todo)
-
-    def check(a, p, build):
-        cols = p['set']
-        t = len(cols & touched)
-        if t < p['n']:
-            miss = sorted(cols - touched)
-            return f'touched {t}/{p["n"]} ({pct(t, p["n"])}) — {len(miss)} untouched, e.g. {miss[:4]}'
-        if build is not None:
-            if build in REVERTED:
-                return f'{build} was reverted (I-009)'
-            if build not in by_build:
-                return f'no verification/site/{build}-cells.json'
-            if not by_build[build] & cols:
-                return f'{build} touched none of its columns'
-        prime(cols)
-        hits = geocraft_leftovers(cols, p['kind'], live, pristine, placed, limit=20)
-        if any(hits.values()):
-            return 'leftover import mass ' + ', '.join(f'{k} e.g. {v[:2]}' for k, v in hits.items() if v)
-        return None
-
-    def sign(a, p, build, note):
-        append_signoff({'parcel': p['id'], 'area': a.name, 'build': build, 'date': today,
-                        'columns': p['n'], 'digest': p['digest'], 'note': note})
-
-    refused = 0
-    if args.backfill:
-        builds = [b.strip() for b in args.builds.split(',')] if args.builds else sorted(by_build)
-        unknown = [b for b in builds if b not in by_build]
-        if unknown:
-            raise SystemExit(f'unknown or reverted builds: {unknown}')
-        report, seen = {'signed': [], 'already': [], 'short': [], 'refused': []}, set()
-        prime(c for a in areas for pid, p in a.parcels.items()
-              if pid not in signoffs and p['set'] <= touched
-              and any(by_build[b] & p['set'] for b in builds) for c in p['set'])
-        for a in areas:
-            for pid, p in a.parcels.items():
-                if pid in seen:
-                    continue
-                who = Counter({b: len(by_build[b] & p['set']) for b in builds if by_build[b] & p['set']})
-                if not who:
-                    continue
-                seen.add(pid)
-                if pid in signoffs:
-                    report['already'].append(pid)
-                    continue
-                t = len(p['set'] & touched)
-                if t < p['n']:
-                    report['short'].append((pid, p['kind'], t, p['n'], p['label']))
-                    continue
-                build = who.most_common(1)[0][0]
-                why = check(a, p, build)
-                if why:
-                    report['refused'].append((pid, why))
-                    continue
-                if not args.dry_run:
-                    sign(a, p, build, args.note or 'Q-038 backfill')
-                report['signed'].append((pid, build))
-        short = sorted(report['short'], key=lambda r: -r[2] / r[3])
-        print(f'backfill over {len(builds)} builds: signed {len(report["signed"])}, already {len(report["already"])}, '
-              f'refused (leftover import mass) {len(report["refused"])}, short of 100% {len(short)}'
-              + (' [dry run]' if args.dry_run else ''))
-        by_kind = Counter(r[1] for r in short)
-        print('  short by kind: ' + ', '.join(f'{k} {by_kind[k]}' for k in KINDS if by_kind[k]))
-        for pid, kind, t, n, label in short[:args.limit]:
-            print(f'  SHORT {pid} | {kind} | {pct(t, n)} ({t}/{n}) | {label}')
-        for pid, why in report['refused'][:args.limit]:
-            print(f'  REFUSED {pid}: {why}')
-        STORE.mkdir(parents=True, exist_ok=True)
-        rep = STORE / f'backfill-{today}{"-dry" if args.dry_run else ""}.json'
-        rep.write_text(json.dumps(report, indent=1, ensure_ascii=False))
-        print(f'  full report: {rep.relative_to(ROOT)}')
-    else:
-        if not args.ids or not args.build:
-            raise SystemExit('signoff needs parcel ids and --build (or --backfill / --revoke)')
-        for pid in args.ids:
-            a, p = _find_parcel(areas, pid)
-            if p is None:
-                print(f'REFUSED {pid}: no such parcel (coverage.py status --list)')
-                refused += 1
-                continue
-            why = check(a, p, args.build)
-            if why:
-                print(f'REFUSED {pid}: {why}')
-                refused += 1
-                continue
-            if args.dry_run:
-                print(f'would sign {pid} ({p["label"]}) by {args.build} on {today} [dry run]')
-                continue
-            sign(a, p, args.build, args.note)
-            print(f'signed {pid} ({p["label"]}) by {args.build} on {today}')
-    if not args.dry_run:
-        write_coverage(areas, by_build)
-    return 1 if refused else 0
+    del args
+    print('coverage signoff retired (ticket #31): parcels are done at 100% touched; '
+          'use cell_registry.py hold / next / issues instead', file=sys.stderr)
+    return 0
 
 
 def cmd_map(args) -> int:

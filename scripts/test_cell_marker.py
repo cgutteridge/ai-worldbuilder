@@ -80,7 +80,7 @@ class TestCellMarker(unittest.TestCase):
 
 
 class TestFocusFile(unittest.TestCase):
-    """CURRENT-CELL.json guards (temp dirs, no Minecraft)."""
+    """Registry focus guards (temp dirs, no Minecraft) — ticket #31."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -89,8 +89,11 @@ class TestFocusFile(unittest.TestCase):
         cm.CURRENT_FILE = tmp / 'CURRENT-CELL.json'
         cm.OUT = tmp
         self.out = tmp
+        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(tmp)})
+        self._env.start()
 
     def tearDown(self):
+        self._env.stop()
         cm.CURRENT_FILE, cm.OUT = self._old
         self._tmp.cleanup()
 
@@ -100,6 +103,7 @@ class TestFocusFile(unittest.TestCase):
     def test_write_and_release(self):
         cm.write_current((48, -46))
         self.assertEqual(cm.read_current(), (48, -46))
+        self.assertFalse(cm.CURRENT_FILE.exists())
         cm.write_current(None)
         self.assertIsNone(cm.read_current())
 
@@ -164,11 +168,11 @@ class TestFocusGhosts(unittest.TestCase):
                 with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts, \
                      mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': tmp}):
                     code = cm.cmd_adopt((48, -44), ghost_ring=1)
-                self.assertEqual(code, 0)
-                ghosts.assert_called_once_with((48, -44), dry=False, ring=1, skip=False)
-                self.assertEqual(cm.read_current(), (48, -44))
-                import cell_registry as cr
-                self.assertEqual(cr.RegistryStore(Path(tmp)).current_cell(), (48, -44))
+                    self.assertEqual(code, 0)
+                    ghosts.assert_called_once_with((48, -44), dry=False, ring=1, skip=False)
+                    self.assertEqual(cm.read_current(), (48, -44))
+                    import cell_registry as cr
+                    self.assertEqual(cr.RegistryStore(Path(tmp)).current_cell(), (48, -44))
             finally:
                 cm.CURRENT_FILE = old
 

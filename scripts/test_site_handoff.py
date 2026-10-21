@@ -39,9 +39,11 @@ GENERIC BOOT PROMPT
 
 class Base(unittest.TestCase):
     def setUp(self):
+        import os
         self.tmp = tempfile.TemporaryDirectory()
         self.site = Path(self.tmp.name)
         (self.site / 'cells').mkdir()
+        (self.site / 'registry').mkdir()
         (self.site / 'QUEUE.txt').write_text(QUEUE_TEXT)
         (self.site / 'HANDOFF.txt').write_text(HANDOFF_TEXT)
         patches = [mock.patch.object(H, n, v) for n, v in dict(
@@ -52,10 +54,28 @@ class Base(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
+        env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.site)})
+        env.start()
+        self.addCleanup(env.stop)
         self.addCleanup(self.tmp.cleanup)
 
     def stages(self, cell, **st):
         (self.site / 'cells' / f'{cell[0]}_{cell[1]}-STAGES.json').write_text(json.dumps({'stages': st}))
+
+    def registry_layers(self, cell, *, ground='generated', trees=True, decor=True):
+        """Seed registry layer flags for (tx, tz)."""
+        import registry_hooks as RH
+        from cell_registry import RegistryStore, cell_id
+        store = RegistryStore(self.site)
+        cid = cell_id(*cell)
+        if ground == 'generated':
+            RH.on_layer_clean(cell, 'ground', store=store)
+        else:
+            store.set_ground(cid, ground)
+        if trees and ground == 'generated':
+            RH.on_layer_clean(cell, 'trees', store=store)
+        if decor and ground == 'generated':
+            RH.on_layer_clean(cell, 'decor', store=store)
 
 
 APPLIED = {k: {'status': 'applied'} for k in ('ground', 'trees', 'decor')}
@@ -63,8 +83,8 @@ APPLIED = {k: {'status': 'applied'} for k in ('ground', 'trees', 'decor')}
 
 class DoneTest(Base):
     def test_done_needs_layers_current_trees_and_no_missing_features(self):
-        """Empty-world DoD: layers + trees mask; missing OSM feature builds still block done."""
-        self.stages((1, 1), **APPLIED)
+        """Registry DoD: layers + trees mask; residual feature builds still block done."""
+        self.registry_layers((1, 1))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
                 mock.patch.object(H, 'trees_over_roof_open', return_value=[]):
@@ -80,6 +100,7 @@ class DoneTest(Base):
 
     def test_applying_stage_is_not_done_and_reported_first(self):
         """An aborted apply leaves 'applying': never done, listed as 'in-flight: <plan>' by next --plan."""
+        self.registry_layers((1, 1), decor=False)
         st = dict(APPLIED)
         st['decor'] = {'status': 'applying', 'plan': 'highfield_1_1_decor'}
         self.stages((1, 1), **st)
@@ -97,33 +118,32 @@ class DoneTest(Base):
         self.assertIn('in-flight: highfield_1_1_decor', out.getvalue())
 
     def test_missing_layer_short_circuits_scan(self):
-        self.stages((1, 1), ground={'status': 'verified'})
+        self.registry_layers((1, 1), trees=False, decor=False)
         with mock.patch.object(H, 'residual_features', side_effect=AssertionError('no scan')):
             self.assertFalse(H.layers_done((1, 1)))
             self.assertEqual(H.cell_gaps((1, 1), features=False)['layers'], ['trees', 'decor'])
 
-    def test_next_cell_requeues_finished_cell_with_missing_features(self):
-        cells = {(48, -44): [], (48, -45): [{'kind': 'building', 'label': 'x', 'refs': ['w1'], 'bbox': (0, 0, 9, 9)}]}
-        for c in cells:
-            self.stages(c, **APPLIED)
+    def test_next_cell_from_registry_not_queue(self):
+        """Ticket #31: next_cell uses registry_next, not STAGES/QUEUE."""
+        self.registry_layers((48, -44))
+        self.registry_layers((48, -45), trees=False, decor=False)
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
-                mock.patch.object(H, 'residual_features', side_effect=lambda c, idx=None: cells.get(c, [])), \
-                mock.patch.object(H, 'trees_over_roof_open', return_value=[]):
-            self.assertEqual(H.next_cell(max_ring=1), (48, -45, 1))
-            plan = H.requeue_plan(max_ring=1)
-        self.assertEqual([(t, z) for t, z, *_ in plan], [(48, -45)])
+                mock.patch.object(H, 'residual_features', return_value=[]), \
+                mock.patch.object(H, 'trees_over_roof_open', return_value=[]), \
+                mock.patch('cellmath.origin_cell', return_value=(48, -44)):
+            nxt = H.next_cell(max_ring=1)
+        self.assertEqual(nxt[:2], (48, -45))
 
-    def test_queue_items_for_missing_features_and_stale_trees(self):
-        feat = {'kind': 'building', 'label': 'Hartley Avenue (2 buildings)',
-                'street': 'Hartley Avenue', 'refs': ['w1'], 'bbox': (6400, -5500, 6430, -5480)}
-        gaps = {'layers': [], 'trees_stale': True, 'features': [feat]}
-        with mock.patch.object(H, 'next_cell', return_value=(48, -44, 0)), \
-                mock.patch.object(H, 'cell_gaps', return_value=gaps), \
-                mock.patch.object(H, 'lidar_lumps', return_value=[]):
+    def test_advance_returns_registry_next_without_queue_write(self):
+        """Ticket #31: advance_to_next_cell does not append QUEUE items."""
+        before = H.QUEUE.read_text()
+        with mock.patch('registry_next.next_task', return_value={
+            'kind': 'layer', 'cell': '48,-44', 'layer': 'ground',
+        }):
             first = H.advance_to_next_cell()
-        self.assertIn('FEATURE Hartley Avenue', first['text'])
-        ids = [(i['id'], 'TREES re-run' in i['text']) for i in H._queue_items() if i['id'] > 'Q-002']
-        self.assertEqual([t for _i, t in ids], [False, True])
+        self.assertEqual(first['id'], 'NEXT')
+        self.assertIn('ground', first['text'])
+        self.assertEqual(H.QUEUE.read_text(), before)
 
     def test_residual_features_is_missing_builds_only_not_lump_scan(self):
         """Seam: residual_features never calls lump_scan; only OSM missing feature builds."""
@@ -138,53 +158,12 @@ class DoneTest(Base):
         scan.assert_not_called()
 
 
-REVIEW_TEXT = '''head
- ring  cell      bld  status
-  r0   1,1        4  done
-  r1   2,2        2  features
-  r1   3,3        8  todo
-'''
-
-
 class GoogleReviewTest(Base):
-    def setUp(self):
-        super().setUp()
-        (self.site / 'AERIAL-REVIEW.txt').write_text(REVIEW_TEXT)
-
-    def test_first_row_not_done_is_next(self):
-        self.assertEqual(H.next_google_review()['cell'], (2, 2))
-        H.set_google_review_status((2, 2), 'done')
-        self.assertEqual(H.next_google_review()['cell'], (3, 3))
-        self.assertIn('  r1   3,3        8  todo', (self.site / 'AERIAL-REVIEW.txt').read_text())
-
-    def test_bad_status_word_is_refused(self):
-        with self.assertRaises(ValueError):
-            H.set_google_review_status((2, 2), 'finished')
-
-    def test_review_item_is_queued_alone_while_a_row_is_open(self):
-        gaps = {'layers': ['ground'], 'trees_stale': False, 'features': [], 'trees_over_roof': []}
-        with mock.patch.object(H, 'next_cell', return_value=(4, 4, 2)), \
-                mock.patch.object(H, 'cell_gaps', return_value=gaps):
-            first = H.advance_to_next_cell()
-            H.advance_to_next_cell()            # the review item is open: not queued twice
-        self.assertIn('AERIAL REVIEW cell 2,2', first['text'])
-        self.assertEqual(H.google_review_cell(first), (2, 2))
-        texts = [i['text'] for i in H._queue_items() if i['id'] > 'Q-002']
-        self.assertTrue(texts[0].startswith('AERIAL REVIEW'))
-        self.assertEqual(sum('AERIAL REVIEW' in t for t in texts), 1)
-        self.assertEqual(len(texts), 1)         # no layered-passes / feature / TREES re-run item for the same work
-
-    def test_end_of_review_chat_sets_the_row(self):
-        gaps = {'layers': [], 'trees_stale': False, 'features': [], 'trees_over_roof': []}
-        with mock.patch.object(H, 'next_cell', return_value=None), \
-                mock.patch.object(H, 'cell_gaps', return_value=gaps):
-            first = H.advance_to_next_cell()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch('site_archive.run'):
-            H.main(['end', first['id'], '--summary', 's', '--skip-say', '--skip-view', '--review-status', 'look'])
-            self.assertEqual(H.next_google_review()['status'], 'look')
-            self.assertEqual(H.cmd_end([first['id'], '--summary', 's', '--skip-say', '--skip-view']), 0)
-        self.assertEqual(H.next_google_review()['cell'], (3, 3))
+    def test_aerial_review_retired(self):
+        """Ticket #31: AERIAL-REVIEW is not a progress source."""
+        self.assertIsNone(H.next_google_review())
+        self.assertFalse(H.set_google_review_status((2, 2), 'finished'))
+        self.assertFalse(H.set_google_review_status((2, 2), 'done'))
 
 
 class LidarGapsTest(Base):
@@ -197,29 +176,25 @@ class LidarGapsTest(Base):
         self.assertEqual(H.trees_over_roof_open((1, 1), lumps=[dict(self.LUMP, trees_over=0)]), [])
 
     def test_open_tree_over_roof_keeps_a_cell_not_done(self):
-        self.stages((1, 1), **APPLIED)
+        self.registry_layers((1, 1))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
                 mock.patch.object(H, 'lidar_lumps', return_value=[self.LUMP]):
             self.assertFalse(H.layers_done((1, 1)))
             self.assertEqual(H.cell_gaps((1, 1))['trees_over_roof'], [self.LUMP])
 
-    def test_feature_item_shows_lidar_storeys_roof_ridge(self):
+    def test_plan_cell_items_shows_lidar_storeys_roof_ridge(self):
         feat = {'kind': 'building', 'label': 'Hartley Avenue', 'street': 'x', 'refs': ['w1'], 'bbox': (0, 0, 40, 40)}
         gaps = {'layers': [], 'trees_stale': False, 'features': [feat], 'trees_over_roof': []}
-        with mock.patch.object(H, 'next_cell', return_value=(1, 1, 0)), \
-                mock.patch.object(H, 'cell_gaps', return_value=gaps), \
-                mock.patch.object(H, 'lidar_lumps', return_value=[self.LUMP]):
-            first = H.advance_to_next_cell()
-        blob = ' '.join(first['lines'])
+        items = H.plan_cell_items(1, 1, 0, gaps, [self.LUMP])
+        blob = ' '.join(line for _h, body in items for line in ([_h] + body))
         self.assertIn('2 storeys (estimate), roof pitched, ridge axis x', blob)
 
-    def test_open_tree_over_roof_is_queued(self):
+    def test_plan_cell_items_includes_trees_over_roof(self):
         gaps = {'layers': [], 'trees_stale': False, 'features': [], 'trees_over_roof': [self.LUMP]}
-        with mock.patch.object(H, 'next_cell', return_value=(1, 1, 0)), \
-                mock.patch.object(H, 'cell_gaps', return_value=gaps):
-            first = H.advance_to_next_cell()
-        self.assertIn('TREES OVER ROOF 1', first['text'])
+        items = H.plan_cell_items(1, 1, 0, gaps, [])
+        heads = [h for h, _ in items]
+        self.assertTrue(any('TREES OVER ROOF' in h for h in heads))
 
 
 class EndTest(Base):

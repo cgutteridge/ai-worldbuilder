@@ -180,34 +180,22 @@ def google_review_rows():
 
 
 def next_google_review():
-    """First Aerial-review row whose status is not "done".
+    """Aerial-review progress retired (ticket #31); always None.
 
-    @returns: row dict or None
+    @returns: None
     """
-    return next((r for r in google_review_rows() if r['status'] != 'done'), None)
+    return None
 
 
 def set_google_review_status(cell, status):
-    """Set one cell's status word in site/AERIAL-REVIEW.txt, keeping the column layout.
+    """No-op: AERIAL-REVIEW.txt is not a progress source (ticket #31).
 
     @param cell: (tx, tz)
-    @param status: one of REVIEW_STATUSES
-    @returns: True when a row was changed
-    @raises ValueError: for an unknown status word
+    @param status: ignored
+    @returns: False
     """
-    if status not in REVIEW_STATUSES:
-        raise ValueError(f'review status must be one of {", ".join(REVIEW_STATUSES)}')
-    path = _aerial_review_path()
-    lines = path.read_text().splitlines()
-    changed = False
-    for i, ln in enumerate(lines):
-        m = _REVIEW_ROW.match(ln)
-        if m and (int(m[4]), int(m[5])) == tuple(cell):
-            lines[i] = ln[:m.start(9)] + status
-            changed = True
-    if changed:
-        path.write_text('\n'.join(lines) + '\n')
-    return changed
+    del cell, status
+    return False
 
 
 def google_review_cell(item):
@@ -356,77 +344,116 @@ def trees_over_roof_open(cell, lumps=None):
 
 
 def cell_gaps(cell, features=True):
-    """What keeps a cell from being done.
+    """What keeps a cell from being done (registry is the source of truth — ticket #31).
 
-    A cell is done when ground, trees and decor are applied, the trees mask follows the current
-    overhang rule (pass_mask.TREES_RULE, I-061), every mapped building has a feature build
-    (residual_features) and every lidar tree-over-roof is resolved (trees_over_roof_open, I-071).
-    Standing vendor lumps alone do not keep a cell open (ADR 003 / empty-world DoD).
+    Layers and registered features come from the cell registry. Optional slow checks
+    still report residual vector-map buildings and lidar trees-over-roof. In-flight
+    applies (site_stages ``applying``) are listed so site_recover can finish them.
 
     @param cell: (tx, tz)
-    @param features: also compute residual_features (slow: reads vector map / missing builds)
-    A stage left 'applying' (aborted run, site_stages) is never done: it is reported first as
-    in_flight 'in-flight: <plan>' and recovered with scripts/site_recover.py.
-
-    @returns: {'in_flight': [...], 'layers': [missing pass names], 'trees_stale': bool, 'features': [...],
-              'trees_over_roof': [open lidar lumps with trees over the roof]}
+    @param features: also compute residual_features (slow)
+    @returns: gaps dict
     """
+    from cell_registry import RegistryStore, cell_id
+
+    store = RegistryStore()
+    cid = cell_id(*cell)
+    c = store.cell(cid)
+    layers = []
+    if c.get('ground') != 'generated':
+        layers.append('ground')
+    if c.get('ground') == 'generated' and not c.get('trees'):
+        layers.append('trees')
+    if c.get('ground') == 'generated' and not c.get('decor'):
+        layers.append('decor')
+    feature_gaps = [
+        f"{f['id']}={f.get('status')}"
+        for f in store.features_in_cell(cid)
+        if f.get('status') != 'built'
+    ]
     stages = _cell_stages(cell)
     in_flight = [f'in-flight: {v.get("plan", k)}' for k, v in (stages or {}).items()
                  if isinstance(v, dict) and v.get('status') == 'applying']
-    ok = ('applied', 'verified')
-    layers = [k for k in LAYER_STAGES
-              if not any((stages or {}).get(n, {}).get('status') in ok
-                         for n in ((k, 'ground-layer') if k == 'ground' else (k,)))]
     stale = False
-    if 'trees' not in layers:
+    if 'trees' not in layers and c.get('trees'):
         from pass_mask import trees_rule_current
         stale = not trees_rule_current(cell)
-    return {'in_flight': in_flight, 'layers': layers, 'trees_stale': stale,
-            'features': residual_features(cell) if features else [],
-            'trees_over_roof': trees_over_roof_open(cell) if features else []}
+    return {
+        'in_flight': in_flight,
+        'layers': layers,
+        'trees_stale': stale,
+        'features': (residual_features(cell) if features else []) + feature_gaps,
+        'trees_over_roof': trees_over_roof_open(cell) if features else [],
+        'hold': c.get('hold'),
+        'done': store.is_done(cid),
+    }
 
 
 def layers_done(cell):
-    """True when the cell is done: layer passes applied, trees current, no missing feature builds.
+    """True when the registry marks the cell DONE (and optional slow checks are clean).
 
     @param cell: (tx, tz)
     @returns: bool
     """
+    from cell_registry import RegistryStore, cell_id
+
+    store = RegistryStore()
+    if not store.is_done(cell_id(*cell)):
+        return False
     g = cell_gaps(cell, features=False)
-    if g.get('in_flight') or g['layers'] or g['trees_stale']:
+    if g.get('in_flight') or g['trees_stale']:
         return False
     return not residual_features(cell) and not trees_over_roof_open(cell)
 
 
 def next_cell(max_ring=12):
-    """First cell in ring order (centre, then rings outward) that is not done (see cell_gaps).
+    """Next cell from the registry picker (ticket #31). ``max_ring`` is unused.
 
-    @param max_ring: stop searching beyond this ring
+    @param max_ring: ignored (kept for call-site compatibility)
     @returns: (tx, tz, ring) or None
     """
-    for r in range(max_ring + 1):
-        for cell in ring_cells(r):
-            if not layers_done(cell):
-                return cell[0], cell[1], r
-    return None
+    del max_ring
+    from registry_next import next_task
+    from cellmath import origin_cell, ring_distance
+
+    task = next_task()
+    if task is None:
+        return None
+    if task.get('kind') == 'issue':
+        if task.get('cell'):
+            tx, tz = (int(x) for x in task['cell'].split(','))
+        else:
+            return None
+    else:
+        tx, tz = (int(x) for x in str(task['cell']).split(','))
+    return tx, tz, ring_distance((tx, tz), origin_cell())
 
 
 def requeue_plan(max_ring=12):
-    """Read-only: every started cell (has a STAGES file) that is not done, with its gaps (writes nothing).
+    """Read-only: every registered non-done cell with its gaps (writes nothing).
 
     @param max_ring: stop searching beyond this ring
     @returns: [(tx, tz, ring, gaps)] in ring order
     """
+    from cell_registry import RegistryStore
+    from cellmath import origin_cell, ring_distance
+
+    del max_ring
+    store = RegistryStore()
     out = []
-    for r in range(max_ring + 1):
-        for cell in ring_cells(r):
-            if _cell_stages(cell) is None:
-                continue
-            g = cell_gaps(cell)
-            if not (g.get('in_flight') or g['layers'] or g['trees_stale'] or g['features'] or g.get('trees_over_roof')):
-                continue
-            out.append((cell[0], cell[1], r, g))
+    seen = set()
+    for cid, rec in store._load_cells().items():
+        seen.add(cid)
+    for feat in store._load_features().values():
+        seen.update(feat.get('cells') or [])
+    for cid in sorted(seen, key=lambda s: tuple(int(p) for p in s.split(','))):
+        tx, tz = (int(p) for p in cid.split(','))
+        if store.is_done(cid):
+            continue
+        g = cell_gaps((tx, tz))
+        if not (g.get('in_flight') or g['layers'] or g['trees_stale'] or g['features'] or g.get('trees_over_roof')):
+            continue
+        out.append((tx, tz, ring_distance((tx, tz), origin_cell()), g))
     return out
 
 
@@ -533,34 +560,26 @@ def _append_queue_items(items):
 
 
 def advance_to_next_cell():
-    """Queue the next cell that is not done: missing feature builds, then layered passes.
+    """Next registry work item (ticket #31). Does not write QUEUE.txt.
 
-    Appends open items to QUEUE.txt (feature items above the layered-passes item, so the top open
-    item is always a feature while any is missing). Features are mapped buildings no build covers
-    (residual_features). Vendor lump scan does not enqueue work. A finished cell regains items
-    only for what is left: missing features, and a trees re-run when its trees mask predates the
-    overhang rule.
+    Aerial-review and Q-nnn queue enqueue are retired. Returns a synthetic item
+    dict shaped like the old queue parser so leftover callers keep working.
 
-    While site/AERIAL-REVIEW.txt has a row that is not done (I-073), only that row's review item is queued
-    (user, 2026-10-16): it covers every part of the cell, so cell-gap, TREES re-run and new-cell items would
-    redo the same ground, trees and decor twice, and new cells wait until the review is finished.
-
-    @returns: first new queue item dict, or None if every cell is done
+    @returns: item dict with ``task`` key, or None when the registry is idle
     """
-    review = next_google_review()
-    nxt = None if review else next_cell()
-    if not nxt and not review:
+    from registry_next import format_next, next_task
+
+    task = next_task()
+    if task is None:
         return None
-    items = []
-    if review and not any(google_review_cell(i) == review['cell'] for i in _queue_items() if i['open']):
-        items.append(google_review_item(review))
-    if nxt:
-        tx, tz, r = nxt
-        gaps = cell_gaps((tx, tz))
-        lumps = lidar_lumps((tx, tz)) if gaps['features'] else []
-        items += plan_cell_items(tx, tz, r, gaps, lumps)
-    first = _append_queue_items(items)
-    return next((i for i in _queue_items() if i['id'] == first), None) if first else None
+    label = format_next(task)
+    return {
+        'id': 'NEXT',
+        'open': True,
+        'text': label,
+        'lines': [label],
+        'task': task,
+    }
 
 
 def lock_status():
@@ -1227,30 +1246,25 @@ def cmd_plan(_argv):
 
 
 def cmd_next(argv):
-    """Print (and optionally copy/write) the boot prompt for the top open item.
+    """Print the next registry work item (ticket #31).
+
+    ``--plan`` still lists requeue gaps. Queue boot prompts and clipboard copy
+    of handoff text are retired; use ``cell_registry.py next``.
 
     @param argv: remaining CLI args
     @returns: exit code
     """
     if '--plan' in argv or '--dry-run' in argv:
         return cmd_plan(argv)
-    item = top_open()
-    if not item or 'BACKLOG' in item['text'].upper():
-        item = advance_to_next_cell() or item
-    if not item:
-        print('No open queue items in site/QUEUE.txt', file=sys.stderr)
+    from registry_next import format_next, next_task
+    import json as _json
+
+    task = next_task()
+    if task is None:
+        print('No open work (registry idle)', file=sys.stderr)
         return 1
-    text = starter_text(item)
-    do_copy = '--copy' in argv
-    sys.stdout.write(text)
-    if not text.endswith('\n'):
-        sys.stdout.write('\n')
-    if '--no-brief' not in argv:
-        sys.stdout.write(brief_text(item))
-    if do_copy:
-        tool = copy_clipboard(text)
-        print(f'# copied via {tool}' if tool else '# clipboard tool not found',
-              file=sys.stderr)
+    print(format_next(task))
+    print(_json.dumps(task, indent=2, sort_keys=True))
     clear_pending()
     return 0
 

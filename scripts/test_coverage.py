@@ -66,9 +66,10 @@ class SeamTest(unittest.TestCase):
 
 
 class StateTest(unittest.TestCase):
-    def test_done_needs_full_coverage_and_signoff(self):
+    def test_done_at_full_coverage_without_signoff(self):
+        """Ticket #31: sign-offs removed; 100% touched is done."""
         self.assertEqual(C.parcel_state(10, 10, True), 'done')
-        self.assertEqual(C.parcel_state(10, 10, False), 'touched')
+        self.assertEqual(C.parcel_state(10, 10, False), 'done')
         self.assertEqual(C.parcel_state(10, 9, True), 'touched')
         self.assertEqual(C.parcel_state(10, 0, False), 'untouched')
 
@@ -92,46 +93,31 @@ class SectionTest(unittest.TestCase):
 
 
 class SignoffStoreTest(unittest.TestCase):
-    def test_latest_record_wins_and_revoke_clears(self):
+    def test_signoffs_retired_always_empty(self):
+        """Ticket #31: load_signoffs is empty; append_signoff is a no-op."""
         import tempfile
         old = C.SIGNOFFS
         with tempfile.TemporaryDirectory() as d:
             C.SIGNOFFS = Path(d) / 'signoffs.jsonl'
             try:
                 C.append_signoff({'parcel': 'prop:w1', 'build': 'a', 'date': '2026-10-12'})
-                C.append_signoff({'parcel': 'prop:w2', 'build': 'a', 'date': '2026-10-12'})
-                C.append_signoff({'parcel': 'prop:w1', 'build': 'b', 'date': '2026-10-13'})
-                C.append_signoff({'parcel': 'prop:w2', 'revoke': True, 'date': '2026-10-13', 'reason': 't'})
                 active = C.load_signoffs()
+                self.assertEqual(active, {})
+                self.assertFalse(C.SIGNOFFS.exists())
             finally:
                 C.SIGNOFFS = old
-        self.assertEqual(set(active), {'prop:w1'})
-        self.assertEqual(active['prop:w1']['build'], 'b')
 
-    def test_named_signoff_dry_run_writes_nothing(self):
+    def test_named_signoff_is_deprecated_noop(self):
         import argparse
-        from types import SimpleNamespace
         from unittest import mock
-        cols = {(0, 0), (0, 1)}
-        area = SimpleNamespace(name='t', parcels={'prop:w1': {
-            'id': 'prop:w1', 'set': cols, 'n': 2, 'kind': 'property', 'label': 'x', 'digest': 'd'}})
         args = argparse.Namespace(ids=['prop:w1'], build='b', date='2026-10-12', note=None,
-                                  backfill=False, builds=None, dry_run=True, revoke=False,
+                                  backfill=False, builds=None, dry_run=False, revoke=False,
                                   reason=None, limit=10)
-        with mock.patch.object(C, 'load_areas', return_value=[area]), \
-                mock.patch.object(C, 'touched_by_build', return_value={'b': set(cols)}), \
-                mock.patch.object(C, 'load_signoffs', return_value={}), \
-                mock.patch.object(C, 'World'), \
-                mock.patch.object(C, 'placed_heights', return_value={}), \
-                mock.patch.object(C, 'geocraft_leftovers', return_value={'carpet': []}), \
-                mock.patch.object(C, 'append_signoff') as append, \
+        with mock.patch.object(C, 'append_signoff') as append, \
                 mock.patch.object(C, 'write_coverage') as write:
             self.assertEqual(C.cmd_signoff(args), 0)
             append.assert_not_called()
             write.assert_not_called()
-            args.dry_run = False
-            self.assertEqual(C.cmd_signoff(args), 0)
-            append.assert_called_once()
 
 
 class ClassifyTest(unittest.TestCase):

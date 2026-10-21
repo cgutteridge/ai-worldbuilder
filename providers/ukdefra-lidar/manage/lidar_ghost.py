@@ -168,20 +168,23 @@ def is_ghost_stage(key: str, entry: dict | None) -> bool:
 
 
 def real_work_started(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when the cell has a non-ghost stage that is applying or finished.
+    """True when the registry shows real refine (not only ghost ground).
 
     @param cell: (tx, tz)
-    @param cells_dir: override (tests)
+    @param cells_dir: unused (registry is the source of truth; ticket #31)
     @returns: whether real refine has begun
     """
-    stages = read_stages(cell, cells_dir).get('stages') or {}
-    for key, entry in stages.items():
-        if is_ghost_stage(key, entry):
-            continue
-        if isinstance(entry, dict) and entry.get('status') in (
-                'applying', 'applied', 'applied-with-mismatches', 'verified'):
+    del cells_dir
+    try:
+        from cell_registry import RegistryStore, cell_id
+        store = RegistryStore()
+        cid = cell_id(*cell)
+        c = store.cell(cid)
+        if c.get('ground') == 'generated' or c.get('trees') or c.get('decor'):
             return True
-    return False
+        return bool(store.features_in_cell(cid))
+    except Exception:
+        return False
 
 
 def ghost_stage_status(cell: tuple[int, int], key: str, cells_dir: Path | None = None) -> str | None:
@@ -210,49 +213,57 @@ def ghosts_complete(cell: tuple[int, int], cells_dir: Path | None = None) -> boo
 
 
 def real_ground_applied(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when the cell has a real ground layer stage in a finished state.
+    """True when the registry ground is ``generated``.
 
     @param cell: (tx, tz)
-    @param cells_dir: STAGES directory override (tests)
+    @param cells_dir: unused (ticket #31)
     @returns: whether real ground owns the surface reference
     """
-    stages = read_stages(cell, cells_dir).get('stages') or {}
-    good = ('applying', 'applied', 'applied-with-mismatches', 'verified')
-    for key in REAL_GROUND_KEYS:
-        entry = stages.get(key)
-        if isinstance(entry, dict) and entry.get('status') in good:
-            return True
-    return False
+    del cells_dir
+    try:
+        from cell_registry import RegistryStore, cell_id
+        return RegistryStore().cell(cell_id(*cell)).get('ground') == 'generated'
+    except Exception:
+        return False
 
 
 def list_stage_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Every cell that has a ``*-STAGES.json`` file.
+    """Every cell known to the registry (and legacy STAGES files if present).
 
-    @param cells_dir: override (tests)
+    @param cells_dir: unused for registry; still scanned for leftover STAGES
     @returns: sorted (tx, tz) list
     """
+    from cell_registry import RegistryStore, parse_cell_id
     from site_stages import CELLS
 
+    cells: set[tuple[int, int]] = set()
+    try:
+        store = RegistryStore()
+        for cid in store._load_cells():
+            cells.add(parse_cell_id(cid))
+        for feat in store._load_features().values():
+            for cid in feat.get('cells') or []:
+                cells.add(parse_cell_id(cid))
+    except Exception:
+        pass
     root = cells_dir or CELLS
-    if not root.is_dir():
-        return []
-    out: list[tuple[int, int]] = []
-    for path in root.glob('*-STAGES.json'):
-        stem = path.name[:-len('-STAGES.json')]
-        if '_' not in stem:
-            continue
-        tx_s, tz_s = stem.split('_', 1)
-        try:
-            out.append((int(tx_s), int(tz_s)))
-        except ValueError:
-            continue
-    return sorted(out)
+    if root.is_dir():
+        for path in root.glob('*-STAGES.json'):
+            stem = path.name[:-len('-STAGES.json')]
+            if '_' not in stem:
+                continue
+            tx_s, tz_s = stem.split('_', 1)
+            try:
+                cells.add((int(tx_s), int(tz_s)))
+            except ValueError:
+                continue
+    return sorted(cells)
 
 
 def seed_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Cells where real refine has started (non-ghost stages).
+    """Cells where real refine has started (registry, not ghost-only).
 
-    @param cells_dir: override (tests)
+    @param cells_dir: passed through for leftover STAGES scan
     @returns: sorted seed cells
     """
     return [c for c in list_stage_cells(cells_dir) if real_work_started(c, cells_dir)]

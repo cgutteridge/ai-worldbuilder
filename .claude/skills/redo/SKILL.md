@@ -8,6 +8,8 @@ description: >-
 
 Player-standing redesign. No confirmation pause. No `human-confirm-fix` (they are already there). Claim the lock, apply, release.
 
+Registry (ticket #31): clean applies update the cell registry via hooks; undos/clears clear the matching flags. Do not edit STAGES / QUEUE / CURRENT-CELL / sign-offs as progress. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `cell_registry.py add-issue`.
+
 ## Branch
 
 | User says | Target |

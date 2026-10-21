@@ -1,46 +1,61 @@
 ---
 name: cell-orchestrator
-description: Run the Southampton Refine cell queue as a thin orchestrator. Builds each queue item in a fresh session so the main context stays small. Use when the user says "run the queue", "orchestrate" or invokes /cell-orchestrator.
+description: Run the Southampton Refine cell registry as a thin orchestrator. Builds each next task in a fresh session so the main context stays small. Use when the user says "run the queue", "orchestrate" or invokes /cell-orchestrator.
 ---
 
 You are a thin orchestrator. You do not build anything yourself. Your context must stay small.
 
+## Source of truth
+
+Progress is the **cell registry** (`registry/cells.json` + `registry/features.json`) plus `site/ISSUES.txt`.
+
+```bash
+.venv/bin/python scripts/cell_registry.py next
+```
+
+That command is read-only and deterministic: open issues first, then the next undone item (marker cell if not DONE, else nearest undone non-held cell). Order inside a cell: ground → features → trees → decor. `next` does **not** raise the marker; the build task does.
+
+Do **not** use `site/QUEUE.txt`, `site/AERIAL-REVIEW.txt`, `site/CURRENT-CELL.json`, coverage sign-offs, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again.
+
 ## Stop point
-Default: stop after ONE queue item (the first unchecked `[ ]` in site/QUEUE.txt) has finished. The user may widen it ("whole cell", "N items", "N cells", "until HH:MM", "overnight") when invoking. Never go past the stop point without asking.
+
+Default: stop after ONE task from `next` has finished. The user may widen it ("whole cell", "N items", "N cells", "until HH:MM", "overnight"). Never go past the stop point without asking.
 
 ## Overnight / unattended mode
-Used when the user says "overnight" or "nobody is watching". Then: do not ask questions. If a cell fails or looks risky, record it as a PROBLEM in the run log, retry at most once, leave the world at its last good state (`site_recover.py`), and carry on with the next cell. Stop the whole run if the lock is held fresh by someone else, two cells in a row fail, the same tool/API error repeats, or the next cell is ambiguous. Never touch hand-made cells, commit, or edit shared scripts unattended. Respect the stated end time or cell count.
+
+Used when the user says "overnight" or "nobody is watching". Then: do not ask questions. If a cell fails or looks risky, record it as a PROBLEM in the run log, retry at most once, leave the world at its last good state (`site_recover.py`), and carry on with the next task. Stop the whole run if the lock is held fresh by someone else, two cells in a row fail, the same tool/API error repeats, or the next task is ambiguous. Never touch hand-made cells, commit, or edit shared scripts unattended. Respect the stated end time or cell count.
 
 ## Keep the human informed (every cell, every mode)
+
 After each cell is verified, write one block to the human run log, then move the marker:
+
 `.venv/bin/python scripts/site_status.py log --cell <tx,tz> --did "<what was built, with counts>" --look "<x,z: what to check>" [--look ...] [--problem "<anything open or failed>"]`
-Give at least one concrete `--look` coordinate per cell (the riskiest or newest thing). When the run ends or stops, run `site_status.py morning --since "<run start>"`, put a one-paragraph summary at the top of site/RUN-LOG.md, and give the user the same in your final message. `site_status.py status --gaps` shows the grid. Finish by refreshing the human pages: `.venv/bin/python scripts/site_pages.py` (HTML only; it links existing images and never makes new ones).
 
-## Preflight (every item)
-1. Read site/QUEUE.txt (first unchecked item only), site/CURRENT-CELL.json and site/LOCK.json. Do not read more.
-2. If LOCK.json has an owner and its heartbeat is under 90 minutes old (scripts/site_lock.py STALE_MIN), STOP and tell the user who holds it. Never clear, steal or edit the lock by hand.
-3. If the lock is stale, or `.venv/bin/python scripts/site_recover.py status` shows an in-flight/rolled-back stage, run `site_recover.py recover <cell> --apply` for that cell first (dry run without --apply; never on a fresh lock; tell the user if it reports unsure/failed), then continue.
-4. Check mcp__ccd_session_mgmt__list_sessions for a running session already on this item.
+Give at least one concrete `--look` coordinate per cell. When the run ends, run `site_status.py morning --since "<run start>"`, put a one-paragraph summary at the top of `site/RUN-LOG.md`, and give the user the same in your final message. Finish by refreshing the human pages: `.venv/bin/python scripts/site_pages.py`.
 
-## Current rules (read these, do not copy them into prompts; point builders at them)
-- The work list is site/AERIAL-REVIEW.txt (I-073): the first row not "done", in ring order. It runs ahead of new cells (Q-178 etc.) and ahead of RESUME-ISSUES (dated 2026-10-15). The unit of work is one CELL, reviewed in ALL five parts: look, features, ground, trees, decor. Never skip a part because the cell was signed off or hand-made before (user, 2026-10-16); 48,-45 is in the review like any other.
-- Definition of done for a cell: the five parts reviewed against aerial evidence AND `site_handoff.py cell_gaps` empty (ground/trees/decor applied, trees mask stamped rule 'overhang-v1', mapped buildings covered by feature builds). Empty-world DoD is evidence + layered passes + masks — not clearing vendor lumps; `lump_scan` is diagnostic only and must not drive the queue. Set the row with `site_handoff.py end Q-nnn --skip-say --skip-view --review-status look|features|ground|trees|done`; `--skip-view` is mandatory because `end` otherwise moves the player and sets creative.
-- Within a cell: evidence-backed features first (house/feature builds from vector-map footprints and photos), then re-run trees under the current rule (dry run first; stop if dense fill adds hundreds of crowns to a built-up cell).
-- Trees: a tree belongs to the cell its trunk is in; crowns overhang neighbours (air or neighbour tree leaves), lawn only (TREES_ON_PAVING False). Material rule: never place plain dirt, use coarse_dirt. Floors come from natural ground outside the footprint, never from a scan starting at y41. Check door reachability (site_walk) before and after.
-- 48,-44 is "done" in the review (its open feature items Q-184..Q-187 are separate); 48,-45 is not and is reviewed like any other cell. Snapshot first, dry-run diff before any re-apply. The cell marker only shows the user which cell is being worked on (user, 2026-10-15). When a cell is finished down to decor and `cell_gaps` is empty and the patrol is clean, move the marker to the next cell: claim the lock, `cell_marker.py --clear <old>` then `--raise <next>` under SITE_OWNER, release. The user reviews wherever they like; never wait on them for this. Process direction from the user: refine the underlying process, never stack per-symptom rules or extra checking steps; log new reports as symptoms of I-057.
-- `site_handoff.py end Q-nnn --skip-say --skip-view --review-status ...` is how an Aerial Review item sets its row; never without `--skip-view` (it moves the player). Other cell-level work does not use `end`.
+## Preflight (every task)
 
-## Per cell (or per item)
-0. Pick the cell from AERIAL-REVIEW.txt, not from the first open QUEUE item. Unattended, skip any QUEUE item that is tooling (shared scripts are not edited unattended); take the Aerial Review item and feature items only.
-1. Brief: run the `cell-researcher` subagent (or general-purpose reading .claude/agents/cell-researcher.md if it is not loaded) for the cell. Ask for a 200-word brief, or let the builder brief itself from `site_handoff.py next --no-brief` and site/cells/<cell>-STAGES.json.
-2. Build: ONE blocking general-purpose Agent per cell (a cell with bld > 12 in AERIAL-REVIEW.txt: one Agent for look+features, a second for ground+trees+decor, so no single context holds 25 buildings plus the layers), run in the foreground, strictly one at a time (one writer, one lock). Do NOT rely on start_session wake-ups: the app refuses start_session from an automated wake-up turn (only the user's own messages allow it), so a chain would stall. The prompt names the cell, points at the rules above, and says: claim the lock with a unique owner, explicit region snapshot + origin fingerprint before each apply, SITE_OWNER, readback 0 mismatches, patrol, update the cell's STAGES file and ISSUES.txt, release the lock, report in under 200 words.
-3. When the agent returns: verify, do not trust. Check the lock is released (`ls site/LOCK.json`), `cell_gaps` for that cell is empty, a new region snapshot exists, and the STAGES file changed. Do not read the agent's transcript.
-4. Report to the user in a few lines: what finished, what failed, anything needing the user's visual check. Then stop at the stop point.
+1. Run `cell_registry.py next` (and optionally `issues`). Read `site/LOCK.json`. Do not read QUEUE / AERIAL-REVIEW / CURRENT-CELL.
+2. If LOCK.json has an owner and its heartbeat is under 90 minutes old (`scripts/site_lock.py` STALE_MIN), STOP and tell the user who holds it. Never clear, steal or edit the lock by hand.
+3. If the lock is stale, or `.venv/bin/python scripts/site_recover.py status` shows an in-flight/rolled-back stage, run `site_recover.py recover <cell> --apply` for that cell first (dry run without `--apply`; never on a fresh lock), then continue.
+4. Check for a running session already on this task.
+
+## Per task
+
+0. Take the JSON from `cell_registry.py next`. Kinds: `issue`, `layer` (ground|trees|decor), or `feature`.
+1. Raise the marker for the target cell if needed (`cell_marker.py --raise tx,tz` under SITE_OWNER) — `next` does not.
+2. Build: ONE blocking general-purpose Agent per task, foreground, one at a time. Prompt names the task JSON, points at `rules/`, and says: claim the lock with a unique owner, region snapshot before apply, SITE_OWNER, readback 0 mismatches, patrol, registry hooks update flags on clean apply, release the lock, report in under 200 words.
+3. When the agent returns: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
+4. Report to the user in a few lines. Then stop at the stop point.
+
+Snags go to ISSUES via `cell_registry.py add-issue` (reopens the target). Clean rebuilds auto-close matching issues.
 
 ## Stop and ask when
-- the lock is held, or a patrol fails, or the brief flags real risks or open questions
-- the next item belongs to a different cell or ring than expected
-- anything is ambiguous about which cell is next (cell order: north centre of the ring, then clockwise; see rules/radial-good-enough.md)
+
+- the lock is held, or a patrol fails, or the brief flags real risks
+- the next task is ambiguous
+- anything needs the user's eyes (`human-confirm-fix`)
 
 ## Context hygiene
-Keep notes to one line per item. If this session grows past a comfortable size, write the current state to site/HANDOFF.txt (or the scratchpad), then tell the user it is safe to start a fresh orchestrator session.
+
+Keep notes to one line per task. If this session grows past a comfortable size, tell the user it is safe to start a fresh orchestrator session that runs `next` again.

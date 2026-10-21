@@ -42,6 +42,10 @@ changes on disk)::
   python3 scripts/cell_registry.py hold set tx,tz --reason R
   python3 scripts/cell_registry.py hold clear tx,tz
   python3 scripts/cell_registry.py dismiss-coverage tx,tz --warning-id ID --reason R
+  python3 scripts/cell_registry.py next
+  python3 scripts/cell_registry.py add-issue --cell tx,tz [--layer trees] --reason R
+  python3 scripts/cell_registry.py add-issue --feature ID --reason R
+  python3 scripts/cell_registry.py issues
 """
 from __future__ import annotations
 
@@ -125,7 +129,10 @@ class RegistryStore:
     """
 
     def __init__(self, root: Path | None = None) -> None:
-        self.root = Path(root) if root is not None else Path(ROOT)
+        if root is None:
+            env = os.environ.get('AI_WORLDBUILDER_REGISTRY_ROOT')
+            root = Path(env) if env else Path(ROOT)
+        self.root = Path(root)
         self.dir = self.root / 'registry'
         self.cells_path = self.dir / 'cells.json'
         self.features_path = self.dir / 'features.json'
@@ -553,6 +560,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--warning-id', required=True)
     p.add_argument('--reason', required=True)
 
+    sub.add_parser('next', help='print the next work item (issues first, then registry)')
+    sub.add_parser('issues', help='list open ISSUES.txt lines')
+
+    p = sub.add_parser('add-issue', help='append a snagging issue and reopen the target')
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument('--cell', help='tx,tz')
+    g.add_argument('--feature', help='feature id')
+    p.add_argument('--layer', choices=('ground', 'trees', 'decor'), default=None)
+    p.add_argument('--reason', required=True)
+
     args = ap.parse_args(argv)
     store = RegistryStore(args.root)
 
@@ -610,6 +627,36 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == 'dismiss-coverage':
             store.dismiss_coverage_warning(args.cell, args.warning_id, reason=args.reason)
             print(f'dismissed {args.warning_id} on {args.cell}')
+            return 0
+
+        if args.cmd == 'next':
+            from registry_next import format_next, next_task
+            task = next_task(store, root=args.root or store.root)
+            print(format_next(task))
+            if task is not None:
+                print(json.dumps(task, indent=2, sort_keys=True))
+            return 0
+
+        if args.cmd == 'issues':
+            from registry_issues import load_issues
+            for issue in load_issues(args.root or store.root):
+                print(issue.raw)
+            return 0
+
+        if args.cmd == 'add-issue':
+            from registry_issues import add_issue
+            if args.feature:
+                issue = add_issue(
+                    reason=args.reason, feature_id=args.feature,
+                    root=args.root or store.root,
+                )
+            else:
+                tx, tz = parse_cell_id(args.cell)
+                issue = add_issue(
+                    reason=args.reason, cell=(tx, tz), layer=args.layer,
+                    root=args.root or store.root,
+                )
+            print(f'added {issue.raw}')
             return 0
     except RegistryError as exc:
         print(f'registry error: {exc}', file=sys.stderr)

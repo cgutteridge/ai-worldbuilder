@@ -1,9 +1,11 @@
 """site_status: parsing, layer aliases, the run log and the morning report (temp files only)."""
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 import site_status as ss
 
@@ -15,9 +17,14 @@ class TestSiteStatus(unittest.TestCase):
         self.saved = (ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG)
         ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = d / 'cells', d / 'cur.json', d / 'LOCK.json', d / 'RUN-LOG.md'
         ss.CELLS.mkdir()
-        ss.MARKER.write_text(json.dumps({'tx': 47, 'tz': -45}))
+        (d / 'registry').mkdir()
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(d).set_marker(cell_id(47, -45), 'up', replace_existing=True)
+        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(d)})
+        self._env.start()
 
     def tearDown(self):
+        self._env.stop()
         ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = self.saved
         self.tmp.cleanup()
 

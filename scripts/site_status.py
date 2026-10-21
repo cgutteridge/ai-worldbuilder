@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Human-readable progress for Southampton Refine: what is done, what happened since X, and a run log.
 
-Read-only except `log`, which appends to site/RUN-LOG.md. Built from the per-cell STAGES files
-(site/cells/*-STAGES.json), the marker (site/CURRENT-CELL.json) and the lock (site/LOCK.json).
+Read-only except `log`, which appends to site/RUN-LOG.md. Progress comes from the cell
+registry (ticket #31); leftover STAGES files are still listed for in-flight recovery.
 
   .venv/bin/python scripts/site_status.py status                       # grid of cells by ring, marker, lock
   .venv/bin/python scripts/site_status.py since "2026-10-15 17:00"     # every stage that finished since then
@@ -52,13 +52,51 @@ def parse_stamp(s) -> datetime | None:
     return datetime.fromisoformat(f'{m[1]} {m[2]}:{m[3] or "00"}') if m else None
 
 
+def _registry_stages() -> dict:
+    """Synthetic stages dict from the registry for status display.
+
+    @returns: {(tx, tz): {layer: {status}}}
+    """
+    from cell_registry import RegistryStore, parse_cell_id
+
+    store = RegistryStore()
+    out: dict = {}
+    cells = set(store._load_cells().keys())
+    for feat in store._load_features().values():
+        cells.update(feat.get('cells') or [])
+    for cid in cells:
+        cell = parse_cell_id(cid)
+        c = store.cell(cid)
+        sts: dict = {}
+        g = c.get('ground')
+        if g == 'generated':
+            sts['ground'] = {'status': 'applied'}
+        elif g and g != 'none':
+            sts['ground'] = {'status': 'applied'}  # ghost counts as placed surface
+        if c.get('trees'):
+            sts['trees'] = {'status': 'applied'}
+        if c.get('decor'):
+            sts['decor'] = {'status': 'applied'}
+        out[cell] = sts
+    return out
+
+
 def load_stages(cells_dir: Path | None = None) -> dict:
-    out = {}
+    """Load progress: registry first, then merge leftover STAGES for in-flight keys."""
+    out = _registry_stages()
     for f in sorted((cells_dir or CELLS).glob('*-STAGES.json')):
+        cell = cell_of(f)
         try:
-            out[cell_of(f)] = json.loads(f.read_text()).get('stages', {})
+            disk = json.loads(f.read_text()).get('stages', {})
         except (OSError, ValueError):
-            out[cell_of(f)] = {'_unreadable': {'status': 'unreadable'}}
+            disk = {'_unreadable': {'status': 'unreadable'}}
+        merged = dict(out.get(cell) or {})
+        for k, v in disk.items():
+            if isinstance(v, dict) and v.get('status') == 'applying':
+                merged[k] = v
+            elif k not in merged:
+                merged[k] = v
+        out[cell] = merged
     return out
 
 
@@ -142,8 +180,16 @@ def lock_line() -> str:
 
 
 def marker_cell():
+    """Focus cell from the registry marker (ticket #31)."""
+    try:
+        from cell_registry import RegistryStore
+        return RegistryStore().current_cell()
+    except Exception:
+        pass
     m = read_json(MARKER)
-    return (m['tx'], m['tz']) if m else None
+    if not m or m.get('tx') is None:
+        return None
+    return (m['tx'], m['tz'])
 
 
 def fmt_event(e: dict, with_note: bool = False) -> str:

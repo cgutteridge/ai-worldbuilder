@@ -311,7 +311,11 @@ class TestRecover(Aborted):
         self.assertFalse(site_lock.LOCK.exists())
 
     def test_rolled_back_is_not_done_and_reappears(self):
+        import registry_hooks as RH
         import site_handoff as H
+        from cell_registry import RegistryStore
+        # Registry DoD: trees only appear as a gap once ground is generated.
+        RH.on_layer_clean(CELL, 'ground', store=RegistryStore(self.t))
         self.abort(fill_limit=1)
         self.set_lock('alice', age_min=200)
         self.recover(loader=lambda n, o: rsb.load_structure(n, o, m=FakePaced()))

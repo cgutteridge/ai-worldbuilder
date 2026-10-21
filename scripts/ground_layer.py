@@ -444,12 +444,12 @@ def level_spikes(live: dict, kind: dict, fp: set) -> dict:
 
 # --- 4. the plan -------------------------------------------------------------------------
 def ground_done(cell: tuple[int, int]) -> bool:
-    """True if the cell's STAGES file records a ground pass (its surface is the reference)."""
-    path = ROOT / f'site/cells/{cell[0]}_{cell[1]}-STAGES.json'
-    if not path.exists():
+    """True if the registry ground is ``generated`` (ticket #31)."""
+    try:
+        from cell_registry import RegistryStore, cell_id
+        return RegistryStore().cell(cell_id(*cell)).get('ground') == 'generated'
+    except Exception:
         return False
-    stages = json.loads(path.read_text()).get('stages', {})
-    return any(k in stages for k in ('ground', 'ground-layer'))
 
 
 def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:

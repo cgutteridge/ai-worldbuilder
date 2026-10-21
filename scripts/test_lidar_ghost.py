@@ -101,16 +101,28 @@ class PlanFromMockHeights(unittest.TestCase):
 
 
 class StagesGhostVsReal(unittest.TestCase):
-    """STAGES distinguishes ghost placeholders from real refine."""
+    """Ghost STAGES vs registry real refine (ticket #31)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.cells = Path(self.tmp.name)
+        root = Path(self.tmp.name)
+        self.cells = root / 'cells'
+        self.cells.mkdir()
+        self.world = root / 'world'
+        self.world.mkdir()
+        (self.world / 'registry').mkdir()
+        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
+        self._env.start()
+        self.addCleanup(self._env.stop)
 
     def _write(self, cell, stages):
         path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
         path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
+
+    def _registry_generated(self, cell):
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
 
     def test_is_ghost_stage_by_key_and_kind(self):
         self.assertTrue(lg.is_ghost_stage('ghost-ground', {'status': 'applied'}))
@@ -132,6 +144,7 @@ class StagesGhostVsReal(unittest.TestCase):
             'ghost-ground': {'status': 'applied', 'kind': 'ghost'},
             'ground-layer': {'status': 'applied', 'plan': 'highfield_1_2_ground'},
         })
+        self._registry_generated(cell)
         self.assertTrue(lg.real_work_started(cell, self.cells))
 
     def test_ensure_skips_when_already_applied(self):
@@ -148,6 +161,9 @@ class StagesGhostVsReal(unittest.TestCase):
     def test_ensure_skips_real_work_when_flagged(self):
         cell = (0, 0)
         self._write(cell, {'trees': {'status': 'applied'}})
+        self._registry_generated(cell)
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(self.world).set_trees(cell_id(*cell), True)
         rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells, skip_if_real=True,
                              heights_fn=lambda *b: _flat_heights(5, 1, *b))
         self.assertEqual(rep['skipped'], 'real-work')
@@ -155,6 +171,7 @@ class StagesGhostVsReal(unittest.TestCase):
     def test_trees_only_still_allows_ghost_ground(self):
         cell = (0, 0)
         self._write(cell, {'trees': {'status': 'applied'}})
+        # Ghost-only STAGES / no registry real work: still plan ghost ground.
         with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
             rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
                                  heights_fn=lambda *b: _flat_heights(5, 1, *b))
@@ -175,20 +192,33 @@ class OnCellFocus(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.cells = Path(self._tmp.name)
+        root = Path(self._tmp.name)
+        self.cells = root / 'cells'
+        self.cells.mkdir()
+        self.world = root / 'world'
+        self.world.mkdir()
+        (self.world / 'registry').mkdir()
+        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
+        self._env.start()
 
     def tearDown(self):
+        self._env.stop()
         self._tmp.cleanup()
 
     def _write(self, cell, stages):
         path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
         path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
 
+    def _registry_generated(self, cell):
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
+
     def test_on_cell_focus_frontier_from_seeds_skips_real_ground(self):
         focus = (0, 0)
         self._write((1, 0), {'ground-layer': {'status': 'applied'}})
+        self._registry_generated((1, 0))
         with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
-             mock.patch.dict(os.environ, {}, clear=False):
+             mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)}, clear=False):
             os.environ.pop('LIDAR_GHOST_RING', None)
             reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
                                     heights_fn=lambda *b: _flat_heights(5, 1, *b))
@@ -259,15 +289,31 @@ class FrontierAndSplitLayers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.cells = Path(self.tmp.name)
+        root = Path(self.tmp.name)
+        self.cells = root / 'cells'
+        self.cells.mkdir()
+        self.world = root / 'world'
+        self.world.mkdir()
+        (self.world / 'registry').mkdir()
+        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
+        self._env.start()
+        self.addCleanup(self._env.stop)
 
     def _write(self, cell, stages):
         path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
         path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
 
+    def _registry_generated(self, cell):
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
+
     def test_frontier_unions_two_seeds(self):
         self._write((0, 0), {'ground-layer': {'status': 'applied'}})
         self._write((3, 0), {'trees': {'status': 'applied'}})
+        self._registry_generated((0, 0))
+        self._registry_generated((3, 0))
+        from cell_registry import RegistryStore, cell_id
+        RegistryStore(self.world).set_trees(cell_id(3, 0), True)
         targets = set(lg.frontier_targets(ring=1, cells_dir=self.cells))
         self.assertIn((0, 0), targets)
         self.assertIn((3, 0), targets)
@@ -280,6 +326,7 @@ class FrontierAndSplitLayers(unittest.TestCase):
             'ghost-ground': {'status': 'applied', 'kind': lg.KIND_GHOST},
             'ground-layer': {'status': 'applied'},
         })
+        self._registry_generated(cell)
         self.assertFalse(lg.needs_ghost_ground(cell, self.cells))
         lg.supersede_ghost_ground(cell, self.cells)
         self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, self.cells), 'superseded')

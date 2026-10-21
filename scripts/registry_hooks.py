@@ -70,6 +70,11 @@ def on_layer_clean(
         reg.set_decor(cid, True)
     else:
         raise RegistryError(f'unknown layer {layer!r}')
+    try:
+        from registry_issues import auto_close_for_target
+        auto_close_for_target(cell=cell, layer=layer, root=reg.root)
+    except Exception as exc:  # noqa: BLE001
+        print(f'issue auto-close failed: {exc}', file=__import__('sys').stderr)
 
 
 def on_layer_cleared(
@@ -163,6 +168,11 @@ def on_feature_clean(
         cells=cells,
         status='built',
     )
+    try:
+        from registry_issues import auto_close_for_target
+        auto_close_for_target(feature_id=feature_id, root=reg.root)
+    except Exception as exc:  # noqa: BLE001
+        print(f'issue auto-close failed: {exc}', file=__import__('sys').stderr)
 
 
 def on_feature_mismatches(
