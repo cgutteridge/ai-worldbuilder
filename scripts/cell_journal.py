@@ -1,0 +1,1230 @@
+"""Cell journal: one append-only record of what is built, and the views folded from it (ADR 004).
+
+``CellRegistry(world_root, blocks)`` is the only writer of ``<world>/registry/journal.jsonl``:
+
+- ``change(intent)`` is the single entry point (intents :class:`Build`, :class:`Undo`, :class:`Note`).
+  A block-writing change is journalled ``begun`` (fsynced) BEFORE the caller writes any block, then
+  ``landed`` or ``mismatched`` after the blocks are read back. A strict/mask readback failure raises
+  :class:`Mismatch` and leaves the entry ``begun`` for :meth:`CellRegistry.reconcile`.
+- ``view(cells)`` returns frozen :class:`CellView` records (ground, ghost, trees, decor, features,
+  in-flight, marker, hold, notes, done, left). They are folded from the journal, so they cannot disagree.
+- ``reconcile(cells, fix=)`` compares the journal with the blocks and, with ``fix``, re-commits the
+  recorded plans through a caller-supplied ``apply`` callable.
+
+Ownership (later build wins, air cancels, ghost owners yield and never clash) is a private projection
+rebuilt from the journal and the plan blobs in ``registry/blobs/<hash>.json``. Nothing here restores
+or snapshots regions (ADR 004 decision a).
+
+Journal lines (JSON, one per line; ``seq`` strictly increasing)::
+
+    {"op":"begin","seq":n,"kind":"build|undo","plan":..,"pass":..,"cell":[tx,tz],"cells":[..],"blob":h,...}
+    {"op":"finish","seq":m,"ref":n,"status":"landed|mismatched","mismatches":k}
+    {"op":"note","seq":n,"cell":[tx,tz],"kind":..,"ref":..,"body":..}
+    {"op":"repair","seq":n,...}     # informational: reconcile re-wrote drifted blocks
+"""
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import time
+from collections import Counter, OrderedDict
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Callable, Iterable, Iterator, Mapping
+
+import cellmath
+from block_store import BlockStore, Pos, block_id, same_state
+
+Cell = tuple[int, int]
+
+REAL_PASSES = ('feature', 'ground', 'trees', 'decor')
+GHOST_PASSES = ('ghost-ground', 'ghost-features')
+PASSES = REAL_PASSES + GHOST_PASSES
+NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close')
+DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing', 'ghost-stale')
+AIR = 'minecraft:air'
+CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
+AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
+DEFAULT_RING = 2
+SAMPLE = 10
+
+
+# --- errors (all loud; nothing is swallowed) -----------------------------------------------------
+class CellJournalError(Exception):
+    """Base class for every journal refusal or failure."""
+
+
+class Refused(CellJournalError):
+    """The change breaks a rule; nothing was journalled and no block was touched."""
+
+    def __init__(self, reason: str, detail: Any = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail
+
+
+class InFlight(CellJournalError):
+    """A ``begun`` entry covers one of the cells; resolve it with ``reconcile(fix=True)`` first."""
+
+    def __init__(self, cells: Iterable[Cell], seqs: Iterable[int]) -> None:
+        self.cells = tuple(sorted(cells))
+        self.seqs = tuple(sorted(seqs))
+        super().__init__(f'cells {list(self.cells)} have unfinished entries {list(self.seqs)}')
+
+
+class Clash(CellJournalError):
+    """Planned blocks collide with a real earlier owner not listed in ``modifies``."""
+
+    def __init__(self, clashes: Mapping[Pos, tuple[str, str, str]]) -> None:
+        self.clashes = dict(clashes)
+        sample = list(self.clashes.items())[:3]
+        super().__init__(f'{len(self.clashes)} cells belong to earlier builds, e.g. {sample}')
+
+
+class Mismatch(CellJournalError):
+    """Strict/mask readback failed; the entry stays ``begun`` for reconcile."""
+
+    def __init__(self, seq: int, mismatches: int, sample: Mapping[str, list]) -> None:
+        self.seq = seq
+        self.mismatches = mismatches
+        self.sample = dict(sample)
+        super().__init__(f'entry {seq}: readback has {mismatches} mismatches; left begun')
+
+
+class JournalError(CellJournalError):
+    """The journal or a plan blob cannot be read or written."""
+
+
+# --- intents and results -------------------------------------------------------------------------
+@dataclass(frozen=True, eq=False)
+class Build:
+    """Journal intent for one block-writing plan.
+
+    @param plan: plan name (feature id, ``ground_48_m44`` ...); same name = same owner
+    @param pass_: one of :data:`PASSES`
+    @param cells: planned ``{(x, y, z): state}``
+    @param modifies: earlier owners this plan may overwrite without a clash
+    @param protect: ``callable(pos, existing_state) -> bool``; True refuses (never journalled)
+    @param strict: a readback mismatch raises :class:`Mismatch` and leaves the entry ``begun``
+    @param mask: opaque pass mask (JSON-able); a mask also makes mismatches strict
+    @param cell: primary cell (default: the cell holding most planned columns)
+    @param payload: opaque object for the caller's apply (e.g. the ``site_kit.Plan``); never journalled
+    """
+
+    plan: str
+    pass_: str
+    cells: Mapping[Pos, str]
+    modifies: tuple[str, ...] = ()
+    protect: Callable[[Pos, str | None], bool] | None = None
+    strict: bool = False
+    mask: Any = None
+    cell: Cell | None = None
+    payload: Any = None
+
+
+@dataclass(frozen=True, eq=False)
+class Undo:
+    """Void earlier Build entries; the registry computes the blocks that put the world back.
+
+    @param target: plan name, or ``(cell, pass_)``
+    @param strict: leave the entry ``begun`` when the erase readback fails (default True)
+    """
+
+    target: str | tuple[Cell, str]
+    strict: bool = True
+
+
+@dataclass(frozen=True)
+class Note:
+    """Journal-only fact: marker, hold, coverage warning, review or issue note.
+
+    @param cell: (tx, tz)
+    @param kind: one of :data:`NOTE_KINDS`
+    @param body: ``up|none`` (marker), reason (hold, coverage-dismiss), text otherwise
+    @param ref: warning id / note id (coverage, coverage-dismiss, review, issue, close)
+    """
+
+    cell: Cell
+    kind: str
+    body: str = ''
+    ref: str = ''
+
+
+@dataclass(frozen=True, eq=False)
+class Writes:
+    """What the caller's ``apply`` must write: the recorded plan of one entry.
+
+    @param plan: owner name
+    @param pass_: pass of the entry (``undo`` entries use the target's pass)
+    @param cells: ``{pos: state}`` to write
+    @param kind: ``build``, ``undo`` or ``repair``
+    @param intent: the originating intent (``Build.payload`` rides on it), None for recovery
+    @param seq: journal seq of the ``begun`` entry (None for repair)
+    """
+
+    plan: str
+    pass_: str
+    cells: Mapping[Pos, str]
+    kind: str = 'build'
+    intent: Any = None
+    seq: int | None = None
+
+
+@dataclass(frozen=True, eq=False)
+class Receipt:
+    """Result of a change.
+
+    @param seq: journal seq of the entry
+    @param status: ``landed`` or ``mismatched`` (notes: ``landed``)
+    @param planned: number of planned positions
+    @param mismatches: readback mismatches
+    @param sample: up to 10 ``{"x,y,z": [planned, actual]}``
+    @param follow_ups: Build intents still needed (strips, ghost ensure), for the caller to apply
+    @param followed: receipts of follow-ups applied by ``change(..., cascade=True)``
+    """
+
+    seq: int
+    status: str
+    planned: int = 0
+    mismatches: int = 0
+    sample: Mapping[str, list] = field(default_factory=dict)
+    follow_ups: tuple[Build, ...] = ()
+    followed: tuple['Receipt', ...] = ()
+
+
+@dataclass(frozen=True)
+class GhostView:
+    """Grey placeholder mass expected in the world now."""
+
+    ground: bool = False
+    features: bool = False
+
+
+@dataclass(frozen=True)
+class FeatureState:
+    """A feature (pass ``feature`` plan) touching a cell: ``in-progress`` or ``built``."""
+
+    id: str
+    status: str
+
+
+@dataclass(frozen=True)
+class InFlightView:
+    """An unfinished (``begun``) entry covering a cell."""
+
+    seq: int
+    plan: str
+    pass_: str
+
+
+@dataclass(frozen=True)
+class NoteView:
+    """An open note: coverage warning, review or issue."""
+
+    kind: str
+    ref: str
+    body: str
+
+
+@dataclass(frozen=True)
+class CellView:
+    """Frozen per-cell state folded from the journal (mirrors the old RegistryStore record).
+
+    @param ground: ``none|ghost|ghost+features|generated``
+    @param ghost: placeholder mass expected in the world now
+    @param done: ground generated, trees, decor, every feature built, no marker, no warnings, nothing in flight
+    @param left: short human reasons work remains (same wording as ``what_is_left``)
+    """
+
+    cell: Cell
+    ground: str = 'none'
+    ghost: GhostView = GhostView()
+    trees: bool = False
+    decor: bool = False
+    features: tuple[FeatureState, ...] = ()
+    in_flight: tuple[InFlightView, ...] = ()
+    marker: bool = False
+    hold: str | None = None
+    notes: tuple[NoteView, ...] = ()
+    done: bool = False
+    left: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DriftItem:
+    """One finding of :meth:`CellRegistry.reconcile`.
+
+    @param cell: cell the finding belongs to
+    @param kind: one of :data:`DRIFT_KINDS`
+    @param seq: highest journal seq involved (0 when none)
+    @param count: positions (or cells for ghost kinds) affected
+    @param sample: up to 5 ``{"x,y,z": [expected, actual]}``
+    @param plans: owner names involved
+    @param fixed: re-committed or resolved by ``fix=True``
+    """
+
+    cell: Cell
+    kind: str
+    seq: int = 0
+    count: int = 0
+    sample: Mapping[str, list] = field(default_factory=dict)
+    plans: tuple[str, ...] = ()
+    fixed: bool = False
+
+
+@dataclass(frozen=True)
+class Drift:
+    """Result of ``reconcile``: findings plus how many mismatched entries were upgraded to landed."""
+
+    items: tuple[DriftItem, ...] = ()
+    upgraded: int = 0
+
+    def __iter__(self) -> Iterator[DriftItem]:
+        return iter(self.items)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    @property
+    def clean(self) -> bool:
+        """True when nothing is left unfixed."""
+        return all(i.fixed for i in self.items)
+
+    def by_kind(self, kind: str) -> tuple[DriftItem, ...]:
+        """Findings of one kind."""
+        return tuple(i for i in self.items if i.kind == kind)
+
+
+GhostPlanner = Callable[[Cell, str], 'Mapping[Pos, str] | None']
+"""``planner(cell, layer)`` for layer ``ground`` or ``features``: ``{pos: state}`` (empty = nothing to
+place), or None when the cell cannot be planned (no data)."""
+
+Apply = Callable[[Writes], None]
+"""Caller-supplied writer: puts ``Writes.cells`` into the world (MCP), nothing else."""
+
+
+# --- internals -----------------------------------------------------------------------------------
+@dataclass
+class _Entry:
+    seq: int
+    kind: str                   # build | undo
+    plan: str
+    pass_: str
+    cell: Cell
+    cells: tuple[Cell, ...]
+    blob: str
+    n: int
+    modifies: tuple[str, ...] = ()
+    strict: bool = False
+    masked: bool = False
+    strip: bool = False
+    targets: tuple[int, ...] = ()
+    status: str = 'begun'       # begun | landed | mismatched
+    finish_seq: int = 0
+    mismatches: int = 0
+    undone: bool = False
+    reopened: tuple[Cell, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Owner:
+    seq: int
+    plan: str
+    state: str
+    ghost: bool
+    pass_: str
+
+
+@dataclass(frozen=True)
+class _Prepared:
+    record: dict
+    writes: Writes
+    strict: bool
+
+
+def _token(tz: int) -> str:
+    return f"{'m' if tz < 0 else ''}{abs(tz)}"
+
+
+def ghost_name(cell: Cell, layer: str) -> str:
+    """Owner name of a cell's ghost plan, e.g. ``ghost_48_m44_ground``.
+
+    @param cell: (tx, tz)
+    @param layer: ``ground`` or ``features``
+    @returns: plan name
+    """
+    return f'ghost_{cell[0]}_{_token(cell[1])}_{layer}'
+
+
+def _blob_key(cells: Mapping[Pos, str]) -> tuple[str, bytes]:
+    body = json.dumps({f'{x},{y},{z}': s for (x, y, z), s in cells.items()},
+                      sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return hashlib.sha256(body).hexdigest()[:32], body
+
+
+class Ticket:
+    """A begun entry. Write the blocks, flush, read back, then ``finish(readback)`` exactly once.
+
+    @param registry: owning registry
+    @param seq: journal seq of the ``begun`` line
+    @param writes: what the caller must write
+    """
+
+    def __init__(self, registry: 'CellRegistry', seq: int, writes: Writes, strict: bool) -> None:
+        self.registry = registry
+        self.seq = seq
+        self.writes = writes
+        self.strict = strict
+
+    def finish(self, readback: Mapping[Pos, str | None]) -> Receipt:
+        """Compare ``readback`` with the plan and journal ``landed`` / ``mismatched``.
+
+        @param readback: ``{pos: state}`` read from the block store after a flush
+        @returns: Receipt
+        @raises Mismatch: strict/mask entry with mismatches (entry stays ``begun``)
+        @raises Refused: the entry was already finished
+        @raises JournalError: the finish line could not be written (entry stays ``begun``)
+        """
+        return self.registry._finish(self, readback)
+
+
+# --- the registry --------------------------------------------------------------------------------
+class CellRegistry:
+    """Journal-backed cell registry.
+
+    @param world_root: world checkout; the journal lives in ``<world_root>/registry/``
+    @param blocks: :class:`block_store.BlockStore` used for readback and reconcile
+    @param ghosts: optional :data:`GhostPlanner`; without it no ghost Builds are produced
+    @param cell_size: cell edge in blocks (default: ``cellmath.cell_size()``)
+    @param ring: Chebyshev depth of the ghost frontier (default 2)
+    """
+
+    def __init__(self, world_root: Path | str, blocks: BlockStore, ghosts: GhostPlanner | None = None,
+                 *, cell_size: int | None = None, ring: int = DEFAULT_RING) -> None:
+        self.root = Path(world_root)
+        self.dir = self.root / 'registry'
+        self.journal_path = self.dir / 'journal.jsonl'
+        self.blob_dir = self.dir / 'blobs'
+        self.blocks = blocks
+        self.ghosts = ghosts
+        self.cell_size = cell_size
+        self.ring = ring
+        self._blob_cache: OrderedDict[str, dict[Pos, str]] = OrderedDict()
+        self._reset_state()
+
+    # ---- folding ---------------------------------------------------------------------------
+    def _reset_state(self) -> None:
+        self._offset = 0
+        self._torn = 0
+        self._seq = 0
+        self._entries: dict[int, _Entry] = {}
+        self._by_cell: dict[Cell, list[int]] = {}
+        self._plans: dict[str, list[int]] = {}
+        self._begun: set[int] = set()
+        self._notes: list[dict] = []
+        self._ghost_feature_cells: set[Cell] = set()
+        self._touch()
+
+    def _touch(self) -> None:
+        """Drop derived caches after the folded state changed."""
+        self._derived: dict[Cell, CellView] = {}
+        self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
+        self._note_cache: dict | None = None
+        self._strip_clean: set[int] = set()
+
+    def _cell_of(self, pos: Pos) -> Cell:
+        return cellmath.cell_of(pos[0], pos[2], self.cell_size)
+
+    def _cells_of(self, positions: Iterable[Pos]) -> set[Cell]:
+        size = self.cell_size
+        return {cellmath.cell_of(x, z, size) for x, _y, z in positions}
+
+    def _fold(self, d: dict) -> None:
+        """Apply one parsed journal line to the folded state (deterministic, no I/O)."""
+        try:
+            op, seq = d['op'], d['seq']
+        except (KeyError, TypeError) as exc:
+            raise JournalError(f'journal line without op/seq: {d!r}') from exc
+        if seq != self._seq + 1:
+            raise JournalError(f'journal seq gap: expected {self._seq + 1}, found {seq}')
+        self._seq = seq
+        if op == 'begin':
+            self._fold_begin(d)
+        elif op == 'finish':
+            self._fold_finish(d)
+        elif op == 'note':
+            self._notes.append(d)
+        elif op != 'repair':
+            raise JournalError(f'unknown journal op {op!r} at seq {seq}')
+        self._touch()
+
+    def _fold_begin(self, d: dict) -> None:
+        cells = tuple(tuple(c) for c in d['cells'])
+        e = _Entry(
+            seq=d['seq'], kind=d['kind'], plan=d['plan'], pass_=d['pass'], cell=tuple(d['cell']),
+            cells=cells, blob=d['blob'], n=d['n'], modifies=tuple(d.get('modifies', ())),
+            strict=bool(d.get('strict')), masked=bool(d.get('mask')), strip=bool(d.get('strip')),
+            targets=tuple(d.get('targets', ())))
+        if e.kind == 'build' and e.pass_ == 'feature':
+            prior = self._latest(e.plan)
+            if prior is not None and prior.status == 'landed':
+                e.reopened = tuple(sorted(set(prior.cells) | set(cells)))
+        if e.kind == 'build' and e.pass_ == 'ghost-features' and not e.strip:
+            self._ghost_feature_cells.add(e.cell)
+        self._entries[e.seq] = e
+        self._begun.add(e.seq)
+        for c in cells:
+            self._by_cell.setdefault(c, []).append(e.seq)
+        self._plans.setdefault(e.plan, []).append(e.seq)
+
+    def _fold_finish(self, d: dict) -> None:
+        e = self._entries.get(d['ref'])
+        if e is None:
+            raise JournalError(f'finish for unknown entry {d["ref"]}')
+        status = d['status']
+        if status not in ('landed', 'mismatched') or e.status == 'landed' or (
+                e.status == 'mismatched' and status != 'landed'):
+            raise JournalError(f'bad finish {e.status} -> {status} for entry {e.seq}')
+        e.status, e.finish_seq, e.mismatches = status, d['seq'], int(d.get('mismatches', 0))
+        self._begun.discard(e.seq)
+        if e.kind == 'undo' and status == 'landed':
+            for t in e.targets:
+                if t in self._entries:
+                    self._entries[t].undone = True
+
+    def _latest(self, plan: str) -> _Entry | None:
+        for seq in reversed(self._plans.get(plan, ())):
+            e = self._entries[seq]
+            if not e.undone and e.kind == 'build':
+                return e
+        return None
+
+    def _sync(self) -> None:
+        """Fold any journal lines written since the last sync (incremental; torn tail ignored)."""
+        try:
+            size = self.journal_path.stat().st_size
+        except FileNotFoundError:
+            if self._offset or self._seq:
+                self._reset_state()
+            return
+        if size < self._offset:
+            self._reset_state()
+        if size == self._offset:
+            return
+        try:
+            with self.journal_path.open('rb') as fh:
+                fh.seek(self._offset)
+                data = fh.read()
+        except OSError as exc:
+            raise JournalError(f'cannot read {self.journal_path}: {exc}') from exc
+        end = data.rfind(b'\n') + 1
+        for raw in data[:end].split(b'\n'):
+            if not raw.strip():
+                continue
+            try:
+                d = json.loads(raw)
+            except ValueError as exc:
+                raise JournalError(f'corrupt journal line after seq {self._seq}: {raw[:80]!r}') from exc
+            self._fold(d)
+        self._offset += end
+        self._torn = len(data) - end
+
+    def _append(self, record: dict) -> int:
+        """Append one line durably (flock, drop a torn tail, write, fsync) and fold it.
+
+        @param record: line without ``seq``/``ts``
+        @returns: its seq
+        @raises JournalError: on any I/O failure (nothing was folded)
+        """
+        try:
+            fresh = not self.journal_path.exists()
+            self.dir.mkdir(parents=True, exist_ok=True)
+            fd = os.open(self.journal_path, os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError as exc:
+            raise JournalError(f'cannot open {self.journal_path}: {exc}') from exc
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            self._sync()
+            if self._torn:
+                os.ftruncate(fd, self._offset)         # an unacknowledged partial line; never durable
+                self._torn = 0
+            line = dict(record, seq=self._seq + 1, ts=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+            payload = (json.dumps(line, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8')
+            os.lseek(fd, 0, os.SEEK_END)
+            written = os.write(fd, payload)
+            if written != len(payload):
+                raise OSError(f'short write {written}/{len(payload)}')
+            os.fsync(fd)
+            if fresh:
+                self._fsync_dir()
+            self._offset += len(payload)
+            self._fold(json.loads(payload))
+            return line['seq']
+        except OSError as exc:
+            note = ''
+            try:
+                os.ftruncate(fd, self._offset)         # undo a line that may be half-durable
+            except OSError as rollback:
+                note = f'; rollback failed: {rollback}'
+            raise JournalError(f'journal write failed: {exc}{note}') from exc
+        finally:
+            os.close(fd)
+
+    def _fsync_dir(self) -> None:
+        fd = os.open(self.dir, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    # ---- plan blobs ------------------------------------------------------------------------
+    def _store_blob(self, cells: Mapping[Pos, str]) -> str:
+        key, body = _blob_key(cells)
+        path = self.blob_dir / f'{key}.json'
+        try:
+            if path.exists():
+                return key
+            self.blob_dir.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f'.{key}.{os.getpid()}.tmp')
+            with open(tmp, 'wb') as fh:
+                fh.write(body)
+                fh.flush()
+                os.fsync(fh.fileno())
+            tmp.replace(path)
+        except OSError as exc:
+            raise JournalError(f'cannot store plan blob {key}: {exc}') from exc
+        return key
+
+    def _blob(self, key: str) -> dict[Pos, str]:
+        got = self._blob_cache.get(key)
+        if got is not None:
+            self._blob_cache.move_to_end(key)
+            return got
+        try:
+            raw = json.loads((self.blob_dir / f'{key}.json').read_bytes())
+        except (OSError, ValueError) as exc:
+            raise JournalError(f'plan blob {key} unreadable: {exc}') from exc
+        got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
+        self._blob_cache[key] = got
+        while len(self._blob_cache) > 16:
+            self._blob_cache.popitem(last=False)
+        return got
+
+    # ---- ownership projection (private, rebuilt from the journal) --------------------------
+    def _cell_owners(self, cell: Cell, *, exclude: frozenset[str] = frozenset(),
+                     skip: frozenset[int] = frozenset()) -> dict[Pos, _Owner]:
+        cacheable = not exclude and not skip
+        if cacheable and cell in self._owner_cache:
+            return self._owner_cache[cell]
+        owners: dict[Pos, _Owner] = {}
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if e.kind != 'build' or e.undone or seq in skip or e.plan in exclude:
+                continue
+            ghost = e.pass_ in GHOST_PASSES
+            for pos, state in self._blob(e.blob).items():
+                if self._cell_of(pos) != cell:
+                    continue
+                if block_id(state) in CANCEL:
+                    owners.pop(pos, None)
+                else:
+                    owners[pos] = _Owner(seq, e.plan, state, ghost, e.pass_)
+            if e.pass_ == 'ground' and e.status == 'landed' and e.cell == cell:
+                for pos in [p for p, o in owners.items() if o.pass_ == 'ghost-ground']:
+                    del owners[pos]                     # real ground supersedes ghost ground
+        if cacheable:
+            self._owner_cache[cell] = owners
+        return owners
+
+    def _owners_in(self, positions: Iterable[Pos], *, exclude: frozenset[str] = frozenset(),
+                   skip: frozenset[int] = frozenset()) -> dict[Pos, _Owner]:
+        by_cell: dict[Cell, list[Pos]] = {}
+        for p in positions:
+            by_cell.setdefault(self._cell_of(p), []).append(p)
+        out: dict[Pos, _Owner] = {}
+        for cell, plist in by_cell.items():
+            owners = self._cell_owners(cell, exclude=exclude, skip=skip)
+            for p in plist:
+                o = owners.get(p)
+                if o is not None:
+                    out[p] = o
+        return out
+
+    def owned(self, within: Iterable[Pos], exclude: Iterable[str] = ()) -> dict[Pos, tuple[str, str]]:
+        """Current owners of positions, like the old ``built_cells(exclude, within)``.
+
+        @param within: positions to look up
+        @param exclude: plan names to ignore (their blocks show earlier owners)
+        @returns: ``{pos: (plan, state)}`` for owned positions (ghost owners included)
+        """
+        self._sync()
+        got = self._owners_in(within, exclude=frozenset(exclude))
+        return {p: (o.plan, o.state) for p, o in got.items()}
+
+    # ---- views -----------------------------------------------------------------------------
+    def _note_state(self) -> dict:
+        if self._note_cache is not None:
+            return self._note_cache
+        st: dict = {'marker': None, 'holds': {}, 'warn': {}, 'open': {}, 'cells': set()}
+        for n in self._notes:
+            cell, kind, ref, body = tuple(n['cell']), n['kind'], n.get('ref', ''), n.get('body', '')
+            st['cells'].add(cell)
+            if kind == 'marker':
+                if body == 'up':
+                    st['marker'] = cell
+                elif st['marker'] == cell:
+                    st['marker'] = None
+            elif kind == 'hold':
+                if body:
+                    st['holds'][cell] = body
+                else:
+                    st['holds'].pop(cell, None)
+            elif kind == 'coverage':
+                st['warn'].setdefault(cell, {}).setdefault(ref, body)
+            elif kind == 'coverage-dismiss':
+                st['warn'].get(cell, {}).pop(ref, None)
+            elif kind in ('review', 'issue'):
+                st['open'].setdefault(cell, {})[ref or f'#{n["seq"]}'] = NoteView(kind, ref, body)
+            elif kind == 'close':
+                st['open'].get(cell, {}).pop(ref, None)
+        self._note_cache = st
+        return st
+
+    def _derive(self, cell: Cell) -> CellView:
+        got = self._derived.get(cell)
+        if got is not None:
+            return got
+        real = ghost_ground = ghost_features = trees = decor = False
+        events: list[tuple[int, int, _Entry]] = []
+        flight: list[InFlightView] = []
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if e.status == 'begun':
+                flight.append(InFlightView(e.seq, e.plan, e.pass_))
+            if e.kind != 'build' or e.undone:
+                continue
+            events.append((e.seq, 0, e))
+            if e.status == 'landed':
+                events.append((e.finish_seq, 1, e))
+        for _seq, phase, e in sorted(events, key=lambda t: (t[0], t[1])):
+            if phase == 0:
+                if cell in e.reopened:
+                    trees = decor = False               # reopening a built feature clears trees+decor
+                continue
+            mine = e.cell == cell
+            if e.pass_ == 'ground' and mine:
+                real, trees, decor, ghost_ground = True, False, False, False
+            elif e.pass_ == 'trees' and mine:
+                trees = True
+            elif e.pass_ == 'decor' and mine:
+                decor = True
+            elif e.pass_ == 'ghost-ground' and mine:
+                ghost_ground = not real
+            elif e.pass_ == 'ghost-features' and mine:
+                ghost_features = not e.strip
+            elif e.pass_ == 'feature':
+                ghost_features = False                  # a real feature overlapping strips the ghost mass
+        feats = []
+        for plan in self._plans:
+            e = self._latest(plan)
+            if e is not None and e.pass_ == 'feature' and cell in e.cells:
+                feats.append(FeatureState(plan, 'built' if e.status == 'landed' else 'in-progress'))
+        ground = 'generated' if real else (
+            'none' if not ghost_ground else ('ghost+features' if ghost_features else 'ghost'))
+        ns = self._note_state()
+        warns = ns['warn'].get(cell, {})
+        notes = tuple(NoteView('coverage', k, v) for k, v in warns.items()) + tuple(
+            ns['open'].get(cell, {}).values())
+        marker = ns['marker'] == cell
+        hold = ns['holds'].get(cell)
+        feats.sort(key=lambda f: f.id)
+        left = []
+        if ground != 'generated':
+            left.append(f'ground={ground}')
+        left += [f'feature {f.id}={f.status}' for f in feats if f.status != 'built']
+        if ground == 'generated' and not trees:
+            left.append('trees')
+        if ground == 'generated' and not decor:
+            left.append('decor')
+        if marker:
+            left.append('marker up')
+        left += [f'coverage warning {k}' for k in warns]
+        if hold:
+            left.append(f'hold: {hold}')
+        left += [f'in-flight: {f.plan}' for f in flight]
+        done = (ground == 'generated' and trees and decor and not marker and not warns
+                and all(f.status == 'built' for f in feats) and not flight)
+        view = CellView(cell, ground, GhostView(ghost_ground, ghost_features), trees, decor, tuple(feats),
+                        tuple(flight), marker, hold, notes, done, tuple(left))
+        self._derived[cell] = view
+        return view
+
+    def _known_cells(self) -> list[Cell]:
+        return sorted(set(self._by_cell) | self._note_state()['cells'])
+
+    def view(self, cells: Iterable[Cell] | None = None) -> dict[Cell, CellView]:
+        """Frozen per-cell views folded from the journal.
+
+        @param cells: cells wanted (each gets a view, empty by default); None = every cell the journal mentions
+        @returns: ``{cell: CellView}``
+        """
+        self._sync()
+        wanted = self._known_cells() if cells is None else [tuple(c) for c in cells]
+        return {c: self._derive(c) for c in wanted}
+
+    def cell(self, cell: Cell) -> CellView:
+        """One cell's view (empty defaults when the journal never mentions it).
+
+        @param cell: (tx, tz)
+        @returns: CellView
+        """
+        return self.view([cell])[tuple(cell)]
+
+    def marker_cell(self) -> Cell | None:
+        """The cell with the marker up, or None."""
+        self._sync()
+        return self._note_state()['marker']
+
+    def seeds(self) -> list[Cell]:
+        """Cells with real work (generated ground, trees, decor or a real feature)."""
+        self._sync()
+        out = []
+        for c in self._known_cells():
+            v = self._derive(c)
+            if v.ground == 'generated' or v.trees or v.decor or v.features:
+                out.append(c)
+        return out
+
+    def frontier(self, ring: int | None = None) -> frozenset[Cell]:
+        """Seeds plus every cell within Chebyshev ``ring`` of a seed (default ring 2).
+
+        @param ring: depth override
+        @returns: frontier cells
+        """
+        depth = self.ring if ring is None else ring
+        if depth < 0:
+            raise Refused(f'ring must be >= 0, got {depth}')
+        out: set[Cell] = set()
+        for s in self.seeds():
+            out.add(s)
+            for r in range(1, depth + 1):
+                out.update(cellmath.ring_cells(r, origin=s))
+        return frozenset(out)
+
+    # ---- writing: prepare / begin / finish -------------------------------------------------
+    def _prepare(self, intent: Build | Undo) -> _Prepared:
+        if isinstance(intent, Build):
+            return self._prepare_build(intent)
+        if isinstance(intent, Undo):
+            return self._prepare_undo(intent)
+        raise Refused(f'unknown intent {type(intent).__name__}')
+
+    def _check_flight(self, cells: Iterable[Cell]) -> None:
+        cells = set(cells)
+        hits = {s for s in self._begun if cells & set(self._entries[s].cells)}
+        if hits:
+            raise InFlight({c for s in hits for c in self._entries[s].cells if c in cells}, hits)
+
+    def _prepare_build(self, b: Build) -> _Prepared:
+        self._sync()
+        if b.pass_ not in PASSES:
+            raise Refused(f'unknown pass {b.pass_!r}; want one of {list(PASSES)}')
+        if not b.plan:
+            raise Refused('plan name is required')
+        positions = {tuple(p): s for p, s in b.cells.items()}
+        ghost = b.pass_ in GHOST_PASSES
+        if not positions and not (ghost and b.cell is not None):
+            raise Refused(f'{b.plan}: empty plan')
+        if b.cell is not None:
+            primary = tuple(b.cell)
+        else:
+            primary = Counter(self._cell_of(p) for p in positions).most_common(1)[0][0]
+        touched = self._cells_of(positions) | {primary}
+        self._check_flight(touched)
+        view = self._derive(primary)
+        strip = bool(positions) and all(block_id(s) in CANCEL for s in positions.values())
+        if b.pass_ in ('trees', 'decor') and view.ground != 'generated':
+            raise Refused(f'{b.pass_} only on generated ground (cell {list(primary)} has ground={view.ground})')
+        if b.pass_ == 'ghost-ground' and view.ground == 'generated':
+            raise Refused(f'ghost ground over real ground (cell {list(primary)})')
+        if b.pass_ == 'ghost-features' and not strip and view.ground == 'none':
+            raise Refused(f'ghost features need ghost or real ground (cell {list(primary)} has none)')
+        owners = self._owners_in(positions, exclude=frozenset(b.modifies) | {b.plan})
+        clash = {p: (o.plan, o.state, positions[p]) for p, o in owners.items()
+                 if not o.ghost and o.state != positions[p]}
+        if clash:
+            raise Clash(clash)
+        if b.protect is not None and positions:
+            actual = self.blocks.read_many(positions)
+            hits = {p: actual[p] for p in positions if b.protect(p, actual[p])}
+            if hits:
+                raise Refused(f'{len(hits)} protected cells would change', hits)
+        record = {
+            'op': 'begin', 'kind': 'build', 'plan': b.plan, 'pass': b.pass_, 'cell': list(primary),
+            'cells': [list(c) for c in sorted(touched)], 'n': len(positions),
+            'modifies': sorted(b.modifies), 'strict': bool(b.strict), 'strip': strip,
+            'owner': os.environ.get('SITE_OWNER'),
+        }
+        if b.mask is not None:
+            record['mask'] = b.mask
+        writes = Writes(b.plan, b.pass_, positions, 'build', b)
+        return _Prepared(record, writes, bool(b.strict or b.mask is not None))
+
+    def _resolve_targets(self, target: str | tuple[Cell, str]) -> list[_Entry]:
+        out = []
+        for e in self._entries.values():
+            if e.kind != 'build' or e.undone or e.status == 'begun':
+                continue
+            if isinstance(target, str):
+                if e.plan == target:
+                    out.append(e)
+            else:
+                cell, pass_ = tuple(target[0]), target[1]
+                if e.pass_ == pass_ and (e.cell == cell or (pass_ == 'feature' and cell in e.cells)):
+                    out.append(e)
+        return out
+
+    def _prepare_undo(self, u: Undo) -> _Prepared:
+        self._sync()
+        targets = self._resolve_targets(u.target)
+        if not targets:
+            raise Refused(f'nothing to undo for {u.target!r}')
+        cells = {c for e in targets for c in e.cells}
+        self._check_flight(cells)
+        tseqs = frozenset(e.seq for e in targets)
+        positions = {p for e in targets for p in self._blob(e.blob)}
+        current = self._owners_in(positions)
+        under = self._owners_in(positions, skip=tseqs)
+        erase = {p: (under[p].state if p in under else AIR)
+                 for p, o in current.items() if o.seq in tseqs}
+        names = sorted({e.plan for e in targets})
+        first = targets[-1]
+        record = {
+            'op': 'begin', 'kind': 'undo', 'plan': f'undo:{",".join(names)}', 'pass': first.pass_,
+            'cell': list(first.cell), 'cells': [list(c) for c in sorted(cells)], 'n': len(erase),
+            'targets': sorted(tseqs), 'strict': bool(u.strict), 'owner': os.environ.get('SITE_OWNER'),
+        }
+        return _Prepared(record, Writes(record['plan'], first.pass_, erase, 'undo', u), bool(u.strict))
+
+    def _begin(self, prep: _Prepared) -> Ticket:
+        record = dict(prep.record, blob=self._store_blob(prep.writes.cells))
+        seq = self._append(record)
+        return Ticket(self, seq, replace(prep.writes, seq=seq), prep.strict)
+
+    def begin(self, intent: Build | Undo) -> Ticket:
+        """Journal ``begun`` (fsynced) and return the ticket; no block has been written yet.
+
+        @param intent: Build or Undo
+        @returns: Ticket (write ``ticket.writes``, flush, read back, ``ticket.finish(readback)``)
+        @raises Refused: a rule is broken (bad pass, trees without ground, protect hit, ...)
+        @raises InFlight: a ``begun`` entry covers the cells
+        @raises Clash: planned blocks belong to a real earlier owner
+        @raises JournalError: the begin line was not written (so no block may be written)
+        """
+        return self._begin(self._prepare(intent))
+
+    def _finish(self, t: Ticket, readback: Mapping[Pos, str | None]) -> Receipt:
+        self._sync()
+        e = self._entries[t.seq]
+        if e.status != 'begun':
+            raise Refused(f'entry {t.seq} is already {e.status}')
+        bad = {p: [s, readback.get(p)] for p, s in t.writes.cells.items()
+               if not same_state(s, readback.get(p))}
+        sample = {f'{x},{y},{z}': v for (x, y, z), v in list(bad.items())[:SAMPLE]}
+        if bad and t.strict:
+            raise Mismatch(t.seq, len(bad), sample)
+        status = 'mismatched' if bad else 'landed'
+        self._append({'op': 'finish', 'ref': t.seq, 'status': status, 'mismatches': len(bad)})
+        return Receipt(t.seq, status, len(t.writes.cells), len(bad), sample)
+
+    def change(self, intent: Build | Undo | Note, apply: Apply | None = None, *,
+               cascade: bool = False) -> Receipt:
+        """The only writer: journal, let ``apply`` write the blocks, read back, finish.
+
+        @param intent: :class:`Build`, :class:`Undo` or :class:`Note`
+        @param apply: callable that writes ``Writes.cells`` (required when blocks change)
+        @param cascade: also apply the follow-up Builds (strips, ghost ensure) after a landed change
+        @returns: Receipt (``follow_ups`` lists what is still needed after a landed real change)
+        @raises Refused: see :meth:`begin`; also when blocks must change but ``apply`` is None
+        @raises Mismatch: strict/mask readback failed (entry stays ``begun``)
+        """
+        if isinstance(intent, Note):
+            return self._note(intent)
+        prep = self._prepare(intent)
+        if prep.writes.cells and apply is None:
+            raise Refused('an apply callable is required to write blocks')
+        ticket = self._begin(prep)
+        if ticket.writes.cells:
+            apply(ticket.writes)
+            mark = getattr(self.blocks, 'mark_written', None)
+            if mark is not None:
+                mark()                                  # LiveBlocks: refuse reads until flush
+            self.blocks.flush()
+        receipt = ticket.finish(self.blocks.read_many(ticket.writes.cells) if ticket.writes.cells else {})
+        if receipt.status != 'landed':
+            return receipt
+        if prep.record['kind'] == 'undo' or prep.record['pass'] in REAL_PASSES:
+            receipt = replace(receipt, follow_ups=self.follow_ups())
+            if cascade:
+                receipt = replace(receipt, followed=tuple(self.ensure(apply)))
+        return receipt
+
+    def _note(self, n: Note) -> Receipt:
+        self._sync()
+        if n.kind not in NOTE_KINDS:
+            raise Refused(f'unknown note kind {n.kind!r}; want one of {list(NOTE_KINDS)}')
+        cell = tuple(n.cell)
+        if n.kind == 'marker' and n.body not in ('up', 'none'):
+            raise Refused(f'marker body must be up|none, got {n.body!r}')
+        if n.kind in ('coverage', 'coverage-dismiss', 'close') and not n.ref:
+            raise Refused(f'{n.kind} needs a ref')
+        if n.kind == 'coverage-dismiss':
+            if not n.body.strip():
+                raise Refused('dismissing a coverage warning needs a reason')
+            if n.ref not in self._note_state()['warn'].get(cell, {}):
+                raise Refused(f'no open coverage warning {n.ref!r} on cell {list(cell)}')
+        seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
+        return Receipt(seq, 'landed')
+
+    # ---- follow-ups: strips and ghost ensure -----------------------------------------------
+    def _strip_builds(self, scope: set[Cell] | None = None) -> list[Build]:
+        """Air Builds for ghost-feature blocks still owned inside a landed real feature's footprint."""
+        wanted: dict[Cell, dict[Pos, str]] = {}
+        for seq, e in self._entries.items():
+            if (e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed' or e.undone
+                    or seq in self._strip_clean or not (set(e.cells) & self._ghost_feature_cells)):
+                continue
+            blob = self._blob(e.blob)
+            if not blob:
+                self._strip_clean.add(seq)
+                continue
+            columns = {(x, z) for x, _y, z in blob}
+            ys = [p[1] for p in blob]
+            lo, hi = min(ys), max(ys)
+            found = False
+            for cell in e.cells:
+                if cell not in self._ghost_feature_cells or (scope is not None and cell not in scope):
+                    continue
+                if self._derive(cell).in_flight:
+                    continue
+                for pos, o in self._cell_owners(cell).items():
+                    if o.pass_ == 'ghost-features' and (pos[0], pos[2]) in columns and lo <= pos[1] <= hi:
+                        wanted.setdefault(cell, {})[pos] = AIR
+                        found = True
+            if not found and scope is None:
+                self._strip_clean.add(seq)
+        out = []
+        for cell in sorted(wanted):
+            out.append(Build(f'ghost_strip_{cell[0]}_{_token(cell[1])}_features', 'ghost-features',
+                             wanted[cell], modifies=(ghost_name(cell, 'features'),), cell=cell))
+        return out
+
+    def _ghost_needs(self, scope: set[Cell] | None = None) -> list[tuple[Cell, str]]:
+        needs = []
+        for cell in sorted(self.frontier()):
+            if scope is not None and cell not in scope:
+                continue
+            v = self._derive(cell)
+            if v.in_flight:
+                continue
+            if v.ground == 'none':
+                needs.append((cell, 'ground'))
+            elif not v.ghost.features and not v.features:
+                needs.append((cell, 'features'))
+        return needs
+
+    def _ghost_build(self, cell: Cell, layer: str) -> Build | None:
+        planned = self.ghosts(cell, layer) if self.ghosts is not None else None
+        if planned is None:
+            return None
+        positions = {tuple(p): s for p, s in planned.items()}
+        owners = self._owners_in(positions)
+        positions = {p: s for p, s in positions.items() if p not in owners or owners[p].ghost}
+        name = ghost_name(cell, layer)
+        return Build(name, f'ghost-{layer}', positions, modifies=(name,), strict=True, cell=cell)
+
+    def follow_ups(self, cells: Iterable[Cell] | None = None) -> tuple[Build, ...]:
+        """Builds still needed: ghost strips under real features, then ghost ground / features for
+        every frontier cell that lacks them (needs a ``ghosts`` planner). Idempotent and derived:
+        applying them removes them from this list.
+
+        @param cells: restrict to these cells (default all)
+        @returns: Build intents for the caller to ``change``
+        """
+        self._sync()
+        scope = None if cells is None else {tuple(c) for c in cells}
+        out = self._strip_builds(scope)
+        for cell, layer in self._ghost_needs(scope):
+            b = self._ghost_build(cell, layer)
+            if b is not None:
+                out.append(b)
+        return tuple(out)
+
+    def ensure(self, apply: Apply, *, cells: Iterable[Cell] | None = None, rounds: int = 8) -> list[Receipt]:
+        """Apply follow-ups until none are left (ground first, then features, then strips).
+
+        @param apply: block writer
+        @param cells: restrict to these cells
+        @param rounds: safety bound
+        @returns: receipts in application order
+        @raises Refused: follow-ups did not settle within ``rounds``
+        """
+        out: list[Receipt] = []
+        for _ in range(rounds):
+            pending = self.follow_ups(cells)
+            if not pending:
+                return out
+            for b in pending:
+                out.append(self.change(b, apply))
+        if self.follow_ups(cells):
+            raise Refused(f'follow-ups did not settle after {rounds} rounds')
+        return out
+
+    # ---- reconcile -------------------------------------------------------------------------
+    def _classify(self, owners: Mapping[Pos, _Owner]) -> tuple[dict[Pos, tuple[str, str | None]], dict[Pos, tuple[str, str | None]]]:
+        actual = self.blocks.read_many(owners)
+        missing, foreign = {}, {}
+        for pos, o in owners.items():
+            got = actual[pos]
+            if same_state(o.state, got):
+                continue
+            (missing if got is None or got in AIR_IDS or block_id(got) in AIR_IDS else foreign)[pos] = (o.state, got)
+        return missing, foreign
+
+    def _finish_line(self, seq: int, status: str, mismatches: int) -> None:
+        self._append({'op': 'finish', 'ref': seq, 'status': status, 'mismatches': mismatches})
+
+    def reconcile(self, cells: Iterable[Cell] | None = None, *, fix: bool = False,
+                  apply: Apply | None = None) -> Drift:
+        """Compare the journal with the blocks (flushes the store first).
+
+        Kinds: ``in-flight`` (a ``begun`` entry), ``missing`` / ``foreign`` (a position the fold owns is
+        absent / holds another block), ``ghost-missing`` (frontier cell lacks ghost ground or features;
+        reported only when a ``ghosts`` planner is set), ``ghost-stale`` (ghost features still owned
+        inside a real feature's footprint).
+
+        With ``fix`` (needs ``apply``): begun entries are read back and landed, re-writing the recorded plan
+        first when it does not match; missing/foreign positions are re-written from their current owner
+        (journalled as an informational ``repair`` line); mismatched entries whose owned blocks now read
+        back are upgraded to ``landed``; follow-up Builds are applied. Re-written plans carry no signs or
+        entities (only ``cells`` are recorded).
+
+        @param cells: cells in scope (default: every cell the journal mentions)
+        @param fix: repair what is found
+        @param apply: block writer, required with ``fix``
+        @returns: Drift
+        @raises Refused: ``fix`` without ``apply``
+        """
+        if fix and apply is None:
+            raise Refused('reconcile(fix=True) needs an apply callable')
+        self._sync()
+        scope = None if cells is None else {tuple(c) for c in cells}
+        self.blocks.flush()
+        items: list[DriftItem] = []
+        # 1. in-flight entries
+        for seq in sorted(self._begun):
+            e = self._entries[seq]
+            hit = set(e.cells) if scope is None else set(e.cells) & scope
+            if not hit:
+                continue
+            writes = Writes(e.plan, e.pass_, self._blob(e.blob), e.kind, None, e.seq)
+            bad = self._bad(writes.cells)
+            fixed = False
+            if fix:
+                if bad:
+                    apply(writes)
+                    self._flush_after_write()
+                    bad = self._bad(writes.cells)
+                self._finish_line(seq, 'mismatched' if bad else 'landed', len(bad))
+                fixed = not bad
+            items.append(DriftItem(min(hit), 'in-flight', seq, len(bad) if bad else 0,
+                                   {f'{x},{y},{z}': v for (x, y, z), v in list(bad.items())[:5]},
+                                   (e.plan,), fixed))
+        # 2. missing / foreign blocks under landed or mismatched entries
+        upgraded = 0
+        for cell in self._known_cells():
+            if scope is not None and cell not in scope:
+                continue
+            owners = {p: o for p, o in self._cell_owners(cell).items() if o.seq not in self._begun}
+            missing, foreign = self._classify(owners)
+            repaired = 0
+            for kind, found in (('missing', missing), ('foreign', foreign)):
+                if not found:
+                    continue
+                plans = sorted({owners[p].plan for p in found})
+                seq = max(owners[p].seq for p in found)
+                sample = {f'{x},{y},{z}': list(v) for (x, y, z), v in list(found.items())[:5]}
+                fixed = False
+                if fix:
+                    by_owner: dict[int, dict[Pos, str]] = {}
+                    for p in found:
+                        by_owner.setdefault(owners[p].seq, {})[p] = owners[p].state
+                    for oseq, part in sorted(by_owner.items()):
+                        o = self._entries[oseq]
+                        apply(Writes(o.plan, o.pass_, part, 'repair', None, None))
+                    repaired += len(found)
+                    self._flush_after_write()
+                    fixed = not self._bad({p: owners[p].state for p in found})
+                items.append(DriftItem(cell, kind, seq, len(found), sample, tuple(plans), fixed))
+            if repaired:
+                self._append({'op': 'repair', 'cell': list(cell), 'count': repaired})
+        if fix:
+            upgraded = self._upgrade_mismatched(scope)
+        # 3. ghosts
+        if self.ghosts is not None:
+            for cell, layer in self._ghost_needs(scope):
+                items.append(DriftItem(cell, 'ghost-missing', 0, 1, {}, (ghost_name(cell, layer),), False))
+        for b in self._strip_builds(scope):
+            items.append(DriftItem(b.cell, 'ghost-stale', 0, len(b.cells), {}, (b.plan,), False))
+        if fix:
+            self.ensure(apply, cells=scope)
+            need = {c for c, _l in self._ghost_needs(scope)}
+            stale = {b.cell for b in self._strip_builds(scope)}
+            items = [replace(i, fixed=True) if (i.kind == 'ghost-missing' and i.cell not in need)
+                     or (i.kind == 'ghost-stale' and i.cell not in stale) else i for i in items]
+        return Drift(tuple(items), upgraded)
+
+    def _bad(self, planned: Mapping[Pos, str]) -> dict[Pos, list]:
+        actual = self.blocks.read_many(planned)
+        return {p: [s, actual[p]] for p, s in planned.items() if not same_state(s, actual[p])}
+
+    def _flush_after_write(self) -> None:
+        mark = getattr(self.blocks, 'mark_written', None)
+        if mark is not None:
+            mark()
+        self.blocks.flush()
+
+    def _upgrade_mismatched(self, scope: set[Cell] | None) -> int:
+        count = 0
+        for seq, e in list(self._entries.items()):
+            if e.status != 'mismatched' or e.undone or (scope is not None and not set(e.cells) & scope):
+                continue
+            mine = {}
+            for cell in e.cells:
+                mine.update({p: o.state for p, o in self._cell_owners(cell).items() if o.seq == seq})
+            if not self._bad(mine):
+                self._finish_line(seq, 'landed', 0)
+                count += 1
+        return count
+
+    # ---- housekeeping ----------------------------------------------------------------------
+    def reset(self) -> Path | None:
+        """Start a fresh journal: the current file is renamed ``journal-<stamp>.jsonl`` (blobs are kept).
+
+        @returns: path of the archived journal, or None when there was none
+        @raises JournalError: the rename failed
+        """
+        self._sync()
+        if not self.journal_path.exists():
+            return None
+        stamp = time.strftime('%Y%m%dT%H%M%S', time.gmtime())
+        target = self.journal_path.with_name(f'journal-{stamp}-{self._seq}.jsonl')
+        try:
+            self.journal_path.replace(target)
+            self._fsync_dir()
+        except OSError as exc:
+            raise JournalError(f'cannot archive journal: {exc}') from exc
+        self._reset_state()
+        return target
