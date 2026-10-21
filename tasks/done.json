@@ -339,6 +339,18 @@
       "title": "Decide and replace read-only region block reads (site_kit.World)",
       "status": "done",
       "notes": "docs/audits/region-block-reads.md: keep one guarded reader behind BlockStore (read/read_many/flush); MCP bulk read unverified (F2). F1: relocate mcp_world_reachable out of region_backup before task 40."
+    },
+    {
+      "id": 40,
+      "title": "Remove region backup and restore entirely",
+      "status": "done",
+      "notes": "Region backup/restore removed (region_backup, registry_repair, repair/undo-repair CLI, restore-ghost, ghost_snap keys, pre-apply snaps). mcp_world_reachable moved to scripts/mcp_probe.py. Not run live: site_recover (snapshot compare removed), site_cleanup, layer scripts. Bakeoff baseline flow pending task 48. Old rounds R-001..R-003 removed separately."
+    },
+    {
+      "id": 41,
+      "title": "Journal-based cell registry core with MemoryBlocks",
+      "status": "done",
+      "notes": "scripts/block_store.py + scripts/cell_journal.py + docs/specs/cell-journal-interface.md (78 tests). Notes for task 42: apply must keep its guards and build Plan from Writes.cells, signs/entities from Build.payload (reconcile re-commits block cells only); Undo is a two-phase entry computing an erase plan; ghosts planner callable (cell,'ground'|'features')->{pos:state}; ownership is replayed per cell, a ghost-heavy world will want a SQLite index behind owned(); issues auto-close and a cell CLI over view() are not built."
     }
   ]
 }
