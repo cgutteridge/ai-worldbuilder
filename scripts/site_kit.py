@@ -11,7 +11,7 @@ cell is written, including air (so excavation is explicit). apply():
   5. saves the world and reads every planned cell back from the region files.
 Reports land in verification/site/<name>-*.json.
 """
-import json, math, struct, sys, time, zlib
+import json, math, os, struct, sys, time, zlib
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -22,6 +22,8 @@ REGION = Path(_CFG['region_path'])
 STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
 OUT = ROOT / 'verification/site'
 D = 'minecraft:overworld'
+# Explicit region override for bake-off sittings (folder under instance/saves/…).
+REGION_ENV = 'AI_WORLDBUILDER_REGION'
 ATTACH = ('door', 'sign', 'torch', 'lantern', 'pane', 'bars', 'bed', 'button', 'lever',
           'trapdoor', 'end_rod', 'chain', 'carpet', 'rail', 'ladder', 'vine', 'banner',
           'flower_pot', 'potted', 'candle', 'rod', 'campfire', 'scaffolding', 'sapling')
@@ -303,11 +305,102 @@ class PlannedWorld:
         return 'minecraft:air' if pos in self.ignore else self.world.block(x, y, z)
 
 
+def resolve_region(region=None) -> Path:
+    """Region folder for World readback: explicit arg, else env, else config.
+
+    Bake-off sittings play in the bakeoff save while ``config/world.json`` still
+    points at SouthamptonAI. Set ``AI_WORLDBUILDER_REGION`` (or pass ``region``)
+    so readback matches the open world.
+
+    @param region: optional region directory (wins over env and config)
+    @returns: absolute path to the ``…/overworld/region`` folder
+    """
+    if region is not None:
+        return Path(region)
+    env = os.environ.get(REGION_ENV)
+    if env:
+        return Path(env)
+    return Path(REGION)
+
+
+def gameworld_id_from_region(region: Path) -> str:
+    """Save-folder identity for a region path (``…/saves/<id>/dimensions/…/region``).
+
+    @param region: overworld region directory
+    @returns: save folder name (e.g. ``bakeoff``, ``SouthamptonAI``)
+    @raises ValueError: when the path does not contain a ``saves/<id>/`` segment
+    """
+    parts = Path(region).resolve().parts
+    for i, part in enumerate(parts):
+        if part == 'saves' and i + 1 < len(parts):
+            return parts[i + 1]
+    raise ValueError(f'cannot derive gameworld id from region path: {region}')
+
+
+def mcp_reported_gameworld(*, region: Path | None = None) -> str | None:
+    """Identity of the Minecraft save the MCP bridge is currently serving.
+
+    MCP runs inside the open client world. That save holds ``session.lock`` under
+    the same ``instance/saves/`` tree as ``region``. Returns None when MCP is
+    down or no lock is found.
+
+    @param region: region used to locate the instance ``saves/`` parent
+    @returns: save folder name, or None when unknown
+    """
+    import region_backup as rb
+
+    if not rb.mcp_world_reachable():
+        return None
+    try:
+        region_path = resolve_region(region).resolve()
+    except OSError:
+        return None
+    saves_root = region_path
+    while saves_root.name != 'saves' and saves_root != saves_root.parent:
+        saves_root = saves_root.parent
+    if saves_root.name != 'saves' or not saves_root.is_dir():
+        return None
+    open_names = [
+        child.name
+        for child in saves_root.iterdir()
+        if child.is_dir() and (child / 'session.lock').is_file()
+    ]
+    if len(open_names) == 1:
+        return open_names[0]
+    return None
+
+
+def ensure_region_matches_open_world(region=None) -> None:
+    """Refuse when World region identity differs from the MCP-open save.
+
+    @param region: region override (same rules as :func:`resolve_region`)
+    @raises SystemExit: when the open world and region target disagree
+    """
+    target = resolve_region(region)
+    try:
+        expected = gameworld_id_from_region(target)
+    except ValueError:
+        return
+    reported = mcp_reported_gameworld(region=target)
+    if reported is None:
+        return
+    if reported.casefold() == expected.casefold():
+        return
+    raise SystemExit(
+        f'refuse apply: World region targets {expected!r} but MCP is serving '
+        f'{reported!r}. Set {REGION_ENV} to the open save\'s region folder '
+        f'(or open the matching world).'
+    )
+
+
 class World:
     """Read-only block access from the saved region files."""
 
-    def __init__(self, region=REGION):
-        self.region = Path(region)
+    def __init__(self, region=None):
+        """
+        @param region: region directory, or None to use :func:`resolve_region`
+        """
+        self.region = resolve_region(region)
         self.chunks = {}
         self.files = {}
 
@@ -715,6 +808,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     print(f'{plan.name}: {len(plan.cells)} cells in {len(boxes)} boxes; bounds {lo}..{hi}; no clashes')
     if dry:
         return
+    ensure_region_matches_open_world()      # bake-off: refuse when region ≠ MCP-open save
     import site_lock
     site_lock.check()                       # single-builder rule: refuse without the world lock
     m = Paced()

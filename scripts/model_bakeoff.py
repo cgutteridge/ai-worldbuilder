@@ -850,6 +850,8 @@ def restore_ghost_step(
 
     Ticket #32: bake-off wipes/restores the whole world with one paired backup,
     not per-cell slices. Partial snaps are refused by region_backup.restore.
+    When config sets ``ghost_region_path``, restore targets that folder (bakeoff
+    save) rather than the snapshot's recorded SouthamptonAI ``region_path``.
 
     @param root: model-bakeoffs root (for config ghost_snap)
     @param snap: override snap name (default config ``ghost_snap``)
@@ -866,11 +868,13 @@ def restore_ghost_step(
             'region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out'
         )
     snap_dir = rb.resolve_snap_dir(str(name))
+    region = cfg.get('ghost_region_path')
     return rb.restore_snap(
         snap_dir,
         confirm_logged_out=confirm_logged_out,
         allow_partial=False,
         restore_registry=True,
+        region_dir=Path(region) if region else None,
     )
 
 
