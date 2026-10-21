@@ -180,4 +180,4 @@ Shared contract suite parametrised over `MemoryBlocks` and `LiveBlocks(fixture_r
 * F1: `site_kit` and `logout_gate` import `region_backup.mcp_world_reachable`; relocate before T40.
 * F2: MCP read tool unverified (server down). Needs a human-run `tools/list`.
 * F3: after T38/T40, `config/world.json` keys `pristine_region_path` and `ghost_region_path` and
-  the `the pristine clone under backups/` clone become unused; remove with those tasks.
+  the pristine clone under `backups/` become unused; remove with those tasks.
