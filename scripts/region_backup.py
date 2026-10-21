@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Sparse region-file backups for Southampton Refine.
+"""Sparse and whole-world region-file backups (ticket #32).
 
-Copies only .mca files that intersect a Minecraft XZ bbox (plus optional
-margin in regions). Does NOT snapshot the whole 1.6G world.
+Copies ``.mca`` files that intersect a Minecraft XZ bbox, or every region for a
+whole-world bake-off pair (regions + registry/).
 
-  # before a build at SO17 3SF-ish
   python3 scripts/region_backup.py snap --bbox 6900,-5400,7000,-5300 --name so173sf-q003
+  python3 scripts/region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out
   python3 scripts/region_backup.py list
-  python3 scripts/region_backup.py restore 2026-10-18-172524-bakeoff-ghost-3x3
+  python3 scripts/region_backup.py restore 2026-10-18-172524-bakeoff-ghost --confirm-logged-out
   python3 scripts/region_backup.py prune --keep 5
 
-``restore`` copies snap ``.mca`` files back into the live ``region_path``.
-Quit the Minecraft world first (title screen or exit). If the MCP bridge
-still answers, restore refuses unless ``--force``.
+Snap kinds in ``BACKUP.json``:
+  - ``partial`` — bbox / repair slice (raw ``restore`` refuses these)
+  - ``whole-world`` — full region dir + ``registry/`` copy (bake-off)
+  - ``repair`` — cell repair backup (restore only via ``registry_repair undo``)
 
-Policy: rules/process.md § backups.
+Policy: rules/process.md § backups; ticket #32 logout gate.
 """
 from __future__ import annotations
 
@@ -29,7 +30,12 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 CFG = json.loads((ROOT / 'config/world.json').read_text())
 REGION = Path(CFG['region_path'])
+if not REGION.is_absolute():
+    REGION = ROOT / REGION
 BACKUP_ROOT = ROOT / 'backups' / 'regions'
+KIND_PARTIAL = 'partial'
+KIND_WHOLE = 'whole-world'
+KIND_REPAIR = 'repair'
 
 
 def regions_for_bbox(x0: int, z0: int, x1: int, z1: int, margin: int = 0) -> list[tuple[int, int]]:
@@ -55,8 +61,41 @@ def regions_for_bbox(x0: int, z0: int, x1: int, z1: int, margin: int = 0) -> lis
     return [(rx, rz) for rx in range(rx0, rx1 + 1) for rz in range(rz0, rz1 + 1)]
 
 
+def _copy_regions(dest: Path, region_dir: Path, names: list[str] | None = None) -> tuple[list[str], list[str], int]:
+    """Copy ``.mca`` files into ``dest``.
+
+    @param dest: snap directory
+    @param region_dir: live region folder
+    @param names: optional explicit file names; default all ``*.mca``
+    @returns: (copied names, missing names, total bytes)
+    """
+    if names is None:
+        names = sorted(p.name for p in region_dir.glob('*.mca') if p.is_file())
+    copied: list[str] = []
+    missing: list[str] = []
+    total = 0
+    for name in names:
+        src = region_dir / name
+        if not src.is_file():
+            missing.append(name)
+            continue
+        shutil.copy2(src, dest / name)
+        total += src.stat().st_size
+        copied.append(name)
+    return copied, missing, total
+
+
+def write_backup_meta(dest: Path, meta: dict) -> None:
+    """Write ``BACKUP.json`` with sorted keys.
+
+    @param dest: snap directory
+    @param meta: metadata
+    """
+    (dest / 'BACKUP.json').write_text(json.dumps(meta, indent=2, sort_keys=True) + '\n')
+
+
 def cmd_snap(args: argparse.Namespace) -> int:
-    """Snapshot regions for a bbox.
+    """Snapshot regions for a bbox (kind=partial).
 
     @param args: CLI args
     @returns: exit code
@@ -67,30 +106,110 @@ def cmd_snap(args: argparse.Namespace) -> int:
     name = args.name or 'snap'
     dest = BACKUP_ROOT / f'{stamp}-{name}'
     dest.mkdir(parents=True, exist_ok=False)
+    names = [f'r.{rx}.{rz}.mca' for rx, rz in cells]
+    copied, missing, total = _copy_regions(dest, REGION, names)
     meta = {
         'time': stamp,
         'name': name,
+        'kind': KIND_PARTIAL,
         'bbox': [x0, z0, x1, z1],
         'margin': args.margin,
         'region_path': str(REGION),
-        'files': [],
+        'files': copied,
+        'bytes': total,
+        'missing': missing,
     }
-    missing = []
-    total = 0
-    for rx, rz in cells:
-        src = REGION / f'r.{rx}.{rz}.mca'
-        if not src.exists():
-            missing.append(src.name)
-            continue
-        shutil.copy2(src, dest / src.name)
-        total += src.stat().st_size
-        meta['files'].append(src.name)
-    meta['bytes'] = total
-    meta['missing'] = missing
-    (dest / 'BACKUP.json').write_text(json.dumps(meta, indent=2) + '\n')
-    print(f'{dest.relative_to(ROOT)}: {len(meta["files"])} regions, '
+    write_backup_meta(dest, meta)
+    print(f'{dest.relative_to(ROOT)}: {len(copied)} regions, '
           f'{total / 1e6:.1f} MB' + (f', missing {missing}' if missing else ''))
     return 0
+
+
+def registry_dir(root: Path | None = None) -> Path:
+    """Path to ``registry/`` under a world root.
+
+    @param root: world root (default active)
+    @returns: registry directory
+    """
+    return (Path(root) if root else Path(ROOT)) / 'registry'
+
+
+def snap_whole_world(
+    *,
+    name: str = 'whole-world',
+    region_dir: Path | None = None,
+    world_root: Path | None = None,
+    backup_root: Path | None = None,
+    confirm_logged_out: bool = False,
+) -> Path:
+    """Snapshot every region file plus a copy of ``registry/`` (bake-off pair).
+
+    @param name: label suffix
+    @param region_dir: live region folder
+    @param world_root: world root for registry
+    @param backup_root: backups/regions override
+    @param confirm_logged_out: logout gate flag
+    @returns: snap directory
+    @raises logout_gate.LogoutGateError: when the world is not idle
+    """
+    import logout_gate
+
+    logout_gate.require_logged_out(confirm_logged_out=confirm_logged_out)
+    region = Path(region_dir) if region_dir else REGION
+    root = Path(world_root) if world_root else Path(ROOT)
+    broot = Path(backup_root) if backup_root else BACKUP_ROOT
+    stamp = time.strftime('%Y-%m-%d-%H%M%S')
+    dest = broot / f'{stamp}-{name}'
+    dest.mkdir(parents=True, exist_ok=False)
+    copied, missing, total = _copy_regions(dest, region)
+    reg_src = registry_dir(root)
+    reg_dest = dest / 'registry'
+    if reg_src.is_dir():
+        shutil.copytree(reg_src, reg_dest)
+    else:
+        reg_dest.mkdir()
+        (reg_dest / 'cells.json').write_text('{}\n')
+        (reg_dest / 'features.json').write_text('{}\n')
+    meta = {
+        'time': stamp,
+        'name': name,
+        'kind': KIND_WHOLE,
+        'region_path': str(region),
+        'world_root': str(root),
+        'files': copied,
+        'bytes': total,
+        'missing': missing,
+        'registry': True,
+    }
+    write_backup_meta(dest, meta)
+    return dest
+
+
+def cmd_snap_world(args: argparse.Namespace) -> int:
+    """CLI: whole-world + registry snap.
+
+    @param args: CLI args
+    @returns: exit code
+    """
+    try:
+        dest = snap_whole_world(
+            name=args.name or 'whole-world',
+            confirm_logged_out=bool(args.confirm_logged_out),
+        )
+    except Exception as exc:  # noqa: BLE001 — LogoutGateError + IO
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
+    print(f'{dest.relative_to(ROOT)}: whole-world {len(json.loads((dest / "BACKUP.json").read_text())["files"])} regions + registry')
+    return 0
+
+
+def snap_kind(meta: dict) -> str:
+    """Backup kind from meta (legacy snaps without kind are partial).
+
+    @param meta: BACKUP.json body
+    @returns: kind string
+    """
+    return str(meta.get('kind') or KIND_PARTIAL)
 
 
 def cmd_list(_args: argparse.Namespace) -> int:
@@ -193,14 +312,79 @@ def mcp_world_reachable(timeout: float = 1.5) -> bool:
         return False
 
 
+def restore_snap(
+    snap_dir: Path,
+    *,
+    confirm_logged_out: bool = False,
+    allow_partial: bool = False,
+    restore_registry: bool = True,
+    world_root: Path | None = None,
+    skip_logout_gate: bool = False,
+) -> list[str]:
+    """Restore a snap's region files (and registry for whole-world).
+
+    @param snap_dir: snap directory with BACKUP.json
+    @param confirm_logged_out: logout gate flag
+    @param allow_partial: permit kind=partial|repair (repair-undo only)
+    @param restore_registry: also copy ``registry/`` when present (whole-world)
+    @param world_root: world root for registry restore
+    @param skip_logout_gate: tests only
+    @returns: restored ``.mca`` names
+    @raises ValueError: partial snap without allow_partial
+    @raises logout_gate.LogoutGateError: world not idle
+    @raises FileNotFoundError: missing files
+    """
+    meta_p = snap_dir / 'BACKUP.json'
+    if not meta_p.is_file():
+        raise FileNotFoundError(f'{snap_dir.name} has no BACKUP.json')
+    meta = json.loads(meta_p.read_text(encoding='utf-8'))
+    kind = snap_kind(meta)
+    if kind == KIND_PARTIAL and not allow_partial:
+        raise ValueError(
+            f'{snap_dir.name} is a partial region snap (kind={kind}). '
+            'Use cell_registry.py undo-repair <snap> for repair backups, '
+            'or region_backup.py snap-world / restore for whole-world bake-off pairs.'
+        )
+    if kind == KIND_REPAIR and not allow_partial:
+        raise ValueError(
+            f'{snap_dir.name} is a repair snap. '
+            'Restore it with: python3 scripts/cell_registry.py undo-repair '
+            f'{snap_dir.name} --confirm-logged-out'
+        )
+    if not skip_logout_gate:
+        import logout_gate
+        logout_gate.require_logged_out(confirm_logged_out=confirm_logged_out)
+    files = list(meta.get('files') or [])
+    if not files:
+        raise FileNotFoundError(f'{snap_dir.name} lists no files')
+    region = Path(meta.get('region_path') or REGION)
+    if not region.is_dir():
+        raise FileNotFoundError(f'region path missing: {region}')
+    restored = []
+    for name in files:
+        src = snap_dir / name
+        if not src.is_file():
+            raise FileNotFoundError(f'missing {src}')
+        shutil.copy2(src, region / name)
+        restored.append(name)
+    bad = [n for n in restored if sha256_file(snap_dir / n) != sha256_file(region / n)]
+    if bad:
+        raise RuntimeError(f'checksum mismatch after copy: {bad}')
+    if restore_registry and kind == KIND_WHOLE and (snap_dir / 'registry').is_dir():
+        root = Path(world_root) if world_root else Path(meta.get('world_root') or ROOT)
+        dest_reg = registry_dir(root)
+        if dest_reg.exists():
+            shutil.rmtree(dest_reg)
+        shutil.copytree(snap_dir / 'registry', dest_reg)
+    return restored
+
+
 def cmd_restore(args: argparse.Namespace) -> int:
-    """Copy a snap's ``.mca`` files back into the live region folder.
+    """Copy a whole-world snap back into the live region folder (+ registry).
 
-    Quit Minecraft (or at least leave the save) before restoring. Swapping
-    ``.mca`` files while the world is open causes chunk-load failures and
-    stale client geometry.
+    Partial snaps are refused; use undo-repair. Logout gate required.
 
-    @param args: CLI args (``snap``, ``force``)
+    @param args: CLI args
     @returns: exit code (0 ok, 2 refused / verify fail)
     """
     try:
@@ -208,48 +392,17 @@ def cmd_restore(args: argparse.Namespace) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
-    meta_p = snap_dir / 'BACKUP.json'
-    if not meta_p.is_file():
-        print(f'error: {snap_dir.name} has no BACKUP.json', file=sys.stderr)
-        return 2
-    meta = json.loads(meta_p.read_text(encoding='utf-8'))
-    files = list(meta.get('files') or [])
-    if not files:
-        print(f'error: {snap_dir.name} lists no files', file=sys.stderr)
-        return 2
-    region = Path(meta.get('region_path') or REGION)
-    if not region.is_dir():
-        print(f'error: region path missing: {region}', file=sys.stderr)
-        return 2
-    if mcp_world_reachable() and not args.force:
-        print(
-            'error: Minecraft MCP bridge is reachable (world likely open). '
-            'Quit to title / close the save, then restore again. '
-            'Override only if you know the region files are idle: --force',
-            file=sys.stderr,
+    confirm = bool(getattr(args, 'confirm_logged_out', False) or getattr(args, 'force', False))
+    try:
+        restored = restore_snap(
+            snap_dir,
+            confirm_logged_out=confirm,
+            allow_partial=False,
         )
+    except Exception as exc:  # noqa: BLE001
+        print(f'error: {exc}', file=sys.stderr)
         return 2
-    restored = []
-    for name in files:
-        src = snap_dir / name
-        if not src.is_file():
-            print(f'error: missing {src}', file=sys.stderr)
-            return 2
-        dst = region / name
-        shutil.copy2(src, dst)
-        restored.append(name)
-    bad = []
-    for name in restored:
-        src_h = sha256_file(snap_dir / name)
-        dst_h = sha256_file(region / name)
-        if src_h != dst_h:
-            bad.append(name)
-    if bad:
-        print(f'error: checksum mismatch after copy: {bad}', file=sys.stderr)
-        return 2
-    print(f'restored {snap_dir.name}: {len(restored)} regions → {region}')
-    if args.force and mcp_world_reachable():
-        print('warning: --force used while MCP was reachable; reload the world before trusting chunks')
+    print(f'restored {snap_dir.name}: {len(restored)} regions')
     return 0
 
 
@@ -261,19 +414,26 @@ def main(argv: list[str] | None = None) -> int:
     """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
-    s = sub.add_parser('snap', help='copy regions intersecting bbox')
+    s = sub.add_parser('snap', help='copy regions intersecting bbox (partial; not raw-restorable)')
     s.add_argument('--bbox', required=True, help='x0,z0,x1,z1')
     s.add_argument('--name', default='', help='label suffix')
     s.add_argument('--margin', type=int, default=0, help='extra regions on each side')
     s.set_defaults(func=cmd_snap)
+    sw = sub.add_parser('snap-world', help='copy every region + registry (bake-off pair)')
+    sw.add_argument('--name', default='whole-world', help='label suffix')
+    sw.add_argument('--confirm-logged-out', action='store_true',
+                    help='required: confirm the Minecraft save is closed')
+    sw.set_defaults(func=cmd_snap_world)
     l = sub.add_parser('list', help='list snapshots')
     l.set_defaults(func=cmd_list)
-    r = sub.add_parser('restore', help='copy a snap back into the live region folder')
+    r = sub.add_parser('restore', help='restore a whole-world snap (refuses partial/repair)')
     r.add_argument('snap', help='snap directory name (or unique suffix)')
+    r.add_argument('--confirm-logged-out', action='store_true',
+                   help='required: confirm the Minecraft save is closed')
     r.add_argument(
         '--force',
         action='store_true',
-        help='restore even if the MCP bridge is reachable (dangerous)',
+        help=argparse.SUPPRESS,  # legacy alias for --confirm-logged-out (still not enough if lock/MCP up)
     )
     r.set_defaults(func=cmd_restore)
     pr = sub.add_parser('prune', help='drop old snapshots')

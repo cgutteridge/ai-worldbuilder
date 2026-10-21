@@ -213,32 +213,38 @@ def delete_regions(region_dir: Path) -> list[str]:
     return deleted
 
 
-def check_preconditions(*, force: bool) -> list[str]:
-    """Refuse live reset when unsafe unless ``force``.
+def check_preconditions(*, force: bool = False, confirm_logged_out: bool = False) -> list[str]:
+    """Refuse live reset when unsafe (ticket #32 logout gate).
 
-    @param force: allow lock / MCP override
+    ``--force`` is accepted as an alias for ``--confirm-logged-out`` but still
+    cannot bypass ``session.lock`` or a live MCP bridge.
+
+    @param force: legacy alias for confirm_logged_out
+    @param confirm_logged_out: operator confirmed quit
     @returns: warning lines (empty when ok)
     @raises SystemExit: when refused
     """
+    import logout_gate
+
+    confirmed = bool(confirm_logged_out or force)
+    try:
+        logout_gate.require_logged_out(confirm_logged_out=confirmed)
+    except logout_gate.LogoutGateError as exc:
+        raise SystemExit(str(exc)) from exc
     warnings: list[str] = []
     lk = lock_held()
-    if lk and not force:
+    if lk and not confirmed:
         raise SystemExit(
             f'site lock held by {lk.get("owner")} for {lk.get("task")!r}; '
-            'release first or pass --force (dangerous).')
-    if lk and force:
+            'release first or pass --confirm-logged-out after quitting the save.')
+    if lk and confirmed:
         warnings.append(
-            f'warning: --force with lock held by {lk.get("owner")} ({lk.get("task")!r})')
-    if mcp_world_reachable() and not force:
-        raise SystemExit(
-            'Minecraft MCP bridge is reachable (world likely open). '
-            'Quit to the launcher, then reset again, or pass --force (dangerous).')
-    if mcp_world_reachable() and force:
-        warnings.append('warning: --force while MCP was reachable; re-open the save after reset')
+            f'warning: lock still held by {lk.get("owner")} ({lk.get("task")!r}) — release after reset')
     return warnings
 
 
-def run_reset(*, dry_run: bool, archive_site: bool, force: bool) -> dict:
+def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
+              confirm_logged_out: bool = False) -> dict:
     """Execute or preview dry-run reset.
 
     @param dry_run: print plan only
@@ -263,7 +269,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool) -> dict:
     }
     if dry_run:
         return report
-    report['warnings'] = check_preconditions(force=force)
+    report['warnings'] = check_preconditions(force=force, confirm_logged_out=confirm_logged_out)
     stamp = time.strftime('%Y-%m-%d-%H%M%S')
     if archive_site and SITE.is_dir():
         dest = ROOT / 'backups' / f'{stamp}-dryrun-site'
@@ -274,6 +280,11 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool) -> dict:
     clear_place_artifacts()
     scaffold_site(keep_current=keep)
     report['regions_deleted'] = delete_regions(region_dir)
+    try:
+        import registry_verify as rv
+        report['verify'] = rv.run_verify(root=ROOT, check_world=False)
+    except Exception as exc:  # noqa: BLE001
+        report['verify_error'] = str(exc)
     return report
 
 
@@ -287,10 +298,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--dry-run', action='store_true', help='print preserved vs wiped paths; no writes')
     ap.add_argument('--archive-site', action='store_true',
                     help='move the current site/ tree to backups/<timestamp>-dryrun-site before scaffold')
+    ap.add_argument('--confirm-logged-out', action='store_true',
+                    help='required for live reset: confirm the Minecraft save is closed')
     ap.add_argument('--force', action='store_true',
-                    help='reset even if site lock is held or MCP is up (dangerous)')
+                    help='legacy alias for --confirm-logged-out (still refuses if session.lock/MCP up)')
     args = ap.parse_args(argv)
-    report = run_reset(dry_run=args.dry_run, archive_site=args.archive_site, force=args.force)
+    report = run_reset(
+        dry_run=args.dry_run,
+        archive_site=args.archive_site,
+        force=args.force,
+        confirm_logged_out=args.confirm_logged_out,
+    )
     print(json.dumps(report, indent=2))
     if not args.dry_run:
         print('\nRe-open the Minecraft save so overworld chunks regenerate empty near your focus cell.')

@@ -53,14 +53,12 @@ class DryRunOutput(unittest.TestCase):
         self.assertEqual(rep['current_cell_kept'], {'tx': 48, 'tz': -44})
         self.assertIn('site/QUEUE.txt', rep['wipe']['replaced'])
 
-    def test_refuses_when_lock_held(self):
-        hb = time.time()
-        (self.site / 'LOCK.json').write_text(json.dumps({
-            'owner': 'agent', 'task': 'Q-1', 'claimed': hb, 'heartbeat': hb,
-        }))
-        with self._patch_world(), mock.patch.object(dr, 'mcp_world_reachable', return_value=False):
-            with self.assertRaises(SystemExit):
+    def test_refuses_without_confirm_logged_out(self):
+        with self._patch_world(), mock.patch.object(dr, 'mcp_world_reachable', return_value=False), \
+                mock.patch('logout_gate.play_need_you'):
+            with self.assertRaises(SystemExit) as ctx:
                 dr.run_reset(dry_run=False, archive_site=False, force=False)
+        self.assertIn('confirm-logged-out', str(ctx.exception))
 
     def test_force_allows_lock_with_warning(self):
         hb = time.time()
@@ -69,7 +67,7 @@ class DryRunOutput(unittest.TestCase):
         }))
         template = _ROOT / 'templates' / 'new-world-site'
         with self._patch_world(), mock.patch.object(dr, 'TEMPLATE', template), \
-             mock.patch.object(dr, 'mcp_world_reachable', return_value=False):
+             mock.patch('logout_gate.require_logged_out'):
             rep = dr.run_reset(dry_run=False, archive_site=False, force=True)
         self.assertIn('warning', rep['warnings'][0])
         self.assertFalse((self.site / 'LOCK.json').exists())

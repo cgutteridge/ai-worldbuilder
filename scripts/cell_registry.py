@@ -570,6 +570,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--layer', choices=('ground', 'trees', 'decor'), default=None)
     p.add_argument('--reason', required=True)
 
+    p = sub.add_parser('repair', help='backup + wipe + replay one cell from the registry (#32)')
+    p.add_argument('cell', help='tx,tz')
+    p.add_argument('--confirm-logged-out', action='store_true',
+                   help='required unless --dry-run: confirm the Minecraft save is closed')
+    p.add_argument('--dry-run', action='store_true', help='plan only (no region writes)')
+
+    p = sub.add_parser('undo-repair', help='restore a repair snap (regions + registry slice)')
+    p.add_argument('snap', help='repair snap directory name')
+    p.add_argument('--confirm-logged-out', action='store_true', required=True)
+
+    p = sub.add_parser('verify', help='registry integrity report (exit 1 on errors)')
+    p.add_argument('--json', action='store_true', help='print JSON report')
+    p.add_argument('--check-world', action='store_true',
+                   help='also check region files for non-empty cells')
+
     args = ap.parse_args(argv)
     store = RegistryStore(args.root)
 
@@ -658,6 +673,48 @@ def main(argv: list[str] | None = None) -> int:
                 )
             print(f'added {issue.raw}')
             return 0
+
+        if args.cmd == 'repair':
+            import registry_repair as RR
+            cell = parse_cell_id(args.cell)
+            try:
+                report = RR.run_repair(
+                    cell,
+                    confirm_logged_out=bool(args.confirm_logged_out),
+                    dry_run=bool(args.dry_run),
+                    world_root=args.root or store.root,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f'repair error: {exc}', file=sys.stderr)
+                return 2
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
+
+        if args.cmd == 'undo-repair':
+            import registry_repair as RR
+            try:
+                report = RR.undo_repair(
+                    args.snap,
+                    confirm_logged_out=bool(args.confirm_logged_out),
+                    world_root=args.root or store.root,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f'undo-repair error: {exc}', file=sys.stderr)
+                return 2
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
+
+        if args.cmd == 'verify':
+            import registry_verify as RV
+            report = RV.run_verify(
+                root=args.root or store.root,
+                check_world=bool(args.check_world),
+            )
+            if args.json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(RV.format_report(report))
+            return RV.exit_code(report)
     except RegistryError as exc:
         print(f'registry error: {exc}', file=sys.stderr)
         return 2

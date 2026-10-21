@@ -448,9 +448,9 @@ def open_round(
                 'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
                 'Quit Minecraft world (title / close save)',
                 (
-                    f"Restore ghost: python3 scripts/region_backup.py restore {cfg['ghost_snap']}"
-                    if cfg.get('ghost_snap')
-                    else 'Restore ghost: python3 scripts/region_backup.py restore <snap-dir>'
+                    f"Restore ghost (whole-world + registry): "
+                    f"python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out"
+                    + (f"  # cfg ghost_snap={cfg['ghost_snap']}" if cfg.get('ghost_snap') else '')
                 ),
                 'Rejoin world (MCP up) — ghost may look sparse/empty around the cell',
                 'Claim site lock; build with that tool/model only',
@@ -462,9 +462,9 @@ def open_round(
                 'Interview + score; then usage paste (need-you if counts unknown)',
             ],
             'ghost_snap_hint': (
-                f"canonical: {cfg['ghost_snap']}"
+                f"canonical whole-world snap: {cfg['ghost_snap']}"
                 if cfg.get('ghost_snap')
-                else 'list snaps with: python3 scripts/region_backup.py list'
+                else 'create with: python3 scripts/region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out'
             ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
@@ -798,7 +798,10 @@ def format_sitting(round_: dict) -> str:
         lines.append(f"parent: {round_['parent_round']}")
     lines.append('')
     lines.append('Sequence (do not skip):')
-    lines.append('  quit world → region_backup restore → rejoin → lock → build/apply → photos → interview')
+    lines.append(
+        '  quit world → model_bakeoff restore-ghost (whole-world + registry) '
+        '→ rejoin → lock → build/apply → photos → interview'
+    )
     lines.append('')
     lines.append('Checklist:')
     for item in round_.get('sitting', {}).get('checklist') or []:
@@ -835,6 +838,40 @@ def _parse_axis(pairs: list[str] | None) -> dict[str, str]:
         name, grade = raw.split('=', 1)
         out[name.strip()] = grade.strip()
     return out
+
+
+def restore_ghost_step(
+    *,
+    root: Path | None = None,
+    snap: str | None = None,
+    confirm_logged_out: bool = False,
+) -> list[str]:
+    """Restore the bake-off whole-world ghost (regions + registry pair).
+
+    Ticket #32: bake-off wipes/restores the whole world with one paired backup,
+    not per-cell slices. Partial snaps are refused by region_backup.restore.
+
+    @param root: model-bakeoffs root (for config ghost_snap)
+    @param snap: override snap name (default config ``ghost_snap``)
+    @param confirm_logged_out: logout gate flag
+    @returns: restored ``.mca`` names
+    """
+    import region_backup as rb
+
+    cfg = load_config(bakeoffs_root(root))
+    name = snap or cfg.get('ghost_snap')
+    if not name:
+        raise ValueError(
+            'no ghost_snap in model-bakeoffs/config.json; pass --snap or run '
+            'region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out'
+        )
+    snap_dir = rb.resolve_snap_dir(str(name))
+    return rb.restore_snap(
+        snap_dir,
+        confirm_logged_out=confirm_logged_out,
+        allow_partial=False,
+        restore_registry=True,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -910,6 +947,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p_show = sub.add_parser('show', help='print a round JSON path / sitting card')
     p_show.add_argument('round_id')
+
+    p_rg = sub.add_parser(
+        'restore-ghost',
+        help='restore whole-world + registry ghost snap (quit world first)',
+    )
+    p_rg.add_argument('--snap', default=None, help='override config ghost_snap')
+    p_rg.add_argument('--confirm-logged-out', action='store_true', required=True)
 
     args = ap.parse_args(argv)
     root = bakeoffs_root(args.root)
@@ -992,7 +1036,15 @@ def main(argv: list[str] | None = None) -> int:
             print()
             print(json.dumps(round_, indent=2))
             return 0
-    except (ValueError, KeyError, FileNotFoundError) as exc:
+        if args.cmd == 'restore-ghost':
+            restored = restore_ghost_step(
+                root=root,
+                snap=args.snap,
+                confirm_logged_out=bool(args.confirm_logged_out),
+            )
+            print(f'restored ghost: {len(restored)} region files (+ registry if present)')
+            return 0
+    except (ValueError, KeyError, FileNotFoundError, RuntimeError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
     return 1

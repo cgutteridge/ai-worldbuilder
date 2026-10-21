@@ -96,7 +96,7 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertIn('usage', round_)
             self.assertIsNone(round_['usage']['total_tokens'])
             checklist = '\n'.join(round_['sitting']['checklist'])
-            self.assertIn('region_backup.py restore', checklist)
+            self.assertIn('restore-ghost', checklist)
             self.assertIn('FAIRNESS.md', checklist)
             self.assertIn('One apply owner', checklist)
             path = root / 'rounds' / 'R-001.json'
