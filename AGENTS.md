@@ -7,11 +7,11 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 
 1. Confirm active world: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
 2. System tracker first when work is **tool** engineering: read `tasks/index.json`. Parallel system tasks: shared skill `parallel-task-wave` (not the world cell-orchestrator).
-3. If work is **world** (QUEUE, ISSUES, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
+3. If work is **world** (cell registry, issues, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
 
 ## Always
 
-- Place memory lives under the active world's `site/` and `config/` (inside `worlds/`), not in the tool tracker.
+- Place memory lives under the active world's `site/`, `registry/`, and `config/` (inside `worlds/`), not in the tool tracker. Progress SoT is `registry/` via `scripts/cell_registry.py`.
 - Providers: on add, ask **local vs system** (below national → local). Skills: `evaluate-data-source`, `add-data-source`.
 - World frame: active world `config/world-frame.json` via `scripts/world_frame.py`.
 - Sound cues: `python3 ~/Projects/agent-soundboard/scripts/play.py <id>` (`done`, `need-you`, `error`).
@@ -35,7 +35,9 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Skills | `.claude/skills/` |
 | Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost restore: `scripts/region_backup.py restore` |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](docs/specs/lidar-ghost-v2-and-dryrun-reset.md), [docs/plans/southampton-dryrun-001.md](docs/plans/southampton-dryrun-001.md) |
-| New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` |
+| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / repair) |
+| Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; empty registry) |
+| New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/`, `templates/new-world-registry/` |
 
 ### Provider roots (dual)
 

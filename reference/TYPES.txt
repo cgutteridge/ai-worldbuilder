@@ -81,6 +81,7 @@ the live world.
 AERIAL REVIEW
 ------------------------------------------------------------------------
 
-Ring-ordered revisit of built cells against the best aerial evidence
-(site/AERIAL-REVIEW.txt). Status: look → features → ground → trees → done.
+Ring-ordered revisit of built cells against the best aerial evidence.
+Progress lives in the cell registry (issues / layer flags), not a separate
+AERIAL-REVIEW.txt file. Status conceptually: look → features → ground → trees → done.
 Not a vendor name.

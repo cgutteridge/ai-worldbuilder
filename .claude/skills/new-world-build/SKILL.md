@@ -3,7 +3,7 @@ name: new-world-build
 description: >-
   Stand up a new place-refine world: empty save, world-frame, place sources,
   Y-offset human loop. Use when starting a new city/campus build, not for
-  refining the existing Southampton queue.
+  refining an existing place's cell registry.
 ---
 
 Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you` when a prerequisite is missing.
@@ -52,7 +52,10 @@ Play `need-you` and **stop** until the user confirms the offset. Do not apply wo
 
 1. Author `config/local-providers.json` for the place (required types covered by system + local together: at least `vector_map`, `lidar`, one `aerial`). Reuse system providers; do not copy nationwide feeds into the world repo.
 2. Point at worldbuilder `reference/TYPES.txt` and start a place `reference/SOURCES.txt` catalogue.
-3. Scaffold place memory from `templates/new-world-site/` into the world checkout `site/` (QUEUE, ISSUES, NOTES, COVERAGE, CURRENT-CELL, cells/, thin stubs for process docs). Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do not import Southampton Aerial Review rows or Southampton QUEUE items.
+3. Scaffold place memory:
+   - `templates/new-world-site/` → world checkout `site/` (ISSUES, NOTES, COVERAGE, REVIEWS, cells/, thin stubs for process docs).
+   - `templates/new-world-registry/` → world checkout `registry/` (`cells.json` + `features.json` as `{}`).
+   Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do **not** create QUEUE.txt, CURRENT-CELL.json, CELL-HOLDS.jsonl, AERIAL-REVIEW.txt, or HANDOFF.txt — `cell_registry.py verify` treats them as leftovers. Progress starts empty; tools populate the registry.
 
 Done when checklist providers have `how` strings and `evaluate-data-source` would not flag an empty type slot that the place needs.
 

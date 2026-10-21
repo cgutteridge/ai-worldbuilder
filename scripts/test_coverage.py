@@ -120,6 +120,37 @@ class SignoffStoreTest(unittest.TestCase):
             write.assert_not_called()
 
 
+class RegistryRollupTest(unittest.TestCase):
+    def test_registry_rollup_lists_registered_cells(self):
+        """Ticket #33: COVERAGE can roll up from registry alone."""
+        import os
+        import tempfile
+        from unittest import mock
+        from cell_registry import RegistryStore, cell_id
+
+        with tempfile.TemporaryDirectory() as d:
+            store = RegistryStore(Path(d))
+            store.set_ground(cell_id(48, -44), 'generated')
+            store.set_trees(cell_id(48, -44), True)
+            old = os.environ.get('AI_WORLDBUILDER_REGISTRY_ROOT')
+            os.environ['AI_WORLDBUILDER_REGISTRY_ROOT'] = d
+            try:
+                with mock.patch.object(C, 'focus_cell', return_value=(48, -44)):
+                    rows = C.registry_rollup_rows()
+            finally:
+                if old is None:
+                    os.environ.pop('AI_WORLDBUILDER_REGISTRY_ROOT', None)
+                else:
+                    os.environ['AI_WORLDBUILDER_REGISTRY_ROOT'] = old
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['cell'], (48, -44))
+            self.assertEqual(rows[0]['ground'], 'generated')
+            self.assertTrue(rows[0]['trees'])
+            text = C.registry_rollup_text(rows)
+            self.assertIn('48,-44', text)
+            self.assertIn('registry rollup', text)
+
+
 class ClassifyTest(unittest.TestCase):
     def test_area_kind(self):
         self.assertEqual(C.area_kind({'amenity': 'university'}), 'umbrella')

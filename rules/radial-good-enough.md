@@ -12,20 +12,16 @@ Read before choosing, planning or signing off build work.
   still built on every side (see `rules/frontage-and-evidence.md`).
 
 ## Radial, no gaps
-- Rebuild all of an area, outward from the focus in `site/COVERAGE.txt`
-  (origin cell 48,-44), finishing each Chebyshev ring before the next. One
-  active cell at a time. Cell order: north centre of the ring, then clockwise
-  (north is smaller tz).
-- Coverage, parcels and sign-off: `rules/process.md` §2c. The record is
-  `coverage.py`, never chat, and never hand-edit PROCESSED CELLS.
-- Skip signed-off parcels in new-cell work. Where an area already has builds
-  (Broadlands), keep them.
-- Exception, current priority (user, 2026-10-16): the Aerial Review (I-073,
-  `site/AERIAL-REVIEW.txt`) deliberately re-opens finished cells in ring order,
-  ALL parts of every cell (features, ground, trees, decor), never a part skipped
-  because the cell was signed off or hand-made before, and runs ahead of new-cell passes (code first, then fixes
-  to existing work, then new builds). A sign-off lapses where a redo touches it:
-  re-sign afterwards. Snapshot first, dry-run diff before any re-apply (I-043).
-- Outside that review, revisits of processed ground are allowed but not the focus.
-- Queue explicit todos for distinctive local features (PROCESS §2e).
-- If the focus changes, update COVERAGE FOCUS and leave no holes behind.
+- Rebuild all of an area, outward from the registry marker / world-frame origin
+  (Southampton highfield origin cell 48,-44), finishing each Chebyshev ring before
+  the next. One active cell at a time. Cell order: north centre of the ring, then
+  clockwise (north is smaller tz).
+- Coverage + registry rollup: `rules/process.md` §2c. The record is
+  `coverage.py write` + `cell_registry.py`, never chat, and never hand-edit the
+  generated COVERAGE block.
+- Prefer registry DONE / open issues over retired parcel sign-offs. Where an area
+  already has builds (Broadlands), keep them unless an issue reopens them.
+- Revisits: open a registry issue (or redo) for the layer/feature; snapshot first,
+  dry-run before re-apply (I-043). Code/tooling fixes beat new cells.
+- Distinctive local features → `cell_registry.py add-issue` (PROCESS §2e).
+- Focus moves with `cell_marker.py --clear` / `--raise`; leave no ring holes behind.

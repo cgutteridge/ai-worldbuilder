@@ -2,5 +2,4 @@ Moved to ai-worldbuilder rules/handoff-layered-passes.md
 (pass order + mask undo).
 
 Edit the tool-repo file. This stub exists so old site/ paths still resolve.
-World memory stays here: QUEUE, ISSUES, NOTES, COVERAGE, HANDOFF, CURRENT-CELL,
-cells/*-STAGES.json, LOCK, archive.
+World memory: registry/ (cells + features), site/ISSUES NOTES COVERAGE REVIEWS, LOCK, archive. Progress via cell_registry.py — not QUEUE / CURRENT-CELL / STAGES.

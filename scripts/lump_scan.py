@@ -21,11 +21,12 @@ footprint-map building(s) under it; lumps with no mapped building are flagged un
 
   python3 scripts/lump_scan.py --cell 49,-43            # report; exit 1 if unrecorded lumps remain
   python3 scripts/lump_scan.py --cell 49,-43 --bbox 6330,-5450,6420,-5380
-  python3 scripts/lump_scan.py --cell 49,-43 --record   # write the result into the cell STAGES file
+  python3 scripts/lump_scan.py --cell 49,-43 --record   # write site/cells/<tx>_<tz>-lump.json
 
 Exceptions (a lump that is really a ruin / roofed shed we decided to keep) are recorded by hand in
-site/cells/<tx>_<tz>-STAGES.json stages.lump_sweep.exceptions = [{"bbox": [x0,z0,x1,z1], "reason": ...}];
+site/cells/<tx>_<tz>-lump.json under ``exceptions`` = [{"bbox": [x0,z0,x1,z1], "reason": ...}];
 a lump whose centre lies in an exception bbox is reported as excepted and does not fail the check.
+(Legacy ``*-STAGES.json`` lump_sweep.exceptions are still read if the lump file is absent.)
 """
 from __future__ import annotations
 
@@ -227,13 +228,33 @@ def lump_features(lumps: list, taken_refs=(), streets=()) -> list:
     return out
 
 
+def lump_path(tx: int, tz: int) -> Path:
+    """Path of the per-cell lump sweep record (ticket #33).
+
+    @returns: ``site/cells/<tx>_<tz>-lump.json``
+    """
+    return ROOT / 'site' / 'cells' / f'{tx}_{tz}-lump.json'
+
+
 def stage_path(tx: int, tz: int) -> Path:
-    """@returns: path of the cell stage file"""
+    """Legacy STAGES path (apply journal / old lump records).
+
+    @returns: path of the cell stage file
+    """
     return ROOT / 'site' / 'cells' / f'{tx}_{tz}-STAGES.json'
 
 
 def recorded_exceptions(tx: int, tz: int) -> list:
-    """@returns: stages.lump_sweep.exceptions from the cell stage file ([] if none)"""
+    """Lump exceptions for a cell (``*-lump.json``, else legacy STAGES).
+
+    @returns: ``exceptions`` list, or [] when none
+    """
+    path = lump_path(tx, tz)
+    if path.is_file():
+        try:
+            return json.loads(path.read_text()).get('exceptions', []) or []
+        except (OSError, json.JSONDecodeError):
+            return []
     try:
         st = json.loads(stage_path(tx, tz).read_text())
     except (OSError, json.JSONDecodeError):
@@ -286,7 +307,8 @@ def main(argv=None) -> int:
     ap.add_argument('--cell', required=True, help='tx,tz')
     ap.add_argument('--bbox', help='x0,z0,x1,z1 clip inside the cell')
     ap.add_argument('--no-osm', action='store_true')
-    ap.add_argument('--record', action='store_true', help='write stages.lump_sweep into the cell STAGES file')
+    ap.add_argument('--record', action='store_true',
+                    help='write site/cells/<tx>_<tz>-lump.json (not STAGES)')
     ap.add_argument('--json', action='store_true')
     a = ap.parse_args(argv)
     tx, tz = (int(v) for v in a.cell.split(','))
@@ -308,15 +330,19 @@ def main(argv=None) -> int:
               f'{s["unmapped"]} without a vector-map building ({s["no_clip"]} outside any map clip)')
     if a.record:
         from datetime import datetime
-        path = stage_path(tx, tz)
-        st = json.loads(path.read_text()) if path.exists() else {'cell': f'{tx},{tz}', 'stages': {}}
-        old = st['stages'].get('lump_sweep', {})
-        st['stages']['lump_sweep'] = {
+        from atomic_json import write_json
+        path = lump_path(tx, tz)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, {
+            'cell': f'{tx},{tz}',
             'status': 'verified' if not s['remaining'] else 'open',
-            'remaining': s['remaining'], 'checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'exceptions': old.get('exceptions', []),
-            'note': 'lump_scan.py: ' + (f'{s["excepted"]} recorded exception(s)' if s['excepted'] else 'no import lumps left')}
-        path.write_text(json.dumps(st, indent=1) + '\n')
+            'remaining': s['remaining'],
+            'checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'exceptions': recorded_exceptions(tx, tz),
+            'note': 'lump_scan.py: ' + (
+                f'{s["excepted"]} recorded exception(s)' if s['excepted'] else 'no import lumps left'),
+        })
+        print(f'recorded -> {path.relative_to(ROOT)}')
     return 1 if s['remaining'] else 0
 
 

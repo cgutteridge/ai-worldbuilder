@@ -1,2 +1,5 @@
-ISSUES — open defects / follow-ups for this place
-Format: I-NNN  status  short title
+ISSUES — human-readable mirror of open defects for this place
+
+Canonical issues live in the cell registry (cell_registry.py issues /
+add-issue). This file may hold free-form notes; prefer the registry so
+next / auto-close stay accurate.

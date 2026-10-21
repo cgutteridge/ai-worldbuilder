@@ -29,7 +29,7 @@
 
 1. Run reset CLI **`--dry-run`**; confirm preserved vs wiped lists match spec (config, reference, caches, current cell; no builds/STAGES/queue; regions listed).
 2. Run reset for real (optional **`--archive-site`** first time).
-3. Confirm: empty `QUEUE.txt`, no `site/builds/*.json`, no `site/cells/*-STAGES.json`, no legacy import notes file, lock cleared.
+3. Confirm: empty `registry/` (`{}` cells+features), no `site/QUEUE.txt` / `CURRENT-CELL.json`, no `site/builds/*.json`, no `site/cells/*-STAGES.json`, no legacy import notes file, lock cleared.
 4. Delete overworld regions (if not already done inside reset CLI — one tool should own this).
 5. **You reopen the world** and load chunks near 48,-44 so the save is empty flat/generated bedrock shell, not stale geometry.
 

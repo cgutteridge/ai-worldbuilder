@@ -6,21 +6,23 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 ------------------------------------------------------------------------
 1. WHERE THINGS LIVE
 ------------------------------------------------------------------------
+ registry/cells.json    cell layers, marker, holds, coverage warnings (SoT)
+ registry/features.json feature builds + cells they touch (SoT)
+ scripts/cell_registry.py  next / status / issues / hold / verify / repair
  site/NOTES.txt         overview, accuracy rules (active world; read first)
  site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
- rules/rules-context.md which rules/docs to read per queue context (anti-reread)
+ rules/rules-context.md which rules/docs to read per work context (anti-reread)
  rules/*.md             craft and process rules in the tool repo (AGENTS.md entry)
- site/COVERAGE.txt      radial focus + generated per-cell coverage (coverage.py)
- site/COVERAGE-SIGNOFFS.jsonl  parcel sign-offs (append-only, coverage.py signoff)
+ site/COVERAGE.txt      radial focus + generated rollup (coverage.py write;
+                        registry-native + optional parcel tables)
  config/coverage-areas.json    areas tracked by scripts/coverage.py
- site/ISSUES.txt        issue register
+ site/ISSUES.txt        optional human mirror; prefer cell_registry issues
  site/REVIEWS.txt       review log
  site/BUILDS-INDEX.txt  generated list of kit builds (scripts/site_index.py)
- site/QUEUE.txt         ordered next work (one item per chat)
- site/archive/          done queue items, closed issues, older reviews
-                        (scripts/site_archive.py; run by site_handoff.py end)
+ site/archive/          closed notes / older reviews
  site/LOCK.json         who holds the live world (scripts/site_lock.py)
+ site/cells/*-STAGES.json  apply journal only (site_kit / site_recover), not progress
  scripts/site_kit.py    plan / preview / apply / readback
  scripts/world_frame.py CRS / OSGB / WGS84 / MC / cells / WM tiles (canonical)
  scripts/osgb.py        thin wrapper → world_frame (legacy OFFSET_* shape)
@@ -33,6 +35,11 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  config/world.json      save + region paths
  config/world-frame.json         CRS, offsets, Y offset, bounds, anchor
  config/map-maker-offsets.json  legacy OFFSET_* mirror of world-frame
+
+ Retired (do not recreate; verify fails if present): site/QUEUE.txt,
+ site/CURRENT-CELL.json, site/CELL-HOLDS.jsonl, site/COVERAGE-SIGNOFFS.jsonl,
+ site/AERIAL-REVIEW.txt, site/.handoff-pending.json, site/HANDOFF.txt.
+ Wipe via: python3 scripts/dryrun_reset.py --confirm-logged-out
 
 Naming: builds are <street>_<numbers>_<thing> for properties (e.g.
 broadlands_rd_20_22), <place>_<thing> otherwise. Modifications
@@ -127,31 +134,30 @@ BUILT plan in place to “fix” the world.
  open (landuse / leisure / amenity polygons), gap (residual: verges,
  corners, unlabelled ground, edges of special areas), no_osm (no clip).
  Touched = columns in verification/site/*-cells.json (reverted I-009
- builds excluded). DONE = 100% touched + a sign-off in
- site/COVERAGE-SIGNOFFS.jsonl; signoff refuses below 100% and on leftover
- leftover unowned structure: carpet roof, exposed stone band / undercroft, stock
+ builds excluded). DONE = registry marks the cell DONE (layers + features + no open warnings),
+ or for parcel tables 100% columns touched. Sign-offs are retired (#31).
+ Leftover unowned structure (carpet roof, exposed stone band / undercroft, stock
  pavement in gardens, or any exposed block above the build floor that no build
- wrote (walls, carpet, trees, floating pavement). No override — to keep a leftover
- vendor block on purpose, write it in the plan.
-   After every build:  coverage.py signoff <parcel ids> --build <name>
-                       coverage.py status --write      (regenerates COVERAGE)
-                       coverage.py gaps --area <a>     (gaps + 1-3 wide seams)
-   Before planning:    coverage.py status --cell tx,tz --list
+ wrote) still blocks a clean parcel row — write it in the plan to keep on purpose.
+   After every build:  coverage.py write                 (registry + parcels)
+                       coverage.py gaps --area <a>       (gaps + 1-3 wide seams)
+   Before planning:    cell_registry.py next / status --cell tx,tz
+                       coverage.py status --cell tx,tz --list
                        .venv/bin/python scripts/coverage.py map --area <a>
    New ground / map:   coverage.py build [--area A --cells tx0,tz0,tx1,tz1]
- PROCESSED CELLS in COVERAGE.txt is generated from that — never hand-edit
- it. A cell is done only when 100% of its columns are in done parcels.
- That record is how we prove ground was processed — chat memory is not enough.
+ The generated block in COVERAGE.txt is written by coverage.py — never hand-edit
+ it. Chat memory is not enough; the registry + rollup prove what was processed.
 
  Revisits of processed ground: see rules/radial-good-enough.md.
 
 ------------------------------------------------------------------------
 2e. CELL CADENCE (128² active patch, layered passes)
 ------------------------------------------------------------------------
- One ACTIVE CELL at a time (IN FLIGHT in COVERAGE.txt), on the lowest incomplete
- ring. Cell done = parcel truth, not perfection on every shed (rules/radial-good-enough.md).
+ One ACTIVE CELL at a time (registry marker up), on the lowest incomplete
+ ring. Cell done = registry DONE (rules/radial-good-enough.md), not perfection on every shed.
  Pass order and undo: rules/handoff-layered-passes.md (features, ground, trees, decor).
  Do not stack extra passes over the same ground (I-035).
+ Next work: `python3 scripts/cell_registry.py next` (issues beat layers).
 
  Lidar ghosts (v2): docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
  `cell_marker --raise`, ring-2 frontier cells may show grey feature mass. On every
@@ -162,10 +168,9 @@ BUILT plan in place to “fix” the world.
  touched — not `applied` grey under the real building. `feature_build` dry-run
  must still list full shell cells (it must not drop columns owned only by ghosts).
 
- 1. Activate — record tx,tz in COVERAGE IN FLIGHT; raise the hazard-stripe marker
-    (REQUIRED, first action on every new cell; it marks the project's current FOCUS
-    cell, not a task run, and stays up across chats): `python3 scripts/cell_marker.py
-    --raise tx,tz`.
+ 1. Activate — raise the hazard-stripe marker (REQUIRED, first action on every new
+    cell; it sets the registry marker = FOCUS, stays up across chats):
+    `python3 scripts/cell_marker.py --raise tx,tz`.
  1b. Sources pass (once per new cell, before the build batch). Goal: a durable guide,
      not a token bonfire in every later chat.
        python3 scripts/cell_sources.py --cell tx,tz --write
@@ -183,31 +188,25 @@ BUILT plan in place to “fix” the world.
      is STALE: `--todo` lists it and `--record` may refresh without --retry-reason.
      `cell_sources.py --cell tx,tz --todo` lists TODO + STALE (exit 1 if any).
  2. Review neighbours — ground, trees and decor read evidence across the cell edge
-    (paths, roads, hedges, canopy), so first check the neighbours' STAGES files, masks
-    and the aerial across the edge for continuity. Every cell restarts from scratch
-    except where the Aerial Review (site/AERIAL-REVIEW.txt) marks it done; 48,-45 is
-    back in that review (all parts: features, ground, trees, decor).
+    (paths, roads, hedges, canopy), so first check neighbours' registry status, masks
+    and the aerial across the edge for continuity.
+      cell_registry.py status --cell tx,tz
       coverage.py status --cell tx,tz --list ; coverage.py gaps --area <a>
-    Light character pass: note distinctive local features worth a named todo.
- 3. Plan — one open QUEUE item per todo (site_archive.py next-id Q). `site_handoff.py
-    next` auto-queues, per cell: one item per missing feature (cell_features.py), then
-    one "layered passes" item for ground, trees, decor.
- 4. Features — each its own build, normal cadence (§2); sign off the parcels it finishes.
+    Light character pass: note distinctive local features as registry issues.
+ 3. Plan — `cell_registry.py next` picks the next layer, feature, or open issue.
+ 4. Features — each its own build, normal cadence (§2); registry marks built on clean apply.
  5. Layered passes — live flow per cell: claim lock; mask_undo.py (decor then trees) if
     masks exist; ground_layer.py --apply; trees_layer.py --apply; decor_layer.py --apply;
-    patrol sweep; update site/cells/<tx>_<tz>-STAGES.json; release lock. Dry-run first
-    and check verification/site/<plan>-kinds.png against the aerial. Python:
-    .venv/bin/python (system python is PEP 668 locked). Never the retired ground scripts
-    (backups/retired-ground-scripts-2026-10-14.tar.gz). Vegetation rules: rules/foliage.md.
- 6. Cell complete — all features, ground, trees and decor done, checks OK, every open
-    issue for the cell closed, and the coverage row status=done (a CELL-HOLDS hold, if
-    any, released). Only then cell_marker.py --clear tx,tz, clear IN FLIGHT, and move on:
-    next cell on the ring, or ring r+1 when the ring is done. Cell order: north centre of
-    the ring (north is smaller tz), then clockwise. Builds may straddle the cell; sign
-    off whole parcels touched.
+    patrol sweep; registry flags update via registry_hooks (STAGES is apply journal only);
+    release lock. Dry-run first and check verification/site/<plan>-kinds.png against the
+    aerial. Python: .venv/bin/python. Vegetation rules: rules/foliage.md.
+ 6. Cell complete — registry DONE (layers + features + no open issues/warnings). Only then
+    cell_marker.py --clear tx,tz and move on: next cell on the ring, or ring r+1 when the
+    ring is done. Cell order: north centre of the ring (north is smaller tz), then clockwise.
+    Holds: `cell_registry.py hold`.
 
- Focus cell file: site/CURRENT-CELL.json is the single source of truth for the active
- cell. ONLY cell_marker.py writes it (raise sets, clear releases); never hand-edit.
+ Focus: the registry marker is the single source of truth for the active cell.
+ ONLY cell_marker.py raises/clears it; never hand-edit registry JSON for focus.
  Raise refuses while another cell holds focus or any other cell_marker_*-cells.json
  exists, so there is at most one ring. Moving focus = --clear old, then --raise new.
  `cell_marker.py --status` shows focus + strays; --stray-clear tx,tz removes a leftover
@@ -302,19 +301,14 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
  - ONE builder at a time. Claim site/LOCK.json with scripts/site_lock.py
    before any world change or player-moving capture. site_kit.apply()
    refuses without it (env SITE_OWNER must match). Stale after 90 min.
- - Stage state machine: site_kit.apply() sets the cell's stage in site/cells/<tx>_<tz>-STAGES.json to
-   'applying' (plan, owner, structure backup, snapshot, planned file) before any live write and to 'applied'
-   after readback. 'applying' = in flight: cell_gaps shows 'in-flight: <plan>', the cell is never done.
+ - Apply journal: site_kit.apply() sets site/cells/<tx>_<tz>-STAGES.json to
+   'applying' before any live write and to 'applied' after readback. Progress flags
+   land in the registry via registry_hooks. 'applying' = in flight (cell never DONE).
  - Recovery: lock stale (> 90 min) or an in-flight stage -> `python3 scripts/site_recover.py status`, then
    `recover <tx,tz> --apply`: world matches plan -> 'applied'; else restore the recorded structure ->
-   'rolled-back' (work reappears). Never with a fresh lock; when unsure it reports and does nothing.
-   Any failed undo/verify raises and leaves 'applying'; do not carry on past it.
- - Work comes from site/QUEUE.txt: take the top open item, finish it,
-   mark done, queue follow-ups, release the lock.
- - Number new queue items / issues with
-   `python3 scripts/site_archive.py next-id Q` (or `I`): it also scans
-   site/archive/, so archived ids are never reused. Old records:
-   `grep -rn Q-017 site/` searches live and archive together.
+   'rolled-back' (work reappears; registry flags clear). Never with a fresh lock.
+ - Work comes from `cell_registry.py next` (issues, then layers/features). Finish the
+   task, let hooks update the registry, release the lock.
  - Offline work may run in parallel (design, photo markup, previews of
    region files) but must not apply builds.
  - The files are the memory. Leave nothing important only in a chat.
@@ -323,21 +317,19 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
 6. SESSION START / END
 ------------------------------------------------------------------------
  Start  User message: "Follow the instructions given by running:
-        python3 scripts/site_handoff.py next". The agent runs that command, then
-        begins the top item immediately; that message is the go-ahead, so do not ask
-        "start?". Then site_lock.py status/claim; read only the PROCESS slices and
-        rules listed under RULES READING in the SESSION BRIEF (rules/rules-context.md
-        §0 has the anti-reread rules). Check server status and sole MCP client.
+        python3 scripts/cell_registry.py next". The agent runs that command, then
+        begins the task immediately; that message is the go-ahead, so do not ask
+        "start?". Then site_lock.py status/claim; read rules/rules-context.md
+        for the matching context. Check server status and sole MCP client.
         Reference imagery: use files already on disk (manifest). Do NOT ask the user
         to start a fetch daemon at handoff. If a needed Hub tile is missing, either
         continue on street/local refs or give ONE Terminal one-liner
         (`aerial_mosaic.py … --add`), never a chore every session.
- New chat first?  Before a new queue item or live build: if this thread already
-        finished an item (lock released / QUEUE ticked) or is dominated by prior
-        build/debug, do not silently continue. Tell the user briefly that a new chat
-        is wiser and show the NEXT CHAT line between `>>> COPY` and `<<< COPY` from
-        `site_handoff.py end` as a fenced code block. Stay in-thread only for a short
-        same-item follow-up (one patrol fix right after a build they just asked for).
+ New chat first?  Before a new registry task or live build: if this thread already
+        finished an item (lock released) or is dominated by prior build/debug, do not
+        silently continue. Tell the user briefly that a new chat is wiser and start
+        with `cell_registry.py next`. Stay in-thread only for a short same-item
+        follow-up (one patrol fix right after a build they just asked for).
         Chain rule (§7) is the exception.
  Need help  When you don't trust your own judgement (an unclear geometry call, a
         result that does not match the photo or aerial, a risky live edit you can't
@@ -368,7 +360,7 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
 ------------------------------------------------------------------------
  - Chain rule (the one home): if an item is done, needs no user check (readback/patrol
    clean, nothing for human eyes, no "awaiting user visual check") and context is under
-   ~100K tokens, release the lock and run `site_handoff.py next` in the same chat
+   ~100K tokens, release the lock and run `cell_registry.py next` in the same chat
    instead of `end`. Otherwise one item per chat: if context passes ~250K tokens or a
    user check is needed, write progress into the files and hand off (site_handoff.py end).
  - Delegate research-heavy or bounded subtasks (cell source-finding and neighbour

@@ -2,15 +2,16 @@
 """Reset the active world for another empty-world dry run (spec: lidar ghost v2).
 
 Wipes Minecraft overworld region chunks and agent place memory while keeping world
-frame, providers, reference downloads, and (by default) current cell focus.
+frame, providers, and reference downloads. Starts from an empty cell registry that
+tools populate again.
 
 Player must **leave the save** before a live reset; reopen afterward so chunks
-regenerate empty.
+regenerate empty, then raise the origin cell (ghost frontier).
 
   python3 scripts/dryrun_reset.py --dry-run
-  python3 scripts/dryrun_reset.py
-  python3 scripts/dryrun_reset.py --archive-site
-  python3 scripts/dryrun_reset.py --force   # lock held or MCP up (dangerous)
+  python3 scripts/dryrun_reset.py --confirm-logged-out
+  python3 scripts/dryrun_reset.py --archive-site --confirm-logged-out
+  python3 scripts/dryrun_reset.py --force   # alias for --confirm-logged-out (dangerous)
 
 Policy: docs/specs/lidar-ghost-v2-and-dryrun-reset.md
 """
@@ -26,11 +27,30 @@ from pathlib import Path
 from script_env import ROOT, TOOL_ROOT  # noqa: E402
 
 SITE = ROOT / 'site'
+REGISTRY = ROOT / 'registry'
 TEMPLATE = TOOL_ROOT / 'templates' / 'new-world-site'
-CURRENT_CELL = SITE / 'CURRENT-CELL.json'
+REGISTRY_TEMPLATE = TOOL_ROOT / 'templates' / 'new-world-registry'
 LOCK = SITE / 'LOCK.json'
 HOLDS = SITE / 'CELL-HOLDS.jsonl'
 VERIFICATION = ROOT / 'verification' / 'site'
+
+# Legacy progress files removed by reset (ticket #33). Must not be re-scaffolded.
+LEGACY_PROGRESS = (
+    'QUEUE.txt',
+    'CURRENT-CELL.json',
+    'CELL-HOLDS.jsonl',
+    'COVERAGE-SIGNOFFS.jsonl',
+    'AERIAL-REVIEW.txt',
+    '.handoff-pending.json',
+    'HANDOFF.txt',
+)
+
+SKIP_TEMPLATE_NAMES = frozenset(LEGACY_PROGRESS) | frozenset({
+    'QUEUE.txt',
+    'CURRENT-CELL.json',
+    'HANDOFF.txt',
+})
+
 PRESERVE_TOP = frozenset({
     'config',
     'providers',
@@ -104,7 +124,7 @@ def site_wipe_paths() -> dict[str, list[str]]:
     for p in TEMPLATE.rglob('*'):
         if p.is_file():
             rel = p.relative_to(TEMPLATE)
-            if rel.name == 'CURRENT-CELL.json':
+            if rel.name in SKIP_TEMPLATE_NAMES:
                 continue
             replaced.append(str(SITE.relative_to(ROOT) / rel))
     removed = [
@@ -113,11 +133,14 @@ def site_wipe_paths() -> dict[str, list[str]]:
         'site/GEOCRAFT.txt',
         'site/builds',
     ]
+    for name in LEGACY_PROGRESS:
+        removed.append(f'site/{name}')
     cleared = [
         str((SITE / 'cells').relative_to(ROOT)),
         str(VERIFICATION.relative_to(ROOT)) if VERIFICATION.is_relative_to(ROOT) else str(VERIFICATION),
+        str(REGISTRY.relative_to(ROOT)) if REGISTRY.is_relative_to(ROOT) else 'registry',
     ]
-    return {'replaced': sorted(replaced), 'removed': removed, 'cleared_dirs': cleared}
+    return {'replaced': sorted(set(replaced)), 'removed': sorted(set(removed)), 'cleared_dirs': cleared}
 
 
 def preserved_paths(region_dir: Path) -> list[str]:
@@ -130,14 +153,8 @@ def preserved_paths(region_dir: Path) -> list[str]:
         str((ROOT / 'config').relative_to(ROOT)),
         str((ROOT / 'providers').relative_to(ROOT)),
         str((ROOT / 'reference').relative_to(ROOT)),
-        str(CURRENT_CELL.relative_to(ROOT)) + ' (content kept)',
     ]
     cache_roots = []
-    for name in ('ukdefra-lidar', 'defra', 'lidar', 'cache'):
-        for base in (ROOT / 'providers', TOOL_ROOT / 'providers'):
-            p = base
-            if name in str(p):
-                cache_roots.append(str(p.relative_to(ROOT) if p.is_relative_to(ROOT) else p))
     for rel in ('providers', 'reference'):
         for p in (ROOT / rel).rglob('*'):
             if p.is_dir() and p.name in ('cache', 'tiles', 'download'):
@@ -146,24 +163,25 @@ def preserved_paths(region_dir: Path) -> list[str]:
     return sorted(set(out))
 
 
-def read_current_cell() -> dict:
-    """Parse ``site/CURRENT-CELL.json`` if present.
+def scaffold_registry() -> None:
+    """Write an empty ``registry/cells.json`` + ``features.json`` for the active world.
 
-    @returns: JSON object (may be empty)
+    Prefer ``templates/new-world-registry/`` when present; otherwise write ``{}``.
     """
-    if not CURRENT_CELL.is_file():
-        return {}
-    try:
-        return json.loads(CURRENT_CELL.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    from atomic_json import write_json
+
+    REGISTRY.mkdir(parents=True, exist_ok=True)
+    for name in ('cells.json', 'features.json'):
+        src = REGISTRY_TEMPLATE / name
+        dst = REGISTRY / name
+        if src.is_file():
+            shutil.copy2(src, dst)
+        else:
+            write_json(dst, {})
 
 
-def scaffold_site(*, keep_current: dict) -> None:
-    """Copy new-world site template over place memory, preserving focus.
-
-    @param keep_current: ``CURRENT-CELL.json`` payload to restore after copy
-    """
+def scaffold_site() -> None:
+    """Copy new-world site template over place memory (no legacy progress files)."""
     if not TEMPLATE.is_dir():
         raise SystemExit(f'missing template: {TEMPLATE}')
     SITE.mkdir(parents=True, exist_ok=True)
@@ -171,22 +189,21 @@ def scaffold_site(*, keep_current: dict) -> None:
         if not src.is_file():
             continue
         rel = src.relative_to(TEMPLATE)
-        if rel.name == 'CURRENT-CELL.json':
+        if rel.name in SKIP_TEMPLATE_NAMES:
             continue
         dst = SITE / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-    from atomic_json import write_json
-
-    write_json(CURRENT_CELL, keep_current if keep_current else {})
 
 
 def clear_place_artifacts() -> None:
-    """Remove builds, STAGES, verification archives, lock, and holds."""
+    """Remove builds, STAGES, verification archives, lock, holds, legacy progress, registry."""
     LOCK.unlink(missing_ok=True)
     HOLDS.unlink(missing_ok=True)
     geo = SITE / 'GEOCRAFT.txt'
     geo.unlink(missing_ok=True)
+    for name in LEGACY_PROGRESS:
+        (SITE / name).unlink(missing_ok=True)
     builds = SITE / 'builds'
     if builds.is_dir():
         shutil.rmtree(builds)
@@ -198,6 +215,8 @@ def clear_place_artifacts() -> None:
     if VERIFICATION.is_dir():
         shutil.rmtree(VERIFICATION)
     VERIFICATION.mkdir(parents=True, exist_ok=True)
+    if REGISTRY.is_dir():
+        shutil.rmtree(REGISTRY)
 
 
 def delete_regions(region_dir: Path) -> list[str]:
@@ -250,11 +269,11 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
     @param dry_run: print plan only
     @param archive_site: move existing site tree to backups/<stamp>-dryrun-site first
     @param force: override lock / MCP refusal
+    @param confirm_logged_out: operator confirmed quit
     @returns: report dict
     """
     region_dir = load_region_dir()
     regions = list_region_files(region_dir)
-    keep = read_current_cell()
     wipe = site_wipe_paths()
     report: dict = {
         'dry_run': dry_run,
@@ -263,9 +282,13 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         'regions_to_delete': [p.name for p in regions],
         'preserved': preserved_paths(region_dir),
         'wipe': wipe,
-        'current_cell_kept': keep,
         'archive_site': archive_site,
         'warnings': [],
+        'next_steps': [
+            'Re-open the Minecraft save so overworld chunks regenerate empty.',
+            'Raise the origin cell (cell_marker.py --raise <origin>) to seed the ghost frontier.',
+            'python3 scripts/cell_registry.py verify',
+        ],
     }
     if dry_run:
         return report
@@ -278,7 +301,8 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         report['archived_site'] = str(dest.relative_to(ROOT))
         SITE.mkdir(parents=True, exist_ok=True)
     clear_place_artifacts()
-    scaffold_site(keep_current=keep)
+    scaffold_site()
+    scaffold_registry()
     report['regions_deleted'] = delete_regions(region_dir)
     try:
         import registry_verify as rv
@@ -311,7 +335,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps(report, indent=2))
     if not args.dry_run:
-        print('\nRe-open the Minecraft save so overworld chunks regenerate empty near your focus cell.')
+        for step in report.get('next_steps') or []:
+            print(f'\nNext: {step}')
     return 0
 
 

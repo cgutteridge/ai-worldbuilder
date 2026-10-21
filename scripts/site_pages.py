@@ -3,9 +3,9 @@
 
 Writes site/pages/index.html and site/pages/cell-<tx>_<tz>.html. It never renders, screenshots or copies media:
 images are linked in place from verification/site when a build or a person already made them. A cell page shows
-the layer table, every stage record, the matching images, related issues and run-log blocks.
+the registry layer table (plus any in-flight apply-journal keys), matching images, related issues and run-log blocks.
 
-  .venv/bin/python scripts/site_pages.py            # all cells with a STAGES file (+ not-started ring cells on the index)
+  .venv/bin/python scripts/site_pages.py            # registry cells (+ not-started ring cells on the index)
   .venv/bin/python scripts/site_pages.py --no-gaps  # skip the slow authoritative cell_gaps check (about 20 s)
 
 Extra images that have no cell id in their name: add them to site/pages/media-map.json as
@@ -161,7 +161,7 @@ def badge(status: str, here: bool = False) -> str:
 def page(title: str, body: str, depth_note: str = '') -> str:
     return (f'<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{e(title)}</title><style>{CSS}</style></head><body><main>{depth_note}{body}'
-            f'<p class="muted">Generated {datetime.now():%Y-%m-%d %H:%M} by scripts/site_pages.py from STAGES files, ISSUES.txt and existing images. '
+            f'<p class="muted">Generated {datetime.now():%Y-%m-%d %H:%M} by scripts/site_pages.py from the cell registry, ISSUES.txt and existing images. '
             f'Nothing on this page was rendered for it.</p></main></body></html>')
 
 

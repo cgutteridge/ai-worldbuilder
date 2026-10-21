@@ -1,36 +1,34 @@
 RULES CONTEXT — WHAT TO READ WHEN (token index)
-Tool-repo index (ai-worldbuilder/rules/rules-context.md). SESSION BRIEF
-(site_handoff.py next) prints the matching block for the top QUEUE item.
-Rule files in rules/ are not auto-loaded: read only what the brief lists.
+Tool-repo index (ai-worldbuilder/rules/rules-context.md). Start with
+`python3 scripts/cell_registry.py next` (or site_handoff.py next, which
+prints the same picker). Rule files in rules/ are not auto-loaded: read
+only what the brief / task needs.
 
 ------------------------------------------------------------------------
 0. ANTI-REREAD (every session)
 ------------------------------------------------------------------------
- - Run `python3 scripts/site_handoff.py next` once at start. That output
-   (starter + SESSION BRIEF) is enough.
+ - Run `python3 scripts/cell_registry.py next` once at start.
  - Read each listed file once per chat unless the work clearly crosses into
    another context (e.g. you start planning a whole house after a ground-only
    item — then read PROPERTY rules before plan).
- - Do not read whole rules/process.md. Use PROCESS slices in the brief only.
- - Do not run coverage.py --help. Cheatsheet is in the SESSION BRIEF.
+ - Do not read whole rules/process.md. Grep the § slices below.
+ - Do not run coverage.py --help. Use `coverage.py write` / status cheatsheet.
  - Imagery: read site/cells/*-SOURCES.txt (or manifest grep) before fetch/Read;
    do not re-Read assets marked useful=no; one contact sheet before full-size.
  - After a rule file is read, grep/sed targeted sections later — do not re-Read
    the whole rule file for a reminder.
 
 ------------------------------------------------------------------------
-1. CONTEXTS (pick one primary per queue item)
+1. CONTEXTS (pick one primary per registry task)
 ------------------------------------------------------------------------
- SESSION       Boot only: lock, cadence, handoff end. No live edits.
+ SESSION       Boot only: lock, cadence. No live edits.
  TOOLING       Scripts/tests/docs; no Minecraft apply.
  SOURCES       cell_sources.py --write; manifest + one imagery judge pass.
  GROUND        Layered passes: ground_layer, trees_layer, decor_layer; no new house shells.
  FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
  PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
  TERRACE       Broadlands-type row; scripts/terrace.py generator.
-
- QUEUE text may include RULES: ground|foliage|property|terrace|sources|tooling
- to override auto-detect.
+ ISSUE         Registry issue fix (cell_registry add-issue / close).
 
 ------------------------------------------------------------------------
 2. rules/process.md SLICES (grep / sed -n; not the full file)
@@ -69,7 +67,7 @@ Rule files in rules/ are not auto-loaded: read only what the brief lists.
  PROPERTY (includes Always + imagery when surveying):
    rules/frontage-and-evidence.md
    rules/craftsmanship.md — full
-   university register entries on the footprint (queue item lists them): reference/portals, reference/buildings
+   university register entries on the footprint: reference/portals, reference/buildings
      (scripts/portals.py building N, scripts/buildings.py building N)
    Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
 
@@ -80,10 +78,7 @@ Rule files in rules/ are not auto-loaded: read only what the brief lists.
    (no rules file unless you touch imagery or apply)
 
 ------------------------------------------------------------------------
-4. WHEN IN DOUBT
+4. OUT OF SCOPE HERE
 ------------------------------------------------------------------------
- - ground_layer / decor_layer / mask_undo and any old cell batch script
-   name: default GROUND, not PROPERTY.
- - trees_layer / foliage → FOLIAGE.
- - Terrace / Broadlands / terrace.py → TERRACE.
- - New façade or osm_footprints frontage for homes → PROPERTY.
+ Provider catalogue / fetch how → place SOURCES + evaluate-data-source / add-data-source.
+ System tracker → tasks/index.json (not the world registry).

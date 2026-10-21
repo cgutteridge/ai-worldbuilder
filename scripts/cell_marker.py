@@ -8,7 +8,7 @@
   python3 scripts/cell_marker.py --status
   python3 scripts/cell_marker.py --adopt 48,-46     # one-off: record an already-raised ring
 
-Focus is tracked in site/CURRENT-CELL.json, written ONLY by this script: raise
+Focus is tracked as the registry marker (ticket #31), written ONLY by this script: raise
 sets it, clear releases it. Raise refuses if the file names another cell or any
 other cell_marker_*-cells.json registry is on disk, so at most one ring exists.
 

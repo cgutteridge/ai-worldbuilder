@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Recover aborted live runs: one mechanism for every pass (rules/process.md, lock / apply protocol).
 
-site_kit.apply() records each live apply in site/cells/<tx>_<tz>-STAGES.json as 'applying'
-(plan, owner, structure backup, region snapshot, planned-cells file) and 'applied' after the
-readback. A run that dies in between leaves 'applying'. This tool resolves it.
+Progress SoT is the cell registry. ``site/cells/*-STAGES.json`` is only the **apply journal**:
+site_kit.apply() records each live apply as 'applying' (plan, owner, structure backup, region
+snapshot, planned-cells file) and 'applied' after the readback. A run that dies in between
+leaves 'applying'. This tool resolves it. After recovery, registry flags are cleared when a
+rollback re-opens work.
 
   python3 scripts/site_recover.py status                  # read-only: stale lock, in-flight, rolled-back stages
   python3 scripts/site_recover.py recover 46,-43          # dry run: what it would do

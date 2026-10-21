@@ -3,8 +3,8 @@ Replace PLACE with the real place name. Accuracy only — no fictional districts
 
 START HERE
 - World AGENTS.md + parent ai-worldbuilder AGENTS.md
-- python3 scripts/site_handoff.py next  (from tool repo; this world active)
-- QUEUE.txt / ISSUES.txt — world tracker (tool work → ai-worldbuilder tasks/)
+- python3 scripts/cell_registry.py next  (from tool repo; this world active)
+- registry/ + ISSUES.txt — world progress (tool work → ai-worldbuilder tasks/)
 - Craft/process rules: ai-worldbuilder rules/ (process, craftsmanship, foliage,
   handoff-layered-passes, rules-context, cleanup). Stubs under site/ point there.
 

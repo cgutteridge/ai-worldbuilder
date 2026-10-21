@@ -55,7 +55,7 @@ def check_leftover_progress_files(root: Path) -> list[dict[str, Any]]:
             out.append(_issue(
                 'leftover:STAGES', SEVERITY_WARN,
                 f'{len(stages)} per-cell STAGES.json file(s) under site/cells '
-                '(in-flight bookkeeping only until #33 wipe)',
+                '(apply journal only; progress SoT is registry/ — wipe via dryrun_reset)',
             ))
     return out
 

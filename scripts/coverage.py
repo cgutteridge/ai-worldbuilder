@@ -957,6 +957,73 @@ def cell_rollup(areas: list, touched: set, signoffs: dict) -> list:
     return sorted(rows, key=lambda r: (r['r'], r['cell']))
 
 
+def registry_rollup_rows() -> list[dict]:
+    """Per-cell status from the cell registry alone (ticket #33).
+
+    @returns: [{'cell', 'r', 'status', 'left', 'ground', 'trees', 'decor', 'hold'}, ...]
+              sorted by ring then cell; empty when the registry is empty
+    """
+    from cell_registry import RegistryStore, parse_cell_id
+
+    try:
+        fx, fz = focus_cell()
+    except SystemExit:
+        fx, fz = 0, 0
+    store = RegistryStore()
+    rows = []
+    for cid in store._load_cells():
+        tx, tz = parse_cell_id(cid)
+        rec = store.cell(cid)
+        if store.is_done(cid):
+            status = 'done'
+        elif rec.get('hold'):
+            status = 'held'
+        elif rec.get('ground') not in (None, 'none') or rec.get('trees') or rec.get('decor'):
+            status = 'partial'
+        else:
+            status = 'registered'
+        left = store.what_is_left(cid)
+        rows.append({
+            'cell': (tx, tz),
+            'r': max(abs(tx - fx), abs(tz - fz)),
+            'status': status,
+            'left': left,
+            'ground': rec.get('ground') or 'none',
+            'trees': bool(rec.get('trees')),
+            'decor': bool(rec.get('decor')),
+            'hold': rec.get('hold'),
+            'marker': rec.get('marker') or 'none',
+        })
+    return sorted(rows, key=lambda r: (r['r'], r['cell']))
+
+
+def registry_rollup_text(rows: list[dict] | None = None) -> str:
+    """Render registry cells for the COVERAGE.txt generated block.
+
+    @param rows: from :func:`registry_rollup_rows` (default: compute)
+    @returns: text lines (no markers)
+    """
+    rows = rows if rows is not None else registry_rollup_rows()
+    lines = [
+        f'registry rollup {datetime.now().strftime("%Y-%m-%d %H:%M")} '
+        f'({len(rows)} cell(s); source = registry/cells.json)',
+        'tx,tz  |  r  |  status  |  ground  |  trees  |  decor  |  marker  |  left',
+    ]
+    if not rows:
+        lines.append('(registry empty)')
+        return '\n'.join(lines)
+    for r in rows:
+        tx, tz = r['cell']
+        left = ', '.join(r['left']) if r['left'] else '—'
+        hold = f' hold={r["hold"]}' if r.get('hold') else ''
+        lines.append(
+            f'{tx},{tz}  |  r={r["r"]}  |  status={r["status"]}{hold}  |  '
+            f'ground={r["ground"]}  |  trees={"yes" if r["trees"] else "no"}  |  '
+            f'decor={"yes" if r["decor"] else "no"}  |  marker={r["marker"]}  |  {left}'
+        )
+    return '\n'.join(lines)
+
+
 def rollup_text(rows: list, n_builds: int) -> str:
     """Render cell_rollup rows as the generated PROCESSED CELLS block.
 
@@ -994,17 +1061,48 @@ def replace_section(text: str, body: str) -> str:
 
 
 def write_coverage(areas: list | None = None, by_build: dict | None = None) -> str:
-    """Regenerate the PROCESSED CELLS block of site/COVERAGE.txt from every configured area.
+    """Regenerate the PROCESSED CELLS block of site/COVERAGE.txt.
 
-    @param areas: [Area, ...] (default: load all)
-    @param by_build: touched_by_build() (default: compute)
+    Always includes a registry rollup (ticket #33). Parcel/area tables are appended
+    when coverage areas have been built.
+
+    @param areas: [Area, ...] (default: load all built areas; empty list skips parcels)
+    @param by_build: touched_by_build() (default: compute when areas present)
     @returns: the generated block
     """
-    areas = areas if areas is not None else load_areas(built_only=True)
-    by_build = by_build if by_build is not None else touched_by_build()
-    body = rollup_text(cell_rollup(areas, union(by_build), load_signoffs()), len(by_build))
-    COVERAGE_TXT.write_text(replace_section(COVERAGE_TXT.read_text(), body))
+    parts = [registry_rollup_text()]
+    try:
+        areas = areas if areas is not None else load_areas(built_only=True)
+    except SystemExit:
+        areas = []
+    if areas:
+        by_build = by_build if by_build is not None else touched_by_build()
+        parts.append('')
+        parts.append(rollup_text(cell_rollup(areas, union(by_build), load_signoffs()), len(by_build)))
+    body = '\n'.join(parts)
+    if not COVERAGE_TXT.is_file():
+        COVERAGE_TXT.write_text(
+            'COVERAGE — radial focus + generated per-cell table\n'
+            f'{BEGIN}\n{body}\n{END}\n'
+        )
+    else:
+        text = COVERAGE_TXT.read_text()
+        if BEGIN not in text or END not in text:
+            COVERAGE_TXT.write_text(text.rstrip() + f'\n\n{BEGIN}\n{body}\n{END}\n')
+        else:
+            COVERAGE_TXT.write_text(replace_section(text, body))
     return body
+
+
+def cmd_write(args) -> int:
+    """Regenerate COVERAGE.txt from the registry (+ parcel areas when built).
+
+    @param args: argparse namespace (unused)
+    @returns: exit code
+    """
+    body = write_coverage()
+    print(f'updated {COVERAGE_TXT.relative_to(ROOT)} ({body.count(chr(10)) + 1} lines)')
+    return 0
 
 
 # --- CLI ----------------------------------------------------------------------------------
@@ -1364,9 +1462,10 @@ def main() -> int:
     m = sub.add_parser('map', help='PNG coverage map (needs .venv matplotlib)')
     m.add_argument('--area')
     m.add_argument('--out', help='output path (with --area only)')
+    w = sub.add_parser('write', help='regenerate COVERAGE.txt from registry (+ parcels when built)')
     a = ap.parse_args()
     return {'build': cmd_build, 'status': cmd_status, 'gaps': cmd_gaps, 'signoff': cmd_signoff,
-            'map': cmd_map}[a.cmd](a)
+            'map': cmd_map, 'write': cmd_write}[a.cmd](a)
 
 
 if __name__ == '__main__':

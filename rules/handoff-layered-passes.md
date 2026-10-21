@@ -1,7 +1,8 @@
-HANDOFF — LAYERED PASSES AND MASK UNDO
+LAYERED PASSES AND MASK UNDO
 Tool-repo rules (ai-worldbuilder/rules/handoff-layered-passes.md).
-Written 2026-10-14. Pass order for empty-world refine; place-specific ring
-centre and holds live in the active world's site/ (QUEUE, CELL-HOLDS, STAGES).
+Written 2026-10-14; registry cut-over 2026-10-21. Pass order for empty-world refine;
+ring focus and holds live in the active world's **registry/** (marker + hold fields).
+`site/cells/*-STAGES.json` is the apply journal only (site_kit / site_recover).
 
 ------------------------------------------------------------------------
 1. PASS ORDER (per cell, in this order, never out of order)
@@ -19,10 +20,10 @@ centre and holds live in the active world's site/ (QUEUE, CELL-HOLDS, STAGES).
  DEFINITION OF DONE (I-057 / ADR 003 empty-world): a cell is done when evidence-backed feature
  builds cover mapped buildings, ground/trees/decor are applied, and the trees mask follows the
  overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined vendor lump left” — vendor
- lumps alone do not keep a cell open. site_handoff.cell_gaps/next_cell test missing feature builds,
- layer passes, and trees-mask currency; a finished cell with an old tree mask is re-queued for a
- trees re-run. `site_handoff.py next --plan` shows what would be queued without writing.
- lump_scan.py is diagnostic only and must not drive the queue.
+ lumps alone do not keep a cell open. `cell_registry.py next` / `site_handoff.cell_gaps`
+ report missing feature builds, layer passes, and trees-mask currency; a finished cell with an
+ old tree mask is reopened for a trees re-run. lump_scan.py is diagnostic only and must not
+ drive work (ADR 003).
 
 Gardens (user, 2026-10-14): a house feature is the house only. Gardens belong to the later
 passes: lawn/paving = GROUND, trees and shrubs = TREES, fences, hedges, sheds, planting and
@@ -81,13 +82,14 @@ box recorded in the stage file. Before any restore:
   - after the restore, compare the fingerprint again and look at the view.
 
 ------------------------------------------------------------------------
-5. CELL STAGE FILE
+5. APPLY JOURNAL (not progress SoT)
 ------------------------------------------------------------------------
-site/cells/<tx>_<tz>-STAGES.json, one entry per pass:
-  status      planned | applied | verified | undone
+site/cells/<tx>_<tz>-STAGES.json records in-flight applies for recovery:
+  status      applying | applied | applied-with-mismatches | rolled-back | …
   plan / mask file / snapshot path / fingerprint
-A cell is done only when every pass is verified: readback 0 mismatches, a patrol with
-no clashes, and a visual check in the game against the aerial and photos.
+Progress SoT is `registry/cells.json` + `registry/features.json`. A cell is done when
+the registry says DONE (layers + features + no open warnings/issues), readback was clean,
+patrol found no clashes, and a visual check against aerial/photos passed.
 
 ------------------------------------------------------------------------
 6. CLIPPING AND NEIGHBOURS
@@ -211,11 +213,12 @@ Was the open decision:
 ------------------------------------------------------------------------
 12. DECISIONS (2026-10-14, user, round 2)
 ------------------------------------------------------------------------
-GROUND REDO IS A BLOCKING QUEUE ITEM
-  - Queued as Q-065 (site/QUEUE.txt) and a hold in site/CELL-HOLDS.jsonl.
-  - scripts/coverage.py reports a held cell as status=held, never done, until the
-    hold is released. Release only after ground redo, trees and decor are verified.
-  - (Q-064 is already taken by the aerial canopy pass in rules/foliage.md.)
+Historical note (ticket #33): QUEUE.txt / CELL-HOLDS.jsonl are retired. Equivalent
+today: `cell_registry.py hold <cell> --reason …` and `cell_registry.py next`.
+
+GROUND REDO IS A BLOCKING HOLD
+  - Hold the cell in the registry until ground redo, trees and decor are verified.
+  - coverage.py reports a held cell as status=held, never done, until the hold clears.
 
 GROUND AND MASKS
   - Ground should not touch a masked tree/decor position at all. If a ground plan
@@ -233,40 +236,21 @@ CONFIRMED §10 (user, 2026-10-14)
   - (Earlier "£10" was a mis-typed "§10", not a spend. No spend approved.)
 
 ------------------------------------------------------------------------
-13. HANDOVER (2026-10-14, end of session)
+13. HANDOVER (2026-10-14, end of session) — HISTORICAL
 ------------------------------------------------------------------------
-STATE OF Q-065 (still OPEN; hold in site/CELL-HOLDS.jsonl stays ON)
+Kept as a worked example of the first ground pass on 48,-44. Do not reopen
+QUEUE/CELL-HOLDS paths; use the registry. Snapshot path and footprint override
+notes below remain useful archaeology.
+
   - Ground layer APPLIED to cell 48,-44 (plan highfield_48_m44_ground).
-    Readback 11240 planned, 0 mismatches. Stage record: site/cells/48_-44-STAGES.json.
-  - Region snapshot before apply: backups/regions/2026-10-14-024133-highfield_48_m44_ground
-    World backup label: before_highfield_48_m44_ground
-  - Footprint guard overridden for THIS cell only (7 polished_diorite blocks by
-    University Rd / Chamberlain Rd, see verification/site/highfield_48_m44_ground-footprint-hits.json).
-    User approved "for this cell, this task only". Do not copy this override elsewhere.
-  - Lock: released. Site lock is free.
+  - Region snapshot: backups/regions/2026-10-14-024133-highfield_48_m44_ground
+  - Footprint guard overridden for THAT cell only (7 polished_diorite blocks);
+    do not copy the override elsewhere.
 
-NOT YET DONE (in order)
-  1. Trees + decor re-run on 48,-44 (§10). The ground clear step removed 2661
-     above-surface blocks, so any old trees/leaves in the cell are gone. Trees and decor
-     must be re-planned as their own passes WITH masks (§3) under verification/site/masks/.
-     No masks exist yet.
-  2. Patrol (scripts/site_patrol.py) and visual check in-game against aerial + photos (§5).
-  3. Only then: append {"cell": [48, -44], "id": "Q-065", "release": true} to CELL-HOLDS.jsonl,
-     update the stage file, mark Q-065 [x] in site/QUEUE.txt.
-
-WHAT EXISTS IN CODE
-  - scripts/ground_layer.py: --cell 48,-44 (dry run + preview); --apply (live, needs
-    SITE_OWNER + claimed lock, takes region snapshot, readback, writes STAGES).
-  - scripts/pass_mask.py: mask build / write / read / verify / plan_undo / masked_overlaps.
-  - scripts/coverage.py: CELL-HOLDS.jsonl gate (open hold => status=held).
-  - Tests: scripts/test_pass_mask.py, scripts/test_ground_layer.py (20 pass).
-  - Old script build_highfield_grounds_cell.py is NOT the ground pass any more. Do not use it.
-
-CAUTIONS
-  - Dry run first; live apply needs the user's explicit go-ahead each time.
-  - The permission check blocked the live apply once and a lock release once. Ask the user
-    for a Bash permission rule for scripts/ground_layer.py if it blocks again.
-  - Python: use .venv/bin/python (matplotlib lives there; system python is PEP 668 locked).
+WHAT EXISTS IN CODE (still true)
+  - scripts/ground_layer.py / trees_layer.py / decor_layer.py + registry_hooks
+  - scripts/pass_mask.py; scripts/coverage.py write (registry rollup + holds via registry)
+  - Apply journal: site/cells/*-STAGES.json for in-flight recovery only
 
 ------------------------------------------------------------------------
 14. 2026-10-14 (user): 48,-44 DONE; ALL OTHER CELLS RESTART

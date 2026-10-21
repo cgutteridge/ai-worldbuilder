@@ -9,7 +9,7 @@ The reusable AI tool for building and refining Minecraft worlds from real-place 
 _Avoid_: refine tool, legacy generator refine, Southampton Refine (as the tool name)
 
 **World**:
-One game place under construction (offsets, gameworld id, queue, issues, feature/tree build scripts, local providers). Lives in its own repository, checked out under the worldbuilder’s gitignored `worlds/` folder.
+One game place under construction (offsets, gameworld id, cell registry, issues, feature/tree build scripts, local providers). Lives in its own repository, checked out under the worldbuilder’s gitignored `worlds/` folder.
 _Avoid_: site (as the name of the whole place), project, instance (unless meaning the Minecraft launcher instance)
 
 **Active world**:
@@ -31,8 +31,30 @@ Matt-style task index for worldbuilder engineering (`tasks/`). Lives only in thi
 _Avoid_: tooling queue, QUEUE (for system work)
 
 **World tracker**:
-That world’s issue register plus ordered build queue. Never holds system engineering tasks.
-_Avoid_: TODO.txt, system tasks in QUEUE
+That world’s cell registry (next work + issues). Never holds system engineering tasks.
+_Avoid_: TODO.txt, site/QUEUE.txt (retired), system tasks in the world registry
+
+## Cells and registry
+
+**Cell**:
+A 128×128 Minecraft block patch on the world grid (`tx,tz`), sized and originated from `config/world-frame.json` via `cellmath`. Work is planned and recorded per cell.
+_Avoid_: chunk (unless meaning an MC chunk), tile (unless meaning a map/lidar tile)
+
+**Cell registry**:
+The source of truth for refine progress in a world: `registry/cells.json` (layers, marker, holds, coverage warnings) and `registry/features.json` (feature builds and the cells they touch). Driven by `scripts/cell_registry.py`. Paths are per active world — never share with a donor or bake-off save.
+_Avoid_: STAGES-as-progress, QUEUE.txt, CURRENT-CELL.json
+
+**Feature** (registry):
+A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches.
+_Avoid_: layer pass, decor prop, queue item
+
+**Registry marker**:
+At most one cell may have `marker=up`. That cell is the focus ring (`cell_marker.py --raise` / `--clear`). Replaces the old `site/CURRENT-CELL.json` file.
+_Avoid_: CURRENT-CELL, focus file
+
+**Apply journal**:
+`site/cells/<tx>_<tz>-STAGES.json` while a live apply is in flight (`applying` → `applied`). Used by `site_recover`; not the progress SoT.
+_Avoid_: treating STAGES as DONE / next-work
 
 ## Evidence
 
@@ -61,5 +83,5 @@ A game save started without a prior city mesh from another generator. Refine mea
 _Avoid_: third-party generator refine (as the default workflow), lump sweep (as the definition of done)
 
 **Lidar ghost**:
-Placeholder ground and grey above-ground mass in a cell, taken only from national lidar composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later.
+Placeholder ground and grey above-ground mass in a cell, taken only from national lidar composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later. Frontier membership comes from the registry (real refine seeds a Chebyshev ring).
 _Avoid_: finished ground pass, real feature build, vendor lump, pristine height sketch

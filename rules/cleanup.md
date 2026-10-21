@@ -10,7 +10,7 @@ PRINCIPLE
 CLASSES
  SAFE (apply, no judgement needed)
   region-snaps   backups/regions beyond the newest 5 (rules/process.md §2a). Exception: the
-                 newest snap of a name that open ISSUES.txt / QUEUE.txt still mentions.
+                 newest snap of a name that open registry issues still mention.
   views          verification/site/views/*.png older than 7 days and named in no live site/*.txt
                  (site_views.py regenerates them).
   screenshots    instance/screenshots older than 7 days.
