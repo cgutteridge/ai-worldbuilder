@@ -170,15 +170,6 @@ class FirstReturnTest(unittest.TestCase):
         self.assertEqual(lh._ground(self.hm, comp, reach=1), self.sea + GROUND_DTM)
 
 
-class StubWorld:
-    """Stands in for the pristine save: one flat stone column at Y 30."""
-    def block(self, x, y, z):
-        return 'minecraft:stone' if y <= 30 else 'minecraft:air'
-
-    def uniform_air(self, x, y, z, airs):
-        return y >= 32
-
-
 class FakeDefra:
     def __init__(self, covered):
         self.covered = covered
@@ -197,32 +188,28 @@ class FakeDefra:
 
 
 class ReferenceWorldTest(unittest.TestCase):
-    def ref(self, source):
-        return lh.ReferenceWorld(source, composite=FakeDefra({(0, 0)}), fallback=StubWorld())
+    def ref(self):
+        return lh.ReferenceWorld(composite=FakeDefra({(0, 0)}))
 
-    def test_auto_uses_composite_per_cell_and_falls_back_elsewhere(self):
-        r = self.ref('auto')
-        self.assertEqual((r.source_of((0, 0)), r.source_of((5, 5))), ('composite', 'pristine'))
-        self.assertEqual(r.block(10, 5, 10), 'minecraft:bricks')            # cell (0, 0)
-        self.assertEqual(r.block(300, 5, 300), 'minecraft:stone')           # cell (2, 2): the save
+    def test_answers_a_cached_cell_from_composite(self):
+        r = self.ref()
+        self.assertEqual(r.source_of((0, 0)), 'composite')
+        self.assertEqual(r.block(10, 5, 10), 'minecraft:bricks')
         self.assertEqual(r.ground(10, 10), 99)
 
-    def test_pristine_never_asks_composite(self):
-        r = self.ref('pristine')
-        self.assertFalse(r.uses_composite((0, 0)))
-        self.assertEqual(r.block(10, 5, 10), 'minecraft:stone')
+    def test_uncached_cell_is_an_error_not_a_fallback(self):
+        r = self.ref()
+        for call in (lambda: r.uses_composite((5, 5)), lambda: r.heightmap((5, 5)), lambda: r.block(300, 5, 300)):
+            with self.assertRaises(LookupError):
+                call()
 
-    def test_composite_only_refuses_an_uncached_cell(self):
-        with self.assertRaises(LookupError):
-            self.ref('composite').uses_composite((5, 5))
-
-    def test_unknown_source_is_an_error(self):
-        with self.assertRaises(SystemExit):
-            lh.ReferenceWorld('bogus')
+    def test_has_no_baseline_save_path(self):
+        self.assertFalse(hasattr(lh, 'pristine_world'))
+        self.assertFalse(hasattr(self.ref(), 'fallback'))
 
     def test_heightmap_function_prefers_a_world_with_its_own_map(self):
         self.assertEqual(
-            lh.heightmap(self.ref('auto'), (0, 0)),
+            lh.heightmap(self.ref(), (0, 0)),
             {'cell': (0, 0), 'source': 'defra'},
         )
 

@@ -145,17 +145,14 @@ class DoneTest(Base):
         self.assertIn('ground', first['text'])
         self.assertEqual(H.QUEUE.read_text(), before)
 
-    def test_residual_features_is_missing_builds_only_not_lump_scan(self):
-        """Seam: residual_features never calls lump_scan; only OSM missing feature builds."""
+    def test_residual_features_is_missing_builds_only(self):
+        """Seam: residual_features is only OSM missing feature builds."""
         mapped = [{'kind': 'houses', 'label': 'A', 'street': 'A', 'refs': ['w1'], 'bbox': (0, 0, 1, 1)}]
         with mock.patch('cell_features.missing_features', return_value=mapped) as miss, \
-                mock.patch('lump_scan.scan_cell', side_effect=AssertionError('lump_scan must not drive residual')) as scan, \
-                mock.patch('lump_scan.lump_features', side_effect=AssertionError('lump_features unused')), \
                 mock.patch('osm_footprints.OSMIndex', return_value=mock.Mock(streets={})):
             out = H.residual_features((48, -44))
         self.assertEqual(out, mapped)
         miss.assert_called_once()
-        scan.assert_not_called()
 
 
 class GoogleReviewTest(Base):

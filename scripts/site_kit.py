@@ -778,7 +778,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if floats and not getattr(plan, 'allow_float', False):
         raise SystemExit(f'{len(floats)} posts would float over half-height blocks, e.g. {floats[:5]}; '
                          'extend them down or put a full block under them (or set plan.allow_float)')
-    # guard (I-009): building-like blocks standing >2 above pristine ground outside every vector-map
+    # guard (I-009): building-like blocks standing >2 above lidar ground outside every vector-map
     # footprint are almost always a façade built on the pavement / front garden
     import osm_footprints
     fp = osm_footprints.guard(plan.cells)
@@ -872,7 +872,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         print('backup:', res)
         structure = {'name': name, 'from': a, 'to': b}
     else:
-        # the first-time backup above is the original pristine import; recovery needs the state before THIS apply
+        # the first-time backup above is the original state; recovery needs the state before THIS apply
         name = f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}'
         a = [lo[0] - 1, lo[1], lo[2] - 1]
         b = [hi[0] + 1, hi[1], hi[2] + 1]

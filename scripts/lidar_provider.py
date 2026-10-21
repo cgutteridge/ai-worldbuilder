@@ -15,18 +15,7 @@ from typing import Any
 
 from cell_sources import load_place_sources, provider_package_dir  # noqa: E402
 
-SOURCES = ('auto', 'composite', 'pristine')
-
 _MODULE_CACHE: dict[str, ModuleType] = {}
-
-
-def normalize_source(source: str) -> str:
-    """Return a lidar source mode unchanged (canonical vocabulary only).
-
-    @param source: raw ``LIDAR_SOURCE`` / ``--source`` value
-    @returns: the same string (callers validate against :data:`SOURCES`)
-    """
-    return source
 
 
 def lidar_provider_row(data: dict | None = None) -> dict:

@@ -4,9 +4,8 @@
 Catalogue provider id: ``ukdefra-lidar`` (aliases ``ukdefra-dtm`` / ``ukdefra-dsm`` in
 ``config/system-providers.json``). DTM and last-return DSM are one feed, two products.
 
-Why: Geocraft's heights are only readable back out of the pristine save. This fetches the open DEFRA
-(Environment Agency) 1 m LIDAR composites itself, so heights exist for any place the data covers, not just
-the Southampton2023 save. England only: Scotland and Wales publish their own LIDAR, which would be a second
+Why: this fetches the open DEFRA (Environment Agency) 1 m LIDAR composites itself, so heights exist for
+any place the data covers. England only: Scotland and Wales publish their own LIDAR, which would be a second
 source with the same interface (``crs``, ``sample(model, e, n)``).
 
 Method (matches Geocraft, so a column here equals the column Geocraft drew):
@@ -30,7 +29,6 @@ world needs its own source and frame; nothing here assumes Southampton.
   python3 shims/defra_lidar.py tiles --cell 48,-44          # which 5 km tiles, cached or not
   python3 shims/defra_lidar.py fetch --cell 48,-44          # download what is missing (large: ~75 MB a tile)
   python3 shims/defra_lidar.py probe 6140,-3760             # DTM, DSM, diff (DSM−DTM) and Y at one column
-  python3 shims/defra_lidar.py compare --cell 48,-44        # check against the pristine Geocraft save
   # Area maps / highs-lows: shims/lidar_query.py --cell TX,TZ --layers dtm,dsm,diff
 
 Cached under downloads/defra-lidar/ (gitignored). Needs Pillow and numpy (already in .venv) and gdaltransform
@@ -317,29 +315,6 @@ def mc_heights(lidar: DefraLidar, x0: int, z0: int, x1: int, z1: int, sea_level:
     return {'dtm': dtm, 'dsm': dsm, 'diff': diff, 'feature': diff, 'ground_y': ground, 'top_y': ground + diff}
 
 
-def compare_with_pristine(cell: tuple[int, int], lidar: DefraLidar) -> dict:
-    """How well these heights reproduce the untouched Geocraft save for one cell.
-
-    Ground columns: pristine ``base`` (solid top) against ground_y. Roof columns (a carpet on top): carpet Y - 1
-    against top_y where the feature is at least 3 high (Geocraft forces buildings to 3).
-    """
-    import lidar_heightmap as lh
-    x0, z0, x1, z1 = cellmath.bounds(cell)
-    hm = lh.Maps().of(cell)
-    mine = mc_heights(lidar, x0, z0, x1, z1)
-    out = {'cell': list(cell)}
-    ground = hm['kind'] == lh.GROUND
-    roof = (hm['kind'] == lh.ROOF) & (mine['feature'] >= 3)
-    for name, mask, want, got in (('ground', ground, hm['base'], mine['ground_y']),
-                                   ('roof', roof, hm['roof'] - 1, mine['top_y'])):
-        d = (got - want)[mask]
-        out[name] = {'columns': int(mask.sum()),
-                     'exact': round(float((d == 0).mean()), 4) if d.size else None,
-                     'within1': round(float((np.abs(d) <= 1).mean()), 4) if d.size else None,
-                     'mean_diff': round(float(d.mean()), 3) if d.size else None}
-    return out
-
-
 def _bbox_from_args(a) -> tuple[int, int, int, int]:
     if a.cell:
         return cellmath.bounds(cellmath.parse_cell(a.cell), a.margin)
@@ -352,15 +327,12 @@ def _bbox_from_args(a) -> tuple[int, int, int, int]:
 def main(argv: list[str] | None = None) -> int:
     ap = make_parser(__doc__)
     sub = ap.add_subparsers(dest='cmd', required=True)
-    for name in ('tiles', 'fetch', 'compare'):
+    for name in ('tiles', 'fetch'):
         p = sub.add_parser(name)
         g = p.add_mutually_exclusive_group(required=True)
         g.add_argument('--cell', help='coverage cell tx,tz')
-        if name != 'compare':
-            g.add_argument('--bbox-mc', help='x0,z0,x1,z1 inclusive blocks')
-            p.add_argument('--margin', type=int, default=0, help='grow the cell by this many blocks')
-        else:
-            p.set_defaults(bbox_mc=None, margin=0)
+        g.add_argument('--bbox-mc', help='x0,z0,x1,z1 inclusive blocks')
+        p.add_argument('--margin', type=int, default=0, help='grow the cell by this many blocks')
         p.add_argument('--cache', type=Path, default=CACHE)
     pr = sub.add_parser('probe')
     pr.add_argument('xz', help='x,z block column')
@@ -396,12 +368,6 @@ def main(argv: list[str] | None = None) -> int:
         for m, e, n in absent:
             print(f'no {m} published for {e}E-{n}N', file=sys.stderr)
         return 1 if absent else 0
-    try:
-        lidar.ensure(*en)
-    except LookupError as exc:
-        print(f'{exc}; run fetch first', file=sys.stderr)
-        return 1
-    print(json.dumps(compare_with_pristine(cellmath.parse_cell(a.cell), lidar), indent=2))
     return 0
 
 

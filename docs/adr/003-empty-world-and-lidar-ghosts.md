@@ -4,12 +4,12 @@
 
 ## Context
 
-The tool formerly treated refine as clearing unrefined vendor-import lumps and often used a pristine heightmap as an evidence path. New worlds start from an **empty** save. Neighbours then have no skyline until their own queue turn, which slows judgement of massing and edges.
+The tool formerly treated refine as clearing unrefined vendor-import lumps and often used a pristine heightmap as an evidence path (removed in task #38: no pristine baseline reads remain). New worlds start from an **empty** save. Neighbours then have no skyline until their own queue turn, which slows judgement of massing and edges.
 
 ## Decision
 
-1. **Empty-world DoD:** A cell is done when evidence-backed features and layered passes (ground, trees, decor) plus masks meet the craft rules — not when “no unrefined vendor import” remains. Lump-scan must not drive the default queue.
-2. **Evidence heights:** National **composite** DTM/DSM (lidar provider package) are the normal lidar path. A pristine import save is not a catalogue provider and not on the default evidence reading list.
+1. **Empty-world DoD:** A cell is done when evidence-backed features and layered passes (ground, trees, decor) plus masks meet the craft rules — not when “no unrefined vendor import” remains. The lump-scan tool is deleted (task #38).
+2. **Evidence heights:** National **composite** DTM/DSM (lidar provider package) are the normal lidar path. A pristine import save is not a catalogue provider and is never read as evidence: tools needing ground or surface heights use the lidar provider only.
 3. **Lidar ghosts:** When a cell is focused, unstarted neighbours within a configurable Chebyshev ring (default 1) get idempotent placeholder applies: composite DTM → ghost ground; composite DSM − DTM → grey ghost features. No trees/decor ghosts in v1. Real `ground_layer` / builders / trees / decor overwrite or refine ghosts later. No per-cell generated Python.
 
 ## Consequences

@@ -135,8 +135,8 @@ class AuditTest(unittest.TestCase):
             return out
 
         # cell (0,-1) ends at z=-1; cell (0,0) starts at z=0
-        pri = L.Maps(use_cache=False)
-        live = L.Maps(use_cache=False)
+        pri = L.Maps()
+        live = L.Maps()
         pri._hm[(0, -1)] = hm((0, -1), 0, -128, {(5, -1): 58})
         pri._hm[(0, 0)] = hm((0, 0), 0, 0, {(5, 0): 60})
         live._hm[(0, -1)] = hm((0, -1), 0, -128, {}, h=60)   # live top = h when no carpet

@@ -22,8 +22,7 @@ ring focus and holds live in the active world's **registry/** (marker + hold fie
  overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined vendor lump left” — vendor
  lumps alone do not keep a cell open. `cell_registry.py next` / `site_handoff.cell_gaps`
  report missing feature builds, layer passes, and trees-mask currency; a finished cell with an
- old tree mask is reopened for a trees re-run. lump_scan.py is diagnostic only and must not
- drive work (ADR 003).
+ old tree mask is reopened for a trees re-run.
 
 Gardens (user, 2026-10-14): a house feature is the house only. Gardens belong to the later
 passes: lawn/paving = GROUND, trees and shrubs = TREES, fences, hedges, sheds, planting and

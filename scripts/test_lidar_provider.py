@@ -17,14 +17,6 @@ for _p in (_ROOT / 'shims', _ROOT / 'scripts'):
 import lidar_provider as lp  # noqa: E402
 
 
-class NormalizeSource(unittest.TestCase):
-    """LIDAR_SOURCE values are type vocabulary only."""
-
-    def test_canonical_sources_pass_through(self):
-        for name in ('auto', 'composite', 'pristine'):
-            self.assertEqual(lp.normalize_source(name), name)
-
-
 class ResolveLidarRow(unittest.TestCase):
     """Active catalogue row is chosen by type ``lidar``, not a hard-coded id."""
 
