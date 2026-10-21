@@ -23,7 +23,7 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 
 from ground_layer import bare, ignored_builds, plan_name  # noqa: E402
-from pass_mask import OVERHANG_MARGIN, PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
+from pass_mask import PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
 from site_kit import Plan, World, apply, same  # noqa: E402
 
 
@@ -48,7 +48,7 @@ def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path
     undo = data['stages'].get(f'{pass_name}-undo', {})
     entry = data['stages'].get(pass_name, {})
     entry.update({'status': 'undone', 'note': f'undone from mask via {name}; re-run the {pass_name} pass after ground',
-                  'undo_snapshot': {'plan': name, 'structure': undo.get('structure'), 'snapshot': undo.get('snapshot'),
+                  'undo_snapshot': {'plan': name, 'structure': undo.get('structure'),
                                     'planned': undo.get('planned'),
                                     'mask_backup': str(backup) if backup.exists() else None}})
     entry.pop('mask', None)
@@ -118,10 +118,6 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
         return 0
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
-    import subprocess
-    from ground_layer import cell_bbox_str
-    subprocess.run([sys.executable, str(ROOT / 'scripts/region_backup.py'), 'snap',
-                    '--bbox', cell_bbox_str(cell, OVERHANG_MARGIN), '--name', name], check=True)
     rb = apply(plan, modifies=mods, stage=f'{pass_name}-undo', cell=cell, strict=True,
                meta={'kind': 'undo', 'pass': pass_name})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')

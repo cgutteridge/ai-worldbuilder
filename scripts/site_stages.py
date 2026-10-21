@@ -6,7 +6,7 @@ leaves 'applying', which site_handoff.cell_gaps reports as 'in-flight: <plan>' a
 site_recover.py can resolve (rules/process.md, lock / apply protocol).
 
 An 'applying' entry records: plan, owner (SITE_OWNER), started, structure backup
-{name, from, to}, region snapshot dir, the planned-cells file and any `meta` (kind 'undo' ...).
+{name, from, to}, the planned-cells file and any `meta` (kind 'undo' ...).
 If the stage key already held an entry it is kept under 'previous' (recovery needs it when a mask
 undo was followed by an aborted re-apply).
 """
@@ -22,8 +22,6 @@ from script_env import ROOT  # noqa: E402
 import cellmath  # noqa: E402
 
 CELLS = ROOT / 'site' / 'cells'
-SNAPSHOTS = ROOT / 'backups' / 'regions'
-SNAPSHOT_MAX_AGE_H = 3
 
 
 def __getattr__(name: str):
@@ -55,20 +53,6 @@ def primary_cell(positions) -> tuple[int, int]:
     shift = cellmath.cell_shift()
     counts = Counter((x >> shift, z >> shift) for x, _y, z in positions)
     return counts.most_common(1)[0][0]
-
-
-def latest_snapshot(name: str, now: float | None = None) -> str | None:
-    """Newest region snapshot dir (backups/regions/<stamp>-<name>) younger than SNAPSHOT_MAX_AGE_H, repo-relative."""
-    now = now or time.time()
-    if not SNAPSHOTS.exists():
-        return None
-    for d in sorted(SNAPSHOTS.glob(f'*-{name}'), reverse=True):
-        if d.is_dir() and now - d.stat().st_mtime < SNAPSHOT_MAX_AGE_H * 3600:
-            try:
-                return str(d.relative_to(ROOT))
-            except ValueError:
-                return str(d)
-    return None
 
 
 def begin(cell, key: str, plan: str, **fields) -> None:

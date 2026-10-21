@@ -21,7 +21,7 @@ Read before choosing, planning or signing off build work.
   generated COVERAGE block.
 - Prefer registry DONE / open issues over retired parcel sign-offs. Where an area
   already has builds (Broadlands), keep them unless an issue reopens them.
-- Revisits: open a registry issue (or redo) for the layer/feature; snapshot first,
+- Revisits: open a registry issue (or redo) for the layer/feature;
   dry-run before re-apply (I-043). Code/tooling fixes beat new cells.
 - Distinctive local features → `cell_registry.py add-issue` (PROCESS §2e).
 - Focus moves with `cell_marker.py --clear` / `--raise`; leave no ring holes behind.

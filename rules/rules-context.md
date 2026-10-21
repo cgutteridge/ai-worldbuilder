@@ -33,7 +33,7 @@ only what the brief / task needs.
 ------------------------------------------------------------------------
 2. rules/process.md SLICES (grep / sed -n; not the full file)
 ------------------------------------------------------------------------
- All live edits     §2 (cadence), §2a (region snap when needed), §6–§7
+ All live edits     §2 (cadence), §2a (undo, no region backups), §6–§7
  GROUND / FOLIAGE   + §2c §2e (step 5 = layered passes)
  PROPERTY           + §2b (refs), §2c §2d-i §3 (checklist as needed)
  SOURCES            §2b, §2e step 1b, reference/LOGGING.txt §8

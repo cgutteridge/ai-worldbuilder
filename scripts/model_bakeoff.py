@@ -427,7 +427,6 @@ def open_round(
         'cell': list(cfg['cell']),
         'cell_note': cfg.get('cell_note'),
         'ghost_cells': [list(c) for c in cfg.get('ghost_cells') or []],
-        'ghost_snap': cfg.get('ghost_snap'),
         'attempt': attempt,
         'kind': kind,
         'parent_round': parent_round,
@@ -447,12 +446,8 @@ def open_round(
             'checklist': [
                 'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
                 'Quit Minecraft world (title / close save)',
-                (
-                    f"Restore ghost (whole-world + registry): "
-                    f"python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out"
-                    + (f"  # cfg ghost_snap={cfg['ghost_snap']}" if cfg.get('ghost_snap') else '')
-                ),
-                'Rejoin world (MCP up) — ghost may look sparse/empty around the cell',
+                'Regenerate the ghost baseline with `lidar_ghost apply` (no restore, ADR 004; the no-restore flow is pending task 48)',
+                'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
                 'Claim site lock; build with that tool/model only',
                 f"Use tool={tool_row['id']} model={model_row['id']} only",
                 f'Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)',
@@ -461,11 +456,6 @@ def open_round(
                 'Apply, capture fixed cameras, release lock',
                 'Interview + score; then usage paste (need-you if counts unknown)',
             ],
-            'ghost_snap_hint': (
-                f"canonical whole-world snap: {cfg['ghost_snap']}"
-                if cfg.get('ghost_snap')
-                else 'create with: python3 scripts/region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out'
-            ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
         'force_mid': bool(force_mid) or None,
@@ -799,8 +789,8 @@ def format_sitting(round_: dict) -> str:
     lines.append('')
     lines.append('Sequence (do not skip):')
     lines.append(
-        '  quit world → model_bakeoff restore-ghost (whole-world + registry) '
-        '→ rejoin → lock → build/apply → photos → interview'
+        '  regenerate ghost (lidar_ghost apply; no-restore flow pending task 48) '
+        '→ lock → build/apply → photos → interview'
     )
     lines.append('')
     lines.append('Checklist:')
@@ -838,44 +828,6 @@ def _parse_axis(pairs: list[str] | None) -> dict[str, str]:
         name, grade = raw.split('=', 1)
         out[name.strip()] = grade.strip()
     return out
-
-
-def restore_ghost_step(
-    *,
-    root: Path | None = None,
-    snap: str | None = None,
-    confirm_logged_out: bool = False,
-) -> list[str]:
-    """Restore the bake-off whole-world ghost (regions + registry pair).
-
-    Ticket #32: bake-off wipes/restores the whole world with one paired backup,
-    not per-cell slices. Partial snaps are refused by region_backup.restore.
-    When config sets ``ghost_region_path``, restore targets that folder (bakeoff
-    save) rather than the snapshot's recorded SouthamptonAI ``region_path``.
-
-    @param root: model-bakeoffs root (for config ghost_snap)
-    @param snap: override snap name (default config ``ghost_snap``)
-    @param confirm_logged_out: logout gate flag
-    @returns: restored ``.mca`` names
-    """
-    import region_backup as rb
-
-    cfg = load_config(bakeoffs_root(root))
-    name = snap or cfg.get('ghost_snap')
-    if not name:
-        raise ValueError(
-            'no ghost_snap in model-bakeoffs/config.json; pass --snap or run '
-            'region_backup.py snap-world --name bakeoff-ghost --confirm-logged-out'
-        )
-    snap_dir = rb.resolve_snap_dir(str(name))
-    region = cfg.get('ghost_region_path')
-    return rb.restore_snap(
-        snap_dir,
-        confirm_logged_out=confirm_logged_out,
-        allow_partial=False,
-        restore_registry=True,
-        region_dir=Path(region) if region else None,
-    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -951,13 +903,6 @@ def main(argv: list[str] | None = None) -> int:
 
     p_show = sub.add_parser('show', help='print a round JSON path / sitting card')
     p_show.add_argument('round_id')
-
-    p_rg = sub.add_parser(
-        'restore-ghost',
-        help='restore whole-world + registry ghost snap (quit world first)',
-    )
-    p_rg.add_argument('--snap', default=None, help='override config ghost_snap')
-    p_rg.add_argument('--confirm-logged-out', action='store_true', required=True)
 
     args = ap.parse_args(argv)
     root = bakeoffs_root(args.root)
@@ -1039,14 +984,6 @@ def main(argv: list[str] | None = None) -> int:
             print(format_sitting(round_))
             print()
             print(json.dumps(round_, indent=2))
-            return 0
-        if args.cmd == 'restore-ghost':
-            restored = restore_ghost_step(
-                root=root,
-                snap=args.snap,
-                confirm_logged_out=bool(args.confirm_logged_out),
-            )
-            print(f'restored ghost: {len(restored)} region files (+ registry if present)')
             return 0
     except (ValueError, KeyError, FileNotFoundError, RuntimeError) as exc:
         print(f'error: {exc}', file=sys.stderr)

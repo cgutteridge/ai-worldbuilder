@@ -347,9 +347,9 @@ def mcp_reported_gameworld(*, region: Path | None = None) -> str | None:
     @param region: region used to locate the instance ``saves/`` parent
     @returns: save folder name, or None when unknown
     """
-    import region_backup as rb
+    import mcp_probe
 
-    if not rb.mcp_world_reachable():
+    if not mcp_probe.mcp_world_reachable():
         return None
     try:
         region_path = resolve_region(region).resolve()
@@ -756,8 +756,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     Cells owned by earlier builds are always protected unless that build is in `modifies`.
 
     Stage state machine (site_stages): before the first live block write the cell's STAGES file
-    gets ``stage`` (default 'feature-<plan>') as 'applying' with the plan, owner, structure backup,
-    region snapshot and planned-cells file; after the readback it becomes 'applied' (or
+    gets ``stage`` (default 'feature-<plan>') as 'applying' with the plan, owner, structure backup
+    and planned-cells file; after the readback it becomes 'applied' (or
     'applied-with-mismatches'). An abort leaves 'applying' for site_recover.py. ``cell`` defaults
     to the cell holding most of the plan; ``meta`` is merged into the entry (e.g. kind 'undo').
     ``strict``: a readback with mismatches raises and leaves the stage 'applying'.
@@ -897,7 +897,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         write_json(pending_mask, mask)
         completion['pending_mask'] = str(pending_mask.relative_to(ROOT) if pending_mask.is_relative_to(ROOT) else pending_mask)
     site_stages.begin(cell, key, plan.name, blocks=len(plan.cells), structure=structure,
-                      snapshot=site_stages.latest_snapshot(plan.name), planned=str(planned.relative_to(ROOT) if planned.is_relative_to(ROOT) else planned),
+                      planned=str(planned.relative_to(ROOT) if planned.is_relative_to(ROOT) else planned),
                       **(meta or {}), **completion)
     if key.startswith('feature-') and (meta or {}).get('kind') not in ('ghost', 'undo'):
         try:

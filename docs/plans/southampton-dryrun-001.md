@@ -49,7 +49,7 @@ For **each** open FEATURE item in order (queue top to bottom):
 
 1. Session brief / handoff `next` for that Q-id.
 2. Evidence read (reference photos — not old build JSON; there should be none).
-3. Plan → dry-run guards → region snapshot → apply feature build. **Cross-cell:** if the footprint spans neighbour cells (e.g. 47,-44 / 48,-43), live apply must pre-strip grey ghost features inside the planned volume before fill — do not rely on agents hand-deleting blocks. After apply, those cells must show `ghost-features` **stripped** (not `applied` under the shell).
+3. Plan → dry-run guards → apply feature build. **Cross-cell:** if the footprint spans neighbour cells (e.g. 47,-44 / 48,-43), live apply must pre-strip grey ghost features inside the planned volume before fill — do not rely on agents hand-deleting blocks. After apply, those cells must show `ghost-features` **stripped** (not `applied` under the shell).
 4. Evidence contact sheet if required by handoff rules.
 5. Mark queue item done.
 6. **Ghost check:** run lidar ghost **status** for focus 48,-44 with ring 2; note frontier cells, ghost ground vs features, strip/superseded on **every cell the footprint touched**, not only the queue home cell.

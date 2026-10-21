@@ -23,7 +23,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (BLOCK_KIND, bare, cell_bbox_str, cell_contains, ignored_builds, is_air,  # noqa: E402
+from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air,  # noqa: E402
                           load_masked_positions)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World, built_cells, full  # noqa: E402
@@ -214,9 +214,8 @@ def run(cell: tuple[int, int]) -> int:
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
-    """Live apply: lock + snapshot first, re-plan from the live world, readback, then the mask."""
+    """Live apply: lock first, re-plan from the live world, readback, then the mask."""
     import os
-    import subprocess
     from site_kit import apply
 
     if not os.environ.get('SITE_OWNER'):
@@ -230,8 +229,6 @@ def apply_cell(cell: tuple[int, int]) -> int:
         raise SystemExit('nothing to place; check the dry run')
     mask = build_mask('decor', cell, name, placed, lambda p: is_air(world.block(*p)))
     print(f'{name}: {len(placed)} blocks')
-    subprocess.run([sys.executable, str(ROOT / 'scripts/region_backup.py'), 'snap',
-                    '--bbox', cell_bbox_str(cell), '--name', name], check=True)
     rb = apply(plan, modifies=ignored_builds(cell), stage='decor', cell=cell,
                strict=True, meta=None, mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')

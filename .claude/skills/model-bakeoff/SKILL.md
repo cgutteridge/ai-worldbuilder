@@ -2,7 +2,7 @@
 name: model-bakeoff
 description: >-
   Run or continue a model bake-off sitting (feature_design pilot). Use when the
-  user says bake-off, model bake-off, open a round, score a round, or restore
+  user says bake-off, model bake-off, open a round, score a round, or regenerate
   the bake-off ghost.
 ---
 
@@ -15,15 +15,12 @@ One model per sitting. Records under `model-bakeoffs/`. CLI: `python3 scripts/mo
 
 ## Sitting sequence
 
-1. **One apply owner** — if the parent takes over restore/re-apply, interrupt the model subagent first.
-2. Quit the Minecraft world (title / close save).
-3. Restore into the bakeoff save (config `ghost_region_path`), not SouthamptonAI:
-   `python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out`
-   (or `region_backup.py restore <snap> --region <ghost_region_path> --confirm-logged-out`;
-   list snaps via `region_backup.py list`).
-4. Rejoin (MCP up). Ghost may look sparse around the cell — expected.
-5. Claim lock; run only the catalogue tool/model for this round.
-6. Evidence table → build → apply → fixed cameras → release lock.
-7. Human interview one axis at a time → `score` → `usage` paste (or leave null).
+1. **One apply owner** — if the parent takes over re-apply, interrupt the model subagent first.
+2. Regenerate the ghost baseline with `lidar_ghost apply`. There is no restore (ADR 004, task 40); the
+   no-restore sitting flow is pending task 48, so do not invent commands for it.
+3. Confirm the world is open (MCP up). Ghost may look sparse around the cell, expected.
+4. Claim lock; run only the catalogue tool/model for this round.
+5. Evidence table → build → apply → fixed cameras → release lock.
+6. Human interview one axis at a time → `score` → `usage` paste (or leave null).
 
 Do not score without the interview. Do not invent token counts.

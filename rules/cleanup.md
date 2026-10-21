@@ -9,8 +9,6 @@ PRINCIPLE
 
 CLASSES
  SAFE (apply, no judgement needed)
-  region-snaps   backups/regions beyond the newest 5 (rules/process.md §2a). Exception: the
-                 newest snap of a name that open registry issues still mention.
   views          verification/site/views/*.png older than 7 days and named in no live site/*.txt
                  (site_views.py regenerates them).
   screenshots    instance/screenshots older than 7 days.
@@ -40,5 +38,5 @@ WHEN
  (`site_cleanup.py due` exits 0 with one line, else 1).
  - Session end: after site_archive, run `due`. If due, `apply`, then `report` and settle the
    REPORT-ONLY and JUDGED lists as one small queue item.
- - Never while another builder holds site/LOCK.json and is mid-apply (a snap may be its undo).
+ - Never while another builder holds site/LOCK.json and is mid-apply.
  - Tuning: constants at the top of scripts/site_cleanup.py.

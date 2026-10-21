@@ -39,9 +39,9 @@ def mcp_world_reachable(timeout: float = 1.5) -> bool:
     @param timeout: connect timeout seconds
     @returns: True when something listens on the bridge
     """
-    import region_backup as rb
+    import mcp_probe
 
-    return rb.mcp_world_reachable(timeout=timeout)
+    return mcp_probe.mcp_world_reachable(timeout=timeout)
 
 
 def resolve_save_path(save_path: Path | None = None) -> Path | None:
