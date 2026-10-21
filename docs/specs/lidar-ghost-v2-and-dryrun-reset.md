@@ -1,9 +1,10 @@
 # Lidar ghost v2 and empty-world dry-run reset
 
-**Status:** ready-for-agent  
+**Status:** implemented; superseded in part by [ADR 004](../adr/004-cell-journal.md).
 **Supersedes in part:** [ADR 003](../adr/003-empty-world-and-lidar-ghosts.md) §3 (focus-only, ring 1, combined ground+features lifecycle).
 
-Canonical copy for the issue tracker: [.scratch/lidar-ghost-v2-dryrun/spec.md](../../.scratch/lidar-ghost-v2-dryrun/spec.md).
+**Still valid (ADR 004 keeps these):** frontier ring depth 2 (env-configurable), split ghost ground / ghost features lifecycles, no tree/decor ghosts, lidar-only sources (composite DTM, DSM minus DTM).
+**Superseded by ADR 004:** ghost bookkeeping in STAGES (ghost state is now derived from the cell journal), the post-apply reconcile hook in `site_kit`, the `lidar_ghost` state functions, and `dryrun_reset` file wipes of STAGES/registry/verification (worlds are erased and recreated). Treat the Solution items on reset and ghost bookkeeping as history; read ADR 004 for the live design.
 
 ## Problem Statement
 

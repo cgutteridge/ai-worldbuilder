@@ -41,8 +41,20 @@ A 128×128 Minecraft block patch on the world grid (`tx,tz`), sized and originat
 _Avoid_: chunk (unless meaning an MC chunk), tile (unless meaning a map/lidar tile)
 
 **Cell registry**:
-The source of truth for refine progress in a world: `registry/cells.json` (layers, marker, holds, coverage warnings) and `registry/features.json` (feature builds and the cells they touch). Driven by `scripts/cell_registry.py`. Paths are per active world — never share with a donor or bake-off save.
-_Avoid_: STAGES-as-progress, QUEUE.txt, CURRENT-CELL.json
+`CellRegistry` over the cell journal (`registry/journal.jsonl`), driven by `scripts/cell_registry.py`. Progress, holds, ghost state, ownership and notes are views folded from the journal, not stored files. Paths are per active world — never share with a donor or bake-off save. See [ADR 004](docs/adr/004-cell-journal.md).
+_Avoid_: STAGES-as-progress, QUEUE.txt, CURRENT-CELL.json, `*-cells.json`, `registry/cells.json` as a writable record
+
+**Cell journal**:
+The single append-only `registry/journal.jsonl`. Each entry is written `begun` (fsynced) before any block write, then `landed` or `mismatched` after readback. `CellRegistry.change(intent)` (Build, Undo, Note) is the only writer; `view()` returns a frozen per-cell `CellView`.
+_Avoid_: STAGES, apply log, verification JSON
+
+**Reconcile**:
+`reconcile(cells, fix=)`: compares the journal to actual blocks; with `fix`, re-commits recorded plans over MCP. Replaces cell repair, `site_recover`, `check_world_presence`. A "mess in a cell" is fixed this way, never by region restore.
+_Avoid_: repair, recover, restore
+
+**BlockStore**:
+The one real seam under the journal, with `LiveBlocks` and `MemoryBlocks` adapters (tests use memory). Read path decided by task 39.
+_Avoid_: region backup, snapshot
 
 **Feature** (registry):
 A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches.
@@ -53,8 +65,8 @@ At most one cell may have `marker=up`. That cell is the focus ring (`cell_marker
 _Avoid_: CURRENT-CELL, focus file
 
 **Apply journal**:
-`site/cells/<tx>_<tz>-STAGES.json` while a live apply is in flight (`applying` → `applied`). Used by `site_recover`; not the progress SoT.
-_Avoid_: treating STAGES as DONE / next-work
+Retired term: the in-flight state of an apply is a `begun` entry in the cell journal with no `landed`/`mismatched` finish; `reconcile` resolves it. No STAGES files.
+_Avoid_: STAGES, `applying`/`applied` files
 
 ## Evidence
 
