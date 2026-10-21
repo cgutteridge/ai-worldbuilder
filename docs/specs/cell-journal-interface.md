@@ -1,7 +1,8 @@
 # Cell journal interface (task 41; ADR 004)
 
-Reference for the cut-over (task 42). Code: `scripts/cell_journal.py`, `scripts/block_store.py`.
-Tests: `scripts/test_cell_journal.py`, `scripts/test_block_store.py`. Nothing calls these modules yet.
+Code: `scripts/cell_journal.py`, `scripts/block_store.py`; the active world's registry is
+`cell_registry.open_registry()` / `view_registry()`. Tests: `scripts/test_cell_journal.py`,
+`scripts/test_block_store.py`. `site_kit.apply` / `site_kit.undo` record through it (task 42).
 
 ## Types
 
@@ -11,20 +12,27 @@ reg = CellRegistry(world_root, blocks, ghosts=None, *, cell_size=None, ring=2)
 reg.change(intent, apply=None, *, cascade=False) -> Receipt   # the ONLY writer
 reg.begin(intent) -> Ticket                                   # lower-level; ticket.finish(readback)
 reg.view(cells=None) -> {cell: CellView}   reg.cell(c)        # frozen views, pure fold of the journal
-reg.owned(within, exclude=()) -> {pos: (plan, state)}         # replaces built_cells(within=) / owned_in
+reg.owned(within, exclude=(), *, real_only=False) -> {pos: (plan, state)}   # replaces built_cells(within=)
+reg.owners(cells, exclude=(), *, real_only=False)             # every owned position in whole cells
+reg.recorded(plan) -> {pos: state} | None                     # latest live entry's plan (old *-cells.json)
+reg.touched(passes=REAL_PASSES) -> {plan: {(x, z)}}           # old touched_by_build
+reg.entries(cells=None, plan=None) -> tuple[EntryView]        # read-only entry listing (recovery, indexes)
+reg.ticket(seq) -> Ticket                                     # re-open a begun entry: finish() or abandon()
 reg.reconcile(cells=None, *, fix=False, apply=None) -> Drift
 reg.follow_ups(cells=None) -> tuple[Build]    reg.ensure(apply) -> [Receipt]
 reg.frontier(ring=None)  reg.seeds()  reg.marker_cell()  reg.reset()
 
-Build(plan, pass_, cells, modifies=(), protect=None, strict=False, mask=None, cell=None, payload=None)
-Undo(target, strict=True)          # target = plan name, or (cell, pass_)
+Build(plan, pass_, cells, modifies=(), protect=None, strict=False, mask=None, cell=None, payload=None, meta=None)
+Undo(target, strict=True, meta=None)   # target = plan name, or (cell, pass_); meta is journalled
 Note(cell, kind, body='', ref='')  # kinds: marker hold coverage coverage-dismiss review issue close
 Writes(plan, pass_, cells, kind, intent, seq)   # what `apply` must write; intent.payload = caller's Plan
 Receipt(seq, status, planned, mismatches, sample, follow_ups, followed)
 CellView(cell, ground, ghost, trees, decor, features, in_flight, marker, hold, notes, done, left)
 ```
 
-Passes: `feature ground trees decor ghost-ground ghost-features`. `apply` is `callable(Writes) -> None`:
+Passes: `feature ground trees decor ghost-ground ghost-features other` (`other` owns blocks with no progress
+meaning: cell markers, clean-ups). `Ticket.abandon(reason)` finishes a begun entry `abandoned` (rolled back by a
+recovery tool; it owns nothing). An open `issue` note keeps a cell from `done` (`left`: `issue <ref>`). `apply` is `callable(Writes) -> None`:
 write `Writes.cells` over MCP and nothing else (no readback, no registry, no flush needed).
 `ghosts` is `callable(cell, 'ground'|'features') -> {pos: state} | {} | None` (None: cannot plan).
 `BlockStore`: `read(pos)`, `read_many(positions)`, `flush()`. `MemoryBlocks` (tests), `LiveBlocks` (region files).
@@ -95,8 +103,15 @@ back and landed, re-writing the whole recorded plan first if it does not match; 
 current owner of each position; mismatched entries whose owned blocks read back become `landed`; follow-ups
 are applied. Recorded plans hold block cells only: signs and entities are not re-committed.
 
-## Not here (task 42 and later)
+## Plan -> Build (site_kit.apply, task 42)
 
-No wiring into `site_kit.apply`, no guard migration, no `lidar_ghost` adapter (supply `ghosts`), no cell CLI
-over `view()`. No region backup/restore and no pristine reads (ADR 004 a, b). Ownership is rebuilt per cell
+`Build(plan.name, pass, plan.cells, modifies, strict, mask summary, cell, payload=plan, meta={structure,
+pending_mask, caller meta})`; stage `feature-*`/default -> `feature`, `ground-layer`/`ground`, `trees`, `decor`,
+`other`. Guards stay in `site_kit.apply` (clash report from `owned(real_only=True)`). `site_kit.McpWriter` is the
+`apply` callable: block cells over MCP, plus the payload Plan's signs and entities (never journalled, so
+`reconcile` re-commits block cells only). The ghost planner is `lidar_ghost.ghost_planner()`.
+
+## Not here (task 43 and later)
+
+No region backup/restore and no pristine reads (ADR 004 a, b). Ownership is rebuilt per cell
 from plan blobs; a SQLite index can go behind `owned()` if ghost-heavy worlds make that slow.

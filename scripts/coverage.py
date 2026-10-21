@@ -19,9 +19,9 @@ Umbrella polygons (campus, school, landuse=residential/railway...) are not parce
 gaps on their edges ("edge of Highfield Campus").
 
 Parcels are drawn from the vector map alone (gardens grow to REACH or a neighbour),
-so they do not move as the live world is refined. Touched columns / disk cache / ownership
-overlap live in scripts/touched_cells.py (re-exported here). Touched = columns covered by
-verification/site/*-cells.json, minus REVERTED builds. State per parcel:
+so they do not move as the live world is refined. Touched = XZ columns covered by the
+latest recorded plan of each real (feature / ground / trees / decor) or ``other`` build in the
+cell journal (``CellRegistry.touched``), minus REVERTED builds and cell markers. State per parcel:
   untouched / touched N% / done.
 Done needs 100% of columns touched AND a sign-off in site/COVERAGE-SIGNOFFS.jsonl.
 signoff refuses below 100%.
@@ -61,10 +61,6 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 from osm_footprints import OSMIndex, _addr, _seg_dist, grow_plots, osm_tags  # noqa: E402
 from site_kit import OUT  # noqa: E402
-from touched_cells import (  # noqa: E402
-    REVERTED, TOUCH_CACHE, decode_runs, encode_runs, ownership_overlap_issues,
-    touched_by_build, union,
-)
 
 from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
@@ -642,7 +638,77 @@ def load_areas(name: str | None = None, built_only: bool = False) -> list:
     return [load_area(n) for n in names]
 
 
-# touched columns + ownership overlap: scripts/touched_cells.py (re-exported above)
+# --- touched columns (cell journal) ------------------------------------------------------
+# Builds whose work was undone (I-009: façade shells on the pavement, reverted by
+# broadlands_facade_revert + region snap I-009-revert).
+REVERTED = frozenset({
+    'portswood_x_broadlands_terrace_facade_1', 'portswood_x_broadlands_terrace_facade_1b',
+    'portswood_x_broadlands_terrace_facade_2', 'portswood_x_broadlands_terrace_facade_2b',
+    'portswood_x_broadlands_terrace_facade_2c', 'broadlands_facade_revert',
+})
+TOUCH_PASSES = ('feature', 'ground', 'trees', 'decor', 'other')
+
+
+def touch_excluded(name: str) -> bool:
+    """Whether a build's columns are omitted from parcel touched stats.
+
+    @param name: plan name
+    @returns: True if the build should not count as touched ground
+    """
+    return name in REVERTED or name.startswith('cell_marker_')
+
+
+def encode_runs(cells) -> list:
+    """Row run-length encoding of a column set.
+
+    @param cells: iterable of (x, z)
+    @returns: [[z, x_first, x_last], ...] sorted by z then x
+    """
+    rows = {}
+    for x, z in cells:
+        rows.setdefault(z, []).append(x)
+    out = []
+    for z in sorted(rows):
+        xs = sorted(rows[z])
+        start = prev = xs[0]
+        for x in xs[1:]:
+            if x != prev + 1:
+                out.append([z, start, prev])
+                start = x
+            prev = x
+        out.append([z, start, prev])
+    return out
+
+
+def decode_runs(runs) -> set:
+    """Inverse of encode_runs.
+
+    @param runs: [[z, x_first, x_last], ...]
+    @returns: {(x, z), ...}
+    """
+    return {(x, z) for z, a, b in runs for x in range(a, b + 1)}
+
+
+def touched_by_build(exclude=REVERTED) -> dict:
+    """Columns covered by each build's latest recorded plan in the cell journal.
+
+    Ghost massing does not count as touched ground.
+
+    @param exclude: build names to ignore (default: REVERTED); also skips cell_marker_*
+    @returns: {build name: set of (x, z)}
+    """
+    from cell_registry import view_registry
+    return {name: cols for name, cols in view_registry().touched(TOUCH_PASSES).items()
+            if name not in exclude and not touch_excluded(name)}
+
+
+def union(by_build: dict) -> set:
+    """@param by_build: {build: set of columns}
+    @returns: every touched column"""
+    out = set()
+    for cols in by_build.values():
+        out |= cols
+    return out
 
 
 # --- sign-offs ----------------------------------------------------------------------------
@@ -655,23 +721,13 @@ def load_signoffs() -> dict:
 
 
 def load_holds() -> dict:
-    """Open holds per cell from the registry ``hold`` field (ticket #31).
+    """Open holds per cell from the cell journal ``hold`` notes (ticket #31).
 
     @returns: {(tx, tz): {id: record}}
     """
-    try:
-        from cell_registry import RegistryStore, parse_cell_id
-        store = RegistryStore()
-        out: dict = {}
-        for cid, rec in store._load_cells().items():
-            reason = rec.get('hold')
-            if not reason:
-                continue
-            cell = parse_cell_id(cid)
-            out[cell] = {'registry': {'cell': list(cell), 'id': 'registry', 'reason': reason}}
-        return out
-    except Exception:
-        return {}
+    from cell_registry import view_registry
+    return {cell: {'registry': {'cell': list(cell), 'id': 'registry', 'reason': v.hold}}
+            for cell, v in view_registry().view().items() if v.hold}
 
 
 def append_signoff(rec: dict):
@@ -735,13 +791,10 @@ def focus_cell() -> tuple[int, int]:
 
     @returns: (tx, tz)
     """
-    try:
-        from cell_registry import RegistryStore
-        cur = RegistryStore().current_cell()
-        if cur is not None:
-            return cur
-    except Exception:
-        pass
+    from cell_registry import view_registry
+    cur = view_registry().marker_cell()
+    if cur is not None:
+        return cur
     try:
         from cellmath import origin_cell
         return origin_cell()
@@ -771,15 +824,8 @@ def cell_rollup(areas: list, touched: set, signoffs: dict) -> list:
     fx, fz = focus_cell()
     seen, rows = set(), []
     holds = load_holds()
-    reg_done: set[tuple[int, int]] = set()
-    try:
-        from cell_registry import RegistryStore, parse_cell_id
-        store = RegistryStore()
-        for cid in store._load_cells():
-            if store.is_done(cid):
-                reg_done.add(parse_cell_id(cid))
-    except Exception:
-        pass
+    from cell_registry import view_registry
+    reg_done = {c for c, v in view_registry().view().items() if v.done}
     for a in areas:
         st = stats(a, touched, signoffs)
         own = a.owner()
@@ -818,36 +864,32 @@ def registry_rollup_rows() -> list[dict]:
     @returns: [{'cell', 'r', 'status', 'left', 'ground', 'trees', 'decor', 'hold'}, ...]
               sorted by ring then cell; empty when the registry is empty
     """
-    from cell_registry import RegistryStore, parse_cell_id
+    from cell_registry import view_registry
 
     try:
         fx, fz = focus_cell()
     except SystemExit:
         fx, fz = 0, 0
-    store = RegistryStore()
     rows = []
-    for cid in store._load_cells():
-        tx, tz = parse_cell_id(cid)
-        rec = store.cell(cid)
-        if store.is_done(cid):
+    for (tx, tz), v in view_registry().view().items():
+        if v.done:
             status = 'done'
-        elif rec.get('hold'):
+        elif v.hold:
             status = 'held'
-        elif rec.get('ground') not in (None, 'none') or rec.get('trees') or rec.get('decor'):
+        elif v.ground != 'none' or v.trees or v.decor:
             status = 'partial'
         else:
             status = 'registered'
-        left = store.what_is_left(cid)
         rows.append({
             'cell': (tx, tz),
             'r': max(abs(tx - fx), abs(tz - fz)),
             'status': status,
-            'left': left,
-            'ground': rec.get('ground') or 'none',
-            'trees': bool(rec.get('trees')),
-            'decor': bool(rec.get('decor')),
-            'hold': rec.get('hold'),
-            'marker': rec.get('marker') or 'none',
+            'left': list(v.left),
+            'ground': v.ground,
+            'trees': v.trees,
+            'decor': v.decor,
+            'hold': v.hold,
+            'marker': 'up' if v.marker else 'none',
         })
     return sorted(rows, key=lambda r: (r['r'], r['cell']))
 
@@ -861,7 +903,7 @@ def registry_rollup_text(rows: list[dict] | None = None) -> str:
     rows = rows if rows is not None else registry_rollup_rows()
     lines = [
         f'registry rollup {datetime.now().strftime("%Y-%m-%d %H:%M")} '
-        f'({len(rows)} cell(s); source = registry/cells.json)',
+        f'({len(rows)} cell(s); source = registry/journal.jsonl)',
         'tx,tz  |  r  |  status  |  ground  |  trees  |  decor  |  marker  |  left',
     ]
     if not rows:
@@ -1112,7 +1154,7 @@ def signoff_parcels(
     """Sign off parcels when touched 100%.
 
     @param parcel_ids: coverage parcel ids (unknown ids are refused)
-    @param build: verification build name (must have ``*-cells.json``)
+    @param build: build (plan) name recorded in the cell journal
     @param note: optional note stored in COVERAGE-SIGNOFFS.jsonl
     @param date_str: ISO date (default today)
     @returns: (signed parcel ids, [(pid, reason), ...] for refusals)
@@ -1131,7 +1173,7 @@ def signoff_parcels(
             if build_name in REVERTED:
                 return f'{build_name} was reverted (I-009)'
             if build_name not in by_build:
-                return f'no verification/site/{build_name}-cells.json'
+                return f'no recorded build {build_name} in the cell journal'
             if not by_build[build_name] & cols:
                 return f'{build_name} touched none of its columns'
         return None

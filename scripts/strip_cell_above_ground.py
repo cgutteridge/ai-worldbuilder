@@ -2,8 +2,9 @@
 """Stage 5a: strip vendor-import above-ground features across one whole cell (dry-run by default).
 
 Plans air for every tree / plant / junk block directly above each column's surface, for
-every column inside the cell (no margin, so neighbours are not written). Records the stage
-in site/cells/<tx>_<tz>-STAGES.json so a later pass can see what has been applied.
+every column inside the cell (no margin, so neighbours are not written). The strip is a
+journal build of pass ``other``; the cell's trees and decor passes are then undone in the
+journal (``site_kit.undo``), so the cell shows them as not done.
 
   python3 scripts/strip_cell_above_ground.py --cell 48,-45            # dry-run + preview
   SITE_OWNER=<lock-owner> python3 scripts/strip_cell_above_ground.py --cell 48,-45 --apply
@@ -11,9 +12,6 @@ in site/cells/<tx>_<tz>-STAGES.json so a later pass can see what has been applie
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
@@ -23,9 +21,7 @@ from cellmath import parse_cell  # noqa: E402,F401
 
 from foliage import strip_foliage_above_surface  # noqa: E402
 from cellmath import CELL  # noqa: E402
-from site_kit import OUT, Plan, World, apply, preview  # noqa: E402
-
-STAGE = 'above-ground-strip'
+from site_kit import Plan, World, apply, preview, undo  # noqa: E402
 
 
 def cell_columns(cell: tuple[int, int]) -> list[tuple[int, int]]:
@@ -36,22 +32,6 @@ def cell_columns(cell: tuple[int, int]) -> list[tuple[int, int]]:
     """
     x0, z0 = cell[0] * CELL, cell[1] * CELL
     return [(x, z) for x in range(x0, x0 + 128) for z in range(z0, z0 + 128)]
-
-
-def stage_record(cell: tuple[int, int], status: str, plan_name: str, cells: int) -> Path:
-    """Write or update the per-cell stage record.
-
-    @param cell: (tx, tz)
-    @param status: planned | applied
-    @param plan_name: plan name used for the stage
-    @param cells: blocks planned
-    @returns: path written
-    """
-    path = ROOT / 'site/cells' / f'{cell[0]}_{cell[1]}-STAGES.json'
-    rec = json.loads(path.read_text()) if path.exists() else {'cell': f'{cell[0]},{cell[1]}', 'stages': {}}
-    rec['stages'][STAGE] = {'status': status, 'plan': plan_name, 'blocks': cells}
-    path.write_text(json.dumps(rec, indent=2) + '\n')
-    return path
 
 
 if __name__ == '__main__':
@@ -66,15 +46,13 @@ if __name__ == '__main__':
     n = strip_foliage_above_surface(plan, w, cell_columns(cell))
     print(f'{name}: columns {len(cell_columns(cell))} blocks to strip {n} cells {len(plan.cells)}')
     preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
-    apply(plan, dry=not args.apply, modifies=())
+    apply(plan, dry=not args.apply, modifies=(), stage='other')
     if args.apply:
-        stage_record(cell, 'applied', name, n)
-        try:
-            import registry_hooks
-            # Above-ground strip removes foliage/decor mass in the cell.
-            registry_hooks.on_layer_cleared(cell, 'trees')
-            registry_hooks.on_layer_cleared(cell, 'decor')
-        except Exception as exc:  # noqa: BLE001
-            print(f'registry strip clear failed: {exc}', file=sys.stderr)
+        # the strip removed the cell's foliage / decor mass: void those passes in the journal too
+        from cell_registry import view_registry
+        view = view_registry().cell(cell)
+        for pass_name, done in (('decor', view.decor), ('trees', view.trees)):
+            if done:
+                undo((cell, pass_name))
     else:
-        print('stage record not written (dry-run)')
+        print('journal not written (dry-run)')

@@ -39,7 +39,6 @@ GENERIC BOOT PROMPT
 
 class Base(unittest.TestCase):
     def setUp(self):
-        import os
         self.tmp = tempfile.TemporaryDirectory()
         self.site = Path(self.tmp.name)
         (self.site / 'cells').mkdir()
@@ -54,31 +53,16 @@ class Base(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
-        env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.site)})
-        env.start()
-        self.addCleanup(env.stop)
+        from journal_testkit import JournalWorld
+        self.jw = JournalWorld(self.site)
+        self.jw.__enter__()
+        self.addCleanup(self.jw.__exit__)
         self.addCleanup(self.tmp.cleanup)
 
-    def stages(self, cell, **st):
-        (self.site / 'cells' / f'{cell[0]}_{cell[1]}-STAGES.json').write_text(json.dumps({'stages': st}))
-
     def registry_layers(self, cell, *, ground='generated', trees=True, decor=True):
-        """Seed registry layer flags for (tx, tz)."""
-        import registry_hooks as RH
-        from cell_registry import RegistryStore, cell_id
-        store = RegistryStore(self.site)
-        cid = cell_id(*cell)
-        if ground == 'generated':
-            RH.on_layer_clean(cell, 'ground', store=store)
-        else:
-            store.set_ground(cid, ground)
-        if trees and ground == 'generated':
-            RH.on_layer_clean(cell, 'trees', store=store)
-        if decor and ground == 'generated':
-            RH.on_layer_clean(cell, 'decor', store=store)
-
-
-APPLIED = {k: {'status': 'applied'} for k in ('ground', 'trees', 'decor')}
+        """Seed journal layers for (tx, tz) (ground other than generated: ghost ground)."""
+        real = ground == 'generated'
+        self.jw.seed(cell, ground=real, ghost_ground=not real, trees=trees and real, decor=decor and real)
 
 
 class DoneTest(Base):
@@ -99,11 +83,10 @@ class DoneTest(Base):
             self.assertTrue(H.cell_gaps((1, 1))['trees_stale'])
 
     def test_applying_stage_is_not_done_and_reported_first(self):
-        """An aborted apply leaves 'applying': never done, listed as 'in-flight: <plan>' by next --plan."""
+        """An aborted apply leaves a 'begun' entry: never done, listed as 'in-flight: <plan>' by next --plan."""
+        from cell_journal import Build
         self.registry_layers((1, 1), decor=False)
-        st = dict(APPLIED)
-        st['decor'] = {'status': 'applying', 'plan': 'highfield_1_1_decor'}
-        self.stages((1, 1), **st)
+        self.jw.reg.begin(Build('highfield_1_1_decor', 'decor', {(140, 61, 140): 'minecraft:poppy'}, cell=(1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]):
             g = H.cell_gaps((1, 1))
@@ -168,7 +151,9 @@ class LidarGapsTest(Base):
 
     def test_trees_over_roof_open_until_resolved(self):
         self.assertEqual(H.trees_over_roof_open((1, 1), lumps=[self.LUMP]), [self.LUMP])
-        self.stages((1, 1), lidar={'trees_over_roof_resolved': [{'bbox': [5, 5, 30, 30], 'reason': 'crown kept'}]})
+        from cell_journal import Note
+        self.jw.reg.change(Note((1, 1), 'review', 'crown kept', 'trees-over-roof:5,5,30,30'))
+        self.assertEqual(H.resolved_trees_over_roof((1, 1)), [{'bbox': [5, 5, 30, 30], 'reason': 'crown kept'}])
         self.assertEqual(H.trees_over_roof_open((1, 1), lumps=[self.LUMP]), [])
         self.assertEqual(H.trees_over_roof_open((1, 1), lumps=[dict(self.LUMP, trees_over=0)]), [])
 
@@ -283,8 +268,7 @@ class EndTest(Base):
 
     def test_end_allows_feature_with_greeblies_stage(self):
         H.QUEUE.write_text(self.FEATURE_QUEUE)
-        self.stages((1, 1), **{'feature-test-greeblies': {
-            'status': 'applied', 'plan': 'test-greeblies'}})
+        self.jw.seed((1, 1), features=('test-greeblies',))
         vroot, out, build = self._install_contact_sheet()
         with mock.patch('evidence_sheet.ROOT', vroot), \
                 mock.patch('evidence_sheet.OUT', out), \

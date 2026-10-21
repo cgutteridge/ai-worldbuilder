@@ -21,7 +21,6 @@ from cell_features import is_feature_build  # noqa: E402
 from coverage import cell_of, touched_by_build  # noqa: E402
 from ground_layer import RETIRED_GROUND_PASSES  # noqa: E402
 from pass_mask import mask_path  # noqa: E402
-from site_kit import owned_in  # noqa: E402
 
 SCRIPTS = ROOT / 'scripts'
 _NAME_RE = re.compile(r"""^NAME\s*=\s*['"]([^'"]+)['"]""", re.M)
@@ -30,7 +29,7 @@ _NAME_RE = re.compile(r"""^NAME\s*=\s*['"]([^'"]+)['"]""", re.M)
 def script_for(name: str, scripts_dir: Path = SCRIPTS) -> Path | None:
     """Path of the build script that sets ``NAME = name``, or None.
 
-    @param name: build record name (verification/site/<name>-cells.json)
+    @param name: build (plan) name in the cell journal
     @param scripts_dir: scripts directory to search
     @returns: path under scripts/, or None if not found
     """
@@ -47,7 +46,7 @@ def script_for(name: str, scripts_dir: Path = SCRIPTS) -> Path | None:
 
 
 def features_covering(x: int, z: int) -> list[str]:
-    """Feature build names whose cells file touches column (x, z).
+    """Feature build names whose recorded plan touches column (x, z).
 
     Skips layer passes and retired ground records (those are not redo targets).
 
@@ -83,7 +82,8 @@ def primary_feature(x: int, z: int, y: int | None = None) -> str | None:
     if y is None:
         return None
     band = [(x, yy, z) for yy in range(max(0, y - 8), y + 33)]
-    owned = owned_in(band)
+    from cell_registry import view_registry
+    owned = view_registry().owned(band)
     exact = owned.get((x, y, z))
     if exact and exact[0] in hits and exact[1]:
         return exact[0]

@@ -2,10 +2,11 @@
 """Human-readable progress for Southampton Refine: what is done, what happened since X, and a run log.
 
 Read-only except `log`, which appends to site/RUN-LOG.md. Progress comes from the cell
-registry (ticket #31); leftover STAGES files are still listed for in-flight recovery.
+journal (ADR 004): every journal entry is shown as a stage record of its primary cell
+(ground-layer, trees, decor, feature-<plan>, ghost-*, <pass>-undo, other-<plan>).
 
   .venv/bin/python scripts/site_status.py status                       # grid of cells by ring, marker, lock
-  .venv/bin/python scripts/site_status.py since "2026-10-15 17:00"     # every stage that finished since then
+  .venv/bin/python scripts/site_status.py since "2026-10-15 17:00"     # every journal entry begun since then
   .venv/bin/python scripts/site_status.py log --cell 47,-45 --did "..." --look "6139,-5742: oak" --problem "..."
   .venv/bin/python scripts/site_status.py morning [--since "2026-10-15 17:00"]   # run log + stage activity + eye list
 
@@ -38,11 +39,6 @@ def __getattr__(name: str):
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
-def cell_of(path: Path) -> tuple[int, int]:
-    m = re.match(r'(-?\d+)_(-?\d+)-STAGES\.json$', path.name)
-    return int(m[1]), int(m[2])
-
-
 def ring(cell: tuple[int, int]) -> int:
     return ring_distance(cell, origin_cell())
 
@@ -52,51 +48,39 @@ def parse_stamp(s) -> datetime | None:
     return datetime.fromisoformat(f'{m[1]} {m[2]}:{m[3] or "00"}') if m else None
 
 
-def _registry_stages() -> dict:
-    """Synthetic stages dict from the registry for status display.
+STATUS = {'begun': 'applying', 'landed': 'applied', 'mismatched': 'applied-with-mismatches',
+          'abandoned': 'rolled-back'}
+PASS_KEY = {'ground': 'ground-layer', 'trees': 'trees', 'decor': 'decor', 'ghost-ground': 'ghost-ground',
+            'ghost-features': 'ghost-features'}
 
-    @returns: {(tx, tz): {layer: {status}}}
+
+def stage_key(e) -> str:
+    """Stage-record name of a journal entry (the names the old STAGES files used).
+
+    @param e: ``cell_journal.EntryView``
+    @returns: e.g. ``ground-layer``, ``feature-<plan>``, ``trees-undo``, ``other-<plan>``
     """
-    from cell_registry import RegistryStore, parse_cell_id
-
-    store = RegistryStore()
-    out: dict = {}
-    cells = set(store._load_cells().keys())
-    for feat in store._load_features().values():
-        cells.update(feat.get('cells') or [])
-    for cid in cells:
-        cell = parse_cell_id(cid)
-        c = store.cell(cid)
-        sts: dict = {}
-        g = c.get('ground')
-        if g == 'generated':
-            sts['ground'] = {'status': 'applied'}
-        elif g and g != 'none':
-            sts['ground'] = {'status': 'applied'}  # ghost counts as placed surface
-        if c.get('trees'):
-            sts['trees'] = {'status': 'applied'}
-        if c.get('decor'):
-            sts['decor'] = {'status': 'applied'}
-        out[cell] = sts
-    return out
+    if e.kind == 'undo':
+        return f'{e.pass_}-undo'
+    if e.pass_ in PASS_KEY:
+        return PASS_KEY[e.pass_]
+    return f'{e.pass_}-{e.plan}'
 
 
-def load_stages(cells_dir: Path | None = None) -> dict:
-    """Load progress: registry first, then merge leftover STAGES for in-flight keys."""
-    out = _registry_stages()
-    for f in sorted((cells_dir or CELLS).glob('*-STAGES.json')):
-        cell = cell_of(f)
-        try:
-            disk = json.loads(f.read_text()).get('stages', {})
-        except (OSError, ValueError):
-            disk = {'_unreadable': {'status': 'unreadable'}}
-        merged = dict(out.get(cell) or {})
-        for k, v in disk.items():
-            if isinstance(v, dict) and v.get('status') == 'applying':
-                merged[k] = v
-            elif k not in merged:
-                merged[k] = v
-        out[cell] = merged
+def load_stages() -> dict:
+    """Progress per cell from the cell journal: the latest entry of each stage key.
+
+    @returns: {(tx, tz): {stage key: {'status', 'plan', 'blocks', 'started', 'readback'}}}
+    """
+    from cell_registry import view_registry
+    reg = view_registry()
+    out: dict = {cell: {} for cell in reg.view()}
+    for e in reg.entries():
+        status = 'undone' if e.undone and e.status == 'landed' else STATUS[e.status]
+        out.setdefault(e.cell, {})[stage_key(e)] = {
+            'status': status, 'plan': e.plan, 'blocks': e.n, 'started': e.ts,
+            'readback': {'mismatches': e.mismatches} if e.status in ('landed', 'mismatched') else {},
+            'note': (e.meta or {}).get('note', '')}
     return out
 
 
@@ -117,13 +101,7 @@ def events(stages: dict, since: datetime | None = None) -> list[dict]:
             out.append({'when': when, 'cell': cell, 'stage': name, 'status': v.get('status', '?'),
                         'blocks': v.get('blocks'), 'mismatches': rb.get('mismatches'),
                         'note': (v.get('note') or '')})
-    seen, uniq = set(), []                       # older scripts recorded one apply under two names (feature_x and feature-x)
-    for e in sorted(out, key=lambda e: (e['when'], e['cell'], e['stage'])):
-        k = (e['cell'], e['when'], e['blocks'], e['status'])
-        if k not in seen:
-            seen.add(k)
-            uniq.append(e)
-    return uniq
+    return sorted(out, key=lambda e: (e['when'], e['cell'], e['stage']))
 
 
 LAYER_KEYS = {'ground': ('ground-layer', 'ground'), 'trees': ('trees',), 'decor': ('decor',)}
@@ -180,16 +158,9 @@ def lock_line() -> str:
 
 
 def marker_cell():
-    """Focus cell from the registry marker (ticket #31)."""
-    try:
-        from cell_registry import RegistryStore
-        return RegistryStore().current_cell()
-    except Exception:
-        pass
-    m = read_json(MARKER)
-    if not m or m.get('tx') is None:
-        return None
-    return (m['tx'], m['tz'])
+    """Focus cell from the cell journal marker note (ticket #31)."""
+    from cell_registry import view_registry
+    return view_registry().marker_cell()
 
 
 def fmt_event(e: dict, with_note: bool = False) -> str:
@@ -230,7 +201,7 @@ def cmd_status(stages: dict, gaps: bool = False) -> str:
             lines.append(row)
     lines += ['', f'{n_layers}/{len(stages)} cells have all three layers applied (layers only; says nothing about houses, lumps, canopies).']
     lines.append(f'{n_done}/{len(stages)} pass cell_gaps (the real done-bar).' if gaps else
-                 'Add --gaps for the real done-bar (site_handoff.cell_gaps per cell, about 20 s). Cells with no STAGES file are not listed.')
+                 'Add --gaps for the real done-bar (site_handoff.cell_gaps per cell, about 20 s). Cells the journal never mentions are not listed.')
     return '\n'.join(lines)
 
 
@@ -238,7 +209,7 @@ def cmd_since(stages: dict, since: datetime) -> str:
     ev = events(stages, since)
     cells = sorted({e['cell'] for e in ev})
     problems = [e for e in ev if e['mismatches'] or e['status'] in ('applying', 'applied-with-mismatches')]
-    lines = [f'SINCE {since:%Y-%m-%d %H:%M}: {len(ev)} stage records across {len(cells)} cells'
+    lines = [f'SINCE {since:%Y-%m-%d %H:%M}: {len(ev)} journal entries across {len(cells)} cells'
              + (f' ({", ".join(f"{a},{b}" for a, b in cells)})' if cells else '')]
     if problems:
         lines.append('PROBLEMS:')

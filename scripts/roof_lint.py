@@ -8,7 +8,7 @@ on that seam changes height and the roof reads as zig-zagged / misaligned blocks
 (I-034: broadlands_rd_56_62 squared a 22 deg pair as three stepped segments, each with
 its own ridge column).
 
-  python3 scripts/roof_lint.py <build> [<build> ...]   # recorded *-cells.json
+  python3 scripts/roof_lint.py <build> [<build> ...]   # recorded plans in the cell journal
   python3 scripts/roof_lint.py --all
 
 site_kit.apply() runs ridge_jogs() on every plan and refuses jogs unless the plan
@@ -17,7 +17,6 @@ sets `roof_jog_ok = "<reason + evidence id>"`.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -113,7 +112,7 @@ def ridge_jogs(cells: dict) -> list[dict]:
     Steps beside a party-wall parapet are allowed: terrace houses may stagger where they
     meet. A shift anywhere else is one roof displaced against itself.
 
-    @param cells: {(x, y, z): block state} (a Plan's cells or a recorded *-cells.json)
+    @param cells: {(x, y, z): block state} (a Plan's cells or a recorded journal plan)
     @returns: list of {'axis', 'row', 'pos', 'next_pos', 'y', 'shift'} — one per seam; the
         positions are MC block coordinates of the ridge midpoint on the slope axis
     """
@@ -136,9 +135,11 @@ def ridge_jogs(cells: dict) -> list[dict]:
 
 
 def _load(name: str) -> dict:
-    f = OUT / f'{name}-cells.json'
-    raw = json.loads(f.read_text())
-    return {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
+    from cell_registry import view_registry
+    got = view_registry().recorded(name)
+    if got is None:
+        raise SystemExit(f'no recorded build {name!r} in the cell journal')
+    return got
 
 
 def main() -> int:
@@ -148,10 +149,13 @@ def main() -> int:
     """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('builds', nargs='*')
-    ap.add_argument('--all', action='store_true', help='every verification/site/*-cells.json')
+    ap.add_argument('--all', action='store_true', help='every build recorded in the cell journal')
     a = ap.parse_args()
-    names = a.builds or ([f.name[:-len('-cells.json')] for f in sorted(OUT.glob('*-cells.json'))]
-                         if a.all else [])
+    if a.all:
+        from cell_registry import latest_entries, view_registry
+        names = a.builds or [e.plan for e in latest_entries(view_registry())]
+    else:
+        names = a.builds
     if not names:
         ap.error('name a build or pass --all')
     bad = 0

@@ -1,187 +1,89 @@
 #!/usr/bin/env python3
-"""Tests for the cell registry module (ticket #29 seams).
-
-Seams: RegistryStore public write API (set_ground, set_trees, set_decor, set_marker,
-set_hold, register_feature, set_feature_status, dismiss_coverage_warning) and derived
-queries (is_empty, is_done, current_cell, features_in_cell).
-"""
+"""cell_registry: the CLI and helpers over the cell journal (ADR 004). Invariants of the fold
+itself are tested in test_cell_journal.py."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
-import sys
-import tempfile
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import cell_registry as R  # noqa: E402
+import cell_registry as R
+from journal_testkit import JournalWorld
 
 
-class RegistryInvariantsTest(unittest.TestCase):
-    """Refused writes raise RegistryError naming the rule and leave disk unchanged."""
+def run(*argv) -> tuple[int, str]:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        code = R.main(list(argv))
+    return code, out.getvalue()
 
+
+class RegistryCliTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.reg = R.RegistryStore(self.root)
+        self.jw = JournalWorld()
+        self.jw.__enter__()
+        self.addCleanup(self.jw.__exit__)
+        self.root = str(self.jw.root)
+        self.jw.seed((48, -44), ground=True, features=('q001_x',))
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def view(self):
+        return R.view_registry(self.root).cell((48, -44))
 
-    def _cells_on_disk(self) -> dict:
-        path = self.root / 'registry' / 'cells.json'
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+    def test_status_and_query_read_the_journal(self):
+        code, out = run('--root', self.root, 'status', '--cell', '48,-44')
+        self.assertEqual(code, 0)
+        self.assertIn('ground=generated trees=False decor=False marker=none', out)
+        self.assertIn('feature q001_x: built', out)
+        code, out = run('--root', self.root, 'query', '--feature', 'q001_x')
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out[:out.index('built:')])['cells'], ['48,-44'])
+        self.assertEqual(run('--root', self.root, 'query', '--feature', 'nope')[0], 1)
 
-    def _features_on_disk(self) -> dict:
-        path = self.root / 'registry' / 'features.json'
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+    def test_hold_set_clear_are_journal_notes(self):
+        self.assertEqual(run('--root', self.root, 'hold', 'set', '48,-44', '--reason', 'flood')[0], 0)
+        self.assertEqual(self.view().hold, 'flood')
+        self.assertEqual(run('--root', self.root, 'hold', 'clear', '48,-44')[0], 0)
+        self.assertIsNone(self.view().hold)
 
-    def test_absent_cell_is_empty(self):
-        self.assertTrue(self.reg.is_empty('48,-44'))
-        self.assertFalse(self.reg.is_done('48,-44'))
+    def test_dismiss_coverage_needs_an_open_warning(self):
+        from cell_journal import Note
+        self.jw.reg.change(Note((48, -44), 'coverage', 'shops unmapped', 'shops'))
+        self.assertEqual(R.coverage_warnings(self.view()), [{'id': 'shops', 'detail': 'shops unmapped'}])
+        self.assertEqual(run('--root', self.root, 'dismiss-coverage', '48,-44', '--warning-id', 'x',
+                             '--reason', 'r')[0], 2)
+        self.assertEqual(run('--root', self.root, 'dismiss-coverage', '48,-44', '--warning-id', 'shops',
+                             '--reason', 'checked')[0], 0)
+        self.assertEqual(R.coverage_warnings(self.view()), [])
 
-    def test_single_marker_invariant(self):
-        self.reg.set_marker('48,-44', 'up')
-        with self.assertRaises(R.RegistryError) as ctx:
-            self.reg.set_marker('48,-45', 'up')
-        self.assertIn('single marker', str(ctx.exception).lower())
-        self.assertEqual(self.reg.current_cell(), (48, -44))
-        self.assertNotIn('48,-45', self._cells_on_disk())
+    def test_note_records_a_review(self):
+        run('--root', self.root, 'note', '48,-44', '--ref', 'trees-over-roof:1,2,3,4', '--body', 'crown kept')
+        self.assertEqual([(n.kind, n.ref, n.body) for n in self.view().notes],
+                         [('review', 'trees-over-roof:1,2,3,4', 'crown kept')])
 
-    def test_trees_only_on_generated_ground(self):
-        self.reg.set_ground('48,-44', 'ghost')
-        with self.assertRaises(R.RegistryError) as ctx:
-            self.reg.set_trees('48,-44', True)
-        self.assertIn('generated', str(ctx.exception).lower())
-        self.assertFalse(self._cells_on_disk()['48,-44'].get('trees'))
+    def test_register_feature_is_gone(self):
+        with self.assertRaises(SystemExit):
+            with contextlib.redirect_stderr(io.StringIO()):
+                R.main(['--root', self.root, 'register-feature', 'x', '--name', 'X', '--cells', '1,1'])
 
-    def test_decor_only_on_generated_ground(self):
-        self.reg.set_ground('48,-44', 'none')
-        with self.assertRaises(R.RegistryError) as ctx:
-            self.reg.set_decor('48,-44', True)
-        self.assertIn('generated', str(ctx.exception).lower())
+    def test_empty_and_feature_map(self):
+        reg = R.view_registry(self.root)
+        self.assertTrue(R.is_empty(reg.cell((0, 0))))
+        self.assertFalse(R.is_empty(reg.cell((48, -44))))
+        self.assertEqual(R.feature_cells(reg), {'q001_x': {'status': 'built', 'cells': ['48,-44']}})
 
-    def test_ghost_plus_features_only_from_ghost(self):
-        self.reg.set_ground('48,-44', 'none')
-        with self.assertRaises(R.RegistryError) as ctx:
-            self.reg.set_ground('48,-44', 'ghost+features')
-        self.assertIn('ghost', str(ctx.exception).lower())
-        self.assertEqual(self._cells_on_disk()['48,-44']['ground'], 'none')
+    def test_latest_cells_merge_later_builds_and_skip_ghosts(self):
+        self.jw.build('ghost_0_0_ground', 'ghost-ground', {(1, 40, 1): 'minecraft:gray_concrete'}, cell=(0, 0))
+        self.jw.build('a', 'feature', {(1, 50, 1): 'minecraft:stone'})
+        self.jw.build('b', 'feature', {(1, 50, 1): 'minecraft:bricks'}, modifies=('a',))
+        cells = R.latest_cells(R.view_registry(self.root))
+        self.assertEqual(cells[(1, 50, 1)], ('b', 'minecraft:bricks'))
+        self.assertNotIn((1, 40, 1), cells)
 
-        self.reg.set_ground('48,-44', 'ghost')
-        self.reg.set_ground('48,-44', 'ghost+features')
-        self.assertEqual(self._cells_on_disk()['48,-44']['ground'], 'ghost+features')
-
-    def test_rebuilding_ground_clears_trees_and_decor(self):
-        self.reg.set_ground('48,-44', 'generated')
-        self.reg.set_trees('48,-44', True)
-        self.reg.set_decor('48,-44', True)
-        self.reg.set_ground('48,-44', 'generated')  # rebuild
-        cell = self._cells_on_disk()['48,-44']
-        self.assertFalse(cell['trees'])
-        self.assertFalse(cell['decor'])
-
-    def test_reopening_feature_clears_trees_decor_in_touched_cells(self):
-        self.reg.register_feature(
-            'q001_road', name='Road', cells=['48,-44', '48,-45'], status='built',
-        )
-        for cid in ('48,-44', '48,-45'):
-            self.reg.set_ground(cid, 'generated')
-            self.reg.set_trees(cid, True)
-            self.reg.set_decor(cid, True)
-        self.reg.set_feature_status('q001_road', 'in-progress')
-        for cid in ('48,-44', '48,-45'):
-            cell = self._cells_on_disk()[cid]
-            self.assertFalse(cell['trees'], cid)
-            self.assertFalse(cell['decor'], cid)
-        self.assertEqual(self._features_on_disk()['q001_road']['status'], 'in-progress')
-
-    def test_register_overwrite_reopen_also_clears_trees_decor(self):
-        self.reg.register_feature(
-            'q001_road', name='Road', cells=['48,-44'], status='built',
-        )
-        self.reg.set_ground('48,-44', 'generated')
-        self.reg.set_trees('48,-44', True)
-        self.reg.register_feature(
-            'q001_road', name='Road', cells=['48,-44', '48,-45'], status='planned',
-        )
-        self.assertFalse(self._cells_on_disk()['48,-44']['trees'])
-
-
-    def test_done_requires_layers_features_no_marker_no_warnings(self):
-        self.reg.register_feature(
-            'q001_road', name='Road', cells=['48,-44'], status='planned',
-        )
-        self.reg.set_ground('48,-44', 'generated')
-        self.reg.set_trees('48,-44', True)
-        self.reg.set_decor('48,-44', True)
-        self.assertFalse(self.reg.is_done('48,-44'))  # feature not built
-        self.reg.set_feature_status('q001_road', 'built')
-        self.assertTrue(self.reg.is_done('48,-44'))
-        self.reg.set_marker('48,-44', 'up')
-        self.assertFalse(self.reg.is_done('48,-44'))
-        self.reg.set_marker('48,-44', 'none')
-        self.reg.add_coverage_warning('48,-44', 'b1', 'uncovered building')
-        self.assertFalse(self.reg.is_done('48,-44'))
-        self.reg.dismiss_coverage_warning('48,-44', 'b1', reason='shed, ignore')
-        self.assertTrue(self.reg.is_done('48,-44'))
-
-    def test_features_in_cell_derived_not_stored(self):
-        self.reg.register_feature('a', name='A', cells=['48,-44'], status='planned')
-        self.reg.register_feature('b', name='B', cells=['48,-45', '48,-44'], status='built')
-        ids = [f['id'] for f in self.reg.features_in_cell('48,-44')]
-        self.assertEqual(ids, ['a', 'b'])
-        cell = self._cells_on_disk()['48,-44'] if '48,-44' in self._cells_on_disk() else {}
-        self.assertNotIn('features', cell)
-
-    def test_atomic_refuse_leaves_sorted_keys_untouched(self):
-        self.reg.set_ground('48,-44', 'ghost')
-        before = self._cells_on_disk()
-        with self.assertRaises(R.RegistryError):
-            self.reg.set_trees('48,-44', True)
-        self.assertEqual(self._cells_on_disk(), before)
-
-    def test_writes_use_sorted_keys(self):
-        self.reg.set_ground('49,-44', 'none')
-        self.reg.set_ground('48,-44', 'ghost')
-        raw = (self.root / 'registry' / 'cells.json').read_text()
-        # "48,-44" sorts before "49,-44"
-        self.assertLess(raw.index('"48,-44"'), raw.index('"49,-44"'))
-
-
-class RegistryCliSmokeTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.reg = R.RegistryStore(self.root)
-        self.reg.set_ground('48,-44', 'generated')
-        self.reg.register_feature('q001_x', name='X', cells=['48,-44'], status='planned')
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_status_and_query(self):
-        self.assertEqual(
-            R.main(['--root', str(self.root), 'status', '--cell', '48,-44']), 0,
-        )
-        self.assertEqual(
-            R.main(['--root', str(self.root), 'query', '--feature', 'q001_x']), 0,
-        )
-
-    def test_hold_set_clear(self):
-        self.assertEqual(
-            R.main(['--root', str(self.root), 'hold', 'set', '48,-44', '--reason', 'flood']),
-            0,
-        )
-        self.assertEqual(self.reg.cell('48,-44')['hold'], 'flood')
-        self.assertEqual(
-            R.main(['--root', str(self.root), 'hold', 'clear', '48,-44']), 0,
-        )
-        self.assertIsNone(self.reg.cell('48,-44')['hold'])
+    def test_view_registry_refuses_block_reads(self):
+        from block_store import BlockStoreError
+        with self.assertRaises(BlockStoreError):
+            R.view_registry(self.root).blocks.read((0, 0, 0))
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline audit of every kit build against the saved world (no MCP calls).
 
-Drift: cells whose current block differs from what the latest build placed.
+Drift: cells whose current block differs from what the latest build placed (cell journal).
 Dark: walkable cells inside builds with block light 0.
 
   python3 scripts/site_audit.py [prefix]
@@ -11,6 +11,7 @@ import json
 import sys
 import time
 
+from cell_registry import latest_cells
 from site_kit import OUT, World, bid, same
 from site_walk import solid
 
@@ -34,13 +35,7 @@ def norm(st):
 
 
 prefix = sys.argv[1] if len(sys.argv) > 1 else ''
-latest = {}
-for f in sorted(OUT.glob('*-cells.json'), key=lambda f: f.stat().st_mtime):
-    name = f.name[:-len('-cells.json')]
-    if not name.startswith(prefix):
-        continue
-    for k, st in json.loads(f.read_text()).items():
-        latest[tuple(map(int, k.split(',')))] = (name, st)
+latest = latest_cells(prefix=prefix)          # cell journal: latest recorded plan per build, later wins
 w = World()
 drift, dark, walk = {}, [], 0
 for q, (name, st) in latest.items():

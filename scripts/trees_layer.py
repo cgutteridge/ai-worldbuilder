@@ -30,12 +30,12 @@ import numpy as np
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import plan_name as ground_plan_name, bare, ignored_builds, is_air, load_masked_positions  # noqa: E402
+from ground_layer import plan_name as ground_plan_name, bare, ignored_builds, is_air, load_masked_positions, neighbour_owned  # noqa: E402
 from surface_probe import short_id, surface_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from plant_cell_canopy import MOSAIC_TILE0, RNG_SEED, bush_voxels, mosaic_px, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
-from site_kit import Plan, World, built_cells  # noqa: E402
+from site_kit import Plan, World  # noqa: E402
 
 MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
 LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
@@ -323,10 +323,10 @@ def planning_inputs(cell):
         crowns = gc + [c for c in crowns
                        if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
-    owned = set(built_cells(exclude=ignored_builds(cell)))
-    ground_file = ROOT / 'verification/site' / f"{ground_plan_name(tx, tz, 'ground')}-cells.json"
-    ground_cols = ({tuple(map(int, k.split(',')))[::2] for k in json.loads(ground_file.read_text())}
-                   if ground_file.exists() else None)
+    owned = neighbour_owned(cell, ignored_builds(cell))
+    from cell_registry import view_registry
+    ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
+    ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
     from osm_footprints import OSMIndex
     fp = {q for q in OSMIndex().cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp)

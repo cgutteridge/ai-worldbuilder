@@ -121,34 +121,24 @@ class SignoffStoreTest(unittest.TestCase):
 
 
 class RegistryRollupTest(unittest.TestCase):
-    def test_registry_rollup_lists_registered_cells(self):
-        """Ticket #33: COVERAGE can roll up from registry alone."""
-        import os
-        import tempfile
+    def test_registry_rollup_lists_journal_cells(self):
+        """Ticket #33: COVERAGE can roll up from the cell journal alone."""
         from unittest import mock
-        from cell_registry import RegistryStore, cell_id
+        from journal_testkit import JournalWorld
 
-        with tempfile.TemporaryDirectory() as d:
-            store = RegistryStore(Path(d))
-            store.set_ground(cell_id(48, -44), 'generated')
-            store.set_trees(cell_id(48, -44), True)
-            old = os.environ.get('AI_WORLDBUILDER_REGISTRY_ROOT')
-            os.environ['AI_WORLDBUILDER_REGISTRY_ROOT'] = d
-            try:
-                with mock.patch.object(C, 'focus_cell', return_value=(48, -44)):
-                    rows = C.registry_rollup_rows()
-            finally:
-                if old is None:
-                    os.environ.pop('AI_WORLDBUILDER_REGISTRY_ROOT', None)
-                else:
-                    os.environ['AI_WORLDBUILDER_REGISTRY_ROOT'] = old
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]['cell'], (48, -44))
-            self.assertEqual(rows[0]['ground'], 'generated')
-            self.assertTrue(rows[0]['trees'])
-            text = C.registry_rollup_text(rows)
-            self.assertIn('48,-44', text)
-            self.assertIn('registry rollup', text)
+        with JournalWorld() as jw:
+            jw.seed((48, -44), ground=True, trees=True)
+            with mock.patch.object(C, 'focus_cell', return_value=(48, -44)):
+                rows = C.registry_rollup_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['cell'], (48, -44))
+        self.assertEqual(rows[0]['ground'], 'generated')
+        self.assertTrue(rows[0]['trees'])
+        self.assertEqual(rows[0]['status'], 'partial')
+        text = C.registry_rollup_text(rows)
+        self.assertIn('48,-44', text)
+        self.assertIn('registry rollup', text)
+        self.assertIn('registry/journal.jsonl', text)
 
 
 class ClassifyTest(unittest.TestCase):

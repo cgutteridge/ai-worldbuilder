@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """Recover aborted live runs: one mechanism for every pass (rules/process.md, lock / apply protocol).
 
-Progress SoT is the cell registry. ``site/cells/*-STAGES.json`` is only the **apply journal**:
-site_kit.apply() records each live apply as 'applying' (plan, owner, structure backup, region
-snapshot, planned-cells file) and 'applied' after the readback. A run that dies in between
-leaves 'applying'. This tool resolves it. After recovery, registry flags are cleared when a
-rollback re-opens work.
+The cell journal (``registry/journal.jsonl``, ADR 004) is the only record. site_kit.apply()
+journals each live apply ``begun`` (plan, owner, structure backup in its meta) before the first
+block write and finishes it after the readback. A run that dies in between leaves the entry
+``begun`` (in flight). This tool resolves it until ``CellRegistry.reconcile`` replaces it (task 44).
 
-  python3 scripts/site_recover.py status                  # read-only: stale lock, in-flight, rolled-back stages
+  python3 scripts/site_recover.py status                  # read-only: stale lock, in-flight, rolled-back entries
   python3 scripts/site_recover.py recover 46,-43          # dry run: what it would do
   python3 scripts/site_recover.py recover 46,-43 --apply  # do it
 
-Decision, per 'applying' stage (conservative: when unsure it reports and does nothing):
+Decision, per in-flight entry touching the cell (conservative: when unsure it reports and does nothing):
   * lock held and fresh (heartbeat < site_lock.STALE_MIN) -> refuse; the run may still be alive.
-  * lock stale but owned by someone other than the stage's owner -> refuse (unsure).
-  * flush the world, read the planned-cells file back from the region files (site_kit.readback):
-      all planned blocks match -> stage 'applied' (recovered). An aborted mask undo also gets its
-      bookkeeping finished (mask_undo.finish_undo).
-      otherwise -> restore the structure saved for THIS apply (restore_structure_backup), stage
-      'rolled-back' (not done, so the work reappears). Trees/decor re-applied after a mask undo:
-      the structure taken before that undo is restored too (and the archived mask put back), so the cell is not left bare.
+  * lock stale but owned by someone other than the entry's owner -> refuse (unsure).
+  * flush the world, read the recorded plan back from the region files (site_kit.readback):
+      all planned blocks match -> entry finished 'landed' (recovered). A staged pass mask is
+      published; an aborted mask undo also gets its bookkeeping finished (mask_undo.finish_undo).
+      otherwise -> restore the structure saved for THIS apply (restore_structure_backup), entry
+      'abandoned' (rolled back: it owns nothing, so the work reappears). Trees/decor re-applied after
+      a journal undo: the structure taken before that undo is restored too (and the archived mask
+      put back), so the cell is not left bare.
   * the stale lock is released only after a successful recovery and only when its owner is the
-    owner recorded on the stage.
+    owner recorded on the entry.
 Cannot verify: sign text / entities (readback never did); a rollback is not compared against
 any earlier world state (region snapshots were removed, ADR 004; task 44 replaces this recovery).
 """
@@ -34,22 +34,17 @@ import sys
 import time
 from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
+import script_env  # noqa: E402,F401
 
 import site_lock  # noqa: E402
 from atomic_json import write_json  # noqa: E402
-import site_stages  # noqa: E402
 
 OWNER = 'site-recover'
 
 
-def _cells():
-    for path in sorted(site_stages.CELLS.glob('*-STAGES.json')):
-        a, _, b = path.name[:-len('-STAGES.json')].partition('_')
-        try:
-            yield (int(a), int(b)), json.loads(path.read_text()).get('stages', {})
-        except (ValueError, OSError, json.JSONDecodeError):
-            continue
+def _registry():
+    import cell_registry
+    return cell_registry.view_registry()
 
 
 def lock_state() -> dict:
@@ -61,15 +56,17 @@ def lock_state() -> dict:
 
 
 def status() -> dict:
-    """Read-only: stale lock, in-flight ('applying') and rolled-back stages across all cells."""
+    """Read-only: stale lock, in-flight ('begun') and rolled-back ('abandoned') journal entries."""
+    reg = _registry()
     inflight, rolled = [], []
-    for cell, stages in _cells():
-        for key, e in stages.items():
-            if isinstance(e, dict) and e.get('status') == 'applying':
-                inflight.append({'cell': cell, 'stage': key, 'plan': e.get('plan'), 'owner': e.get('owner'),
-                                 'started': e.get('started')})
-            elif isinstance(e, dict) and e.get('status') == 'rolled-back':
-                rolled.append({'cell': cell, 'stage': key, 'plan': e.get('plan')})
+    entries = reg.entries()
+    live = {e.plan for e in entries if not e.undone}
+    for e in entries:
+        if e.status == 'begun':
+            inflight.append({'cell': e.cell, 'stage': e.pass_, 'plan': e.plan, 'owner': e.owner,
+                             'started': e.ts, 'seq': e.seq})
+        elif e.status == 'abandoned' and e.plan not in live:
+            rolled.append({'cell': e.cell, 'stage': e.pass_, 'plan': e.plan, 'seq': e.seq})
     return {'lock': lock_state(), 'in_flight': inflight, 'rolled_back': rolled}
 
 
@@ -79,64 +76,68 @@ def _flush():
     time.sleep(3)
 
 
-def _load_planned(entry: dict):
-    from site_kit import Plan
-    rel = entry.get('planned')
-    path = ROOT / rel if rel else None
-    if not path or not path.exists():
+def _undo_before(reg, e):
+    """The landed undo of this trees/decor pass that the in-flight re-apply follows, or None."""
+    if e.kind != 'build' or e.pass_ not in ('trees', 'decor'):
         return None
-    plan = Plan(entry.get('plan', 'recover'))
-    for k, st in json.loads(path.read_text()).items():
-        x, y, z = (int(v) for v in k.split(','))
-        plan.cells[(x, y, z)] = st
-    return plan
+    last = None
+    for x in reg.entries(cells=[e.cell]):
+        if x.seq >= e.seq or x.pass_ != e.pass_ or x.cell != e.cell or x.status != 'landed' or x.undone:
+            continue
+        last = x
+    return last if last is not None and last.kind == 'undo' else None
 
 
 def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=None) -> dict:
-    """Resolve the 'applying' stage of one cell. Returns {'cell', 'action', 'detail'}.
+    """Resolve the in-flight journal entry of one cell. Returns {'cell', 'action', 'detail'}.
 
     action: 'none' | 'applied' | 'rolled-back' | 'unsure' | 'failed' (prefixed 'would-' unless apply).
     flush / world_factory / loader are injectable for tests.
     """
     import site_kit
+    from cell_journal import JournalError
     flush = flush or _flush
     world_factory = world_factory or site_kit.World
     cell = tuple(cell)
-    stages = (site_stages.read(cell) or {}).get('stages', {})
-    flying = site_stages.in_flight(stages)
+    reg = _registry()
+    flying = [e for e in reg.entries(cells=[cell]) if e.status == 'begun']
     res = {'cell': list(cell), 'action': 'none', 'detail': []}
     say = res['detail'].append
     if not flying:
-        say('no stage is in flight')
+        say('no journal entry is in flight')
         return res
     if len(flying) > 1:
         res['action'] = 'unsure'
-        say('several stages are in flight (' + ', '.join(k for k, _ in flying) + '); resolve by hand')
+        say('several entries are in flight (' + ', '.join(f'{e.seq} {e.plan}' for e in flying) + '); resolve by hand')
         return res
-    key, e = flying[0]
-    say(f'stage {key}: plan {e.get("plan")}, owner {e.get("owner")}, started {e.get("started")}')
+    e = flying[0]
+    say(f'entry {e.seq} ({e.kind} {e.pass_}): plan {e.plan}, owner {e.owner}, started {e.ts}')
     ls = lock_state()
     if ls['state'] == 'fresh':
         res['action'] = 'unsure'
         say(f'lock held by {ls["lock"]["owner"]} with a fresh heartbeat ({ls["age_min"]} min); the run may be '
             f'alive. Wait for it to go stale (> {site_lock.STALE_MIN} min) or ask the user. Nothing done.')
         return res
-    if ls['state'] == 'stale' and (not e.get('owner') or ls['lock']['owner'] != e['owner']):
+    if ls['state'] == 'stale' and (not e.owner or ls['lock']['owner'] != e.owner):
         res['action'] = 'unsure'
-        say(f'stale lock belongs to {ls["lock"]["owner"]}, the in-flight stage to {e.get("owner")}: not the same run. Nothing done.')
+        say(f'stale lock belongs to {ls["lock"]["owner"]}, the in-flight entry to {e.owner}: not the same run. Nothing done.')
         return res
-    plan = _load_planned(e)
-    if plan is None:
+    try:
+        ticket = reg.ticket(e.seq)
+    except JournalError as exc:
         res['action'] = 'unsure'
-        say(f'planned-cells file {e.get("planned")} is missing: cannot compare the world. Nothing done.')
+        say(f'recorded plan of entry {e.seq} is unreadable ({exc}): cannot compare the world. Nothing done.')
         return res
+    plan = site_kit.Plan(e.plan)
+    plan.cells = dict(ticket.writes.cells)
     try:
         flush()
     except Exception as exc:                              # noqa: BLE001
         res['action'] = 'unsure'
         say(f'could not flush the world ({exc}); reading stale region files would mislead. Nothing done.')
         return res
-    rb = site_kit.readback(plan, world_factory())
+    world = world_factory()
+    rb = site_kit.readback(plan, world)
     say(f'live world vs plan: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     prefix = '' if apply else 'would-'
     original_lock = ls['lock']
@@ -144,39 +145,43 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     def release_stale():
         if original_lock is not None:
             site_lock.LOCK.unlink(missing_ok=True)
-            say('stale lock released (same owner as the in-flight stage)')
+            say('stale lock released (same owner as the in-flight entry)')
 
     if rb['mismatches'] == 0:
         res['action'] = prefix + 'applied'
-        say("every planned block is in the world: stage -> 'applied' (recovered)")
+        say("every planned block is in the world: entry -> 'landed' (recovered)")
         if apply:
-            if e.get('kind') == 'undo':
+            pending = e.meta.get('pending_mask')
+            if pending and Path(pending).exists():
+                import pass_mask
+                mask = pass_mask.read_mask(Path(pending))
+                if not pass_mask.verify_integrity(mask):
+                    res['action'] = 'unsure'
+                    say('the staged pass mask fails its integrity check; entry left in flight. Report to the user.')
+                    return res
+                say(f'pass mask published at {pass_mask.write_mask(mask)}')
+            if e.kind == 'undo':
                 import mask_undo
-                mask_undo.finish_undo(cell, e['pass'], e['plan'])
-                say("mask undo bookkeeping finished (mask archived, stage '%s' -> 'undone')" % e['pass'])
-            site_stages.complete(cell, key, rb,
-                               recovered=f'matched the plan after an aborted run ({time.strftime("%Y-%m-%d %H:%M:%S")})')
+                mask_undo.finish_undo(cell, e.pass_, e.meta.get('undo_plan') or e.plan)
+                say("mask undo bookkeeping finished (mask archived)")
+            ticket.finish({p: world.block(*p) for p in plan.cells})
             release_stale()
         return res
 
     # --- roll back ---------------------------------------------------------------------------
     steps = []
-    if not e.get('structure'):
+    if not e.meta.get('structure'):
         res['action'] = 'unsure'
         say('world differs from the plan and no structure backup is recorded for this apply. Nothing done.')
         return res
-    steps.append(('apply', e['structure'], list(plan.cells)))
-    prev = e.get('previous') or {}
-    undo = prev.get('undo_snapshot') if key in ('trees', 'decor') and prev.get('status') == 'undone' else None
-    if undo:
-        if not undo.get('structure'):
+    steps.append(('apply', e.meta['structure'], list(plan.cells)))
+    undo = _undo_before(reg, e)
+    if undo is not None:
+        if not undo.meta.get('structure'):
             res['action'] = 'unsure'
             say('the pass was undone before this apply but the undo snapshot structure is not recorded. Nothing done.')
             return res
-        positions = []
-        if undo.get('planned') and (ROOT / undo['planned']).exists():
-            positions = [tuple(int(v) for v in k.split(',')) for k in json.loads((ROOT / undo['planned']).read_text())]
-        steps.append(('before-undo', undo['structure'], positions))
+        steps.append(('before-undo', undo.meta['structure'], []))
     say('would restore: ' + ' then '.join(f'{n} {s["name"]}' for n, s, *_ in steps))
     if not apply:
         res['action'] = 'would-rolled-back'
@@ -184,7 +189,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     original = site_lock.read()
     verified = []
     try:
-        site_lock.claim(OWNER, f'recover {cell[0]},{cell[1]} {e.get("plan")}')
+        site_lock.claim(OWNER, f'recover {cell[0]},{cell[1]} {e.plan}')
         if loader is None:
             import restore_structure_backup
             loader = restore_structure_backup.load_structure
@@ -195,33 +200,22 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
             say(f'restored {name}: {struct["name"]}')
     except (Exception, SystemExit) as exc:                # noqa: BLE001
         res['action'] = 'failed'
-        say(f'rollback failed: {exc}. Stage stays "applying"; original lock restored. Report to the user.')
+        say(f'rollback failed: {exc}. Entry stays in flight; original lock restored. Report to the user.')
         if original:
             write_json(site_lock.LOCK, original)
         else:
             site_lock.LOCK.unlink(missing_ok=True)
         return res
-    if undo and undo.get('mask_backup') and Path(undo['mask_backup']).exists():
+    backup = (undo.meta.get('mask_backup') if undo is not None else None)
+    if backup and Path(backup).exists():
         from pass_mask import mask_path
-        dest = mask_path(key, cell)
-        shutil.copy2(undo['mask_backup'], dest)
-        say(f'archived {key} mask put back at {dest}')
-    site_stages.finish(cell, key, 'rolled-back', recovered={
-        'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'restored': verified,
-        'used_undo_snapshot': undo['structure'] if undo else None})
-    try:
-        import registry_hooks
-        if key in ('ground-layer', 'ground'):
-            registry_hooks.on_layer_cleared(cell, 'ground')
-        elif key in ('trees', 'decor'):
-            registry_hooks.on_layer_cleared(cell, key)
-        elif key.startswith('feature-'):
-            fid = e.get('plan') or key[len('feature-'):]
-            registry_hooks.on_feature_reopened(fid)
-    except Exception as exc:  # noqa: BLE001
-        say(f'registry rollback clear failed: {exc}')
+        dest = mask_path(e.pass_, cell)
+        shutil.copy2(backup, dest)
+        say(f'archived {e.pass_} mask put back at {dest}')
+    ticket.abandon(json.dumps({'restored': verified,
+                               'used_undo_snapshot': undo.meta['structure']['name'] if undo else None}))
     site_lock.LOCK.unlink(missing_ok=True)
-    say('lock released; stage rolled-back (work reappears in cell_gaps)')
+    say('lock released; entry rolled back (abandoned; the work reappears in cell_gaps)')
     res['action'] = 'rolled-back'
     return res
 

@@ -23,10 +23,10 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air,  # noqa: E402
+from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air, neighbour_owned,  # noqa: E402
                           load_masked_positions)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
-from site_kit import Plan, World, built_cells, full  # noqa: E402
+from site_kit import Plan, World, full  # noqa: E402
 
 
 def plan_name(tx: int, tz: int) -> str:
@@ -135,7 +135,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     from osm_footprints import OSMIndex
     from surface_probe import surface_y
 
-    owned = set(built_cells(exclude=ignored_builds(cell)))
+    owned = neighbour_owned(cell, ignored_builds(cell))
     owned_cols = {(x, z) for x, _y, z in owned}
     masked = load_masked_positions()
     fp = set(OSMIndex().cells())

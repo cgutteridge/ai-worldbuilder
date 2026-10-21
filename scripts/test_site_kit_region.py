@@ -93,12 +93,18 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
 
 
 class TestApplyRegionGate(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.tmp = t.name
+
     def test_live_apply_calls_region_match_gate(self):
         plan = site_kit.Plan('gate-test')
         plan.set(0, 64, 0, 'stone')
         with mock.patch.object(
             site_kit, 'ensure_region_matches_open_world', side_effect=SystemExit('mismatch')
-        ) as gate, mock.patch.object(site_kit, 'built_cells', return_value={}), mock.patch(
+        ) as gate, mock.patch.dict('os.environ', {'AI_WORLDBUILDER_REGISTRY_ROOT': self.tmp}), mock.patch(
             'osm_footprints.guard', return_value={'outside': {}, 'blind': []}
         ), mock.patch.object(site_kit, 'door_frame_issues', return_value=[]), mock.patch(
             'roof_lint.ridge_jogs', return_value=[]
@@ -113,7 +119,7 @@ class TestApplyRegionGate(unittest.TestCase):
         plan.set(0, 64, 0, 'stone')
         with mock.patch.object(
             site_kit, 'ensure_region_matches_open_world'
-        ) as gate, mock.patch.object(site_kit, 'built_cells', return_value={}), mock.patch(
+        ) as gate, mock.patch.dict('os.environ', {'AI_WORLDBUILDER_REGISTRY_ROOT': self.tmp}), mock.patch(
             'osm_footprints.guard', return_value={'outside': {}, 'blind': []}
         ), mock.patch.object(site_kit, 'door_frame_issues', return_value=[]), mock.patch(
             'roof_lint.ridge_jogs', return_value=[]

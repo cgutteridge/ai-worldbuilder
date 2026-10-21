@@ -18,7 +18,7 @@ import coverage as cov  # noqa: E402
 from floaters import floating_leaves  # noqa: E402
 from floater_scan import cell_output_stem, parse_cell  # noqa: E402
 from floater_scan import parse_y_range  # noqa: E402
-from site_kit import Plan, World, apply, built_cells  # noqa: E402
+from site_kit import Plan, World, apply  # noqa: E402
 
 
 def plan_clears(
@@ -64,7 +64,8 @@ def modifies_for(plan: Plan) -> tuple[str, ...]:
     @param plan: kit plan
     @returns: sorted build names for ``apply(modifies=...)``
     """
-    owned = built_cells(exclude={plan.name})
+    from cell_registry import view_registry
+    owned = view_registry().owned(plan.cells, exclude={plan.name})
     names = {owned[q][0] for q in plan.cells if q in owned}
     return tuple(sorted(names))
 
@@ -96,9 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         print('modifies:', ', '.join(mods))
     if not args.apply:
         print('dry-run only — pass --apply to write')
-        apply(plan, dry=True, modifies=mods)
+        apply(plan, dry=True, modifies=mods, stage='other')
         return 0
-    apply(plan, modifies=mods)
+    apply(plan, modifies=mods, stage='other')
     return 0
 
 

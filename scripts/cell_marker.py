@@ -8,9 +8,9 @@
   python3 scripts/cell_marker.py --status
   python3 scripts/cell_marker.py --adopt 48,-46     # one-off: record an already-raised ring
 
-Focus is tracked as the registry marker (ticket #31), written ONLY by this script: raise
-sets it, clear releases it. Raise refuses if the file names another cell or any
-other cell_marker_*-cells.json registry is on disk, so at most one ring exists.
+Focus is tracked as the cell journal marker note (ticket #31, ADR 004), written ONLY by this
+script: raise sets it, clear releases it. Raise refuses if another cell holds the marker or the
+journal still records another cell_marker_* ring, so at most one ring exists.
 
 After a successful --raise / --adopt, the lidar ghost **frontier** is ensured
 (all worked cells seed a Chebyshev ring, default depth 2 via LIDAR_GHOST_RING;
@@ -21,17 +21,16 @@ Raise places one horizontal wool ring on the cell bbox at a single Y (~30 blocks
 above the highest sampled ground in the cell). Black and yellow wool alternate
 along the perimeter like hazard tape. Only minecraft:air (and cave/void air) is
 replaced — occupied voxels are skipped so teardown is trivial.
-Clear removes every marker wool on the cell perimeter: coordinates in
-*-cells.json plus a legacy Y-band sweep (~30 m above ground through +5 bumps,
+Clear removes every marker wool on the cell perimeter: coordinates the journal
+recorded for the ring plus a legacy Y-band sweep (~30 m above ground through +5 bumps,
 matching the old per-column raise). Refuses non-wool blocks or cells owned by
 other builds. Re-raise strips leftover wool in that band before placing the
-flat ring. Markers use build names
+flat ring. Markers use build names (journal pass ``other``)
 cell_marker_<tx>_m<abs_tz> (e.g. cell_marker_48_m44 for tz=-44).
 """
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -40,7 +39,7 @@ from script_env import ROOT  # noqa: E402
 
 import coverage as cov  # noqa: E402
 import site_kit  # noqa: E402
-from site_kit import Plan, World, apply, bid, built_cells  # noqa: E402
+from site_kit import Plan, World, apply, bid  # noqa: E402
 
 HEIGHT_ABOVE = 30
 GROUND_SAMPLE_STEP = 16
@@ -50,7 +49,8 @@ WOOL = ('black_wool', 'yellow_wool')
 AIRS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
 OUT = site_kit.OUT
 CURRENT_FILE = ROOT / 'site' / 'CURRENT-CELL.json'
-REGISTRY_RE = re.compile(r'^cell_marker_(\d+)_(m?)(\d+)-cells\.json$')
+REGISTRY_RE = re.compile(r'^cell_marker_(\d+)_(m?)(\d+)$')
+STAGE = 'other'          # journal pass: owns its blocks, no progress meaning
 
 
 from cellmath import parse_cell  # noqa: E402,F401
@@ -169,10 +169,29 @@ def is_air(state: str | None) -> bool:
     return bid(state or 'minecraft:air') in AIRS
 
 
+def _registry():
+    import cell_registry
+    return cell_registry.view_registry()
+
+
+def _owned_near_perimeter(tx: int, tz: int, ys, name: str) -> dict:
+    """Journal owners (other than the marker) of the perimeter columns at the given Ys.
+
+    @param tx: cell X index
+    @param tz: cell Z index
+    @param ys: Y values to look up
+    @param name: marker build name (excluded)
+    @returns: {(x, y, z): (build, state)}
+    """
+    ys = list(ys)
+    positions = [(x, y, z) for x, z in perimeter_columns(tx, tz) for y in ys]
+    return _registry().owned(positions, exclude={name})
+
+
 def _occupied_by_other(owned: dict, pos: tuple[int, int, int], skip_build: str) -> bool:
     """True if another build owns this exact cell.
 
-    @param owned: built_cells() map
+    @param owned: journal ownership map ``{pos: (build, state)}``
     @param pos: (x, y, z)
     @param skip_build: build name allowed to occupy (the marker itself)
     @returns: whether to skip placing or clearing here
@@ -190,7 +209,7 @@ def _clear_positions(tx: int, tz: int, world: World, registry: dict[str, str],
     @param tx: cell X index
     @param tz: cell Z index
     @param world: world reader
-    @param registry: parsed *-cells.json map
+    @param registry: recorded ring ``{"x,y,z": state}`` (the journal's plan of the marker)
     @param extra_y: also sweep this exact Y (ring raised when ground read differently)
     @returns: positions from registry plus legacy-band wool on the perimeter
     """
@@ -225,7 +244,7 @@ def _strip_legacy_wool(
     @param tz: cell Z index
     @param world: world reader
     @param name: marker build name
-    @param owned: built_cells() map
+    @param owned: journal ownership map
     @param y_ring: Y of the new flat ring
     @param stats: mutable stats dict (stripped_legacy incremented)
     """
@@ -271,7 +290,9 @@ def plan_raise(tx: int, tz: int, world: World | None = None) -> tuple[Plan, dict
         '(cell_marker.py); not a building footprint placement'
     )
     y_ring = marker_plane_y(world, tx, tz)
-    owned = built_cells(exclude={name})
+    base = reference_ground_y(world, tx, tz)
+    owned = _owned_near_perimeter(tx, tz, (list(marker_y_band(base)) if base is not None else [])
+                                  + ([y_ring] if y_ring is not None else []), name)
     stats = {
         'placed': 0,
         'stripped_legacy': 0,
@@ -311,20 +332,20 @@ def plan_clear(tx: int, tz: int, world: World | None = None,
     """
     world = world or World()
     name = marker_name(tx, tz)
-    reg = OUT / f'{name}-cells.json'
-    registry: dict[str, str] = json.loads(reg.read_text()) if reg.exists() else {}
+    recorded = recorded_ring(name)
+    registry: dict[str, str] = {f'{x},{y},{z}': st for (x, y, z), st in (recorded or {}).items()}
     candidates = _clear_positions(tx, tz, world, registry, extra_y)
     stats = {
         'cleared': 0,
         'skipped_foreign': 0,
         'skipped_not_wool': 0,
-        'missing_registry': not reg.exists() and not candidates,
+        'missing_registry': recorded is None and not candidates,
         'sweep_extra': 0,
     }
     if stats['missing_registry']:
         return Plan(name), stats
     plan = Plan(name)
-    owned = built_cells(exclude={name})
+    owned = _registry().owned(candidates, exclude={name})
     registry_positions = {
         tuple(int(v) for v in key.split(',')) for key in registry
     }
@@ -348,41 +369,51 @@ def plan_clear(tx: int, tz: int, world: World | None = None,
 
 
 def read_current() -> tuple[int, int] | None:
-    """Cell that currently owns the focus ring (registry marker — ticket #31).
+    """Cell that currently owns the focus ring (journal marker note — ticket #31).
 
     @returns: (tx, tz) or None when no ring is held
     """
-    from cell_registry import RegistryStore
-    return RegistryStore().current_cell()
+    return _registry().marker_cell()
 
 
 def write_current(cell: tuple[int, int] | None) -> None:
-    """Record (or release) the focus cell in the registry. Only raise/clear/adopt call this.
+    """Record (or release) the focus cell in the journal. Only raise/clear/adopt call this.
 
     Legacy ``site/CURRENT-CELL.json`` is removed (ticket #31).
 
     @param cell: (tx, tz) to hold, or None to release
     """
+    from cell_journal import Note
     CURRENT_FILE.unlink(missing_ok=True)
-    from cell_registry import RegistryStore, cell_id
-    store = RegistryStore()
+    reg = _registry()
     if cell is None:
-        cur = store.current_cell()
+        cur = reg.marker_cell()
         if cur is not None:
-            store.set_marker(cell_id(*cur), 'none', replace_existing=True)
+            reg.change(Note(cur, 'marker', 'none'))
         return
-    store.set_marker(cell_id(*cell), 'up', replace_existing=True)
+    reg.change(Note(tuple(cell), 'marker', 'up'))
+
+
+def recorded_ring(name: str) -> dict | None:
+    """The marker ring the journal recorded last for ``name`` (None when never raised or undone).
+
+    @param name: marker build name
+    @returns: {(x, y, z): state} or None
+    """
+    return _registry().recorded(name)
 
 
 def registered_cells() -> list[tuple[int, int]]:
-    """Cells that still have a marker registry on disk (ring probably in the world).
+    """Cells whose latest recorded marker plan still places wool (ring probably in the world).
 
     @returns: sorted (tx, tz) list
     """
     found = []
-    for f in OUT.glob('cell_marker_*-cells.json'):
-        m = REGISTRY_RE.match(f.name)
-        if m:
+    reg = _registry()
+    for name in sorted({e.plan for e in reg.entries() if e.plan.startswith('cell_marker_')}):
+        m = REGISTRY_RE.match(name)
+        ring = reg.recorded(name)
+        if m and ring and any(is_marker_wool(st) for st in ring.values()):
             tz = int(m.group(3))
             found.append((int(m.group(1)), -tz if m.group(2) else tz))
     return sorted(found)
@@ -401,14 +432,14 @@ def check_can_raise(cell: tuple[int, int]) -> str | None:
     strays = [c for c in registered_cells() if c != cell]
     if strays:
         s = ', '.join(f'{a},{b}' for a, b in strays)
-        return f'stray marker registry for {s}: --clear each (or --adopt then --clear) before raising'
+        return f'stray marker ring recorded for {s}: --clear each (or --adopt then --clear) before raising'
     return None
 
 
 def cmd_status() -> int:
-    """Print focus cell and any stray registries.
+    """Print focus cell and any stray recorded rings.
 
-    @returns: 0 when consistent, 1 when focus and registries disagree
+    @returns: 0 when consistent, 1 when focus and recorded rings disagree
     """
     cur = read_current()
     regs = registered_cells()
@@ -419,7 +450,7 @@ def cmd_status() -> int:
         print('INCONSISTENT: stray ring(s) ' + ', '.join(f'{a},{b}' for a, b in bad), file=sys.stderr)
         return 1
     if cur and cur not in regs:
-        print('note: focus held but no registry (ring not raised yet, or already cleared)')
+        print('note: focus held but no recorded ring (ring not raised yet, or already cleared)')
     return 0
 
 
@@ -487,11 +518,6 @@ def cmd_adopt(cell: tuple[int, int], *, ghost_ring: int | None = None,
         return 1
     write_current(cell)
     print(f'current: {cell[0]},{cell[1]}')
-    try:
-        import registry_hooks
-        registry_hooks.on_marker_raise(cell)
-    except Exception as exc:  # noqa: BLE001
-        print(f'registry marker adopt failed: {exc}', file=sys.stderr)
     # Adopt records focus without placing wool; still need neighbour skyline.
     ensure_neighbour_ghosts(cell, dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
@@ -521,13 +547,8 @@ def cmd_raise(tx: int, tz: int, dry: bool, *, ghost_ring: int | None = None,
         print(f'dry-run: would place {len(plan.cells)} cells')
         ensure_neighbour_ghosts((tx, tz), dry=True, ring=ghost_ring, skip=no_ghosts)
         return 0
-    apply(plan, dry=False, protect=_protect_not_air)
+    apply(plan, dry=False, protect=_protect_not_air, stage=STAGE)
     write_current((tx, tz))
-    try:
-        import registry_hooks
-        registry_hooks.on_marker_raise((tx, tz))
-    except Exception as exc:  # noqa: BLE001
-        print(f'registry marker raise failed: {exc}', file=sys.stderr)
     ensure_neighbour_ghosts((tx, tz), dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
 
@@ -550,44 +571,25 @@ def cmd_clear(tx: int, tz: int, dry: bool, stray: bool = False, y: int | None = 
     plan, stats = plan_clear(tx, tz, extra_y=y)
     print(f'{plan.name}: {stats}')
     if stats.get('missing_registry'):
-        print('no marker registry on disk', file=sys.stderr)
+        print('no marker ring recorded in the journal', file=sys.stderr)
         if cur == (tx, tz) and not dry:
             write_current(None)
-            try:
-                import registry_hooks
-                registry_hooks.on_marker_clear((tx, tz))
-            except Exception as exc:  # noqa: BLE001
-                print(f'registry marker clear failed: {exc}', file=sys.stderr)
             print('released focus (ring already gone)')
         return 1
     if not plan.cells:
         print('nothing to clear')
         if not dry:
-            (OUT / f'{plan.name}-cells.json').unlink(missing_ok=True)
-            (OUT / f'{plan.name}-backup.json').unlink(missing_ok=True)
+            if recorded_ring(plan.name):
+                site_kit.undo(plan.name)        # the journal still records a ring the world no longer has
             if cur == (tx, tz):
                 write_current(None)
-                try:
-                    import registry_hooks
-                    registry_hooks.on_marker_clear((tx, tz))
-                except Exception as exc:  # noqa: BLE001
-                    print(f'registry marker clear failed: {exc}', file=sys.stderr)
         return 0
     if dry:
         print(f'dry-run: would clear {len(plan.cells)} cells')
         return 0
-    apply(plan, dry=False, modifies=(plan.name,))
-    if stats['cleared'] > 0:
-        (OUT / f'{plan.name}-cells.json').unlink(missing_ok=True)
-        (OUT / f'{plan.name}-backup.json').unlink(missing_ok=True)
+    apply(plan, dry=False, modifies=(plan.name,), stage=STAGE)
     if cur == (tx, tz):
         write_current(None)
-    if not stray:
-        try:
-            import registry_hooks
-            registry_hooks.on_marker_clear((tx, tz))
-        except Exception as exc:  # noqa: BLE001
-            print(f'registry marker clear failed: {exc}', file=sys.stderr)
     return 0
 
 
@@ -602,7 +604,7 @@ def main() -> int:
     g.add_argument('--clear', dest='clear_cell', metavar='TX,TZ', help='remove marker and release focus')
     g.add_argument('--stray-clear', dest='stray_cell', metavar='TX,TZ', help='remove a leftover ring that is not the focus')
     g.add_argument('--adopt', dest='adopt_cell', metavar='TX,TZ', help='record an already-raised ring as focus')
-    g.add_argument('--status', action='store_true', help='show focus cell and stray registries')
+    g.add_argument('--status', action='store_true', help='show focus cell and stray recorded rings')
     p.add_argument('--y', type=int, help='with --clear/--stray-clear: also sweep this exact ring Y')
     p.add_argument('--dry-run', action='store_true', help='plan only, no MCP apply')
     p.add_argument('--ghost-ring', type=int, default=None, metavar='N',

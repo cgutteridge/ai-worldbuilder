@@ -40,7 +40,7 @@ from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb, ce
                             line_cells, hsv, majority, MARGIN)
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
-from site_kit import Plan, World, built_cells, full  # noqa: E402
+from site_kit import Plan, World, full  # noqa: E402
 from surface_probe import (PLANTS, is_tree_or_plant_block, is_water, short_id,  # noqa: E402,F401
                            surface_y)
 
@@ -109,8 +109,24 @@ def ignored_builds(cell: tuple[int, int]) -> frozenset:
 
 
 def _all_build_names() -> set:
-    from site_kit import OUT
-    return {f.name[:-len('-cells.json')] for f in OUT.glob('*-cells.json')}
+    from cell_registry import view_registry
+    return {e.plan for e in view_registry().entries()}
+
+
+def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
+    """Positions the cell journal says other builds own, in the cell and its 8 neighbours.
+
+    The layer passes read this instead of the old whole-world ownership merge: their plans
+    (with tree overhang) never reach past the neighbour cells.
+
+    @param cell: (tx, tz)
+    @param exclude: plan names that do not count (``ignored_builds``)
+    @returns: {(x, y, z), ...}
+    """
+    from cell_registry import view_registry
+    tx, tz = cell
+    around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
+    return set(view_registry().owners(around, exclude=exclude))
 
 
 def load_masked_positions() -> dict:
@@ -438,12 +454,9 @@ def level_spikes(live: dict, kind: dict, fp: set) -> dict:
 
 # --- 4. the plan -------------------------------------------------------------------------
 def ground_done(cell: tuple[int, int]) -> bool:
-    """True if the registry ground is ``generated`` (ticket #31)."""
-    try:
-        from cell_registry import RegistryStore, cell_id
-        return RegistryStore().cell(cell_id(*cell)).get('ground') == 'generated'
-    except Exception:
-        return False
+    """True if the cell journal shows the ground ``generated`` (ticket #31)."""
+    from cell_registry import view_registry
+    return view_registry().cell(tuple(cell)).ground == 'generated'
 
 
 def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:
@@ -578,8 +591,8 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     plan = Plan(name)
     world = _fresh_world()
     masked = load_masked_positions()
-    neighbour_owned = set(built_cells(exclude=ignored_builds(cell)))
-    stats, conflicts, kind, skipped = plan_cell(cell, masked, neighbour_owned, plan, world)
+    owned = neighbour_owned(cell, ignored_builds(cell))
+    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
     changes = [p for p, b in plan.cells.items() if bare(world.block(*p)) != b]
     print(f'{name}: columns {stats["columns"]}  (levelled {stats["levelled"]})')
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
@@ -620,8 +633,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     world = _fresh_world(strict=True)
     masked = load_masked_positions()
     ignored = ignored_builds(cell)
-    neighbour_owned = set(built_cells(exclude=ignored))
-    stats, conflicts, kind, _skipped = plan_cell(cell, masked, neighbour_owned, plan, world)
+    owned = neighbour_owned(cell, ignored)
+    stats, conflicts, kind, _skipped = plan_cell(cell, masked, owned, plan, world)
     if conflicts:
         print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
         return 1

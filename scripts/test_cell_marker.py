@@ -1,8 +1,5 @@
 """Unit tests for scripts/cell_marker.py (no Minecraft)."""
-import os
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import cell_marker as cm
@@ -80,24 +77,22 @@ class TestCellMarker(unittest.TestCase):
 
 
 class TestFocusFile(unittest.TestCase):
-    """Registry focus guards (temp dirs, no Minecraft) — ticket #31."""
+    """Journal focus guards (temp world, no Minecraft) — ticket #31, ADR 004."""
 
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        tmp = Path(self._tmp.name)
-        self._old = (cm.CURRENT_FILE, cm.OUT)
-        cm.CURRENT_FILE = tmp / 'CURRENT-CELL.json'
-        cm.OUT = tmp
-        self.out = tmp
-        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(tmp)})
-        self._env.start()
+        from journal_testkit import JournalWorld
+        self.jw = JournalWorld()
+        self.jw.__enter__()
+        self.addCleanup(self.jw.__exit__)
+        self._old = cm.CURRENT_FILE
+        cm.CURRENT_FILE = self.jw.root / 'CURRENT-CELL.json'
+        self.addCleanup(setattr, cm, 'CURRENT_FILE', self._old)
 
-    def tearDown(self):
-        self._env.stop()
-        cm.CURRENT_FILE, cm.OUT = self._old
-        self._tmp.cleanup()
+    def ring(self, tx, tz, block='minecraft:black_wool'):
+        x0, z0 = tx * 128, tz * 128
+        self.jw.build(cm.marker_name(tx, tz), 'other', {(x0, 90, z0): block}, modifies=(cm.marker_name(tx, tz),))
 
-    def test_no_file_means_no_focus(self):
+    def test_no_marker_means_no_focus(self):
         self.assertIsNone(cm.read_current())
 
     def test_write_and_release(self):
@@ -112,15 +107,17 @@ class TestFocusFile(unittest.TestCase):
         self.assertIn('--clear 48,-45', cm.check_can_raise((48, -46)))
         self.assertIsNone(cm.check_can_raise((48, -45)))
 
-    def test_raise_refused_with_stray_registry(self):
-        (self.out / 'cell_marker_47_m44-cells.json').write_text('{}')
+    def test_raise_refused_with_stray_recorded_ring(self):
+        self.ring(47, -44)
         self.assertEqual(cm.registered_cells(), [(47, -44)])
         self.assertIn('47,-44', cm.check_can_raise((49, -45)))
         self.assertIsNone(cm.check_can_raise((47, -44)))
 
-    def test_registry_parse_positive_tz(self):
-        (self.out / 'cell_marker_3_5-cells.json').write_text('{}')
+    def test_registry_parse_positive_tz_and_cleared_ring_is_gone(self):
+        self.ring(3, 5)
         self.assertEqual(cm.registered_cells(), [(3, 5)])
+        self.ring(3, 5, block='minecraft:air')                          # the clear plan
+        self.assertEqual(cm.registered_cells(), [])
 
     def test_clear_of_stray_refused_without_flag(self):
         cm.write_current((48, -46))
@@ -161,18 +158,17 @@ class TestFocusGhosts(unittest.TestCase):
         ghosts.assert_called_once_with((0, 0), dry=True, ring=None, skip=True)
 
     def test_cmd_adopt_requests_live_ghosts(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        from journal_testkit import JournalWorld
+        with JournalWorld() as jw:
             old = cm.CURRENT_FILE
-            cm.CURRENT_FILE = Path(tmp) / 'CURRENT-CELL.json'
+            cm.CURRENT_FILE = jw.root / 'CURRENT-CELL.json'
             try:
-                with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts, \
-                     mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': tmp}):
+                with mock.patch.object(cm, 'ensure_neighbour_ghosts') as ghosts:
                     code = cm.cmd_adopt((48, -44), ghost_ring=1)
                     self.assertEqual(code, 0)
                     ghosts.assert_called_once_with((48, -44), dry=False, ring=1, skip=False)
                     self.assertEqual(cm.read_current(), (48, -44))
-                    import cell_registry as cr
-                    self.assertEqual(cr.RegistryStore(Path(tmp)).current_cell(), (48, -44))
+                    self.assertEqual(jw.reg.marker_cell(), (48, -44))
             finally:
                 cm.CURRENT_FILE = old
 

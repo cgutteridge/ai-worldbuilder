@@ -4,7 +4,7 @@
 Each feature also lists the university entrances ("portals", scripts/portals.py) on its footprint: door positions
 and names for the build, with photos to look at.
 
-A feature is any build in verification/site/*-cells.json that is not a layer pass
+A feature is any build recorded in the cell journal that is not a layer pass
 (ground, trees, decor, foliage, canopy, undo, markers). A vector-map building is "in a
 feature" when at least COVERED_FRAC of its footprint columns are touched by one.
 
@@ -52,7 +52,7 @@ LAYER_BUILD = re.compile(
 def is_feature_build(name: str) -> bool:
     """Whether a build name is a feature rather than a layer pass.
 
-    @param name: build name (verification/site/<name>-cells.json)
+    @param name: build (plan) name
     @returns: True for features
     """
     return not LAYER_BUILD.search(name)

@@ -1,7 +1,9 @@
-"""Registry verify: report-only integrity check (ticket #32).
+"""Registry verify: report-only integrity check over the cell journal (ticket #32, ADR 004).
 
 Exit non-zero when any error-severity finding is present. World block presence
-checks are optional (``check_world=True``) and skipped in unit tests.
+checks are optional (``check_world=True``) and skipped in unit tests. Files of the
+retired record (STAGES, ``registry/cells.json`` / ``features.json``, ``*-cells.json``)
+are reported as leftovers: nothing reads them.
 
   python3 scripts/cell_registry.py verify
   python3 scripts/cell_registry.py verify --json
@@ -12,7 +14,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cell_registry import RegistryStore
+from cell_journal import CellRegistry
+from cell_registry import cell_id, feature_cells, view_registry
 from script_env import ROOT  # noqa: E402
 
 SEVERITY_ERROR = 'error'
@@ -48,28 +51,37 @@ def check_leftover_progress_files(root: Path) -> list[dict[str, Any]]:
                 f'leftover:{name}', SEVERITY_ERROR,
                 f'legacy progress file still present: site/{name}',
             ))
+    retired = '(retired record, ADR 004: ignored; the cell journal registry/journal.jsonl is the only record)'
     cells = site / 'cells'
     if cells.is_dir():
         stages = list(cells.glob('*-STAGES.json'))
         if stages:
             out.append(_issue(
                 'leftover:STAGES', SEVERITY_WARN,
-                f'{len(stages)} per-cell STAGES.json file(s) under site/cells '
-                '(apply journal only; progress SoT is registry/ — wipe via dryrun_reset)',
+                f'{len(stages)} per-cell STAGES.json file(s) under site/cells {retired}',
             ))
+    for name in ('cells.json', 'features.json'):
+        if (root / 'registry' / name).exists():
+            out.append(_issue(f'leftover:registry/{name}', SEVERITY_WARN, f'registry/{name} {retired}'))
+    owned = list((root / 'verification' / 'site').glob('*-cells.json'))
+    if owned:
+        out.append(_issue(
+            'leftover:cells-json', SEVERITY_WARN,
+            f'{len(owned)} verification/site/*-cells.json ownership file(s) {retired}',
+        ))
     return out
 
 
-def check_feature_specs(store: RegistryStore, root: Path) -> list[dict[str, Any]]:
-    """Registered features should have ``site/builds/<id>.json``.
+def check_feature_specs(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
+    """Features in the journal should have ``site/builds/<id>.json``.
 
-    @param store: registry
+    @param reg: registry
     @param root: world root
     @returns: issues
     """
     builds = root / 'site' / 'builds'
     out: list[dict[str, Any]] = []
-    for fid, feat in store._load_features().items():
+    for fid, feat in feature_cells(reg).items():
         path = builds / f'{fid}.json'
         if not path.is_file():
             sev = SEVERITY_ERROR if feat.get('status') == 'built' else SEVERITY_WARN
@@ -80,13 +92,13 @@ def check_feature_specs(store: RegistryStore, root: Path) -> list[dict[str, Any]
     return out
 
 
-def check_marker_invariant(store: RegistryStore) -> list[dict[str, Any]]:
+def check_marker_invariant(reg: CellRegistry) -> list[dict[str, Any]]:
     """At most one cell may have marker=up.
 
-    @param store: registry
+    @param reg: registry
     @returns: issues
     """
-    ups = [cid for cid, rec in store._load_cells().items() if rec.get('marker') == 'up']
+    ups = [cell_id(*c) for c, v in reg.view().items() if v.marker]
     if len(ups) > 1:
         return [_issue(
             'marker:multiple', SEVERITY_ERROR,
@@ -95,40 +107,77 @@ def check_marker_invariant(store: RegistryStore) -> list[dict[str, Any]]:
     return []
 
 
-def check_done_invariants(store: RegistryStore) -> list[dict[str, Any]]:
-    """Cells marked logically inconsistent (trees without generated ground, etc.).
+def check_done_invariants(reg: CellRegistry) -> list[dict[str, Any]]:
+    """Cells logically inconsistent (trees without generated ground, etc.).
 
-    @param store: registry
+    @param reg: registry
     @returns: issues
     """
     out: list[dict[str, Any]] = []
-    for cid, rec in store._load_cells().items():
-        if rec.get('trees') and rec.get('ground') != 'generated':
+    for c, v in reg.view().items():
+        cid = cell_id(*c)
+        if v.trees and v.ground != 'generated':
             out.append(_issue(
                 f'invariant:trees:{cid}', SEVERITY_ERROR,
-                f'cell {cid} has trees=true but ground={rec.get("ground")!r}',
+                f'cell {cid} has trees=true but ground={v.ground!r}',
             ))
-        if rec.get('decor') and rec.get('ground') != 'generated':
+        if v.decor and v.ground != 'generated':
             out.append(_issue(
                 f'invariant:decor:{cid}', SEVERITY_ERROR,
-                f'cell {cid} has decor=true but ground={rec.get("ground")!r}',
+                f'cell {cid} has decor=true but ground={v.ground!r}',
             ))
     return out
 
 
-def check_coverage_warnings(store: RegistryStore) -> list[dict[str, Any]]:
+def check_coverage_warnings(reg: CellRegistry) -> list[dict[str, Any]]:
     """Open coverage warnings that block DONE.
 
-    @param store: registry
+    @param reg: registry
     @returns: issues
     """
     out: list[dict[str, Any]] = []
-    for cid in store._load_cells():
-        for w in store.open_coverage_warnings(cid):
-            out.append(_issue(
-                f'coverage:{cid}:{w.get("id")}', SEVERITY_WARN,
-                f'open coverage warning on {cid}: {w.get("id")} — {w.get("detail") or w.get("reason")}',
-            ))
+    for c, v in reg.view().items():
+        cid = cell_id(*c)
+        for n in v.notes:
+            if n.kind == 'coverage':
+                out.append(_issue(
+                    f'coverage:{cid}:{n.ref}', SEVERITY_WARN,
+                    f'open coverage warning on {cid}: {n.ref} — {n.body}',
+                ))
+    return out
+
+
+def check_in_flight(reg: CellRegistry) -> list[dict[str, Any]]:
+    """Journal entries still ``begun`` (an aborted apply; site_recover.py resolves them).
+
+    @param reg: registry
+    @returns: issues
+    """
+    return [_issue(f'in-flight:{e.seq}', SEVERITY_WARN,
+                   f'entry {e.seq} {e.plan} ({e.pass_}, cell {cell_id(*e.cell)}, owner {e.owner}) is still begun '
+                   '(python scripts/site_recover.py status)')
+            for e in reg.entries() if e.status == 'begun']
+
+
+def check_issue_notes(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
+    """Open issue notes in the journal whose ISSUES.txt line is gone (closed by hand).
+
+    @param reg: registry
+    @param root: world root
+    @returns: issues
+    """
+    from registry_issues import issue_ref, load_issues
+    open_refs = {issue_ref(i) for i in load_issues(root)}
+    out = []
+    for c, v in reg.view().items():
+        for n in v.notes:
+            if n.kind == 'issue' and n.ref not in open_refs:
+                cid = cell_id(*c)
+                out.append(_issue(
+                    f'issue-note:{cid}:{n.ref}', SEVERITY_WARN,
+                    f'cell {cid} still has open issue note {n.ref} but ISSUES.txt does not list it; close it with '
+                    f'cell_registry.py note {cid} --kind close --ref {n.ref}',
+                ))
     return out
 
 
@@ -144,15 +193,17 @@ def run_verify(
     @returns: report with ``issues``, ``error_count``, ``warn_count``
     """
     world = Path(root) if root else Path(ROOT)
-    store = RegistryStore(world)
+    reg = view_registry(world)
     issues: list[dict[str, Any]] = []
-    issues += check_marker_invariant(store)
-    issues += check_done_invariants(store)
-    issues += check_feature_specs(store, world)
-    issues += check_coverage_warnings(store)
+    issues += check_marker_invariant(reg)
+    issues += check_done_invariants(reg)
+    issues += check_feature_specs(reg, world)
+    issues += check_coverage_warnings(reg)
+    issues += check_in_flight(reg)
+    issues += check_issue_notes(reg, world)
     issues += check_leftover_progress_files(world)
     if check_world:
-        issues += check_world_presence(store, world)
+        issues += check_world_presence(reg, world)
     errors = sum(1 for i in issues if i['severity'] == SEVERITY_ERROR)
     warns = sum(1 for i in issues if i['severity'] == SEVERITY_WARN)
     return {
@@ -164,10 +215,10 @@ def run_verify(
     }
 
 
-def check_world_presence(store: RegistryStore, root: Path) -> list[dict[str, Any]]:
+def check_world_presence(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
     """Optional live checks: region files for non-empty cells (no MCP block scan yet).
 
-    @param store: registry
+    @param reg: registry
     @param root: world root
     @returns: issues
     """
@@ -183,16 +234,16 @@ def check_world_presence(store: RegistryStore, root: Path) -> list[dict[str, Any
     if not region.is_dir():
         return [_issue('region:missing-dir', SEVERITY_ERROR, f'region path missing: {region}')]
     import cellmath
-    for cid, rec in store._load_cells().items():
-        if rec.get('ground') in (None, 'none'):
+    for cell, v in reg.view().items():
+        if v.ground == 'none':
             continue
-        cell = tuple(int(p) for p in cid.split(','))
+        cid = cell_id(*cell)
         for rx, rz in cellmath.regions_for_cell(cell):  # type: ignore[arg-type]
             name = f'r.{rx}.{rz}.mca'
             if not (region / name).is_file():
                 out.append(_issue(
                     f'region:missing:{cid}:{name}', SEVERITY_WARN,
-                    f'cell {cid} has ground={rec.get("ground")!r} but {name} is absent',
+                    f'cell {cid} has ground={v.ground!r} but {name} is absent',
                 ))
     return out
 

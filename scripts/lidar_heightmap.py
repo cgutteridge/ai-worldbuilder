@@ -384,17 +384,13 @@ def format_report(cell, items: list, source: str | None = None) -> str:
 
 
 def touched_cells() -> list:
-    """Cells that have a site/cells/<tx>_<tz>-STAGES.json file."""
-    import re
-    out = []
-    for f in sorted((ROOT / 'site/cells').glob('*-STAGES.json')):
-        m = re.match(r'(-?\d+)_(-?\d+)-STAGES', f.name)
-        out.append((int(m[1]), int(m[2])))
-    return out
+    """Cells with real work in the cell journal (``CellRegistry.seeds``)."""
+    from cell_registry import view_registry
+    return view_registry().seeds()
 
 
 def write_tables() -> int:
-    """Write the lump table of every touched cell next to its STAGES file (regenerable; commit them)."""
+    """Write the lump table of every worked cell to site/cells/<tx>_<tz>-LIDAR.txt (regenerable; commit them)."""
     ref = reference_world()
     for cell in touched_cells():
         text = format_report(cell, report(ref.heightmap(cell)), ref.source_of(cell)) + '\n'
@@ -406,7 +402,7 @@ def write_tables() -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--cell', help='tx,tz')
-    ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with a STAGES file')
+    ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with real work in the cell journal')
     ap.add_argument('--json', action='store_true', help='print JSON instead of a table')
     ap.add_argument('--no-osm', action='store_true', help='skip footprint-map match (faster)')
     a = ap.parse_args(argv)

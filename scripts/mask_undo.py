@@ -9,8 +9,10 @@ no longer holds the masked block stops the undo with nothing written), then one 
   SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell 48,-44 --pass trees --apply
 
 Undo order is the reverse of the pass order: decor first, then trees.
-On a clean readback the mask file is archived (masks/undone/) and the stage is marked 'undone'.
-Any failure raises (fail-closed); see site_recover.py for an aborted run.
+The erase is a journal Undo of the cell's pass (``site_kit.undo``): the cell journal computes the
+blocks from the recorded pass plan and voids it, so the cell shows the pass as not done. On a
+clean readback the mask file is archived (masks/undone/). Any failure raises (fail-closed); see
+site_recover.py for an aborted run.
 """
 from __future__ import annotations
 
@@ -24,42 +26,41 @@ from script_env import ROOT  # noqa: E402
 
 from ground_layer import bare, ignored_builds, plan_name  # noqa: E402
 from pass_mask import PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
-from site_kit import Plan, World, apply, same  # noqa: E402
+from site_kit import Plan, World, apply, same, undo  # noqa: E402
 
 
-def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path | None = None) -> None:
-    """Bookkeeping after a clean undo: archive the mask, mark the pass stage 'undone'. Idempotent.
+def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path | None = None) -> Path | None:
+    """Bookkeeping after a clean undo: archive the mask (moved to <mask_dir>/undone/, not deleted). Idempotent.
 
-    The mask moves to <mask_dir>/undone/ (not deleted) and the stage keeps ``undo_snapshot`` (the
-    structure saved by the undo's own apply), so site_recover.py can put the trees/decor back if the
-    re-apply after the undo aborts. Shared with recovery of an aborted undo.
+    The archived copy lets site_recover.py put the mask back if the re-apply after the undo aborts
+    and is rolled back. Shared with recovery of an aborted undo. The journal Undo itself already
+    voided the pass.
+
+    @param cell: (tx, tz)
+    @param pass_name: trees | decor
+    @param name: undo plan name (archive file stem)
+    @param mask_dir: mask directory override
+    @returns: archived mask path, or None when there was no mask
     """
     import shutil
 
-    import site_stages
-
     path = mask_path(pass_name, cell, mask_dir) if mask_dir else mask_path(pass_name, cell)
-    backup = path.parent / 'undone' / f'{name}.mask.json'
+    backup = archive_path(path, name)
     if path.exists():
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, backup)
         path.unlink()
-    data = site_stages.read(cell) or {'cell': f'{cell[0]},{cell[1]}', 'stages': {}}
-    undo = data['stages'].get(f'{pass_name}-undo', {})
-    entry = data['stages'].get(pass_name, {})
-    entry.update({'status': 'undone', 'note': f'undone from mask via {name}; re-run the {pass_name} pass after ground',
-                  'undo_snapshot': {'plan': name, 'structure': undo.get('structure'),
-                                    'planned': undo.get('planned'),
-                                    'mask_backup': str(backup) if backup.exists() else None}})
-    entry.pop('mask', None)
-    data['stages'][pass_name] = entry
-    site_stages.write(cell, data)
-    try:
-        import registry_hooks
-        if pass_name in ('trees', 'decor'):
-            registry_hooks.on_layer_cleared(cell, pass_name)
-    except Exception as exc:  # noqa: BLE001
-        print(f'registry undo clear failed: {exc}', file=sys.stderr)
+    return backup if backup.exists() else None
+
+
+def archive_path(path: Path, name: str) -> Path:
+    """Where ``finish_undo`` archives a mask.
+
+    @param path: live mask path
+    @param name: undo plan name
+    @returns: ``<mask dir>/undone/<name>.mask.json``
+    """
+    return path.parent / 'undone' / f'{name}.mask.json'
 
 
 def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = False) -> int:
@@ -67,7 +68,7 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
 
     Fail-closed: a conflict, a failed flush, or a readback mismatch raises SystemExit instead of
     returning, so a calling script cannot carry on and overwrite the mask. After a mismatch the
-    stage '<pass>-undo' stays 'applying' (site_recover.py).
+    journal Undo entry stays 'begun' (site_recover.py).
 
     ``skip_changed`` (CLI --skip-changed): a masked position that no longer holds its masked block (already air because
     another pass cleared it, or replaced by a later build, e.g. a roof over an old crown) is not ours any more: it is
@@ -118,9 +119,9 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
         return 0
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
-    rb = apply(plan, modifies=mods, stage=f'{pass_name}-undo', cell=cell, strict=True,
-               meta={'kind': 'undo', 'pass': pass_name})
-    print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
+    rec = undo((cell, pass_name), strict=True,
+               meta={'undo_plan': name, 'mask_backup': str(archive_path(path, name))})
+    print(f'readback: {rec.planned} planned, {rec.mismatches} mismatches')
     finish_undo(cell, pass_name, name)
     print(f'{pass_name} undone; mask archived')
     return 0

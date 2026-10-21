@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
-"""Idempotent lidar ghosts v2: frontier ring, split ground vs features (spec 2026-10).
+"""Lidar ghosts v2: plan builders for placeholder massing (spec 2026-10, ADR 004).
 
-Placeholder massing near **worked** cells (real ground/trees/decor/features), not only
-focus-time neighbours. Default Chebyshev ring depth is 2 (``LIDAR_GHOST_RING``). No
-trees/decor ghosts. Real applies refresh the frontier and strip grey mass under features.
+Placeholder massing near **worked** cells (real ground/trees/decor/features). Default
+Chebyshev frontier depth is 2 (``LIDAR_GHOST_RING``). No trees/decor ghosts.
 
-  Owners:  ghost_<tx>_<tz>_ground / ghost_<tx>_<tz>_features
-  STAGES:  ghost-ground / ghost-features  (meta kind=ghost; real layers stay ground-layer/…)
+This module only *plans*: ``plan_ghost_ground`` / ``plan_ghost_features`` from lidar heights,
+wrapped as the cell journal's ghost planner (:func:`ghost_planner`). Ghost state is a view of
+the cell journal (``CellRegistry.view()`` ``ghost`` / ``ground``); the registry supersedes ghost
+ground under real ground, strips ghost features under real features and ensures the frontier
+as follow-up Builds after every real apply (``site_kit.apply``). Ghost owners yield to real
+owners and never clash.
+
+  Owners:  ghost_<tx>_<tz>_ground / ghost_<tx>_<tz>_features   (passes ghost-ground / ghost-features)
 
   python3 shims/lidar_ghost.py status --cell 48,-44 --ring 2
   python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2
   SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 2
 
 ``plan`` / unit tests inject height samples (no live server, no DEFRA download).
-Post-apply reconcile runs from ``site_kit.apply`` after successful real work.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import sys
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -28,19 +32,13 @@ from typing import Any
 import numpy as np
 
 import cellmath
-from script_env import ROOT, make_parser  # noqa: E402
+from script_env import make_parser  # noqa: E402
 
 DEFAULT_RING = 2
 FILL_BOTTOM = 1                     # empty save has bedrock at y=0; fill solid above it
 GROUND_BLOCK = 'gray_concrete'      # DTM surface
 FILL_BLOCK = 'stone'                # under the surface
 FEATURE_BLOCK = 'light_gray_concrete'  # DSM − DTM mass
-STAGE_GROUND = 'ghost-ground'
-STAGE_FEATURES = 'ghost-features'
-KIND_GHOST = 'ghost'
-REAL_GROUND_KEYS = ('ground', 'ground-layer')
-GHOST_APPLIED = frozenset({'applied', 'verified'})
-GHOST_TERMINAL = frozenset({'superseded', 'stripped', 'partial'})
 FOOTPRINT_OK = 'lidar ghost massing (ADR 003); not a real feature build'
 AIR = 'minecraft:air'
 
@@ -68,7 +66,7 @@ def owner_name(tx: int, tz: int, layer: str) -> str:
 def is_ghost_feature_owner(build: str) -> bool:
     """True when ``build`` is a lidar ghost features owner (not ground).
 
-    @param build: verification/site build name
+    @param build: plan (owner) name
     @returns: whether this owner is grey feature mass
     """
     name = str(build)
@@ -97,23 +95,12 @@ def ghost_modifies_for_plan(volume_plan) -> frozenset[str]:
     return frozenset(out)
 
 
-def strip_ghost_features_before_feature_apply(volume_plan, *, cells_dir: Path | None = None) -> list[dict]:
-    """Remove grey ghost-feature blocks inside a planned feature volume before live fill.
-
-    @param volume_plan: offline feature plan about to apply
-    @param cells_dir: STAGES override (tests)
-    @returns: per-cell strip reports from ``apply_strip_plans``
-    """
-    strips = plan_strip_ghost_features(volume_plan, cells_dir=cells_dir)
-    return apply_strip_plans(strips, dry=False, cells_dir=cells_dir)
-
-
 def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
                     include_focus: bool = False) -> list[tuple[int, int]]:
     """Cells within Chebyshev distance ``ring`` of ``focus``.
 
-    @param focus: centre cell (usually CURRENT-CELL)
-    @param ring: max Chebyshev distance (default 1)
+    @param focus: centre cell (usually the marker cell)
+    @param ring: max Chebyshev distance
     @param include_focus: when False (default), omit the focus cell itself
     @returns: cells sorted by ring distance then (tx, tz)
     """
@@ -125,323 +112,6 @@ def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
     return out
 
 
-def stage_path(cell: tuple[int, int], cells_dir: Path | None = None) -> Path:
-    """Path of ``site/cells/<tx>_<tz>-STAGES.json``.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: path
-    """
-    from site_stages import CELLS, stage_path as _sp
-    return _sp(cell, cells_dir or CELLS)
-
-
-def read_stages(cell: tuple[int, int], cells_dir: Path | None = None) -> dict:
-    """Load STAGES for a cell, or an empty stages dict.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: ``{'cell': 'tx,tz', 'stages': {...}}``
-    """
-    path = stage_path(cell, cells_dir)
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {'cell': f'{cell[0]},{cell[1]}', 'stages': {}}
-    data.setdefault('cell', f'{cell[0]},{cell[1]}')
-    data.setdefault('stages', {})
-    return data
-
-
-def is_ghost_stage(key: str, entry: dict | None) -> bool:
-    """True when a STAGES entry is a lidar ghost (not real refine).
-
-    @param key: stage key
-    @param entry: stage value
-    @returns: whether this is ghost massing
-    """
-    if not isinstance(entry, dict):
-        return False
-    if entry.get('kind') == KIND_GHOST:
-        return True
-    return key in (STAGE_GROUND, STAGE_FEATURES)
-
-
-def real_work_started(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when the registry shows real refine (not only ghost ground).
-
-    @param cell: (tx, tz)
-    @param cells_dir: unused (registry is the source of truth; ticket #31)
-    @returns: whether real refine has begun
-    """
-    del cells_dir
-    try:
-        from cell_registry import RegistryStore, cell_id
-        store = RegistryStore()
-        cid = cell_id(*cell)
-        c = store.cell(cid)
-        if c.get('ground') == 'generated' or c.get('trees') or c.get('decor'):
-            return True
-        return bool(store.features_in_cell(cid))
-    except Exception:
-        return False
-
-
-def ghost_stage_status(cell: tuple[int, int], key: str, cells_dir: Path | None = None) -> str | None:
-    """Status string for a ghost stage key, or None if absent.
-
-    @param cell: (tx, tz)
-    @param key: ``ghost-ground`` or ``ghost-features``
-    @param cells_dir: override (tests)
-    @returns: status or None
-    """
-    entry = (read_stages(cell, cells_dir).get('stages') or {}).get(key)
-    if isinstance(entry, dict):
-        return entry.get('status')
-    return None
-
-
-def ghosts_complete(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when both ghost stages are applied (idempotent short-circuit).
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: whether ground + features ghosts are done
-    """
-    return (ghost_stage_status(cell, STAGE_GROUND, cells_dir) in GHOST_APPLIED
-            and ghost_stage_status(cell, STAGE_FEATURES, cells_dir) in GHOST_APPLIED)
-
-
-def real_ground_applied(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when the registry ground is ``generated``.
-
-    @param cell: (tx, tz)
-    @param cells_dir: unused (ticket #31)
-    @returns: whether real ground owns the surface reference
-    """
-    del cells_dir
-    try:
-        from cell_registry import RegistryStore, cell_id
-        return RegistryStore().cell(cell_id(*cell)).get('ground') == 'generated'
-    except Exception:
-        return False
-
-
-def list_stage_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Every cell known to the registry (and legacy STAGES files if present).
-
-    @param cells_dir: unused for registry; still scanned for leftover STAGES
-    @returns: sorted (tx, tz) list
-    """
-    from cell_registry import RegistryStore, parse_cell_id
-    from site_stages import CELLS
-
-    cells: set[tuple[int, int]] = set()
-    try:
-        store = RegistryStore()
-        for cid in store._load_cells():
-            cells.add(parse_cell_id(cid))
-        for feat in store._load_features().values():
-            for cid in feat.get('cells') or []:
-                cells.add(parse_cell_id(cid))
-    except Exception:
-        pass
-    root = cells_dir or CELLS
-    if root.is_dir():
-        for path in root.glob('*-STAGES.json'):
-            stem = path.name[:-len('-STAGES.json')]
-            if '_' not in stem:
-                continue
-            tx_s, tz_s = stem.split('_', 1)
-            try:
-                cells.add((int(tx_s), int(tz_s)))
-            except ValueError:
-                continue
-    return sorted(cells)
-
-
-def seed_cells(cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Cells where real refine has started (registry, not ghost-only).
-
-    @param cells_dir: passed through for leftover STAGES scan
-    @returns: sorted seed cells
-    """
-    return [c for c in list_stage_cells(cells_dir) if real_work_started(c, cells_dir)]
-
-
-def frontier_targets(ring: int | None = None, cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Union of Chebyshev ``ring`` neighbourhoods around every seed cell.
-
-    @param ring: depth; None → ``ring_from_env()``
-    @param cells_dir: STAGES override (tests)
-    @returns: sorted target cells (includes seeds)
-    """
-    depth = ring_from_env() if ring is None else ring
-    if depth < 0:
-        raise ValueError(f'ring must be >= 0, got {depth}')
-    seeds = seed_cells(cells_dir)
-    seen: set[tuple[int, int]] = set()
-    for s in seeds:
-        seen.update(neighbour_cells(s, depth, include_focus=True))
-    return sorted(seen)
-
-
-def real_feature_touches_cell(cell: tuple[int, int]) -> bool:
-    """True when a non-layer feature build touches this cell's columns.
-
-    @param cell: (tx, tz)
-    @returns: whether real feature volume overlaps the cell
-    """
-    from cell_features import is_feature_build
-    from touched_cells import touched_by_build
-
-    x0, z0, x1, z1 = cellmath.bounds(cell)
-    cols = {(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
-    for name, touched in touched_by_build().items():
-        if is_feature_build(name) and cols & touched:
-            return True
-    return False
-
-
-def ghost_ground_ready(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when ghost ground is applied and not superseded.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: whether ghost ground blocks are expected in-world
-    """
-    st = ghost_stage_status(cell, STAGE_GROUND, cells_dir)
-    return st in GHOST_APPLIED
-
-
-def ghost_features_ready(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """True when ghost features are applied and not stripped/superseded.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: whether ghost feature blocks are expected in-world
-    """
-    st = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
-    return st in GHOST_APPLIED
-
-
-def needs_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """Whether ghost ground should be planned/applied for ``cell``.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: True when placeholders are still appropriate
-    """
-    if real_ground_applied(cell, cells_dir):
-        return False
-    if ghost_ground_ready(cell, cells_dir):
-        return False
-    return True
-
-
-def needs_ghost_features(cell: tuple[int, int], cells_dir: Path | None = None) -> bool:
-    """Whether ghost features should be planned/applied for ``cell``.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @returns: True when grey mass is still appropriate
-    """
-    if real_feature_touches_cell(cell):
-        return False
-    if not (real_ground_applied(cell, cells_dir) or ghost_ground_ready(cell, cells_dir)):
-        return False
-    if ghost_features_ready(cell, cells_dir):
-        return False
-    return True
-
-
-def _write_ghost_stage(cell: tuple[int, int], key: str, status: str, cells_dir: Path | None,
-                       **fields) -> None:
-    """Update one ghost stage entry without a live apply.
-
-    @param cell: (tx, tz)
-    @param key: ghost stage key
-    @param status: new status string
-    @param cells_dir: STAGES override (tests)
-    @param fields: extra JSON fields on the entry
-    """
-    import site_stages
-
-    data = read_stages(cell, cells_dir)
-    entry = data['stages'].get(key)
-    if not isinstance(entry, dict):
-        entry = {'kind': KIND_GHOST}
-    entry.update({'status': status, **fields})
-    data['stages'][key] = entry
-    if cells_dir is not None:
-        path = stage_path(cell, cells_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + '\n')
-    else:
-        site_stages.write(cell, data)
-
-
-def supersede_ghost_ground(cell: tuple[int, int], cells_dir: Path | None = None, *,
-                           note: str = 'real ground layer applied') -> None:
-    """Mark ghost-ground superseded after real ground overwrites blocks.
-
-    Registry ground is set to ``generated`` by the real ground-layer apply hook;
-    this only updates STAGES. When called alone (tests), also clear ghost+features
-    demotion is handled by the ground-layer registry write.
-
-    @param cell: (tx, tz)
-    @param cells_dir: override (tests)
-    @param note: human reason stored on the stage entry
-    """
-    if ghost_stage_status(cell, STAGE_GROUND, cells_dir) in GHOST_APPLIED:
-        _write_ghost_stage(cell, STAGE_GROUND, 'superseded', cells_dir, note=note)
-
-
-def mark_ghost_features_stripped_for_volume(volume_plan, *, cells_dir: Path | None = None) -> list[tuple[int, int]]:
-    """Mark ghost-features stages stripped in every cell the volume touches.
-
-    Used after a real feature apply when blocks were overwritten in place (so
-    post-apply ``plan_strip_ghost_features`` finds no registry hits) but grey
-    mass may still be present in cross-cell columns until stripped or replaced.
-
-    @param volume_plan: applied feature plan
-    @param cells_dir: STAGES override (tests)
-    @returns: cells whose ghost-features stage was updated
-    """
-    touched: list[tuple[int, int]] = []
-    for cell in sorted(cells_for_positions(volume_plan.cells.keys())):
-        st = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
-        if st in GHOST_APPLIED:
-            mark_ghost_features_stripped(cell, partial=False, cells_dir=cells_dir)
-            touched.append(cell)
-    return touched
-
-
-def mark_ghost_features_stripped(cell: tuple[int, int], *, partial: bool = False,
-                                 cells_dir: Path | None = None,
-                                 note: str = 'real feature overlap') -> None:
-    """Mark ghost-features terminal so idempotent ensure can re-run when needed.
-
-    Also demotes registry ground ``ghost+features`` → ``ghost`` when features are
-    fully stripped (not partial).
-
-    @param cell: (tx, tz)
-    @param partial: use ``partial`` instead of ``stripped``
-    @param cells_dir: override (tests)
-    @param note: human reason stored on the stage entry
-    """
-    status = 'partial' if partial else 'stripped'
-    prev = ghost_stage_status(cell, STAGE_FEATURES, cells_dir)
-    if prev in GHOST_APPLIED | GHOST_TERMINAL:
-        _write_ghost_stage(cell, STAGE_FEATURES, status, cells_dir, note=note)
-    if not partial:
-        try:
-            import registry_hooks
-            registry_hooks.on_ghost_features_stripped([cell])
-        except Exception as exc:  # noqa: BLE001
-            print(f'registry ghost strip failed: {exc}', file=sys.stderr)
-
-
 def cells_for_positions(positions) -> set[tuple[int, int]]:
     """Map block positions to coverage cells.
 
@@ -451,68 +121,6 @@ def cells_for_positions(positions) -> set[tuple[int, int]]:
     import cellmath
 
     return {cellmath.cell_of(x, z) for x, _y, z in positions}
-
-
-def plan_strip_ghost_features(volume_plan, *, cells_dir: Path | None = None):
-    """Plan air cells for ghost-feature-owned blocks inside a real feature volume.
-
-    @param volume_plan: applied feature ``site_kit.Plan``
-    @param cells_dir: unused; reserved for tests
-    @returns: list of (cell, strip_plan) pairs (empty when nothing to strip)
-    """
-    from site_kit import Plan, built_cells
-
-    del cells_dir
-    positions = set(volume_plan.cells.keys())
-    owned = built_cells(within=positions)
-    by_cell: dict[tuple[int, int], dict] = {}
-    for pos, (build, _st) in owned.items():
-        if not is_ghost_feature_owner(build):
-            continue
-        import cellmath
-
-        cell = cellmath.cell_of(pos[0], pos[2])
-        by_cell.setdefault(cell, {})[pos] = build
-    out = []
-    for cell, hits in sorted(by_cell.items()):
-        tx, tz = cell
-        strip = Plan(f'ghost_strip_{tx}_{tz_token(tz)}_features')
-        strip.outside_footprint_ok = FOOTPRINT_OK
-        for pos in hits:
-            strip.set(*pos, AIR)
-        if strip.cells:
-            out.append((cell, strip))
-    return out
-
-
-def apply_strip_plans(strips, *, dry: bool = False, cells_dir: Path | None = None) -> list[dict]:
-    """Apply ghost-feature strip plans and update STAGES.
-
-    @param strips: output of ``plan_strip_ghost_features``
-    @param dry: plan-only
-    @param cells_dir: STAGES override (tests)
-    @returns: per-cell strip reports
-    """
-    reports: list[dict] = []
-    if not strips:
-        return reports
-    if not dry and not os.environ.get('SITE_OWNER'):
-        raise SystemExit('SITE_OWNER is not set; claim the lock before stripping ghost features')
-    from site_kit import apply
-
-    for cell, strip in strips:
-        rep = {'cell': list(cell), 'blocks': len(strip.cells), 'dry': dry}
-        if dry:
-            reports.append(rep)
-            continue
-        mods = {owner_name(cell[0], cell[1], 'features')}
-        apply(strip, dry=False, modifies=mods, stage=STAGE_FEATURES, cell=cell,
-              meta={'kind': KIND_GHOST, 'note': 'strip ghost features under real build'},
-              strict=False)
-        mark_ghost_features_stripped(cell, partial=False, cells_dir=cells_dir)
-        rep['stripped'] = True
-        reports.append(rep)
-    return reports
 
 
 def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
@@ -600,146 +208,6 @@ def plan_stats(plan) -> dict[str, int]:
     return {'blocks': len(plan.cells), **dict(counts)}
 
 
-def ensure_cell(cell: tuple[int, int], *, dry: bool = True, force: bool = False,
-                heights_fn: HeightsFn | None = None, cells_dir: Path | None = None,
-                skip_if_real: bool = False) -> dict[str, Any]:
-    """Plan (and optionally apply) ghost ground and features for one cell (split lifecycle).
-
-    @param cell: (tx, tz)
-    @param dry: when True, do not write the world or STAGES (default)
-    @param force: re-plan/apply even if a layer is already applied
-    @param heights_fn: injectable height sampler (tests / offline)
-    @param cells_dir: STAGES directory override (tests)
-    @param skip_if_real: legacy whole-cell skip when any real work exists
-    @returns: report dict
-    """
-    tx, tz = cell
-    report: dict[str, Any] = {'cell': [tx, tz], 'dry': dry, 'actions': []}
-    if skip_if_real and real_work_started(cell, cells_dir):
-        report['skipped'] = 'real-work'
-        return report
-    want_ground = force or needs_ghost_ground(cell, cells_dir)
-    want_features = force or needs_ghost_features(cell, cells_dir)
-    if want_ground and not want_features and not real_ground_applied(cell, cells_dir):
-        # Ground and features are applied in one ensure pass; plan both together.
-        want_features = True
-    if not want_ground and not want_features:
-        report['skipped'] = 'layers-complete'
-        return report
-
-    h = None
-    if heights_fn is not None:
-        x0, z0, x1, z1 = cellmath.bounds(cell)
-        h = heights_fn(x0, z0, x1, z1)
-
-    if want_ground:
-        ground_plan = plan_ghost_ground(cell, heights=h, heights_fn=heights_fn)
-        report['ground'] = plan_stats(ground_plan)
-        report['actions'].append('plan-ground')
-    else:
-        ground_plan = None
-        report['ground_skip'] = ghost_stage_status(cell, STAGE_GROUND, cells_dir) or 'real-ground'
-
-    if want_features:
-        feature_plan = plan_ghost_features(cell, heights=h, heights_fn=heights_fn)
-        report['features'] = plan_stats(feature_plan)
-        report['actions'].append('plan-features')
-    else:
-        feature_plan = None
-        report['features_skip'] = ghost_stage_status(cell, STAGE_FEATURES, cells_dir) or 'no-ground-or-overlap'
-
-    if dry:
-        return report
-
-    if not os.environ.get('SITE_OWNER'):
-        raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim …)')
-
-    from site_kit import apply
-
-    mods = ghost_owners_for(cell)
-    meta = {'kind': KIND_GHOST, 'note': 'lidar ghost (DTM / DSM−DTM); real layers overwrite'}
-    if ground_plan is not None:
-        apply(ground_plan, dry=False, modifies=mods, stage=STAGE_GROUND, cell=cell, meta=meta, strict=True)
-        report['actions'].append('apply-ground')
-    if feature_plan is not None:
-        apply(feature_plan, dry=False, modifies=mods, stage=STAGE_FEATURES, cell=cell, meta=meta, strict=True)
-        report['actions'].append('apply-features')
-    return report
-
-
-def ensure_frontier(*, ring: int | None = None, dry: bool = True, force: bool = False,
-                    heights_fn: HeightsFn | None = None,
-                    cells_dir: Path | None = None) -> dict[str, Any]:
-    """Ensure ghosts for every cell in the v2 frontier (all seeds + ring union).
-
-    @param ring: Chebyshev depth; None → env default (2)
-    @param dry: plan-only when True
-    @param force: re-apply layers even when applied
-    @param heights_fn: injectable sampler
-    @param cells_dir: STAGES override (tests)
-    @returns: summary with seeds, targets, and per-cell reports
-    """
-    depth = ring_from_env() if ring is None else ring
-    seeds = seed_cells(cells_dir)
-    targets = frontier_targets(depth, cells_dir)
-    reports = [ensure_cell(c, dry=dry, force=force, heights_fn=heights_fn, cells_dir=cells_dir)
-               for c in targets]
-    return {'ring': depth, 'seeds': [list(c) for c in seeds], 'targets': [list(c) for c in targets],
-            'dry': dry, 'reports': reports}
-
-
-def reconcile_after_real_apply(plan, *, stage_key: str, cell: tuple[int, int],
-                               mismatches: int = 0, cells_dir: Path | None = None,
-                               heights_fn: HeightsFn | None = None) -> dict[str, Any]:
-    """Refresh frontier ghosts after a successful real apply (not ghost applies).
-
-    @param plan: applied plan
-    @param stage_key: STAGES key written by the apply
-    @param cell: primary cell for the apply
-    @param mismatches: readback mismatch count (skip reconcile when non-zero)
-    @param cells_dir: STAGES override (tests)
-    @param heights_fn: injectable sampler for follow-up ensure
-    @returns: reconcile report
-    """
-    if mismatches:
-        return {'skipped': 'readback-mismatches', 'cell': list(cell)}
-    rep: dict[str, Any] = {'cell': list(cell), 'stage': stage_key}
-    if stage_key in REAL_GROUND_KEYS:
-        supersede_ghost_ground(cell, cells_dir)
-        rep['ghost_ground'] = 'superseded'
-    elif stage_key.startswith('feature-'):
-        strips = plan_strip_ghost_features(plan, cells_dir=cells_dir)
-        rep['strip'] = apply_strip_plans(strips, dry=False, cells_dir=cells_dir)
-        rep['ghost_features_marked'] = [
-            list(c) for c in mark_ghost_features_stripped_for_volume(plan, cells_dir=cells_dir)
-        ]
-    frontier = ensure_frontier(dry=False, heights_fn=heights_fn, cells_dir=cells_dir)
-    rep['frontier'] = {'seeds': frontier['seeds'], 'targets': frontier['targets'],
-                        'planned': sum(1 for r in frontier['reports'] if 'skipped' not in r)}
-    return rep
-
-
-def ensure_ring(focus: tuple[int, int], ring: int = DEFAULT_RING, *, dry: bool = True,
-                force: bool = False, include_focus: bool = False,
-                heights_fn: HeightsFn | None = None, cells_dir: Path | None = None,
-                skip_if_real: bool = False) -> list[dict[str, Any]]:
-    """Ensure ghosts for every cell in the Chebyshev ring around ``focus``.
-
-    @param focus: centre cell
-    @param ring: neighbour depth (default 1)
-    @param dry: plan-only when True
-    @param force: re-apply even when already ghosted
-    @param include_focus: also ghost the focus cell
-    @param heights_fn: injectable sampler
-    @param cells_dir: STAGES override
-    @param skip_if_real: skip cells with real refine
-    @returns: list of per-cell reports
-    """
-    return [ensure_cell(c, dry=dry, force=force, heights_fn=heights_fn, cells_dir=cells_dir,
-                        skip_if_real=skip_if_real)
-            for c in neighbour_cells(focus, ring, include_focus=include_focus)]
-
-
 def ring_from_env(default: int = DEFAULT_RING) -> int:
     """Neighbour ring depth from ``LIDAR_GHOST_RING``, else ``default``.
 
@@ -756,33 +224,6 @@ def ring_from_env(default: int = DEFAULT_RING) -> int:
     if ring < 0:
         raise ValueError(f'LIDAR_GHOST_RING must be >= 0, got {ring}')
     return ring
-
-
-def on_cell_focus(focus: tuple[int, int], ring: int | None = None, *, dry: bool = False,
-                  force: bool = False, heights_fn: HeightsFn | None = None,
-                  cells_dir: Path | None = None) -> list[dict[str, Any]]:
-    """Ensure frontier ghosts when CURRENT-CELL focus is set (raise / handoff).
-
-    Uses all worked cells as seeds (v2 frontier). When nothing is seeded yet,
-    falls back to a ring around ``focus`` so the first raise still shows neighbours.
-    Default ring is ``LIDAR_GHOST_RING`` or 2.
-
-    @param focus: newly focused cell
-    @param ring: Chebyshev depth; None → ``ring_from_env()``
-    @param dry: plan-only when True (marker ``--dry-run``)
-    @param force: re-apply even when ghosts already applied
-    @param heights_fn: injectable sampler (tests)
-    @param cells_dir: STAGES override (tests)
-    @returns: per-target reports
-    """
-    depth = ring_from_env() if ring is None else ring
-    if depth < 0:
-        raise ValueError(f'ring must be >= 0, got {depth}')
-    if seed_cells(cells_dir):
-        return ensure_frontier(ring=depth, dry=dry, force=force, heights_fn=heights_fn,
-                               cells_dir=cells_dir)['reports']
-    return ensure_ring(focus, depth, dry=dry, force=force, include_focus=False,
-                       heights_fn=heights_fn, cells_dir=cells_dir, skip_if_real=False)
 
 
 def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
@@ -802,6 +243,206 @@ def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
         return {'ground_y': gy, 'feature': feat, 'diff': feat}
 
     return fn
+
+
+
+
+def ghost_planner(heights_fn: HeightsFn | None = None) -> Callable[[tuple[int, int], str], dict | None]:
+    """The cell journal's ghost planner over the lidar plan builders.
+
+    Heights are sampled once per cell and shared by both layers (a few cells are cached).
+
+    @param heights_fn: injectable sampler (tests / fixtures); default DEFRA cached tiles
+    @returns: ``planner(cell, 'ground'|'features') -> {pos: state}``; None when lidar tiles are not
+        cached for the cell (the registry then skips it)
+    """
+    cache: OrderedDict[tuple[int, int], dict | None] = OrderedDict()
+
+    def heights(cell: tuple[int, int]) -> dict | None:
+        cell = tuple(cell)
+        if cell not in cache:
+            x0, z0, x1, z1 = cellmath.bounds(cell)
+            try:
+                cache[cell] = (heights_fn or default_heights)(x0, z0, x1, z1)
+            except LookupError as exc:                   # tile not cached and download is off
+                print(f'lidar ghost: no lidar for cell {cell[0]},{cell[1]} ({exc})')
+                cache[cell] = None
+            while len(cache) > 4:
+                cache.popitem(last=False)
+        return cache[cell]
+
+    def planner(cell: tuple[int, int], layer: str) -> dict | None:
+        h = heights(cell)
+        if h is None:
+            return None
+        if layer == 'ground':
+            return plan_ghost_ground(cell, heights=h).cells
+        if layer == 'features':
+            return plan_ghost_features(cell, heights=h).cells
+        raise ValueError(f'layer must be ground or features, got {layer!r}')
+
+    return planner
+
+
+def _stats(cells: dict) -> dict[str, int]:
+    from collections import Counter
+    from site_kit import bid
+    counts = Counter(bid(b).split(':', 1)[-1] for b in cells.values())
+    return {'blocks': len(cells), **dict(counts)}
+
+
+def needs(view, *, force: bool = False) -> tuple[bool, bool]:
+    """Which ghost layers a cell still needs, from its journal view.
+
+    @param view: ``CellView``
+    @param force: re-plan layers that are already present
+    @returns: (ghost ground, ghost features)
+    """
+    ground = view.ground == 'none' or (force and view.ground != 'generated')
+    features = not view.features and (force or not view.ghost.features) and (
+        ground or view.ground != 'none')
+    return ground, features
+
+
+def cell_builds(reg, cell: tuple[int, int], layer: str):
+    """The ghost Build for one cell layer (positions owned by real builds are dropped).
+
+    @param reg: ``CellRegistry`` with a ghost planner
+    @param cell: (tx, tz)
+    @param layer: ``ground`` or ``features``
+    @returns: Build, or None when lidar cannot plan the cell
+    """
+    from cell_journal import Build, ghost_name
+    planned = reg.ghosts(cell, layer) if reg.ghosts is not None else None
+    if planned is None:
+        return None
+    real = reg.owned(planned, real_only=True)
+    cells = {p: s for p, s in planned.items() if p not in real}
+    name = ghost_name(cell, layer)
+    return Build(name, f'ghost-{layer}', cells, modifies=(name,), strict=True, cell=tuple(cell))
+
+
+def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[str, Any]]:
+    """Plan (``apply`` None) or apply the ghost layers each cell still needs.
+
+    Unlike ``CellRegistry.ensure`` this also serves cells outside the frontier (an explicit
+    ``--cell``, or the focus ring before any real work).
+
+    @param reg: ``CellRegistry`` with a ghost planner
+    @param cells: target cells
+    @param apply: journal writer (``site_kit.McpWriter``); None = dry run
+    @param force: re-plan layers already present
+    @returns: per-cell reports
+    """
+    reports = []
+    for cell in cells:
+        cell = tuple(cell)
+        rep: dict[str, Any] = {'cell': list(cell), 'dry': apply is None, 'actions': []}
+        reports.append(rep)
+        view = reg.cell(cell)
+        if view.in_flight:
+            rep['skipped'] = 'in-flight'
+            continue
+        want_ground, want_features = needs(view, force=force)
+        if not (want_ground or want_features):
+            rep['skipped'] = 'layers-complete'
+            continue
+        for layer, wanted in (('ground', want_ground), ('features', want_features)):
+            if not wanted:
+                rep[f'{layer}_skip'] = 'real-ground' if layer == 'ground' else 'present-or-real-feature'
+                continue
+            build = cell_builds(reg, cell, layer)
+            if build is None:
+                rep['skipped'] = 'no-lidar'
+                break
+            rep[layer] = _stats(build.cells)
+            rep['actions'].append(f'plan-{layer}')
+            if apply is not None:
+                reg.change(build, apply)
+                rep['actions'].append(f'apply-{layer}')
+    return reports
+
+
+def status_rows(reg, cells, ring: int) -> list[dict[str, Any]]:
+    """Per-cell ghost status from the journal views.
+
+    @param reg: ``CellRegistry``
+    @param cells: cells to report
+    @param ring: frontier depth
+    @returns: rows
+    """
+    seeds = set(reg.seeds())
+    frontier = reg.frontier(ring) if seeds else frozenset()
+    rows = []
+    for c in cells:
+        v = reg.cell(c)
+        ground, features = needs(v)
+        rows.append({
+            'cell': list(c),
+            'in_frontier': (c in frontier) if seeds else None,
+            'real_work': c in seeds,
+            'real_ground': v.ground == 'generated',
+            'feature_overlap': bool(v.features),
+            'needs_ghost_ground': ground,
+            'needs_ghost_features': features,
+            'ghost_ground': 'applied' if v.ghost.ground else None,
+            'ghost_features': 'applied' if v.ghost.features else None,
+            'ghosts_complete': v.ghost.ground and v.ghost.features,
+            'in_flight': [f.plan for f in v.in_flight],
+        })
+    return rows
+
+
+def targets_for(reg, focus: tuple[int, int], ring: int | None, *, include_focus: bool = False,
+                frontier_when_seeded: bool = True) -> list[tuple[int, int]]:
+    """Cells a ghost run covers: the journal frontier once real work exists, else the focus ring.
+
+    @param reg: ``CellRegistry``
+    @param focus: focus cell
+    @param ring: depth (None: only the focus cell)
+    @param include_focus: with a focus ring, include the focus cell
+    @param frontier_when_seeded: use the registry frontier when there are seeds
+    @returns: sorted cells
+    """
+    if ring is None:
+        return [tuple(focus)]
+    if frontier_when_seeded and reg.seeds():
+        return sorted(reg.frontier(ring))
+    return neighbour_cells(focus, ring, include_focus=include_focus)
+
+
+def on_cell_focus(focus: tuple[int, int], ring: int | None = None, *, dry: bool = False,
+                  force: bool = False, heights_fn: HeightsFn | None = None) -> list[dict[str, Any]]:
+    """Ensure frontier ghosts when the marker is raised (cell_marker --raise / --adopt).
+
+    All worked cells seed the frontier; before any real work, the ring around ``focus``
+    (focus excluded) is ghosted so the first raise still shows neighbours.
+
+    @param focus: newly focused cell
+    @param ring: Chebyshev depth; None → ``ring_from_env()``
+    @param dry: plan-only when True
+    @param force: re-plan layers already present
+    @param heights_fn: injectable sampler (tests)
+    @returns: per-target reports
+    """
+    depth = ring_from_env() if ring is None else ring
+    if depth < 0:
+        raise ValueError(f'ring must be >= 0, got {depth}')
+    reg, writer = _session(dry, heights_fn, depth)
+    cells = targets_for(reg, focus, depth)
+    return ensure_cells(reg, cells, apply=writer, force=force)
+
+
+def _session(dry: bool, heights_fn: HeightsFn | None, ring: int):
+    """(registry, writer): a view registry for dry runs, the live journal session otherwise."""
+    planner = ghost_planner(heights_fn)
+    if dry:
+        import cell_registry
+        return cell_registry.open_registry(ghosts=planner, ring=ring), None
+    if not os.environ.get('SITE_OWNER'):
+        raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim …)')
+    import site_kit
+    return site_kit.live_session(ghosts=planner, ring=ring)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -830,46 +471,25 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     focus = cellmath.parse_cell(a.cell)
     heights_fn = _mock_or_default(a.heights_json)
+    depth = a.ring if a.ring is not None else ring_from_env()
 
     if a.cmd == 'status':
-        depth = a.ring if a.ring is not None else ring_from_env()
-        seeds = seed_cells()
-        if a.ring is None:
-            cells = [focus]
-        elif seed_cells():
-            cells = frontier_targets(depth)
-        else:
-            cells = neighbour_cells(focus, depth, include_focus=a.include_focus)
-        rows = []
-        for c in cells:
-            rows.append({
-                'cell': list(c),
-                'in_frontier': c in set(frontier_targets(depth)) if seed_cells() else None,
-                'real_work': real_work_started(c),
-                'real_ground': real_ground_applied(c),
-                'feature_overlap': real_feature_touches_cell(c),
-                'needs_ghost_ground': needs_ghost_ground(c),
-                'needs_ghost_features': needs_ghost_features(c),
-                'ghost_ground': ghost_stage_status(c, STAGE_GROUND),
-                'ghost_features': ghost_stage_status(c, STAGE_FEATURES),
-                'ghosts_complete': ghosts_complete(c),
-            })
+        import cell_registry
+        reg = cell_registry.open_registry(ghosts=None, ring=depth)
+        cells = targets_for(reg, focus, a.ring, include_focus=a.include_focus)
         print(json.dumps({
             'focus': list(focus),
             'ring': depth,
-            'seeds': [list(c) for c in seeds],
-            'cells': rows,
+            'seeds': [list(c) for c in reg.seeds()],
+            'cells': status_rows(reg, cells, depth),
         }, indent=2))
         return 0
 
     dry = a.cmd != 'apply'
-    if a.ring is None:
-        reports = [ensure_cell(focus, dry=dry, force=a.force, heights_fn=heights_fn)]
-    else:
-        reports = ensure_ring(focus, a.ring, dry=dry, force=a.force,
-                              include_focus=a.include_focus, heights_fn=heights_fn)
-    print(json.dumps({'focus': list(focus), 'ring': a.ring, 'dry': dry, 'reports': reports},
-                     indent=2))
+    reg, writer = _session(dry, heights_fn, depth)
+    cells = targets_for(reg, focus, a.ring, include_focus=a.include_focus, frontier_when_seeded=False)
+    reports = ensure_cells(reg, cells, apply=writer, force=a.force)
+    print(json.dumps({'focus': list(focus), 'ring': a.ring, 'dry': dry, 'reports': reports}, indent=2))
     return 0
 
 

@@ -2,16 +2,19 @@
 
 A Plan maps (x, y, z) -> block state string ('minecraft:' optional). Every planned
 cell is written, including air (so excavation is explicit). apply():
-  1. refuses if the backup record is missing and cannot be created,
+  1. runs the guards (floating posts, vector-map footprint, door frames, roof jogs, clashes
+     with earlier owners in the cell journal, protect),
   2. saves one structure template of the plan's bounding box (+1 margin)
-     as southampton_refine:before_<name> (only the first time),
-  3. writes merged boxes with block_fill_batch (<= 8000 entries/call),
+     as southampton_refine:before_<name> (the first time; timestamped afterwards),
+  3. journals the plan 'begun' in the cell journal (registry/journal.jsonl, ADR 004),
+  4. writes merged boxes with block_fill_batch (<= 8000 entries/call),
      solid blocks first and attachable blocks (doors, signs, torches...) after,
-  4. writes sign text, summons entities,
-  5. saves the world and reads every planned cell back from the region files.
-Reports land in verification/site/<name>-*.json.
+     then sign text and entities,
+  5. saves the world, reads every planned cell back through the BlockStore and finishes the
+     journal entry, then runs the journal follow-ups (lidar ghost strip / frontier).
+Guard and readback reports land in verification/site/<name>-*.json.
 """
-import json, math, os, struct, sys, time, zlib
+import json, math, os, struct, time, zlib
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -529,196 +532,202 @@ def _feature_block_id() -> str:
         return 'minecraft:light_gray_concrete'
 
 
-def find_ghost_feature_leftovers(plan, world=None) -> list[tuple[int, int, int]]:
-    """List live FEATURE_BLOCK cells the plan did not place.
+def _is_ghost_features_owner(name: str) -> bool:
+    return str(name).startswith('ghost_') and str(name).endswith('_features')
 
-    Scans every footprint column implied by ``plan.cells`` (including columns in
-    neighbour cells a cross-cell volume crosses) across the plan's Y span. Grey
-    ghost mass with no ``built_cells`` ownership record is invisible to pre-strip;
-    this readback catches it after a live feature apply.
 
-    @param plan: applied feature ``Plan``
-    @param world: optional world view (defaults to ``World()``)
-    @returns: sorted ``(x, y, z)`` positions still holding unplanned feature grey
+# --- the cell journal (ADR 004) ----------------------------------------------
+# Plan -> Build: Build(plan.name, pass, plan.cells, modifies, strict, mask summary, cell,
+# payload=plan, meta={structure, pending_mask, caller meta}). The journal records block cells
+# only; signs and entities ride on Build.payload and are written by McpWriter, so
+# CellRegistry.reconcile re-commits block cells only (never signs or entities).
+STAGE_PASS = {
+    'ground-layer': 'ground', 'ground': 'ground', 'trees': 'trees', 'decor': 'decor', 'other': 'other',
+}
+
+
+def stage_pass(stage: str | None) -> str:
+    """Journal pass for an ``apply(stage=...)`` key.
+
+    @param stage: None / ``feature-<name>`` (feature), ``ground-layer`` / ``ground``, ``trees``,
+        ``decor``, ``other`` (blocks with no progress meaning: markers, clean-ups)
+    @returns: cell_journal pass name
+    @raises ValueError: unknown stage (undo goes through :func:`undo`, ghosts through lidar_ghost)
+    """
+    if stage is None or stage.startswith('feature-'):
+        return 'feature'
+    if stage in STAGE_PASS:
+        return STAGE_PASS[stage]
+    raise ValueError(f'unknown apply stage {stage!r}; want feature-<name>, '
+                     f'{", ".join(sorted(STAGE_PASS))} (undo: site_kit.undo)')
+
+
+def primary_cell(positions) -> tuple[int, int]:
+    """The cell holding most of the given (x, y, z) positions.
+
+    @param positions: iterable of (x, y, z)
+    @returns: (tx, tz)
+    """
+    from collections import Counter
+    import cellmath
+    return Counter(cellmath.cell_of(x, z) for x, _y, z in positions).most_common(1)[0][0]
+
+
+def live_blocks():
+    """BlockStore over the active (or ``AI_WORLDBUILDER_REGION``) region files (tests patch this).
+
+    @returns: ``block_store.LiveBlocks``
+    """
+    from block_store import LiveBlocks
+    return LiveBlocks.from_world_config()
+
+
+class McpWriter:
+    """``apply`` callable for :class:`cell_journal.CellRegistry`: writes ``Writes.cells`` over MCP.
+
+    Boxes are merged with :meth:`Plan.boxes` (air first, attachables last) and sent with
+    ``block_fill_batch`` (<= 8000 per call). When the intent's payload is a :class:`Plan`, its
+    signs and entities are written too (the journal never records them). The player is hopped
+    over far builds so their chunks load (:func:`_bring_player`).
+
+    @param m: MCP client (default: a new ``mc_paced.Paced``)
+    """
+
+    def __init__(self, m=None):
+        self.m = m
+        self.fill_results: list = []
+        self.entities: list = []
+
+    def __call__(self, writes) -> None:
+        from mc_paced import Paced, xyz
+        m = self.m = self.m or Paced()
+        payload = getattr(writes.intent, 'payload', None)
+        plan = payload if isinstance(payload, Plan) and writes.kind == 'build' else None
+        if plan is None:
+            plan = Plan(writes.plan)
+            plan.cells = {tuple(p): full(s) for p, s in writes.cells.items()}
+        if not plan.cells:
+            return
+        lo, hi = plan.bounds()
+        # fills into unloaded chunks silently do nothing: if the player is far from the build,
+        # hop them (spectator) over it while filling, then put them back exactly
+        restore = _bring_player(m, lo, hi)
+        boxes = plan.boxes()
+        for i in range(0, len(boxes), 8000):
+            chunk = boxes[i:i + 8000]
+            res = m.text('block_fill_batch', {'dimension': D, 'fills': [
+                {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
+            self.fill_results.append(res)
+            print('fill:', res.replace('\n', '; ')[:300])
+        for pos, lines, col, glow in plan.signs if plan is payload else ():
+            nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
+                   f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
+                   ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
+            m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
+        for kind, pos, snbt in plan.entities if plan is payload else ():
+            args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
+            if snbt:
+                args['nbt'] = snbt
+            self.entities.append(m.text('entity_summon', args))
+        if restore:
+            restore()
+
+
+def live_session(*, ghosts='default', ring=None):
+    """Registry over the live world plus an MCP writer, after the apply gates (region, lock).
+
+    For journal changes outside :func:`apply` (ghost Builds, follow-ups).
+
+    @param ghosts: ghost planner (``'default'``: lidar)
+    @param ring: frontier depth override
+    @returns: (CellRegistry, McpWriter)
+    @raises SystemExit: region / lock gate refused
+    """
+    import cell_registry
+    import site_lock
+    ensure_region_matches_open_world()
+    site_lock.check()
+    return cell_registry.open_registry(blocks=live_blocks(), ghosts=ghosts, ring=ring), McpWriter()
+
+
+def _structure_backup(m, name, lo, hi):
+    """Save a structure template of a box (+1 margin); the guard before every live write."""
+    from mc_paced import box
+    a = [lo[0] - 1, lo[1], lo[2] - 1]
+    b = [hi[0] + 1, hi[1], hi[2] + 1]
+    res = m.text('structure_save_from_world', {'name': name, 'dimension': D, 'box': box(a, b)})
+    if 'saved' not in res:
+        raise SystemExit('Backup failed: ' + res)
+    return {'name': name, 'from': a, 'to': b}, res
+
+
+def _journal_refusal(name, exc):
+    """SystemExit for a journal refusal at begin (nothing journalled, no block written)."""
+    from cell_journal import InFlight
+    if isinstance(exc, InFlight):
+        return SystemExit(f'{name}: {exc}; an earlier apply was aborted '
+                          '(python scripts/site_recover.py status)')
+    return SystemExit(f'{name}: cell journal refused the apply: {exc}')
+
+
+def _ghost_leftovers(plan, blocks, registry=None):
+    """FEATURE_BLOCK cells the plan did not place, in every plan column across its Y span.
+
+    @param plan: feature plan
+    @param blocks: BlockStore (flushed)
+    @param registry: when given, skip positions a journal ghost-features owner still holds
+        (the follow-up strip clears those)
+    @returns: sorted positions
     """
     if not plan.cells:
         return []
-    w = world or World()
     feature = _feature_block_id()
     lo, hi = plan.bounds()
-    y0, y1 = lo[1], hi[1]
     columns = {(x, z) for (x, _y, z) in plan.cells}
-    planned_feature = {
-        pos for pos, st in plan.cells.items() if bid(st) == feature
-    }
-    leftovers: list[tuple[int, int, int]] = []
-    for x, z in columns:
-        for y in range(y0, y1 + 1):
-            pos = (x, y, z)
-            if pos in planned_feature:
-                continue
-            actual = w.block(x, y, z) or ''
-            if bid(actual) == feature:
-                leftovers.append(pos)
-    leftovers.sort()
-    return leftovers
+    scan = [(x, y, z) for x, z in columns for y in range(lo[1], hi[1] + 1)
+            if (x, y, z) not in plan.cells or bid(plan.cells[(x, y, z)]) != feature]
+    actual = blocks.read_many(scan)
+    hits = [p for p in scan if actual[p] and bid(actual[p]) == feature]
+    if registry is not None and hits:
+        owned = registry.owned(hits)
+        hits = [p for p in hits if not (p in owned and _is_ghost_features_owner(owned[p][0]))]
+    return sorted(hits)
 
 
-# --- live application ------------------------------------------------------
-CELLS_CACHE = ROOT / 'backups/cells-cache'      # git-ignored; one pickle per *-cells.json, rebuilt when its mtime/size change
-
-
-def _parse_cells_file(f: Path):
-    """(adds {(x,y,z): (build, state)}, air [(x,y,z)]) for one cells file, via the on-disk cache when it is current."""
-    import pickle
-    st = f.stat()
-    key = (st.st_mtime_ns, st.st_size)
-    cache = CELLS_CACHE / (f.name + '.pkl')
-    try:
-        with cache.open('rb') as fh:
-            got = pickle.load(fh)
-        if got[0] == key:
-            return got[1], got[2]
-    except Exception:
-        pass                                                   # missing, truncated or old: reparse
-    name = f.name[:-len('-cells.json')]
-    adds, air = {}, []
-    for k, s in json.loads(f.read_text()).items():
-        q = tuple(int(v) for v in k.split(','))
-        if bid(s) in ('minecraft:air', 'minecraft:light'):
-            air.append(q)
-        else:
-            adds[q] = (name, s)
-    try:
-        CELLS_CACHE.mkdir(parents=True, exist_ok=True)
-        tmp = cache.with_name(f'{cache.name}.{id(adds)}.tmp')
-        with tmp.open('wb') as fh:
-            pickle.dump((key, adds, air), fh, protocol=pickle.HIGHEST_PROTOCOL)
-        tmp.replace(cache)                                     # atomic: a concurrent reader never sees half a file
-    except OSError:
-        pass
-    return adds, air
-
-
-def built_cells(exclude=(), within=None):
-    """Non-air cells placed by earlier builds (verification/site/*-cells.json), as {(x,y,z): (build, state)}.
-
-    ``within``: optional iterable of cells; only those are looked up, through the persistent ownership
-    index (owned_in), which is far faster than merging every build record. Without it the whole map is merged.
-    """
-    if within is not None:
-        return owned_in(within, exclude)
-    owned = {}
-    for f in sorted(OUT.glob('*-cells.json'), key=lambda f: f.stat().st_mtime):  # later builds win
-        name = f.name[:-len('-cells.json')]
-        if name in exclude:
-            continue
-        adds, air = _parse_cells_file(f)
-        owned.update(adds)                                     # keys are unique within a file, so update-then-pop
-        for q in air:                                          # is the same as the old entry-by-entry loop
-            owned.pop(q, None)
-    return owned
+def _leftover_exit(plan, leftovers, tail):
+    sample = leftovers[:40]
+    (OUT / f'{plan.name}-ghost-leftovers.json').write_text(
+        json.dumps({'leftovers': [list(p) for p in leftovers], 'sample': [list(p) for p in sample]}, indent=1))
+    return SystemExit(
+        f'{plan.name}: {len(leftovers)} ghost feature leftover(s) '
+        f'(unplanned {_feature_block_id()}), e.g. {sample[:5]}; '
+        f'see {plan.name}-ghost-leftovers.json; {tail} (python scripts/site_recover.py status)')
 
 
 def reset_to_base(build, records):
-    """Plan that restores follow-up record cells from the base build's *-cells.json.
+    """Plan that restores follow-up record cells from the base build's recorded plan.
 
-    For every cell written by any name in ``records``, put back the state recorded in
-    ``{build}-cells.json`` (or air if that cell was not in the base). Never uses
-    built_cells(): an earlier step's air can cancel the roof there and leave holes
+    For every cell written by any name in ``records``, put back the state recorded for
+    ``build`` in the cell journal (or air if that cell was not in the base). Never uses the
+    merged ownership: an earlier step's air can cancel the roof there and leave holes
     (FEATURE FOLLOW-UP STEPS in rules/craftsmanship.md). Apply with
     ``modifies=(build, *records)``.
 
     @param build: base feature name (e.g. ``highfield_susu_west``)
     @param records: iterable of follow-up record names (e.g. ``highfield_susu_west-lower``)
     @returns: Plan named ``{build}-reset``
-    @raises SystemExit: if the base cells file is missing
+    @raises SystemExit: if the base build is not in the journal
     """
-    base_path = OUT / f'{build}-cells.json'
-    if not base_path.is_file():
-        raise SystemExit(f'reset_to_base: missing base record {base_path}')
-    base = json.loads(base_path.read_text())
+    import cell_registry
+    reg = cell_registry.view_registry()
+    base = reg.recorded(build)
+    if base is None:
+        raise SystemExit(f'reset_to_base: no recorded build {build!r} in the cell journal')
     plan = Plan(f'{build}-reset')
     for name in records:
-        path = OUT / f'{name}-cells.json'
-        if not path.is_file():
-            continue
-        for k in json.loads(path.read_text()):
-            q = tuple(int(v) for v in k.split(','))
-            plan.set(*q, base.get(k, 'minecraft:air'))
+        for q in reg.recorded(name) or {}:
+            plan.set(*q, base.get(q, 'minecraft:air'))
     return plan
-
-
-# --- persistent ownership index ----------------------------------------------
-# One SQLite file with every build's per-cell events, so a dry run looks up only its own few thousand cells
-# instead of merging all *-cells.json (the cost grew with every house built). Same rule as the full merge:
-# builds apply in file-mtime order, a later build wins, air cancels an earlier block. Air rows are kept only
-# where an earlier block exists (3M of 3.2M air cells cancel nothing). Rebuilt from scratch when a build record
-# is removed or re-saved out of order; otherwise only new/changed files are ingested.
-OWNERS_DB = ROOT / 'backups/cells-cache/owners.sqlite'      # git-ignored, always re-creatable from the records
-
-
-def _owners_conn():
-    import sqlite3
-    OWNERS_DB.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(OWNERS_DB, timeout=60)
-    db.executescript(
-        'CREATE TABLE IF NOT EXISTS files (name TEXT PRIMARY KEY, mtime_ns INTEGER, size INTEGER);'
-        'CREATE TABLE IF NOT EXISTS ev (x INTEGER, y INTEGER, z INTEGER, ord INTEGER, build TEXT, state TEXT,'
-        ' PRIMARY KEY (x, y, z, ord)) WITHOUT ROWID;')
-    return db
-
-
-def _sync_owners(db):
-    """Bring the index in line with verification/site/*-cells.json."""
-    disk = {f.name[:-len('-cells.json')]: f for f in OUT.glob('*-cells.json')}
-    known = {n: (m, sz) for n, m, sz in db.execute('SELECT name, mtime_ns, size FROM files')}
-    keys = {n: (f.stat().st_mtime_ns, f.stat().st_size) for n, f in disk.items()}
-    stale = sorted((n for n in disk if known.get(n) != keys[n]), key=lambda n: keys[n][0])
-    gone = [n for n in known if n not in disk]
-    unchanged_newest = max((keys[n][0] for n in disk if n not in stale), default=0)
-    if gone or (stale and keys[stale[0]][0] < unchanged_newest):
-        db.execute('DELETE FROM ev')                          # out-of-order change: rebuild everything
-        db.execute('DELETE FROM files')
-        stale, gone = sorted(disk, key=lambda n: keys[n][0]), []
-    for n in stale:
-        if n in known:
-            db.execute('DELETE FROM ev WHERE build = ?', (n,))
-        adds, air = _parse_cells_file(disk[n])
-        o = keys[n][0]
-        db.executemany('INSERT OR REPLACE INTO ev VALUES (?,?,?,?,?,?)',
-                       ((x, y, z, o, n, st) for (x, y, z), (_b, st) in adds.items()))
-        keep = []
-        for q in air:
-            if db.execute('SELECT 1 FROM ev WHERE x=? AND y=? AND z=? AND ord<? LIMIT 1', (*q, o)).fetchone():
-                keep.append((*q, o, n, None))
-        db.executemany('INSERT OR REPLACE INTO ev VALUES (?,?,?,?,?,?)', keep)
-        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?)', (n, *keys[n]))
-    db.commit()
-
-
-def owned_in(cells, exclude=()):
-    """{(x,y,z): (build, state)} for those of ``cells`` held by earlier builds, skipping builds in ``exclude``."""
-    cells = list(cells)
-    db = _owners_conn()
-    try:
-        _sync_owners(db)
-        db.execute('CREATE TEMP TABLE want (x INTEGER, y INTEGER, z INTEGER)')
-        db.executemany('INSERT INTO want VALUES (?,?,?)', cells)
-        rows = db.execute('SELECT e.x, e.y, e.z, e.build, e.state FROM ev e JOIN want w '
-                          'ON e.x=w.x AND e.y=w.y AND e.z=w.z ORDER BY e.ord').fetchall()
-    finally:
-        db.close()
-    exclude = set(exclude)
-    owned = {}
-    for x, y, z, build, st in rows:                           # ascending ord: later builds win
-        if build in exclude:
-            continue
-        if st is None:
-            owned.pop((x, y, z), None)
-        else:
-            owned[(x, y, z)] = (build, st)
-    return owned
 
 
 def door_frame_issues(plan, block):
@@ -751,19 +760,28 @@ def door_frame_issues(plan, block):
     return out
 
 
+
+
 def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, meta=None, strict=False, mask=None):
     """protect: optional callable(pos, existing_state) -> bool; True = refuse to overwrite.
     Cells owned by earlier builds are always protected unless that build is in `modifies`.
 
-    Stage state machine (site_stages): before the first live block write the cell's STAGES file
-    gets ``stage`` (default 'feature-<plan>') as 'applying' with the plan, owner, structure backup
-    and planned-cells file; after the readback it becomes 'applied' (or
-    'applied-with-mismatches'). An abort leaves 'applying' for site_recover.py. ``cell`` defaults
-    to the cell holding most of the plan; ``meta`` is merged into the entry (e.g. kind 'undo').
-    ``strict``: a readback with mismatches raises and leaves the stage 'applying'.
-    ``mask``: optional pass mask, durably staged before writes and published only after a
-    clean readback. Mask publication failure leaves 'applying' for recovery."""
-    from mc_paced import Paced, box, xyz
+    Recording (ADR 004): the cell journal (``cell_journal.CellRegistry``) is the only record.
+    Before the first live block write the plan is journalled ``begun`` (fsynced) as a Build of
+    the pass named by ``stage`` (default and 'feature-<plan>': feature; 'ground-layer' / 'ground',
+    'trees', 'decor', 'other'). After the flush and readback it is finished ``landed`` (or
+    ``mismatched``); a landed real apply then runs the journal follow-ups (ghost features under a
+    feature stripped, the lidar ghost frontier ensured; real ground supersedes ghost ground in the
+    view). An abort leaves the entry ``begun`` for site_recover.py. ``cell`` defaults to the cell
+    holding most of the plan; ``meta`` is journalled with the entry. ``strict``: a readback with
+    mismatches raises and leaves the entry 'begun'. ``mask``: optional pass mask, durably staged
+    before writes and published only after a clean readback; publication failure leaves the
+    entry 'begun' for recovery. A feature apply fails closed on unplanned ghost feature blocks
+    left in its columns."""
+    from mc_paced import Paced
+    import cell_registry
+    from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
+    pass_ = stage_pass(stage)
     OUT.mkdir(parents=True, exist_ok=True)
     lo, hi = plan.bounds()
     w = World()
@@ -815,23 +833,11 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 'with the vector-map rotation). Real offset roofs (evidence in hand): set '
                 'plan.roof_jog_ok = "<reason + evidence id>".')
         print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
-    stage_key = stage or f'feature-{plan.name}'
-    if not dry and stage_key.startswith('feature-'):
-        try:
-            import lidar_ghost as lg
-            strip_rep = lg.strip_ghost_features_before_feature_apply(plan)
-            if strip_rep:
-                print('lidar ghost pre-strip:', json.dumps(strip_rep)[:600])
-        except Exception as exc:
-            raise SystemExit(f'lidar ghost pre-strip failed: {exc}') from exc
-    owned = built_cells(exclude=set(modifies) | {plan.name}, within=plan.cells)
-    try:
-        import lidar_ghost as lg
-        ghost_ok = lg.is_ghost_feature_owner
-    except ImportError:
-        ghost_ok = lambda name: str(name).startswith('ghost_') and str(name).endswith('_features')
+    # clash report from the journal's ownership: ghost owners yield (never clash)
+    view = cell_registry.view_registry()
+    owned = view.owned(plan.cells, exclude=set(modifies) | {plan.name}, real_only=True)
     clash = {str(q): [owned[q][0], owned[q][1], st] for q, st in plan.cells.items()
-             if q in owned and owned[q][1] != st and not ghost_ok(owned[q][0])}
+             if q in owned and owned[q][1] != st}
     if clash:
         (OUT / f'{plan.name}-clashes.json').write_text(json.dumps(clash, indent=1))
         raise SystemExit(f'{len(clash)} cells belong to earlier builds; see {plan.name}-clashes.json')
@@ -859,164 +865,146 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     import site_lock
     site_lock.check()                       # single-builder rule: refuse without the world lock
     m = Paced()
-    rec = OUT / f'{plan.name}-backup.json'
-    if not rec.exists():
-        name = f'{STRUCTURE_NS}:before_{plan.name}'
-        a = [lo[0] - 1, lo[1], lo[2] - 1]
-        b = [hi[0] + 1, hi[1], hi[2] + 1]
-        res = m.text('structure_save_from_world', {'name': name, 'dimension': D, 'box': box(a, b)})
-        if 'saved' not in res:
-            raise SystemExit('Backup failed: ' + res)
-        rec.write_text(json.dumps({'structure': name, 'from': a, 'to': b, 'result': res,
-                                   'time': time.strftime('%Y-%m-%d %H:%M:%S')}, indent=2))
+    blocks = live_blocks()
+    registry = cell_registry.open_registry(blocks=blocks)
+    if not registry.entries(plan=plan.name):
+        structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi)
         print('backup:', res)
-        structure = {'name': name, 'from': a, 'to': b}
     else:
-        # the first-time backup above is the original state; recovery needs the state before THIS apply
-        name = f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}'
-        a = [lo[0] - 1, lo[1], lo[2] - 1]
-        b = [hi[0] + 1, hi[1], hi[2] + 1]
-        res = m.text('structure_save_from_world', {'name': name, 'dimension': D, 'box': box(a, b)})
-        if 'saved' not in res:
-            raise SystemExit('Backup failed: ' + res)
-        structure = {'name': name, 'from': a, 'to': b}
-    import site_stages
-    key = stage or f'feature-{plan.name}'
-    cell = tuple(cell) if cell else site_stages.primary_cell(plan.cells)
-    planned = OUT / f'{plan.name}-planned.json'
-    from atomic_json import write_json
-    write_json(planned, {f'{x},{y},{z}': st for (x, y, z), st in plan.cells.items()})
-    completion = {}
+        # the first-time backup is the original state; recovery needs the state before THIS apply
+        structure, _res = _structure_backup(
+            m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
+    cell = tuple(cell) if cell else primary_cell(plan.cells)
+    record = {**(meta or {}), 'structure': structure}
+    mask_ref = None
     if mask is not None:
         from pass_mask import verify_integrity, mask_placements
         if tuple(mask['cell']) != cell or mask['plan'] != plan.name or not verify_integrity(mask):
             raise ValueError('mask does not belong to this plan or failed integrity check')
         if {p: full(b) for p, b in mask_placements(mask).items()} != plan.cells:
             raise ValueError('mask placements differ from the plan')
+        from atomic_json import write_json
         pending_mask = OUT / f'{plan.name}-pending-mask.json'
         write_json(pending_mask, mask)
-        completion['pending_mask'] = str(pending_mask.relative_to(ROOT) if pending_mask.is_relative_to(ROOT) else pending_mask)
-    site_stages.begin(cell, key, plan.name, blocks=len(plan.cells), structure=structure,
-                      planned=str(planned.relative_to(ROOT) if planned.is_relative_to(ROOT) else planned),
-                      **(meta or {}), **completion)
-    if key.startswith('feature-') and (meta or {}).get('kind') not in ('ghost', 'undo'):
-        try:
-            import registry_hooks
-            registry_hooks.on_feature_begin(
-                plan.name,
-                cells=registry_hooks.cells_touched_by_positions(plan.cells.keys()),
-            )
-        except Exception as exc:  # noqa: BLE001 — never block a live apply on registry bookkeeping
-            print(f'registry begin failed: {exc}', file=sys.stderr)
-    # fills into unloaded chunks silently do nothing: if the player is far from the build,
-    # hop them (spectator) over it while filling, then put them back exactly
-    restore = _bring_player(m, lo, hi)
-    results = []
-    for i in range(0, len(boxes), 8000):
-        chunk = boxes[i:i + 8000]
-        res = m.text('block_fill_batch', {'dimension': D, 'fills': [
-            {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
-        results.append(res)
-        print('fill:', res.replace('\n', '; ')[:300])
-    for pos, lines, col, glow in plan.signs:
-        nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
-               f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
-               ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
-        m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
-    ents = []
-    for kind, pos, snbt in plan.entities:
-        args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
-        if snbt:
-            args['nbt'] = snbt
-        ents.append(m.text('entity_summon', args))
-    (OUT / f'{plan.name}-cells.json').write_text(json.dumps(
-        {f'{x},{y},{z}': st for (x, y, z), st in plan.cells.items()}))
-    if restore:
-        restore()
-    m.call('server_save_all_worlds', {})
-    time.sleep(3)
-    rep = readback(plan)
-    rep.update({'fill_results': results, 'entities': ents})
+        record['pending_mask'] = str(pending_mask)
+        mask_ref = {'pass': mask['pass'], 'cell': list(mask['cell']), 'plan': mask['plan'],
+                    'count': mask.get('count'), 'sha256': mask.get('sha256')}
+    build = Build(plan.name, pass_, dict(plan.cells), modifies=tuple(sorted(set(modifies))), strict=bool(strict),
+                  mask=mask_ref, cell=cell, payload=plan, meta=record)
+    try:
+        ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write
+    except (InFlight, Clash, Refused) as exc:
+        raise _journal_refusal(plan.name, exc) from exc
+    writer = McpWriter(m)
+    writer(ticket.writes)
+    mark = getattr(blocks, 'mark_written', None)
+    if mark is not None:
+        mark()                              # LiveBlocks: refuse reads until the flush
+    blocks.flush()                          # server_save_all_worlds, settle, fresh region reads
+    actual = blocks.read_many(plan.cells)
+    rep = _readback_report(plan, actual)
+    rep.update({'fill_results': writer.fill_results, 'entities': writer.entities, 'journal_seq': ticket.seq})
     (OUT / f'{plan.name}-result.json').write_text(json.dumps(rep, indent=1))
     print(json.dumps({k: v for k, v in rep.items() if k != 'mismatch_sample'}, indent=1)[:1500])
     if rep['mismatches'] and (strict or mask is not None):
-        raise SystemExit(f'{plan.name}: readback has {rep["mismatches"]} mismatches; stage {key} left '
-                         "'applying' (python scripts/site_recover.py status)")
-    if (key.startswith('feature-') and (meta or {}).get('kind') not in ('ghost', 'undo')):
-        leftovers = find_ghost_feature_leftovers(plan)
+        raise SystemExit(f'{plan.name}: readback has {rep["mismatches"]} mismatches; journal entry '
+                         f"{ticket.seq} left 'begun' (python scripts/site_recover.py status)")
+    feature = pass_ == 'feature' and (meta or {}).get('kind') not in ('ghost', 'undo')
+    if feature:
+        leftovers = _ghost_leftovers(plan, blocks, registry)
         if leftovers:
-            sample = leftovers[:40]
-            (OUT / f'{plan.name}-ghost-leftovers.json').write_text(
-                json.dumps({'leftovers': [list(p) for p in leftovers], 'sample': [list(p) for p in sample]},
-                           indent=1))
-            raise SystemExit(
-                f'{plan.name}: {len(leftovers)} ghost feature leftover(s) '
-                f'(unplanned {_feature_block_id()}), e.g. {sample[:5]}; '
-                f'see {plan.name}-ghost-leftovers.json; stage {key} left '
-                "'applying' (python scripts/site_recover.py status)")
-    if rep['mismatches']:
-        site_stages.finish(cell, key, 'applied-with-mismatches', readback=rep)
-    else:
-        site_stages.complete(cell, key, rep)
-    _update_registry_after_apply(
-        plan, stage_key=key, cell=cell, meta=meta, mismatches=rep.get('mismatches', 0),
-    )
-    _reconcile_lidar_ghosts(plan, stage_key=key, cell=cell, meta=meta, dry=dry, rep=rep)
+            raise _leftover_exit(plan, leftovers, f"journal entry {ticket.seq} left 'begun'")
+    if mask is not None:
+        import pass_mask
+        pass_mask.write_mask(mask)          # publish only after a clean readback
+    receipt = ticket.finish(actual)
+    if receipt.status == 'landed':
+        import registry_issues
+        registry_issues.close_for_build(registry, pass_, cell, plan.name)
+        try:
+            followed = registry.ensure(writer)
+        except CellJournalError as exc:
+            raise SystemExit(f'{plan.name}: landed, but the journal follow-ups (ghost strip / frontier) '
+                             f'failed: {exc} (python scripts/site_recover.py status)') from exc
+        if followed:
+            print('journal follow-ups:', json.dumps([[r.seq, r.status, r.planned] for r in followed])[:800])
+        if feature:
+            leftovers = _ghost_leftovers(plan, blocks)
+            if leftovers:
+                raise _leftover_exit(plan, leftovers, 'the feature landed but the ghost strip left them')
     return rep
 
 
-def _update_registry_after_apply(plan, *, stage_key: str, cell, meta, mismatches: int) -> None:
-    """Update the cell registry after a finished (non-aborted) apply.
+def undo(target, *, strict=True, meta=None):
+    """Live Undo through the cell journal: erase a plan (name) or a cell pass ``((tx, tz), pass)``
+    back to the earlier owners (air where none), with the same gates as :func:`apply`.
 
-    Clean layer/feature applies set flags; mismatched feature applies stay
-    in-progress. Strict/mask failures never reach here (SystemExit first).
+    The registry computes the erase from the recorded plans; the entry is journalled ``begun``
+    before any write and finished after the readback. A structure template of the erased box is
+    saved first (recorded in the entry's meta).
+
+    @param target: plan name or ``(cell, pass_)``
+    @param strict: a readback mismatch raises and leaves the entry 'begun'
+    @param meta: extra meta journalled with the entry
+    @returns: Receipt
+    @raises SystemExit: refused, nothing to undo, or readback mismatch
+    """
+    from mc_paced import Paced
+    import cell_registry
+    from cell_journal import CellJournalError, InFlight, Mismatch, Refused, Undo
+    ensure_region_matches_open_world()
+    import site_lock
+    site_lock.check()
+    m = Paced()
+    blocks = live_blocks()
+    registry = cell_registry.open_registry(blocks=blocks)
+    label = target if isinstance(target, str) else f'{target[0][0]},{target[0][1]} {target[1]}'
+    if isinstance(target, str):
+        names = [target]
+    else:
+        cell, pass_ = tuple(target[0]), target[1]
+        names = sorted({e.plan for e in registry.entries(cells=[cell])
+                        if e.kind == 'build' and e.pass_ == pass_ and not e.undone and e.status != 'begun'
+                        and (e.cell == cell or pass_ == 'feature')})
+    positions = [p for n in names for p in (registry.recorded(n) or {})]
+    record = dict(meta or {})
+    if positions:
+        box_plan = Plan('undo')
+        box_plan.cells = dict.fromkeys(positions, 'minecraft:air')
+        lo, hi = box_plan.bounds()
+        name = f'{STRUCTURE_NS}:before_undo_{"_".join(names)[:80]}_{time.strftime("%Y%m%d%H%M%S")}'
+        record['structure'], _res = _structure_backup(m, name, lo, hi)
+    writer = McpWriter(m)
+    try:
+        receipt = registry.change(Undo(target, strict=strict, meta=record), writer)
+    except Mismatch as exc:
+        raise SystemExit(f'undo {label}: readback has {exc.mismatches} mismatches; journal entry '
+                         f"{exc.seq} left 'begun' (python scripts/site_recover.py status)") from exc
+    except (InFlight, Refused) as exc:
+        raise _journal_refusal(f'undo {label}', exc) from exc
+    try:
+        registry.ensure(writer)
+    except CellJournalError as exc:
+        raise SystemExit(f'undo {label}: landed, but the journal follow-ups failed: {exc}') from exc
+    print(f'undo {label}: entry {receipt.seq} {receipt.status}, {receipt.planned} blocks')
+    return receipt
+
+
+def _readback_report(plan, actual):
+    """Readback report from ``{pos: state}`` read after a flush.
 
     @param plan: applied plan
-    @param stage_key: STAGES key
-    @param cell: primary cell
-    @param meta: apply meta
-    @param mismatches: readback mismatch count
+    @param actual: block states keyed by plan position
+    @returns: {'planned', 'mismatches', 'mismatch_sample', 'checked'}
     """
-    try:
-        import registry_hooks
-        registry_hooks.on_stage_key_clean(
-            tuple(cell),
-            stage_key,
-            plan_name=plan.name,
-            positions=plan.cells.keys(),
-            meta=meta or {},
-            mismatches=mismatches,
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f'registry update failed: {exc}', file=sys.stderr)
-
-
-def _reconcile_lidar_ghosts(plan, *, stage_key: str, cell, meta, dry: bool, rep: dict) -> None:
-    """Invoke lidar ghost v2 frontier refresh after successful real applies.
-
-    @param plan: applied plan
-    @param stage_key: STAGES key for this apply
-    @param cell: primary cell tuple
-    @param meta: stage meta dict from apply()
-    @param dry: whether apply was dry-run
-    @param rep: readback report from apply()
-    """
-    if dry:
-        return
-    meta = meta or {}
-    if meta.get('kind') == 'ghost':
-        return
-    if stage_key in ('ghost-ground', 'ghost-features'):
-        return
-    try:
-        import lidar_ghost as lg
-        summary = lg.reconcile_after_real_apply(
-            plan, stage_key=stage_key, cell=tuple(cell), mismatches=rep.get('mismatches', 0))
-        print('lidar ghost reconcile:', json.dumps(summary)[:800])
-    except SystemExit:
-        raise
-    except Exception as exc:
-        print(f'lidar ghost reconcile failed: {exc}', file=sys.stderr)
+    bad = {}
+    for p, s in plan.cells.items():
+        a = actual.get(p)
+        if not same(s, a):
+            bad[str(p)] = [s, a]
+    return {'planned': len(plan.cells), 'mismatches': len(bad),
+            'mismatch_sample': dict(list(bad.items())[:60]),
+            'checked': time.strftime('%Y-%m-%d %H:%M:%S')}
 
 
 def _bring_player(m, lo, hi, reach=80):
@@ -1049,13 +1037,14 @@ def _bring_player(m, lo, hi, reach=80):
     return restore
 
 
+
+
 def readback(plan, world=None):
+    """Read every planned cell back from a world view (default: the saved region files).
+
+    @param plan: Plan
+    @param world: object with ``block(x, y, z)``
+    @returns: {'planned', 'mismatches', 'mismatch_sample', 'checked'}
+    """
     w = world or World()
-    bad = {}
-    for p, s in plan.cells.items():
-        a = w.block(*p)
-        if not same(s, a):
-            bad[str(p)] = [s, a]
-    return {'planned': len(plan.cells), 'mismatches': len(bad),
-            'mismatch_sample': dict(list(bad.items())[:60]),
-            'checked': time.strftime('%Y-%m-%d %H:%M:%S')}
+    return _readback_report(plan, {p: w.block(*p) for p in plan.cells})
