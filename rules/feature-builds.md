@@ -39,9 +39,10 @@ Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
 **Lidar ghost v2 (cross-cell):** After `cell_marker --raise`, frontier cells may
 show grey DSM−DTM placeholders. A feature whose footprint crosses a cell border
 must not leave that grey mass under the real shell: `site_kit.apply` pre-strips
-ghost-feature blocks inside the planned volume before fill; `feature_build` keeps
-plan cells where only `ghost_*_features` owned the column and adds ghost owners
-to `modifies` on live apply. Before handoff, run
+recorded ghost-feature blocks before fill, then fails closed if any unplanned
+`light_gray_concrete` remains in the footprint columns (including ownership-less
+grey). `feature_build` keeps plan cells where only `ghost_*_features` owned the
+column and adds ghost owners to `modifies` on live apply. Before handoff, run
 `python3 shims/lidar_ghost.py status --cell <home> --ring 2` and confirm every
 touched cell has `ghost-features` stripped/superseded where the build sits.
 
