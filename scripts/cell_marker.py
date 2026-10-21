@@ -95,7 +95,7 @@ def perimeter_columns(tx: int, tz: int) -> list[tuple[int, int]]:
 def reference_ground_y(world: World, tx: int, tz: int) -> int | None:
     """Highest ground Y sampled inside the cell (defines the marker plane base).
 
-    @param world: live or pristine reader
+    @param world: world reader
     @param tx: cell X index
     @param tz: cell Z index
     @returns: ground Y or None if no samples
@@ -131,7 +131,7 @@ def marker_y_band(base: int) -> range:
 def marker_plane_y(world: World, tx: int, tz: int) -> int | None:
     """Single Y for the whole perimeter ring (~30 blocks above cell ground peak).
 
-    @param world: live or pristine reader
+    @param world: world reader
     @param tx: cell X index
     @param tz: cell Z index
     @returns: world Y for wool placement, or None if ground unknown
@@ -189,7 +189,7 @@ def _clear_positions(tx: int, tz: int, world: World, registry: dict[str, str],
 
     @param tx: cell X index
     @param tz: cell Z index
-    @param world: live or pristine reader
+    @param world: world reader
     @param registry: parsed *-cells.json map
     @param extra_y: also sweep this exact Y (ring raised when ground read differently)
     @returns: positions from registry plus legacy-band wool on the perimeter
@@ -223,7 +223,7 @@ def _strip_legacy_wool(
     @param plan: plan under construction
     @param tx: cell X index
     @param tz: cell Z index
-    @param world: live or pristine reader
+    @param world: world reader
     @param name: marker build name
     @param owned: built_cells() map
     @param y_ring: Y of the new flat ring

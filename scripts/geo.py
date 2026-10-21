@@ -185,7 +185,7 @@ def pitch_deg_to_slope(deg: float) -> dict:
 
 
 def lidar_top(world, x: int, z: int, ymax: int = 120, ymin: int = 30) -> int:
-    """Top solid block Y on the pristine save, skipping vegetation/air.
+    """Top solid block Y of the given world, skipping vegetation/air.
 
     @param world: site_kit.World
     @param x: column X
@@ -639,7 +639,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument('--pitch', type=float, help='real roof pitch degrees')
     s.set_defaults(func=cmd_slope)
 
-    pr = sub.add_parser('probe', help='ground Y and LIDAR top (pristine world)')
+    pr = sub.add_parser('probe', help='ground Y and LIDAR top (live world)')
     pr.add_argument('at', nargs='?', help='x,z column')
     pr.add_argument('--bbox', help='x0,z0,x1,z1 summary')
     pr.set_defaults(func=cmd_probe)

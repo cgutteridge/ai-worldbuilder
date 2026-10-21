@@ -42,9 +42,6 @@ try:
 except FileNotFoundError:
     VECTOR_MAP_CLIPS = ROOT / 'reference' / 'vector_map'
 CACHE = ROOT / 'verification/site/osm27700'
-_CFG = json.loads((ROOT / 'config/world.json').read_text())
-# Untouched pristine save: ground reference for "how high above the street is this?"
-PRISTINE = Path(_CFG.get('pristine_region_path', ''))
 
 # Blocks that may legitimately stand outside a building footprint and rise above
 # the ground: garden walls/fences/hedges, trees, street furniture.
@@ -222,13 +219,16 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
     """Find building-like blocks standing in front of / outside every vector-map footprint.
 
     @param cells: {(x, y, z): state}
-    @param world: site_kit.World for the ground reference (default: pristine save)
+    @param world: object with ``ground(x, z)`` for the ground reference (default: lidar composite world)
     Front zone (street side of the house line): max MAX_RISE. Back gardens: BACK_RISE.
-    @returns: {'outside': {pos: [state, rise, zone, street, dist]}, 'blind': [pos...]}
+    @returns: {'outside': {pos: [state, rise, zone, street, dist]}, 'blind': [pos...]} (blind = no map clip or no cached lidar)
     """
-    from site_kit import World, bid
+    from site_kit import bid
     idx = idx or OSMIndex()
-    w = world or World(PRISTINE)
+    if world is None:
+        import lidar_provider
+        world = lidar_provider.composite_world()
+    w = world
     ground = {}
     out, blind = {}, []
     for (x, y, z), st in cells.items():
@@ -239,7 +239,11 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
         if covered and idx.near_footprint(x, z):
             continue
         if (x, z) not in ground:
-            ground[(x, z)] = w.ground(x, z, top=120, bottom=0)
+            try:
+                ground[(x, z)] = w.ground(x, z, top=120, bottom=0)
+            except LookupError:       # lidar tiles for this cell are not cached: ground unknown
+                blind.append((x, y, z))
+                continue
         rise = y - ground[(x, z)]
         if rise <= MAX_RISE:
             continue          # kerbs, paving, low garden walls: fine anywhere
@@ -299,7 +303,7 @@ STREET_SURFACE = ('gray_terracotta', 'polished_diorite', 'smooth_stone', 'andesi
 def street_surface(world, x: int, z: int) -> bool:
     """True if the top surface block of column (x, z) is a road / pavement block.
 
-    @param world: site_kit.World to read (live save or pristine)
+    @param world: site_kit.World to read (the live save)
     @param x: MC block x
     @param z: MC block z
     @returns: whether the surface block id is in STREET_SURFACE

@@ -4,7 +4,6 @@ import random
 import unittest
 
 import coverage
-import lump_scan
 import osm_footprints as osm
 import pass_mask as pm
 
@@ -62,31 +61,6 @@ class TestPassMaskDecode(unittest.TestCase):
     def test_runs_that_end_early_raise(self):
         with self.assertRaises(IndexError):
             pm.decode_runs(['minecraft:air'], [[0, 2]], [0, 0, 0, 1, 1, 1])
-
-
-class TestSurfaceSectionSkip(unittest.TestCase):
-    class W:
-        """A world where only y 60..64 and 70 hold blocks; uniform_air mimics site_kit.World sections."""
-        def __init__(self, fast):
-            if fast:
-                self.uniform_air = self._uniform
-
-        def block(self, x, y, z):
-            if 60 <= y <= 64:
-                return 'minecraft:grass_block' if y == 64 else 'minecraft:stone'
-            if y == 70:
-                return 'minecraft:oak_leaves[persistent=true]'
-            return 'minecraft:air' if y > 0 else None
-
-        def _uniform(self, x, y, z, airs):
-            sec = y >> 4
-            return not any(60 <= yy <= 64 or yy == 70 for yy in range(sec * 16, sec * 16 + 16))
-
-    def test_skipping_sections_gives_the_same_surface(self):
-        for top in (140, 70, 64, 63, 16, 15, 1):
-            self.assertEqual(lump_scan.surface(self.W(True), 3, 4, top), lump_scan.surface(self.W(False), 3, 4, top))
-        self.assertEqual(lump_scan.surface(self.W(True), 3, 4), (64, 'minecraft:grass_block'))
-        self.assertEqual(lump_scan.surface(self.W(True), 3, 4, 20), (0, ''))
 
 
 class TestTouchedMemo(unittest.TestCase):

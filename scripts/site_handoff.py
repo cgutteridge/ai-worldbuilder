@@ -128,8 +128,7 @@ def _cell_stages(cell):
 def residual_features(cell, idx=None):
     """Mapped buildings no feature build covers, packaged as queue features.
 
-    Empty-world DoD (ADR 003): vector-map footprints still missing a house/feature build. Does not scan
-    standing vendor lumps — ``lump_scan`` is diagnostic only and must not drive the queue.
+    Empty-world DoD (ADR 003): vector-map footprints still missing a house/feature build.
 
     @param cell: (tx, tz)
     @param idx: optional shared OSMIndex
@@ -243,7 +242,7 @@ def lidar_lumps(cell):
     try:
         import lidar_heightmap as lh
         return lh.lumps(lh.reference_world().heightmap(cell))
-    except (OSError, ValueError, KeyError, SystemExit, ImportError):
+    except (OSError, ValueError, KeyError, SystemExit, ImportError, LookupError):
         return []
 
 

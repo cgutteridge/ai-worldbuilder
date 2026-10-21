@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tree review: the lidar crown inventory against the live world (I-067 method, I-073 per-cell check).
 
-The pristine import draws every lidar tree as log + leaf, so the PRISTINE save is a crown inventory
+The lidar composite (first-return minus last-return crowns) is the crown inventory
 (position, height, spread; lidar_heightmap kind 2 = tree, 3 = tree over a roof). Lidar filters small
 things (shrubs, cars, street furniture) and is blind to trees planted after the survey, so it is
 evidence, not truth: the aerial sheet decides what is real. This tool lines the two up and says where
@@ -129,11 +129,7 @@ def cells_for_zone(x0: int, z0: int, x1: int, z1: int) -> list[tuple[int, int]]:
 
 def run(cells: list[tuple[int, int]], zone: tuple[int, int, int, int] | None = None) -> list[dict]:
     from site_kit import World
-    import os
-    # Default stays the pristine save, the inventory this tool was calibrated on. LIDAR_SOURCE=composite opts in: trees are then
-    # real crowns (first-return minus last-return lidar) and number more than the import's.
-    src = os.environ.get('LIDAR_SOURCE')
-    live_w, pri_w = World(), L.reference_world('pristine' if src in (None, 'auto') else src)
+    live_w, pri_w = World(), L.reference_world()
     rows = []
     for cell in cells:
         live, pri = L.heightmap(live_w, cell), L.heightmap(pri_w, cell)

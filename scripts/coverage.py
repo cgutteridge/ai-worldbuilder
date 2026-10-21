@@ -4,13 +4,13 @@
 Model: a 2D map of block columns (no Y). Every column of an area belongs to exactly one PARCEL:
 
   property  footprint-map building polygon, plus a garden grown by osm_footprints.grow_plots for homes
-  road      carriageway + pavement band of a road (fixed half-widths from the pristine import palette)
+  road      carriageway + pavement band of a road (fixed half-widths)
   path      footway / path / steps / cycleway / service / track ways (rear lanes, alleys, twittens)
   open      landuse / leisure / amenity / natural polygons (grass, car parks, parks, ...)
   gap       RESIDUAL: whatever is left (verges, kerbs, corners, slivers, unlabelled ground).
             Connected components cut at 128-cell edges, named
             "gap:x,z N cols, between <A> and <B>" and listed like any other parcel.
-            Stock street surface <= FRINGE past a corridor and slivers <= SLIVER columns join
+            Slivers <= SLIVER columns join
             their neighbour parcel instead (still counted against its 100%).
   no_osm    residual outside every vector-map clip (run osm_extract.py there before judging it)
 
@@ -18,16 +18,13 @@ Road, path, open, gap and no_osm parcels are split per 128x128 cell; properties 
 Umbrella polygons (campus, school, landuse=residential/railway...) are not parcels: they label
 gaps on their edges ("edge of Highfield Campus").
 
-Parcels are drawn from the vector map + the pristine reference save (street surface stops garden growth),
+Parcels are drawn from the vector map alone (gardens grow to REACH or a neighbour),
 so they do not move as the live world is refined. Touched columns / disk cache / ownership
 overlap live in scripts/touched_cells.py (re-exported here). Touched = columns covered by
 verification/site/*-cells.json, minus REVERTED builds. State per parcel:
   untouched / touched N% / done.
 Done needs 100% of columns touched AND a sign-off in site/COVERAGE-SIGNOFFS.jsonl.
-signoff refuses below 100%, and on any leftover import mass (carpet roof, exposed stone band /
-undercroft, stock pavement inside gardens, or any exposed block above the build floor that no
-build wrote and is unchanged from pristine). There is no override: to keep a vendor-import block on
-purpose, write it in the build plan.
+signoff refuses below 100%.
 
 CLI (do not rely on ``--help`` in agent sessions — use COVERAGE_CHEATSHEET /
 site_handoff SESSION BRIEF / rules/process.md §2c):
@@ -40,7 +37,7 @@ from __future__ import annotations
 COVERAGE_CHEATSHEET = """
 Commands (prefix: python3 scripts/coverage.py):
   build [--area NAME [--cells tx0,tz0,tx1,tz1]]
-  status [--area NAME] [--cell tx,tz] [--parcel ID] [--kind K] [--state S] [--list] [--check] [--write]
+  status [--area NAME] [--cell tx,tz] [--parcel ID] [--kind K] [--state S] [--list] [--write]
   gaps [--area NAME] [--limit N]
   signoff ID [ID ...] --build NAME [--note TEXT]
   signoff --backfill [--builds a,b] [--dry-run]
@@ -62,9 +59,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
-from osm_footprints import (PRISTINE, OSMIndex, _addr, _seg_dist, grow_plots,  # noqa: E402
-                            osm_tags, street_surface)
-from site_kit import OUT, World  # noqa: E402
+from osm_footprints import OSMIndex, _addr, _seg_dist, grow_plots, osm_tags  # noqa: E402
+from site_kit import OUT  # noqa: E402
 from touched_cells import (  # noqa: E402
     REVERTED, TOUCH_CACHE, decode_runs, encode_runs, ownership_overlap_issues,
     touched_by_build, union,
@@ -73,9 +69,7 @@ from touched_cells import (  # noqa: E402
 from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
 MARGIN = 48           # grid margin round the area's cells; > REACH so edge properties stay whole
-FRINGE = 3            # stock street surface this far past a parcel joins it (ParcelBuilder.fringe)
 SLIVER = 5            # residual components this small join a neighbour (ParcelBuilder.residual)
-LEFTOVER_TOP = 160    # highest y scanned for leftover import structure (geocraft_leftovers)
 AREAS_FILE = ROOT / 'config/coverage-areas.json'
 STORE = OUT / 'coverage'
 SIGNOFFS = ROOT / 'site/COVERAGE-SIGNOFFS.jsonl'
@@ -300,15 +294,14 @@ class ParcelBuilder:
     """Assign every column of an area (+ MARGIN) to exactly one parcel.
 
     Order: footprints > highways (best score, nearest) > open polygons (smallest first) >
-    gardens grown from home footprints (+ leftover outbuildings) > street-surface fringe >
+    gardens grown from home footprints (+ leftover outbuildings) >
     residual gaps / no_osm.
     """
 
-    def __init__(self, name: str, cells, idx: OSMIndex | None = None, pristine: World | None = None):
+    def __init__(self, name: str, cells, idx: OSMIndex | None = None):
         """@param name: area name
         @param cells: (tx0, tz0, tx1, tz1) inclusive 128-cell rectangle
         @param idx: OSMIndex (loaded if omitted)
-        @param pristine: World over the untouched reference save (street surface for growth)
         """
         self.name = name
         self.cells = tuple(cells)
@@ -316,13 +309,11 @@ class ParcelBuilder:
         x0, z0, x1, z1 = self.core
         self.grid = (x0 - MARGIN, z0 - MARGIN, x1 + MARGIN, z1 + MARGIN)
         self.idx = idx or OSMIndex()
-        self.pristine = pristine or World(PRISTINE)
         self.owner = {}       # (x, z) -> parcel id
         self.parcels = {}     # parcel id -> {'kind', 'label', 'meta'}
         self.outbuildings = {}
         self.seeds = {}
         self.umbrellas = []   # (label, set of columns)
-        self._surf = {}
 
     def in_grid(self, x: int, z: int) -> bool:
         """@returns: whether (x, z) lies in the working grid (area + margin)"""
@@ -402,43 +393,14 @@ class ParcelBuilder:
                 self.owner[(x, z)] = pid
                 self._register(pid, kind, label, map_ref=ref, cell=[tx, tz])
 
-    def street(self, x: int, z: int) -> bool:
-        """@returns: whether the pristine import surface of (x, z) is road / pavement (cached)"""
-        if (x, z) not in self._surf:
-            self._surf[(x, z)] = street_surface(self.pristine, x, z)
-        return self._surf[(x, z)]
-
     def gardens(self):
-        """Grow home footprints over unassigned ground until street surface (pristine) or a neighbour."""
+        """Grow home footprints over unassigned ground until REACH or a neighbour."""
         def passable(x, z):
-            return self.in_grid(x, z) and (x, z) not in self.owner and not self.street(x, z)
+            return self.in_grid(x, z) and (x, z) not in self.owner
         for c, pid in grow_plots(self.seeds, passable, REACH).items():
             self.owner.setdefault(c, pid)
         for c, pid in self.outbuildings.items():
             self.owner.setdefault(c, pid)
-
-    def fringe(self):
-        """Stock street surface just past the fixed corridors joins the parcel it touches.
-
-        The import raster has junction caps, driveway mouths and paved verges beyond the
-        fixed half-widths; left alone they become hundreds of 1-5 column gaps. Up to FRINGE
-        blocks deep they join the touching road / path parcel, else the touching property, so
-        they still count against that parcel's 100%.
-        """
-        for kinds in (('road', 'path'), ('property', 'open')):
-            todo = deque()
-            for (x, z), pid in sorted(self.owner.items()):
-                if self.parcels[pid]['kind'] in kinds:
-                    todo.append((x, z, pid, 0))
-            while todo:
-                x, z, pid, d = todo.popleft()
-                if d >= FRINGE:
-                    continue
-                for dx, dz in N4:
-                    n = (x + dx, z + dz)
-                    if self.in_grid(*n) and n not in self.owner and self.street(*n):
-                        self.owner[n] = pid
-                        todo.append((n[0], n[1], pid, d + 1))
 
     def residual(self):
         """Unassigned columns -> gap components per cell, or no_osm outside every map clip.
@@ -525,7 +487,6 @@ class ParcelBuilder:
         self.highways()
         self.areas()
         self.gardens()
-        self.fringe()
         self.residual()
         members = {}
         for c, pid in self.owner.items():
@@ -766,112 +727,6 @@ def stats(area: Area, touched: set, signoffs: dict) -> dict:
                     'signed': bool(s), 'lapsed': bool(s) and t < n,
                     'moved': bool(s) and s.get('digest') not in (None, p['digest'])}
     return out
-
-
-# --- leftover import mass --------------------------------------------------------------------
-_AIRS = ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:light')
-_SOFT = ('leaves', '_log', 'short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy', 'dandelion',
-         'bush', 'vine', 'daisy', 'bluet', 'orchid', 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom')
-
-
-def surface(world: World, x: int, z: int, top: int = 120) -> tuple[int, str]:
-    """Top solid block of a column, skipping air (by exact id), plants, leaves and logs.
-
-    Unlike World.ground() this does not treat '*_stairs' as air ('air' substring match).
-
-    @param world: World to read
-    @param x: MC block x
-    @param z: MC block z
-    @param top: highest y scanned
-    @returns: (y, block id without properties); (0, '') if nothing found
-    """
-    for y in range(top, 0, -1):
-        b = (world.block(x, y, z) or 'minecraft:air').split('[')[0]
-        if b not in _AIRS and not any(k in b for k in _SOFT):
-            return y, b
-    return 0, ''
-
-
-def placed_heights(cols, by_build: dict) -> dict:
-    """Y levels each build wrote (air included) in the given columns, from the build archives.
-
-    One pass over the archives of the builds touching cols; REVERTED builds are already
-    absent from by_build. A block a build wrote is deliberate even when it matches the import.
-
-    @param cols: iterable of (x, z) to collect
-    @param by_build: touched_by_build() — {build: set of (x, z)}
-    @returns: {(x, z): set of y}; columns no build wrote are absent
-    """
-    cols = set(cols)
-    out: dict = {}
-    for build, touched in sorted(by_build.items()):
-        if not touched & cols:
-            continue
-        for k in json.loads((OUT / f'{build}-cells.json').read_text()):
-            x, y, z = (int(v) for v in k.split(','))
-            if (x, z) in cols:
-                out.setdefault((x, z), set()).add(y)
-    return out
-
-
-def _exposed(live: World, x: int, y: int, z: int) -> bool:
-    """@returns: whether any of the six face neighbours of (x, y, z) is air in the live save"""
-    return any((live.block(x + dx, y + dy, z + dz) or 'minecraft:air').split('[')[0] in _AIRS
-               for dx, dy, dz in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)))
-
-
-def geocraft_leftovers(cells, kind: str, live: World, pristine: World, placed: dict,
-                       limit: int = 0) -> dict:
-    """Blocks still exactly as the import left them on ground that should be fully refined.
-
-    carpet     the pristine top block is a *_carpet (import roof) and it is still there
-    stone      the live surface is minecraft:stone unchanged from pristine (raised front-garden
-               band, or the building undercroft once walls were stripped)
-    pavement   the live surface is stock polished_diorite in a property / open / gap parcel
-               (import PAVEMENT fringe swallowing a garden)
-    structure  any other block above the lowest Y a build wrote in the column that no build
-               wrote, is unchanged from pristine and touches air: import walls, carpet,
-               procedural trees, floating pavement. Buried fill under build blocks is ignored.
-
-    @param cells: iterable of (x, z)
-    @param kind: parcel kind (pavement only counts outside road / path parcels)
-    @param live: World over the live save
-    @param pristine: World over the untouched reference save
-    @param placed: placed_heights() covering cells
-    @param limit: stop after this many hits in total (0 = scan everything)
-    @returns: {'carpet': [(x, y, z)...], 'stone': [...], 'pavement': [...], 'structure': [...]}
-    """
-    hits = {'carpet': [], 'stone': [], 'pavement': [], 'structure': []}
-    total = 0
-    for x, z in sorted(cells):
-        found = []
-        py, pb = surface(pristine, x, z)
-        if pb.endswith('_carpet') and (live.block(x, py, z) or '').split('[')[0] == pb:
-            found.append(('carpet', (x, py, z)))
-        else:
-            ly, lb = surface(live, x, z)
-            same = lb == (pristine.block(x, ly, z) or '').split('[')[0]
-            if same and lb == 'minecraft:stone':
-                found.append(('stone', (x, ly, z)))
-            elif same and lb == 'minecraft:polished_diorite' and kind not in ('road', 'path'):
-                found.append(('pavement', (x, ly, z)))
-        ys = placed.get((x, z))
-        if ys:
-            flagged = {pos for _, pos in found}
-            for y in range(LEFTOVER_TOP, min(ys), -1):
-                if y in ys or (x, y, z) in flagged:
-                    continue
-                pb = (pristine.block(x, y, z) or 'minecraft:air').split('[')[0]
-                if pb in _AIRS or (live.block(x, y, z) or '').split('[')[0] != pb:
-                    continue
-                if _exposed(live, x, y, z):
-                    found.append(('structure', (x, y, z)))
-        for k, pos in found:
-            hits[k].append(pos)
-            total += 1
-            if limit and total >= limit:
-                return hits
-    return hits
 
 
 # --- COVERAGE.txt -------------------------------------------------------------------------
@@ -1127,9 +982,9 @@ def cmd_build(args) -> int:
     names = [args.area] if args.area else list(specs)
     if not names or any(n not in specs for n in names):
         raise SystemExit(f'unknown area(s) {names}; add with: build --area NAME --cells tx0,tz0,tx1,tz1')
-    idx, pristine = OSMIndex(), World(PRISTINE)
+    idx = OSMIndex()
     for n in names:
-        rec = ParcelBuilder(n, specs[n]['cells'], idx, pristine).run()
+        rec = ParcelBuilder(n, specs[n]['cells'], idx).run()
         path = save_area(rec)
         kinds = Counter(p['kind'] for p in rec['parcels'])
         print(f'{n}: {len(rec["parcels"])} parcels ' +
@@ -1160,14 +1015,13 @@ def _detail(area: Area, pid: str, by_build: dict, touched: set, signoffs: dict):
 
 
 def cmd_status(args) -> int:
-    """Summary per area, optional filtered parcel list, parcel detail and import-leftover check.
+    """Summary per area, optional filtered parcel list and parcel detail.
 
     @param args: argparse namespace
-    @returns: exit code (1 if --check finds leftover import mass in done parcels)
+    @returns: exit code (0)
     """
     by_build = touched_by_build()
     touched, signoffs = union(by_build), load_signoffs()
-    bad = 0
     for a in load_areas(args.area):
         st = stats(a, touched, signoffs)
         if args.parcel:
@@ -1202,22 +1056,10 @@ def cmd_status(args) -> int:
                 print('  ' + _parcel_line(a.parcels[pid], st[pid]))
             if len(sel) > args.limit:
                 print(f'  ... {len(sel) - args.limit} more (raise --limit)')
-        if args.check:
-            live, pristine = World(), World(PRISTINE)
-            done = [p for p in a.parcels if st[p]['state'] == 'done']
-            placed = placed_heights((c for p in done for c in a.parcels[p]['set']), by_build)
-            for pid in done:
-                hits = geocraft_leftovers(a.parcels[pid]['set'], a.parcels[pid]['kind'], live, pristine,
-                                          placed)
-                if any(hits.values()):
-                    bad += 1
-                    print(f'  LEFTOVER IMPORT in done {pid}: ' +
-                          ', '.join(f'{k} {len(v)} e.g. {v[:2]}' for k, v in hits.items() if v))
-            print(f'  import-leftover check on done parcels: {bad} with leftovers')
     if args.write:
         write_coverage(by_build=by_build)
         print(f'updated {COVERAGE_TXT.relative_to(ROOT)} PROCESSED CELLS')
-    return 1 if bad else 0
+    return 0
 
 
 def cmd_gaps(args) -> int:
@@ -1267,7 +1109,7 @@ def signoff_parcels(
     note: str | None = None,
     date_str: str | None = None,
 ) -> tuple[list[str], list[tuple[str, str]]]:
-    """Sign off parcels when touched 100% and no leftover import mass blocks signoff.
+    """Sign off parcels when touched 100%.
 
     @param parcel_ids: coverage parcel ids (unknown ids are refused)
     @param build: verification build name (must have ``*-cells.json``)
@@ -1279,16 +1121,6 @@ def signoff_parcels(
     by_build = touched_by_build()
     touched = union(by_build)
     today = date_str or date.today().isoformat()
-    live, pristine = World(), World(PRISTINE)
-    placed: dict = {}
-    primed: set = set()
-
-    def prime(cols):
-        todo = set(cols) - primed
-        if todo:
-            placed.update(placed_heights(todo, by_build))
-            primed.update(todo)
-
     def check(a, p, build_name):
         cols = p['set']
         t = len(cols & touched)
@@ -1302,10 +1134,6 @@ def signoff_parcels(
                 return f'no verification/site/{build_name}-cells.json'
             if not by_build[build_name] & cols:
                 return f'{build_name} touched none of its columns'
-        prime(cols)
-        hits = geocraft_leftovers(cols, p['kind'], live, pristine, placed, limit=20)
-        if any(hits.values()):
-            return 'leftover import mass ' + ', '.join(f'{k} e.g. {v[:2]}' for k, v in hits.items() if v)
         return None
 
     signed: list[str] = []
@@ -1442,7 +1270,6 @@ def main() -> int:
     s.add_argument('--state', choices=STATES)
     s.add_argument('--list', action='store_true', help='list parcels (highest coverage first)')
     s.add_argument('--limit', type=int, default=25)
-    s.add_argument('--check', action='store_true', help='scan done parcels for leftover import mass')
     s.add_argument('--write', action='store_true', help='regenerate COVERAGE.txt PROCESSED CELLS (after new builds)')
     g = sub.add_parser('gaps', help='gap parcels + seams')
     g.add_argument('--area')

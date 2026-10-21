@@ -84,4 +84,4 @@ _Avoid_: third-party generator refine (as the default workflow), lump sweep (as 
 
 **Lidar ghost**:
 Placeholder ground and grey above-ground mass in a cell, taken only from national lidar composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later. Frontier membership comes from the registry (real refine seeds a Chebyshev ring).
-_Avoid_: finished ground pass, real feature build, vendor lump, pristine height sketch
+_Avoid_: finished ground pass, real feature build, vendor lump, baseline height sketch

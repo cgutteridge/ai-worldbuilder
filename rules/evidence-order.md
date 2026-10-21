@@ -33,7 +33,7 @@ Provider ids for this place live in `reference/SOURCES.txt`, place-sources catal
   but keep street furniture where practical. DSM−DTM (`lidar_query.py --layers
   diff`) finds walls and other standing objects. Rim reads low; ground_y is too
   low for a building on a bank. Newer photos win; record the mismatch.
-  Pristine third-party height exports are not evidence providers (ADR 003).
+  Heights and surfaces come from the lidar provider only; a baseline or import save is never read as evidence (ADR 003).
 - A portal gives the door's position and name, not its look (door type, canopy, steps): read that from its photo or streetlevel.
   A building with no portal can still have doors.
 - Some aerial and streetlevel providers are look-only: view, write down what they show,

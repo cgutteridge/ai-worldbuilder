@@ -162,9 +162,9 @@ def _stair(mat, facing, half='bottom'):
 
 
 class Terrace:
-    def __init__(self, plan, houses, ground_y, pav_row, lane_row, x_range, pristine=None,
+    def __init__(self, plan, houses, ground_y, pav_row, lane_row, x_range,
                  plot_slope=(0, -1), gore=None, gore_reach=18, street=None, restore_west=False):
-        """ground_y(x,z)->int pristine ground; pav_row(x)->northmost pavement row;
+        """ground_y(x,z)->int ground; pav_row(x)->northmost pavement row;
         lane_row(x)->southmost rear-lane row; x_range=(x0,x1) columns this build owns.
 
         plot_slope is the back-garden party line (houses stay squared). gore is
@@ -176,7 +176,6 @@ class Terrace:
         self.p, self.H = plan, houses
         self.ground_y, self.pav_row, self.lane_row = ground_y, pav_row, lane_row
         self.x0, self.x1 = x_range
-        self.pristine = pristine
         self.plot_slope = plot_slope
         self.gore, self.gore_reach, self.street = gore, gore_reach, street
         self.restore_west = restore_west
@@ -357,7 +356,7 @@ class Terrace:
 
     def surface_y(self, h, x, z):
         """Front garden and yard at floor level; lawn steps up gently toward the
-        rear lane following the pristine LIDAR ground (never more than +3)."""
+        rear lane following the LIDAR ground (never more than +3)."""
         if z >= h.f - 13:
             return h.b
         n = (h.f - 14) - z                    # rows into the lawn

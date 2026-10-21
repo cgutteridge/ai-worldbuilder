@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Lidar height map of the pristine reference save, and the lump report built from it.
+"""Lidar height map from the national composite DTM/DSM, and the building report built from it.
 
-The untouched baseline save (``config/world.json`` ``pristine_region_path``) holds import geometry:
-every column is a height. This reads that save, never the live world, so the report is stable across
-builds and resets.
+Evidence heights come from the lidar provider only (``lidar_provider.composite_world()``; ADR 003), never from
+the live world, so the report is stable across builds and resets. ``heightmap(world, cell)`` also reads a live
+``World`` when a caller wants the live surface to compare.
 
 Per column (cell = 128 x 128, arrays indexed [x - x0, z - z0]):
   h      top of the lidar surface: carpet is ignored (it sits ON the lidar), leaves and logs count, because
-         where there is no building the import draws a tree as log + leaf. Grass tufts and flowers are ignored.
+         where there is no building a tree is log + leaf. Grass tufts and flowers are ignored.
   base   top of the solid ground under any carpet / leaves / logs (ground or wall top, no vegetation)
-  roof   y of the import roof carpet over the column, 0 if none
+  roof   y of the roof carpet over the column, 0 if none
   kind   0 ground / paving, 1 roof (building lump), 2 tree, 3 tree overhanging a roof,
          4 structure (composite lidar only: tall solid outside any footprint-map polygon)
 
@@ -19,26 +19,21 @@ footprint-map ways under it (none = unmapped).
 
   python3 scripts/lidar_heightmap.py --cell 51,-41            # report
   python3 scripts/lidar_heightmap.py --cell 51,-41 --json     # machine-readable
-  python3 scripts/lidar_heightmap.py --cell 51,-41 --write    # also keep verification/site/lidar/51_-41.npz
 
-Source: national composite lidar (composite world module + lidar shim) wherever tiles are cached, else the
-pristine save, cell by cell. Force one with ``LIDAR_SOURCE`` (``auto`` | ``pristine`` | composite-only;
-default ``auto``). Composite lidar matches the save on ground and roofs; its trees are first-return
-crowns, so there are usually more than the import's procedural ones.
+Source: national composite lidar (composite world module + lidar shim); a cell whose tiles are not cached
+raises LookupError (fetch them with the lidar provider first). Trees are first-return crowns.
 
 Lookups that may straddle a cell edge (B42 at z -5505):
 
-  maps = Maps()                     # pristine by default; Maps(World()) for live
-  maps.top_at(x, z)                 # roof carpet y if the import had a roof, else surface h
+  maps = Maps()                     # lidar composite by default; Maps(World()) for live
+  maps.top_at(x, z)                 # roof carpet y if there is a roof, else surface h
   top_at(x, z)                      # same, with a module-level Maps cache
 """
 from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import statistics
-import sys
 
 import numpy as np
 
@@ -53,7 +48,6 @@ RIDGE_BASE = 3                      # ridge height above ground minus this, / ST
                                     # map building:levels on 54 single-building lumps in touched cells: 57% exact, 89%
                                     # within one level (eave height is useless: ~4 above ground whatever the levels)
 GROUND, ROOF, TREE, TREE_OVER_ROOF, STRUCTURE = 0, 1, 2, 3, 4
-OUT = ROOT / 'verification/site/lidar'
 _AIRS = ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:light')
 _TREE = ('leaves', '_log', '_wood')
 _PLANT = ('short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy', 'dandelion', 'bush', 'vine', 'daisy',
@@ -99,7 +93,7 @@ def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
 def heightmap(world, cell: tuple[int, int]) -> dict:
     """Height map of one cell.
 
-    @param world: World over the pristine save, or a world with its own ``heightmap(cell)`` (composite world, ReferenceWorld)
+    @param world: a live World, or a world with its own ``heightmap(cell)`` (composite world, ReferenceWorld)
     @param cell: (tx, tz)
     @returns: {'cell', 'x0', 'z0', 'h', 'base', 'roof', 'kind'} with 128x128 int16 / uint8 arrays
     """
@@ -116,28 +110,10 @@ def heightmap(world, cell: tuple[int, int]) -> dict:
     return {'cell': cell, 'x0': x0, 'z0': z0, **arr}
 
 
-def save(hm: dict) -> 'Path':
-    """Write the height map to verification/site/lidar/<tx>_<tz>.npz (regenerable, git-ignored)."""
-    OUT.mkdir(parents=True, exist_ok=True)
-    p = OUT / f'{hm["cell"][0]}_{hm["cell"][1]}.npz'
-    np.savez_compressed(p, x0=hm['x0'], z0=hm['z0'], h=hm['h'], base=hm['base'], roof=hm['roof'], kind=hm['kind'])
-    return p
-
-
-def load(cell: tuple[int, int]) -> dict | None:
-    """Height map from verification/site/lidar/<tx>_<tz>.npz, or None if missing."""
-    p = OUT / f'{cell[0]}_{cell[1]}.npz'
-    if not p.is_file():
-        return None
-    data = np.load(p)
-    return {'cell': cell, 'x0': int(data['x0']), 'z0': int(data['z0']),
-            'h': data['h'], 'base': data['base'], 'roof': data['roof'], 'kind': data['kind']}
-
-
 def top_of(hm: dict, x: int, z: int) -> int:
     """Lidar top Y of one column inside ``hm``: roof carpet where present, else surface h.
 
-    Same rule as lidar_audit.target: the import paints a roof carpet on building tops.
+    Same rule as lidar_audit.target: a roof carpet marks building tops.
     """
     i, j = x - hm['x0'], z - hm['z0']
     r = int(hm['roof'][i, j])
@@ -147,35 +123,24 @@ def top_of(hm: dict, x: int, z: int) -> int:
 class Maps:
     """Cached height maps keyed by cell, for lookups that may straddle cell edges.
 
-    @param world: object with block(x,y,z); defaults to the pristine reference save
-    @param use_cache: load from verification/site/lidar/*.npz when present (pristine only)
+    @param world: object with block(x,y,z) (a live World); default is the lidar composite reference
     """
 
-    def __init__(self, world=None, use_cache: bool = True):
+    def __init__(self, world=None):
         self.world = world
-        self.use_cache = use_cache
         self._hm: dict[tuple[int, int], dict] = {}
 
     def of(self, cell: tuple[int, int]) -> dict:
         """Height map of one cell, loaded once per Maps instance."""
         if cell not in self._hm:
             if self.world is None:
-                ref = reference_world()
-                if ref.uses_composite(cell):
-                    self._hm[cell] = ref.heightmap(cell)
-                    return self._hm[cell]
-                if self.use_cache:
-                    got = load(cell)
-                    if got is not None:
-                        self._hm[cell] = got
-                        return got
-                self._hm[cell] = heightmap(ref.fallback, cell)
+                self._hm[cell] = reference_world().heightmap(cell)
             else:
                 self._hm[cell] = heightmap(self.world, cell)
         return self._hm[cell]
 
     def top_at(self, x: int, z: int) -> int:
-        """Lidar top Y at (x, z): roof carpet if the import had a roof, else surface h.
+        """Lidar top Y at (x, z): roof carpet if there is a roof, else surface h.
 
         Loads the cell containing the column (works across cell edges).
         """
@@ -191,11 +156,11 @@ _DEFAULT_MAPS: Maps | None = None
 
 
 def top_at(x: int, z: int, maps: Maps | None = None) -> int:
-    """Lidar top Y at (x, z) across cell edges (module-level Maps cache of the pristine save).
+    """Lidar top Y at (x, z) across cell edges (module-level Maps cache of the lidar reference).
 
     @param x: block X
     @param z: block Z
-    @param maps: optional Maps instance (live world, tests); default is a shared pristine Maps
+    @param maps: optional Maps instance (live world, tests); default is a shared lidar Maps
     """
     global _DEFAULT_MAPS
     if maps is not None:
@@ -286,53 +251,39 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
     return out
 
 
+def map_refs_under(lump: dict, idx) -> list:
+    """Vector-map buildings sharing at least a quarter of the smaller footprint (min 4 columns) with the lump.
+
+    @param lump: one lumps() item
+    @param idx: osm_footprints.OSMIndex
+    @returns: [map way ref]
+    """
+    from coverage import osm_ref, scan_polygon
+    x0, z0, x1, z1 = lump['bbox']
+    out = []
+    for rings, p in idx.buildings:
+        xs = [x for x, _ in rings[0]]
+        zs = [z for _, z in rings[0]]
+        if max(xs) < x0 or min(xs) > x1 or max(zs) < z0 or min(zs) > z1:
+            continue
+        fp = set(scan_polygon(rings, (x0 - 2, z0 - 2, x1 + 2, z1 + 2)))
+        if fp and len(fp & lump['cols']) >= max(4, min(len(fp), lump['columns']) / 4):
+            out.append(osm_ref(p))
+    return out
+
+
 def report(hm: dict, with_osm: bool = True) -> list:
     """lumps() plus footprint-map ways under each (map-ref key empty = not mapped)."""
     items = lumps(hm)
     if with_osm:
-        import lump_scan
         from osm_footprints import OSMIndex
         idx = OSMIndex()
         levels = map_levels(idx)
         for lp in items:
-            lp['map_refs'] = lump_scan.map_refs_under(lp, idx)
+            lp['map_refs'] = map_refs_under(lp, idx)
             lv = {levels[r] for r in lp['map_refs'] if r in levels}
             lp['map_levels'] = sorted(lv)
     return items
-
-
-def pristine_path() -> Path:
-    """Region folder of the untouched reference save; stops with a clear message when missing or empty.
-
-    ``config/world.json`` ``pristine_region_path`` is outside the repo; a read-only clone is kept
-    under ``backups/`` (see ``rules/cleanup.md``).
-    """
-    p = Path(json.loads((ROOT / 'config/world.json').read_text())['pristine_region_path'])
-    clone = ROOT / 'backups/pristine-geocraft/region'
-    if not p.is_dir() or not any(p.glob('r.*.mca')):
-        raise SystemExit(f'pristine reference save not found at {p}\n'
-                         f'  a clone lives in {clone}: point '
-                         'config/world.json pristine_region_path there')
-    return p
-
-
-def pristine_world():
-    """World over the untouched reference save."""
-    from site_kit import World
-    return World(pristine_path())
-
-
-SOURCES = ('auto', 'composite', 'pristine')
-
-
-def normalize_lidar_source(source: str) -> str:
-    """Map a lidar source mode onto the canonical set.
-
-    @param source: raw ``LIDAR_SOURCE`` / ``--source`` value
-    @returns: one of :data:`SOURCES` (unchanged; unknown values fail later)
-    """
-    import lidar_provider as lp
-    return lp.normalize_source(source)
 
 
 def _composite_world():
@@ -342,19 +293,13 @@ def _composite_world():
 
 
 class ReferenceWorld:
-    """The lidar reference: composite tiles where cached, pristine save where not (per 128² cell).
+    """The lidar reference: composite tiles (DTM/DSM) only, per 128x128 cell.
 
-    @param source: 'auto' (that rule), 'composite' (LookupError when a cell is not cached) or 'pristine'
     @param composite: composite lidar world handle (default: shared cache, no downloads)
-    @param fallback: world to use for the pristine path (default: pristine_world(), opened on first use)
     """
 
-    def __init__(self, source: str = 'auto', composite=None, fallback=None):
-        source = normalize_lidar_source(source)
-        if source not in SOURCES:
-            raise SystemExit(f'LIDAR_SOURCE must be one of {SOURCES}, got {source!r}')
-        self.source = source
-        self._composite, self._fallback = composite, fallback
+    def __init__(self, composite=None):
+        self._composite = composite
 
     @property
     def composite(self):
@@ -363,36 +308,29 @@ class ReferenceWorld:
             self._composite = _composite_world()
         return self._composite
 
-    @property
-    def fallback(self):
-        if self._fallback is None:
-            self._fallback = pristine_world()
-        return self._fallback
-
     def uses_composite(self, cell: tuple[int, int]) -> bool:
-        """True when this cell is answered from composite lidar tiles.
+        """True when composite tiles cover the cell.
 
         @param cell: (tx, tz)
-        @returns: whether composite tiles cover the cell for this source mode
+        @raises LookupError: when the tiles for the cell are not cached
         """
-        if self.source == 'pristine':
-            return False
         if self.composite.covers(cell):
             return True
-        if self.source == 'composite':
-            raise LookupError(
-                f'Composite lidar tiles for cell {cell[0]},{cell[1]} are not cached; '
-                f'fetch the lidar provider tiles for that cell first')
-        return False
+        raise LookupError(
+            f'Composite lidar tiles for cell {cell[0]},{cell[1]} are not cached; '
+            f'fetch the lidar provider tiles for that cell first')
 
     def source_of(self, cell: tuple[int, int]) -> str:
-        return 'composite' if self.uses_composite(cell) else 'pristine'
+        self.uses_composite(cell)
+        return 'composite'
 
     def heightmap(self, cell: tuple[int, int]) -> dict:
-        return self.composite.heightmap(cell) if self.uses_composite(cell) else heightmap(self.fallback, cell)
+        self.uses_composite(cell)
+        return self.composite.heightmap(cell)
 
     def _world(self, x: int, z: int):
-        return self.composite if self.uses_composite(cellmath.cell_of(x, z)) else self.fallback
+        self.uses_composite(cellmath.cell_of(x, z))
+        return self.composite
 
     def block(self, x, y, z):
         return self._world(x, z).block(x, y, z)
@@ -405,16 +343,15 @@ class ReferenceWorld:
         return self._world(x, z).ground(x, z, top, bottom)
 
 
-_REFERENCE: dict[str, ReferenceWorld] = {}
+_REFERENCE: ReferenceWorld | None = None
 
 
-def reference_world(source: str | None = None) -> ReferenceWorld:
-    """The shared lidar reference world. ``source`` defaults to $LIDAR_SOURCE, else 'auto'."""
-    import os
-    source = normalize_lidar_source(source or os.environ.get('LIDAR_SOURCE', 'auto'))
-    if source not in _REFERENCE:
-        _REFERENCE[source] = ReferenceWorld(source)
-    return _REFERENCE[source]
+def reference_world() -> ReferenceWorld:
+    """The shared lidar reference world (composite DTM/DSM)."""
+    global _REFERENCE
+    if _REFERENCE is None:
+        _REFERENCE = ReferenceWorld()
+    return _REFERENCE
 
 
 def map_levels(idx) -> dict:
@@ -433,7 +370,7 @@ osm_levels = map_levels  # back-compat alias
 
 
 def format_report(cell, items: list, source: str | None = None) -> str:
-    """Plain-text table of the lump report; ``source`` ('composite' | 'pristine') is named in the heading when given."""
+    """Plain-text table of the building report; ``source`` ('composite') is named in the heading when given."""
     lines = [f'LIDAR LUMPS cell {cell[0]},{cell[1]}: {len(items)} building(s)' + (f' [{source}]' if source else ''),
              'bbox                       cols ground eave ridge st roof     axis trees lvl map']
     for lp in items:
@@ -471,9 +408,6 @@ def main(argv=None) -> int:
     ap.add_argument('--cell', help='tx,tz')
     ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with a STAGES file')
     ap.add_argument('--json', action='store_true', help='print JSON instead of a table')
-    ap.add_argument('--write', action='store_true', help='keep the height map as .npz')
-    ap.add_argument('--source', type=normalize_lidar_source, choices=SOURCES,
-                    help='lidar source (default $LIDAR_SOURCE, else auto: composite when cached, else pristine)')
     ap.add_argument('--no-osm', action='store_true', help='skip footprint-map match (faster)')
     a = ap.parse_args(argv)
     if a.tables:
@@ -481,12 +415,8 @@ def main(argv=None) -> int:
     if not a.cell:
         ap.error('--cell or --tables is required')
     cell = cellmath.parse_cell(a.cell)
-    ref = reference_world(a.source)
+    ref = reference_world()
     hm = ref.heightmap(cell)
-    if a.write and ref.uses_composite(cell):
-        print('--write skipped: the .npz cache holds pristine maps only; composite maps rebuild in about a second', file=sys.stderr)
-    elif a.write:
-        print(f'wrote {save(hm)}', file=sys.stderr)
     items = report(hm, with_osm=not a.no_osm)
     if a.json:
         print(json.dumps([{k: v for k, v in lp.items() if k != 'cols'} for lp in items], indent=1))

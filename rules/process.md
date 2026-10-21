@@ -238,8 +238,8 @@ BUILT plan in place to “fix” the world.
  from lidar or from the footprint map, build it anyway: house only, usual conventions, trace the
  footprint from the aerial and record source + year in the build docstring and the cell
  STAGES note. Check osm_extract.py first for ways outside the map clip. Queue driving is
- missing footprint feature builds via residual_features — not lump_scan (diagnostic only;
- empty-world DoD / ADR 003).
+ missing footprint feature builds via residual_features
+ (empty-world DoD / ADR 003).
 
  LIDAR IS A DATED SNAPSHOT TOO (user, 2026-10-16). Lidar can disagree with newer (or older)
  photos on footprint, height or roof (extension, new roof, demolition). Lidar stays the

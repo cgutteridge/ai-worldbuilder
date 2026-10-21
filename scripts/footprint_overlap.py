@@ -281,7 +281,7 @@ def lidar_feature_lookup(footprint: set[tuple[int, int]]) -> dict[tuple[int, int
     """Standing height (DSM−DTM metres) per footprint column from cached composite lidar tiles.
 
     Does not download tiles. Returns ``None`` when the DTM/DSM cache does not cover the
-    footprint (pristine sampling would otherwise report 0 and look falsely open).
+    footprint (a missing cache would otherwise report 0 and look falsely open).
 
     @param footprint: building mass columns
     @returns: ``{(x, z): feature_m}`` or ``None`` when tiles / frame are unavailable

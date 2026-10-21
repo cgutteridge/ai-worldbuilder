@@ -1,8 +1,8 @@
-"""A read-only stand-in for the pristine Geocraft save, built from DEFRA LIDAR + OSM footprints.
+"""A read-only world built from DEFRA LIDAR + OSM footprints (the composite lidar world).
 
 Everything that reads "the lidar" does so through a world with ``block(x, y, z)`` (lidar_heightmap, campus, geo probe).
-``DefraWorld`` answers those calls from shims/defra_lidar.py instead of region files, using Geocraft's own block
-rules (lib/Minecraft/Projection.pm render_xz), so callers cannot tell the difference:
+``DefraWorld`` answers those calls from shims/defra_lidar.py instead of region files, using Geocraft-style block
+rules (lib/Minecraft/Projection.pm render_xz):
 
   ground      solid up to SEA_LEVEL + int(DTM)
   feature     int(DSM - DTM) more solid blocks above it  (same quantity as lidar_query ``diff``)
@@ -18,8 +18,7 @@ rules (lib/Minecraft/Projection.pm render_xz), so callers cannot tell the differ
   else        solid up to the top of the feature
 
 Unfiltered DSM noise: cars/trains are not built form; street furniture is often worth keeping
-(site/GEOCRAFT.txt §1a). Checked against the untouched save (shims/defra_lidar.py compare): ground columns
-99% exact, roofs 100%. Footprints come from the OSMIndex (reference/osm clips); pass ``idx`` for another place.
+(site/GEOCRAFT.txt §1a). Footprints come from the OSMIndex (reference/osm clips); pass ``idx`` for another place.
 """
 from __future__ import annotations
 

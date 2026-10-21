@@ -287,7 +287,7 @@ class Build:
             h.rear = None
 
     def top_solid(self, x, z):
-        # natural/pristine ground only (ignores roof fringe slabs and earlier steps of this build)
+        # natural ground only (ignores roof fringe slabs and earlier steps of this build)
         for y in range(70, 40, -1):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
             if n in GROUND and n != 'minecraft:stone_stairs':

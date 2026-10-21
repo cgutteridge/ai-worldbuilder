@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Audit the live world against the pristine lidar height map (I-064 / I-065).
+"""Audit the live world against the lidar height map (I-064 / I-065).
 
 For one cell, take the height map of the live world (same rules as lidar_heightmap: carpet ignored, leaves
-and logs count) and compare it with the pristine one. The target for a column is the lidar roof top where
+and logs count) and compare it with the lidar one. The target for a column is the lidar roof top where
 the import had a roof (carpet y), else the lidar surface h.
 
 Per lump (building in the lidar): live vs lidar ridge, eave-free shape check (share of columns within 1 block),
@@ -37,7 +37,7 @@ def audit(live: dict, pri: dict, tol: int = 1, worst: int = 10) -> dict:
     """Compare two height maps of the same cell.
 
     @param live: heightmap() of the live world
-    @param pri: heightmap() of the pristine world
+    @param pri: heightmap() of the lidar reference
     @param tol: columns within this many blocks count as matching
     @param worst: how many worst columns to list
     @returns: {'columns', 'within', 'tree_missing', 'tree_extra', 'lumps': [...], 'worst': [...]}
@@ -101,7 +101,7 @@ def grid_diff(live: L.Maps, pri: L.Maps, x0: int, z0: int, x1: int, z1: int,
     """Live-minus-lidar columns over a bbox (works across cell edges).
 
     @param live: Maps over the live world
-    @param pri: Maps over the pristine lidar
+    @param pri: Maps over the lidar reference
     @param x0: inclusive min X
     @param z0: inclusive min Z
     @param x1: inclusive max X
@@ -152,8 +152,8 @@ def main(argv=None) -> int:
     from site_kit import World
     if a.grid:
         bbox = parse_bbox(a.grid)
-        live = L.Maps(World(), use_cache=False)
-        pri = L.Maps()                                          # lidar reference: composite where cached, else pristine (.npz when present)
+        live = L.Maps(World())
+        pri = L.Maps()                                          # lidar reference: composite DTM/DSM
         rows = grid_diff(live, pri, *bbox, min_abs=a.min_abs)
         if a.json:
             print(json.dumps({'bbox': list(bbox), 'min_abs': a.min_abs,
