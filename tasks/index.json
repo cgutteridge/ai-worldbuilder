@@ -4,23 +4,12 @@
   "nextTaskId": 34,
   "tasks": [
     {
-      "id": 31,
-      "title": "Cell registry 3/5: replace STAGES, QUEUE, handoff, sign-offs, holds, AERIAL-REVIEW, CURRENT-CELL; add next + issues; rewrite orchestrator",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "xl",
-      "blockedBy": [],
-      "notes": "DELETE: per-cell STAGES.json (all readers - cell_gaps, layers_done, requeue_plan, real_work_started, ground_done, site_status, site_pages, site_recover, lump_scan - read the registry instead); QUEUE.txt + Q-nnn ids + site_handoff queue writing/advance_to_next_cell + .handoff-pending.json + set_pending/clear_pending + the whole handoff system; COVERAGE-SIGNOFFS.jsonl and ALL sign-off code, rules, docs, tests (system runs unsupervised); CELL-HOLDS.jsonl (becomes cell hold field); AERIAL-REVIEW.txt and its code (site_handoff.py ~147-247); CURRENT-CELL.json and every other way of tracking the current cell (coverage.focus_cell, site_status centre, queue 'marker must be up' text); coverage.cell_rollup (COVERAGE.txt generated block now produced from the registry). KEEP/ADD: `next` registry command, read-only and deterministic (idempotent): open issues first, then next undone item. Cell choice: marker cell if not DONE, else nearest undone non-held cell to the configured origin ordered by distance then clockwise ring order from north (the build task raises the marker, next does not). Order inside a cell: ground, then features in registry order, then trees, then decor. ISSUES.txt = snagging backlog, one parsed line per issue with a registry target and reason, e.g. 'I-014  cell 48,-44 trees  <why>' / 'I-015  feature q001_university_road_42  <why>'; target is cell layer, feature id or whole cell; add-issue command reopens the target; auto-closes on clean rebuild and archives with date. Rewrite cell-orchestrator skill as a thin loop: run next, launch one subagent per task (a cell layer, a feature, or an issue), wait; a handoff is just a fresh session running next. Update human-confirm-fix and redo skills accordingly."
-    },
-    {
       "id": 32,
       "title": "Cell registry 4/5: repair cell, whole-world backup pair, logout gate, verify",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [
-        31
-      ],
+      "blockedBy": [],
       "notes": "repair <cell>: back up ONLY the impacted region files (region holding the cell plus any region its features/trees/decor spill into, from *-cells.json footprints and masks) together with that cell's registry record; wipe only that cell's columns to air above bedrock; replay from the registry clipped to the cell bounds (ghost ground/features if ghost state, else ground, features in registry order, trees, decor; features from site/builds specs); re-raise marker if it was up; if any step fails, clear flags for that step and all later ones so next picks it up. 'undo repair' restores the region files and the saved registry record. Bake-off: wipe the WHOLE world each round, restore ONE whole-world backup paired with a whole-registry copy (no per-cell slices); update model_bakeoff.restore_ghost_step and region_backup. Raw region_backup restore of a partial snapshot is refused (error points at the proper undo/redo command) except via repair-undo and the full-world bake-off restore. LOGOUT GATE: every command that rewrites region files (repair, undo repair, bake-off wipe/restore, dryrun_reset) refuses without --confirm-logged-out, stops and plays the need-you sound asking the user to log out; second guard checks session.lock / a running server holding the save and refuses even with the flag. VERIFY (report only, exit non-zero on any error): invariants; marker rings vs registry (exactly the marked cell has a stripe ring); region files exist for cells with ground and no blocks in cells the registry calls empty; built features have ownership files and blocks still present; registered features have specs; OSM buildings no registered feature covers (warnings that block DONE until resolved or dismissed with a reason); leftover old-system files (STAGES, QUEUE, CURRENT-CELL, sign-offs). Hook verify into scripts/run_tests.py / dryrun_reset where sensible."
     },
     {
