@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 
 import cellmath
+from cell_journal import ghost_name
 from script_env import make_parser  # noqa: E402
 
 DEFAULT_RING = 2
@@ -39,60 +40,19 @@ FILL_BOTTOM = 1                     # empty save has bedrock at y=0; fill solid 
 GROUND_BLOCK = 'gray_concrete'      # DTM surface
 FILL_BLOCK = 'stone'                # under the surface
 FEATURE_BLOCK = 'light_gray_concrete'  # DSM − DTM mass
-FOOTPRINT_OK = 'lidar ghost massing (ADR 003); not a real feature build'
+FOOTPRINT_OK = 'lidar ghost massing (ADR 004); not a real feature build'
 AIR = 'minecraft:air'
 
 HeightsFn = Callable[[int, int, int, int], dict[str, Any]]
 
 
-def tz_token(tz: int) -> str:
-    """Encode tz for owner names (negative → ``m`` prefix), matching ground_layer.plan_name."""
-    return f"{'m' if tz < 0 else ''}{abs(tz)}"
-
-
-def owner_name(tx: int, tz: int, layer: str) -> str:
-    """Build ownership / plan name, e.g. ``ghost_48_m44_ground``.
-
-    @param tx: cell tile X
-    @param tz: cell tile Z
-    @param layer: ``ground`` or ``features``
-    @returns: owner string
-    """
-    if layer not in ('ground', 'features'):
-        raise ValueError(f'layer must be ground or features, got {layer!r}')
-    return f'ghost_{tx}_{tz_token(tz)}_{layer}'
-
-
-def is_ghost_feature_owner(build: str) -> bool:
-    """True when ``build`` is a lidar ghost features owner (not ground).
-
-    @param build: plan (owner) name
-    @returns: whether this owner is grey feature mass
-    """
-    name = str(build)
-    return name.startswith('ghost_') and name.endswith('_features')
-
-
 def ghost_owners_for(cell: tuple[int, int]) -> frozenset[str]:
-    """Both ghost plan names for one cell (for ``modifies`` / ignored_builds).
+    """Both ghost plan names for one cell (the owners a real ground pass ignores).
 
     @param cell: (tx, tz)
     @returns: frozenset of owner names
     """
-    tx, tz = cell
-    return frozenset({owner_name(tx, tz, 'ground'), owner_name(tx, tz, 'features')})
-
-
-def ghost_modifies_for_plan(volume_plan) -> frozenset[str]:
-    """Ghost owner names for every cell a feature plan touches (cross-cell footprints).
-
-    @param volume_plan: feature ``site_kit.Plan``
-    @returns: names to pass in ``site_kit.apply(..., modifies=...)``
-    """
-    out: set[str] = set()
-    for cell in cells_for_positions(volume_plan.cells.keys()):
-        out |= ghost_owners_for(cell)
-    return frozenset(out)
+    return frozenset({ghost_name(cell, 'ground'), ghost_name(cell, 'features')})
 
 
 def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
@@ -110,17 +70,6 @@ def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
     for r in range(0 if include_focus else 1, ring + 1):
         out.extend(cellmath.ring_cells(r, origin=focus))
     return out
-
-
-def cells_for_positions(positions) -> set[tuple[int, int]]:
-    """Map block positions to coverage cells.
-
-    @param positions: iterable of (x, y, z)
-    @returns: set of (tx, tz)
-    """
-    import cellmath
-
-    return {cellmath.cell_of(x, z) for x, _y, z in positions}
 
 
 def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
@@ -154,7 +103,7 @@ def plan_ghost_ground(cell: tuple[int, int], heights: dict[str, Any] | None = No
     x0, z0, x1, z1 = cellmath.bounds(cell)
     h = heights if heights is not None else (heights_fn or default_heights)(x0, z0, x1, z1)
     ground = np.asarray(h['ground_y'])
-    plan = Plan(owner_name(tx, tz, 'ground'))
+    plan = Plan(ghost_name((tx, tz), 'ground'))
     plan.outside_footprint_ok = FOOTPRINT_OK
     for i, x in enumerate(range(x0, x1 + 1)):
         for j, z in enumerate(range(z0, z1 + 1)):
@@ -183,7 +132,7 @@ def plan_ghost_features(cell: tuple[int, int], heights: dict[str, Any] | None = 
     h = heights if heights is not None else (heights_fn or default_heights)(x0, z0, x1, z1)
     ground = np.asarray(h['ground_y'])
     feature = np.asarray(h.get('feature', h.get('diff')))
-    plan = Plan(owner_name(tx, tz, 'features'))
+    plan = Plan(ghost_name((tx, tz), 'features'))
     plan.outside_footprint_ok = FOOTPRINT_OK
     for i, x in enumerate(range(x0, x1 + 1)):
         for j, z in enumerate(range(z0, z1 + 1)):
@@ -194,18 +143,6 @@ def plan_ghost_features(cell: tuple[int, int], heights: dict[str, Any] | None = 
             for y in range(gy + 1, gy + fh + 1):
                 plan.set(x, y, z, FEATURE_BLOCK)
     return plan
-
-
-def plan_stats(plan) -> dict[str, int]:
-    """Compact counts for CLI / tests.
-
-    @param plan: ``site_kit.Plan``
-    @returns: block counts by short id plus total
-    """
-    from collections import Counter
-    from site_kit import bid
-    counts = Counter(bid(b).split(':', 1)[-1] for b in plan.cells.values())
-    return {'blocks': len(plan.cells), **dict(counts)}
 
 
 def ring_from_env(default: int = DEFAULT_RING) -> int:
@@ -243,8 +180,6 @@ def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
         return {'ground_y': gy, 'feature': feat, 'diff': feat}
 
     return fn
-
-
 
 
 def ghost_planner(heights_fn: HeightsFn | None = None) -> Callable[[tuple[int, int], str], dict | None]:
@@ -312,7 +247,7 @@ def cell_builds(reg, cell: tuple[int, int], layer: str):
     @param layer: ``ground`` or ``features``
     @returns: Build, or None when lidar cannot plan the cell
     """
-    from cell_journal import Build, ghost_name
+    from cell_journal import Build
     planned = reg.ghosts(cell, layer) if reg.ghosts is not None else None
     if planned is None:
         return None
