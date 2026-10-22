@@ -2,8 +2,9 @@
 """Reset the active world for another empty-world dry run (spec: lidar ghost v2).
 
 Wipes Minecraft overworld region chunks and agent place memory while keeping world
-frame, providers, and reference downloads. Starts from an empty cell registry that
-tools populate again.
+frame, providers, and reference downloads. Erases the registry directory (the cell
+journal and its plan blobs, ADR 004); the first journal write recreates it, so a
+reset world starts with a fresh journal and nothing is migrated or restored.
 
 Player must **leave the save** before a live reset; reopen afterward so chunks
 regenerate empty, then raise the origin cell (ghost frontier).
@@ -29,7 +30,6 @@ from script_env import ROOT, TOOL_ROOT  # noqa: E402
 SITE = ROOT / 'site'
 REGISTRY = ROOT / 'registry'
 TEMPLATE = TOOL_ROOT / 'templates' / 'new-world-site'
-REGISTRY_TEMPLATE = TOOL_ROOT / 'templates' / 'new-world-registry'
 LOCK = SITE / 'LOCK.json'
 HOLDS = SITE / 'CELL-HOLDS.jsonl'
 VERIFICATION = ROOT / 'verification' / 'site'
@@ -163,23 +163,6 @@ def preserved_paths(region_dir: Path) -> list[str]:
     return sorted(set(out))
 
 
-def scaffold_registry() -> None:
-    """Write an empty ``registry/cells.json`` + ``features.json`` for the active world.
-
-    Prefer ``templates/new-world-registry/`` when present; otherwise write ``{}``.
-    """
-    from atomic_json import write_json
-
-    REGISTRY.mkdir(parents=True, exist_ok=True)
-    for name in ('cells.json', 'features.json'):
-        src = REGISTRY_TEMPLATE / name
-        dst = REGISTRY / name
-        if src.is_file():
-            shutil.copy2(src, dst)
-        else:
-            write_json(dst, {})
-
-
 def scaffold_site() -> None:
     """Copy new-world site template over place memory (no legacy progress files)."""
     if not TEMPLATE.is_dir():
@@ -197,7 +180,11 @@ def scaffold_site() -> None:
 
 
 def clear_place_artifacts() -> None:
-    """Remove builds, STAGES, verification archives, lock, holds, legacy progress, registry."""
+    """Remove builds, cells, verification archives, lock, holds, legacy progress and the whole registry dir.
+
+    ``registry/`` holds ``journal.jsonl`` and ``blobs/``; removing it is the erase half of
+    erase-and-recreate (ADR 004). Nothing scaffolds it back.
+    """
     LOCK.unlink(missing_ok=True)
     HOLDS.unlink(missing_ok=True)
     geo = SITE / 'GEOCRAFT.txt'
@@ -217,6 +204,14 @@ def clear_place_artifacts() -> None:
     VERIFICATION.mkdir(parents=True, exist_ok=True)
     if REGISTRY.is_dir():
         shutil.rmtree(REGISTRY)
+
+
+def _journal_entry_count() -> int:
+    """Lines in ``registry/journal.jsonl`` (0 when the registry dir or journal is absent)."""
+    journal = REGISTRY / 'journal.jsonl'
+    if not journal.is_file():
+        return 0
+    return sum(1 for line in journal.read_text(encoding='utf-8').splitlines() if line.strip())
 
 
 def delete_regions(region_dir: Path) -> list[str]:
@@ -287,7 +282,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         'next_steps': [
             'Re-open the Minecraft save so overworld chunks regenerate empty.',
             'Raise the origin cell (cell_marker.py --raise <origin>) to seed the ghost frontier.',
-            'python3 scripts/cell_registry.py verify',
+            'python3 scripts/cell_registry.py verify  # expect no issues; registry/ appears with the first journal write',
         ],
     }
     if dry_run:
@@ -302,8 +297,12 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         SITE.mkdir(parents=True, exist_ok=True)
     clear_place_artifacts()
     scaffold_site()
-    scaffold_registry()
     report['regions_deleted'] = delete_regions(region_dir)
+    report['registry'] = {
+        'dir_present': REGISTRY.exists(),
+        'journal_entries': _journal_entry_count(),
+        'note': 'registry/ is created by the first journal write (registry/journal.jsonl, ADR 004)',
+    }
     try:
         import registry_verify as rv
         report['verify'] = rv.run_verify(root=ROOT, check_world=False)

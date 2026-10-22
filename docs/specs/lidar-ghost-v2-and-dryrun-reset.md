@@ -12,7 +12,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 ## Solution
 
-1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), write an **empty** `registry/` from `templates/new-world-registry/`, clear lock/holds/builds/STAGES/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the origin cell to seed the ghost frontier.
+1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the origin cell to seed the ghost frontier.
 2. **Lidar ghost v2** — Maintain a **frontier** of cells that should show placeholders: any cell with **real refine started** in the **registry** (ground, trees, decor, or feature) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** until **real ground** exists there, and **ghost features** until **real feature volume** overlaps that cell. **Strip** ghost-feature blocks in overlap volumes and update ghost bookkeeping so ensure does not skip. After **every successful apply** that counts as real work, **refresh** the frontier and reconcile ghosts.
 3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
 
@@ -68,7 +68,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 - When a real feature apply succeeds, run a **strip pass** for ghost-feature-owned blocks inside the feature’s placed volume (intersection with ghost feature owner), then update ghost-features stage to a terminal state that **does not** satisfy ghosts-complete idempotency (e.g. superseded / stripped / partial) so ensure can reason about missing mass.
 - When real ground completes, mark ghost-ground stage superseded or equivalent; blocks already overwritten by ground apply.
-- **Never** leave “no blocks but stages say applied” as the steady state after strip or reset; region wipe + reset clears site STAGES; strip must update stages when blocks are removed in-world.
+- **Never** leave “no blocks but stages say applied” as the steady state after strip or reset; region wipe + reset erases the cell journal; strip must update stages when blocks are removed in-world.
 
 ### Refresh triggers
 

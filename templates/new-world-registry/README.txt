@@ -1,10 +1,8 @@
-Empty cell registry scaffold for a new world (ticket #33).
+Nothing to scaffold for the cell registry.
 
-Copy into worlds/<name>/registry/ when bootstrapping (skill new-world-build
-or dryrun_reset). Paths are per active world — never share registry files
-across bake-off / donor saves.
+The registry directory is created by the first journal write
+(registry/journal.jsonl plus registry/blobs/, see docs/adr/004-cell-journal.md).
+A new or freshly reset world has no registry/ at all, and that is the correct
+empty state: do not create registry files by hand.
 
-  cells.json      {} until tools register layers / markers / holds
-  features.json   {} until tools register feature builds
-
-Progress source of truth: scripts/cell_registry.py (not site/QUEUE or STAGES).
+Progress source of truth: scripts/cell_registry.py (next / verify).
