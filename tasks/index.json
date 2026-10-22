@@ -55,11 +55,11 @@
     {
       "id": 51,
       "title": "Tidy leftover world state and old bakeoff branch (remaining items)",
-      "status": "todo",
+      "status": "blocked",
       "priority": "low",
       "complexity": "xs",
       "blockedBy": [],
-      "notes": "DONE already: backups/cells-cache (2.1 GB) deleted, backups/2026-10-19-010906-dryrun-site deleted, backups/regions already deleted, the pre-restore region copy in the scratch area deleted; the world's backups/ folder is empty. REMAINING: (a) worlds/southampton-build/verification/site/bakeoff_r003_* and bakeoff_r004_* outputs (keep bakeoff-R-001-evidence: the feature-selection scenarios point at it); (b) worlds/southampton-build has its own uncommitted edits (config/world.json no longer carries pristine_region_path/pristine_note, plus HUMANS.html, README.md, reference/LOGGING.txt, reference/README.txt): review and commit or drop in that repo; (c) delete the unmerged branch bakeoff-r004-haiku-high (old aborted R-004; the redo is task 48) with `git branch -D` once the owner agrees."
+      "notes": "DONE: backups/ emptied earlier; (a) deleted verification/site/bakeoff_r003_* and bakeoff_r004_* (~12MB; shots+json+previews). (b) reviewed and committed in worlds/southampton-build 37c84ba \u2014 config/world.json drops pristine_region_path/pristine_note; HUMANS.html, README.md, reference/LOGGING.txt, reference/README.txt refreshed for parent-tool layout / no PLACES. NOTE: bakeoff-R-001-evidence was already missing on disk (FS-001..004 still point at it); not recreated here. Left alone: other uncommitted southampton-build dryrun/site/ghost churn (outside the five-file review), site/builds/bakeoff_r003_susu.json, verification/archive bakeoff_r003. REMAINING needs owner OK: (c) `git branch -D bakeoff-r004-haiku-high` in ai-worldbuilder (unmerged; tip 65b0e29 already deleted aborted R-004 sitting; redo is task 48)."
     }
   ]
 }
