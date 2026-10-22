@@ -351,6 +351,12 @@
       "title": "Journal-based cell registry core with MemoryBlocks",
       "status": "done",
       "notes": "scripts/block_store.py + scripts/cell_journal.py + docs/specs/cell-journal-interface.md (78 tests). Notes for task 42: apply must keep its guards and build Plan from Writes.cells, signs/entities from Build.payload (reconcile re-commits block cells only); Undo is a two-phase entry computing an erase plan; ghosts planner callable (cell,'ground'|'features')->{pos:state}; ownership is replayed per cell, a ghost-heavy world will want a SQLite index behind owned(); issues auto-close and a cell CLI over view() are not built."
+    },
+    {
+      "id": 42,
+      "title": "Cut site_kit.apply over to the journal",
+      "status": "done",
+      "notes": "site_kit.apply records through CellRegistry (journal begun->landed); STAGES, registry_hooks, touched_cells, ownership cache/index deleted; site_recover reads journal entries; lidar_ghost state machine deleted; 60 files. Verified live (bakeoff world): recover lands intact crash, rolls back partial crash. For tasks 43-46: thin adapters left (site_status/site_pages stage-dict adapters, registry_issues dual records ISSUES.txt+journal notes, restore_structure_backup loads blocks outside the journal, site_recover structure restore until 44); dryrun_reset still writes empty registry/cells.json+features.json (task 45); docs still naming removed modules: skills cell-orchestrator/human-confirm-fix/new-world-build/redo, GLOSSARY, ADR 003/004 (004 lists site_recover as deleted - it is rebuilt in 44), audit, dryrun plan, v2 spec, rules building-review/cleanup/foliage/handoff-layered-passes/process, templates empty-world/new-world-registry/new-world-site. Known quirks: after a rollback that restores the pre-undo world the journal still shows the pass undone; register-feature CLI removed (feature exists once first apply begins), new `cell_registry.py note` command; trees_over_roof_resolved is a review Note; 7 listed behaviour changes in worker report (apply over aborted entry refused, journal refusals loud, ghost leftover check, other pass for markers/floating leaves/strip, mask_undo via Undo, coverage counts real/other plans only)."
     }
   ]
 }

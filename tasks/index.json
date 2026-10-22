@@ -4,45 +4,30 @@
   "nextTaskId": 49,
   "tasks": [
     {
-      "id": 42,
-      "title": "Cut site_kit.apply over to the journal",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "apply keeps signature, guards and SystemExit messages; calls change(Build). Delete scripts/site_stages.py, scripts/registry_hooks.py, the swallow-and-print try blocks in site_kit, built_cells/owned_in/owner index/cache, touched_cells.py; reroute readers (feature_build, house_build, terrace, ground_layer, trees_layer, decor_layer, cell_marker, redo_here, coverage, site_status, site_handoff, registry_next). Delete old tests as each path goes."
-    },
-    {
       "id": 43,
       "title": "Cut ghosts over: derive ghost state, strip stored ghost stages",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        42
-      ],
+      "blockedBy": [],
       "notes": "lidar_ghost keeps plan builders and heights only (GhostPlanner). Delete its STAGES/registry state functions (about 18); ghost ground/features/frontier derived from the journal; real Build supersedes ghost ground, strips overlapping ghost features and ensures the ring-2 frontier as follow-up entries. Fix test_lidar_ghost (ring 1, STAGES-as-store)."
     },
     {
       "id": 44,
       "title": "Cut undo, mask undo, strip, recover and repair over to reconcile",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        42
-      ],
+      "blockedBy": [],
       "notes": "mask_undo.finish_undo, strip_cell_above_ground (no direct STAGES write), site_recover, redo_here become Undo/reconcile. Cell repair = reconcile(cells, fix=True): detect foreign/missing blocks, re-commit recorded plans over MCP; no region copies. Verify the possible registry_repair_wipe bogus-feature bug is gone."
     },
     {
       "id": 45,
       "title": "Dry-run reset as erase-and-recreate",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [
-        42
-      ],
+      "blockedBy": [],
       "notes": "dryrun_reset: empty world, fresh journal, rescaffold site/ from templates; no region file copying. Worlds are volatile this phase."
     },
     {
@@ -52,7 +37,6 @@
       "priority": "high",
       "complexity": "l",
       "blockedBy": [
-        42,
         43,
         44
       ],
