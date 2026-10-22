@@ -54,12 +54,12 @@
     },
     {
       "id": 51,
-      "title": "Tidy leftover world state and old bakeoff branch",
+      "title": "Tidy leftover world state and old bakeoff branch (remaining items)",
       "status": "todo",
       "priority": "low",
       "complexity": "xs",
       "blockedBy": [],
-      "notes": "Loose ends from the cell journal rework: (1) worlds/southampton-build/backups/cells-cache is 2.1 GB of the retired ownership cache; site_cleanup only counts expired items as safe, so delete it deliberately (nothing reads it after task 42); (2) worlds/southampton-build/verification/site/bakeoff_r003_* and bakeoff_r004_* outputs (keep bakeoff-R-001-evidence: the feature-selection scenarios point at it); (3) worlds/southampton-build has its own uncommitted edits (config/world.json no longer carries pristine_region_path/pristine_note, plus HUMANS.html, README.md, reference/LOGGING.txt, reference/README.txt): review and commit or drop in that repo; (4) delete the unmerged branch bakeoff-r004-haiku-high (old aborted R-004; the redo is task 48) with `git branch -D` once the owner agrees; (5) the old backups/regions snapshots are already deleted."
+      "notes": "DONE already: backups/cells-cache (2.1 GB) deleted, backups/2026-10-19-010906-dryrun-site deleted, backups/regions already deleted, the pre-restore region copy in the scratch area deleted; the world's backups/ folder is empty. REMAINING: (a) worlds/southampton-build/verification/site/bakeoff_r003_* and bakeoff_r004_* outputs (keep bakeoff-R-001-evidence: the feature-selection scenarios point at it); (b) worlds/southampton-build has its own uncommitted edits (config/world.json no longer carries pristine_region_path/pristine_note, plus HUMANS.html, README.md, reference/LOGGING.txt, reference/README.txt): review and commit or drop in that repo; (c) delete the unmerged branch bakeoff-r004-haiku-high (old aborted R-004; the redo is task 48) with `git branch -D` once the owner agrees."
     }
   ]
 }
