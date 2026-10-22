@@ -51,15 +51,6 @@
       "notes": "From R-006 retro. A multi-minute apply printed nothing until the end, was backgrounded, and when killed (exit 144) it was unclear whether it had completed. Decided (grill): print one progress line per cell to stderr, flushed (stdout stays the final JSON); end with a summary counting builds by journal status (landed / mismatched / abandoned / skipped); install a SIGTERM handler (SIGINT already raises) so the process exits cleanly and names any cell still in flight with `cell_registry.py reconcile`. Do NOT release the site lock on kill: apply never claims it, `site_lock.py claim` does, and it spans the whole sitting. Code: providers/ukdefra-lidar/manage/lidar_ghost.py (ensure_cells, main)."
     },
     {
-      "id": 62,
-      "title": "ship_branch.py sweep: surface unmerged branches and leftover worktrees",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Same script as #61, so serialised. `ship_branch.py sweep` lists `git branch --no-merged main` and leftover worktrees, labels each branch tracker/docs-only or code, with commit count. Offers to merge tracker/docs-only strays; code strays are reported and wait for the owner's call (review-and-merge or delete). Never deletes or merges code on its own."
-    },
-    {
       "id": 64,
       "title": "Project parallel-task-wave override: review before each merge",
       "status": "todo",
@@ -71,12 +62,10 @@
     {
       "id": 65,
       "title": "Repo rules and policy record for the branch gate",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        62
-      ],
+      "blockedBy": [],
       "notes": "AGENTS.md: new Always rule (code goes on task/* branches and through the gate unless the owner opts out; tracker-only and docs-only edits commit straight to main under the pre-commit checks, no tracker/* branches) and a Start step that runs `ship_branch.py sweep`. Update CODING_STANDARDS.md to match. Project-level `done` override that includes the sweep (global done skill untouched). Write ADR 005 recording the policy. The pre-commit hook already only blocks tracker edits on task/*, so check whether any change is needed there."
     }
   ]
