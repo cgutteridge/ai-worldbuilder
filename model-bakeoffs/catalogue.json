@@ -34,6 +34,12 @@
           "tier": "low",
           "label": "Claude Haiku 5.5 (high effort)",
           "bulk_ok": true
+        },
+        {
+          "id": "claude-sonnet-5-5-low",
+          "tier": "mid",
+          "label": "Claude Sonnet 5.5 (low effort)",
+          "bulk_ok": true
         }
       ]
     }

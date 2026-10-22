@@ -1,6 +1,6 @@
 {
   "id": "R-004",
-  "status": "ready",
+  "status": "skipped",
   "created": "2026-10-21T21:29:41Z",
   "scored_at": null,
   "task": "feature_design",
@@ -139,5 +139,5 @@
     ],
     "ghost_snap_hint": "canonical whole-world snap: 2026-10-18-224358-bakeoff-ghost-3x3-lidar"
   },
-  "notes": ""
+  "notes": "Abandoned unrun 2026-10-22 by user to prioritise Sonnet 5.5 low-effort (mid tier)."
 }
