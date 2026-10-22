@@ -5,30 +5,30 @@
   "tasks": [
     {
       "id": 43,
-      "title": "Cut ghosts over: derive ghost state, strip stored ghost stages",
+      "title": "Ghost leftovers: delete dead lidar_ghost helpers, ring-2 tests",
       "status": "todo",
       "priority": "high",
-      "complexity": "m",
+      "complexity": "s",
       "blockedBy": [],
-      "notes": "lidar_ghost keeps plan builders and heights only (GhostPlanner). Delete its STAGES/registry state functions (about 18); ghost ground/features/frontier derived from the journal; real Build supersedes ghost ground, strips overlapping ghost features and ensures the ring-2 frontier as follow-up entries. Fix test_lidar_ghost (ring 1, STAGES-as-store)."
+      "notes": "Task 42 already did the cutover (state machine deleted, ghost state derived from the journal, registry supersedes/strips/ensures). Remaining: delete lidar_ghost helpers with no callers (is_ghost_feature_owner, ghost_modifies_for_plan, cells_for_positions; check ghost_owners_for/owner_name/neighbour_cells/plan_stats callers and keep or delete accordingly); make scripts/test_lidar_ghost.py exercise the default ring depth 2 (tests use ring=1); confirm shims/lidar_ghost.py status/plan/apply match ADR 004 and the module docstring."
     },
     {
       "id": 44,
-      "title": "Cut undo, mask undo, strip, recover and repair over to reconcile",
+      "title": "Expose reconcile: cell_registry.py reconcile; define site_recover's role",
       "status": "todo",
       "priority": "high",
-      "complexity": "m",
+      "complexity": "s",
       "blockedBy": [],
-      "notes": "mask_undo.finish_undo, strip_cell_above_ground (no direct STAGES write), site_recover, redo_here become Undo/reconcile. Cell repair = reconcile(cells, fix=True): detect foreign/missing blocks, re-commit recorded plans over MCP; no region copies. Verify the possible registry_repair_wipe bogus-feature bug is gone."
+      "notes": "Task 42 already moved mask_undo, strip_cell_above_ground and redo_here onto Undo/journal. Remaining: add `cell_registry.py reconcile [cells] [--fix]` using site_kit.live_session() so drift (missing/foreign/in-flight/ghost-missing/ghost-stale) is reported and, with --fix, re-committed over MCP (block cells only; signs/entities are not journalled). Decide and document the relationship with site_recover.py: site_recover = resolve ONE aborted begun entry by landing it or rolling back to its saved structure; reconcile = detect/repair drift forward. Either make site_recover delegate the land/abort decision to reconcile or document why not; tests with MemoryBlocks; live check afterwards by the orchestrator."
     },
     {
       "id": 45,
-      "title": "Dry-run reset as erase-and-recreate",
+      "title": "Dry-run reset: fresh journal, drop retired registry scaffolding",
       "status": "todo",
       "priority": "medium",
-      "complexity": "m",
+      "complexity": "s",
       "blockedBy": [],
-      "notes": "dryrun_reset: empty world, fresh journal, rescaffold site/ from templates; no region file copying. Worlds are volatile this phase."
+      "notes": "Task 42 already removed STAGES and the registry dir on reset. Remaining: dryrun_reset must stop scaffolding registry/cells.json and features.json (scaffold_registry) and reduce templates/new-world-registry to a README note (journal is created on first write); reset leaves a fresh empty journal state; keep delete_regions behind logout_gate (the reset erases region files, nothing copies or restores them); update test_dryrun_reset and registry_verify expectations; update docs/plans/southampton-dryrun-001.md only where it names the removed scaffolding."
     },
     {
       "id": 46,
