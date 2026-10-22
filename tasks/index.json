@@ -4,42 +4,12 @@
   "nextTaskId": 49,
   "tasks": [
     {
-      "id": 43,
-      "title": "Ghost leftovers: delete dead lidar_ghost helpers, ring-2 tests",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Task 42 already did the cutover (state machine deleted, ghost state derived from the journal, registry supersedes/strips/ensures). Remaining: delete lidar_ghost helpers with no callers (is_ghost_feature_owner, ghost_modifies_for_plan, cells_for_positions; check ghost_owners_for/owner_name/neighbour_cells/plan_stats callers and keep or delete accordingly); make scripts/test_lidar_ghost.py exercise the default ring depth 2 (tests use ring=1); confirm shims/lidar_ghost.py status/plan/apply match ADR 004 and the module docstring."
-    },
-    {
-      "id": 44,
-      "title": "Expose reconcile: cell_registry.py reconcile; define site_recover's role",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Task 42 already moved mask_undo, strip_cell_above_ground and redo_here onto Undo/journal. Remaining: add `cell_registry.py reconcile [cells] [--fix]` using site_kit.live_session() so drift (missing/foreign/in-flight/ghost-missing/ghost-stale) is reported and, with --fix, re-committed over MCP (block cells only; signs/entities are not journalled). Decide and document the relationship with site_recover.py: site_recover = resolve ONE aborted begun entry by landing it or rolling back to its saved structure; reconcile = detect/repair drift forward. Either make site_recover delegate the land/abort decision to reconcile or document why not; tests with MemoryBlocks; live check afterwards by the orchestrator."
-    },
-    {
-      "id": 45,
-      "title": "Dry-run reset: fresh journal, drop retired registry scaffolding",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Task 42 already removed STAGES and the registry dir on reset. Remaining: dryrun_reset must stop scaffolding registry/cells.json and features.json (scaffold_registry) and reduce templates/new-world-registry to a README note (journal is created on first write); reset leaves a fresh empty journal state; keep delete_regions behind logout_gate (the reset erases region files, nothing copies or restores them); update test_dryrun_reset and registry_verify expectations; update docs/plans/southampton-dryrun-001.md only where it names the removed scaffolding."
-    },
-    {
       "id": 46,
       "title": "Purge stale rules, docs, prompts, templates, world docs",
-      "status": "blocked",
+      "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "blockedBy": [
-        43,
-        44
-      ],
+      "blockedBy": [],
       "notes": "Work through the audit top-10: process.md:25 and handoff-layered-passes (STAGES 'journal only'), site_handoff.py hand-edit-STAGES and QUEUE/'end Q-nnn' strings, handoff-layered-passes s11 site/REGISTRY.json proposal, templates/empty-world/README.txt, worlds/southampton-build AGENTS/README/HUMANS.html/site/*.txt (own git repo) and retired QUEUE/CURRENT-CELL files, coverage.py signoff, ADR/spec status lines, model-bakeoffs README/PROTOCOL/rounds snap names, skills (model-bakeoff, cell-orchestrator, human-confirm-fix). One canonical doc per fact; others link, do not copy. Remove tests that encode old behaviour (test_site_handoff QUEUE round-trip, test_coverage signoffs, etc.)."
     },
     {
@@ -60,7 +30,6 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        45,
         47
       ],
       "notes": "Wipe and recreate southampton-build and the bakeoff world; regenerate the 3x3 (ring 2) ghosts with lidar_ghost apply; commit R-004 (open, Claude Haiku 5.5 high effort, feature_design) and run the sitting. Update model-bakeoffs PROTOCOL/README/SKILL to the no-restore flow."
