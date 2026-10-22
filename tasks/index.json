@@ -60,23 +60,12 @@
       "notes": "Same script as #61, so serialised. `ship_branch.py sweep` lists `git branch --no-merged main` and leftover worktrees, labels each branch tracker/docs-only or code, with commit count. Offers to merge tracker/docs-only strays; code strays are reported and wait for the owner's call (review-and-merge or delete). Never deletes or merges code on its own."
     },
     {
-      "id": 63,
-      "title": "ship-branch skill: build, review, fix, merge loop",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Project skill under .claude/skills/. Builder session finishing a code change runs: tests, then a fresh-context read-only reviewer subagent on Sonnet at high effort, then a normal-tier fixer (default model, normal effort, same worktree) on blockers, re-review, up to 3 review rounds, then ship_branch.py merge. Tests failing before review go to the fixer and count toward the cap. If main moved, the fixer merges main into the branch; re-review only if the resolution touched more than conflict markers. Reviewer brief is fixed: branch diff vs main, CODING_STANDARDS.md, GLOSSARY.md, accepted ADRs, ticket text, test coverage; returns APPROVE or CHANGES with blocker/nit findings; never edits. Only blockers loop; nits become tracker follow-ups or are dropped if trivial. Ask the owner before using Opus or any other high-cost model; everything else is automatic. Opt-outs in the owner's words: 'no review'/'skip review' (build, test, merge) and 'leave on branch'/'don't merge' (stop after build, report branch; implies no review). A ticket may carry review: skip. Cap hit or any stop: leave the branch unmerged and play need-you. Check by running it on one trivial real change. Bootstrapping: #61-#63 themselves are built on task/* branches and merged by the orchestrator after a manual pass."
-    },
-    {
       "id": 64,
       "title": "Project parallel-task-wave override: review before each merge",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        63
-      ],
+      "blockedBy": [],
       "notes": "Project-level override of the global parallel-task-wave skill (leave the global copy alone). The wave orchestrator runs the #63 loop on each returned worker branch before merging it. Workers stay code-only and never review or merge themselves; tracker archive stays an orchestrator hop on main after merge."
     },
     {
@@ -86,8 +75,7 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [
-        62,
-        63
+        62
       ],
       "notes": "AGENTS.md: new Always rule (code goes on task/* branches and through the gate unless the owner opts out; tracker-only and docs-only edits commit straight to main under the pre-commit checks, no tracker/* branches) and a Start step that runs `ship_branch.py sweep`. Update CODING_STANDARDS.md to match. Project-level `done` override that includes the sweep (global done skill untouched). Write ADR 005 recording the policy. The pre-commit hook already only blocks tracker edits on task/*, so check whether any change is needed there."
     }

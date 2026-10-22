@@ -465,6 +465,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Part of the branch-gate policy (decided in grill, 2026-10-22): code is built on task/* branches and always ends merged. `scripts/ship_branch.py merge <branch>`: run scripts/run_tests.py on the branch tip; merge --no-ff (matches history); re-run the tests on main; delete the branch and its worktree. Any failure stops and reports, no auto-revert. Unit tests on throwaway git repos: green merge, failing tip, failing main after merge. Worker rule unchanged: workers leave the tracker alone. Merged via wave 61-65: ship_branch.py merge + tests on main (cf5a57a)."
+    },
+    {
+      "id": 63,
+      "title": "ship-branch skill: build, review, fix, merge loop",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Project skill under .claude/skills/. Builder session finishing a code change runs: tests, then a fresh-context read-only reviewer subagent on Sonnet at high effort, then a normal-tier fixer (default model, normal effort, same worktree) on blockers, re-review, up to 3 review rounds, then ship_branch.py merge. Tests failing before review go to the fixer and count toward the cap. If main moved, the fixer merges main into the branch; re-review only if the resolution touched more than conflict markers. Reviewer brief is fixed: branch diff vs main, CODING_STANDARDS.md, GLOSSARY.md, accepted ADRs, ticket text, test coverage; returns APPROVE or CHANGES with blocker/nit findings; never edits. Only blockers loop; nits become tracker follow-ups or are dropped if trivial. Ask the owner before using Opus or any other high-cost model; everything else is automatic. Opt-outs in the owner's words: 'no review'/'skip review' (build, test, merge) and 'leave on branch'/'don't merge' (stop after build, report branch; implies no review). A ticket may carry review: skip. Cap hit or any stop: leave the branch unmerged and play need-you. Check by running it on one trivial real change. Bootstrapping: #61-#63 themselves are built on task/* branches and merged by the orchestrator after a manual pass. Merged via wave 61-65: .claude/skills/ship-branch/SKILL.md on main."
     }
   ]
 }
