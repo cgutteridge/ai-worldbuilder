@@ -357,6 +357,24 @@
       "title": "Cut site_kit.apply over to the journal",
       "status": "done",
       "notes": "site_kit.apply records through CellRegistry (journal begun->landed); STAGES, registry_hooks, touched_cells, ownership cache/index deleted; site_recover reads journal entries; lidar_ghost state machine deleted; 60 files. Verified live (bakeoff world): recover lands intact crash, rolls back partial crash. For tasks 43-46: thin adapters left (site_status/site_pages stage-dict adapters, registry_issues dual records ISSUES.txt+journal notes, restore_structure_backup loads blocks outside the journal, site_recover structure restore until 44); dryrun_reset still writes empty registry/cells.json+features.json (task 45); docs still naming removed modules: skills cell-orchestrator/human-confirm-fix/new-world-build/redo, GLOSSARY, ADR 003/004 (004 lists site_recover as deleted - it is rebuilt in 44), audit, dryrun plan, v2 spec, rules building-review/cleanup/foliage/handoff-layered-passes/process, templates empty-world/new-world-registry/new-world-site. Known quirks: after a rollback that restores the pre-undo world the journal still shows the pass undone; register-feature CLI removed (feature exists once first apply begins), new `cell_registry.py note` command; trees_over_roof_resolved is a review Note; 7 listed behaviour changes in worker report (apply over aborted entry refused, journal refusals loud, ghost leftover check, other pass for markers/floating leaves/strip, mask_undo via Undo, coverage counts real/other plans only)."
+    },
+    {
+      "id": 43,
+      "title": "Ghost leftovers: delete dead lidar_ghost helpers, ring-2 tests",
+      "status": "done",
+      "notes": "Dead lidar_ghost helpers deleted (is_ghost_feature_owner, ghost_modifies_for_plan, cells_for_positions, plan_stats, owner_name, tz_token; one namer cell_journal.ghost_name); ring depth 2 is the tested default."
+    },
+    {
+      "id": 44,
+      "title": "Expose reconcile: cell_registry.py reconcile; define site_recover's role",
+      "status": "done",
+      "notes": "cell_registry.py reconcile [CELL...] [--fix] (dry run default; exit 0 clean / 1 drift / 2 bad cell). site_recover stays for ONE interrupted apply (land or roll back); reconcile repairs drift forward. site_recover land-or-not decision now comes from reconcile's in-flight finding. NOT yet live-tested: see worker plan (break a block with setblock, dry run, --fix, rerun clean; kill mid-apply then recover; --fix with lock held by another owner). ADR 004 and GLOSSARY still say reconcile replaces site_recover: fix in task 46."
+    },
+    {
+      "id": 45,
+      "title": "Dry-run reset: fresh journal, drop retired registry scaffolding",
+      "status": "done",
+      "notes": "dryrun_reset: scaffold_registry and templates/new-world-registry json removed; reset removes registry/ (journal + blobs); report gains registry and verify keys; delete_regions + logout_gate unchanged."
     }
   ]
 }
