@@ -80,7 +80,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Deleted build_runner.py + house_geometry.py (and their tests). house_build.py + site/builds/<name>.json is the sole house apply path; terrace.py kept for geo snap_slope. terrace-builds.md, CRAFTSMANSHIP §3a / HOUSE-ONLY, plan_cell_items, and open QUEUE FEATURE lines no longer point at build_runner or say copy-the-nearest-spec. Unblocked #11."
+      "notes": "Deleted build_runner.py + house_geometry.py (and their tests). house_build.py + site/builds/<name>.json is the sole house apply path; terrace.py kept for geo snap_slope. terrace-builds.md, CRAFTSMANSHIP \u00a73a / HOUSE-ONLY, plan_cell_items, and open QUEUE FEATURE lines no longer point at build_runner or say copy-the-nearest-spec. Unblocked #11."
     },
     {
       "id": 11,
@@ -89,7 +89,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "feature_build.py + tests at seams (load_spec, build→Plan, CLI dry-run, SU run()). site/builds/susu_42.json (w33830305) dry-runs via feature_build; rules/feature-builds.md + CRAFTSMANSHIP NON-HOUSE + handoff plan_cell_items route houses→house_build / else→feature_build. Facade/doors/greeblies/path/sheet remain #12 and #14–17 (world Q-203)."
+      "notes": "feature_build.py + tests at seams (load_spec, build\u2192Plan, CLI dry-run, SU run()). site/builds/susu_42.json (w33830305) dry-runs via feature_build; rules/feature-builds.md + CRAFTSMANSHIP NON-HOUSE + handoff plan_cell_items route houses\u2192house_build / else\u2192feature_build. Facade/doors/greeblies/path/sheet remain #12 and #14\u201317 (world Q-203)."
     },
     {
       "id": 12,
@@ -98,7 +98,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "From Q-198. feature_build facades map {label: {N|S|E|W: [{storey, glazed_h, pier, wall?, rhythm?}]}}; _validate_facades; windows() from photo table; dry-run glazed_share_report per storey/face; FacadeSpecTest + FacadeWindowsTest. Landed with #14 wiring; tracker closed here. World Q-203 still waits on 15–17."
+      "notes": "From Q-198. feature_build facades map {label: {N|S|E|W: [{storey, glazed_h, pier, wall?, rhythm?}]}}; _validate_facades; windows() from photo table; dry-run glazed_share_report per storey/face; FacadeSpecTest + FacadeWindowsTest. Landed with #14 wiring; tracker closed here. World Q-203 still waits on 15\u201317."
     },
     {
       "id": 13,
@@ -107,7 +107,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Superseded 2026-10-17: split into system tasks 19–22 (catalogue lidar merge, system providers/, local providers/, loader sweep)."
+      "notes": "Superseded 2026-10-17: split into system tasks 19\u201322 (catalogue lidar merge, system providers/, local providers/, loader sweep)."
     },
     {
       "id": 14,
@@ -116,7 +116,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "From Q-199. feature_build doors map {portal_id: {leaves:1|2, block}}; portal_doors mirrored hinges + door_cells keepout for facades; dry-run print; DoorSpecBuildTest hinge pairing + facade survival. World Q-203 still waits on 12, 15–17."
+      "notes": "From Q-199. feature_build doors map {portal_id: {leaves:1|2, block}}; portal_doors mirrored hinges + door_cells keepout for facades; dry-run print; DoorSpecBuildTest hinge pairing + facade survival. World Q-203 still waits on 12, 15\u201317."
     },
     {
       "id": 15,
@@ -125,7 +125,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "plan_cell_items FEATURE template lists aerial greeblies + <name>-greeblies / \"no greeblies seen\". cmd_end refuses FEATURE without that stage record unless summary escape; EndTest + PlanCellItems cover both. World Q-203 still waits on 12, 16–17."
+      "notes": "plan_cell_items FEATURE template lists aerial greeblies + <name>-greeblies / \"no greeblies seen\". cmd_end refuses FEATURE without that stage record unless summary escape; EndTest + PlanCellItems cover both. World Q-203 still waits on 12, 16\u201317."
     },
     {
       "id": 16,
@@ -152,7 +152,7 @@
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Moved PROCESS/CRAFTSMANSHIP/FOLIAGE/HANDOFF-LAYERED-PASSES/RULES-CONTEXT/CLEANUP into ai-worldbuilder rules/ as kebab-case .md. Updated rules_context (TOOL_ROOT), site_handoff/cleanup/pass_mask + callers, tests, AGENTS, new-world-build, templates/new-world-site/ + empty-world README. GEOCRAFT out of scope (23–25)."
+      "notes": "Moved PROCESS/CRAFTSMANSHIP/FOLIAGE/HANDOFF-LAYERED-PASSES/RULES-CONTEXT/CLEANUP into ai-worldbuilder rules/ as kebab-case .md. Updated rules_context (TOOL_ROOT), site_handoff/cleanup/pass_mask + callers, tests, AGENTS, new-world-build, templates/new-world-site/ + empty-world README. GEOCRAFT out of scope (23\u201325)."
     },
     {
       "id": 19,
@@ -167,7 +167,7 @@
       "id": 20,
       "title": "System providers/<id>/ folders + shims/ + package field",
       "status": "done",
-      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs → shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put. Done: providers/<id>/{get,review,manage} for system providers with code; CLIs in shims/; package field on catalogue rows; reference/ unchanged; cell_sources/defra/lidar/google tests pass."
+      "notes": "Split from old #13. Per system provider id under ai-worldbuilder/providers/ (get/review/manage). Old CLIs \u2192 shims/ (not scripts/). Cross-provider glue stays in scripts/. package field required when code lives under providers/. reference/ data stays put. Done: providers/<id>/{get,review,manage} for system providers with code; CLIs in shims/; package field on catalogue rows; reference/ unchanged; cell_sources/defra/lidar/google tests pass."
     },
     {
       "id": 21,
@@ -176,7 +176,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Split from old #13. Moved local provider CLIs into worlds/southampton-build/providers/<id>/ (geofabrik-hampshire, uos-portals, uos-buildings, southampton-tpo, hampshire-hub). local-providers.json package fields set; world AGENTS/SOURCES/README pointers. Tool repo: scripts/ shims via world_provider.py; AGENTS/active-world-contract/GLOSSARY/add-data-source updated. Task #20 not done yet — #22 stays blocked."
+      "notes": "Split from old #13. Moved local provider CLIs into worlds/southampton-build/providers/<id>/ (geofabrik-hampshire, uos-portals, uos-buildings, southampton-tpo, hampshire-hub). local-providers.json package fields set; world AGENTS/SOURCES/README pointers. Tool repo: scripts/ shims via world_provider.py; AGENTS/active-world-contract/GLOSSARY/add-data-source updated. Task #20 not done yet \u2014 #22 stays blocked."
     },
     {
       "id": 23,
@@ -185,7 +185,7 @@
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Cell done = evidence + layer passes + masks — not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
+      "notes": "Cell done = evidence + layer passes + masks \u2014 not unrefined Geocraft. residual_features = missing_features only (no lump_scan). plan_cell_items / cell-orchestrator / lump_scan header updated. Tests at three TDD seams. DoD wording in untracked rules/handoff-layered-passes.md + process.md left for #18/#25."
     },
     {
       "id": 24,
@@ -194,7 +194,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Archived rules/geocraft-accuracy.md → docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
+      "notes": "Archived rules/geocraft-accuracy.md \u2192 docs/archive/; removed from rules_context Always + rules-context.md. evidence-order / building-review / frontage-and-evidence: DEFRA composite DTM/DSM only. Broader Geocraft wording left to #25."
     },
     {
       "id": 25,
@@ -203,16 +203,16 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Grep-driven sweep after #18/#23–24: replaced Geocraft-default, lump-as-DoD, and pristine-as-lidar wording in rules/ (craftsmanship streets/lidar report, foliage, process coverage/review, cleanup, terrace, rules-context, handoff, building-review) + new-world-build pointer and ADR 003 status. Intentional mentions kept: evidence-order guardrail, GEOCRAFT.txt legacy pointers, lump_scan diagnostic-only, GLOSSARY Avoid, docs/archive. Docs/pointers only."
+      "notes": "Grep-driven sweep after #18/#23\u201324: replaced Geocraft-default, lump-as-DoD, and pristine-as-lidar wording in rules/ (craftsmanship streets/lidar report, foliage, process coverage/review, cleanup, terrace, rules-context, handoff, building-review) + new-world-build pointer and ADR 003 status. Intentional mentions kept: evidence-order guardrail, GEOCRAFT.txt legacy pointers, lump_scan diagnostic-only, GLOSSARY Avoid, docs/archive. Docs/pointers only."
     },
     {
       "id": 26,
-      "title": "Lidar ghost tool: DTM ground + grey DSM−DTM features",
+      "title": "Lidar ghost tool: DTM ground + grey DSM\u2212DTM features",
       "status": "done",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "scripts/lidar_ghost.py: idempotent DTM ground + grey DSM−DTM features; owners ghost_<tx>_<tz>_ground/_features; STAGES ghost-ground/ghost-features kind=ghost; ring default 1; CLI plan/status/apply + dry-run fixtures; ground_layer.ignored_builds + cell_features treat ghosts as overwritable/non-features. test_lidar_ghost.py."
+      "notes": "scripts/lidar_ghost.py: idempotent DTM ground + grey DSM\u2212DTM features; owners ghost_<tx>_<tz>_ground/_features; STAGES ghost-ground/ghost-features kind=ghost; ring default 1; CLI plan/status/apply + dry-run fixtures; ground_layer.ignored_builds + cell_features treat ghosts as overwritable/non-features. test_lidar_ghost.py."
     },
     {
       "id": 27,
@@ -239,7 +239,7 @@
       "priority": "low",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "cell_sources.STALE_DAYS=183: HAVE/TRIED → STALE from newest manifest added or last attempt date; --todo lists TODO+STALE; --record refreshes without --retry-reason when prior attempt is stale. TYPES/ADR 001/process/handoff updated. TestStaleRefresh."
+      "notes": "cell_sources.STALE_DAYS=183: HAVE/TRIED \u2192 STALE from newest manifest added or last attempt date; --todo lists TODO+STALE; --record refreshes without --retry-reason when prior attempt is stale. TYPES/ADR 001/process/handoff updated. TestStaleRefresh."
     },
     {
       "id": 28,
@@ -248,7 +248,7 @@
       "priority": "high",
       "complexity": "xl",
       "blockedBy": [],
-      "notes": "2026-10-20: closed. Type-facing seams: scripts/lidar_provider.py (catalogue modules.world/tiles), scripts/vector_map_clips.py (reference/vector_map, legacy fallback), shims/lidar_world.py + lidar_tiles.py. Residual baseline burned 8→0. Callers no longer import defra_*; LIDAR_SOURCE=defra removed; AERIAL REVIEW only. Allowlist: legacy_reference_paths.py. World: vector_map symlink + osm_extract place_dir + SOURCES LIDAR_SOURCE=composite."
+      "notes": "2026-10-20: closed. Type-facing seams: scripts/lidar_provider.py (catalogue modules.world/tiles), scripts/vector_map_clips.py (reference/vector_map, legacy fallback), shims/lidar_world.py + lidar_tiles.py. Residual baseline burned 8\u21920. Callers no longer import defra_*; LIDAR_SOURCE=defra removed; AERIAL REVIEW only. Allowlist: legacy_reference_paths.py. World: vector_map symlink + osm_extract place_dir + SOURCES LIDAR_SOURCE=composite."
     },
     {
       "id": 29,
@@ -293,7 +293,7 @@
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "MIGRATION: world data is volatile. Update dryrun_reset for the registry (delete region files, STAGES, QUEUE, CURRENT-CELL, handoff pending, holds, sign-offs, AERIAL-REVIEW, old verification/site build records), reset worlds/southampton-build through it, start with an empty registry that the tools populate, regenerate the ghost frontier around the origin cell, run verify clean. Update templates/new-world-site/ and skill new-world-build to scaffold the registry. Note: worlds/southampton-build config still points at the donor SouthamptonAI save and the bake-off save shares site records; make sure the registry paths are per active world. COMPLETION GATE (the work is not done until this audit is clean): hunt down and update every rule, script, skill, doc, ADR, template and test that the registry changes or invalidates - at minimum rules/process.md (s1, s2c, s2e, s5), handoff-layered-passes.md (also fix stage vocabulary and ghost ring docs), feature-builds.md, foliage.md, radial-good-enough.md, rules-context.md, building-review.md, craftsmanship.md; skills cell-orchestrator, redo, human-confirm-fix, new-world-build, model-bakeoff; docs/specs/lidar-ghost-v2-and-dryrun-reset.md, docs/adr/003, docs/model-bakeoffs.md; AGENTS.md, GLOSSARY.md (add cell, feature, registry terms); the ~58 scripts/test_*.py (test_lidar_ghost, test_site_handoff, test_site_status, test_site_recover, test_cell_marker, test_cell_features, test_touched_cells, test_dryrun_reset, test_coverage, test_world_frame, test_cellmath, test_region_backup, test_site_pages, test_site_archive, test_redo_here, test_model_bakeoff ...). Grep for removed names (STAGES, QUEUE, CURRENT-CELL, handoff, signoff, AERIAL, CELL-HOLDS, focus_cell, ORIGIN_CELL) must come back empty or justified. Run scripts/run_tests.py green. DONE 2026-10-21 on cell-registry-tickets: dryrun_reset empties registry + wipes QUEUE/CURRENT-CELL/holds/AERIAL/pending/HANDOFF/builds/STAGES/verification; templates/new-world-registry + site template without legacy progress; coverage.py write registry rollup; lump_scan --record -> *-lump.json; site_pages/recover docs (STAGES=apply journal); rules/docs/skills/AGENTS/GLOSSARY audit. Live world reset blocked by session.lock — user must quit Minecraft then: dryrun_reset.py --confirm-logged-out; reopen; cell_marker --raise origin; cell_registry verify."
+      "notes": "MIGRATION: world data is volatile. Update dryrun_reset for the registry (delete region files, STAGES, QUEUE, CURRENT-CELL, handoff pending, holds, sign-offs, AERIAL-REVIEW, old verification/site build records), reset worlds/southampton-build through it, start with an empty registry that the tools populate, regenerate the ghost frontier around the origin cell, run verify clean. Update templates/new-world-site/ and skill new-world-build to scaffold the registry. Note: worlds/southampton-build config still points at the donor SouthamptonAI save and the bake-off save shares site records; make sure the registry paths are per active world. COMPLETION GATE (the work is not done until this audit is clean): hunt down and update every rule, script, skill, doc, ADR, template and test that the registry changes or invalidates - at minimum rules/process.md (s1, s2c, s2e, s5), handoff-layered-passes.md (also fix stage vocabulary and ghost ring docs), feature-builds.md, foliage.md, radial-good-enough.md, rules-context.md, building-review.md, craftsmanship.md; skills cell-orchestrator, redo, human-confirm-fix, new-world-build, model-bakeoff; docs/specs/lidar-ghost-v2-and-dryrun-reset.md, docs/adr/003, docs/model-bakeoffs.md; AGENTS.md, GLOSSARY.md (add cell, feature, registry terms); the ~58 scripts/test_*.py (test_lidar_ghost, test_site_handoff, test_site_status, test_site_recover, test_cell_marker, test_cell_features, test_touched_cells, test_dryrun_reset, test_coverage, test_world_frame, test_cellmath, test_region_backup, test_site_pages, test_site_archive, test_redo_here, test_model_bakeoff ...). Grep for removed names (STAGES, QUEUE, CURRENT-CELL, handoff, signoff, AERIAL, CELL-HOLDS, focus_cell, ORIGIN_CELL) must come back empty or justified. Run scripts/run_tests.py green. DONE 2026-10-21 on cell-registry-tickets: dryrun_reset empties registry + wipes QUEUE/CURRENT-CELL/holds/AERIAL/pending/HANDOFF/builds/STAGES/verification; templates/new-world-registry + site template without legacy progress; coverage.py write registry rollup; lump_scan --record -> *-lump.json; site_pages/recover docs (STAGES=apply journal); rules/docs/skills/AGENTS/GLOSSARY audit. Live world reset blocked by session.lock \u2014 user must quit Minecraft then: dryrun_reset.py --confirm-logged-out; reopen; cell_marker --raise origin; cell_registry verify."
     },
     {
       "id": 34,
@@ -375,6 +375,15 @@
       "title": "Dry-run reset: fresh journal, drop retired registry scaffolding",
       "status": "done",
       "notes": "dryrun_reset: scaffold_registry and templates/new-world-registry json removed; reset removes registry/ (journal + blobs); report gains registry and verify keys; delete_regions + logout_gate unchanged."
+    },
+    {
+      "id": 51,
+      "title": "Tidy leftover world state and old bakeoff branch (remaining items)",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "DONE: backups/ emptied earlier; (a) deleted verification/site/bakeoff_r003_* and bakeoff_r004_*; (b) worlds/southampton-build 37c84ba (pristine keys dropped; HUMANS/README/reference docs refreshed). NOTE: bakeoff-R-001-evidence was already missing (FS-001..004 still point at it). (c) local branch bakeoff-r004-haiku-high deleted with owner OK (was 65b0e29)."
     }
   ]
 }

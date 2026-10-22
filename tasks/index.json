@@ -51,15 +51,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Branches were merged on passing suites plus diff skim, not a formal review. Run the code-review skill at high effort over the merged range 37e905e^..HEAD (region backup removal, scripts/block_store.py, scripts/cell_journal.py ~1.2k lines, site_kit.apply cutover, site_recover on reconcile, reconcile CLI, dryrun_reset). Focus: crash safety of begun/landed (fsync, torn lines), ownership/clash rules vs the old built_cells semantics, ghost supersede/strip rules, Undo erase plans, silent exception swallowing (ADR 004 says none), behaviour deviations listed in task 42's archive note (e.g. journal still shows a pass undone after a rollback restores the pre-undo world; apply onto an aborted entry is refused by the clash check not the begun-entry message), signs and entities not journalled. File each confirmed finding as its own task."
-    },
-    {
-      "id": 51,
-      "title": "Tidy leftover world state and old bakeoff branch (remaining items)",
-      "status": "blocked",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "DONE: backups/ emptied earlier; (a) deleted verification/site/bakeoff_r003_* and bakeoff_r004_* (~12MB; shots+json+previews). (b) reviewed and committed in worlds/southampton-build 37c84ba \u2014 config/world.json drops pristine_region_path/pristine_note; HUMANS.html, README.md, reference/LOGGING.txt, reference/README.txt refreshed for parent-tool layout / no PLACES. NOTE: bakeoff-R-001-evidence was already missing on disk (FS-001..004 still point at it); not recreated here. Left alone: other uncommitted southampton-build dryrun/site/ghost churn (outside the five-file review), site/builds/bakeoff_r003_susu.json, verification/archive bakeoff_r003. REMAINING needs owner OK: (c) `git branch -D bakeoff-r004-haiku-high` in ai-worldbuilder (unmerged; tip 65b0e29 already deleted aborted R-004 sitting; redo is task 48)."
     }
   ]
 }
