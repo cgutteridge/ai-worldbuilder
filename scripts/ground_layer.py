@@ -97,7 +97,7 @@ def ignored_builds(cell: tuple[int, int]) -> frozenset:
     Earlier ground passes (retired), plus this cell's own layer plans: the old foliage pass and
     the ground/trees/decor plans that are being redone, and cell marker rings (wool ~30 m up, not
     ground: counting them left the cell's outer ring of columns unsurfaced). Lidar ghosts
-    (ADR 003 / shims/lidar_ghost.py) are placeholders real ground overwrites. Another cell's
+    (ADR 004, ghost owners yield to real owners) are placeholders real ground overwrites. Another cell's
     trees stay owners.
     """
     from lidar_ghost import ghost_owners_for

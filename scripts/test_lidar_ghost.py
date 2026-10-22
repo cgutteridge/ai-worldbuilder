@@ -35,16 +35,18 @@ def _flat_heights(ground_y: int, feature: int, x0: int, z0: int, x1: int, z1: in
 class NamingAndRing(unittest.TestCase):
     """Owner names and Chebyshev neighbour selection."""
 
-    def test_owner_name_encodes_negative_tz(self):
-        self.assertEqual(lg.owner_name(48, -44, 'ground'), 'ghost_48_m44_ground')
-        self.assertEqual(lg.owner_name(48, -44, 'features'), 'ghost_48_m44_features')
-        self.assertEqual(lg.owner_name(10, 3, 'ground'), 'ghost_10_3_ground')
+    def test_neighbour_ring_default_is_two_deep_and_excludes_focus(self):
+        focus = (48, -44)
+        cells = lg.neighbour_cells(focus)
+        self.assertEqual(lg.DEFAULT_RING, 2)
+        self.assertEqual(len(cells), 8 + 16)
+        self.assertNotIn(focus, cells)
+        self.assertEqual({cellmath.ring_distance(c, focus) for c in cells}, {1, 2})
 
-    def test_neighbour_ring_default_excludes_focus(self):
+    def test_smaller_ring_is_one_deep(self):
         focus = (48, -44)
         cells = lg.neighbour_cells(focus, ring=1)
         self.assertEqual(len(cells), 8)
-        self.assertNotIn(focus, cells)
         self.assertTrue(all(cellmath.ring_distance(c, focus) == 1 for c in cells))
 
     def test_neighbour_ring_zero_with_focus(self):
@@ -52,9 +54,11 @@ class NamingAndRing(unittest.TestCase):
         self.assertEqual(lg.neighbour_cells(focus, ring=0, include_focus=True), [focus])
         self.assertEqual(lg.neighbour_cells(focus, ring=0, include_focus=False), [])
 
-    def test_ghost_owners_for(self):
+    def test_ghost_owners_for_encodes_negative_tz(self):
         self.assertEqual(lg.ghost_owners_for((48, -44)),
                          frozenset({'ghost_48_m44_ground', 'ghost_48_m44_features'}))
+        self.assertEqual(lg.ghost_owners_for((10, 3)),
+                         frozenset({'ghost_10_3_ground', 'ghost_10_3_features'}))
 
 
 class PlanFromMockHeights(unittest.TestCase):
@@ -79,7 +83,7 @@ class PlanFromMockHeights(unittest.TestCase):
         self.assertEqual(plan.cells[(0, 5, 0)], 'minecraft:gray_concrete')
         self.assertEqual(plan.cells[(0, 1, 0)], 'minecraft:stone')
         self.assertNotIn((0, 0, 0), plan.cells)  # bedrock layer left alone
-        self.assertEqual(lg.plan_stats(plan)['blocks'], 4 * 5)  # 4 cols × (4 fill + 1 top)
+        self.assertEqual(len(plan.cells), 4 * 5)  # 4 cols × (4 fill + 1 top)
 
     def test_features_are_grey_columns_above_ground(self):
         cell = (0, 0)
@@ -89,7 +93,7 @@ class PlanFromMockHeights(unittest.TestCase):
         self.assertEqual(plan.cells[(0, 6, 0)], 'minecraft:light_gray_concrete')
         self.assertEqual(plan.cells[(0, 8, 0)], 'minecraft:light_gray_concrete')
         self.assertNotIn((0, 5, 0), plan.cells)  # ground surface not owned by features
-        self.assertEqual(lg.plan_stats(plan)['blocks'], 4 * 3)
+        self.assertEqual(len(plan.cells), 4 * 3)
 
     def test_zero_feature_skips_column(self):
         cell = (0, 0)
@@ -116,7 +120,7 @@ class _Tiny(unittest.TestCase):
         self.addCleanup(self.jw.__exit__)
         self.heights = lambda *b: _flat_heights(5, 1, *b)
 
-    def registry(self, ring=1):
+    def registry(self, ring=lg.DEFAULT_RING):
         import cell_registry
         return cell_registry.open_registry(blocks=self.jw.blocks, ghosts=lg.ghost_planner(self.heights), ring=ring)
 
@@ -176,29 +180,50 @@ class GhostPlannerAndNeeds(_Tiny):
 class OnCellFocus(_Tiny):
     """Focus raise ensures the journal frontier, or the focus ring before any real work."""
 
-    def test_frontier_from_seeds_includes_focus_and_skips_real_ground(self):
+    def test_frontier_from_seeds_is_two_deep_and_skips_real_ground(self):
         self.real_ground((1, 0))
-        reps = lg.on_cell_focus((0, 0), ring=1, dry=True, heights_fn=self.heights)
+        reps = lg.on_cell_focus((0, 0), dry=True, heights_fn=self.heights)
         by = {tuple(r['cell']): r for r in reps}
-        self.assertIn((0, 0), by)                                       # inside the seed's ring
+        self.assertEqual(set(by), {(x, z) for x in range(-1, 4) for z in range(-2, 3)})   # Chebyshev 2 of the seed
         self.assertEqual(by[(1, 0)]['ground_skip'], 'real-ground')
-        self.assertIn('ground', by[(2, 1)])
+        self.assertIn('ground', by[(3, 2)])                             # two cells out is still ghosted
 
-    def test_before_seeds_rings_the_focus_and_skips_it(self):
-        reps = lg.on_cell_focus((0, 0), ring=1, dry=True, heights_fn=self.heights)
+    def test_before_seeds_rings_the_focus_two_deep_and_skips_it(self):
+        reps = lg.on_cell_focus((0, 0), dry=True, heights_fn=self.heights)
         cells = {tuple(r['cell']) for r in reps}
         self.assertNotIn((0, 0), cells)
-        self.assertEqual(len(cells), 8)
+        self.assertEqual(len(cells), 24)
+        self.assertEqual({cellmath.ring_distance(c, (0, 0)) for c in cells}, {1, 2})
+
+    def test_env_ring_overrides_the_default_depth(self):
+        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '1'}):
+            reps = lg.on_cell_focus((0, 0), dry=True, heights_fn=self.heights)
+        self.assertEqual(len(reps), 8)
+
+    def test_explicit_ring_beats_env(self):
+        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '1'}):
+            reps = lg.on_cell_focus((0, 0), ring=2, dry=True, heights_fn=self.heights)
+        self.assertEqual(len(reps), 24)
+
+    def test_ring_zero_ghosts_nothing_before_seeds_and_only_the_seed_after(self):
+        self.assertEqual(lg.on_cell_focus((0, 0), ring=0, dry=True, heights_fn=self.heights), [])
+        self.real_ground((1, 0))
+        reps = lg.on_cell_focus((0, 0), ring=0, dry=True, heights_fn=self.heights)
+        self.assertEqual([tuple(r['cell']) for r in reps], [(1, 0)])
 
     def test_frontier_unions_two_seeds(self):
         self.real_ground((0, 0))
-        self.real_ground((3, 0))
-        targets = self.registry().frontier(1)
-        self.assertTrue({(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)} <= targets)
+        self.real_ground((7, 0))
+        targets = self.registry().frontier()
+        self.assertTrue({(x, 0) for x in (-2, 0, 2, 5, 7, 9)} <= targets)   # both seeds' ring-2 reach
+        self.assertFalse({(3, 0), (4, 0)} & targets)                    # gap beyond either seed's ring 2
 
     def test_ring_from_env(self):
-        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '2'}):
-            self.assertEqual(lg.ring_from_env(), 2)
+        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '3'}):
+            self.assertEqual(lg.ring_from_env(), 3)
+        with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '-1'}):
+            with self.assertRaises(ValueError):
+                lg.ring_from_env()
         os.environ.pop('LIDAR_GHOST_RING', None)
         self.assertEqual(lg.ring_from_env(), lg.DEFAULT_RING)
 
@@ -218,7 +243,7 @@ class CliDryRun(_Tiny):
         lg.ensure_cells(self.registry(), [(0, 0)], apply=self.jw.apply)
         self.real_ground((1, 0))
         with mock.patch('sys.stdout', new_callable=io.StringIO) as out:
-            code = lg.main(['status', '--cell', '0,0', '--ring', '1'])
+            code = lg.main(['status', '--cell', '0,0', '--ring', '2'])
         self.assertEqual(code, 0)
         rows = {tuple(r['cell']): r for r in json.loads(out.getvalue())['cells']}
         self.assertEqual(rows[(0, 0)]['ghost_ground'], 'applied')
