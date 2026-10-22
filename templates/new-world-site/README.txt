@@ -10,12 +10,12 @@ rules-context, cleanup). Thin stubs below point there.
 
 Keep in the world repo:
   ISSUES.txt NOTES.txt COVERAGE.txt REVIEWS.txt
-  LOCK.json (runtime) cells/ (apply journals + optional SOURCES)
+  LOCK.json (runtime) cells/ (optional SOURCES notes)
   archive/
 
-Progress source of truth is the cell journal (registry/journal.jsonl), driven by scripts/cell_registry.py next / issues / hold.
-Do not recreate QUEUE.txt, CURRENT-CELL.json, CELL-HOLDS.jsonl,
-AERIAL-REVIEW.txt, COVERAGE-SIGNOFFS.jsonl, or HANDOFF.txt — verify treats
-them as leftovers.
+Progress source of truth is the cell journal (registry/journal.jsonl), driven by
+scripts/cell_registry.py next / issues / hold / reconcile.
+Do not recreate retired progress files under site/ — `cell_registry.py verify`
+treats them as leftovers (see dryrun_reset / registry_verify for the list).
 
 Craft/process: edit ai-worldbuilder/rules/*.md only.

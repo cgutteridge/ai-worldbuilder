@@ -16,8 +16,8 @@ One model per sitting. Records under `model-bakeoffs/`. CLI: `python3 scripts/mo
 ## Sitting sequence
 
 1. **One apply owner** — if the parent takes over re-apply, interrupt the model subagent first.
-2. Regenerate the ghost baseline with `lidar_ghost apply`. There is no restore (ADR 004, task 40); the
-   no-restore sitting flow is pending task 48, so do not invent commands for it.
+2. Regenerate the ghost baseline with `lidar_ghost apply`. There is no region restore
+   (ADR 004, task 40).
 3. Confirm the world is open (MCP up). Ghost may look sparse around the cell, expected.
 4. Claim lock; run only the catalogue tool/model for this round.
 5. Evidence table → build → apply → fixed cameras → release lock.

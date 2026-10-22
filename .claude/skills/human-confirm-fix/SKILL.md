@@ -21,7 +21,7 @@ Send one line naming the fix and the place in plain words, e.g. "Fixed the roof 
 
 Done when that line is sent. Stop and wait for the answer.
 
-- **Later, no, or no reply:** leave the issue open in `site/ISSUES.txt` (or `add-issue` if it was only a chat report), note `FIXED <date>, awaiting user check` in the reason/chat, and carry on. Do not invent QUEUE / sign-off / STAGES progress.
+- **Later, no, or no reply:** leave the issue open in `site/ISSUES.txt` (or `add-issue` if it was only a chat report), note `FIXED <date>, awaiting user check` in the reason/chat, and carry on. Do not invent progress outside the cell journal / issues.
 
 ## 2. Show it (user said yes)
 

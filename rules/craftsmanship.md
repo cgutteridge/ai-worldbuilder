@@ -154,7 +154,7 @@ rule-file copy.
     lay no street there (clearing holes the building).
   - Clear unowned blocks above (road-label signs, orphan posts);
     re-solidify the bed down to the lowest cell any superseded streetscape
-    pass wrote (their trims left air: gravel falls, signoff sees "structure").
+    pass wrote (their trims left air: gravel falls, readback sees "structure").
   - Never write cells owned by house builds; put old streetscape passes and
     the reverted I-009 façades (+ facade_revert) in modifies.
 
@@ -208,7 +208,7 @@ Storeys from ridge height (eave is ~4); map building:levels shows as 'lvl' when 
 DOORS ARE FRAMED (user, 2026-10-16)
  A door has a jamb each side and a lintel above, at both door heights. site_kit.apply refuses a
  plan whose door lacks one (plan.allow_unframed_doors for a genuinely free-standing door). scripts/door_audit.py lists
- the old ones (142 of 700 doors on 2026-10-16): see the QUEUE item.
+ the old ones (142 of 700 doors on 2026-10-16): see the matching issue / next-task item.
 
 
 ENTRANCES (university register, user, 2026-10-16)

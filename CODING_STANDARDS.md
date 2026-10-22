@@ -9,12 +9,12 @@ pre-commit hook. Mechanical rules belong in `.githooks/` /
 - Prefer `GLOSSARY.md` terms; do not reintroduce glossary “Avoid” synonyms in
   new APIs or user-facing strings.
 - Honour accepted ADRs under `docs/adr/` (especially ADR 002: system tracker vs
-  world QUEUE).
+  world place memory).
 
 ## Placement
 
 - Tool engineering lands in this repo’s `tasks/` and `scripts/` /
-  `providers/`. World QUEUE, ISSUES, and place memory stay in the active world
+  `providers/`. World ISSUES and place memory stay in the active world
   checkout under `worlds/`.
 - When a change could be either tool or world work, the patch should make the
   choice obvious (or the ticket should have recorded an ask). Silent dumping of

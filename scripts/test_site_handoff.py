@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for scripts/site_handoff.py: definition of done and atomic `end` (I-046, I-049, I-057).
+"""Unit tests for scripts/site_handoff.py: definition of done and cell planning (I-046, I-049, I-057).
 
 Temp SITE dir only; the real site/ is never touched, no Minecraft, no OSM.
 
@@ -107,7 +107,7 @@ class DoneTest(Base):
             self.assertEqual(H.cell_gaps((1, 1), features=False)['layers'], ['trees', 'decor'])
 
     def test_next_cell_from_registry_not_queue(self):
-        """Ticket #31: next_cell uses registry_next, not STAGES/QUEUE."""
+        """Ticket #31: next_cell uses registry_next, not retired queue files."""
         self.registry_layers((48, -44))
         self.registry_layers((48, -45), trees=False, decor=False)
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
@@ -177,154 +177,6 @@ class LidarGapsTest(Base):
         items = H.plan_cell_items(1, 1, 0, gaps, [])
         heads = [h for h, _ in items]
         self.assertTrue(any('TREES OVER ROOF' in h for h in heads))
-
-
-class EndTest(Base):
-    def run_end(self, *args):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch('site_archive.run'):
-            rc = H.main(['end', *args, '--summary', 's', '--skip-say', '--skip-view'])
-        return rc, out.getvalue()
-
-    def test_end_ticks_releases_and_arms_next(self):
-        (self.site / 'LOCK.json').write_text(json.dumps({'owner': 'me', 'task': 'Q-001 …', 'heartbeat': time.time()}))
-        H.set_pending('Q-000', {'id': 'Q-001', 'text': 'stale'})
-        rc, _ = self.run_end('Q-001')
-        self.assertEqual(rc, 0)
-        self.assertFalse((self.site / 'LOCK.json').exists())
-        self.assertIn('[x] Q-001', H.QUEUE.read_text())
-        self.assertIn('[ ] Q-002', H.QUEUE.read_text())
-        pend = H.read_pending()
-        self.assertEqual((pend['done'], pend['next']), ('Q-001', 'Q-002'))
-
-    def test_end_without_id_uses_lock_task(self):
-        (self.site / 'LOCK.json').write_text(json.dumps({'owner': 'me', 'task': 'Q-002 stuff', 'heartbeat': time.time()}))
-        self.run_end()
-        self.assertIn('[x] Q-002', H.QUEUE.read_text())
-        self.assertEqual(H.read_pending()['next'], 'Q-001')
-
-    def test_state_changes_survive_a_later_crash(self):
-        (self.site / 'LOCK.json').write_text(json.dumps({'owner': 'me', 'task': 'Q-001', 'heartbeat': time.time()}))
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch('site_archive.run', side_effect=IndexError('boom')):
-            rc = H.main(['end', 'Q-001', '--summary', 's', '--skip-say', '--skip-view'])
-        self.assertEqual(rc, 0)
-        self.assertFalse((self.site / 'LOCK.json').exists())
-        self.assertIn('[x] Q-001', H.QUEUE.read_text())
-        self.assertEqual(H.read_pending()['next'], 'Q-002')
-
-    def test_last_item_leaves_no_next(self):
-        H.QUEUE.write_text(QUEUE_TEXT.replace('[ ] Q-002', '[x] Q-002'))
-        self.run_end('Q-001')
-        self.assertIsNone(H.read_pending()['next'])
-
-    FEATURE_QUEUE = '''SOUTHAMPTON REFINE — QUEUE
-
-[ ] Q-001  CELL 1,1 (r=0) FEATURE Test Building. RULES: property.
-           Auto-queued.
-
-[ ] Q-002  CELL 2,2 (r=1) layered passes: ground, trees, decor. RULES: ground.
-           Auto-queued.
-'''
-
-    def test_end_blocks_ungreebled_feature(self):
-        """FEATURE end without <name>-greeblies or escape phrase must not tick."""
-        H.QUEUE.write_text(self.FEATURE_QUEUE)
-        err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err), \
-                mock.patch('site_archive.run'):
-            rc = H.main(['end', 'Q-001', '--summary', 'built the shell only',
-                         '--skip-say', '--skip-view'])
-        self.assertEqual(rc, 2)
-        self.assertIn('greeblies', err.getvalue().lower())
-        self.assertIn('[ ] Q-001', H.QUEUE.read_text())
-
-    def _install_contact_sheet(self, build='test_bldg'):
-        """Fake evidence sheet so greeblies-gate tests can clear the #17 gate too."""
-        from PIL import Image
-        vroot = Path(tempfile.mkdtemp())
-        out = vroot / 'verification' / 'site'
-        out.mkdir(parents=True)
-        sheet = out / f'{build}-contact.png'
-        Image.new('RGB', (40, 40), (10, 20, 30)).save(sheet)
-        (out / f'{build}-result.json').write_text(json.dumps({
-            'contact_sheet': f'verification/site/{build}-contact.png'}))
-        return vroot, out, build
-
-    def test_end_allows_feature_when_summary_says_no_greeblies_seen(self):
-        H.QUEUE.write_text(self.FEATURE_QUEUE)
-        vroot, out, build = self._install_contact_sheet()
-        out_s = io.StringIO()
-        with mock.patch('evidence_sheet.ROOT', vroot), \
-                mock.patch('evidence_sheet.OUT', out), \
-                mock.patch.object(H, 'ROOT', vroot), \
-                contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch('site_archive.run'):
-            rc = H.main(['end', 'Q-001', '--summary', 'shell done; no greeblies seen',
-                         '--skip-say', '--skip-view', '--build', build])
-        self.assertEqual(rc, 0)
-        self.assertIn('[x] Q-001', H.QUEUE.read_text())
-
-    def test_end_allows_feature_with_greeblies_stage(self):
-        H.QUEUE.write_text(self.FEATURE_QUEUE)
-        self.jw.seed((1, 1), features=('test-greeblies',))
-        vroot, out, build = self._install_contact_sheet()
-        with mock.patch('evidence_sheet.ROOT', vroot), \
-                mock.patch('evidence_sheet.OUT', out), \
-                mock.patch.object(H, 'ROOT', vroot), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch('site_archive.run'):
-            rc = H.main(['end', 'Q-001', '--summary', 's', '--skip-say', '--skip-view',
-                         '--build', build])
-        self.assertEqual(rc, 0)
-        self.assertIn('[x] Q-001', H.QUEUE.read_text())
-
-    def test_feature_end_refuses_without_contact_sheet(self):
-        """FEATURE handoff must not tick when the evidence contact sheet is missing (#17)."""
-        from PIL import Image
-
-        feat = (
-            'SOUTHAMPTON REFINE — QUEUE\n\n'
-            '[ ] Q-010  CELL 1,1 (r=0) FEATURE Demo Hall. RULES: property.\n'
-            '           Non-house building: use scripts/feature_build.py — write site/builds/demo_hall.json\n\n'
-            '[ ] Q-011  CELL 1,1 (r=0) layered passes: ground, trees, decor. RULES: ground.\n'
-        )
-        H.QUEUE.write_text(feat)
-        (self.site / 'LOCK.json').write_text(
-            json.dumps({'owner': 'me', 'task': 'Q-010 FEATURE', 'heartbeat': time.time()}))
-        err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err), \
-                mock.patch('site_archive.run'):
-            # Clear greeblies gate so the refusal is specifically the contact sheet.
-            rc = H.main(['end', 'Q-010', '--summary', 's; no greeblies seen',
-                         '--skip-say', '--skip-view', '--build', 'demo_hall'])
-        self.assertEqual(rc, 2)
-        self.assertIn('contact sheet', err.getvalue().lower())
-        self.assertIn('[ ] Q-010', H.QUEUE.read_text())
-        self.assertTrue((self.site / 'LOCK.json').exists())
-
-        # With a recorded sheet, end succeeds and names the path.
-        vroot = Path(tempfile.mkdtemp())
-        out = vroot / 'verification' / 'site'
-        out.mkdir(parents=True)
-        sheet = out / 'demo_hall-contact.png'
-        Image.new('RGB', (40, 40), (10, 20, 30)).save(sheet)
-        (out / 'demo_hall-result.json').write_text(json.dumps({
-            'contact_sheet': 'verification/site/demo_hall-contact.png'}))
-        with mock.patch('evidence_sheet.ROOT', vroot), \
-                mock.patch('evidence_sheet.OUT', out), \
-                mock.patch.object(H, 'ROOT', vroot):
-            out_s = io.StringIO()
-            with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(io.StringIO()), \
-                    mock.patch('site_archive.run'):
-                rc = H.main(['end', 'Q-010', '--summary', 'built demo; no greeblies seen',
-                             '--skip-say', '--skip-view', '--build', 'demo_hall'])
-            self.assertEqual(rc, 0)
-            self.assertIn('CONTACT SHEET:', out_s.getvalue())
-            self.assertIn('demo_hall-contact.png', out_s.getvalue())
-        self.assertIn('[x] Q-010', H.QUEUE.read_text())
 
 
 class PlanCellItems(unittest.TestCase):
@@ -438,22 +290,6 @@ class BriefLidarGhost(Base):
         self.assertIn('shims/lidar_ghost.py status --cell 48,-44', brief)
         self.assertIn('DTM ghost ground', brief)
 
-
-class AppendQueueItems(unittest.TestCase):
-    def test_numbers_after_highest_and_fills_qid(self):
-        with tempfile.TemporaryDirectory() as d:
-            q = Path(d) / 'QUEUE.txt'
-            q.write_text('[x] Q-007  old\n')
-            with mock.patch.object(H, 'QUEUE', q), mock.patch.object(H, 'QUEUE_DONE', Path(d) / 'none.txt'):
-                first = H._append_queue_items([('one', ['end {qid}']), ('two', ['b'])])
-            text = q.read_text()
-        self.assertEqual(first, 'Q-008')
-        self.assertIn('[ ] Q-008  one', text)
-        self.assertIn('end Q-008', text)
-        self.assertIn('[ ] Q-009  two', text)
-
-    def test_empty_writes_nothing(self):
-        self.assertIsNone(H._append_queue_items([]))
 
 
 if __name__ == '__main__':

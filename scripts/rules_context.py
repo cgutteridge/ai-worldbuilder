@@ -234,7 +234,7 @@ def plan_for_item(item: dict, cell_sources_rel: str | None = None) -> ContextPla
 _DONE_HINTS: dict[WorkContext, str] = {
     WorkContext.TOOLING: 'Tests/docs only; no live apply unless item says so.',
     WorkContext.SOURCES: 'Write SOURCES file; one imagery judge pass; TOKEN NOTES in file.',
-    WorkContext.GROUND: 'Apply → readback → signoff touched parcels → status --write → gaps.',
+    WorkContext.GROUND: 'Apply → readback → status --write → gaps (parcels done at 100% touched).',
     WorkContext.FOLIAGE: (
         'build_cell_foliage dry-run then SITE_OWNER --apply; script signs in-cell open/gap.'
     ),

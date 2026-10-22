@@ -66,8 +66,8 @@ class SeamTest(unittest.TestCase):
 
 
 class StateTest(unittest.TestCase):
-    def test_done_at_full_coverage_without_signoff(self):
-        """Ticket #31: sign-offs removed; 100% touched is done."""
+    def test_done_at_full_coverage(self):
+        """Ticket #31: 100% touched is done (no separate done gate)."""
         self.assertEqual(C.parcel_state(10, 10, True), 'done')
         self.assertEqual(C.parcel_state(10, 10, False), 'done')
         self.assertEqual(C.parcel_state(10, 9, True), 'touched')
@@ -90,34 +90,6 @@ class SectionTest(unittest.TestCase):
     def test_replace_section_needs_markers(self):
         with self.assertRaises(ValueError):
             C.replace_section('no markers here', 'x')
-
-
-class SignoffStoreTest(unittest.TestCase):
-    def test_signoffs_retired_always_empty(self):
-        """Ticket #31: load_signoffs is empty; append_signoff is a no-op."""
-        import tempfile
-        old = C.SIGNOFFS
-        with tempfile.TemporaryDirectory() as d:
-            C.SIGNOFFS = Path(d) / 'signoffs.jsonl'
-            try:
-                C.append_signoff({'parcel': 'prop:w1', 'build': 'a', 'date': '2026-10-12'})
-                active = C.load_signoffs()
-                self.assertEqual(active, {})
-                self.assertFalse(C.SIGNOFFS.exists())
-            finally:
-                C.SIGNOFFS = old
-
-    def test_named_signoff_is_deprecated_noop(self):
-        import argparse
-        from unittest import mock
-        args = argparse.Namespace(ids=['prop:w1'], build='b', date='2026-10-12', note=None,
-                                  backfill=False, builds=None, dry_run=False, revoke=False,
-                                  reason=None, limit=10)
-        with mock.patch.object(C, 'append_signoff') as append, \
-                mock.patch.object(C, 'write_coverage') as write:
-            self.assertEqual(C.cmd_signoff(args), 0)
-            append.assert_not_called()
-            write.assert_not_called()
 
 
 class RegistryRollupTest(unittest.TestCase):

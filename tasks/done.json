@@ -384,6 +384,24 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "DONE: backups/ emptied earlier; (a) deleted verification/site/bakeoff_r003_* and bakeoff_r004_*; (b) worlds/southampton-build 37c84ba (pristine keys dropped; HUMANS/README/reference docs refreshed). NOTE: bakeoff-R-001-evidence was already missing (FS-001..004 still point at it). (c) local branch bakeoff-r004-haiku-high deleted with owner OK (was 65b0e29)."
+    },
+    {
+      "id": 46,
+      "title": "Purge stale rules, docs, prompts, templates, world docs",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Work through the audit top-10: process.md:25 and handoff-layered-passes (STAGES 'journal only'), site_handoff.py hand-edit-STAGES and QUEUE/'end Q-nnn' strings, handoff-layered-passes s11 site/REGISTRY.json proposal, templates/empty-world/README.txt, worlds/southampton-build AGENTS/README/HUMANS.html/site/*.txt (own git repo) and retired QUEUE/CURRENT-CELL files, coverage.py signoff, ADR/spec status lines, model-bakeoffs README/PROTOCOL/rounds snap names, skills (model-bakeoff, cell-orchestrator, human-confirm-fix). One canonical doc per fact; others link, do not copy. Remove tests that encode old behaviour (test_site_handoff QUEUE round-trip, test_coverage signoffs, etc.). CORRECTION to carry into the purge: site_recover.py is NOT deleted. Task 44 kept it to resolve ONE interrupted apply (land it or roll back to its saved structure); `cell_registry.py reconcile [--fix]` detects and repairs drift forward. Fix docs/adr/004-cell-journal.md (lines ~12, 39, 45: 'deleted/replaced'), GLOSSARY.md (lines ~52-53: reconcile 'replaces' site_recover; 'recover' under Avoid), AGENTS.md line ~38 ('repair path is being rebuilt, tasks 41-44': point at reconcile and site_recover), and rules/process.md, foliage.md, handoff-layered-passes.md, skills cell-orchestrator and redo wherever they describe recovery. Also point docs at `cell_registry.py reconcile` as the 'mess in a cell' answer. DONE: purged rules/skills/templates/ADR/GLOSSARY/AGENTS; world docs committed in southampton-build 06fb49e; removed QUEUE/signoff round-trip tests; site_recover kept; reconcile is mess-in-a-cell answer."
+    },
+    {
+      "id": 47,
+      "title": "Stale-terms guard so old instructions cannot creep back",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Add a check (cell_registry verify and/or a test) that fails on banned terms outside the ADR/history: site_stages, registry_hooks, snap --bbox, snap-world, restore-ghost, archive_stale, pristine_region_path, QUEUE.txt, signoff, STAGES.json. Run it in the normal test command. DONE: scripts/stale_terms_audit.py + test_stale_terms_audit.py (suite discovers it); ADR/audits/plans exempt."
     }
   ]
 }

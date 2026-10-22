@@ -15,8 +15,7 @@ python3 scripts/model_bakeoff.py status
 python3 scripts/model_bakeoff.py add-tool --id cursor --name Cursor
 python3 scripts/model_bakeoff.py add-model --tool cursor --id composer --tier low --label Composer
 python3 scripts/model_bakeoff.py open --tool cursor --model composer
-# the ghost baseline is regenerated with `lidar_ghost apply` (no restore, ADR 004;
-# the no-restore sitting flow is pending task 48)
+# the ghost baseline is regenerated with `lidar_ghost apply` (no region restore, ADR 004)
 # apply, interview…
 python3 scripts/model_bakeoff.py score R-001 --overall pass --axis massing=pass --axis keep=pass
 python3 scripts/model_bakeoff.py usage R-001 --input 12000 --output 3000 --source cursor-ui

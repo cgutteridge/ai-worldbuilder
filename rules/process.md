@@ -6,9 +6,8 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 ------------------------------------------------------------------------
 1. WHERE THINGS LIVE
 ------------------------------------------------------------------------
- registry/cells.json    cell layers, marker, holds, coverage warnings (SoT)
- registry/features.json feature builds + cells they touch (SoT)
- scripts/cell_registry.py  next / status / issues / hold / verify
+ registry/journal.jsonl  cell journal (SoT); progress/ghost/ownership are views
+ scripts/cell_registry.py  next / status / issues / hold / verify / reconcile
  site/NOTES.txt         overview, accuracy rules (active world; read first)
  site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
@@ -22,8 +21,8 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  site/BUILDS-INDEX.txt  generated list of kit builds (scripts/site_index.py)
  site/archive/          closed notes / older reviews
  site/LOCK.json         who holds the live world (scripts/site_lock.py)
- site/cells/*-STAGES.json  apply journal only (site_kit / site_recover), not progress
- scripts/site_kit.py    plan / preview / apply / readback
+ scripts/site_kit.py    plan / preview / apply / readback (journals via CellRegistry)
+ scripts/site_recover.py  land or roll back ONE interrupted apply
  scripts/world_frame.py CRS / OSGB / WGS84 / MC / cells / WM tiles (canonical)
  scripts/osgb.py        thin wrapper → world_frame (legacy OFFSET_* shape)
  scripts/geo.py         WGS84 + probe Y + slopes + survey bboxes (see README)
@@ -36,10 +35,10 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  config/world-frame.json         CRS, offsets, Y offset, bounds, anchor
  config/map-maker-offsets.json  legacy OFFSET_* mirror of world-frame
 
- Retired (do not recreate; verify fails if present): site/QUEUE.txt,
- site/CURRENT-CELL.json, site/CELL-HOLDS.jsonl, site/COVERAGE-SIGNOFFS.jsonl,
- site/AERIAL-REVIEW.txt, site/.handoff-pending.json, site/HANDOFF.txt.
- Wipe via: python3 scripts/dryrun_reset.py --confirm-logged-out
+ Retired progress files (do not recreate; `cell_registry.py verify` fails if
+ present): old queue / focus / holds / retired coverage-done files / aerial-review /
+ handoff pending files under site/. Wipe via:
+ python3 scripts/dryrun_reset.py --confirm-logged-out
 
 Naming: builds are <street>_<numbers>_<thing> for properties (e.g.
 broadlands_rd_20_22), <place>_<thing> otherwise. Modifications
@@ -75,17 +74,19 @@ BUILT plan in place to “fix” the world.
                      Fix or schedule high issues before starting the next.
 
 ------------------------------------------------------------------------
-2a. UNDO (no region backups, ADR 004)
+2a. UNDO AND REPAIR (no region backups, ADR 004)
 ------------------------------------------------------------------------
  Region-file backup and restore were removed (ADR 004, task 40). Do not copy,
  snap or restore .mca files by hand.
 
  1. Kit builds: site_kit structure backup (verification/site/*-backup.json)
-    stays the undo for planned kit applies; `site_recover.py` uses it.
+    stays the undo for planned kit applies; `site_recover.py` uses it for an
+    interrupted apply.
  2. Mask undo for the layered passes (trees, decor): scripts/mask_undo.py.
- 3. "Undo" for anything else means the planned undo pass or, later, the
-    journal reconcile. The repair path is being rebuilt, see ADR 004
-    (docs/adr/004-cell-journal.md) and tasks 41-44.
+ 3. Mess in a cell (blocks drifted from the journal): 
+    `python3 scripts/cell_registry.py reconcile [tx,tz] [--fix]`.
+ 4. Interrupted apply (journal entry still `begun`):
+    `python3 scripts/site_recover.py status` then `recover <tx,tz> --apply`.
 
  Always `server_save` / save the world before reading region files so they
  match what you think you are editing.
@@ -186,9 +187,9 @@ BUILT plan in place to “fix” the world.
  4. Features — each its own build, normal cadence (§2); registry marks built on clean apply.
  5. Layered passes — live flow per cell: claim lock; mask_undo.py (decor then trees) if
     masks exist; ground_layer.py --apply; trees_layer.py --apply; decor_layer.py --apply;
-    patrol sweep; registry flags update via registry_hooks (STAGES is apply journal only);
-    release lock. Dry-run first and check verification/site/<plan>-kinds.png against the
-    aerial. Python: .venv/bin/python. Vegetation rules: rules/foliage.md.
+    patrol sweep; clean applies land journal entries (CellRegistry); release lock.
+    Dry-run first and check verification/site/<plan>-kinds.png against the aerial.
+    Python: .venv/bin/python. Vegetation rules: rules/foliage.md.
  6. Cell complete — registry DONE (layers + features + no open issues/warnings). Only then
     cell_marker.py --clear tx,tz and move on: next cell on the ring, or ring r+1 when the
     ring is done. Cell order: north centre of the ring (north is smaller tz), then clockwise.
@@ -222,16 +223,16 @@ BUILT plan in place to “fix” the world.
  Vector map, lidar, aerial and street-level photos come from different years and can disagree. If ANY
  photo source (aerial, look-only streetlevel, shared photo archives) shows a building that is absent
  from lidar or from the footprint map, build it anyway: house only, usual conventions, trace the
- footprint from the aerial and record source + year in the build docstring and the cell
- STAGES note. Check osm_extract.py first for ways outside the map clip. Queue driving is
- missing footprint feature builds via residual_features
+ footprint from the aerial and record source + year in the build docstring and a
+ journal note on the cell. Check osm_extract.py first for ways outside the map clip.
+ Missing footprint feature builds are driven via residual_features
  (empty-world DoD / ADR 003).
 
  LIDAR IS A DATED SNAPSHOT TOO (user, 2026-10-16). Lidar can disagree with newer (or older)
  photos on footprint, height or roof (extension, new roof, demolition). Lidar stays the
  default for ground / eaves / ridge Y; where a photo clearly shows a later change, follow
- the photo and record source + year and the lidar mismatch in the build docstring and the
- cell STAGES note. Do not "fix" the photo to match lidar.
+ the photo and record source + year and the lidar mismatch in the build docstring and a
+ journal note on the cell. Do not "fix" the photo to match lidar.
  Some lidar products filter 1-2 m features (cars, street furniture, bins, signs, low walls)
  as noise; national lidar composites are noisier — strip transitory hits, keep street furniture where
  practical (`rules/evidence-order.md`). Absence from lidar proves nothing for them; add them in
@@ -267,7 +268,7 @@ BUILT plan in place to “fix” the world.
  Evidence    client view from reference photo camera beside the photo;
              top-down view beside the aerial;
              3 written matches/mismatches in REVIEWS.
- Records     queue/issue notes and reference/manifest match the world.
+ Records     issue notes and reference/manifest match the world.
  Backups     kit structure backup present.
 
 Outcome: each finding → ISSUES.txt (severity, place, location, action).
@@ -290,14 +291,15 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
  - ONE builder at a time. Claim site/LOCK.json with scripts/site_lock.py
    before any world change or player-moving capture. site_kit.apply()
    refuses without it (env SITE_OWNER must match). Stale after 90 min.
- - Apply journal: site_kit.apply() sets site/cells/<tx>_<tz>-STAGES.json to
-   'applying' before any live write and to 'applied' after readback. Progress flags
-   land in the registry via registry_hooks. 'applying' = in flight (cell never DONE).
- - Recovery: lock stale (> 90 min) or an in-flight stage -> `python3 scripts/site_recover.py status`, then
-   `recover <tx,tz> --apply`: world matches plan -> 'applied'; else restore the recorded structure ->
-   'rolled-back' (work reappears; registry flags clear). Never with a fresh lock.
+ - Apply path: site_kit.apply() journals `begun` before any live write and
+   `landed`/`mismatched` after readback (CellRegistry). An unfinished `begun`
+   entry keeps the cell from DONE.
+ - Interrupted apply: `python3 scripts/site_recover.py status`, then
+   `recover <tx,tz> --apply` (land if world matches plan, else roll back to the
+   structure backup). Never with a fresh lock held by someone else.
+ - Mess in a cell: `python3 scripts/cell_registry.py reconcile [tx,tz] [--fix]`.
  - Work comes from `cell_registry.py next` (issues, then layers/features). Finish the
-   task, let hooks update the registry, release the lock.
+   task, release the lock.
  - Offline work may run in parallel (design, photo markup, previews of
    region files) but must not apply builds.
  - The files are the memory. Leave nothing important only in a chat.
@@ -325,24 +327,16 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
         verify), call the user in rather than looping on retries: run `say "I need
         help"` outside any command sandbox, say in one or two lines what needs
         deciding, then stop. Do not chain further attempts.
- End    release the lock; save the world; update brief / TODO / ISSUES /
-        REVIEWS / COVERAGE; regenerate BUILDS-INDEX;
+ End    release the lock; save the world; update ISSUES / REVIEWS / COVERAGE;
+        regenerate BUILDS-INDEX;
         python3 scripts/site_cleanup.py due (if it prints CLEANUP DUE: rules/cleanup.md);
         python3 scripts/run_tests.py (stdlib unit tests incl. roof_lint on all
         *-cells.json; same check as CI); then TOKEN NOTES
         (2–5 lines in REVIEWS or place CHANGE LOG: what wasted tokens
         this stage, what to change next — reference/LOGGING.txt §8);
-        then hand off with summary + creative viewpoint of the main change:
-          python3 scripts/site_handoff.py end Q-nnn \
-            --summary "one sentence: area + task; then what this session did" \
-            --view x,y,z[,lookx,looky,lookz]
-        Run that outside any command sandbox: a sandbox mutes macOS `say` and `end`
-        fails fast (exit 3). `end` (1) speaks "ready for handoff", (2) prints area/task
-        from the QUEUE item plus the summary (a sentence or two, not an essay), (3) sets
-        creative mode and teleports the player to the main change. Use --skip-view
-        only if MCP is down; --skip-say only if audio is unavailable. Then open a new
-        chat and paste the NEXT CHAT copy box from `end` output (code block, not
-        inline prose).
+        then hand off: summary in chat + creative viewpoint of the main change
+        (`site_handoff.py` view helpers if useful). Open a new chat and start with
+        `cell_registry.py next` — that is the progress source, not a retired queue.
 
 ------------------------------------------------------------------------
 7. TOKEN BUDGET
@@ -359,5 +353,5 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
  - Review views through the contact sheet; open full-size only for detail.
  - Batch anything only the user can do into ONE request; do not poll.
  - Good enough: rules/radial-good-enough.md.
- - End of build work: coverage.py signoff + status --write (never hand-edit
-   PROCESSED CELLS).
+ - End of build work: coverage.py status --write (never hand-edit
+   PROCESSED CELLS). Parcels are done at 100% touched; coverage sign-offs are retired.

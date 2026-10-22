@@ -1,15 +1,15 @@
 LAYERED PASSES AND MASK UNDO
 Tool-repo rules (ai-worldbuilder/rules/handoff-layered-passes.md).
-Written 2026-10-14; registry cut-over 2026-10-21. Pass order for empty-world refine;
-ring focus and holds live in the active world's **registry/** (marker + hold fields).
-`site/cells/*-STAGES.json` is the apply journal only (site_kit / site_recover).
+Written 2026-10-14; cell-journal cut-over 2026-10-21. Pass order for empty-world refine;
+ring focus and holds live in the active world's **registry/** (journal views: marker + hold).
+In-flight applies are `begun` journal entries; mess-in-a-cell → `cell_registry.py reconcile`.
 
 ------------------------------------------------------------------------
 1. PASS ORDER (per cell, in this order, never out of order)
 ------------------------------------------------------------------------
  1. MAJOR FEATURES — buildings, and anything large that gets its own thing:
     bridges, tunnels, other big structures. Each is its own build with its own
-    undo (see §4; the repair path is being rebuilt, ADR 004 and tasks 41-44). Not mask-undone.
+    undo (see §4; ADR 004). Not mask-undone.
  2. GROUND — redo every ground-level block not covered by a major feature.
     Includes the above-ground strip of all non-air blocks not owned by a neighbour, because trees and decor may only
     go on air. Clipped to the cell bounds. Not mask-undone (rerun the pass).
@@ -72,22 +72,20 @@ Undo passes run in reverse order of the passes that wrote them.
 4. MAJOR FEATURES: UNDO IS NOT THE MASK
 ------------------------------------------------------------------------
 Buildings, bridges and tunnels are big and do not write masks. Region snapshots and restores
-no longer exist (ADR 004, task 40). Their undo is the planned undo pass or, later, the journal
-reconcile; the repair path is being rebuilt, see docs/adr/004-cell-journal.md and tasks 41-44.
-Until then, before any manual put-back of a feature:
-  - check a few known blocks (the fingerprint recorded in the stage file) at the planned origin
-    (an earlier restore used a box of the wrong size and nothing checked the origin);
-  - after the put-back, compare the fingerprint again and look at the view.
+no longer exist (ADR 004, task 40). Their undo is the journal Undo intent, or
+`cell_registry.py reconcile [--fix]` when blocks have drifted. Interrupted kit applies
+use `site_recover.py` (land or roll back to the structure backup). See
+docs/adr/004-cell-journal.md.
 
 ------------------------------------------------------------------------
-5. APPLY JOURNAL (not progress SoT)
+5. CELL JOURNAL (progress SoT)
 ------------------------------------------------------------------------
-site/cells/<tx>_<tz>-STAGES.json records in-flight applies for recovery:
-  status      applying | applied | applied-with-mismatches | rolled-back | …
-  plan / mask file / fingerprint
-Progress SoT is `registry/cells.json` + `registry/features.json`. A cell is done when
-the registry says DONE (layers + features + no open warnings/issues), readback was clean,
-patrol found no clashes, and a visual check against aerial/photos passed.
+`registry/journal.jsonl` is the only progress record. In-flight applies are `begun`
+entries; finish as `landed` / `mismatched`. Interrupted apply → `site_recover.py`.
+Drift from recorded plans → `cell_registry.py reconcile [--fix]`.
+A cell is done when the journal view says DONE (layers + features + no open
+warnings/issues), readback was clean, patrol found no clashes, and a visual check
+against aerial/photos passed.
 
 ------------------------------------------------------------------------
 6. CLIPPING AND NEIGHBOURS
@@ -167,52 +165,34 @@ MAJOR FEATURES AND TREES
 NOTHING ELSE CHANGES: pass order in §1 stands.
 
 ------------------------------------------------------------------------
-11. FEATURE REGISTRY (proposal, 2026-10-14)
+11. CROSS-CELL TREE/DECOR AFTER A FEATURE (decided 2026-10-14; journal today)
 ------------------------------------------------------------------------
 Purpose: when a major feature runs or re-runs, any tree or decor of another cell that
 overlaps it must be re-run too, without anyone remembering to do it.
 
-Registry file: site/REGISTRY.json (one list of entries, machine-written by the
-feature tool; never edited by hand).
-  entry = {
-    "feature":     "<major feature build name>",
-    "feature_cell":[tx, tz],
-    "dep_cell":    [tx, tz],          the cell whose trees/decor overlap
-    "dep_pass":    "trees" | "decor",
-    "positions":   count of overlapping non-air blocks,
-    "status":      "queued" | "run" | "done",
-    "created":     ISO timestamp
-  }
+Progress and ownership live in the cell journal (`registry/journal.jsonl` via
+`cell_registry.py`), not a separate hand-edited registry file. Neighbour dep work
+shows up through `cell_registry.py next` / issues after the feature lands.
 
 Feature step (each major feature gets this, in order):
-  1. Fingerprint + origin check (§4).
-  2. Clear the vertical path above its footprint: non-air blocks not owned by a
+  1. Clear the vertical path above its footprint: non-air blocks not owned by a
      neighbour are removed; any block owned by a neighbour's tree or decor mask is
      left in place and counted.
-  3. Each neighbour-owned block inside the feature volume gives a registry entry for
-     (dep_cell, dep_pass) with status "queued".
-  4. Run the queued dep passes now, or leave them queued, as the operator chooses.
-     A dep pass re-run first undoes its own mask (§3 undo), then re-plans with the new
+  2. Note or issue the neighbour cells whose masks overlap so trees/decor re-run.
+  3. A dep pass re-run first undoes its own mask (§3 undo), then re-plans with the new
      feature volume excluded. Its trees and decor never enter a feature volume.
 
 Ground step follows the same rule: it skips feature-owned columns, and records a
 dep pass for any neighbour-owned block it cannot clear.
 
-DECIDED 2026-10-14 (user): leave it. A feature never removes a neighbour's block;
-the neighbour's tree/decor is re-run and drops the overlapping blocks itself.
-
-Was the open decision:
-  When a neighbour's tree crown sits inside a new feature volume, the feature may NOT
-  remove it (it belongs to the neighbour). Recommended: the feature leaves it, the
-  registry queues the neighbour's tree re-run, and the re-run drops the overlapping
-  leaves from its own plan. The alternative is to let the feature remove it, which
-  breaks the rule that a cell never damages a neighbour's deployment.
+DECIDED 2026-10-14 (user): a feature never removes a neighbour's block; the
+neighbour's tree/decor is re-run and drops the overlapping blocks itself.
 
 ------------------------------------------------------------------------
 12. DECISIONS (2026-10-14, user, round 2)
 ------------------------------------------------------------------------
-Historical note (ticket #33): QUEUE.txt / CELL-HOLDS.jsonl are retired. Equivalent
-today: `cell_registry.py hold <cell> --reason …` and `cell_registry.py next`.
+Historical note (ticket #33): retired world queue / hold files. Equivalent today:
+`cell_registry.py hold <cell> --reason …` and `cell_registry.py next`.
 
 GROUND REDO IS A BLOCKING HOLD
   - Hold the cell in the registry until ground redo, trees and decor are verified.
@@ -236,9 +216,9 @@ CONFIRMED §10 (user, 2026-10-14)
 ------------------------------------------------------------------------
 13. HANDOVER (2026-10-14, end of session) — HISTORICAL
 ------------------------------------------------------------------------
-Kept as a worked example of the first ground pass on 48,-44. Do not reopen
-QUEUE/CELL-HOLDS paths; use the registry. Footprint override
-notes below remain useful archaeology.
+Kept as a worked example of the first ground pass on 48,-44. Use the cell journal
+(`/cell_registry.py`), not retired queue/hold files. Footprint override notes below
+remain useful archaeology.
 
   - Ground layer APPLIED to cell 48,-44 (plan highfield_48_m44_ground).
   - (A region snapshot was taken then; region backups no longer exist, ADR 004.)
@@ -246,9 +226,9 @@ notes below remain useful archaeology.
     do not copy the override elsewhere.
 
 WHAT EXISTS IN CODE (still true)
-  - scripts/ground_layer.py / trees_layer.py / decor_layer.py + registry_hooks
-  - scripts/pass_mask.py; scripts/coverage.py write (registry rollup + holds via registry)
-  - Apply journal: site/cells/*-STAGES.json for in-flight recovery only
+  - scripts/ground_layer.py / trees_layer.py / decor_layer.py (journal via CellRegistry)
+  - scripts/pass_mask.py; scripts/coverage.py write (registry rollup + holds)
+  - Interrupted apply: site_recover.py; drift: cell_registry.py reconcile
 
 ------------------------------------------------------------------------
 14. 2026-10-14 (user): 48,-44 DONE; ALL OTHER CELLS RESTART

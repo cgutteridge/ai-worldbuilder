@@ -55,7 +55,7 @@ Play `need-you` and **stop** until the user confirms the offset. Do not apply wo
 3. Scaffold place memory:
    - `templates/new-world-site/` → world checkout `site/` (ISSUES, NOTES, COVERAGE, REVIEWS, cells/, thin stubs for process docs).
    - Registry: nothing to copy. `registry/` is created by the first journal write (`templates/new-world-registry/README.txt`, ADR 004).
-   Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do **not** create QUEUE.txt, CURRENT-CELL.json, CELL-HOLDS.jsonl, AERIAL-REVIEW.txt, or HANDOFF.txt — `cell_registry.py verify` treats them as leftovers. Progress starts empty; tools populate the registry.
+   Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do **not** create retired progress files under site/ — `cell_registry.py verify` treats them as leftovers. Progress starts empty; tools populate the journal.
 
 Done when checklist providers have `how` strings and `evaluate-data-source` would not flag an empty type slot that the place needs.
 

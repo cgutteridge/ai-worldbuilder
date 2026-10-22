@@ -63,5 +63,5 @@ matches Southampton. Done needs:
 
 ## 5. Stop instead of patching
 The stop rule is in `rules/process.md` §2: a geometry fix build means revert
-and re-survey, never _b/_c patches. If a QUEUE item tells you to repeat a
+and re-survey, never _b/_c patches. If a next-task item tells you to repeat a
 method that contradicts the evidence, fix the queue item and log an ISSUE.

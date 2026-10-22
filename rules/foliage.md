@@ -9,7 +9,7 @@ ground, before decor. This file is the single home for the vegetation rules.
 Rules
 ------------------------------------------------------------------------
  - NEVER place sapling blocks. They grow on random tick, so the world drifts after
-   apply: builds stop being idempotent, readback and signoff lie, and ground work
+   apply: builds stop being idempotent, readback lies, and ground work
    gets undone. Strip stock/vendor saplings in the ground pass; do not replant them.
  - Canopy is static: log + leaves[persistent=true] massing (or hedge/wall), sized from
    the aerial. Allowlist: scripts/foliage.py (REFINE_FOLIAGE).
@@ -59,7 +59,7 @@ Decide each MISSING with aerial showing a real tree (check the distance column) 
     gives the crown size (height 13 = r 6+ plane tree; 7-10 = r 3.5-5; 3-5 = bush).
   - invented over non-tree ground: remove at the root (trees_layer detection), not by a one-off hand edit.
   - lawn where lidar and aerial both show nothing: leave open (Library Square formal lawn, I-060).
-Record counts and decisions in the cell STAGES note (e.g. "tree review: lidar 12 crowns, 2 missing added, 0 invented over
+Record counts and decisions as a journal note on the cell (e.g. "tree review: lidar 12 crowns, 2 missing added, 0 invented over
 non-tree"). Cells whose neighbours' crowns overhang the edge: review them together (--zone across the edge).
 
 ------------------------------------------------------------------------
@@ -80,7 +80,7 @@ rules still apply. Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small ro
   4 claim the lock; SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell tx,tz --pass trees [--skip-changed] [--apply]
     (--skip-changed leaves masked positions that are already air or that a later build replaced; without it any such
     position stops the undo and an aborted run goes through site_recover.py);
-    then trees_layer.py --cell tx,tz (dry) and --apply; patrol sweep floating 0; release the lock; note in the cell STAGES.
+    then trees_layer.py --cell tx,tz (dry) and --apply; patrol sweep floating 0; release the lock; add a journal note on the cell.
 Do NOT snap to lidar: it holds ~1/3 of the crowns and sits 3-4 blocks south of them (checked 2026-10-16). Skipped-by-water crowns mean the
 ground layer drew water under a wooded bank: a ground-step issue to settle against aerial.
 

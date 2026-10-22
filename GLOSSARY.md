@@ -28,11 +28,11 @@ _Avoid_: place source (as the only term)
 
 **System tracker**:
 Matt-style task index for worldbuilder engineering (`tasks/`). Lives only in this repo.
-_Avoid_: tooling queue, QUEUE (for system work)
+_Avoid_: tooling queue, world-queue files (for system work)
 
 **World tracker**:
 That world’s cell registry (next work + issues). Never holds system engineering tasks.
-_Avoid_: TODO.txt, site/QUEUE.txt (retired), system tasks in the world registry
+_Avoid_: TODO.txt, retired world queue files, system tasks in the world registry
 
 ## Cells and registry
 
@@ -42,15 +42,19 @@ _Avoid_: chunk (unless meaning an MC chunk), tile (unless meaning a map/lidar ti
 
 **Cell registry**:
 `CellRegistry` over the cell journal (`registry/journal.jsonl`), driven by `scripts/cell_registry.py`. Progress, holds, ghost state, ownership and notes are views folded from the journal, not stored files. Paths are per active world — never share with a donor or bake-off save. See [ADR 004](docs/adr/004-cell-journal.md).
-_Avoid_: STAGES-as-progress, QUEUE.txt, CURRENT-CELL.json, `*-cells.json`, `registry/cells.json` as a writable record
+_Avoid_: stage-files-as-progress, retired queue/focus files, `*-cells.json`, `registry/cells.json` as a writable record
 
 **Cell journal**:
 The single append-only `registry/journal.jsonl`. Each entry is written `begun` (fsynced) before any block write, then `landed` or `mismatched` after readback. `CellRegistry.change(intent)` (Build, Undo, Note) is the only writer; `view()` returns a frozen per-cell `CellView`.
-_Avoid_: STAGES, apply log, verification JSON
+_Avoid_: stage files, apply log, verification JSON as progress SoT
 
 **Reconcile**:
-`reconcile(cells, fix=)`: compares the journal to actual blocks; with `fix`, re-commits recorded plans over MCP. Replaces cell repair, `site_recover`, `check_world_presence`. A "mess in a cell" is fixed this way, never by region restore.
-_Avoid_: repair, recover, restore
+`cell_registry.py reconcile [CELL...] [--fix]`: compares the journal to actual blocks; with `--fix`, re-commits recorded plans over MCP. Replaces cell repair and `check_world_presence`. A "mess in a cell" is fixed this way, never by region restore.
+_Avoid_: region restore, repair-by-snapshot
+
+**Recover (interrupted apply)**:
+`site_recover.py`: resolves **one** unfinished journal entry (land it if blocks already match the plan, or roll back to the pre-apply structure). Not for general drift — use reconcile for that.
+_Avoid_: using recover as a substitute for reconcile
 
 **BlockStore**:
 The one real seam under the journal, with `LiveBlocks` and `MemoryBlocks` adapters (tests use memory). Read path decided by task 39.
@@ -61,12 +65,12 @@ A named major build (house, bridge, …) with status `proposed|in_progress|built
 _Avoid_: layer pass, decor prop, queue item
 
 **Registry marker**:
-At most one cell may have `marker=up`. That cell is the focus ring (`cell_marker.py --raise` / `--clear`). Replaces the old `site/CURRENT-CELL.json` file.
-_Avoid_: CURRENT-CELL, focus file
+At most one cell may have `marker=up`. That cell is the focus ring (`cell_marker.py --raise` / `--clear`).
+_Avoid_: focus file as a separate progress SoT
 
-**Apply journal**:
-Retired term: the in-flight state of an apply is a `begun` entry in the cell journal with no `landed`/`mismatched` finish; `reconcile` resolves it. No STAGES files.
-_Avoid_: STAGES, `applying`/`applied` files
+**In-flight apply**:
+A `begun` journal entry with no `landed`/`mismatched` finish. `site_recover` lands or rolls it back; `reconcile` can also surface it. No per-cell stage files.
+_Avoid_: stage files as progress
 
 ## Evidence
 

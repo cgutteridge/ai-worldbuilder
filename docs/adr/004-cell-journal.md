@@ -1,20 +1,21 @@
 # ADR 004: One cell journal; no region backup/restore
 
-**Status:** Accepted (2026-10-21). Supersedes ADR 003 §3 (ghost state) and the ghost bookkeeping in the lidar ghost v2 spec. Implementation: tasks 38-48 (read path from task 39).
+**Status:** Accepted (2026-10-21). Supersedes ADR 003 §3 (ghost state) and the ghost bookkeeping in the lidar ghost v2 spec. Implementation: tasks 38–45 (read path from task 39); doc purge task 46.
 
 ## Context
 
-Three overlapping records describe one cell's state and routinely disagree: `STAGES` (`site/cells/<tx>_<tz>-STAGES.json`, apply journal), the registry (`registry/cells.json`, `features.json`, hooks), and `verification/site/*-cells.json` (ownership). Ghost state, the owner index and a pickle cache were further derived copies. Recovery tools (`site_recover`, cell repair, `check_world_presence`) each re-guessed which record was right. Region backup/restore added a fourth source of truth, and restoring a region drifted from the registry (restored blocks, stale records): the drift bug that motivates this ADR.
+Three overlapping records used to describe one cell's state and routinely disagree: per-cell apply stage files, the old registry JSON pair with hooks, and `verification/site/*-cells.json` (ownership). Ghost state, the owner index and a pickle cache were further derived copies. Recovery tools each re-guessed which record was right. Region backup/restore added a fourth source of truth, and restoring a region drifted from the registry (restored blocks, stale records): the drift bug that motivates this ADR.
 
 ## Decision
 
 1. **One journal.** `registry/journal.jsonl` is append-only. Each change is an entry written `begun` (fsynced) before any block write, then finished `landed` or `mismatched` after reading blocks back. Progress, ghost state, ownership map, in-flight status and notes are **views folded from it**, so they cannot disagree.
-2. **Interface.** `CellRegistry.change(intent)` is the only writer; intents are `Build`, `Undo`, `Note`. `view()` returns a frozen per-cell `CellView`. `reconcile(cells, fix=)` compares journal to actual blocks; with `fix`, it re-commits recorded plans over MCP. It replaces cell repair, `site_recover` and `check_world_presence`.
-3. **`site_kit.apply`** keeps its signature, guards and `SystemExit` messages and becomes a wrapper over `change(Build)`.
-4. **Ghost state is derived.** A real Build supersedes ghost ground, strips overlapping ghost features, and ensures the ring-2 frontier, all as follow-up journal entries. Ghost owners yield to real owners; they never clash.
-5. **Ownership** is a private, rebuildable projection of the journal. It replaces `*-cells.json`, the pickle cache and the owner index. Nothing outside the registry reads or writes it.
-6. **One real seam: `BlockStore`**, with `LiveBlocks` and `MemoryBlocks` adapters. Tests use `MemoryBlocks`; do not add other seams.
-7. **Loud errors.** No swallow-and-print `try` blocks. A failed `begin` means no blocks were written. A failed finish leaves the entry in flight for `reconcile`.
+2. **Interface.** `CellRegistry.change(intent)` is the only writer; intents are `Build`, `Undo`, `Note`. `view()` returns a frozen per-cell `CellView`. `reconcile(cells, fix=)` compares journal to actual blocks; with `fix`, it re-commits recorded plans over MCP. It replaces cell repair and `check_world_presence`. A "mess in a cell" is fixed by `python3 scripts/cell_registry.py reconcile [--fix]`, never by region restore.
+3. **Interrupted apply.** `site_recover.py` stays for **one** unfinished journal entry: land it if the world already matches the plan, or roll the world back to the structure saved before that apply. It does not repair general drift — that is `reconcile`.
+4. **`site_kit.apply`** keeps its signature, guards and `SystemExit` messages and becomes a wrapper over `change(Build)`.
+5. **Ghost state is derived.** A real Build supersedes ghost ground, strips overlapping ghost features, and ensures the ring-2 frontier, all as follow-up journal entries. Ghost owners yield to real owners; they never clash.
+6. **Ownership** is a private, rebuildable projection of the journal. It replaces `*-cells.json`, the pickle cache and the owner index. Nothing outside the registry reads or writes it.
+7. **One real seam: `BlockStore`**, with `LiveBlocks` and `MemoryBlocks` adapters. Tests use `MemoryBlocks`; do not add other seams.
+8. **Loud errors.** No swallow-and-print `try` blocks. A failed `begin` means no blocks were written. A failed finish leaves the entry in flight for `site_recover` / `reconcile`.
 
 ### Decisions to preserve
 
@@ -30,16 +31,16 @@ Audit: [docs/audits/region-block-reads.md](../audits/region-block-reads.md). **O
 ## Consequences
 
 - One place to read cell state; callers use `view()`, never files.
-- Crash safety: `begun` is durable before blocks change, so every interruption is visible as an unfinished entry and `reconcile` can redo it.
+- Crash safety: `begun` is durable before blocks change, so every interruption is visible as an unfinished entry; `site_recover` lands or rolls it back, and `reconcile` repairs drift forward.
 - No undo-by-restore: `Undo` is a journal intent, and damage is repaired by re-committing recorded plans.
-- Existing worlds and their STAGES/registry files are not read; erase and recreate (decision c).
+- Existing worlds and their old stage/registry files are not read; erase and recreate (decision c).
 
 ## What gets deleted
 
-`site_stages.py`, `registry_hooks.py`, `site_recover.py`, `registry_repair.py`, `region_backup.py`; the ownership cache, pickle and owner index; the `lidar_ghost` state functions (ghost state is a view); `dryrun_reset` file wipes of STAGES/registry/verification (reset erases and recreates the world).
+The old stage writer/reader modules, registry hooks, cell repair, region backup/restore; the ownership cache, pickle and owner index; the `lidar_ghost` state functions (ghost state is a view). `dryrun_reset` erases and recreates the world (including wiping leftover progress files). **`site_recover.py` is kept** (decision 3).
 
 ## Superseded
 
-- ADR 003 §3 ghost lifecycle and "ghost owners distinguishable in STAGES".
+- ADR 003 §3 ghost lifecycle and stage-file ghost bookkeeping.
 - [Lidar ghost v2 spec](../specs/lidar-ghost-v2-and-dryrun-reset.md) bookkeeping, post-apply reconcile hook and reset wipes. Still valid there: frontier ring depth 2, split ground/features, no tree/decor ghosts, lidar sources.
-- STAGES as apply journal; `*-cells.json`, `registry/cells.json` and `features.json` as stored records; `site_recover`, cell repair, `check_world_presence`; region backup/restore and `model_bakeoff.py restore-ghost`.
+- Stage files as apply journal; `*-cells.json`, `registry/cells.json` and `features.json` as stored progress records; cell repair, `check_world_presence`; region backup/restore and bake-off ghost restore commands.

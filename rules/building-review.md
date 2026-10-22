@@ -1,7 +1,7 @@
 # Building review
 
 Read when reviewing a built building (I-064 / I-069 items, or the user asks).
-One building per review. Skip any building that already has an open feature item on the QUEUE (it is rebuilt there; user, 2026-10-16). Worked example: Oakdene Court, `site/REVIEWS.txt` 2026-10-16.
+One building per review. Skip any building that already has an open feature issue (it is rebuilt there; user, 2026-10-16). Worked example: Oakdene Court, `site/REVIEWS.txt` 2026-10-16.
 
 1. **Read the data, not the label.** Lidar height row (`site/cells/<cell>-LIDAR.txt`), `lidar_audit.py --cell`, and the raw
    height grid of the building. Labels (flat/pitched, storeys) are estimates until the grid and a photo agree.
@@ -44,7 +44,7 @@ One building per review. Skip any building that already has an open feature item
    see FEATURE FOLLOW-UP STEPS in `rules/craftsmanship.md`. Re-run steps rather than patching by hand.
  - **One defect is a class.** When the user finds one (a door with no jamb, a trench from the door generator, a canopy from a vector-map
    `building=roof` tag that aerial does not show), fix it, then add the guard to `site_kit.apply` or the generator and run an audit over
-   everything already built (`scripts/door_audit.py`: 142 of 700 doors unframed, QUEUE Q-182). No evidence in aerial or lidar for a
+   everything already built (`scripts/door_audit.py`: 142 of 700 doors unframed, issue / next-task Q-182 era). No evidence in aerial or lidar for a
    footprint micro-feature means remove it.
  - **Ask what is really there.** For entrances, steps and levels the user's knowledge beats every source here. Ask them to stand
    where it is wrong; read their position (`player_list_online`) and look (`view_capture`), say what you observed, then act.

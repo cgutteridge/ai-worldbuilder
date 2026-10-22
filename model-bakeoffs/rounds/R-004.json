@@ -127,7 +127,7 @@
     "checklist": [
       "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
       "Quit Minecraft world (title / close save)",
-      "Restore ghost (whole-world + registry): python3 scripts/model_bakeoff.py restore-ghost --confirm-logged-out  # cfg ghost_snap=2026-10-18-224358-bakeoff-ghost-3x3-lidar",
+      "Regenerate ghost baseline: lidar_ghost apply (no region restore, ADR 004)",
       "Rejoin world (MCP up) \u2014 ghost may look sparse/empty around the cell",
       "Claim site lock; build with that tool/model only",
       "Use tool=claude-code model=claude-haiku-5-5-high only",

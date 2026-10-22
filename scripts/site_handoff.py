@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Southampton Refine handoff helpers: next-chat starter, session end, agent hooks.
+"""Southampton Refine handoff helpers: session brief, view, agent hooks.
+
+Progress SoT is ``cell_registry.py next`` (cell journal), not a world queue file.
 
   python3 scripts/site_handoff.py next
   python3 scripts/site_handoff.py next --no-brief
   python3 scripts/site_handoff.py next --copy
-  python3 scripts/site_handoff.py next --copy
-  python3 scripts/site_handoff.py next --plan      (read-only: cells/items it would re-queue)
-  python3 scripts/site_handoff.py end Q-nnn --summary "…" --view x,y,z[,lx,ly,lz]
+  python3 scripts/site_handoff.py next --plan      (read-only plan preview)
+  python3 scripts/site_handoff.py end … --summary "…" --view x,y,z[,lx,ly,lz]
   python3 scripts/site_handoff.py status
   python3 scripts/site_handoff.py hook-stop
   python3 scripts/site_handoff.py hook-start
 
-Memory stays in site/ files. These commands prepare the next chat — they do
-not claim the lock or apply builds. ``end`` ticks the item, releases the lock and arms the
-nudge first (finish_item), then announces ready-for-handoff
-aloud, prints the session summary, and moves the player in creative to view
-the main change area.
+Memory stays in site/ + registry/. These commands prepare the next chat — they do
+not claim the lock or apply builds. Prefer starting sessions with
+``cell_registry.py next``. ``end`` may still release the lock and move the player;
+do not treat a retired queue file as progress.
 
-Run ``end`` outside any command sandbox: a sandbox makes macOS ``say`` exit 0
-with no audible output.
+Mess in a cell: ``cell_registry.py reconcile [--fix]``. Interrupted apply:
+``site_recover.py``.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ from rules_context import format_rules_brief, format_starter_rules_line, plan_fo
 
 CONTEXT_CEILING = '~250K tokens'
 SAY_PHRASE = 'ready for handoff'
-NEXT_CHAT_CMD = 'python3 scripts/site_handoff.py next'
+NEXT_CHAT_CMD = 'python3 scripts/cell_registry.py next'
 NEXT_CHAT_USER_MSG = (
     f'Follow the instructions given by running: {NEXT_CHAT_CMD}'
 )
@@ -803,7 +803,7 @@ def brief_hint(item):
     """
     hints = [
         'rules/rules-context.md (what to read when; anti-reread)',
-        'site/QUEUE.txt (top open item)',
+        'scripts/cell_registry.py next (progress SoT)',
         'rules/foliage.md (foliage-last cadence + allowlist)',
         'rules/process.md (slices only — see SESSION BRIEF RULES READING)',
         'site/COVERAGE.txt (focus + generated cells; coverage CLI in SESSION BRIEF)',
@@ -991,26 +991,22 @@ BRIEF below (from `{NEXT_CHAT_CMD}`) instead of reading every site file.
 
 Run: python3 scripts/site_lock.py status
 If free: python3 scripts/site_lock.py claim {owner_placeholder} "{qid} …"
-Then do {qid} from site/QUEUE.txt end to end (survey/plan → preview → apply with
+Then do the task from `cell_registry.py next` end to end (survey/plan → preview → apply with
 SITE_OWNER=<you> → readback → walk → evidence check → records). Follow the
 "Done bar" under RULES READING in the brief for this item's context.
 Stop rule: geometry fix builds → revert + re-survey; no _b/_c patches (I-009).
 
 Parcel coverage: commands are in the SESSION BRIEF below (not coverage.py --help).
 
-Top open item:
+Current task:
   {qid}  {summary}
 
 Context lives in files, not chat (grep / sed -n what you need):
 {hints}
 
-When the item is done: mark QUEUE [x], release the lock, then hand off with a
-short session summary and a creative-mode view of the main change:
-  python3 scripts/site_handoff.py end {qid} --summary "…" --view x,y,z[,lx,ly,lz]
-Summary: open with one sentence naming the area and task, then what you did
-(not an essay). That speaks "ready for handoff", prints area/task + summary,
-and teleports the player.
-Run it outside any command sandbox (a sandbox mutes `say`). Then stop — open a new chat for the next item.
+When the item is done: release the lock, then hand off with a short session
+summary and a creative-mode view of the main change (site_handoff end helpers
+if useful). Open a new chat and run `cell_registry.py next` again.
 {CHAIN_RULE}
 Needs: Minecraft open with Southampton2023 + Fabric MCP (F3+P), sole MCP client.
 """.strip() + '\n'

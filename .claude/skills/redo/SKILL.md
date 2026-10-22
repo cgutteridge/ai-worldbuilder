@@ -8,7 +8,7 @@ description: >-
 
 Player-standing redesign. No confirmation pause. No `human-confirm-fix` (they are already there). Claim the lock, apply, release.
 
-Registry (ticket #31): clean applies update the cell registry via hooks; undos/clears clear the matching flags. Do not edit STAGES / QUEUE / CURRENT-CELL / sign-offs as progress. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `cell_registry.py add-issue`.
+Cell journal (ADR 004): clean applies land journal entries; undos/clears clear matching ownership. Do not edit retired progress files by hand. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `cell_registry.py add-issue`. Mess in a cell → `reconcile [--fix]`.
 
 ## Branch
 
@@ -100,6 +100,6 @@ Done when ground readback is clean. Trees/decor remain undone until an explicit 
 ## Guards
 
 - One builder: never apply without a fresh `SITE_OWNER` lock.
-- Fail closed on mask conflicts / readback mismatches (`site_recover.py` if a stage is left applying).
+- Fail closed on mask conflicts / readback mismatches (`site_recover.py` if a journal entry is left `begun`; `reconcile` if blocks drifted).
 - Feature redesign never uses the previous build as evidence.
 - Moving the player is allowed for hover (this skill); end cue is always `party-cheer` (`yay` is broken).
