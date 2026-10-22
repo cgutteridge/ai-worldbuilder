@@ -9,7 +9,11 @@ import json
 import unittest
 
 import cell_registry as R
-from journal_testkit import JournalWorld
+from unittest import mock
+
+import site_kit
+import site_lock
+from journal_testkit import FakePaced, JournalWorld, LiveApplyCase
 
 
 def run(*argv) -> tuple[int, str]:
@@ -84,6 +88,92 @@ class RegistryCliTest(unittest.TestCase):
         from block_store import BlockStoreError
         with self.assertRaises(BlockStoreError):
             R.view_registry(self.root).blocks.read((0, 0, 0))
+
+
+CELL = (48, -44)
+X0, Z0 = 6150, -5600
+STONE, LOG = 'minecraft:stone', 'minecraft:oak_log'
+
+
+class ReconcileCliTest(LiveApplyCase):
+    """``cell_registry.py reconcile`` over a journal written by the real apply, a fake MCP and MemoryBlocks."""
+
+    def setUp(self):
+        super().setUp()
+        plan = site_kit.Plan('p')
+        plan.fill((X0, 60, Z0), (X0 + 1, 60, Z0), STONE)
+        plan.fill((X0, 61, Z0), (X0 + 1, 61, Z0), LOG)
+        self.run_apply(plan, cell=CELL)
+        gate = mock.patch.object(site_lock, 'check', lambda owner=None: None)
+        gate.start()
+        self.addCleanup(gate.stop)
+
+    def reconcile(self, *argv):
+        return run('reconcile', *argv)
+
+    def test_clean_world_exits_zero(self):
+        code, out = self.reconcile()
+        self.assertEqual(code, 0)
+        self.assertIn('clean', out)
+
+    def test_dry_run_reports_by_kind_and_changes_nothing(self):
+        self.blocks.write((X0, 60, Z0), 'minecraft:air')
+        self.blocks.write((X0 + 1, 61, Z0), 'minecraft:dirt')
+        seq_before = len(self.entries())
+        calls_before = len(FakePaced.calls)
+        code, out = self.reconcile()
+        self.assertEqual(code, 1)
+        self.assertLess(out.index('missing: 1'), out.index('foreign: 1'))
+        self.assertIn('48,-44', out)
+        self.assertIn(f'{X0},60,{Z0}: want minecraft:stone, got minecraft:air', out)
+        self.assertIn(f'{X0 + 1},61,{Z0}: want minecraft:oak_log, got minecraft:dirt', out)
+        self.assertIn('dry run', out)
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:air')
+        self.assertEqual(len(self.entries()), seq_before)
+        self.assertNotIn('block_fill_batch', FakePaced.calls[calls_before:])
+        self.assertFalse((self.t / 'LOCK.json').exists())          # a dry run claims nothing
+
+    def test_cell_arguments_scope_the_report(self):
+        self.blocks.write((X0, 60, Z0), 'minecraft:air')
+        self.assertEqual(self.reconcile('0,0')[0], 0)
+        self.assertEqual(self.reconcile('48,-44')[0], 1)
+
+    def test_bad_cell_is_a_usage_error(self):
+        self.assertEqual(self.reconcile('nope')[0], 2)
+
+    def test_fix_recommits_the_recorded_plan(self):
+        self.blocks.write((X0, 60, Z0), 'minecraft:air')
+        self.blocks.write((X0 + 1, 61, Z0), 'minecraft:dirt')
+        code, out = self.reconcile('--fix')
+        self.assertEqual(code, 0)
+        self.assertIn('[fixed]', out)
+        self.assertIn('repaired 2 of 2', out)
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), STONE)
+        self.assertEqual(self.blocks.read((X0 + 1, 61, Z0)), LOG)
+        self.assertEqual(self.reconcile()[0], 0)
+
+    def test_fix_lands_an_interrupted_apply(self):
+        plan = site_kit.Plan('q')
+        plan.fill((X0 + 2, 60, Z0), (X0 + 3, 60, Z0), STONE)
+        FakePaced.fill_limit = 0
+        with self.assertRaises(RuntimeError):
+            self.run_apply(plan, cell=CELL)
+        FakePaced.fill_limit = None
+        self.assertEqual(self.entries('q')[-1].status, 'begun')
+        code, out = self.reconcile()
+        self.assertEqual(code, 1)
+        self.assertIn('in-flight: 2 in 1 cell(s)', out)
+        self.assertEqual(self.reconcile('--fix')[0], 0)
+        self.assertEqual(self.entries('q')[-1].status, 'landed')
+        self.assertEqual(self.blocks.read((X0 + 3, 60, Z0)), STONE)
+
+    def test_help_names_the_split_with_site_recover(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            R.main(['reconcile', '--help'])
+        text = ' '.join(out.getvalue().split())
+        self.assertIn('site_recover = resolve an interrupted apply (land or roll back)', text)
+        self.assertIn('reconcile = detect and repair drift forward', text)
 
 
 if __name__ == '__main__':

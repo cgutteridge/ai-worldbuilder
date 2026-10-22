@@ -633,13 +633,14 @@ class McpWriter:
             restore()
 
 
-def live_session(*, ghosts='default', ring=None):
+def live_session(*, ghosts='default', ring=None, root=None):
     """Registry over the live world plus an MCP writer, after the apply gates (region, lock).
 
     For journal changes outside :func:`apply` (ghost Builds, follow-ups).
 
     @param ghosts: ghost planner (``'default'``: lidar)
     @param ring: frontier depth override
+    @param root: world root of the registry (default: the active world)
     @returns: (CellRegistry, McpWriter)
     @raises SystemExit: region / lock gate refused
     """
@@ -647,7 +648,7 @@ def live_session(*, ghosts='default', ring=None):
     import site_lock
     ensure_region_matches_open_world()
     site_lock.check()
-    return cell_registry.open_registry(blocks=live_blocks(), ghosts=ghosts, ring=ring), McpWriter()
+    return cell_registry.open_registry(root, blocks=live_blocks(), ghosts=ghosts, ring=ring), McpWriter()
 
 
 def _structure_backup(m, name, lo, hi):
