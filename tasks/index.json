@@ -24,17 +24,6 @@
       "notes": "Add a check (cell_registry verify and/or a test) that fails on banned terms outside the ADR/history: site_stages, registry_hooks, snap --bbox, snap-world, restore-ghost, archive_stale, pristine_region_path, QUEUE.txt, signoff, STAGES.json. Run it in the normal test command."
     },
     {
-      "id": 48,
-      "title": "Recreate worlds and rerun bakeoff R-004 with a lidar-ghost baseline",
-      "status": "blocked",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        47
-      ],
-      "notes": "Wipe and recreate southampton-build and the bakeoff world; regenerate the 3x3 (ring 2) ghosts with lidar_ghost apply; commit R-004 (open, Claude Haiku 5.5 high effort, feature_design) and run the sitting. Update model-bakeoffs PROTOCOL/README/SKILL to the no-restore flow."
-    },
-    {
       "id": 49,
       "title": "Live check of cell_registry.py reconcile in the bakeoff world",
       "status": "todo",
