@@ -1,11 +1,13 @@
-"""Tests for ship_branch.merge using throwaway git repositories."""
+"""Tests for ship_branch.merge and sweep using throwaway git repositories."""
 
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import ship_branch as sb
@@ -35,7 +37,9 @@ def _init_repo(root: Path) -> None:
 
 def _add_branch_commit(root: Path, branch: str, filename: str, body: str) -> None:
     _git(root, 'checkout', '-b', branch)
-    (root / filename).write_text(body, encoding='utf-8')
+    path = root / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding='utf-8')
     _git(root, 'add', filename)
     _git(root, 'commit', '-m', f'work on {branch}')
     _git(root, 'checkout', 'main')
@@ -141,6 +145,157 @@ class ShipBranchMergeTest(unittest.TestCase):
         cleaned = sb._git_env(poisoned)
         self.assertNotIn('GIT_DIR', cleaned)
         self.assertNotIn('GIT_WORK_TREE', cleaned)
+
+
+class ShipBranchSweepTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name) / 'repo'
+        self.root.mkdir()
+        _init_repo(self.root)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _branches(self) -> set[str]:
+        out = _git(self.root, 'branch', '--format=%(refname:short)')
+        return {line for line in out.splitlines() if line}
+
+    def test_classify_docs_only_allowlist(self) -> None:
+        self.assertEqual(
+            sb.classify_changed_paths(['tasks/index.json', 'docs/plans/x.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['AGENTS.md', 'CODING_STANDARDS.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['rules/process.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['scripts/ship_branch.py']),
+            'code',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['tasks/index.json', 'scripts/foo.py']),
+            'code',
+        )
+
+    def test_detects_unmerged_and_labels_code_vs_docs(self) -> None:
+        _add_branch_commit(
+            self.root, 'task/docs-stray', 'tasks/notes.txt', 'tracker\n'
+        )
+        _add_branch_commit(
+            self.root, 'task/code-stray', 'scripts/tool.py', 'print(1)\n'
+        )
+        # Second docs commit so count > 1 is exercised.
+        _git(self.root, 'checkout', 'task/docs-stray')
+        (self.root / 'docs').mkdir(exist_ok=True)
+        (self.root / 'docs' / 'extra.md').write_text('more\n', encoding='utf-8')
+        _git(self.root, 'add', 'docs/extra.md')
+        _git(self.root, 'commit', '-m', 'more docs')
+        _git(self.root, 'checkout', 'main')
+
+        strays = {s.name: s for s in sb.collect_stray_branches(self.root)}
+        self.assertIn('task/docs-stray', strays)
+        self.assertIn('task/code-stray', strays)
+        self.assertEqual(strays['task/docs-stray'].kind, 'tracker/docs-only')
+        self.assertEqual(strays['task/docs-stray'].commits, 2)
+        self.assertEqual(strays['task/code-stray'].kind, 'code')
+        self.assertEqual(strays['task/code-stray'].commits, 1)
+
+    def test_reports_leftover_worktree(self) -> None:
+        branch = 'task/wt-stray'
+        _add_branch_commit(self.root, branch, 'feature.txt', 'x\n')
+        wt = Path(self._tmp.name) / 'wt-stray'
+        _git(self.root, 'worktree', 'add', str(wt), branch)
+
+        leftovers = sb.list_leftover_worktrees(self.root)
+        self.assertEqual(len(leftovers), 1)
+        self.assertEqual(leftovers[0].path.resolve(), wt.resolve())
+        self.assertEqual(leftovers[0].branch, branch)
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = sb.sweep(self.root, prompt=lambda _q: False, run_tests=lambda _r: 0)
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn(str(wt.resolve()), out)
+        self.assertIn(branch, out)
+
+    def test_merge_docs_only_flag_merges_docs_not_code(self) -> None:
+        _add_branch_commit(
+            self.root, 'task/docs-only', 'docs/plan.md', 'plan\n'
+        )
+        _add_branch_commit(
+            self.root, 'task/code-only', 'scripts/tool.py', 'print(1)\n'
+        )
+        main_before = _git(self.root, 'rev-parse', 'main')
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = sb.sweep(
+                self.root,
+                merge_docs_only=True,
+                run_tests=lambda _r: 0,
+            )
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn('task/docs-only', out)
+        self.assertIn('task/code-only', out)
+        self.assertIn('code strays', out.lower())
+
+        branches = self._branches()
+        self.assertNotIn('task/docs-only', branches)
+        self.assertIn('task/code-only', branches)
+        self.assertNotEqual(_git(self.root, 'rev-parse', 'main'), main_before)
+        # Docs content landed; code file did not.
+        self.assertTrue((self.root / 'docs' / 'plan.md').is_file())
+        self.assertFalse((self.root / 'scripts' / 'tool.py').exists())
+
+    def test_cli_merge_docs_only(self) -> None:
+        _add_branch_commit(
+            self.root, 'task/cli-docs', 'AGENTS.md', 'agents\n'
+        )
+        _add_branch_commit(
+            self.root, 'task/cli-code', 'providers/x.py', 'x\n'
+        )
+
+        # CLI path has no injected runner; stub run_unit_tests via attribute.
+        original = sb.run_unit_tests
+        sb.run_unit_tests = lambda _r: 0  # type: ignore[assignment]
+        try:
+            code = sb.main(
+                [
+                    'sweep',
+                    '--repo-root',
+                    str(self.root),
+                    '--merge-docs-only',
+                ],
+            )
+        finally:
+            sb.run_unit_tests = original  # type: ignore[assignment]
+
+        self.assertEqual(code, 0)
+        branches = self._branches()
+        self.assertNotIn('task/cli-docs', branches)
+        self.assertIn('task/cli-code', branches)
+
+    def test_code_stray_not_merged_without_flag_or_prompt_yes(self) -> None:
+        _add_branch_commit(
+            self.root, 'task/code-stay', 'scripts/tool.py', 'print(1)\n'
+        )
+        main_before = _git(self.root, 'rev-parse', 'main')
+        code = sb.sweep(
+            self.root,
+            merge_docs_only=True,
+            run_tests=lambda _r: 0,
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(_git(self.root, 'rev-parse', 'main'), main_before)
+        self.assertIn('task/code-stay', self._branches())
 
 
 if __name__ == '__main__':

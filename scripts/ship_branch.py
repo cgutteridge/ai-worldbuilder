@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Merge a tested task branch into main, then clean up.
+"""Merge a tested task branch into main, then clean up; sweep strays.
 
 Branch-gate policy: code lands on ``task/*`` branches and always ends merged.
 
   python3 scripts/ship_branch.py merge <branch>
+  python3 scripts/ship_branch.py sweep
 
-Runs ``scripts/run_tests.py`` on the branch tip, merges with ``--no-ff`` into
-main, re-runs tests on main, then deletes the local branch and any worktree
-that had it checked out. Any failure stops and reports; the merge is never
-auto-reverted.
+``merge`` runs ``scripts/run_tests.py`` on the branch tip, merges with
+``--no-ff`` into main, re-runs tests on main, then deletes the local branch
+and any worktree that had it checked out. Any failure stops and reports; the
+merge is never auto-reverted.
+
+``sweep`` lists local branches not merged into main and leftover linked
+worktrees. Each unmerged branch is labelled tracker/docs-only or code (with
+commit count). Tracker/docs-only strays may be merged (interactive prompt on a
+TTY, or ``--merge-docs-only`` for automation). Code strays are reported only;
+sweep never deletes or merges code on its own.
 """
 from __future__ import annotations
 
@@ -17,9 +24,23 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 RunTestsFn = Callable[[Path], int]
+PromptFn = Callable[[str], bool]
+
+# Paths that may appear on a tracker/docs-only stray. Anything outside this
+# allowlist is treated as code (conservative: scripts/, providers/, tests,
+# config JSON, etc. all count as code).
+_ROOT_DOCS_NAMES = frozenset(
+    {
+        'AGENTS.md',
+        'CODING_STANDARDS.md',
+        'CLAUDE.md',
+        '.gitignore',
+    }
+)
 
 
 class ShipBranchError(RuntimeError):
@@ -309,14 +330,328 @@ def merge_branch(
     return 0
 
 
+def is_docs_only_path(rel_path: str) -> bool:
+    """Whether a changed path is allowed on a tracker/docs-only branch.
+
+    Allowlist (documented here; keep conservative):
+
+    - anything under ``tasks/`` or ``docs/``
+    - root files ``AGENTS.md``, ``CODING_STANDARDS.md``, ``CLAUDE.md``,
+      ``.gitignore``
+    - any path ending in ``.md``
+
+    Everything else (``scripts/``, ``providers/``, non-markdown sources, …)
+    is treated as code.
+
+    @param rel_path: path relative to the repository root (forward or backslash)
+    @returns: True when the path is tracker/docs-only
+    """
+    normalised = rel_path.replace('\\', '/').lstrip('./')
+    if not normalised or normalised == '.':
+        return False
+    if normalised in _ROOT_DOCS_NAMES:
+        return True
+    if normalised == 'tasks' or normalised.startswith('tasks/'):
+        return True
+    if normalised == 'docs' or normalised.startswith('docs/'):
+        return True
+    if normalised.endswith('.md'):
+        return True
+    return False
+
+
+def classify_changed_paths(paths: Sequence[str]) -> str:
+    """Label a file set as ``tracker/docs-only`` or ``code``.
+
+    Empty change sets are ``tracker/docs-only`` (nothing to treat as code).
+
+    @param paths: paths changed on the branch vs main
+    @returns: ``tracker/docs-only`` or ``code``
+    """
+    if not paths:
+        return 'tracker/docs-only'
+    if all(is_docs_only_path(p) for p in paths):
+        return 'tracker/docs-only'
+    return 'code'
+
+
+def list_unmerged_branches(repo_root: Path, main_branch: str = 'main') -> list[str]:
+    """Local branch names not merged into ``main_branch``.
+
+    @param repo_root: repository root
+    @param main_branch: integration branch
+    @returns: branch names (short), excluding ``main_branch``
+    """
+    out = _git_out(repo_root, 'branch', '--no-merged', main_branch)
+    names: list[str] = []
+    for line in out.splitlines():
+        # Current branch is marked '*'; a branch checked out in another
+        # worktree is marked '+'.
+        name = line.strip().lstrip('*+').strip()
+        if not name or name == main_branch:
+            continue
+        names.append(name)
+    return names
+
+
+def commits_ahead(repo_root: Path, branch: str, main_branch: str = 'main') -> int:
+    """How many commits ``branch`` has that ``main_branch`` lacks.
+
+    @param repo_root: repository root
+    @param branch: candidate branch
+    @param main_branch: integration branch
+    @returns: commit count in ``main_branch..branch``
+    """
+    out = _git_out(repo_root, 'rev-list', '--count', f'{main_branch}..{branch}')
+    return int(out) if out else 0
+
+
+def changed_files_vs_main(
+    repo_root: Path,
+    branch: str,
+    main_branch: str = 'main',
+) -> list[str]:
+    """Files changed on ``branch`` relative to the merge-base with main.
+
+    @param repo_root: repository root
+    @param branch: candidate branch
+    @param main_branch: integration branch
+    @returns: path strings (as reported by git)
+    """
+    out = _git_out(
+        repo_root,
+        'diff',
+        '--name-only',
+        f'{main_branch}...{branch}',
+    )
+    return [line for line in out.splitlines() if line.strip()]
+
+
+@dataclass(frozen=True)
+class StrayBranch:
+    """An unmerged local branch and its sweep classification."""
+
+    name: str
+    commits: int
+    kind: str
+    files: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LinkedWorktree:
+    """A linked worktree that is not the primary checkout."""
+
+    path: Path
+    branch: str | None
+    head: str | None
+
+
+def list_leftover_worktrees(repo_root: Path) -> list[LinkedWorktree]:
+    """Linked worktrees other than the primary checkout.
+
+    The primary worktree is the first entry from ``git worktree list``. Any
+    other path (and any path that is not ``repo_root`` itself when it is the
+    primary) is reported as leftover.
+
+    @param repo_root: any worktree of the repository (used only for git cwd)
+    @returns: leftover linked worktrees
+    """
+    out = _git_out(repo_root, 'worktree', 'list', '--porcelain')
+    entries: list[LinkedWorktree] = []
+    current_path: Path | None = None
+    current_head: str | None = None
+    current_branch: str | None = None
+
+    def _flush() -> None:
+        nonlocal current_path, current_head, current_branch
+        if current_path is not None:
+            entries.append(
+                LinkedWorktree(
+                    path=current_path,
+                    branch=current_branch,
+                    head=current_head,
+                )
+            )
+        current_path = None
+        current_head = None
+        current_branch = None
+
+    for line in out.splitlines():
+        if line.startswith('worktree '):
+            _flush()
+            current_path = Path(line[len('worktree '):]).resolve()
+        elif line.startswith('HEAD '):
+            current_head = line[len('HEAD '):].strip() or None
+        elif line.startswith('branch '):
+            ref = line[len('branch '):].strip()
+            prefix = 'refs/heads/'
+            current_branch = ref[len(prefix):] if ref.startswith(prefix) else ref
+        elif line.startswith('detached'):
+            current_branch = None
+    _flush()
+
+    if not entries:
+        return []
+    primary = entries[0].path.resolve()
+    leftovers: list[LinkedWorktree] = []
+    for entry in entries[1:]:
+        leftovers.append(entry)
+    # If the caller is not standing in the primary, still treat only
+    # non-primary paths as leftovers (already entries[1:]).
+    _ = primary  # documented: first list entry is primary
+    return leftovers
+
+
+def collect_stray_branches(
+    repo_root: Path,
+    main_branch: str = 'main',
+) -> list[StrayBranch]:
+    """Classify every local branch not merged into ``main_branch``.
+
+    @param repo_root: repository root
+    @param main_branch: integration branch
+    @returns: stray branches with commit counts and kinds
+    """
+    strays: list[StrayBranch] = []
+    for name in list_unmerged_branches(repo_root, main_branch):
+        files = tuple(changed_files_vs_main(repo_root, name, main_branch))
+        strays.append(
+            StrayBranch(
+                name=name,
+                commits=commits_ahead(repo_root, name, main_branch),
+                kind=classify_changed_paths(files),
+                files=files,
+            )
+        )
+    return strays
+
+
+def _default_prompt(question: str) -> bool:
+    """Ask a yes/no question on stderr; default no.
+
+    @param question: prompt text (without trailing [y/N])
+    @returns: True only when the user answers yes
+    """
+    try:
+        answer = input(f'{question} [y/N] ').strip().lower()
+    except EOFError:
+        return False
+    return answer in ('y', 'yes')
+
+
+def sweep(
+    repo_root: Path,
+    *,
+    main_branch: str = 'main',
+    merge_docs_only: bool = False,
+    prompt: PromptFn | None = None,
+    run_tests: RunTestsFn | None = None,
+) -> int:
+    """Report unmerged branches and leftover worktrees; optionally merge docs.
+
+    Code strays are never merged or deleted. Tracker/docs-only strays are
+    merged when ``merge_docs_only`` is set, or when a prompt returns True
+    (default prompt runs only when stdin is a TTY and ``merge_docs_only`` is
+    false).
+
+    @param repo_root: primary checkout used for merge targets
+    @param main_branch: integration branch (default ``main``)
+    @param merge_docs_only: merge all tracker/docs-only strays without prompting
+    @param prompt: optional yes/no callback (tests); default is interactive TTY
+    @param run_tests: optional test runner passed through to ``merge_branch``
+    @returns: 0 when reporting (and any requested merges) succeed; 1 on failure
+    """
+    root = repo_root.resolve()
+    if not branch_exists(root, main_branch):
+        print(
+            f'ship_branch: destination branch {main_branch!r} does not exist',
+            file=sys.stderr,
+        )
+        return 1
+
+    strays = collect_stray_branches(root, main_branch)
+    leftovers = list_leftover_worktrees(root)
+
+    print(f'ship_branch sweep: unmerged into {main_branch!r}')
+    if not strays:
+        print('  (none)')
+    else:
+        for stray in strays:
+            noun = 'commit' if stray.commits == 1 else 'commits'
+            print(
+                f'  {stray.name}: {stray.kind}, {stray.commits} {noun}'
+            )
+
+    print('ship_branch sweep: leftover worktrees')
+    if not leftovers:
+        print('  (none)')
+    else:
+        for wt in leftovers:
+            branch_bit = wt.branch if wt.branch else 'detached'
+            print(f'  {wt.path} ({branch_bit})')
+
+    docs_strays = [s for s in strays if s.kind == 'tracker/docs-only']
+    code_strays = [s for s in strays if s.kind == 'code']
+
+    if code_strays:
+        print(
+            'ship_branch sweep: code strays need an owner decision '
+            '(review-and-merge or delete); not merged automatically:'
+        )
+        for stray in code_strays:
+            print(f'  - {stray.name}')
+
+    if not docs_strays:
+        return 0
+
+    ask = prompt
+    if ask is None and not merge_docs_only:
+        if sys.stdin.isatty():
+            ask = _default_prompt
+        else:
+            print(
+                'ship_branch sweep: tracker/docs-only strays present; '
+                're-run with --merge-docs-only to merge them non-interactively, '
+                'or run on a TTY to be prompted'
+            )
+            for stray in docs_strays:
+                print(f'  - {stray.name}')
+            return 0
+
+    for stray in docs_strays:
+        should_merge = merge_docs_only
+        if not should_merge and ask is not None:
+            should_merge = ask(
+                f"Merge tracker/docs-only branch {stray.name!r} "
+                f'({stray.commits} commit'
+                f'{"s" if stray.commits != 1 else ""}) into {main_branch!r}?'
+            )
+        if not should_merge:
+            print(f'ship_branch sweep: skipped {stray.name!r}')
+            continue
+        print(f'ship_branch sweep: merging tracker/docs-only {stray.name!r}…')
+        code = merge_branch(
+            root,
+            stray.name,
+            main_branch=main_branch,
+            run_tests=run_tests,
+        )
+        if code != 0:
+            return code
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry for shipping a branch.
+    """CLI entry for shipping a branch or sweeping strays.
 
     @param argv: argument list (defaults to ``sys.argv[1:]``)
     @returns: process exit code
     """
     parser = argparse.ArgumentParser(
-        description='Merge a tested task branch into main, then clean up.',
+        description=(
+            'Merge a tested task branch into main, then clean up; '
+            'or sweep unmerged branches and leftover worktrees.'
+        ),
     )
     sub = parser.add_subparsers(dest='cmd', required=True)
 
@@ -337,13 +672,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         help='destination branch (default: main)',
     )
 
+    sweep_p = sub.add_parser(
+        'sweep',
+        help=(
+            'list unmerged branches and leftover worktrees; '
+            'optionally merge tracker/docs-only strays'
+        ),
+    )
+    sweep_p.add_argument(
+        '--repo-root',
+        type=Path,
+        default=None,
+        help='repository root (default: parent of scripts/)',
+    )
+    sweep_p.add_argument(
+        '--main-branch',
+        default='main',
+        help='integration branch (default: main)',
+    )
+    sweep_p.add_argument(
+        '--merge-docs-only',
+        action='store_true',
+        help=(
+            'non-interactively merge all tracker/docs-only unmerged branches '
+            'into the integration branch (never merges code strays). '
+            'Without this flag, a TTY prompts per docs-only branch; '
+            'non-TTY runs report only'
+        ),
+    )
+
     args = parser.parse_args(argv)
+    root = (
+        args.repo_root if args.repo_root is not None else default_repo_root()
+    ).resolve()
     if args.cmd == 'merge':
-        root = args.repo_root if args.repo_root is not None else default_repo_root()
         return merge_branch(
-            root.resolve(),
+            root,
             args.branch,
             main_branch=args.main_branch,
+        )
+    if args.cmd == 'sweep':
+        return sweep(
+            root,
+            main_branch=args.main_branch,
+            merge_docs_only=args.merge_docs_only,
         )
     return 2
 
