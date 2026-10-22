@@ -1236,19 +1236,16 @@ class CellRegistry:
 
     # ---- follow-ups: strips and ghost ensure -----------------------------------------------
     def _strip_builds(self, scope: set[Cell] | None = None) -> list[Build]:
-        """Air Builds for ghost-feature blocks still owned inside a landed real feature's footprint."""
+        """Air Builds for every ghost-feature block still owned in a cell a landed real feature touches.
+
+        Ghost feature state is per cell (a real feature strips the cell's ghost mass), so the strip
+        is cell-wide, not limited to the feature's own columns.
+        """
         wanted: dict[Cell, dict[Pos, str]] = {}
         for seq, e in self._entries.items():
             if (e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed' or e.undone
                     or seq in self._strip_clean or not (set(e.cells) & self._ghost_feature_cells)):
                 continue
-            blob = self._blob(e.blob)
-            if not blob:
-                self._strip_clean.add(seq)
-                continue
-            columns = {(x, z) for x, _y, z in blob}
-            ys = [p[1] for p in blob]
-            lo, hi = min(ys), max(ys)
             found = False
             for cell in e.cells:
                 if cell not in self._ghost_feature_cells or (scope is not None and cell not in scope):
@@ -1256,7 +1253,7 @@ class CellRegistry:
                 if self._derive(cell).in_flight:
                     continue
                 for pos, o in self._cell_owners(cell).items():
-                    if o.pass_ == 'ghost-features' and (pos[0], pos[2]) in columns and lo <= pos[1] <= hi:
+                    if o.pass_ == 'ghost-features':
                         wanted.setdefault(cell, {})[pos] = AIR
                         found = True
             if not found and scope is None:

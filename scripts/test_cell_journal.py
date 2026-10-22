@@ -398,8 +398,22 @@ class TestGhosts(Base):
         self.reg.change(Build('ghost_0_0_features', 'ghost-features', ghost), self.apply)
         rec = self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(0, 0, 0, 62): GLASS})
         self.assertFalse(self.reg.cell((0, 0)).ghost.features)       # logically stripped at once
-        self.assertEqual(rec.follow_ups, ())                          # the house overwrote every ghost block in its columns
-        self.assertEqual(self.reg.owned([P(0, 0, 1, 61)])[P(0, 0, 1, 61)], ('ghost_0_0_features', FEATURE_GREY))
+        self.assertEqual([(b.plan, len(b.cells)) for b in rec.follow_ups],
+                         [('ghost_strip_0_0_features', 4)])           # ghost outside the footprint columns too
+        self.reg.ensure(self.apply)
+        self.assertEqual(self.reg.owned([P(0, 0, 1, 61)]), {})
+        self.assertEqual(self.blocks.read(P(0, 0, 1, 61)), AIR)
+
+    def test_real_feature_strips_ghost_in_every_cell_it_touches(self):
+        for c in (0, 1):
+            self.reg.change(Build(f'ghost_{c}_0_ground', 'ghost-ground', plan(c, 0, GREY, y=60), cell=(c, 0)), self.apply)
+            ghost = {P(c, 0, i, 61): FEATURE_GREY for i in range(3)}
+            self.reg.change(Build(f'ghost_{c}_0_features', 'ghost-features', ghost, cell=(c, 0)), self.apply)
+        self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(1, 0, 0, 61): GLASS})
+        self.reg.ensure(self.apply)
+        for c in (0, 1):
+            self.assertEqual(self.blocks.read(P(c, 0, 2, 61)), AIR)
+        self.assertEqual(self.reg.follow_ups(), ())
 
     def test_strip_follow_up_covers_leftover_ghost_in_footprint_columns(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
