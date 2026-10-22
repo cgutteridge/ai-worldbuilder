@@ -97,7 +97,7 @@ def find_contact_sheet(name: str) -> Path | None:
 
 
 def footprint_bbox(cells: dict) -> tuple[int, int, int, int]:
-    """XZ bbox of a ``*-cells.json`` (or planned) map.
+    """XZ bbox of a recorded plan map.
 
     @param cells: ``{"x,y,z": state}`` map
     @returns: (x0, z0, x1, z1)
@@ -114,17 +114,21 @@ def footprint_bbox(cells: dict) -> tuple[int, int, int, int]:
 
 
 def load_cells(name: str) -> dict:
-    """Load archived cells for a build (cells.json, else planned.json).
+    """Recorded cells of a build from the cell journal (its latest entry, also while in flight).
 
     @param name: build name
-    @returns: cells map
-    @raises SystemExit: when neither file exists
+    @returns: ``{"x,y,z": state}`` map
+    @raises SystemExit: when the journal has no such build
     """
-    for suffix in ('-cells.json', '-planned.json'):
-        path = OUT / f'{name}{suffix}'
-        if path.is_file():
-            return json.loads(path.read_text())
-    raise SystemExit(f'no verification/site/{name}-cells.json (or -planned.json); apply the build first')
+    from cell_registry import view_registry
+    reg = view_registry()
+    got = reg.recorded(name)
+    if got is None:
+        flying = [e for e in reg.entries(plan=name) if e.status == 'begun']
+        got = dict(reg.ticket(flying[-1].seq).writes.cells) if flying else None
+    if got is None:
+        raise SystemExit(f'no recorded build {name!r} in the cell journal; apply the build first')
+    return {f'{x},{y},{z}': st for (x, y, z), st in got.items()}
 
 
 def portal_facing_camera(
@@ -420,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     @returns: exit code
     """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('name', help='build name (verification/site/<name>-cells.json)')
+    ap.add_argument('name', help='build name (a plan recorded in the cell journal)')
     ap.add_argument('--from-dir', type=Path, help='tile existing images instead of capturing')
     ap.add_argument('--no-minecraft', action='store_true',
                     help='skip client captures (aerial + portal photos only)')

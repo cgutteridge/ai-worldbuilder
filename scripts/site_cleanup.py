@@ -101,13 +101,12 @@ def plan_screenshots(days: float = SHOT_DAYS, now: float | None = None) -> list[
 
 
 def plan_cells_cache() -> list[Item]:
-    """Pickles in backups/cells-cache whose *-cells.json source no longer exists."""
+    """Files of the retired ownership cache (pickles, owner index) in backups/cells-cache (ADR 004)."""
     root = ROOT / 'backups' / 'cells-cache'
     if not root.exists():
         return []
-    src = ROOT / 'verification' / 'site'
-    return [Item(p, 'source cells.json gone', p.stat().st_size)
-            for p in sorted(root.glob('*-cells.json.pkl')) if not (src / p.name[:-4]).exists()]
+    return [Item(p, 'retired ownership cache (ADR 004)', p.stat().st_size)
+            for p in sorted(root.iterdir()) if p.is_file()]
 
 
 def plan_audits(keep: int = KEEP_AUDITS) -> list[Item]:

@@ -24,15 +24,12 @@ PATROL = OUT / 'patrol'
 
 
 def latest_cells():
-    """Merge archived cells; later builds win.
+    """Recorded cells of every build in the cell journal; later builds win.
 
     @returns: {(x,y,z): (owner_name, state)}
     """
-    latest = {}
-    for f in sorted(OUT.glob('*-cells.json'), key=lambda f: f.stat().st_mtime):
-        for k, st in json.loads(f.read_text()).items():
-            latest[tuple(map(int, k.split(',')))] = (f.name[:-11], st)
-    return latest
+    from cell_registry import latest_cells as journal_cells
+    return journal_cells()
 
 
 def sweep():

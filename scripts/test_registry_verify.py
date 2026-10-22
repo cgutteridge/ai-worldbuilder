@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Tests for registry verify (ticket #32) — file/registry seams only."""
+"""Tests for registry verify (ticket #32) over the cell journal."""
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
 import cell_registry as CR
-import registry_hooks as H
+import registry_issues as RI
 import registry_verify as V
+from cell_journal import Build
+from journal_testkit import JournalWorld
 
 
 class VerifyLeftoversTest(unittest.TestCase):
-    def test_reports_legacy_progress_files(self):
+    def test_reports_legacy_progress_files_and_retired_records(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             site = root / 'site'
@@ -23,60 +24,55 @@ class VerifyLeftoversTest(unittest.TestCase):
             (site / 'COVERAGE-SIGNOFFS.jsonl').write_text('\n')
             (site / 'cells').mkdir()
             (site / 'cells' / '48_-44-STAGES.json').write_text('{}\n')
-            issues = V.check_leftover_progress_files(root)
-        ids = {i['id'] for i in issues}
-        self.assertIn('leftover:QUEUE.txt', ids)
-        self.assertIn('leftover:CURRENT-CELL.json', ids)
-        self.assertIn('leftover:COVERAGE-SIGNOFFS.jsonl', ids)
-        self.assertIn('leftover:STAGES', ids)
+            (root / 'registry').mkdir()
+            (root / 'registry' / 'cells.json').write_text('{}\n')
+            (root / 'verification' / 'site').mkdir(parents=True)
+            (root / 'verification' / 'site' / 'house-cells.json').write_text('{}\n')
+            issues = {i['id']: i for i in V.check_leftover_progress_files(root)}
+        for iid in ('leftover:QUEUE.txt', 'leftover:CURRENT-CELL.json', 'leftover:COVERAGE-SIGNOFFS.jsonl'):
+            self.assertEqual(issues[iid]['severity'], V.SEVERITY_ERROR)
+        for iid in ('leftover:STAGES', 'leftover:registry/cells.json', 'leftover:cells-json'):
+            self.assertEqual(issues[iid]['severity'], V.SEVERITY_WARN)
+            self.assertIn('retired record', issues[iid]['message'])
 
 
-class VerifySpecsTest(unittest.TestCase):
+class VerifyJournalTest(unittest.TestCase):
+    def setUp(self):
+        self.jw = JournalWorld()
+        self.jw.__enter__()
+        self.addCleanup(self.jw.__exit__)
+        self.root = self.jw.root
+
+    def reg(self):
+        return CR.view_registry(self.root)
+
     def test_built_feature_missing_spec_is_error(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            store = CR.RegistryStore(root)
-            H.on_layer_clean((48, -44), 'ground', store=store)
-            store.register_feature('q001_x', name='X', cells=['48,-44'], status='built')
-            (root / 'site' / 'builds').mkdir(parents=True)
-            issues = V.check_feature_specs(store, root)
-        self.assertTrue(any(i['id'] == 'missing-spec:q001_x' for i in issues))
+        self.jw.seed((48, -44), ground=True, features=('q001_x',))
+        (self.root / 'site' / 'builds').mkdir(parents=True)
+        issues = V.check_feature_specs(self.reg(), self.root)
+        self.assertEqual([(i['id'], i['severity']) for i in issues], [('missing-spec:q001_x', V.SEVERITY_ERROR)])
+        (self.root / 'site' / 'builds' / 'q001_x.json').write_text('{}\n')
+        self.assertEqual(V.check_feature_specs(self.reg(), self.root), [])
 
-    def test_spec_present_is_clean(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            store = CR.RegistryStore(root)
-            store.register_feature('q001_x', name='X', cells=['48,-44'], status='built')
-            builds = root / 'site' / 'builds'
-            builds.mkdir(parents=True)
-            (builds / 'q001_x.json').write_text('{}\n')
-            issues = V.check_feature_specs(store, root)
-        self.assertEqual(issues, [])
+    def test_in_flight_entries_are_reported(self):
+        self.jw.reg.begin(Build('house', 'feature', {(1, 60, 1): 'minecraft:bricks'}))
+        issues = V.check_in_flight(self.reg())
+        self.assertEqual(len(issues), 1)
+        self.assertIn('site_recover.py status', issues[0]['message'])
 
+    def test_issue_note_without_issues_line_is_reported(self):
+        self.jw.seed((48, -44), ground=True)
+        RI.add_issue(reason='x', cell=(48, -44), root=self.root)
+        self.assertEqual(V.check_issue_notes(self.reg(), self.root), [])
+        RI.issues_path(self.root).write_text('')                          # closed by hand
+        issues = V.check_issue_notes(self.reg(), self.root)
+        self.assertIn('--kind close --ref I-001', issues[0]['message'])
 
-class VerifyMarkersTest(unittest.TestCase):
-    def test_at_most_one_marker_up(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            store = CR.RegistryStore(root)
-            store.set_marker('48,-44', 'up')
-            # Force a second marker via raw write to simulate corruption
-            cells = store._load_cells()
-            cells['49,-44'] = dict(CR.DEFAULT_CELL)
-            cells['49,-44']['marker'] = 'up'
-            store._save(cells, store._load_features())
-            issues = V.check_marker_invariant(store)
-        self.assertTrue(any(i['id'] == 'marker:multiple' for i in issues))
-
-
-class VerifyReportTest(unittest.TestCase):
-    def test_verify_exit_nonzero_on_errors(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            (root / 'site').mkdir()
-            (root / 'site' / 'QUEUE.txt').write_text('x\n')
-            CR.RegistryStore(root)  # empty registry ok
-            report = V.run_verify(root=root, check_world=False)
+    def test_verify_exit_nonzero_on_errors_and_clean_on_empty(self):
+        self.assertEqual(V.exit_code(V.run_verify(root=self.root)), 0)
+        (self.root / 'site').mkdir(exist_ok=True)
+        (self.root / 'site' / 'QUEUE.txt').write_text('x\n')
+        report = V.run_verify(root=self.root, check_world=False)
         self.assertGreater(report['error_count'], 0)
         self.assertNotEqual(V.exit_code(report), 0)
 

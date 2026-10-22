@@ -117,12 +117,13 @@ QUEUE_DONE = SITE / 'archive' / 'QUEUE-done.txt'
 from cellmath import ORIGIN_CELL, ring_cells  # noqa: E402,F401
 
 
-def _cell_stages(cell):
-    path = SITE / 'cells' / f'{cell[0]}_{cell[1]}-STAGES.json'
-    try:
-        return json.loads(path.read_text()).get('stages', {})
-    except (OSError, json.JSONDecodeError):
-        return None
+TREES_OVER_ROOF = 'trees-over-roof'      # journal review-note ref prefix: trees-over-roof:x0,z0,x1,z1
+
+
+def _view(cell):
+    """The cell's journal view (``CellRegistry.view``)."""
+    from cell_registry import view_registry
+    return view_registry().cell(tuple(cell))
 
 
 def residual_features(cell, idx=None):
@@ -227,8 +228,9 @@ def google_review_item(row):
         'rules/foliage.md "Tree review" (missing real trees, invented ones over lawn/paving/roof), then trees pass dry run.',
         '(5) DECOR against aerial and streetlevel (fences, hedges, walls, cars, street furniture, plants, roof greeblies), then decor pass.',
         'WHOLE CELL: review ALL five parts even if the cell was signed off or hand-made before; never skip one as "done".',
-        'Update the row in site/AERIAL-REVIEW.txt (look/features/ground/trees/done), note matches and mismatches in the cell',
-        f'STAGES file. End the chat with: site_handoff.py end {{qid}} --skip-say --skip-view --review-status look|features|ground|trees|done',
+        'Update the row in site/AERIAL-REVIEW.txt (look/features/ground/trees/done), note matches and mismatches as journal',
+        f'review notes (cell_registry.py note {tx},{tz} --kind review --ref aerial --body ...). '
+        f'End the chat with: site_handoff.py end {{qid}} --skip-say --skip-view --review-status look|features|ground|trees|done',
         '(default done; --skip-view because end would otherwise move the player: AGENTS.md never-move-the-user).',
     ])
 
@@ -319,19 +321,30 @@ def building_facts(pictures):
 
 
 def resolved_trees_over_roof(cell):
-    """stages.lidar.trees_over_roof_resolved from the cell stage file: [{'bbox': [...], 'reason': str}].
+    """Trees-over-roof decisions journalled as review notes on the cell: [{'bbox': [...], 'reason': str}].
+
+    Recorded with ``cell_registry.py note tx,tz --kind review --ref trees-over-roof:x0,z0,x1,z1 --body <reason>``.
 
     @param cell: (tx, tz)
     @returns: list ([] if none)
     """
-    return ((_cell_stages(cell) or {}).get('lidar') or {}).get('trees_over_roof_resolved', [])
+    out = []
+    for n in _view(cell).notes:
+        if n.kind == 'review' and n.ref.startswith(TREES_OVER_ROOF + ':'):
+            try:
+                bbox = [int(v) for v in n.ref.split(':', 1)[1].split(',')]
+            except ValueError:
+                continue
+            if len(bbox) == 4:
+                out.append({'bbox': bbox, 'reason': n.body})
+    return out
 
 
 def trees_over_roof_open(cell, lumps=None):
-    """Lidar lumps with trees over the roof that no stage record resolves (I-071).
+    """Lidar lumps with trees over the roof that no journal review note resolves (I-071).
 
-    A lump is resolved when its bbox lies inside a recorded ``trees_over_roof_resolved`` bbox (a tree-pass
-    decision: crown kept over the roof, or the roof rebuilt). The trees pass writes the record.
+    A lump is resolved when its bbox lies inside a recorded ``trees-over-roof:<bbox>`` review note (a tree-pass
+    decision: crown kept over the roof, or the roof rebuilt).
 
     @param cell: (tx, tz)
     @param lumps: optional lidar_lumps(cell) result
@@ -343,38 +356,28 @@ def trees_over_roof_open(cell, lumps=None):
 
 
 def cell_gaps(cell, features=True):
-    """What keeps a cell from being done (registry is the source of truth — ticket #31).
+    """What keeps a cell from being done (the cell journal is the source of truth — ADR 004).
 
-    Layers and registered features come from the cell registry. Optional slow checks
-    still report residual vector-map buildings and lidar trees-over-roof. In-flight
-    applies (site_stages ``applying``) are listed so site_recover can finish them.
+    Layers, features and in-flight entries come from the cell's journal view. Optional slow
+    checks still report residual vector-map buildings and lidar trees-over-roof. In-flight
+    entries (``begun``, an aborted apply) are listed so site_recover can finish them.
 
     @param cell: (tx, tz)
     @param features: also compute residual_features (slow)
     @returns: gaps dict
     """
-    from cell_registry import RegistryStore, cell_id
-
-    store = RegistryStore()
-    cid = cell_id(*cell)
-    c = store.cell(cid)
+    v = _view(cell)
     layers = []
-    if c.get('ground') != 'generated':
+    if v.ground != 'generated':
         layers.append('ground')
-    if c.get('ground') == 'generated' and not c.get('trees'):
+    if v.ground == 'generated' and not v.trees:
         layers.append('trees')
-    if c.get('ground') == 'generated' and not c.get('decor'):
+    if v.ground == 'generated' and not v.decor:
         layers.append('decor')
-    feature_gaps = [
-        f"{f['id']}={f.get('status')}"
-        for f in store.features_in_cell(cid)
-        if f.get('status') != 'built'
-    ]
-    stages = _cell_stages(cell)
-    in_flight = [f'in-flight: {v.get("plan", k)}' for k, v in (stages or {}).items()
-                 if isinstance(v, dict) and v.get('status') == 'applying']
+    feature_gaps = [f'{f.id}={f.status}' for f in v.features if f.status != 'built']
+    in_flight = [f'in-flight: {f.plan}' for f in v.in_flight]
     stale = False
-    if 'trees' not in layers and c.get('trees'):
+    if 'trees' not in layers and v.trees:
         from pass_mask import trees_rule_current
         stale = not trees_rule_current(cell)
     return {
@@ -383,21 +386,18 @@ def cell_gaps(cell, features=True):
         'trees_stale': stale,
         'features': (residual_features(cell) if features else []) + feature_gaps,
         'trees_over_roof': trees_over_roof_open(cell) if features else [],
-        'hold': c.get('hold'),
-        'done': store.is_done(cid),
+        'hold': v.hold,
+        'done': v.done,
     }
 
 
 def layers_done(cell):
-    """True when the registry marks the cell DONE (and optional slow checks are clean).
+    """True when the cell journal marks the cell DONE (and optional slow checks are clean).
 
     @param cell: (tx, tz)
     @returns: bool
     """
-    from cell_registry import RegistryStore, cell_id
-
-    store = RegistryStore()
-    if not store.is_done(cell_id(*cell)):
+    if not _view(cell).done:
         return False
     g = cell_gaps(cell, features=False)
     if g.get('in_flight') or g['trees_stale']:
@@ -429,25 +429,18 @@ def next_cell(max_ring=12):
 
 
 def requeue_plan(max_ring=12):
-    """Read-only: every registered non-done cell with its gaps (writes nothing).
+    """Read-only: every non-done cell of the cell journal with its gaps (writes nothing).
 
     @param max_ring: stop searching beyond this ring
     @returns: [(tx, tz, ring, gaps)] in ring order
     """
-    from cell_registry import RegistryStore
+    from cell_registry import view_registry
     from cellmath import origin_cell, ring_distance
 
     del max_ring
-    store = RegistryStore()
     out = []
-    seen = set()
-    for cid, rec in store._load_cells().items():
-        seen.add(cid)
-    for feat in store._load_features().values():
-        seen.update(feat.get('cells') or [])
-    for cid in sorted(seen, key=lambda s: tuple(int(p) for p in s.split(','))):
-        tx, tz = (int(p) for p in cid.split(','))
-        if store.is_done(cid):
+    for (tx, tz), v in sorted(view_registry().view().items()):
+        if v.done:
             continue
         g = cell_gaps((tx, tz))
         if not (g.get('in_flight') or g['layers'] or g['trees_stale'] or g['features'] or g.get('trees_over_roof')):
@@ -486,7 +479,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
     items = []
     if gaps.get('in_flight'):
         items.append((f'CELL {tx},{tz} (r={r}) RECOVER aborted run: {"; ".join(gaps["in_flight"])}.', [
-            f'A stage is left "applying" (aborted apply). Run scripts/site_recover.py status, then',
+            f'A cell journal entry is left "begun" (aborted apply). Run scripts/site_recover.py status, then',
             f'site_recover.py recover {tx},{tz} (dry run) and --apply; report to the user if it is unsure.',
         ]))
     for f in gaps['features']:
@@ -519,7 +512,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
     if gaps.get('trees_over_roof'):
         items.append((f'CELL {tx},{tz} (r={r}) TREES OVER ROOF {len(gaps["trees_over_roof"])} lidar lump(s) (I-071). RULES: foliage.', [
             'Lidar shows tree columns over these roofs; decide each (crown kept over the roof, or roof/crown rebuilt) and record',
-            f'it in site/cells/{tx}_{tz}-STAGES.json stages.lidar.trees_over_roof_resolved = [{{"bbox": [x0,z0,x1,z1], "reason": ...}}].',
+            f'it as a journal note: python3 scripts/cell_registry.py note {tx},{tz} --kind review '
+            f'--ref {TREES_OVER_ROOF}:x0,z0,x1,z1 --body "<reason>".',
         ] + lidar_facts(gaps['trees_over_roof'], (-10**9, -10**9, 10**9, 10**9))))
     if gaps['layers']:
         items.append((f'CELL {tx},{tz} (r={r}) layered passes: ground, trees, decor. RULES: ground.', [
@@ -529,7 +523,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             f'feature ghosts in this cell drop when real features overlap.',
             'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
-            f'patrol sweep; update site/cells/{tx}_{tz}-STAGES.json;',
+            'patrol sweep (each apply records itself in the cell journal);',
             'Done = evidence-backed features plus layered passes and masks (empty-world DoD); not clearing vendor lumps.',
             f'Marker stays up after this run; clear it only when decor is done, checks',
             f'pass and all open issues for the cell are closed: cell_marker.py --clear {tx},{tz}.',
@@ -539,7 +533,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'Auto-queued: finished cell whose trees mask predates the overhang rule (no rule stamp).',
             'mask_undo trees; re-plan trees with trees_layer (tree belongs to the cell of its trunk, crowns overhang',
             'neighbours, tree-on-tree leaves merge: HANDOFF-LAYERED-PASSES §6); dry run, apply with SITE_OWNER;',
-            f'update site/cells/{tx}_{tz}-STAGES.json. Ground and decor stay as they are; check decor interplay.',
+            'Ground and decor stay as they are; check decor interplay.',
         ]))
     return items
 
@@ -647,25 +641,22 @@ def is_feature_item(item) -> bool:
     return is_feature_queue_item(item)
 
 
-def greeblies_record_present(stages):
-    """True when ``stages`` has a ``<name>-greeblies`` key or plan (site_kit apply record).
+def greeblies_record_present(cell):
+    """True when the cell journal shows a ``<name>-greeblies`` feature build in the cell.
 
-    @param stages: stages dict from ``_cell_stages``, or None
+    @param cell: (tx, tz), or None
     @returns: bool
     """
-    for key, entry in (stages or {}).items():
-        if str(key).endswith('-greeblies'):
-            return True
-        if isinstance(entry, dict) and str(entry.get('plan') or '').endswith('-greeblies'):
-            return True
-    return False
+    if cell is None:
+        return False
+    return any(f.id.endswith('-greeblies') for f in _view(cell).features)
 
 
 def feature_greeblies_refusal(item, summary):
     """Error message if FEATURE ``end`` lacks greeblies evidence; else None.
 
-    A FEATURE item may end only when the cell has a ``<name>-greeblies`` stage
-    record (key or plan), or ``summary`` contains ``no greeblies seen``.
+    A FEATURE item may end only when the cell journal has a ``<name>-greeblies``
+    feature build in the cell, or ``summary`` contains ``no greeblies seen``.
 
     @param item: queue item dict or None
     @param summary: ``--summary`` text
@@ -675,12 +666,10 @@ def feature_greeblies_refusal(item, summary):
         return None
     if NO_GREEBLIES_SEEN in (summary or '').lower():
         return None
-    cell = _cell_for_item(item)
-    stages = _cell_stages(cell) if cell else None
-    if greeblies_record_present(stages):
+    if greeblies_record_present(_cell_for_item(item)):
         return None
     return (
-        'FEATURE end refused: no <name>-greeblies stage record '
+        'FEATURE end refused: no <name>-greeblies build in the cell journal '
         f'(apply greeblies, or put "{NO_GREEBLIES_SEEN}" in --summary)'
     )
 
@@ -707,8 +696,8 @@ def feature_build_names(item, builds: list[str] | None = None) -> list[str]:
     """Build names tied to a FEATURE queue item (for contact-sheet lookup).
 
     Order: explicit ``builds``, names from ``site/builds/<name>.json`` mentioned in
-    the item text, then ``feature-<name>`` stage plans on the item's cell (skipping
-    cell markers).
+    the item text, then the feature builds the cell journal shows in the item's cell
+    (skipping cell markers).
 
     @param item: queue item dict
     @param builds: optional explicit build names (e.g. from ``--build``)
@@ -731,19 +720,9 @@ def feature_build_names(item, builds: list[str] | None = None) -> list[str]:
         add(m.group(1))
     cell = _cell_for_item(item)
     if cell is not None:
-        stages_path = SITE / 'cells' / f'{cell[0]}_{cell[1]}-STAGES.json'
-        if stages_path.is_file():
-            try:
-                stages = json.loads(stages_path.read_text()).get('stages') or {}
-            except (json.JSONDecodeError, OSError):
-                stages = {}
-            for key, row in stages.items():
-                if not str(key).startswith('feature-'):
-                    continue
-                plan = (row or {}).get('plan') or str(key)[len('feature-'):]
-                if str(plan).startswith('cell_marker'):
-                    continue
-                add(str(plan))
+        for f in _view(cell).features:
+            if not f.id.startswith('cell_marker'):
+                add(f.id)
     return names
 
 

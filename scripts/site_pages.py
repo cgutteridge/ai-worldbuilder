@@ -193,7 +193,6 @@ def cell_page(cell, sts, gaps, status, media, here, runlog) -> str:
         or '<p class="muted">No issue mentions this cell.</p>'
     log = ''.join(f'<pre>{e(b)}</pre>' for b in runlog) or '<p class="muted">No run-log entry yet.</p>'
     links = ' · '.join(f'<a href="{rel(p, out)}">{n}</a>' for n, p in [
-        ('STAGES json', ROOT / f'site/cells/{cell[0]}_{cell[1]}-STAGES.json'),
         ('SOURCES', ROOT / f'site/cells/{cell[0]}_{cell[1]}-SOURCES.txt')] if p.exists())
     body = (f'<p class="crumbs"><a href="index.html">All cells</a> · <a href="{rel(ROOT / "HUMANS.html", out)}">HUMANS</a></p>'
             f'<h1>Cell {cell[0]},{cell[1]} {badge(status, cell == here)}</h1>'

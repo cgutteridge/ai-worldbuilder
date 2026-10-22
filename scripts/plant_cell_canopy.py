@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import colorsys
-import json
 import math
 import random
 import subprocess
@@ -297,18 +296,16 @@ def volume_clear(w: World, voxels: dict, ground_y: int, taken: set) -> bool:
     return True
 
 
-def owned_cells() -> set:
-    """Voxels already planned by other builds (every verification/site/*-cells.json).
+def owned_cells(cell: tuple[int, int]) -> set:
+    """Voxels the cell journal says other builds own, in the cell and its neighbours.
 
+    @param cell: (tx, tz)
     @returns: set of (x, y, z) owned elsewhere
     """
-    taken = set()
-    for f in (ROOT / 'verification/site').glob('*-cells.json'):
-        if f.name.startswith(CANOPY_PLAN_PREFIX):
-            continue
-        for k in json.loads(f.read_text()):
-            taken.add(tuple(int(v) for v in k.strip('()').split(',')))
-    return taken
+    from ground_layer import neighbour_owned
+    from cell_registry import view_registry
+    canopy = {e.plan for e in view_registry().entries() if e.plan.startswith(CANOPY_PLAN_PREFIX)}
+    return neighbour_owned(cell, canopy)
 
 
 def near_corridor(x: int, z: int, corridors: set, reach: int) -> bool:
@@ -380,7 +377,7 @@ def build_plan(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
     blobs = [b for b in blobs_of(mask) if len(b) >= MIN_BLOB_PX]
     rnd = random.Random(RNG_SEED)
     w = World()
-    taken = owned_cells()
+    taken = owned_cells(cell)
     plan = Plan(CANOPY_PLAN_PREFIX)
     trees, bushes = [], []
     for blob in sorted(blobs, key=len, reverse=True):
@@ -437,7 +434,7 @@ def plan_hand(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
     lawn = columns_for_parcels(area, pids)
     corridors = set(corridor_columns_in_cell(area, cell, margin=0))
     w = World()
-    taken = owned_cells()
+    taken = owned_cells(cell)
     plan = Plan(CANOPY_PLAN_PREFIX)
     trees, bushes, skipped = [], [], []
     for x, z, r in hand_anchors():
@@ -525,7 +522,7 @@ if __name__ == '__main__':
         raise SystemExit('no canopy anchors found; check the mask overlay before applying')
     if not args.skip_preview:
         preview(plan, scratch / f'{plan.name}-preview.png', scale=2)
-    backup = OUT / f'{plan.name}-backup.json'
-    if args.apply and backup.exists():
-        raise SystemExit(f'{backup.name} exists; restore it before re-applying')
+    from cell_registry import view_registry
+    if args.apply and view_registry().entries(plan=plan.name):
+        raise SystemExit(f'{plan.name} is already in the cell journal; undo it before re-applying')
     apply(plan, dry=not args.apply, modifies=())

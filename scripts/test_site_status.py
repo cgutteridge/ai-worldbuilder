@@ -1,39 +1,32 @@
 """site_status: parsing, layer aliases, the run log and the morning report (temp files only)."""
-import json
-import os
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest import mock
 
 import site_status as ss
 
 
 class TestSiteStatus(unittest.TestCase):
     def setUp(self):
+        from journal_testkit import JournalWorld
         self.tmp = tempfile.TemporaryDirectory()
         d = Path(self.tmp.name)
         self.saved = (ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG)
         ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = d / 'cells', d / 'cur.json', d / 'LOCK.json', d / 'RUN-LOG.md'
-        ss.CELLS.mkdir()
-        (d / 'registry').mkdir()
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(d).set_marker(cell_id(47, -45), 'up', replace_existing=True)
-        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(d)})
-        self._env.start()
+        self.jw = JournalWorld(d)
+        self.jw.__enter__()
+        self.jw.seed((47, -45), marker=True)
 
     def tearDown(self):
-        self._env.stop()
+        self.jw.__exit__()
         ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = self.saved
         self.tmp.cleanup()
-
-    def cell(self, tx, tz, stages):
-        (ss.CELLS / f'{tx}_{tz}-STAGES.json').write_text(json.dumps({'cell': f'{tx},{tz}', 'stages': stages}))
 
     def test_stamps_and_rings(self):
         self.assertEqual(ss.parse_stamp('2026-10-15 19:03:18'), datetime(2026, 10, 15, 19, 3, 18))
         self.assertEqual(ss.parse_stamp('2026-10-15 19:03'), datetime(2026, 10, 15, 19, 3))
+        self.assertEqual(ss.parse_stamp('2026-10-15T19:03:18Z'), datetime(2026, 10, 15, 19, 3, 18))
         self.assertIsNone(ss.parse_stamp('never'))
         self.assertEqual([ss.ring(c) for c in [(48, -44), (47, -45), (50, -42), (51, -41)]], [0, 1, 2, 3])
 
@@ -48,17 +41,18 @@ class TestSiteStatus(unittest.TestCase):
         sts['decor'] = {'status': 'applied'}
         self.assertTrue(ss.layers_applied(sts))
 
-    def test_events_since_and_dedupe(self):
-        one = {'status': 'applied', 'blocks': 5, 'readback': {'checked': '2026-10-15 19:03:18', 'mismatches': 0}}
-        self.cell(47, -45, {'feature_x': one, 'feature-x': one, 'trees': {'status': 'applied', 'blocks': 9,
-                 'readback': {'checked': '2026-10-14 08:00', 'mismatches': 0}}})
-        ev = ss.events(ss.load_stages(), datetime(2026, 10, 15, 17, 0))
-        self.assertEqual(len(ev), 1)
-        self.assertEqual(ev[0]['blocks'], 5)
-        self.assertEqual(len(ss.events(ss.load_stages())), 2)
+    def test_journal_entries_become_stage_records(self):
+        self.jw.seed((47, -45), ground=True, trees=True, features=('feature_x',))
+        st = ss.load_stages()[(47, -45)]
+        self.assertEqual(st['ground-layer']['status'], 'applied')
+        self.assertEqual(st['feature-feature_x']['blocks'], 1)
+        self.assertEqual(len(ss.events(ss.load_stages())), 3)
+        self.assertEqual(ss.events(ss.load_stages(), datetime(2999, 1, 1)), [])
 
     def test_status_flags_problems_and_marker(self):
-        self.cell(47, -45, {'ground-layer': {'status': 'applying'}, 'trees': {'status': 'applied'}, 'decor': {'status': 'applied'}})
+        from cell_journal import Build
+        self.jw.seed((47, -45), ground=True, trees=True, decor=True)
+        self.jw.reg.begin(Build('regrade', 'ground', {(6016, 61, -5760): 'minecraft:stone'}, cell=(47, -45)))
         out = ss.cmd_status(ss.load_stages())
         self.assertIn('MARKER (where work is): 47,-45', out)
         self.assertIn('▶  47,-45', out)
@@ -66,8 +60,7 @@ class TestSiteStatus(unittest.TestCase):
         self.assertIn('⚠ ground-layer', out)
 
     def test_log_then_morning_lists_eye_items(self):
-        self.cell(47, -45, {'ground-layer': {'status': 'applied', 'blocks': 3, 'readback': {'checked': '2026-10-16 10:09', 'mismatches': 0}},
-                            'trees': {'status': 'applied'}, 'decor': {'status': 'applied'}})
+        self.jw.seed((47, -45), ground=True, trees=True, decor=True)
         ss.main(['log', '--cell', '47,-45', '--did', 'plaza lawn applied', '--look', '6139,-5742: oak',
                  '--problem', 'strip under Building 2 still paved'])
         text = ss.RUN_LOG.read_text()

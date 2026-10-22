@@ -549,5 +549,78 @@ class TestReconcile(Base):
         self.assertEqual(len(self.registry(ring=1).reconcile()), 0)    # without a planner nothing is claimed missing
 
 
+
+class TestCutOverAdditions(Base):
+    """Interface added for the site_kit cut-over (task 42)."""
+
+    def test_meta_is_journalled_and_listed_by_entries(self):
+        self.build('house', 'feature', plan(0, 0, STONE), meta={'structure': {'name': 's'}})
+        (e,) = self.reg.entries(plan='house')
+        self.assertEqual((e.kind, e.status, e.meta, e.n), ('build', 'landed', {'structure': {'name': 's'}}, 3))
+        self.assertEqual(self.reg.entries(cells=[(5, 5)]), ())
+
+    def test_ticket_reopens_an_in_flight_entry_and_finishes_it(self):
+        def boom(_w):
+            raise RuntimeError('mcp died')
+        with self.assertRaises(RuntimeError):
+            self.reg.change(Build('house', 'feature', plan(0, 0, STONE)), boom)
+        reg = self.registry()
+        (e,) = reg.entries()
+        t = reg.ticket(e.seq)
+        self.assertEqual(dict(t.writes.cells), plan(0, 0, STONE))
+        self.blocks.write_many(t.writes.cells)
+        self.blocks.flush()
+        self.assertEqual(t.finish(self.blocks.read_many(t.writes.cells)).status, 'landed')
+        with self.assertRaises(Refused):
+            reg.ticket(e.seq)
+
+    def test_abandon_voids_an_in_flight_entry(self):
+        self.build('house', 'feature', plan(0, 0, STONE))
+        ticket = self.reg.begin(Build('house', 'feature', plan(0, 0, GLASS)))
+        ticket.abandon('rolled back')
+        self.assertEqual([x.status for x in self.reg.entries()], ['landed', 'abandoned'])
+        self.assertEqual(self.reg.cell((0, 0)).features[0].status, 'built')     # the earlier version stands
+        self.assertEqual(set(self.reg.owned(plan(0, 0, STONE)).values()), {('house', STONE)})
+        self.assertEqual(self.registry().view(), self.reg.view())               # cold fold agrees
+        with self.assertRaises(Refused):
+            ticket.abandon()
+
+    def test_owned_real_only_and_whole_cell_owners(self):
+        self.build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0))
+        self.build('wall', 'feature', plan(0, 0, STONE, n=1))
+        everything = self.reg.owners([(0, 0)])
+        self.assertEqual(len(everything), 4)
+        self.assertEqual(set(self.reg.owners([(0, 0)], real_only=True)), {P(0, 0)})
+        self.assertEqual(self.reg.owned(plan(0, 0, GREY, y=60), real_only=True), {})
+        self.assertEqual(set(self.reg.owners([(0, 0)], exclude={'wall'})), set(plan(0, 0, GREY, y=60)))
+
+    def test_recorded_and_touched_follow_the_latest_live_entry(self):
+        self.build('house', 'feature', plan(0, 0, STONE, n=1))
+        self.build('house', 'feature', plan(0, 0, STONE, n=2))
+        self.build('ghost_1_0_ground', 'ghost-ground', plan(1, 0, GREY), cell=(1, 0))
+        self.assertEqual(self.reg.recorded('house'), plan(0, 0, STONE, n=2))
+        self.assertIsNone(self.reg.recorded('nope'))
+        self.assertEqual(self.reg.touched(), {'house': {(0, 0), (1, 0)}})
+        self.reg.change(Undo('house'), self.apply)
+        self.assertIsNone(self.reg.recorded('house'))
+
+    def test_other_pass_owns_blocks_without_progress(self):
+        self.real_cell()
+        self.build('cell_marker_0_0', 'other', plan(0, 0, 'minecraft:black_wool', y=90))
+        v = self.reg.cell((0, 0))
+        self.assertTrue(v.done)
+        self.assertEqual(v.features, ())
+        self.assertEqual(set(self.reg.owned(plan(0, 0, 'minecraft:black_wool', y=90)).values()),
+                         {('cell_marker_0_0', 'minecraft:black_wool')})
+
+    def test_open_issue_note_keeps_a_cell_from_done(self):
+        self.real_cell()
+        self.reg.change(Note((0, 0), 'issue', 'roof wrong', ref='I-001'))
+        v = self.reg.cell((0, 0))
+        self.assertFalse(v.done)
+        self.assertIn('issue I-001', v.left)
+        self.reg.change(Note((0, 0), 'close', ref='I-001'))
+        self.assertTrue(self.reg.cell((0, 0)).done)
+
 if __name__ == '__main__':
     unittest.main()

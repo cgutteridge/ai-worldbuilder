@@ -4,7 +4,7 @@
 One module for every "house only" run (layered pass 1: Granby Grove, Merton Rd, Ripstone and Blenheim Gardens
 q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json instead of a 390-line script copy:
 
-  name           plan name (also the verification/site/<name>-cells.json record)
+  name           plan name (also the cell journal plan / feature id)
   notes          provenance: map ways, aerial/streetlevel evidence, date, queue item (free text, never read by code)
   modifies       earlier builds this one may overwrite (default [])
   ways           {"<map way id>": "<label>"} the footprints to build
@@ -438,8 +438,8 @@ class Build:
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
         # roof-overhang slabs of a neighbouring earlier build that spill onto our corner are theirs: leave them
-        from site_kit import built_cells
-        owned = built_cells(exclude={self.name}, within=self.p.cells)
+        from cell_registry import view_registry
+        owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
         for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
         for h in self.houses:

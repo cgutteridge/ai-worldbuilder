@@ -12,31 +12,30 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from site_kit import OUT, World, _parse_cells_file  # noqa: E402
+from cell_registry import latest_cells  # noqa: E402
+from site_kit import World  # noqa: E402
 
 
 def audit():
     """@returns: (doors checked, {build: [(x, y, z, [missing pieces])]})"""
     w = World()
     seen, bad, n = set(), collections.defaultdict(list), 0
-    for f in sorted(OUT.glob('*-cells.json')):
-        adds, _air = _parse_cells_file(f)
-        for (x, y, z), (b, st) in adds.items():
-            if '_door' not in st or 'trapdoor' in st or 'half=lower' not in st or (x, y, z) in seen:
-                continue
-            seen.add((x, y, z))
-            live = w.block(x, y, z) or ''
-            if 'door' not in live:
-                continue
-            n += 1
-            face = live.split('facing=')[1].split(',')[0]
-            sides = ((1, 0), (-1, 0)) if face in ('north', 'south') else ((0, 1), (0, -1))
-            miss = [f'jamb {dx},{dz}@{dy}' for dx, dz in sides for dy in (0, 1)
-                    if (w.block(x + dx, y + dy, z + dz) or 'air').endswith('air')]
-            if (w.block(x, y + 2, z) or 'air').endswith('air'):
-                miss.append('lintel')
-            if miss:
-                bad[b].append((x, y, z, miss))
+    for (x, y, z), (b, st) in latest_cells().items():
+        if '_door' not in st or 'trapdoor' in st or 'half=lower' not in st or (x, y, z) in seen:
+            continue
+        seen.add((x, y, z))
+        live = w.block(x, y, z) or ''
+        if 'door' not in live:
+            continue
+        n += 1
+        face = live.split('facing=')[1].split(',')[0]
+        sides = ((1, 0), (-1, 0)) if face in ('north', 'south') else ((0, 1), (0, -1))
+        miss = [f'jamb {dx},{dz}@{dy}' for dx, dz in sides for dy in (0, 1)
+                if (w.block(x + dx, y + dy, z + dz) or 'air').endswith('air')]
+        if (w.block(x, y + 2, z) or 'air').endswith('air'):
+            miss.append('lintel')
+        if miss:
+            bad[b].append((x, y, z, miss))
     return n, bad
 
 

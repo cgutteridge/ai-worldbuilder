@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Restore a site_kit apply backup structure into the live world.
 
-Uses verification/site/<build>-backup.json written on first apply of that build.
+Uses the structure recorded with the first cell journal entry of that build (site_kit.apply).
+Restoring blocks bypasses the journal: follow it with a journal Undo or a re-apply.
 
   python3 scripts/restore_structure_backup.py highfield_48_m44_foliage
   SITE_OWNER=you python3 scripts/restore_structure_backup.py highfield_48_m44_foliage --apply
@@ -9,26 +10,24 @@ Uses verification/site/<build>-backup.json written on first apply of that build.
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
 from mc_paced import Paced, box, D, xyz  # noqa: E402
-from site_kit import OUT  # noqa: E402
 
 
 def load_record(build: str) -> dict:
-    """Read backup metadata for a build name.
+    """First-apply structure backup of a build, from its first cell journal entry.
 
     @param build: kit plan name
-    @returns: parsed backup json
+    @returns: {'structure', 'from', 'to'}
     """
-    path = OUT / f'{build}-backup.json'
-    if not path.exists():
-        raise SystemExit(f'missing {path}')
-    return json.loads(path.read_text())
+    from cell_registry import view_registry
+    for e in view_registry().entries(plan=build):
+        st = e.meta.get('structure')
+        if st:
+            return {'structure': st['name'], 'from': st['from'], 'to': st['to']}
+    raise SystemExit(f'no structure backup recorded for {build!r} in the cell journal')
 
 
 def load_structure(name: str, origin, m=None) -> str:

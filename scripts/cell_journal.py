@@ -18,7 +18,7 @@ or snapshots regions (ADR 004 decision a).
 Journal lines (JSON, one per line; ``seq`` strictly increasing)::
 
     {"op":"begin","seq":n,"kind":"build|undo","plan":..,"pass":..,"cell":[tx,tz],"cells":[..],"blob":h,...}
-    {"op":"finish","seq":m,"ref":n,"status":"landed|mismatched","mismatches":k}
+    {"op":"finish","seq":m,"ref":n,"status":"landed|mismatched|abandoned","mismatches":k}
     {"op":"note","seq":n,"cell":[tx,tz],"kind":..,"ref":..,"body":..}
     {"op":"repair","seq":n,...}     # informational: reconcile re-wrote drifted blocks
 """
@@ -41,7 +41,8 @@ Cell = tuple[int, int]
 
 REAL_PASSES = ('feature', 'ground', 'trees', 'decor')
 GHOST_PASSES = ('ghost-ground', 'ghost-features')
-PASSES = REAL_PASSES + GHOST_PASSES
+NEUTRAL_PASSES = ('other',)        # owns blocks, no progress meaning (cell markers, clean-ups)
+PASSES = REAL_PASSES + GHOST_PASSES + NEUTRAL_PASSES
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing', 'ghost-stale')
 AIR = 'minecraft:air'
@@ -111,6 +112,7 @@ class Build:
     @param mask: opaque pass mask (JSON-able); a mask also makes mismatches strict
     @param cell: primary cell (default: the cell holding most planned columns)
     @param payload: opaque object for the caller's apply (e.g. the ``site_kit.Plan``); never journalled
+    @param meta: small JSON-able dict journalled on the ``begin`` line (structure backup, notes ...)
     """
 
     plan: str
@@ -122,6 +124,7 @@ class Build:
     mask: Any = None
     cell: Cell | None = None
     payload: Any = None
+    meta: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -130,10 +133,12 @@ class Undo:
 
     @param target: plan name, or ``(cell, pass_)``
     @param strict: leave the entry ``begun`` when the erase readback fails (default True)
+    @param meta: small JSON-able dict journalled on the ``begin`` line
     """
 
     target: str | tuple[Cell, str]
     strict: bool = True
+    meta: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -220,6 +225,32 @@ class InFlightView:
 
 
 @dataclass(frozen=True)
+class EntryView:
+    """One journalled build or undo entry (read-only; for recovery tools and plan listings).
+
+    @param status: ``begun``, ``landed``, ``mismatched`` or ``abandoned`` (rolled back by a recovery tool)
+    @param undone: voided by a landed Undo, or abandoned
+    @param ts: UTC time of the ``begin`` line
+    @param meta: the intent's ``meta`` dict
+    """
+
+    seq: int
+    kind: str
+    plan: str
+    pass_: str
+    cell: Cell
+    cells: tuple[Cell, ...]
+    status: str
+    undone: bool
+    n: int
+    owner: str | None
+    ts: str
+    meta: Mapping[str, Any]
+    targets: tuple[int, ...] = ()
+    mismatches: int = 0
+
+
+@dataclass(frozen=True)
 class NoteView:
     """An open note: coverage warning, review or issue."""
 
@@ -234,7 +265,8 @@ class CellView:
 
     @param ground: ``none|ghost|ghost+features|generated``
     @param ghost: placeholder mass expected in the world now
-    @param done: ground generated, trees, decor, every feature built, no marker, no warnings, nothing in flight
+    @param done: ground generated, trees, decor, every feature built, no marker, no warnings, no open
+        issue note, nothing in flight
     @param left: short human reasons work remains (same wording as ``what_is_left``)
     """
 
@@ -321,11 +353,14 @@ class _Entry:
     masked: bool = False
     strip: bool = False
     targets: tuple[int, ...] = ()
-    status: str = 'begun'       # begun | landed | mismatched
+    status: str = 'begun'       # begun | landed | mismatched | abandoned
     finish_seq: int = 0
     mismatches: int = 0
     undone: bool = False
     reopened: tuple[Cell, ...] = ()
+    owner: str | None = None
+    ts: str = ''
+    meta: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -388,6 +423,15 @@ class Ticket:
         @raises JournalError: the finish line could not be written (entry stays ``begun``)
         """
         return self.registry._finish(self, readback)
+
+    def abandon(self, reason: str = '') -> None:
+        """Void a ``begun`` entry whose blocks a recovery tool put back (it owns nothing afterwards).
+
+        @param reason: short text journalled on the finish line
+        @raises Refused: the entry was already finished
+        @raises JournalError: the finish line could not be written
+        """
+        self.registry._abandon(self, reason)
 
 
 # --- the registry --------------------------------------------------------------------------------
@@ -466,7 +510,8 @@ class CellRegistry:
             seq=d['seq'], kind=d['kind'], plan=d['plan'], pass_=d['pass'], cell=tuple(d['cell']),
             cells=cells, blob=d['blob'], n=d['n'], modifies=tuple(d.get('modifies', ())),
             strict=bool(d.get('strict')), masked=bool(d.get('mask')), strip=bool(d.get('strip')),
-            targets=tuple(d.get('targets', ())))
+            targets=tuple(d.get('targets', ())), owner=d.get('owner'), ts=d.get('ts', ''),
+            meta=dict(d.get('meta') or {}))
         if e.kind == 'build' and e.pass_ == 'feature':
             prior = self._latest(e.plan)
             if prior is not None and prior.status == 'landed':
@@ -484,11 +529,14 @@ class CellRegistry:
         if e is None:
             raise JournalError(f'finish for unknown entry {d["ref"]}')
         status = d['status']
-        if status not in ('landed', 'mismatched') or e.status == 'landed' or (
+        if status not in ('landed', 'mismatched', 'abandoned') or e.status in ('landed', 'abandoned') or (
                 e.status == 'mismatched' and status != 'landed'):
             raise JournalError(f'bad finish {e.status} -> {status} for entry {e.seq}')
         e.status, e.finish_seq, e.mismatches = status, d['seq'], int(d.get('mismatches', 0))
         self._begun.discard(e.seq)
+        if status == 'abandoned':
+            e.undone = True                             # rolled back: owns nothing, counts for nothing
+            return
         if e.kind == 'undo' and status == 'landed':
             for t in e.targets:
                 if t in self._entries:
@@ -652,16 +700,95 @@ class CellRegistry:
                     out[p] = o
         return out
 
-    def owned(self, within: Iterable[Pos], exclude: Iterable[str] = ()) -> dict[Pos, tuple[str, str]]:
+    def owned(self, within: Iterable[Pos], exclude: Iterable[str] = (), *,
+              real_only: bool = False) -> dict[Pos, tuple[str, str]]:
         """Current owners of positions, like the old ``built_cells(exclude, within)``.
 
         @param within: positions to look up
         @param exclude: plan names to ignore (their blocks show earlier owners)
-        @returns: ``{pos: (plan, state)}`` for owned positions (ghost owners included)
+        @param real_only: drop ghost owners (they yield and never clash)
+        @returns: ``{pos: (plan, state)}`` for owned positions (ghost owners included unless ``real_only``)
         """
         self._sync()
         got = self._owners_in(within, exclude=frozenset(exclude))
-        return {p: (o.plan, o.state) for p, o in got.items()}
+        return {p: (o.plan, o.state) for p, o in got.items() if not (real_only and o.ghost)}
+
+    def owners(self, cells: Iterable[Cell], exclude: Iterable[str] = (), *,
+               real_only: bool = False) -> dict[Pos, tuple[str, str]]:
+        """Every owned position inside whole cells (the old full ``built_cells()`` merge, per cell).
+
+        @param cells: cells to scan
+        @param exclude: plan names to ignore
+        @param real_only: drop ghost owners
+        @returns: ``{pos: (plan, state)}``
+        """
+        self._sync()
+        ex = frozenset(exclude)
+        out: dict[Pos, tuple[str, str]] = {}
+        for cell in {tuple(c) for c in cells}:
+            for p, o in self._cell_owners(cell, exclude=ex).items():
+                if not (real_only and o.ghost):
+                    out[p] = (o.plan, o.state)
+        return out
+
+    def recorded(self, plan: str) -> dict[Pos, str] | None:
+        """The recorded plan of the latest live (not undone) build entry of ``plan`` (the old ``*-cells.json``).
+
+        @param plan: plan name
+        @returns: ``{pos: state}`` copy, or None when the journal has no such build
+        """
+        self._sync()
+        e = self._latest(plan)
+        return None if e is None else dict(self._blob(e.blob))
+
+    def touched(self, passes: Iterable[str] = REAL_PASSES) -> dict[str, set[tuple[int, int]]]:
+        """XZ columns of each plan's latest live build entry (the old ``touched_by_build``).
+
+        @param passes: passes to include (default: real passes only)
+        @returns: ``{plan: {(x, z), ...}}``
+        """
+        self._sync()
+        want = frozenset(passes)
+        out: dict[str, set[tuple[int, int]]] = {}
+        for plan in self._plans:
+            e = self._latest(plan)
+            if e is not None and e.pass_ in want:
+                out[plan] = {(x, z) for x, _y, z in self._blob(e.blob)}
+        return out
+
+    def entries(self, cells: Iterable[Cell] | None = None, plan: str | None = None) -> tuple[EntryView, ...]:
+        """Journalled build/undo entries in seq order (read-only).
+
+        @param cells: only entries touching one of these cells
+        @param plan: only entries of this plan name
+        @returns: EntryView tuple
+        """
+        self._sync()
+        scope = None if cells is None else {tuple(c) for c in cells}
+        out = []
+        for seq in sorted(self._entries):
+            e = self._entries[seq]
+            if plan is not None and e.plan != plan:
+                continue
+            if scope is not None and not scope & set(e.cells):
+                continue
+            out.append(EntryView(e.seq, e.kind, e.plan, e.pass_, e.cell, e.cells, e.status, e.undone, e.n,
+                                 e.owner, e.ts, dict(e.meta), e.targets, e.mismatches))
+        return tuple(out)
+
+    def ticket(self, seq: int) -> 'Ticket':
+        """Re-open the ticket of a ``begun`` entry (recovery: read back, then ``finish`` or ``abandon``).
+
+        @param seq: journal seq of the begun entry
+        @returns: Ticket whose ``writes`` is the recorded plan
+        @raises Refused: no such begun entry
+        """
+        self._sync()
+        e = self._entries.get(seq)
+        if e is None or e.status != 'begun':
+            raise Refused(f'entry {seq} is not in flight')
+        return Ticket(self, seq, Writes(e.plan, e.pass_, self._blob(e.blob), e.kind, None, seq),
+                      e.strict or e.masked)
 
     # ---- views -----------------------------------------------------------------------------
     def _note_state(self) -> dict:
@@ -751,10 +878,12 @@ class CellRegistry:
         if marker:
             left.append('marker up')
         left += [f'coverage warning {k}' for k in warns]
+        issues = [n.ref for n in notes if n.kind == 'issue']
+        left += [f'issue {r}' for r in issues]
         if hold:
             left.append(f'hold: {hold}')
         left += [f'in-flight: {f.plan}' for f in flight]
-        done = (ground == 'generated' and trees and decor and not marker and not warns
+        done = (ground == 'generated' and trees and decor and not marker and not warns and not issues
                 and all(f.status == 'built' for f in feats) and not flight)
         view = CellView(cell, ground, GhostView(ghost_ground, ghost_features), trees, decor, tuple(feats),
                         tuple(flight), marker, hold, notes, done, tuple(left))
@@ -869,6 +998,8 @@ class CellRegistry:
         }
         if b.mask is not None:
             record['mask'] = b.mask
+        if b.meta:
+            record['meta'] = dict(b.meta)
         writes = Writes(b.plan, b.pass_, positions, 'build', b)
         return _Prepared(record, writes, bool(b.strict or b.mask is not None))
 
@@ -906,6 +1037,8 @@ class CellRegistry:
             'cell': list(first.cell), 'cells': [list(c) for c in sorted(cells)], 'n': len(erase),
             'targets': sorted(tseqs), 'strict': bool(u.strict), 'owner': os.environ.get('SITE_OWNER'),
         }
+        if u.meta:
+            record['meta'] = dict(u.meta)
         return _Prepared(record, Writes(record['plan'], first.pass_, erase, 'undo', u), bool(u.strict))
 
     def _begin(self, prep: _Prepared) -> Ticket:
@@ -938,6 +1071,13 @@ class CellRegistry:
         status = 'mismatched' if bad else 'landed'
         self._append({'op': 'finish', 'ref': t.seq, 'status': status, 'mismatches': len(bad)})
         return Receipt(t.seq, status, len(t.writes.cells), len(bad), sample)
+
+    def _abandon(self, t: Ticket, reason: str) -> None:
+        self._sync()
+        e = self._entries[t.seq]
+        if e.status != 'begun':
+            raise Refused(f'entry {t.seq} is already {e.status}')
+        self._append({'op': 'finish', 'ref': t.seq, 'status': 'abandoned', 'mismatches': 0, 'reason': reason})
 
     def change(self, intent: Build | Undo | Note, apply: Apply | None = None, *,
                cascade: bool = False) -> Receipt:

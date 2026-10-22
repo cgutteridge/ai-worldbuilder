@@ -10,6 +10,7 @@ for _p in (_ROOT / "shims", _ROOT / "scripts"):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 
+import io
 import json
 import os
 import tempfile
@@ -100,299 +101,130 @@ class PlanFromMockHeights(unittest.TestCase):
         self.assertIn((x0 + 1, 5, z0), plan.cells)
 
 
-class StagesGhostVsReal(unittest.TestCase):
-    """Ghost STAGES vs registry real refine (ticket #31)."""
+class _Tiny(unittest.TestCase):
+    """CELL patched to 2 and a throwaway journal (journal_testkit) as the active registry."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        self.cells = root / 'cells'
-        self.cells.mkdir()
-        self.world = root / 'world'
-        self.world.mkdir()
-        (self.world / 'registry').mkdir()
-        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
-        self._env.start()
-        self.addCleanup(self._env.stop)
+        from journal_testkit import JournalWorld
+        for p in (mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2),
+                  mock.patch.dict(os.environ, {}, clear=False)):
+            p.start()
+            self.addCleanup(p.stop)
+        os.environ.pop('LIDAR_GHOST_RING', None)
+        self.jw = JournalWorld()
+        self.jw.__enter__()
+        self.addCleanup(self.jw.__exit__)
+        self.heights = lambda *b: _flat_heights(5, 1, *b)
 
-    def _write(self, cell, stages):
-        path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
-        path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
+    def registry(self, ring=1):
+        import cell_registry
+        return cell_registry.open_registry(blocks=self.jw.blocks, ghosts=lg.ghost_planner(self.heights), ring=ring)
 
-    def _registry_generated(self, cell):
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
+    def real_ground(self, cell):
+        x0, z0, _x1, _z1 = cellmath.bounds(cell)
+        self.jw.build(f'ground_{cell[0]}_{cell[1]}', 'ground', {(x0, 5, z0): 'minecraft:grass_block'}, cell=cell)
 
-    def test_is_ghost_stage_by_key_and_kind(self):
-        self.assertTrue(lg.is_ghost_stage('ghost-ground', {'status': 'applied'}))
-        self.assertTrue(lg.is_ghost_stage('feature-x', {'kind': 'ghost', 'status': 'applied'}))
-        self.assertFalse(lg.is_ghost_stage('ground-layer', {'status': 'applied'}))
 
-    def test_real_work_ignores_ghost_stages(self):
-        cell = (1, 2)
-        self._write(cell, {
-            'ghost-ground': {'status': 'applied', 'kind': 'ghost', 'plan': 'ghost_1_2_ground'},
-            'ghost-features': {'status': 'applied', 'kind': 'ghost', 'plan': 'ghost_1_2_features'},
-        })
-        self.assertFalse(lg.real_work_started(cell, self.cells))
-        self.assertTrue(lg.ghosts_complete(cell, self.cells))
+class GhostPlannerAndNeeds(_Tiny):
+    """The registry's ghost planner wraps the lidar plan builders; needs come from the view."""
 
-    def test_real_ground_layer_counts_as_real_work(self):
-        cell = (1, 2)
-        self._write(cell, {
-            'ghost-ground': {'status': 'applied', 'kind': 'ghost'},
-            'ground-layer': {'status': 'applied', 'plan': 'highfield_1_2_ground'},
-        })
-        self._registry_generated(cell)
-        self.assertTrue(lg.real_work_started(cell, self.cells))
+    def test_planner_wraps_plan_builders(self):
+        planner = lg.ghost_planner(self.heights)
+        self.assertEqual(planner((0, 0), 'ground'), lg.plan_ghost_ground((0, 0), heights=self.heights(0, 0, 1, 1)).cells)
+        self.assertEqual(len(planner((0, 0), 'features')), 4)
 
-    def test_ensure_skips_when_already_applied(self):
-        cell = (0, 0)
-        self._write(cell, {
-            lg.STAGE_GROUND: {'status': 'applied', 'kind': lg.KIND_GHOST},
-            lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST},
-        })
-        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
-            rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
-                                 heights_fn=lambda *b: _flat_heights(5, 1, *b))
-        self.assertEqual(rep['skipped'], 'layers-complete')
+    def test_planner_returns_none_without_lidar(self):
+        def missing(*_b):
+            raise LookupError('tile not cached')
+        self.assertIsNone(lg.ghost_planner(missing)((0, 0), 'ground'))
 
-    def test_ensure_skips_real_work_when_flagged(self):
-        cell = (0, 0)
-        self._write(cell, {'trees': {'status': 'applied'}})
-        self._registry_generated(cell)
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(self.world).set_trees(cell_id(*cell), True)
-        rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells, skip_if_real=True,
-                             heights_fn=lambda *b: _flat_heights(5, 1, *b))
-        self.assertEqual(rep['skipped'], 'real-work')
-
-    def test_trees_only_still_allows_ghost_ground(self):
-        cell = (0, 0)
-        self._write(cell, {'trees': {'status': 'applied'}})
-        # Ghost-only STAGES / no registry real work: still plan ghost ground.
-        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
-            rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
-                                 heights_fn=lambda *b: _flat_heights(5, 1, *b))
-        self.assertIn('ground', rep)
-
-    def test_ensure_plans_when_empty(self):
-        cell = (0, 0)
-        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
-            rep = lg.ensure_cell(cell, dry=True, cells_dir=self.cells,
-                                 heights_fn=lambda *b: _flat_heights(5, 2, *b))
+    def test_ensure_plans_both_layers_when_empty(self):
+        rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
         self.assertNotIn('skipped', rep)
         self.assertEqual(rep['ground']['blocks'], 4 * 5)
-        self.assertEqual(rep['features']['blocks'], 4 * 2)
+        self.assertEqual(rep['features']['blocks'], 4 * 1)
+        self.assertEqual(self.jw.reg.view(), {})                         # dry run journals nothing
+
+    def test_ensure_applies_and_then_skips_complete_cells(self):
+        reg = self.registry()
+        rep = lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)[0]
+        self.assertEqual(rep['actions'], ['plan-ground', 'apply-ground', 'plan-features', 'apply-features'])
+        v = reg.cell((0, 0))
+        self.assertEqual((v.ground, v.ghost.ground, v.ghost.features), ('ghost+features', True, True))
+        self.assertEqual(lg.ensure_cells(reg, [(0, 0)])[0]['skipped'], 'layers-complete')
+
+    def test_real_ground_skips_ghost_ground_but_still_wants_grey_mass(self):
+        self.real_ground((0, 0))
+        rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
+        self.assertEqual(rep['ground_skip'], 'real-ground')
+        self.assertIn('features', rep)
+
+    def test_real_feature_in_the_cell_means_no_grey_mass(self):
+        self.real_ground((0, 0))
+        self.jw.build('house', 'feature', {(0, 6, 0): 'minecraft:bricks'})
+        rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
+        self.assertEqual(rep['skipped'], 'layers-complete')
+
+    def test_ghost_plans_drop_positions_owned_by_real_builds(self):
+        self.jw.build('wall', 'feature', {(0, 5, 0): 'minecraft:bricks'})
+        reg = self.registry()
+        b = lg.cell_builds(reg, (0, 0), 'ground')
+        self.assertNotIn((0, 5, 0), b.cells)
+        self.assertIn((1, 5, 0), b.cells)
 
 
-class OnCellFocus(unittest.TestCase):
-    """Focus handoff ensures the v2 frontier (seed rings), or focus neighbours before seeds."""
+class OnCellFocus(_Tiny):
+    """Focus raise ensures the journal frontier, or the focus ring before any real work."""
 
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        root = Path(self._tmp.name)
-        self.cells = root / 'cells'
-        self.cells.mkdir()
-        self.world = root / 'world'
-        self.world.mkdir()
-        (self.world / 'registry').mkdir()
-        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
-        self._env.start()
-
-    def tearDown(self):
-        self._env.stop()
-        self._tmp.cleanup()
-
-    def _write(self, cell, stages):
-        path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
-        path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
-
-    def _registry_generated(self, cell):
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
-
-    def test_on_cell_focus_frontier_from_seeds_skips_real_ground(self):
-        focus = (0, 0)
-        self._write((1, 0), {'ground-layer': {'status': 'applied'}})
-        self._registry_generated((1, 0))
-        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
-             mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)}, clear=False):
-            os.environ.pop('LIDAR_GHOST_RING', None)
-            reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
-                                    heights_fn=lambda *b: _flat_heights(5, 1, *b))
-        cells = {tuple(r['cell']) for r in reps}
-        # Focus is inside the seed's ring-1 neighbourhood, so it is a frontier target.
-        self.assertIn(focus, cells)
-        self.assertIn((1, 0), cells)
+    def test_frontier_from_seeds_includes_focus_and_skips_real_ground(self):
+        self.real_ground((1, 0))
+        reps = lg.on_cell_focus((0, 0), ring=1, dry=True, heights_fn=self.heights)
         by = {tuple(r['cell']): r for r in reps}
-        self.assertIn('ground_skip', by[(1, 0)])
-        # A neighbour with no stages should be planned
-        empty = next(r for r in reps if 'ground' in r and tuple(r['cell']) != focus)
-        self.assertIn('ground', empty)
+        self.assertIn((0, 0), by)                                       # inside the seed's ring
+        self.assertEqual(by[(1, 0)]['ground_skip'], 'real-ground')
+        self.assertIn('ground', by[(2, 1)])
 
-    def test_on_cell_focus_before_seeds_skips_focus_cell(self):
-        focus = (0, 0)
-        with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2), \
-             mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('LIDAR_GHOST_RING', None)
-            reps = lg.on_cell_focus(focus, ring=1, dry=True, cells_dir=self.cells,
-                                    heights_fn=lambda *b: _flat_heights(5, 1, *b))
+    def test_before_seeds_rings_the_focus_and_skips_it(self):
+        reps = lg.on_cell_focus((0, 0), ring=1, dry=True, heights_fn=self.heights)
         cells = {tuple(r['cell']) for r in reps}
-        self.assertNotIn(focus, cells)
+        self.assertNotIn((0, 0), cells)
+        self.assertEqual(len(cells), 8)
+
+    def test_frontier_unions_two_seeds(self):
+        self.real_ground((0, 0))
+        self.real_ground((3, 0))
+        targets = self.registry().frontier(1)
+        self.assertTrue({(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)} <= targets)
 
     def test_ring_from_env(self):
         with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '2'}):
             self.assertEqual(lg.ring_from_env(), 2)
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('LIDAR_GHOST_RING', None)
-            self.assertEqual(lg.ring_from_env(), lg.DEFAULT_RING)
+        os.environ.pop('LIDAR_GHOST_RING', None)
+        self.assertEqual(lg.ring_from_env(), lg.DEFAULT_RING)
 
 
-class CliDryRun(unittest.TestCase):
+class CliDryRun(_Tiny):
     """CLI plan/status with fixture heights (no server)."""
 
     def test_plan_one_cell_with_heights_json(self):
         with tempfile.TemporaryDirectory() as tmp:
-            # 2×2 cell at (0,0) when CELL=2
             fixture = Path(tmp) / 'h.json'
-            gy = [[10, 10], [10, 10]]
-            feat = [[0, 1], [2, 0]]
-            fixture.write_text(json.dumps({'ground_y': gy, 'feature': feat}))
-            with mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2):
+            fixture.write_text(json.dumps({'ground_y': [[10, 10], [10, 10]], 'feature': [[0, 1], [2, 0]]}))
+            with mock.patch('sys.stdout'):
                 code = lg.main(['plan', '--cell', '0,0', '--heights-json', str(fixture)])
             self.assertEqual(code, 0)
 
-    def test_status_json(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            cells = Path(tmp)
-            path = cells / '48_-44-STAGES.json'
-            path.write_text(json.dumps({'stages': {
-                'ghost-ground': {'status': 'applied', 'kind': 'ghost'},
-            }}))
-            with mock.patch.object(lg, 'stage_path',
-                                   lambda cell, cells_dir=None: cells / f'{cell[0]}_{cell[1]}-STAGES.json'):
-                # status uses read_stages → stage_path; patch read_stages root via cells_dir not available
-                # so patch read_stages directly
-                pass
-            with mock.patch.object(lg, 'read_stages',
-                                   lambda cell, cells_dir=None: json.loads(path.read_text())
-                                   if cell == (48, -44) else {'stages': {}}):
-                code = lg.main(['status', '--cell', '48,-44'])
-            self.assertEqual(code, 0)
-
-
-class FrontierAndSplitLayers(unittest.TestCase):
-    """V2 frontier union and independent ground vs feature needs."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        self.cells = root / 'cells'
-        self.cells.mkdir()
-        self.world = root / 'world'
-        self.world.mkdir()
-        (self.world / 'registry').mkdir()
-        self._env = mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGISTRY_ROOT': str(self.world)})
-        self._env.start()
-        self.addCleanup(self._env.stop)
-
-    def _write(self, cell, stages):
-        path = self.cells / f'{cell[0]}_{cell[1]}-STAGES.json'
-        path.write_text(json.dumps({'cell': f'{cell[0]},{cell[1]}', 'stages': stages}))
-
-    def _registry_generated(self, cell):
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(self.world).set_ground(cell_id(*cell), 'generated')
-
-    def test_frontier_unions_two_seeds(self):
-        self._write((0, 0), {'ground-layer': {'status': 'applied'}})
-        self._write((3, 0), {'trees': {'status': 'applied'}})
-        self._registry_generated((0, 0))
-        self._registry_generated((3, 0))
-        from cell_registry import RegistryStore, cell_id
-        RegistryStore(self.world).set_trees(cell_id(3, 0), True)
-        targets = set(lg.frontier_targets(ring=1, cells_dir=self.cells))
-        self.assertIn((0, 0), targets)
-        self.assertIn((3, 0), targets)
-        self.assertIn((1, 0), targets)
-        self.assertIn((2, 0), targets)
-
-    def test_real_ground_supersedes_ghost_ground_need(self):
-        cell = (5, 5)
-        self._write(cell, {
-            'ghost-ground': {'status': 'applied', 'kind': lg.KIND_GHOST},
-            'ground-layer': {'status': 'applied'},
-        })
-        self._registry_generated(cell)
-        self.assertFalse(lg.needs_ghost_ground(cell, self.cells))
-        lg.supersede_ghost_ground(cell, self.cells)
-        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, self.cells), 'superseded')
-
-    def test_mark_features_stripped_is_not_idempotent_complete(self):
-        cell = (2, 2)
-        self._write(cell, {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
-        lg.mark_ghost_features_stripped(cell, cells_dir=self.cells)
-        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_FEATURES, self.cells), 'stripped')
-        self.assertFalse(lg.ghosts_complete(cell, self.cells))
-
-    def test_mark_stripped_for_volume_touches_neighbour_cell(self):
-        from site_kit import Plan
-
-        self._write((1, 0), {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
-        self._write((2, 0), {lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST}})
-        plan = Plan('cross_cell_feature')
-        plan.set(130, 50, 0, 'minecraft:bricks')
-        plan.set(256, 50, 0, 'minecraft:bricks')
-        touched = lg.mark_ghost_features_stripped_for_volume(plan, cells_dir=self.cells)
-        self.assertEqual(set(touched), {(1, 0), (2, 0)})
-        self.assertEqual(lg.ghost_stage_status((1, 0), lg.STAGE_FEATURES, self.cells), 'stripped')
-
-
-class ReconcileHook(unittest.TestCase):
-    """Post-apply reconcile updates stages without live MCP."""
-
-    def test_ground_layer_supersedes_ghost_ground(self):
-        tmp = tempfile.TemporaryDirectory()
-        cells = Path(tmp.name)
-        cell = (0, 0)
-        path = cells / '0_0-STAGES.json'
-        path.write_text(json.dumps({'stages': {
-            lg.STAGE_GROUND: {'status': 'applied', 'kind': lg.KIND_GHOST},
-        }}))
-        from site_kit import Plan
-
-        plan = Plan('highfield_0_0_ground')
-        with mock.patch.object(lg, 'ensure_frontier', return_value={'seeds': [], 'targets': [], 'reports': []}), \
-             mock.patch.object(lg, 'plan_strip_ghost_features', return_value=[]):
-            rep = lg.reconcile_after_real_apply(plan, stage_key='ground-layer', cell=cell,
-                                                cells_dir=cells)
-        self.assertEqual(rep['ghost_ground'], 'superseded')
-        self.assertEqual(lg.ghost_stage_status(cell, lg.STAGE_GROUND, cells), 'superseded')
-        tmp.cleanup()
-
-    def test_feature_reconcile_marks_cross_cell_ghost_stages(self):
-        tmp = tempfile.TemporaryDirectory()
-        cells = Path(tmp.name)
-        for cell in ((1, 0), (2, 0)):
-            path = cells / f'{cell[0]}_{cell[1]}-STAGES.json'
-            path.write_text(json.dumps({'stages': {
-                lg.STAGE_FEATURES: {'status': 'applied', 'kind': lg.KIND_GHOST},
-            }}))
-        from site_kit import Plan
-
-        plan = Plan('feat')
-        plan.set(130, 50, 0, 'minecraft:bricks')
-        plan.set(256, 50, 0, 'minecraft:bricks')
-        with mock.patch.object(lg, 'ensure_frontier', return_value={'seeds': [], 'targets': [], 'reports': []}), \
-             mock.patch.object(lg, 'plan_strip_ghost_features', return_value=[]), \
-             mock.patch.object(lg, 'apply_strip_plans', return_value=[]):
-            rep = lg.reconcile_after_real_apply(plan, stage_key='feature-feat', cell=(2, 0),
-                                                cells_dir=cells)
-        self.assertEqual(set(map(tuple, rep['ghost_features_marked'])), {(1, 0), (2, 0)})
-        tmp.cleanup()
+    def test_status_json_reads_the_journal_views(self):
+        lg.ensure_cells(self.registry(), [(0, 0)], apply=self.jw.apply)
+        self.real_ground((1, 0))
+        with mock.patch('sys.stdout', new_callable=io.StringIO) as out:
+            code = lg.main(['status', '--cell', '0,0', '--ring', '1'])
+        self.assertEqual(code, 0)
+        rows = {tuple(r['cell']): r for r in json.loads(out.getvalue())['cells']}
+        self.assertEqual(rows[(0, 0)]['ghost_ground'], 'applied')
+        self.assertTrue(rows[(0, 0)]['ghosts_complete'])
+        self.assertTrue(rows[(1, 0)]['real_ground'])
+        self.assertFalse(rows[(1, 0)]['needs_ghost_ground'])
 
 
 class GroundLayerIgnoresGhosts(unittest.TestCase):

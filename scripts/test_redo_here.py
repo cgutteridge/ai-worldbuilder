@@ -48,17 +48,16 @@ class TestPrimaryFeature(unittest.TestCase):
             self.assertIsNone(rh.primary_feature(1, 2))
 
     def test_many_with_y_picks_owner(self):
-        with mock.patch.object(rh, 'features_covering', return_value=['a', 'b']), \
-             mock.patch.object(rh, 'owned_in', return_value={(1, 50, 2): ('b', 'minecraft:stone')}):
+        from journal_testkit import JournalWorld
+        with JournalWorld() as jw, mock.patch.object(rh, 'features_covering', return_value=['a', 'b']):
+            jw.build('b', 'feature', {(1, 50, 2): 'minecraft:stone'})
             self.assertEqual(rh.primary_feature(1, 2, y=50), 'b')
 
     def test_many_with_y_picks_nearest_in_column(self):
-        owned = {
-            (1, 48, 2): ('a', 'minecraft:stone'),
-            (1, 60, 2): ('b', 'minecraft:bricks'),
-        }
-        with mock.patch.object(rh, 'features_covering', return_value=['a', 'b']), \
-             mock.patch.object(rh, 'owned_in', return_value=owned):
+        from journal_testkit import JournalWorld
+        with JournalWorld() as jw, mock.patch.object(rh, 'features_covering', return_value=['a', 'b']):
+            jw.build('a', 'feature', {(1, 48, 2): 'minecraft:stone'})
+            jw.build('b', 'feature', {(1, 60, 2): 'minecraft:bricks'})
             self.assertEqual(rh.primary_feature(1, 2, y=58), 'b')
 
 

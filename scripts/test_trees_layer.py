@@ -78,7 +78,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: cover(1.0, 1.0)), \
                 mock.patch.object(tl, 'surface_y', surface), \
-                mock.patch.object(tl, 'built_cells', lambda exclude=None: []), \
+                mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
                 mock.patch.dict(sys.modules, {'osm_footprints': osm}):
             return tl.plan_cell(CELL, plan, FakeWorld())[1]
@@ -108,7 +108,7 @@ class TestOverhang(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', lambda g: [crown]), \
                 mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, 'grass_block')), \
-                mock.patch.object(tl, 'built_cells', lambda exclude=None: []), \
+                mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: masked or {}), \
                 mock.patch.dict(sys.modules, {'osm_footprints': osm}):
             placed, rep = tl.plan_cell(CELL, plan, world)
@@ -191,7 +191,7 @@ class TestExtraCrowns(unittest.TestCase):
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
-                    mock.patch.object(tl, 'built_cells', lambda exclude=None: []), \
+                    mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())
@@ -228,7 +228,7 @@ class TestGoogleCrowns(unittest.TestCase):
                     mock.patch.object(tl, 'find_crowns', lambda g: list(detected)), \
                     mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
-                    mock.patch.object(tl, 'built_cells', lambda exclude=None: []), \
+                    mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())

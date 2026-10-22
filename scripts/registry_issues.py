@@ -6,8 +6,12 @@ One open issue per line::
     I-015  feature q001_university_road_42  <why>
     I-016  cell 48,-44  <why>          # whole cell
 
-``add_issue`` reopens the target (clears the matching registry flag / feature
-status). Clean rebuilds call :func:`auto_close_for_target` to archive with a date.
+``add_issue`` notes the issue in the cell journal (``Note(cell, 'issue', ref='I-014')`` on the
+target cell, or on every cell of the target feature), so the cell is not done while it is open.
+A landed rebuild of the target (``site_kit.apply``) calls :func:`close_for_build`, which archives
+the line with a date and journals ``Note(cell, 'close', ref=...)``. An issue closed by hand in
+ISSUES.txt also needs ``cell_registry.py note <cell> --kind close --ref I-014``
+(``cell_registry.py verify`` lists the difference).
 """
 from __future__ import annotations
 
@@ -165,15 +169,17 @@ def add_issue(
     feature_id: str | None = None,
     root: Path | None = None,
     reopen: bool = True,
+    registry=None,
 ) -> Issue:
-    """Append an issue and optionally reopen the registry target.
+    """Append an issue and note it on the target cells in the cell journal.
 
     @param reason: why the snag exists
     @param cell: cell target
     @param layer: ground|trees|decor or None for whole cell
     @param feature_id: feature target
     @param root: world root
-    @param reopen: clear matching registry flags
+    @param reopen: journal the issue note (the cell is not done while it is open)
+    @param registry: ``CellRegistry`` (default: the view registry of ``root``)
     @returns: the new Issue
     @raises ValueError: on bad target
     """
@@ -198,39 +204,42 @@ def add_issue(
         fh.write(line + '\n')
     issue = parse_issues(line)[0]
     if reopen:
-        _reopen_target(issue, root=root)
+        _note_issue(issue, 'issue', _registry(registry, root))
     return issue
 
 
-def _reopen_target(issue: Issue, *, root: Path | None = None) -> None:
-    from cell_registry import RegistryStore, cell_id
+def issue_ref(issue: Issue) -> str:
+    """Journal note ref of an issue (``I-014``).
 
-    store = RegistryStore(root)
-    if issue.kind == 'feature' and issue.feature_id:
-        if store.feature(issue.feature_id):
-            store.set_feature_status(issue.feature_id, 'in-progress')
-        return
-    assert issue.cell is not None
-    cid = cell_id(*issue.cell)
-    if issue.layer == 'ground' or issue.layer is None:
-        store.set_ground(cid, 'none')
-    if issue.layer in ('trees', None):
-        c = store.cell(cid)
-        if c.get('ground') == 'generated' or issue.layer == 'trees':
-            try:
-                store.set_trees(cid, False)
-            except Exception:
-                pass
-    if issue.layer in ('decor', None):
-        try:
-            store.set_decor(cid, False)
-        except Exception:
-            pass
-    if issue.layer is None:
-        # Whole-cell snag: reopen every registered feature in the cell too.
-        for feat in store.features_in_cell(cid):
-            if feat.get('status') == 'built':
-                store.set_feature_status(feat['id'], 'in-progress')
+    @param issue: issue
+    @returns: ref string
+    """
+    return f'I-{issue.id:03d}'
+
+
+def _registry(registry, root: Path | None):
+    if registry is not None:
+        return registry
+    from cell_registry import view_registry
+    return view_registry(root)
+
+
+def issue_cells(issue: Issue, registry) -> list[tuple[int, int]]:
+    """Cells an issue is noted on: its cell, or every cell the feature touches.
+
+    @param issue: issue
+    @param registry: ``CellRegistry``
+    @returns: cells (empty for an unknown feature)
+    """
+    if issue.kind == 'cell':
+        return [issue.cell]
+    return sorted(c for c, v in registry.view().items() if any(f.id == issue.feature_id for f in v.features))
+
+
+def _note_issue(issue: Issue, kind: str, registry) -> None:
+    from cell_journal import Note
+    for cell in issue_cells(issue, registry):
+        registry.change(Note(tuple(cell), kind, issue.reason if kind == 'issue' else '', issue_ref(issue)))
 
 
 def remove_open_issue(num: int, *, root: Path | None = None) -> Issue | None:
@@ -276,13 +285,15 @@ def auto_close_for_target(
     layer: str | None = None,
     feature_id: str | None = None,
     root: Path | None = None,
+    registry=None,
 ) -> list[Issue]:
-    """Close open issues whose target matches a clean rebuild.
+    """Close open issues whose target matches a clean rebuild (archive + journal ``close`` note).
 
     @param cell: cell that was rebuilt
     @param layer: layer cleaned (or None for whole-cell / feature)
     @param feature_id: feature that reached built
     @param root: world root
+    @param registry: ``CellRegistry`` for the close notes (default: view registry of ``root``)
     @returns: closed issues
     """
     closed: list[Issue] = []
@@ -299,8 +310,25 @@ def auto_close_for_target(
             continue
         remove_open_issue(issue.id, root=root)
         archive_issue(issue, root=root)
+        _note_issue(issue, 'close', _registry(registry, root))
         closed.append(issue)
     return closed
+
+
+def close_for_build(registry, pass_: str, cell: tuple[int, int], plan: str) -> list[Issue]:
+    """Auto-close issues after a landed apply (layer pass of ``cell``, or feature ``plan``).
+
+    @param registry: ``CellRegistry`` (its root is the world root)
+    @param pass_: journal pass of the landed build
+    @param cell: primary cell
+    @param plan: plan name
+    @returns: closed issues
+    """
+    if pass_ in ('ground', 'trees', 'decor'):
+        return auto_close_for_target(cell=tuple(cell), layer=pass_, root=registry.root, registry=registry)
+    if pass_ == 'feature':
+        return auto_close_for_target(feature_id=plan, root=registry.root, registry=registry)
+    return []
 
 
 def next_open_issue(root: Path | None = None) -> Issue | None:

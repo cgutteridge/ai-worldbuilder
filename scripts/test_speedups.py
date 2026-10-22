@@ -63,30 +63,17 @@ class TestPassMaskDecode(unittest.TestCase):
             pm.decode_runs(['minecraft:air'], [[0, 2]], [0, 0, 0, 1, 1, 1])
 
 
-class TestTouchedMemo(unittest.TestCase):
-    def test_memo_follows_file_changes_and_hands_out_copies(self):
-        import json
-        import tempfile
-        from pathlib import Path
-
-        import touched_cells as tc
-        with tempfile.TemporaryDirectory() as d:
-            old_out, old_cache = tc.OUT, tc.TOUCH_CACHE
-            tc.OUT, tc.TOUCH_CACHE = Path(d), Path(d) / 'cache.json'
-            try:
-                f = Path(d) / 'demo_build-cells.json'
-                f.write_text(json.dumps({'1,50,2': 'minecraft:stone'}))
-                first = tc.touched_by_build()
-                self.assertEqual(first['demo_build'], {(1, 2)})
-                first['demo_build'].add((9, 9))                              # a caller scribbling on its copy
-                self.assertEqual(tc.touched_by_build()['demo_build'], {(1, 2)})
-                f.write_text(json.dumps({'1,50,2': 'minecraft:stone', '3,50,4': 'minecraft:stone'}))
-                self.assertEqual(tc.touched_by_build()['demo_build'], {(1, 2), (3, 4)})   # changed file, fresh answer
-                self.assertEqual(coverage.touched_by_build()['demo_build'], {(1, 2), (3, 4)})  # coverage re-export
-            finally:
-                tc.OUT, tc.TOUCH_CACHE = old_out, old_cache
-                tc._TOUCHED_MEMO.clear()
-
+class TestTouchedColumns(unittest.TestCase):
+    def test_touched_follows_the_journal_and_skips_ghosts_and_markers(self):
+        from journal_testkit import JournalWorld
+        with JournalWorld() as jw:
+            jw.build('demo_build', 'feature', {(1, 50, 2): 'minecraft:stone'})
+            jw.build('cell_marker_0_0', 'other', {(5, 90, 5): 'minecraft:black_wool'})
+            jw.build('ghost_0_0_ground', 'ghost-ground', {(7, 40, 7): 'minecraft:gray_concrete'}, cell=(0, 0))
+            first = coverage.touched_by_build()
+            self.assertEqual(first, {'demo_build': {(1, 2)}})
+            jw.build('demo_build', 'feature', {(1, 50, 2): 'minecraft:stone', (3, 50, 4): 'minecraft:stone'})
+            self.assertEqual(coverage.touched_by_build()['demo_build'], {(1, 2), (3, 4)})   # latest plan wins
 
 if __name__ == '__main__':
     unittest.main()

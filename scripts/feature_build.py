@@ -6,7 +6,7 @@ Use for odd masses (SU, halls, sheds, campus lumps) — not for houses/terraces
 
 A run is a JSON spec in ``site/builds/<name>.json``:
 
-  name           plan name (also verification/site/<name>-cells.json)
+  name           plan name (also the cell journal plan / feature id)
   notes          provenance (free text, never read by code)
   modifies       earlier builds this one may overwrite (default [])
   ways           {"<map way id>": "<label>"} footprints to build
@@ -61,20 +61,6 @@ N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})
-
-
-def _ghost_feature_clash_ok(build: str) -> bool:
-    """True when an earlier owner is lidar ghost features (real shell may overwrite).
-
-    @param build: verification/site build name
-    @returns: whether the clash filter should keep the planned cell
-    """
-    try:
-        import lidar_ghost as lg
-        return lg.is_ghost_feature_owner(build)
-    except ImportError:
-        name = str(build)
-        return name.startswith('ghost_') and name.endswith('_features')
 
 
 def pane(axis: str) -> str:
@@ -864,10 +850,10 @@ class Build:
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
-        from site_kit import built_cells
-        owned = built_cells(exclude={self.name}, within=self.p.cells)
-        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep
-                  and not _ghost_feature_clash_ok(owned[q][0])]:
+        # cells of earlier real builds are theirs (ghost owners yield: the shell overwrites them)
+        from cell_registry import view_registry
+        owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
+        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
         for f in self.features:
             print(f.no, 'b', f.b, 'storeys', f.storeys, 'cells', len(f.cells),
@@ -926,14 +912,7 @@ def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
-    modifies = set(spec['modifies'])
-    if do_apply:
-        try:
-            import lidar_ghost as lg
-            modifies |= lg.ghost_modifies_for_plan(plan)
-        except ImportError:
-            pass
-    apply(plan, dry=not do_apply, modifies=tuple(modifies))
+    apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']))      # ghost owners yield in the journal
     return plan
 
 

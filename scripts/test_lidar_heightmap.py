@@ -153,27 +153,19 @@ class AuditTest(unittest.TestCase):
 class ResetToBaseTest(unittest.TestCase):
     def test_restores_from_base_not_air_when_followup_cleared(self):
         """Follow-up air over a base roof must put the roof back, not leave a hole."""
-        import tempfile
-        from pathlib import Path
         import site_kit
+        from journal_testkit import JournalWorld
 
-        with tempfile.TemporaryDirectory() as d:
-            out = Path(d)
-            old = site_kit.OUT
-            site_kit.OUT = out
-            try:
-                (out / 'feat-cells.json').write_text(
-                    '{"10,50,20": "minecraft:light_gray_concrete", "10,51,20": "minecraft:smooth_stone_slab[type=bottom]"}')
-                (out / 'feat-lower-cells.json').write_text(
-                    '{"10,50,20": "minecraft:air", "10,51,20": "minecraft:air", "11,50,20": "minecraft:stone"}')
-                plan = site_kit.reset_to_base('feat', ['feat-lower'])
-                self.assertEqual(plan.name, 'feat-reset')
-                self.assertEqual(plan.cells[(10, 50, 20)], 'minecraft:light_gray_concrete')
-                self.assertEqual(plan.cells[(10, 51, 20)], 'minecraft:smooth_stone_slab[type=bottom]')
-                self.assertEqual(plan.cells[(11, 50, 20)], 'minecraft:air')  # not in base → air
-            finally:
-                site_kit.OUT = old
-
+        with JournalWorld() as jw:
+            jw.build('feat', 'feature', {(10, 50, 20): 'minecraft:light_gray_concrete',
+                                         (10, 51, 20): 'minecraft:smooth_stone_slab[type=bottom]'})
+            jw.build('feat-lower', 'feature', {(10, 50, 20): 'minecraft:air', (10, 51, 20): 'minecraft:air',
+                                               (11, 50, 20): 'minecraft:stone'}, modifies=('feat',))
+            plan = site_kit.reset_to_base('feat', ['feat-lower'])
+        self.assertEqual(plan.name, 'feat-reset')
+        self.assertEqual(plan.cells[(10, 50, 20)], 'minecraft:light_gray_concrete')
+        self.assertEqual(plan.cells[(10, 51, 20)], 'minecraft:smooth_stone_slab[type=bottom]')
+        self.assertEqual(plan.cells[(11, 50, 20)], 'minecraft:air')  # not in base → air
 
 if __name__ == '__main__':
     unittest.main()

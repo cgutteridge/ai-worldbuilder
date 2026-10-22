@@ -440,13 +440,15 @@ def _runs(seq):
 
 
 def check(args):
-    from site_kit import OUT, built_cells
+    from cell_registry import latest_cells, view_registry
     if args.all:
-        cells = {q: st for q, (_n, st) in built_cells().items()}
-        owner = {q: n for q, (n, _st) in built_cells().items()}
+        merged = {q: v for q, v in latest_cells().items() if v[1].split('[')[0] not in ('minecraft:air', 'minecraft:light')}
+        cells = {q: st for q, (_n, st) in merged.items()}
+        owner = {q: n for q, (n, _st) in merged.items()}
     else:
-        f = OUT / f'{args.build}-cells.json'
-        cells = {tuple(int(v) for v in k.split(',')): st for k, st in json.loads(f.read_text()).items()}
+        cells = view_registry().recorded(args.build)
+        if cells is None:
+            raise SystemExit(f'no recorded build {args.build!r} in the cell journal')
         owner = {q: args.build for q in cells}
     rep = guard(cells)
     by = {}
