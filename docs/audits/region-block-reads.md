@@ -178,6 +178,58 @@ Shared contract suite parametrised over `MemoryBlocks` and `LiveBlocks(fixture_r
 ## Follow-ups
 
 * F1: `site_kit` and `logout_gate` import `region_backup.mcp_world_reachable`; relocate before T40.
-* F2: MCP read tool unverified (server down). Needs a human-run `tools/list`.
+* F2: **answered 2026-10-22** (task #49 live bakeoff world, MCP `:8765`). See §7 below. Follow-up: task #56 LiveBlocks MCP backend.
 * F3: after T38/T40, `config/world.json` keys `pristine_region_path` and `ghost_region_path` and
   the pristine clone under `backups/` become unused; remove with those tasks.
+
+## 7. Live MCP block-read probe (task #49, bakeoff save)
+
+Server: `minecraft_world` MOTD `cgutteridge - Bakeoff`, mod 1.1.0, paced at **60 requests/minute**
+(`mc_paced.Paced` default interval 1.1 s). Region identity checked with
+`AI_WORLDBUILDER_REGION=…/saves/bakeoff/…/region`.
+
+### Tools (schemas from `python3 scripts/mcp.py tools/list`)
+
+| tool | role | limits |
+| --- | --- | --- |
+| `block_get_state` | one position → id, properties, light, hardness, block-entity flag | 1 block / call |
+| `block_scan_region` | box → list of matching blocks (id + properties + light) | **volume ≤ 65 536**; **results ≤ `limit`** (default **1024**) |
+| `block_scan_summary` | box → non-air count, bounds, material histogram | volume ≤ **1 048 576**; no per-block states |
+| `block_get_top_y` | one (x,z) column heightmap Y | 1 column / call |
+| `block_render_region` | PNG render (review eyes, not state) | view/step/scale; not for readback |
+| `block_fill_*` / `structure_*` | writes / structure I/O | unchanged; not read tools |
+
+`block_scan_region` returns verbose text (one YAML-ish record per block). There is **no**
+palette + index encoding. Without `match_block_id`, every non-filtered block in the box is listed
+until `limit`.
+
+### Timing (cell 47,-44: xz 6016..6143, −5632..−5505; wall time includes pace wait)
+
+| call | volume | limit | wall |
+| --- | --- | --- | --- |
+| `block_scan_region` 128×1×128 at y=50 | 16 384 | 1024 | **~0.05 s** (truncated to 1024 hits; ~178 KB text) |
+| `block_scan_region` 128×4×128 (y 48..51) | 65 536 | 65536 | **~1.5 s** (full box; ~11 MB text) |
+| `block_scan_summary` 128×64×128 (y 0..63) | 1 048 576 | n/a | **~1.2 s** (histogram only) |
+| `block_get_state` one block | 1 | n/a | **~1.1 s** (paced) |
+
+A full cell column set at ~100 Y would need ~**25** `block_scan_region` tiles (65 536 each) →
+~**25–30 s** at the shared 60/min pace, plus tens of MB of text to parse. Exact within each tile;
+not sparse (AABB of a plan still returns every block in the box).
+
+### Decision gate (ADR 004 “Block read path”)
+
+Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps, so a later
+`LiveBlocks` MCP backend is viable (file task #56). Keep today’s region-file `LiveBlocks` until
+that lands: payload size, tiling, and lack of sparse/palette output still make the region reader
+the cheaper default for planners and full-cell readback. Per-position `block_get_state` stays
+rejected on speed alone.
+
+### Reconcile live check (same sitting)
+
+Throwaway `other` plan `reconcile_live_t49` (4×4 orange_concrete at 6128..6131, 50, −5546..−5543
+in cell 47,-44): (1) dry `reconcile` / `reconcile 47,-44` exit 0 clean; (2) break one block to
+stone → dry exit 1, `foreign` want/got sample, journal unchanged, lock unchanged; (3)
+`reconcile 47,-44 --fix` re-fills, exit 0, rerun clean, journal `repair` line; (4) crash
+`Ticket.finish` mid-apply → `site_recover status` + `reconcile` show in-flight; after lock
+release, `recover 47,-44 --apply` lands; (5) `--fix` with another owner’s lock → SystemExit
+(“World lock not held by …”). Cleaned with `CellRegistry.reset()` + air fill of the patch.
