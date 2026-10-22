@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 57,
+  "nextTaskId": 61,
   "tasks": [
     {
       "id": 56,
@@ -10,7 +10,45 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md \u00a77). block_scan_region is bulk and exact within volume\u226465536 and results\u2264limit (default 1024); ~1.5s for a full 128\u00d74\u00d7128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
+      "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md §7). block_scan_region is bulk and exact within volume≤65536 and results≤limit (default 1024); ~1.5s for a full 128×4×128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
+    },
+    {
+      "id": 57,
+      "title": "Make world and save impossible to mismatch: drop the region override and the silent default world",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From bake-off R-006 retro. `lidar_ghost apply` with AI_WORLDBUILDER_REGION pointing at the bakeoff save, while AI_WORLDBUILDER_WORLD_ROOT defaulted to southampton-build, ran 33 builds into the bakeoff save and wrote the journal into southampton-build/registry: region and registry were resolved independently, and the existing gate only compares the region to the MCP-open save. Decided (grill): (1) Remove AI_WORLDBUILDER_REGION entirely (site_kit.REGION_ENV / resolve_region env branch, block_store._configured_regions docstrings, test_site_kit_region.py env tests, docs/audits/region-block-reads.md mentions); the save always comes from the active world's config/world.json (worlds/bakeoff now has its own). (2) Remove the silent default in active_world.py (_DEFAULT_WORLD = southampton-build): if AI_WORLDBUILDER_WORLD_ROOT is unset, refuse with a message saying to set it; update AGENTS.md start step and any script/test that relies on the default (tests set the env or patch). (3) Reword the 'MCP is serving X' refusal (site_kit.py ~L393) to name AI_WORLDBUILDER_WORLD_ROOT. World repair tools (cell_registry.py reconcile, site_recover.py, site_cleanup.py) stay available in any world, they just need the variable set. No stray journal remains in southampton-build/registry (checked 2026-10-22)."
+    },
+    {
+      "id": 58,
+      "title": "Bake-off open and repair refuse outside the bake-off world; instructions prefix every command with the world",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "From R-006 retro. In scripts/model_bakeoff.py, the CLI `open` and `repair` commands (NOT open_round(), which tests call with temp roots) check active_world.gameworld_id() against a `world` key added to model-bakeoffs/config.json (value 'bakeoff'; worlds/bakeoff) and refuse otherwise, printing the exact prefix `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`. Agent shells do not keep exports between calls, so SKILL.md and PROTOCOL.md must say to prefix every bake-off command with that variable (not a one-off `export`). Does not restrict world repair tools. Pairs with the no-default-world task (#57)."
+    },
+    {
+      "id": 59,
+      "title": "Bake-off sitting steps written once in config.json; round checklist and open card generated from it",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        58
+      ],
+      "notes": "From R-006 retro. The sitting sequence is copied in SKILL.md, PROTOCOL.md, README.md, docs/model-bakeoffs.md, FAIRNESS.md and the checklist baked into each rounds/R-NNN.json, and they contradict (checklist says 'Quit Minecraft world', protocol says the world must be open for apply; both the checklist and format_sitting say 'pending task 48', which was deleted). Decided (grill): keep the steps as a list in model-bakeoffs/config.json; open_round and format_sitting render from it; the other docs link to it instead of copying. Leave existing rounds R-004..R-006 as historical records. Blocked by #58: both edit model_bakeoff.py and SKILL.md."
+    },
+    {
+      "id": 60,
+      "title": "lidar_ghost apply: per-cell progress, final summary, clean exit on kill",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "From R-006 retro. A multi-minute apply printed nothing until the end, was backgrounded, and when killed (exit 144) it was unclear whether it had completed. Decided (grill): print one progress line per cell to stderr, flushed (stdout stays the final JSON); end with a summary counting builds by journal status (landed / mismatched / abandoned / skipped); install a SIGTERM handler (SIGINT already raises) so the process exits cleanly and names any cell still in flight with `cell_registry.py reconcile`. Do NOT release the site lock on kill: apply never claims it, `site_lock.py claim` does, and it spans the whole sitting. Code: providers/ukdefra-lidar/manage/lidar_ghost.py (ensure_cells, main)."
     }
   ]
 }
