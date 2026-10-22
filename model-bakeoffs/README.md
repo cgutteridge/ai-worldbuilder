@@ -14,6 +14,7 @@ Protocol detail: [PROTOCOL.md](PROTOCOL.md). Short pointer from docs: [../docs/m
 | `config.json` | Cell, pack, active tiers (`low`+`mid` only for now), interview axes |
 | `packs/v1/` | Frozen prompt brief |
 | `rounds/R-NNN.json` | **One sitting** — self-contained (tool, model, brief path, cell, checklist, interview, grades) |
+| `MACRO-RESULTS.md` | Archived cold scores for R-001–R-003 (round JSON removed) |
 | `checks/feature-selection/` | Paper-only feature pick + bounds (Composer smoke; not the ladder) |
 
 `high` models and anything with `bulk_ok: false` are never scheduled (too dear for bulk).
