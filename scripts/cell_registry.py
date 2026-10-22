@@ -307,7 +307,7 @@ def format_drift(drift, *, fix: bool = False) -> str:
         lines.append(f'upgraded {drift.upgraded} mismatched entr{"y" if drift.upgraded == 1 else "ies"} to landed')
     if fix:
         lines.append(f'repaired {len(drift.items) - len(left)} of {len(drift.items)} finding(s)'
-                     + ('; signs and entities are not journalled, so they are not re-written' if drift.items else ''))
+                     + ('; journalled signs/entities are re-written with the blocks' if drift.items else ''))
     else:
         lines.append(f'{len(drift.items)} finding(s); dry run, nothing changed. Re-run with --fix to repair over MCP')
     return '\n'.join(lines)

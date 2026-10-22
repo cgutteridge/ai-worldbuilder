@@ -538,9 +538,9 @@ def _is_ghost_features_owner(name: str) -> bool:
 
 # --- the cell journal (ADR 004) ----------------------------------------------
 # Plan -> Build: Build(plan.name, pass, plan.cells, modifies, strict, mask summary, cell,
-# payload=plan, meta={structure, pending_mask, caller meta}). The journal records block cells
-# only; signs and entities ride on Build.payload and are written by McpWriter, so
-# CellRegistry.reconcile re-commits block cells only (never signs or entities).
+# payload=plan, meta={structure, pending_mask, caller meta}). Signs and entities on the Plan are
+# journalled on the begin line (and on Writes) so reconcile/recover can rewrite them; block cells
+# stay in the plan blob.
 STAGE_PASS = {
     'ground-layer': 'ground', 'ground': 'ground', 'trees': 'trees', 'decor': 'decor', 'other': 'other',
 }
@@ -586,9 +586,9 @@ class McpWriter:
     """``apply`` callable for :class:`cell_journal.CellRegistry`: writes ``Writes.cells`` over MCP.
 
     Boxes are merged with :meth:`Plan.boxes` (air first, attachables last) and sent with
-    ``block_fill_batch`` (<= 8000 per call). When the intent's payload is a :class:`Plan`, its
-    signs and entities are written too (the journal never records them). The player is hopped
-    over far builds so their chunks load (:func:`_bring_player`).
+    ``block_fill_batch`` (<= 8000 per call). Signs and entities come from ``Writes`` (journalled
+    on begin) or, for a live apply, from a :class:`Plan` payload. The player is hopped over far
+    builds so their chunks load (:func:`_bring_player`).
 
     @param m: MCP client (default: a new ``mc_paced.Paced``)
     """
@@ -619,12 +619,14 @@ class McpWriter:
                 {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
             self.fill_results.append(res)
             print('fill:', res.replace('\n', '; ')[:300])
-        for pos, lines, col, glow in plan.signs if plan is payload else ():
+        signs = writes.signs or (plan.signs if plan is payload else ())
+        entities = writes.entities or (plan.entities if plan is payload else ())
+        for pos, lines, col, glow in signs:
             nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
                    f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
                    ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
             m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
-        for kind, pos, snbt in plan.entities if plan is payload else ():
+        for kind, pos, snbt in entities:
             args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
             if snbt:
                 args['nbt'] = snbt
@@ -834,8 +836,18 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 'with the vector-map rotation). Real offset roofs (evidence in hand): set '
                 'plan.roof_jog_ok = "<reason + evidence id>".')
         print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
-    # clash report from the journal's ownership: ghost owners yield (never clash)
+    # in-flight (begun) first: point at site_recover, not the ownership Clash wording (#54)
+    import cellmath
     view = cell_registry.view_registry()
+    touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
+    if cell is not None:
+        touched.add(tuple(cell))
+    flight = [f for c in touched for f in view.cell(c).in_flight]
+    if flight:
+        plans = ', '.join(sorted({f.plan for f in flight}))
+        raise SystemExit(f'{plan.name}: cells are in an aborted apply ({plans}); '
+                         'python scripts/site_recover.py status')
+    # clash report from the journal's ownership: ghost owners yield (never clash); begun excluded
     owned = view.owned(plan.cells, exclude=set(modifies) | {plan.name}, real_only=True)
     clash = {str(q): [owned[q][0], owned[q][1], st] for q, st in plan.cells.items()
              if q in owned and owned[q][1] != st}

@@ -4,42 +4,6 @@
   "nextTaskId": 57,
   "tasks": [
     {
-      "id": 52,
-      "title": "Journal signs and entities so reconcile/recover can restore them",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Code review #50 (range 37e905e^..HEAD). site_kit.apply writes signs/entities via McpWriter after block fills, but CellRegistry only journals block cells (site_kit.py comment ~542-543). reconcile --fix re-commits blocks only; site_recover land/rollback cannot recreate sign text or summoned entities. ADR 004 'one journal' for applies that use Plan.sign/entity is incomplete until these are recorded (or explicitly out of scope with a loud refuse when a plan has them)."
-    },
-    {
-      "id": 53,
-      "title": "After undo rollback, clear journal undone so views match the world",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Code review #50. Known quirk from #42 Cut site_kit.apply over to the journal: when recover rolls back an apply that followed a landed Undo (restoring the pre-undo world via structure backup), the journal still marks the original pass undone. Ownership/views then disagree with the restored blocks. Need a journal finish/repair path that un-voids the undone targets when that rollback path runs (or refuse undo+structure combinations that cannot stay consistent)."
-    },
-    {
-      "id": 54,
-      "title": "Refuse apply onto aborted journal entry with a clear in-flight message",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Code review #50. Known quirk from #42: apply onto an aborted (begun, unfinished) entry is refused by the ownership Clash check rather than InFlight / a begun-entry message, so agents get 'cells belong to earlier builds' instead of being pointed at site_recover.py. Align Clash vs InFlight ordering (or treat begun owners as in-flight) so the recovery path is obvious."
-    },
-    {
-      "id": 55,
-      "title": "site_recover soft-fails on broad Exception; tighten to loud typed errors",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Code review #50 vs ADR 004 loud-errors. site_recover.recover catches bare Exception around reconcile/flush and around structure restore, sets action=unsure/failed, prints, and returns without re-raising (site_recover.py ~160 and ~227). Recovery UX wants a dry-run report, but the catch is wider than JournalError/OSError and can hide unexpected bugs. Narrow the except clauses and let unexpected errors propagate."
-    },
-    {
       "id": 56,
       "title": "Give LiveBlocks an MCP backend and drop the region-file parser",
       "status": "todo",

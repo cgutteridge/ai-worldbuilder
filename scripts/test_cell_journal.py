@@ -513,6 +513,17 @@ class TestReconcile(Base):
         self.assertEqual(self.reg.cell((0, 0)).features[0].status, 'built')
         self.assertEqual(self.reg.cell((0, 0)).in_flight, ())
 
+    def test_in_flight_with_attachments_rewrites_even_when_blocks_match(self):
+        sign = (P(0, 0, 0, 65), ['Hi', '', '', ''], 'black', False)
+        t = self.reg.begin(Build('house', 'feature', plan(0, 0, STONE), signs=(sign,)))
+        self.blocks.write_many(t.writes.cells)
+        self.blocks.flush()
+        before = len(self.applied)
+        drift = self.reg.reconcile(fix=True, apply=self.apply)
+        self.assertTrue(drift.clean)
+        self.assertEqual(len(self.applied), before + 1)
+        self.assertEqual(self.applied[-1].signs, (sign,))
+
     def test_in_flight_entry_with_blocks_missing_is_recommitted(self):
         with self.assertRaises(RuntimeError):
             self.reg.change(Build('house', 'feature', plan(0, 0, STONE)), lambda w: _raise())
@@ -621,6 +632,79 @@ class TestCutOverAdditions(Base):
         self.assertIn('issue I-001', v.left)
         self.reg.change(Note((0, 0), 'close', ref='I-001'))
         self.assertTrue(self.reg.cell((0, 0)).done)
+
+
+class TestRevive(Base):
+    """Recover that restores a pre-undo world must clear journal undone (#53)."""
+
+    def test_revive_clears_undone_and_cancels_the_undo(self):
+        self.build('house', 'feature', plan(0, 0, STONE))
+        self.reg.change(Undo('house'), self.apply)
+        (build, undo) = self.reg.entries()
+        self.assertTrue(build.undone)
+        self.reg.revive(undo.targets, undo_seq=undo.seq)
+        fresh = self.registry()
+        (build2, undo2) = fresh.entries()
+        self.assertFalse(build2.undone)
+        self.assertTrue(undo2.undone)
+        self.assertEqual(fresh.cell((0, 0)).features[0].status, 'built')
+
+
+class TestAttachments(Base):
+    """Signs and entities ride on the journal so reconcile/recover can rewrite them (#52)."""
+
+    SIGN = (P(0, 0, 0, 65), ['Hi', '', '', ''], 'black', False)
+    ENTITY = ('minecraft:armor_stand', P(0, 0, 1, 65), '{Invisible:1b}')
+
+    def test_begin_journals_signs_and_entities_onto_writes(self):
+        ticket = self.reg.begin(Build(
+            'house', 'feature', plan(0, 0, STONE),
+            signs=(self.SIGN,), entities=(self.ENTITY,)))
+        self.assertEqual(ticket.writes.signs, (self.SIGN,))
+        self.assertEqual(ticket.writes.entities, (self.ENTITY,))
+        begin = self.lines()[0]
+        self.assertEqual(begin['signs'], [[list(self.SIGN[0]), self.SIGN[1], 'black', False]])
+        self.assertEqual(begin['entities'], [[self.ENTITY[0], list(self.ENTITY[1]), self.ENTITY[2]]])
+
+    def test_payload_plan_attachments_are_picked_up(self):
+        sign, entity = self.SIGN, self.ENTITY
+
+        class FakePlan:
+            signs = [sign]
+            entities = [entity]
+
+        ticket = self.reg.begin(Build(
+            'house', 'feature', plan(0, 0, STONE), payload=FakePlan()))
+        self.assertEqual(ticket.writes.signs, (self.SIGN,))
+        self.assertEqual(ticket.writes.entities, (self.ENTITY,))
+
+    def test_ticket_and_reconcile_fix_replay_attachments(self):
+        def boom(_w):
+            raise RuntimeError('mcp died')
+
+        with self.assertRaises(RuntimeError):
+            self.reg.change(
+                Build('house', 'feature', plan(0, 0, STONE),
+                      signs=(self.SIGN,), entities=(self.ENTITY,)),
+                boom)
+        fresh = self.registry()
+        t = fresh.ticket(fresh.entries()[0].seq)
+        self.assertEqual(t.writes.signs, (self.SIGN,))
+        self.assertEqual(t.writes.entities, (self.ENTITY,))
+        # in-flight fix with missing blocks rewrites the full plan (signs + entities)
+        before = len(self.applied)
+        drift = fresh.reconcile(fix=True, apply=self.apply)
+        self.assertTrue(drift.clean)
+        self.assertEqual(self.applied[before].signs, (self.SIGN,))
+        self.assertEqual(self.applied[before].entities, (self.ENTITY,))
+        # partial cell repair keeps signs but skips entities (avoid re-summon duplicates)
+        self.blocks.write(P(0, 0), AIR)
+        self.blocks.flush()
+        before = len(self.applied)
+        drift = fresh.reconcile(fix=True, apply=self.apply)
+        self.assertTrue(drift.clean)
+        self.assertEqual(self.applied[before].signs, (self.SIGN,))
+        self.assertEqual(self.applied[before].entities, ())
 
 if __name__ == '__main__':
     unittest.main()

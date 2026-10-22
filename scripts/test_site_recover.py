@@ -130,6 +130,14 @@ class TestApplyRecordsInTheJournal(Base):
         with self.assertRaises(SystemExit) as ctx:
             self.run_apply(make_plan('q'))
         self.assertIn('site_recover.py status', str(ctx.exception))
+        # different block states must still be InFlight (not the ownership Clash wording)
+        other = site_kit.Plan('bricks')
+        for (x, y, z), _st in make_plan().cells.items():
+            other.set(x, y, z, 'minecraft:bricks')
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_apply(other)
+        self.assertIn('site_recover.py status', str(ctx.exception))
+        self.assertNotIn('belong to earlier builds', str(ctx.exception))
 
     def test_trees_before_ground_are_refused_loudly(self):
         with self.assertRaises(SystemExit) as ctx:
@@ -148,7 +156,7 @@ class TestApplyRecordsInTheJournal(Base):
         self.assertEqual(list(clashes.values()), [['house', 'minecraft:stone', 'minecraft:bricks']])
         self.run_apply(other, modifies=('house',))                        # modifies lifts the clash
 
-    def test_signs_and_entities_are_written_not_journalled(self):
+    def test_signs_and_entities_are_written_and_journalled(self):
         plan = make_plan()
         plan.sign((X0, 62, Z0), ['Hi'])
         plan.entity('minecraft:armor_stand', (X0, 62, Z0))
@@ -156,6 +164,12 @@ class TestApplyRecordsInTheJournal(Base):
         self.assertIn('block_entity_set_nbt', FakePaced.calls)
         self.assertIn('entity_summon', FakePaced.calls)
         self.assertEqual(set(self.reg().recorded('p')), set(plan.cells))
+        begin = next(l for l in (self.t / 'registry' / 'journal.jsonl').read_text().splitlines()
+                     if '"op": "begin"' in l or '"op":"begin"' in l)
+        import json as _json
+        line = _json.loads(begin)
+        self.assertEqual(line['signs'][0][1][0], 'Hi')
+        self.assertEqual(line['entities'][0][0], 'minecraft:armor_stand')
 
     def test_unknown_stage_is_refused(self):
         with self.assertRaises(ValueError):
@@ -319,10 +333,14 @@ class TestRecover(Aborted):
         self.abort(fill_limit=1)
         self.set_lock('alice', age_min=200)
 
-        def boom():
-            raise RuntimeError('no server')
-        res = sr.recover(CELL, apply=True, flush=boom, loader=lambda n, o: self.fail('must not load'))
+        def boom_os():
+            raise OSError('no server')
+        res = sr.recover(CELL, apply=True, flush=boom_os, loader=lambda n, o: self.fail('must not load'))
         self.assertEqual(res['action'], 'unsure')
+        # unexpected errors stay loud (#55); only typed flush failures soft-fail
+        with self.assertRaises(RuntimeError):
+            sr.recover(CELL, apply=True, flush=lambda: (_ for _ in ()).throw(RuntimeError('bug')),
+                       loader=lambda n, o: self.fail('must not load'))
         for blob in (self.t / 'registry' / 'blobs').glob('*.json'):
             blob.unlink()
         res = self.recover(loader=lambda n, o: self.fail('must not load'))
@@ -430,6 +448,7 @@ class TestUndo(Aborted):
         self.assertEqual({self.blocks.read(p) for p in plan.cells}, {'minecraft:oak_leaves'})   # not left bare
         self.assertNotEqual(dict(self.blocks._blocks), bare)
         self.assertTrue(self.mpath.exists())                                                     # mask put back
+        self.assertTrue(self.view().trees)                                                       # #53: undo void cleared
 
     def test_undo_of_a_named_plan_erases_to_the_earlier_owner(self):
         self.run_apply(make_plan('house'))

@@ -29,8 +29,9 @@ Decision, per in-flight entry touching the cell (conservative: when unsure it re
       put back), so the cell is not left bare.
   * the stale lock is released only after a successful recovery and only when its owner is the
     owner recorded on the entry.
-Cannot verify: sign text / entities (readback never did); a rollback is not compared against
-any earlier world state (region snapshots were removed, ADR 004; task 44 replaces this recovery).
+Sign text / entities are journalled with the plan (#52) and re-written when reconcile --fix
+re-commits a full plan; readback still only checks blocks. A rollback is not compared against
+any earlier world state (region snapshots were removed, ADR 004).
 """
 from __future__ import annotations
 
@@ -45,6 +46,8 @@ import script_env  # noqa: E402,F401
 
 import site_lock  # noqa: E402
 from atomic_json import write_json  # noqa: E402
+from block_store import BlockStoreError  # noqa: E402
+from cell_journal import JournalError  # noqa: E402
 
 OWNER = 'site-recover'
 
@@ -120,7 +123,6 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     """
     import cell_registry
     import site_kit
-    from cell_journal import JournalError
     flush = flush or _flush
     world_factory = world_factory or site_kit.World
     cell = tuple(cell)
@@ -157,7 +159,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     planned = dict(ticket.writes.cells)
     try:
         drift = reg.reconcile([cell])                     # flushes the world, then compares the recorded plans
-    except Exception as exc:                              # noqa: BLE001
+    except (JournalError, OSError, BlockStoreError) as exc:
         res['action'] = 'unsure'
         say(f'could not flush the world ({exc}); reading stale region files would mislead. Nothing done.')
         return res
@@ -177,6 +179,12 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         res['action'] = prefix + 'applied'
         say("every planned block is in the world: entry -> 'landed' (recovered)")
         if apply:
+            if ticket.writes.signs or ticket.writes.entities:
+                # blocks match; still re-write journalled signs/entities (crash may have skipped them)
+                import site_kit as sk
+                sk.McpWriter()(ticket.writes)
+                flush()
+                say('re-wrote journalled signs/entities')
             pending = e.meta.get('pending_mask')
             if pending and Path(pending).exists():
                 import pass_mask
@@ -224,7 +232,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
             flush()
             verified.append({'step': name, 'structure': struct['name']})
             say(f'restored {name}: {struct["name"]}')
-    except (Exception, SystemExit) as exc:                # noqa: BLE001
+    except (OSError, SystemExit) as exc:
         res['action'] = 'failed'
         say(f'rollback failed: {exc}. Entry stays in flight; original lock restored. Report to the user.')
         if original:
@@ -240,6 +248,10 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         say(f'archived {e.pass_} mask put back at {dest}')
     ticket.abandon(json.dumps({'restored': verified,
                                'used_undo_snapshot': undo.meta['structure']['name'] if undo else None}))
+    if undo is not None and undo.targets:
+        # pre-undo world is back: clear the void so ownership/views match the restored blocks (#53)
+        reg.revive(undo.targets, undo_seq=undo.seq)
+        say(f'revived {len(undo.targets)} plan(s) voided by undo seq {undo.seq}')
     site_lock.LOCK.unlink(missing_ok=True)
     say('lock released; entry rolled back (abandoned; the work reappears in cell_gaps)')
     res['action'] = 'rolled-back'

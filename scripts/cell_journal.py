@@ -113,6 +113,8 @@ class Build:
     @param cell: primary cell (default: the cell holding most planned columns)
     @param payload: opaque object for the caller's apply (e.g. the ``site_kit.Plan``); never journalled
     @param meta: small JSON-able dict journalled on the ``begin`` line (structure backup, notes ...)
+    @param signs: ``((pos, lines, colour, glow), ...)`` journalled and replayed on reconcile/recover
+    @param entities: ``((entity_type, pos, snbt|None), ...)`` journalled and replayed on reconcile/recover
     """
 
     plan: str
@@ -125,6 +127,8 @@ class Build:
     cell: Cell | None = None
     payload: Any = None
     meta: Mapping[str, Any] | None = None
+    signs: tuple = ()
+    entities: tuple = ()
 
 
 @dataclass(frozen=True, eq=False)
@@ -167,6 +171,8 @@ class Writes:
     @param kind: ``build``, ``undo`` or ``repair``
     @param intent: the originating intent (``Build.payload`` rides on it), None for recovery
     @param seq: journal seq of the ``begun`` entry (None for repair)
+    @param signs: recorded sign text to rewrite after the blocks (empty for undo/repair of cells only)
+    @param entities: recorded summons to rewrite after the blocks
     """
 
     plan: str
@@ -175,6 +181,8 @@ class Writes:
     kind: str = 'build'
     intent: Any = None
     seq: int | None = None
+    signs: tuple = ()
+    entities: tuple = ()
 
 
 @dataclass(frozen=True, eq=False)
@@ -361,6 +369,8 @@ class _Entry:
     owner: str | None = None
     ts: str = ''
     meta: dict = field(default_factory=dict)
+    signs: tuple = ()
+    entities: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -397,6 +407,70 @@ def _blob_key(cells: Mapping[Pos, str]) -> tuple[str, bytes]:
     body = json.dumps({f'{x},{y},{z}': s for (x, y, z), s in cells.items()},
                       sort_keys=True, separators=(',', ':')).encode('utf-8')
     return hashlib.sha256(body).hexdigest()[:32], body
+
+
+def _norm_sign(item) -> tuple:
+    """Canonical sign attachment: ``(pos, lines, colour, glow)``."""
+    pos, lines, colour, glow = item
+    return (tuple(pos), list(lines), colour, bool(glow))
+
+
+def _norm_entity(item) -> tuple:
+    """Canonical entity attachment: ``(kind, pos, snbt)``."""
+    kind, pos, snbt = item
+    return (kind, tuple(pos), snbt)
+
+
+def _attachments(b: Build) -> tuple[tuple, tuple]:
+    """Signs/entities from ``Build`` fields, or from a Plan-like ``payload`` when those are empty.
+
+    @param b: build intent
+    @returns: ``(signs, entities)`` as tuples of the shapes :class:`Writes` stores
+    """
+    signs = tuple(_norm_sign(s) for s in (b.signs or ()))
+    entities = tuple(_norm_entity(e) for e in (b.entities or ()))
+    payload = b.payload
+    if payload is not None and not signs and not entities:
+        signs = tuple(_norm_sign(s) for s in (getattr(payload, 'signs', ()) or ()))
+        entities = tuple(_norm_entity(e) for e in (getattr(payload, 'entities', ()) or ()))
+    return signs, entities
+
+
+def _signs_json(signs: tuple) -> list:
+    """JSON form of sign attachments for a begin line."""
+    return [[list(pos), list(lines), colour, bool(glow)] for pos, lines, colour, glow in signs]
+
+
+def _entities_json(entities: tuple) -> list:
+    """JSON form of entity attachments for a begin line."""
+    return [[kind, list(pos), snbt] for kind, pos, snbt in entities]
+
+
+def _signs_from_json(raw: list | None) -> tuple:
+    """Parse journalled signs back into Writes shape."""
+    if not raw:
+        return ()
+    return tuple(_norm_sign(item) for item in raw)
+
+
+def _entities_from_json(raw: list | None) -> tuple:
+    """Parse journalled entities back into Writes shape."""
+    if not raw:
+        return ()
+    return tuple(_norm_entity(item) for item in raw)
+
+
+def _writes_for(e: _Entry, cells: Mapping[Pos, str], *, kind: str | None = None,
+                intent: Any = None, seq: int | None = None, full_plan: bool = True) -> Writes:
+    """Build a :class:`Writes` for an entry, including journalled attachments.
+
+    Entities are only attached when ``full_plan`` is true so a partial cell repair does not
+    re-summon duplicates; signs are always attached (``block_entity_set_nbt`` is idempotent).
+    """
+    return Writes(
+        e.plan, e.pass_, cells, kind or e.kind, intent,
+        e.seq if seq is None and e.status == 'begun' else seq,
+        e.signs, e.entities if full_plan else ())
 
 
 class Ticket:
@@ -500,6 +574,8 @@ class CellRegistry:
             self._fold_finish(d)
         elif op == 'note':
             self._notes.append(d)
+        elif op == 'revive':
+            self._fold_revive(d)
         elif op != 'repair':
             raise JournalError(f'unknown journal op {op!r} at seq {seq}')
         self._touch()
@@ -511,7 +587,8 @@ class CellRegistry:
             cells=cells, blob=d['blob'], n=d['n'], modifies=tuple(d.get('modifies', ())),
             strict=bool(d.get('strict')), masked=bool(d.get('mask')), strip=bool(d.get('strip')),
             targets=tuple(d.get('targets', ())), owner=d.get('owner'), ts=d.get('ts', ''),
-            meta=dict(d.get('meta') or {}))
+            meta=dict(d.get('meta') or {}),
+            signs=_signs_from_json(d.get('signs')), entities=_entities_from_json(d.get('entities')))
         if e.kind == 'build' and e.pass_ == 'feature':
             prior = self._latest(e.plan)
             if prior is not None and prior.status == 'landed':
@@ -541,6 +618,15 @@ class CellRegistry:
             for t in e.targets:
                 if t in self._entries:
                     self._entries[t].undone = True
+
+    def _fold_revive(self, d: dict) -> None:
+        """Clear ``undone`` on targets (and cancel the undo) after a recover that restored pre-undo blocks."""
+        for t in d.get('targets', ()):
+            if t in self._entries:
+                self._entries[t].undone = False
+        u = d.get('undo')
+        if u is not None and u in self._entries:
+            self._entries[u].undone = True
 
     def _latest(self, plan: str) -> _Entry | None:
         for seq in reversed(self._plans.get(plan, ())):
@@ -669,7 +755,7 @@ class CellRegistry:
         owners: dict[Pos, _Owner] = {}
         for seq in self._by_cell.get(cell, ()):
             e = self._entries[seq]
-            if e.kind != 'build' or e.undone or seq in skip or e.plan in exclude:
+            if e.kind != 'build' or e.undone or e.status == 'begun' or seq in skip or e.plan in exclude:
                 continue
             ghost = e.pass_ in GHOST_PASSES
             for pos, state in self._blob(e.blob).items():
@@ -787,8 +873,7 @@ class CellRegistry:
         e = self._entries.get(seq)
         if e is None or e.status != 'begun':
             raise Refused(f'entry {seq} is not in flight')
-        return Ticket(self, seq, Writes(e.plan, e.pass_, self._blob(e.blob), e.kind, None, seq),
-                      e.strict or e.masked)
+        return Ticket(self, seq, _writes_for(e, self._blob(e.blob), seq=seq), e.strict or e.masked)
 
     # ---- views -----------------------------------------------------------------------------
     def _note_state(self) -> dict:
@@ -1000,7 +1085,12 @@ class CellRegistry:
             record['mask'] = b.mask
         if b.meta:
             record['meta'] = dict(b.meta)
-        writes = Writes(b.plan, b.pass_, positions, 'build', b)
+        signs, entities = _attachments(b)
+        if signs:
+            record['signs'] = _signs_json(signs)
+        if entities:
+            record['entities'] = _entities_json(entities)
+        writes = Writes(b.plan, b.pass_, positions, 'build', b, signs=signs, entities=entities)
         return _Prepared(record, writes, bool(b.strict or b.mask is not None))
 
     def _resolve_targets(self, target: str | tuple[Cell, str]) -> list[_Entry]:
@@ -1078,6 +1168,22 @@ class CellRegistry:
         if e.status != 'begun':
             raise Refused(f'entry {t.seq} is already {e.status}')
         self._append({'op': 'finish', 'ref': t.seq, 'status': 'abandoned', 'mismatches': 0, 'reason': reason})
+
+    def revive(self, targets: Iterable[int], *, undo_seq: int | None = None) -> None:
+        """Clear ``undone`` on Build entries after a recover restored the pre-undo world.
+
+        Journals a ``revive`` line so ownership/views match the restored blocks. When ``undo_seq``
+        is set, that undo entry is itself marked undone (cancelled).
+
+        @param targets: journal seqs of the Builds the undo had voided
+        @param undo_seq: optional seq of the landed Undo that is being cancelled
+        @raises JournalError: the revive line could not be written
+        """
+        self._sync()
+        record: dict = {'op': 'revive', 'targets': sorted({int(t) for t in targets})}
+        if undo_seq is not None:
+            record['undo'] = int(undo_seq)
+        self._append(record)
 
     def change(self, intent: Build | Undo | Note, apply: Apply | None = None, *,
                cascade: bool = False) -> Receipt:
@@ -1248,8 +1354,8 @@ class CellRegistry:
         With ``fix`` (needs ``apply``): begun entries are read back and landed, re-writing the recorded plan
         first when it does not match; missing/foreign positions are re-written from their current owner
         (journalled as an informational ``repair`` line); mismatched entries whose owned blocks now read
-        back are upgraded to ``landed``; follow-up Builds are applied. Re-written plans carry no signs or
-        entities (only ``cells`` are recorded).
+        back are upgraded to ``landed``; follow-up Builds are applied. Re-written plans carry journalled
+        signs (always) and entities (when the full plan is re-committed, not on a partial cell repair).
 
         @param cells: cells in scope (default: every cell the journal mentions)
         @param fix: repair what is found
@@ -1269,11 +1375,12 @@ class CellRegistry:
             hit = set(e.cells) if scope is None else set(e.cells) & scope
             if not hit:
                 continue
-            writes = Writes(e.plan, e.pass_, self._blob(e.blob), e.kind, None, e.seq)
+            writes = _writes_for(e, self._blob(e.blob), seq=e.seq)
             bad = self._bad(writes.cells)
             fixed = False
             if fix:
-                if bad:
+                if bad or writes.signs or writes.entities:
+                    # blocks may already match while signs/entities were skipped mid-apply
                     apply(writes)
                     self._flush_after_write()
                     bad = self._bad(writes.cells)
@@ -1303,7 +1410,8 @@ class CellRegistry:
                         by_owner.setdefault(owners[p].seq, {})[p] = owners[p].state
                     for oseq, part in sorted(by_owner.items()):
                         o = self._entries[oseq]
-                        apply(Writes(o.plan, o.pass_, part, 'repair', None, None))
+                        full = set(part) == set(self._blob(o.blob))
+                        apply(_writes_for(o, part, kind='repair', seq=None, full_plan=full))
                     repaired += len(found)
                     self._flush_after_write()
                     fixed = not self._bad({p: owners[p].state for p in found})
