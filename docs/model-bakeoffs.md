@@ -7,6 +7,7 @@ Framework for comparing bulk-work models on place design/review (**one model per
 | Doc | What |
 |-----|------|
 | [model-bakeoffs/README.md](../model-bakeoffs/README.md) | Operator guide + CLI |
+| [model-bakeoffs/MACRO-RESULTS.md](../model-bakeoffs/MACRO-RESULTS.md) | Skip-list of models failed on feature-design bake-off |
 | [model-bakeoffs/PROTOCOL.md](../model-bakeoffs/PROTOCOL.md) | Agreed rules (tiers, scoring, ghost world) |
 
 ```bash

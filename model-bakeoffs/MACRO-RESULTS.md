@@ -1,9 +1,9 @@
-# Macro bake-off results
+# Models to skip for place build
 
-Archived cold scores for R-001–R-003 (full round JSON removed). Pilot: `feature_design`, cell (48, −44).
+Use this list so future sittings do not re-try models already shown unsuitable for `feature_design` / place-build bake-off work.
 
-| Round | Model | Overall | Notes |
-|-------|-------|---------|-------|
-| R-001 | Composer 2.5 | fail | |
-| R-002 | Grok 4.7 | fail | |
-| R-003 | Claude Haiku 5.5 | fail | mech_gate fail |
+| Round | Model | Result |
+|-------|-------|--------|
+| R-001 | Composer 2.5 | overall fail |
+| R-002 | Grok 4.7 | overall fail |
+| R-003 | Claude Haiku 5.5 | overall fail (mech_gate fail) |
