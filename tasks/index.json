@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 61,
+  "nextTaskId": 66,
   "tasks": [
     {
       "id": 56,
@@ -49,6 +49,60 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "From R-006 retro. A multi-minute apply printed nothing until the end, was backgrounded, and when killed (exit 144) it was unclear whether it had completed. Decided (grill): print one progress line per cell to stderr, flushed (stdout stays the final JSON); end with a summary counting builds by journal status (landed / mismatched / abandoned / skipped); install a SIGTERM handler (SIGINT already raises) so the process exits cleanly and names any cell still in flight with `cell_registry.py reconcile`. Do NOT release the site lock on kill: apply never claims it, `site_lock.py claim` does, and it spans the whole sitting. Code: providers/ukdefra-lidar/manage/lidar_ghost.py (ensure_cells, main)."
+    },
+    {
+      "id": 61,
+      "title": "ship_branch.py merge: tested branch into main, then clean up",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Part of the branch-gate policy (decided in grill, 2026-10-22): code is built on task/* branches and always ends merged. `scripts/ship_branch.py merge <branch>`: run scripts/run_tests.py on the branch tip; merge --no-ff (matches history); re-run the tests on main; delete the branch and its worktree. Any failure stops and reports, no auto-revert. Unit tests on throwaway git repos: green merge, failing tip, failing main after merge. Worker rule unchanged: workers leave the tracker alone."
+    },
+    {
+      "id": 62,
+      "title": "ship_branch.py sweep: surface unmerged branches and leftover worktrees",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [
+        61
+      ],
+      "notes": "Same script as #61, so serialised. `ship_branch.py sweep` lists `git branch --no-merged main` and leftover worktrees, labels each branch tracker/docs-only or code, with commit count. Offers to merge tracker/docs-only strays; code strays are reported and wait for the owner's call (review-and-merge or delete). Never deletes or merges code on its own."
+    },
+    {
+      "id": 63,
+      "title": "ship-branch skill: build, review, fix, merge loop",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        61
+      ],
+      "notes": "Project skill under .claude/skills/. Builder session finishing a code change runs: tests, then a fresh-context read-only reviewer subagent on Sonnet at high effort, then a normal-tier fixer (default model, normal effort, same worktree) on blockers, re-review, up to 3 review rounds, then ship_branch.py merge. Tests failing before review go to the fixer and count toward the cap. If main moved, the fixer merges main into the branch; re-review only if the resolution touched more than conflict markers. Reviewer brief is fixed: branch diff vs main, CODING_STANDARDS.md, GLOSSARY.md, accepted ADRs, ticket text, test coverage; returns APPROVE or CHANGES with blocker/nit findings; never edits. Only blockers loop; nits become tracker follow-ups or are dropped if trivial. Ask the owner before using Opus or any other high-cost model; everything else is automatic. Opt-outs in the owner's words: 'no review'/'skip review' (build, test, merge) and 'leave on branch'/'don't merge' (stop after build, report branch; implies no review). A ticket may carry review: skip. Cap hit or any stop: leave the branch unmerged and play need-you. Check by running it on one trivial real change. Bootstrapping: #61-#63 themselves are built on task/* branches and merged by the orchestrator after a manual pass."
+    },
+    {
+      "id": 64,
+      "title": "Project parallel-task-wave override: review before each merge",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        63
+      ],
+      "notes": "Project-level override of the global parallel-task-wave skill (leave the global copy alone). The wave orchestrator runs the #63 loop on each returned worker branch before merging it. Workers stay code-only and never review or merge themselves; tracker archive stays an orchestrator hop on main after merge."
+    },
+    {
+      "id": 65,
+      "title": "Repo rules and policy record for the branch gate",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        62,
+        63
+      ],
+      "notes": "AGENTS.md: new Always rule (code goes on task/* branches and through the gate unless the owner opts out; tracker-only and docs-only edits commit straight to main under the pre-commit checks, no tracker/* branches) and a Start step that runs `ship_branch.py sweep`. Update CODING_STANDARDS.md to match. Project-level `done` override that includes the sweep (global done skill untouched). Write ADR 005 recording the policy. The pre-commit hook already only blocks tracker edits on task/*, so check whether any change is needed there."
     }
   ]
 }
