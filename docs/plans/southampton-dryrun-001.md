@@ -27,9 +27,9 @@
 
 ## Phase 1 — Reset place memory and chunks
 
-1. Run reset CLI **`--dry-run`**; confirm preserved vs wiped lists match spec (config, reference, caches, current cell; no builds/STAGES/queue; regions listed).
+1. Run reset CLI **`--dry-run`**; confirm preserved vs wiped lists match spec (config, reference, caches, current cell; no builds/queue; regions listed).
 2. Run reset for real (optional **`--archive-site`** first time).
-3. Confirm: empty `registry/` (`{}` cells+features), no `site/QUEUE.txt` / `CURRENT-CELL.json`, no `site/builds/*.json`, no `site/cells/*-STAGES.json`, no legacy import notes file, lock cleared.
+3. Confirm: `registry/` absent (the first journal write creates it; the report shows `registry.journal_entries: 0`), `python3 scripts/cell_registry.py verify` reports no issues, no `site/QUEUE.txt` / `CURRENT-CELL.json`, no `site/builds/*.json`, no legacy import notes file, lock cleared.
 4. Delete overworld regions (if not already done inside reset CLI — one tool should own this).
 5. **You reopen the world** and load chunks near 48,-44 so the save is empty flat/generated bedrock shell, not stale geometry.
 
@@ -69,10 +69,10 @@ Repeat until no FEATURE items remain for this cell.
 
 | Check | Pass criterion |
 |--------|----------------|
-| Reset | No prior build specs or STAGES; world chunks empty at start; reference intact |
+| Reset | No prior build specs or journal entries; world chunks empty at start; reference intact |
 | Frontier | After applies, status shows ghosts in ~ring-2 belt around **all** seeded worked cells, not only focus-time neighbours |
 | Split layers | Cells with real ground but no feature overlap may still show feature ghosts until feature strip; cells under real features have no ghost feature blocks in footprint |
-| STAGES | No ghost stage left `applied` where blocks were stripped or region was wiped |
+| Journal | No ghost build left landed in the cell journal where blocks were stripped or region was wiped |
 | Queue | All FEATURE items ticked; ground stage recorded; trees/decor explicitly deferred |
 
 Log outcome in world `site/RUN-LOG.md` (one short paragraph + date). If fail, note phase and status JSON snapshot path — do not patch forward without spec change.

@@ -35,8 +35,10 @@ class DryRunOutput(unittest.TestCase):
         cells.mkdir()
         (cells / '48_-44-STAGES.json').write_text('{"stages":{}}')
         reg = self.world / 'registry'
-        reg.mkdir()
-        (reg / 'cells.json').write_text(json.dumps({'48,-44': {'ground': 'generated'}}))
+        (reg / 'blobs').mkdir(parents=True)
+        (reg / 'journal.jsonl').write_text('{"op":"begin","seq":1}\n')
+        (reg / 'blobs' / 'abc.json').write_text('{}')
+        (reg / 'cells.json').write_text('{}')
         (reg / 'features.json').write_text('{}')
         self.region = self.world / 'region'
         self.region.mkdir()
@@ -54,7 +56,7 @@ class DryRunOutput(unittest.TestCase):
             load_region_dir=lambda: self.region,
         )
 
-    def test_dry_run_lists_legacy_wipes_and_empty_registry(self):
+    def test_dry_run_lists_legacy_wipes_and_registry_erase(self):
         with self._patch_world():
             rep = dr.run_reset(dry_run=True, archive_site=False, force=False)
         self.assertTrue(rep['dry_run'])
@@ -72,7 +74,7 @@ class DryRunOutput(unittest.TestCase):
                 dr.run_reset(dry_run=False, archive_site=False, force=False)
         self.assertIn('confirm-logged-out', str(ctx.exception))
 
-    def test_live_reset_wipes_legacy_and_empties_registry(self):
+    def test_live_reset_wipes_legacy_and_erases_registry(self):
         hb = time.time()
         (self.site / 'LOCK.json').write_text(json.dumps({
             'owner': 'agent', 'task': 'old', 'claimed': hb, 'heartbeat': hb,
@@ -85,12 +87,26 @@ class DryRunOutput(unittest.TestCase):
         self.assertFalse((self.site / 'CURRENT-CELL.json').exists())
         self.assertFalse((self.site / '.handoff-pending.json').exists())
         self.assertFalse(list((self.site / 'cells').glob('*-STAGES.json')))
-        cells = json.loads((self.world / 'registry' / 'cells.json').read_text())
-        feats = json.loads((self.world / 'registry' / 'features.json').read_text())
-        self.assertEqual(cells, {})
-        self.assertEqual(feats, {})
+        self.assertFalse((self.world / 'registry').exists())
+        self.assertEqual(rep['registry']['journal_entries'], 0)
+        self.assertFalse(rep['registry']['dir_present'])
         self.assertFalse((self.site / 'LOCK.json').exists())
         self.assertIn('warning', (rep.get('warnings') or ['warning'])[0])
+
+    def test_reset_world_verifies_clean(self):
+        template = _ROOT / 'templates' / 'new-world-site'
+        with self._patch_world(), mock.patch.object(dr, 'TEMPLATE', template), \
+             mock.patch('logout_gate.require_logged_out'):
+            rep = dr.run_reset(dry_run=False, archive_site=False, confirm_logged_out=True)
+        self.assertNotIn('verify_error', rep)
+        self.assertEqual(rep['verify']['issues'], [])
+        self.assertTrue(rep['verify']['ok'])
+        self.assertFalse((self.world / 'registry').exists())
+        self.assertEqual(rep['regions_deleted'], ['r.0.0.mca'])
+
+    def test_no_registry_scaffold_left(self):
+        self.assertFalse(hasattr(dr, 'scaffold_registry'))
+        self.assertEqual([p.name for p in (_ROOT / 'templates' / 'new-world-registry').iterdir()], ['README.txt'])
 
 
 if __name__ == '__main__':
