@@ -456,6 +456,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Code review #50 vs ADR 004 loud-errors. site_recover.recover catches bare Exception around reconcile/flush and around structure restore, sets action=unsure/failed, prints, and returns without re-raising (site_recover.py ~160 and ~227). Recovery UX wants a dry-run report, but the catch is wider than JournalError/OSError and can hide unexpected bugs. Narrow the except clauses and let unexpected errors propagate. | DONE: site_recover.recover catches only JournalError/OSError/BlockStoreError around reconcile and OSError/SystemExit around structure restore; other exceptions propagate."
+    },
+    {
+      "id": 61,
+      "title": "ship_branch.py merge: tested branch into main, then clean up",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Part of the branch-gate policy (decided in grill, 2026-10-22): code is built on task/* branches and always ends merged. `scripts/ship_branch.py merge <branch>`: run scripts/run_tests.py on the branch tip; merge --no-ff (matches history); re-run the tests on main; delete the branch and its worktree. Any failure stops and reports, no auto-revert. Unit tests on throwaway git repos: green merge, failing tip, failing main after merge. Worker rule unchanged: workers leave the tracker alone. Merged via wave 61-65: ship_branch.py merge + tests on main (cf5a57a)."
     }
   ]
 }

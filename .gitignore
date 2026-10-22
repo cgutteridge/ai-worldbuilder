@@ -10,3 +10,4 @@
 # Nested world git repos (each checkout keeps its own .git)
 /worlds/*/
 !/worlds/README.md
+.worktrees/
