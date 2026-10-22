@@ -4,7 +4,13 @@
 The cell journal (``registry/journal.jsonl``, ADR 004) is the only record. site_kit.apply()
 journals each live apply ``begun`` (plan, owner, structure backup in its meta) before the first
 block write and finishes it after the readback. A run that dies in between leaves the entry
-``begun`` (in flight). This tool resolves it until ``CellRegistry.reconcile`` replaces it (task 44).
+``begun`` (in flight). This tool resolves it.
+
+Split with ``python3 scripts/cell_registry.py reconcile`` (``CellRegistry.reconcile``):
+  site_recover = resolve ONE interrupted apply (land it, or roll the world back to the structure saved before it);
+  reconcile    = detect and repair drift forward (re-commit recorded plans; never restores an older state).
+Rolling back to the pre-apply structure is not forward repair, so the two stay separate tools. The
+land-or-not decision here reads the world through ``reconcile`` (its in-flight finding), not a second readback.
 
   python3 scripts/site_recover.py status                  # read-only: stale lock, in-flight, rolled-back entries
   python3 scripts/site_recover.py recover 46,-43          # dry run: what it would do
@@ -13,7 +19,8 @@ block write and finishes it after the readback. A run that dies in between leave
 Decision, per in-flight entry touching the cell (conservative: when unsure it reports and does nothing):
   * lock held and fresh (heartbeat < site_lock.STALE_MIN) -> refuse; the run may still be alive.
   * lock stale but owned by someone other than the entry's owner -> refuse (unsure).
-  * flush the world, read the recorded plan back from the region files (site_kit.readback):
+  * flush the world, compare the recorded plan with the region files:
+      (``reconcile`` in-flight finding on the cell: planned blocks vs the world)
       all planned blocks match -> entry finished 'landed' (recovered). A staged pass mask is
       published; an aborted mask undo also gets its bookkeeping finished (mask_undo.finish_undo).
       otherwise -> restore the structure saved for THIS apply (restore_structure_backup), entry
@@ -45,6 +52,23 @@ OWNER = 'site-recover'
 def _registry():
     import cell_registry
     return cell_registry.view_registry()
+
+
+class _SavedWorld:
+    """BlockStore over an injected world: ``flush`` saves it, then re-opens a fresh view to read."""
+
+    def __init__(self, flush, world_factory):
+        self._flush, self._factory, self.world = flush, world_factory, None
+
+    def flush(self):
+        self._flush()
+        self.world = self._factory()
+
+    def read(self, pos):
+        return self.world.block(*pos)
+
+    def read_many(self, positions):
+        return {tuple(p): self.world.block(*p) for p in positions}
 
 
 def lock_state() -> dict:
@@ -94,12 +118,14 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     action: 'none' | 'applied' | 'rolled-back' | 'unsure' | 'failed' (prefixed 'would-' unless apply).
     flush / world_factory / loader are injectable for tests.
     """
+    import cell_registry
     import site_kit
     from cell_journal import JournalError
     flush = flush or _flush
     world_factory = world_factory or site_kit.World
     cell = tuple(cell)
-    reg = _registry()
+    store = _SavedWorld(flush, world_factory)
+    reg = cell_registry.open_registry(blocks=store, ghosts=None)
     flying = [e for e in reg.entries(cells=[cell]) if e.status == 'begun']
     res = {'cell': list(cell), 'action': 'none', 'detail': []}
     say = res['detail'].append
@@ -128,17 +154,17 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         res['action'] = 'unsure'
         say(f'recorded plan of entry {e.seq} is unreadable ({exc}): cannot compare the world. Nothing done.')
         return res
-    plan = site_kit.Plan(e.plan)
-    plan.cells = dict(ticket.writes.cells)
+    planned = dict(ticket.writes.cells)
     try:
-        flush()
+        drift = reg.reconcile([cell])                     # flushes the world, then compares the recorded plans
     except Exception as exc:                              # noqa: BLE001
         res['action'] = 'unsure'
         say(f'could not flush the world ({exc}); reading stale region files would mislead. Nothing done.')
         return res
-    world = world_factory()
-    rb = site_kit.readback(plan, world)
-    say(f'live world vs plan: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
+    world = store.world
+    mine = [i for i in drift.by_kind('in-flight') if i.seq == e.seq]
+    mismatches = mine[0].count if mine else 0
+    say(f'live world vs plan: {len(planned)} planned, {mismatches} mismatches')
     prefix = '' if apply else 'would-'
     original_lock = ls['lock']
 
@@ -147,7 +173,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
             site_lock.LOCK.unlink(missing_ok=True)
             say('stale lock released (same owner as the in-flight entry)')
 
-    if rb['mismatches'] == 0:
+    if mismatches == 0:
         res['action'] = prefix + 'applied'
         say("every planned block is in the world: entry -> 'landed' (recovered)")
         if apply:
@@ -164,7 +190,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
                 import mask_undo
                 mask_undo.finish_undo(cell, e.pass_, e.meta.get('undo_plan') or e.plan)
                 say("mask undo bookkeeping finished (mask archived)")
-            ticket.finish({p: world.block(*p) for p in plan.cells})
+            ticket.finish({p: world.block(*p) for p in planned})
             release_stale()
         return res
 
@@ -174,7 +200,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         res['action'] = 'unsure'
         say('world differs from the plan and no structure backup is recorded for this apply. Nothing done.')
         return res
-    steps.append(('apply', e.meta['structure'], list(plan.cells)))
+    steps.append(('apply', e.meta['structure'], list(planned)))
     undo = _undo_before(reg, e)
     if undo is not None:
         if not undo.meta.get('structure'):

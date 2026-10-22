@@ -28,6 +28,10 @@ Per-cell view (folded, never stored)::
   python3 scripts/cell_registry.py add-issue --feature ID --reason R
   python3 scripts/cell_registry.py issues
   python3 scripts/cell_registry.py verify
+  python3 scripts/cell_registry.py reconcile [CELL ...] [--fix]
+
+reconcile compares the journal with the blocks (dry run by default; ``--fix`` re-commits over MCP).
+site_recover = resolve an interrupted apply (land or roll back); reconcile = detect and repair drift forward.
 
 A feature is registered by its first apply (a ``feature`` Build); there is no register command.
 """
@@ -263,6 +267,77 @@ def note(reg: CellRegistry, cell: tuple[int, int], kind: str, body: str = '', re
     reg.change(Note(tuple(cell), kind, body, ref))
 
 
+DRIFT_ORDER = ('in-flight', 'missing', 'foreign', 'ghost-missing', 'ghost-stale')
+DRIFT_NOTES = {
+    'in-flight': 'an apply began and never finished (site_recover.py can also roll it back)',
+    'missing': 'journal owns the block, the world has air / nothing',
+    'foreign': 'journal owns the block, the world holds another block',
+    'ghost-missing': 'frontier cell lacks ghost ground / features',
+    'ghost-stale': 'ghost features still inside a real feature footprint',
+}
+RECONCILE_HELP = ('compare the journal with the blocks; dry run unless --fix. '
+                  'site_recover = resolve an interrupted apply (land or roll back); '
+                  'reconcile = detect and repair drift forward')
+
+
+def format_drift(drift, *, fix: bool = False) -> str:
+    """Human report of a :class:`cell_journal.Drift`, grouped by kind.
+
+    @param drift: result of ``CellRegistry.reconcile``
+    @param fix: the run was a ``--fix`` run (marks each cell fixed / still drifting)
+    @returns: report text
+    """
+    if not drift.items and not drift.upgraded:
+        return 'reconcile: clean (the journal matches the blocks)'
+    lines = []
+    for kind in DRIFT_ORDER:
+        items = drift.by_kind(kind)
+        if not items:
+            continue
+        lines.append(f'{kind}: {sum(i.count for i in items)} in {len(items)} cell(s), {DRIFT_NOTES[kind]}')
+        for i in sorted(items, key=lambda i: (i.cell, i.seq)):
+            tag = (' [fixed]' if i.fixed else ' [NOT fixed]') if fix else ''
+            what = f'{i.count} position(s)' if i.count or i.kind != 'in-flight' else 'every planned block is present'
+            lines.append(f'  {cell_id(*i.cell)}  {what}  plans {", ".join(i.plans) or "-"}'
+                         f'{f"  seq {i.seq}" if i.seq else ""}{tag}')
+            for pos, (want, got) in list(i.sample.items())[:3]:
+                lines.append(f'      {pos}: want {want}, got {got}')
+    left = [i for i in drift.items if not i.fixed]
+    if drift.upgraded:
+        lines.append(f'upgraded {drift.upgraded} mismatched entr{"y" if drift.upgraded == 1 else "ies"} to landed')
+    if fix:
+        lines.append(f'repaired {len(drift.items) - len(left)} of {len(drift.items)} finding(s)'
+                     + ('; signs and entities are not journalled, so they are not re-written' if drift.items else ''))
+    else:
+        lines.append(f'{len(drift.items)} finding(s); dry run, nothing changed. Re-run with --fix to repair over MCP')
+    return '\n'.join(lines)
+
+
+def run_reconcile(root: Path | None, cells: list[str], fix: bool) -> int:
+    """The ``reconcile`` command: report drift, and with ``fix`` repair it over MCP.
+
+    Dry run reads the saved world through a read-only registry; ``fix`` goes through
+    ``site_kit.live_session`` (region gate and lock).
+
+    @param root: world root (None: active world)
+    @param cells: ``tx,tz`` specs (empty: every cell the journal mentions)
+    @param fix: repair what is found
+    @returns: 0 when nothing is left drifting, 1 otherwise
+    """
+    import site_kit
+    scope = [parse_cell_id(c) for c in cells] or None
+    if fix:
+        reg, writer = site_kit.live_session(root=root)
+        drift = reg.reconcile(scope, fix=True, apply=writer)
+    else:
+        reg = open_registry(root, blocks=site_kit.live_blocks())
+        drift = reg.reconcile(scope)
+    print(format_drift(drift, fix=fix))
+    if not drift.items:
+        return 0
+    return 0 if fix and drift.clean else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Management CLI for the cell registry.
 
@@ -319,7 +394,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--check-world', action='store_true',
                    help='also check region files for non-empty cells')
 
+    p = sub.add_parser('reconcile', help=RECONCILE_HELP, description=RECONCILE_HELP)
+    p.add_argument('cells', nargs='*', metavar='CELL', help='tx,tz (default: every cell in the journal)')
+    p.add_argument('--fix', action='store_true',
+                   help='re-commit recorded plans over MCP (needs the lock and the region gate); block cells only')
+
     args = ap.parse_args(argv)
+    if args.cmd == 'reconcile':
+        try:
+            return run_reconcile(args.root, args.cells, args.fix)
+        except (RegistryError, CellJournalError) as exc:
+            print(f'registry error: {exc}', file=sys.stderr)
+            return 2
     root = registry_root(args.root)
     reg = view_registry(root)
 
