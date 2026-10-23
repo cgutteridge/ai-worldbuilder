@@ -10,7 +10,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md §7). block_scan_region is bulk and exact within volume≤65536 and results≤limit (default 1024); ~1.5s for a full 128×4×128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
+      "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md \u00a77). block_scan_region is bulk and exact within volume\u226465536 and results\u2264limit (default 1024); ~1.5s for a full 128\u00d74\u00d7128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
     },
     {
       "id": 57,
@@ -49,15 +49,6 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "From R-006 retro. A multi-minute apply printed nothing until the end, was backgrounded, and when killed (exit 144) it was unclear whether it had completed. Decided (grill): print one progress line per cell to stderr, flushed (stdout stays the final JSON); end with a summary counting builds by journal status (landed / mismatched / abandoned / skipped); install a SIGTERM handler (SIGINT already raises) so the process exits cleanly and names any cell still in flight with `cell_registry.py reconcile`. Do NOT release the site lock on kill: apply never claims it, `site_lock.py claim` does, and it spans the whole sitting. Code: providers/ukdefra-lidar/manage/lidar_ghost.py (ensure_cells, main)."
-    },
-    {
-      "id": 66,
-      "title": "Readback ignores game-derived connection state on panes, fences, walls and bars",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "From R-006 ghost diagnosis. Minecraft re-derives north/south/east/west (and wall `up`) on glass panes, iron bars, fences and walls from neighbours, so a plan that pins them never reads back equal: R-005 and R-006 both finished `mismatched` on 2 panes. A mismatched feature skips the journal follow-ups (site_kit.apply gates on landed; cell_journal._strip_builds needs landed), so ghost features are never stripped and reconcile never upgrades it. Fix: block_store.same_state and site_kit.same (duplicate) ignore those connection properties for connectable ids (_pane, iron_bars, _fence, _wall; not _fence_gate). Test: pane planned east/west reads back with north=true lands, and a feature with such a pane strips ghost features."
     }
   ]
 }
