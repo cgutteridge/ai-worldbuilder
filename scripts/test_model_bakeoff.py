@@ -17,6 +17,26 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
 
 
+SEED_SITTING_STEPS = [
+    'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
+    'Regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004)',
+    'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
+    (
+        'Confirm the 3×3 ghost baseline around {cell} is complete and clean: '
+        '`cell_registry.py reconcile` over the nine cells and '
+        '`lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; '
+        'regenerate any incomplete cell with `lidar_ghost apply --force`'
+    ),
+    'Claim site lock; build with that tool/model only',
+    'Use tool={tool} model={model} only',
+    'Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)',
+    'Build from evidence table — not a previous Minecraft build',
+    'Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)',
+    'Apply, capture fixed cameras, release lock',
+    'Interview + score; then usage paste (need-you if counts unknown)',
+]
+
+
 def _seed(root: Path) -> None:
     (root / 'rounds').mkdir(parents=True)
     (root / 'packs' / 'v1').mkdir(parents=True)
@@ -35,6 +55,7 @@ def _seed(root: Path) -> None:
             'critical_axes': ['massing', 'keep'],
             'max_attempts': 3,
             'grades': ['fail', 'pass', 'great'],
+            'sitting_steps': list(SEED_SITTING_STEPS),
         },
     )
     MB.write_json(
@@ -113,6 +134,66 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertTrue(path.is_file())
             disk = json.loads(path.read_text(encoding='utf-8'))
             self.assertEqual(disk['model']['id'], 'composer')
+
+    def test_open_round_checklist_comes_from_config_sitting_steps(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            custom = [
+                'Step A only',
+                'Use tool={tool} model={model} pack={pack} cell={cell}',
+            ]
+            cfg = MB.load_config(root)
+            cfg['sitting_steps'] = custom
+            MB.write_json(root / 'config.json', cfg)
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='composer',
+                task='feature_design',
+            )
+            self.assertEqual(
+                round_['sitting']['checklist'],
+                [
+                    'Step A only',
+                    'Use tool=cursor model=composer pack=v1 cell=(48,-44)',
+                ],
+            )
+
+    def test_generated_checklist_has_no_stale_quit_or_task_48(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='composer',
+                task='feature_design',
+            )
+            checklist = '\n'.join(round_['sitting']['checklist'])
+            self.assertNotIn('Quit Minecraft', checklist)
+            self.assertNotIn('task 48', checklist)
+            self.assertIn('complete and clean', checklist)
+            card = MB.format_sitting(round_)
+            self.assertNotIn('task 48', card)
+            self.assertNotIn('Quit Minecraft', card)
+            self.assertIn('complete and clean', card)
+            for item in round_['sitting']['checklist']:
+                self.assertIn(item, card)
+
+    def test_live_config_sitting_steps_are_source_of_truth(self):
+        cfg = MB.load_config(MB.DEFAULT_BAKEOFFS)
+        steps = cfg.get('sitting_steps')
+        self.assertIsInstance(steps, list)
+        self.assertGreaterEqual(len(steps), 1)
+        joined = '\n'.join(steps)
+        self.assertNotIn('Quit Minecraft', joined)
+        self.assertNotIn('task 48', joined)
+        self.assertIn('lidar_ghost apply', joined)
+        self.assertIn('complete and clean', joined)
+        self.assertIn('{tool}', joined)
+        self.assertIn('{model}', joined)
+        self.assertIn('{pack}', joined)
 
     def test_record_usage_sums_total(self):
         with tempfile.TemporaryDirectory() as d:
@@ -354,6 +435,26 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 r'(?i)export\s+AI_WORLDBUILDER_WORLD_ROOT',
                 msg=f'{name} must not teach a one-off export',
             )
+
+    def test_docs_link_sitting_steps_instead_of_copying(self):
+        """Operator docs must point at config.json sitting_steps, not duplicate them."""
+        paths = [
+            TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md',
+            TOOL_ROOT / 'model-bakeoffs' / 'PROTOCOL.md',
+            TOOL_ROOT / 'model-bakeoffs' / 'README.md',
+            TOOL_ROOT / 'docs' / 'model-bakeoffs.md',
+        ]
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            name = path.name
+            self.assertIn(
+                'sitting_steps',
+                text,
+                msg=f'{name} must link to config sitting_steps',
+            )
+            self.assertNotIn('Quit Minecraft', text, msg=name)
+            self.assertNotIn('pending task 48', text, msg=name)
+            self.assertNotIn('task 48', text, msg=name)
 
     def test_cli_subprocess_status_imports(self):
         """Running the script as ``python3 scripts/model_bakeoff.py`` must find active_world."""

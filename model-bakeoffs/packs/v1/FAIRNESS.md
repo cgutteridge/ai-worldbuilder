@@ -18,7 +18,7 @@ footprint osm=N readable=M pad=P cover=C%
 
 ## Ghost look
 
-The 3×3 ghost baseline may look sparse or empty outside the cell. That is expected after restore — not a reason to chase false “chunk failed” bugs before apply.
+The 3×3 ghost baseline may look sparse or empty outside the cell. That is expected after `lidar_ghost apply` — not a reason to chase false “chunk failed” bugs before apply. Sitting order (including the clean-baseline check) lives in `sitting_steps` in [../../config.json](../../config.json), not here.
 
 ## Google aerial sheets
 

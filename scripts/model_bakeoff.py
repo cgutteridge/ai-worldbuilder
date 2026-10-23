@@ -80,6 +80,33 @@ def load_config(root: Path) -> dict:
     return load_json(root / 'config.json')
 
 
+def sitting_checklist(
+    cfg: dict,
+    *,
+    tool: str,
+    model: str,
+    pack: str,
+) -> list[str]:
+    """Render ``sitting_steps`` from config with round-specific fields.
+
+    Placeholders: ``{tool}``, ``{model}``, ``{pack}``, ``{cell}`` (e.g. ``(48,-44)``).
+
+    @param cfg: bake-off config (must include ``sitting_steps``)
+    @param tool: tool id for this round
+    @param model: model id for this round
+    @param pack: pack id for this round
+    @returns: checklist strings for the round record / open card
+    @raises ValueError: when ``sitting_steps`` is missing or empty
+    """
+    steps = cfg.get('sitting_steps')
+    if not isinstance(steps, list) or not steps:
+        raise ValueError('config.json missing non-empty sitting_steps list')
+    cell = cfg.get('cell') or []
+    cell_s = f'({cell[0]},{cell[1]})' if len(cell) >= 2 else ''
+    ctx = {'tool': tool, 'model': model, 'pack': pack, 'cell': cell_s}
+    return [str(step).format(**ctx) for step in steps]
+
+
 def require_bakeoff_active_world(root: Path) -> None:
     """Refuse CLI open/repair unless the active world matches config ``world``.
 
@@ -472,19 +499,12 @@ def open_round(
         },
         'usage': usage_template(),
         'sitting': {
-            'checklist': [
-                'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
-                'Quit Minecraft world (title / close save)',
-                'Regenerate the ghost baseline with `lidar_ghost apply` (no restore, ADR 004; the no-restore flow is pending task 48)',
-                'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
-                'Claim site lock; build with that tool/model only',
-                f"Use tool={tool_row['id']} model={model_row['id']} only",
-                f'Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)',
-                'Build from evidence table — not a previous Minecraft build',
-                'Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)',
-                'Apply, capture fixed cameras, release lock',
-                'Interview + score; then usage paste (need-you if counts unknown)',
-            ],
+            'checklist': sitting_checklist(
+                cfg,
+                tool=tool_row['id'],
+                model=model_row['id'],
+                pack=pack,
+            ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
         'force_mid': bool(force_mid) or None,
@@ -816,13 +836,9 @@ def format_sitting(round_: dict) -> str:
     if round_.get('parent_round'):
         lines.append(f"parent: {round_['parent_round']}")
     lines.append('')
-    lines.append('Sequence (do not skip):')
     lines.append(
-        '  regenerate ghost (lidar_ghost apply; no-restore flow pending task 48) '
-        '→ lock → build/apply → photos → interview'
+        'Sequence (do not skip) — from model-bakeoffs/config.json sitting_steps:'
     )
-    lines.append('')
-    lines.append('Checklist:')
     for item in round_.get('sitting', {}).get('checklist') or []:
         lines.append(f'  - {item}')
     usage = round_.get('usage') or {}
