@@ -1,0 +1,141 @@
+{
+  "id": "R-007",
+  "status": "scored",
+  "created": "2026-10-23T21:44:05Z",
+  "scored_at": "2026-10-23T23:17:24Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "mid",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-sonnet-5-5-low",
+    "label": "Claude Sonnet 5.5 (low effort)",
+    "tier": "mid",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": "Declared a failure by the user (2026-10-24) before the interview; no per-axis grades recorded. Round stopped by the parent: R-007 session interrupted and its apply process killed.",
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "fail",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": null,
+    "street_front": null,
+    "aerial_top": null,
+    "real_refs_note": null
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": null
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004)",
+      "Confirm the 3\u00d73 ghost baseline around (48,-44) is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=claude-code model=claude-sonnet-5-5-low only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ]
+  },
+  "notes": "Sonnet 5.5 low effort. Feature apply seq 116 landed. Stopping left ghost build entry 118 (ghost_45_m46_features, cell 45,-46) begun with nothing written and no backup, which site_recover will not resolve; entry 115 (47,-42 ghost ground) was recovered to landed. Site lock bakeoff_sonnet_low released by the parent. No usage recorded."
+}

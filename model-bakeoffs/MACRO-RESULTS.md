@@ -9,3 +9,4 @@ Use this list so future sittings do not re-try models already shown unsuitable f
 | R-003 | Claude Haiku 5.5 | overall fail (mech_gate fail) |
 | R-005 | Claude Haiku 5.5 (second attempt) | overall fail |
 | R-006 | Claude Haiku 5.5 (high effort) | overall fail (massing, openings, roof/greeblies, keep fail; materials pass) |
+| R-007 | Claude Sonnet 5.5 (low effort) | overall fail (user-declared; not interviewed) |
