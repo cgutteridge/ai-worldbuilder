@@ -537,6 +537,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "From R-006 retro. In scripts/model_bakeoff.py, the CLI `open` and `repair` commands (NOT open_round(), which tests call with temp roots) check active_world.gameworld_id() against a `world` key added to model-bakeoffs/config.json (value 'bakeoff'; worlds/bakeoff) and refuse otherwise, printing the exact prefix `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`. Agent shells do not keep exports between calls, so SKILL.md and PROTOCOL.md must say to prefix every bake-off command with that variable (not a one-off `export`). Does not restrict world repair tools. Pairs with the no-default-world task (#57). Done 2026-10-23: merged task/58-bakeoff-world-guard (4cf25c6 tip); ship-branch APPROVE after import fix."
+    },
+    {
+      "id": 59,
+      "title": "Bake-off sitting steps written once in config.json; round checklist and open card generated from it",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "From R-006 retro. The sitting sequence is copied in SKILL.md, PROTOCOL.md, README.md, docs/model-bakeoffs.md, FAIRNESS.md and the checklist baked into each rounds/R-NNN.json, and they contradict (checklist says 'Quit Minecraft world', protocol says the world must be open for apply; both the checklist and format_sitting say 'pending task 48', which was deleted). Decided (grill): keep the steps as a list in model-bakeoffs/config.json; open_round and format_sitting render from it; the other docs link to it instead of copying. Leave existing rounds R-004..R-006 as historical records. Blocked by #58: both edit model_bakeoff.py and SKILL.md. Add one more step (from R-006 done-gate): before claiming the lock, confirm the 3x3 ghost baseline around (48,-44) is complete and clean, because a prior round's teardown leaves ghost ground without ghost features and the journal can say 'applied' while the blocks differ (R-006 left cells 47,-44 / 48,-44 / 48,-43 ghost-ground-only, with 2 reconcile drift findings). Run `cell_registry.py reconcile` over the 9 cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any cell not complete with `lidar_ghost apply --force`. Unblocked 2026-10-23 after #58 merged. Done 2026-10-23: merged c25b03a / 8a2d18f; ship-branch APPROVE (nits only)."
     }
   ]
 }
