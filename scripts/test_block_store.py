@@ -250,6 +250,22 @@ class TestStateHelpers(unittest.TestCase):
         self.assertFalse(same_state('stone', None))
         self.assertFalse(same_state('stone', 'minecraft:dirt'))
 
+    def test_same_state_ignores_game_derived_connections(self):
+        # the game re-derives connections from neighbours after placement (R-006: 2 panes)
+        self.assertTrue(same_state('glass_pane[east=true,west=true]',
+                                   'minecraft:glass_pane[east=false,north=true,south=false,waterlogged=false,west=true]'))
+        self.assertTrue(same_state('iron_bars[north=true]', 'minecraft:iron_bars[north=false,south=true]'))
+        self.assertTrue(same_state('oak_fence[east=true]', 'minecraft:oak_fence[east=false,north=true]'))
+        self.assertTrue(same_state('stone_brick_wall[up=true,north=low]',
+                                   'minecraft:stone_brick_wall[up=false,north=none]'))
+        self.assertFalse(same_state('glass_pane[east=true]', 'minecraft:stained_glass_pane[east=true]'))
+
+    def test_same_state_keeps_other_properties_on_connectables(self):
+        # gates are not connectables: facing/open/in_wall are the builder's choice
+        self.assertFalse(same_state('oak_fence_gate[facing=north,open=true]',
+                                    'minecraft:oak_fence_gate[facing=north,open=false]'))
+        self.assertFalse(same_state('oak_fence_gate[facing=north]', 'minecraft:oak_fence_gate[facing=south]'))
+
 
 if __name__ == '__main__':
     unittest.main()

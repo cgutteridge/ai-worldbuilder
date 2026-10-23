@@ -52,9 +52,19 @@ def block_id(state: str) -> str:
     return canonical_state(state).split('[')[0]
 
 
+# Blocks whose connection properties the game re-derives from neighbours after placement.
+_CONNECTION_PROPS = frozenset({'north', 'south', 'east', 'west', 'up'})
+
+
+def _game_derives_connections(block: str) -> bool:
+    name = block.removeprefix('minecraft:')
+    return name.endswith(('_pane', '_fence', '_wall')) or name == 'iron_bars'
+
+
 def same_state(planned: str, actual: str | None) -> bool:
     """Whether ``actual`` satisfies ``planned``: same id and every planned property
-    (``waterlogged`` ignored). Mirrors ``site_kit.same`` without importing site_kit.
+    (``waterlogged`` ignored; so are connection properties of panes, bars, fences and walls,
+    which the game rewrites from the neighbours). Mirrored by ``site_kit.same``.
 
     @param planned: planned block state
     @param actual: block state read back, or None (unloaded)
@@ -70,7 +80,10 @@ def same_state(planned: str, actual: str | None) -> bool:
     want = dict(kv.split('=') for kv in want_state[want_state.index('[') + 1:-1].split(','))
     got = (dict(kv.split('=') for kv in actual[actual.index('[') + 1:-1].split(','))
            if '[' in actual else {})
-    return all(got.get(k) == v for k, v in want.items() if k != 'waterlogged')
+    skip = {'waterlogged'}
+    if _game_derives_connections(block_id(want_state)):
+        skip |= _CONNECTION_PROPS
+    return all(got.get(k) == v for k, v in want.items() if k not in skip)
 
 
 @runtime_checkable

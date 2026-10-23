@@ -507,17 +507,9 @@ class World:
 
 
 def same(planned, actual):
-    """Compare id and the planned properties (unplanned properties may differ)."""
-    if actual is None:
-        return False
-    p = full(planned)
-    if bid(p) != actual.split('[')[0]:
-        return False
-    if '[' in p:
-        want = dict(kv.split('=') for kv in p[p.index('[') + 1:-1].split(','))
-        got = dict(kv.split('=') for kv in actual[actual.index('[') + 1:-1].split(',')) if '[' in actual else {}
-        return all(got.get(k) == v for k, v in want.items() if k not in ('waterlogged',))
-    return True
+    """Compare id and the planned properties (unplanned properties may differ; see ``block_store.same_state``)."""
+    from block_store import same_state
+    return same_state(planned, actual)
 
 
 def _feature_block_id() -> str:
