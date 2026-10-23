@@ -22,10 +22,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import active_world
 from atomic_json import write_json
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BAKEOFFS = ROOT / 'model-bakeoffs'
+# Prefix every bake-off CLI call (agent shells do not keep a one-off export).
+BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
 
 TIERS = ('low', 'mid', 'high')
 GRADE_RANK = {'fail': 0, 'pass': 1, 'great': 2}
@@ -72,6 +75,29 @@ def load_config(root: Path) -> dict:
     @returns: config dict
     """
     return load_json(root / 'config.json')
+
+
+def require_bakeoff_active_world(root: Path) -> None:
+    """Refuse CLI open/repair unless the active world matches config ``world``.
+
+    Library helpers such as ``open_round`` are not guarded (tests use temp roots).
+    Does not restrict world repair tools outside this CLI.
+
+    @param root: bake-offs root (config.json with a ``world`` key)
+    @raises RuntimeError: when the active ``gameworld_id`` does not match
+    """
+    expected = load_config(root).get('world')
+    if not expected:
+        raise RuntimeError(
+            'model-bakeoffs/config.json missing "world" '
+            f'(expected bakeoff); prefix every command with {BAKEOFF_WORLD_PREFIX}'
+        )
+    actual = active_world.gameworld_id()
+    if actual != expected:
+        raise RuntimeError(
+            f'bake-off open/repair requires world {expected!r} '
+            f'(active is {actual!r}); prefix every command with {BAKEOFF_WORLD_PREFIX}'
+        )
 
 
 def load_catalogue(root: Path) -> dict:
@@ -931,6 +957,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f'added {args.tool}/{args.id} tier={args.tier}')
             return 0
         if args.cmd == 'open':
+            require_bakeoff_active_world(root)
             round_ = open_round(
                 root,
                 tool=args.tool,
@@ -954,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"scored {round_['id']} overall={round_['overall']}")
             return 0
         if args.cmd == 'repair':
+            require_bakeoff_active_world(root)
             child = open_repair(root, args.round_id, args.brief)
             print(format_sitting(child))
             print(f"\nwrote {round_path(root, child['id'])}")

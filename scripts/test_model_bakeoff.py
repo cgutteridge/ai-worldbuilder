@@ -1,12 +1,17 @@
 """Unit tests for model bake-off round records and ladder suggestions."""
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import model_bakeoff as MB
+
+TOOL_ROOT = Path(__file__).resolve().parent.parent
+BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
 
 
 def _seed(root: Path) -> None:
@@ -16,6 +21,7 @@ def _seed(root: Path) -> None:
         root / 'config.json',
         {
             'pack': 'v1',
+            'world': 'bakeoff',
             'cell': [48, -44],
             'cell_note': 'test',
             'ghost_cells': [[48, -44]],
@@ -263,6 +269,88 @@ class TestModelBakeoff(unittest.TestCase):
             cat = MB.load_catalogue(root)
             azure = next(t for t in cat['tools'] if t['id'] == 'azure')
             self.assertEqual(azure['models'][0]['id'], 'gpt-mini')
+
+
+class TestBakeoffWorldGuard(unittest.TestCase):
+    """CLI open/repair must run only against the bake-off world."""
+
+    def test_config_names_bakeoff_world(self):
+        cfg = MB.load_config(MB.DEFAULT_BAKEOFFS)
+        self.assertEqual(cfg['world'], 'bakeoff')
+
+    def test_cli_open_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            err = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+                    mock.patch('sys.stderr', err):
+                rc = MB.main([
+                    '--root', str(root),
+                    'open', '--tool', 'cursor', '--model', 'composer',
+                ])
+            self.assertEqual(rc, 2)
+            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertFalse((root / 'rounds' / 'R-001.json').is_file())
+
+    def test_cli_repair_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            parent = MB.open_round(
+                root, tool='cursor', model='composer', task='feature_design',
+            )
+            MB.score_round(
+                root,
+                parent['id'],
+                overall='fail',
+                axes={'massing': 'fail', 'keep': 'fail'},
+                mech_gate='pass',
+                why='ridge too low',
+            )
+            err = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+                    mock.patch('sys.stderr', err):
+                rc = MB.main([
+                    '--root', str(root),
+                    'repair', parent['id'], '--brief', 'raise ridge one block',
+                ])
+            self.assertEqual(rc, 2)
+            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertFalse((root / 'rounds' / 'R-002.json').is_file())
+
+    def test_cli_open_succeeds_when_world_matches(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            out = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch('sys.stdout', out):
+                rc = MB.main([
+                    '--root', str(root),
+                    'open', '--tool', 'cursor', '--model', 'composer',
+                ])
+            self.assertEqual(rc, 0)
+            self.assertTrue((root / 'rounds' / 'R-001.json').is_file())
+            self.assertIn('R-001', out.getvalue())
+
+    def test_docs_say_prefix_every_command(self):
+        skill = (TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md').read_text(
+            encoding='utf-8',
+        )
+        protocol = (TOOL_ROOT / 'model-bakeoffs' / 'PROTOCOL.md').read_text(encoding='utf-8')
+        for text, name in ((skill, 'SKILL.md'), (protocol, 'PROTOCOL.md')):
+            self.assertIn(BAKEOFF_WORLD_PREFIX, text, msg=name)
+            self.assertRegex(
+                text,
+                r'(?i)prefix every',
+                msg=f'{name} must say to prefix every bake-off command',
+            )
+            self.assertNotRegex(
+                text,
+                r'(?i)export\s+AI_WORLDBUILDER_WORLD_ROOT',
+                msg=f'{name} must not teach a one-off export',
+            )
 
 
 if __name__ == '__main__':
