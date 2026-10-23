@@ -13,6 +13,7 @@ for _p in (_ROOT / "shims", _ROOT / "scripts"):
 import io
 import json
 import os
+import signal
 import tempfile
 import unittest
 from pathlib import Path
@@ -111,7 +112,8 @@ class _Tiny(unittest.TestCase):
     def setUp(self):
         from journal_testkit import JournalWorld
         for p in (mock.patch.object(cellmath, 'CELL', 2), mock.patch.object(lg.cellmath, 'CELL', 2),
-                  mock.patch.dict(os.environ, {}, clear=False)):
+                  mock.patch.dict(os.environ, {}, clear=False),
+                  mock.patch('sys.stderr', new_callable=io.StringIO)):
             p.start()
             self.addCleanup(p.stop)
         os.environ.pop('LIDAR_GHOST_RING', None)
@@ -228,6 +230,61 @@ class OnCellFocus(_Tiny):
         self.assertEqual(lg.ring_from_env(), lg.DEFAULT_RING)
 
 
+class ApplyProgress(_Tiny):
+    """Per-cell stderr progress, journal-status summary, clean SIGTERM (task #60)."""
+
+    def test_ensure_prints_one_flushed_stderr_line_per_cell(self):
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(self.registry(), [(0, 0), (1, 0)])
+        lines = [ln for ln in err.getvalue().splitlines() if 'cell ' in ln]
+        self.assertEqual(len(lines), 2)
+        self.assertIn('0,0', lines[0])
+        self.assertIn('1/2', lines[0])
+        self.assertIn('1,0', lines[1])
+        self.assertIn('2/2', lines[1])
+
+    def test_ensure_summary_counts_landed_and_skipped_builds(self):
+        reg = self.registry()
+        lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)  # two builds land
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(reg, [(0, 0), (1, 0)], apply=self.jw.apply)
+        # (0,0) skipped (layers-complete); (1,0) ground+features both land
+        summary = [ln for ln in err.getvalue().splitlines() if 'summary' in ln]
+        self.assertEqual(len(summary), 1)
+        self.assertIn('landed=2', summary[0])
+        self.assertIn('mismatched=0', summary[0])
+        self.assertIn('abandoned=0', summary[0])
+        self.assertIn('skipped=1', summary[0])
+
+    def test_sigterm_names_in_flight_cell_and_reconcile_hint(self):
+        lg.set_in_flight_cell((48, -44))
+        self.addCleanup(lg.set_in_flight_cell, None)
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            with self.assertRaises(SystemExit) as cm:
+                lg.handle_sigterm(signal.SIGTERM, None)
+        self.assertNotEqual(cm.exception.code, 0)
+        text = err.getvalue()
+        self.assertIn('48,-44', text)
+        self.assertIn('cell_registry.py reconcile', text)
+
+    def test_cli_plan_keeps_final_json_on_stdout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / 'h.json'
+            fixture.write_text(json.dumps({'ground_y': [[10, 10], [10, 10]], 'feature': [[0, 1], [2, 0]]}))
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch('sys.stdout', out), mock.patch('sys.stderr', err):
+                code = lg.main(['plan', '--cell', '0,0', '--heights-json', str(fixture)])
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload['focus'], [0, 0])
+            self.assertTrue(payload['dry'])
+            self.assertIn('reports', payload)
+            self.assertTrue(any('cell ' in ln for ln in err.getvalue().splitlines()))
+
+
 class CliDryRun(_Tiny):
     """CLI plan/status with fixture heights (no server)."""
 
@@ -235,7 +292,7 @@ class CliDryRun(_Tiny):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = Path(tmp) / 'h.json'
             fixture.write_text(json.dumps({'ground_y': [[10, 10], [10, 10]], 'feature': [[0, 1], [2, 0]]}))
-            with mock.patch('sys.stdout'):
+            with mock.patch('sys.stdout'), mock.patch('sys.stderr'):
                 code = lg.main(['plan', '--cell', '0,0', '--heights-json', str(fixture)])
             self.assertEqual(code, 0)
 
