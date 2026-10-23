@@ -10,5 +10,18 @@
   "axes": ["massing", "openings", "roof_greeblies", "materials", "keep"],
   "critical_axes": ["massing", "keep"],
   "max_attempts": 3,
-  "grades": ["fail", "pass", "great"]
+  "grades": ["fail", "pass", "great"],
+  "sitting_steps": [
+    "One apply owner for this sitting (parent recovery → interrupt the model subagent first)",
+    "Regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004)",
+    "Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell",
+    "Confirm the 3×3 ghost baseline around {cell} is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
+    "Claim site lock; build with that tool/model only",
+    "Use tool={tool} model={model} only",
+    "Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)",
+    "Build from evidence table — not a previous Minecraft build",
+    "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+    "Apply, capture fixed cameras, release lock",
+    "Interview + score; then usage paste (need-you if counts unknown)"
+  ]
 }

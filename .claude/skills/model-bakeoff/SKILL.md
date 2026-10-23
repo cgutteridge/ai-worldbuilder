@@ -28,12 +28,8 @@ AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py 
 
 ## Sitting sequence
 
-1. **One apply owner** — if the parent takes over re-apply, interrupt the model subagent first.
-2. Regenerate the ghost baseline with `lidar_ghost apply` (same world prefix). There is no region restore
-   (ADR 004, task 40).
-3. Confirm the world is open (MCP up). Ghost may look sparse around the cell, expected.
-4. Claim lock; run only the catalogue tool/model for this round.
-5. Evidence table → build → apply → fixed cameras → release lock.
-6. Human interview one axis at a time → `score` → `usage` paste (or leave null).
+Canonical steps live in `model-bakeoffs/config.json` (`sitting_steps`). `open` / `show`
+render them onto the round checklist and sitting card — do not copy the list here.
+World prefix as above; no region restore (ADR 004).
 
 Do not score without the interview. Do not invent token counts.

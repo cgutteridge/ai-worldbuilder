@@ -11,7 +11,7 @@ Protocol detail: [PROTOCOL.md](PROTOCOL.md). Short pointer from docs: [../docs/m
 | Path | Role |
 |------|------|
 | `catalogue.json` | Tools you use + models available when you have tokens (`low` / `mid` / `high`) |
-| `config.json` | Cell, pack, active tiers (`low`+`mid` only for now), interview axes |
+| `config.json` | Cell, pack, active tiers (`low`+`mid` only for now), interview axes, **`sitting_steps`** (canonical sitting sequence) |
 | `packs/v1/` | Frozen prompt brief |
 | `rounds/R-NNN.json` | **One sitting** — self-contained (tool, model, brief path, cell, checklist, interview, grades) |
 | `MACRO-RESULTS.md` | Skip-list: models failed on feature-design bake-off (do not re-try for place build) |
@@ -28,6 +28,8 @@ Protocol detail: [PROTOCOL.md](PROTOCOL.md). Short pointer from docs: [../docs/m
 
 ## One sitting
 
+Sitting sequence: edit `sitting_steps` in [config.json](config.json) only. `open` / `show` render that list onto the round checklist and card (see [PROTOCOL.md](PROTOCOL.md)).
+
 ```bash
 # once per tool/model you have access to
 python3 scripts/model_bakeoff.py add-tool --id cursor --name Cursor
@@ -38,7 +40,7 @@ python3 scripts/model_bakeoff.py add-model --tool cursor --id opus --tier high -
 python3 scripts/model_bakeoff.py status
 python3 scripts/model_bakeoff.py next
 python3 scripts/model_bakeoff.py open --tool cursor --model composer-2.5
-# regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004) → apply
+# follow the sitting_steps checklist printed by open/show
 python3 scripts/model_bakeoff.py score R-001 --mech-gate pass --overall pass \
   --axis massing=pass --axis openings=pass --axis roof_greeblies=pass \
   --axis materials=pass --axis keep=pass --why "ridge a bit low"
