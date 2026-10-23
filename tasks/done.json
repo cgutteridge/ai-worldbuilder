@@ -483,6 +483,24 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Same script as #61, so serialised. `ship_branch.py sweep` lists `git branch --no-merged main` and leftover worktrees, labels each branch tracker/docs-only or code, with commit count. Offers to merge tracker/docs-only strays; code strays are reported and wait for the owner's call (review-and-merge or delete). Never deletes or merges code on its own. Merged via wave 61-65: ship_branch.py sweep on main."
+    },
+    {
+      "id": 64,
+      "title": "Project parallel-task-wave override: review before each merge",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Project-level override of the global parallel-task-wave skill (leave the global copy alone). The wave orchestrator runs the #63 loop on each returned worker branch before merging it. Workers stay code-only and never review or merge themselves; tracker archive stays an orchestrator hop on main after merge. Merged via wave 61-65: .claude/skills/parallel-task-wave/SKILL.md."
+    },
+    {
+      "id": 65,
+      "title": "Repo rules and policy record for the branch gate",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "AGENTS.md: new Always rule (code goes on task/* branches and through the gate unless the owner opts out; tracker-only and docs-only edits commit straight to main under the pre-commit checks, no tracker/* branches) and a Start step that runs `ship_branch.py sweep`. Update CODING_STANDARDS.md to match. Project-level `done` override that includes the sweep (global done skill untouched). Write ADR 005 recording the policy. The pre-commit hook already only blocks tracker edits on task/*, so check whether any change is needed there. Merged via wave 61-65: ADR 005, AGENTS/CODING_STANDARDS, project done sweep."
     }
   ]
 }
