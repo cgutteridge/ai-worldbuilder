@@ -5,8 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from block_store import (BlockStoreError, LiveBlocks, MemoryBlocks, StaleRead, canonical_state,
-                         format_block_scan_text, parse_block_scan_text, same_state, scan_tiles)
+from block_store import (BlockStoreError, LiveBlocks, MemoryBlocks, StaleRead, aabb_tile_lower_bound,
+                         canonical_state, format_block_scan_text, parse_block_scan_text, same_state,
+                         scan_tiles)
 
 STONE = 'minecraft:stone'
 STAIRS = 'minecraft:oak_stairs[facing=north,half=bottom]'
@@ -31,7 +32,33 @@ SAMPLE_STAIRS_SCAN = '''\
         half: top
 '''
 
+# Truncated live block_scan_region (bakeoff 2026-10-23 parity probe): two air blocks.
 SAMPLE_AIR_TILE = '''\
+[2]:
+  - position:
+    x: 6128
+    y: 50
+    z: -5546
+    state:
+      id: "minecraft:air"
+      lightLevel: 0
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+  - position:
+    x: 6129
+    y: 50
+    z: -5546
+    state:
+      id: "minecraft:air"
+      lightLevel: 0
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+'''
+
+# Hand-built fixture (not a recorded capture) — air + stone for mixed parse.
+FIXTURE_AIR_AND_STONE_TILE = '''\
 [2]:
   - position:
     x: 0
@@ -275,6 +302,28 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
         # single-block tile: limit == volume (never the tool default of 1024)
         self.assertEqual(args['limit'], 1)
 
+    def test_far_apart_read_many_falls_back_to_per_chunk(self):
+        """Sparse positions whose parent AABB needs >64 tiles scan per chunk, not the AABB."""
+        near = (0, 64, 0)
+        far = (100_000, 64, 100_000)
+        blocks = {near: STONE, far: 'minecraft:dirt'}
+        loaded = {(near[0] >> 4, near[2] >> 4), (far[0] >> 4, far[2] >> 4)}
+        mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+        store = make_store('live', blocks, self.tmp / 'sparse', mcp=mcp, loaded_chunks=loaded)
+        got = store.read_many([near, far])
+        self.assertEqual(got[near], STONE)
+        self.assertEqual(got[far], 'minecraft:dirt')
+        scan_calls = [a for n, a in mcp.calls if n == 'block_scan_region']
+        # Per-chunk fallback: two tiny scans, not millions of empty AABB tiles.
+        self.assertEqual(len(scan_calls), 2)
+        for args in scan_calls:
+            box = args['box']
+            x0, y0, z0 = (int(box['from'][k]) for k in 'xyz')
+            x1, y1, z1 = (int(box['to'][k]) for k in 'xyz')
+            vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
+            self.assertLessEqual(vol, 65536)
+            self.assertLessEqual(vol, 16)  # single-block (or tiny) per chunk group
+
 
 class TestParseBlockScanText(unittest.TestCase):
     def test_recorded_stairs_sample(self):
@@ -282,8 +331,13 @@ class TestParseBlockScanText(unittest.TestCase):
         self.assertEqual(got[(6128, 80, -5546)],
                          'minecraft:oak_stairs[facing=east,half=top,shape=straight,waterlogged=false]')
 
-    def test_air_and_stone_tile(self):
+    def test_recorded_air_tile(self):
         got = parse_block_scan_text(SAMPLE_AIR_TILE)
+        self.assertEqual(got[(6128, 50, -5546)], AIR)
+        self.assertEqual(got[(6129, 50, -5546)], AIR)
+
+    def test_fixture_air_and_stone_tile(self):
+        got = parse_block_scan_text(FIXTURE_AIR_AND_STONE_TILE)
         self.assertEqual(got[(0, 64, 0)], AIR)
         self.assertEqual(got[(1, 64, 0)], STONE)
 
@@ -310,6 +364,31 @@ class TestScanTiles(unittest.TestCase):
             self.assertLessEqual(vol, 65536)
         self.assertEqual(tiles[0], ((0, 0, 0), (127, 3, 127)))
         self.assertEqual(tiles[-1], ((0, 96, 0), (127, 99, 127)))
+
+    def test_dz_greater_than_cap_slices_z_without_recursion(self):
+        """Regression: dz > cap used to set x_span=1 and recurse forever."""
+        cap = 100
+        tiles = list(scan_tiles(0, 0, 0, 0, 0, cap + 50, cap=cap))
+        self.assertGreater(len(tiles), 1)
+        for lo, hi in tiles:
+            vol = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+            self.assertLessEqual(vol, cap)
+        # Coverage: every z from 0..cap+50 appears in some tile
+        covered = set()
+        for lo, hi in tiles:
+            covered.update(range(lo[2], hi[2] + 1))
+        self.assertEqual(covered, set(range(cap + 51)))
+
+    def test_wide_footprint_slices_without_recursion(self):
+        """Footprint ≫ cap (wide X and Z) must terminate; every tile ≤ cap."""
+        # 400×1×400 = 160_000 > 65536 — needs horizontal slicing (was a crash path
+        # when only one axis exceeded the cap).
+        tiles = list(scan_tiles(0, 64, 0, 399, 64, 399, cap=65536))
+        self.assertGreater(len(tiles), 1)
+        for lo, hi in tiles:
+            vol = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+            self.assertLessEqual(vol, 65536)
+        self.assertGreater(aabb_tile_lower_bound(0, 64, 0, 100_000, 64, 100_000), 64)
 
 
 class TestStateHelpers(unittest.TestCase):

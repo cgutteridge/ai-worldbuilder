@@ -4,9 +4,11 @@
 
 - :class:`MemoryBlocks` is a dict, for tests and planned overlays.
 - :class:`LiveBlocks` reads the open world over MCP ``block_scan_region`` (tiled to volume
-  ≤ 65 536, ``limit`` raised to the tile size). Region identity and stale-read guards stay;
-  writes always go over MCP, never through this module. ``site_kit.World`` (``.mca`` parser)
-  remains for non-BlockStore planners/audits — LiveBlocks no longer uses it.
+  ≤ 65 536, ``limit`` raised to the tile size; sparse AABBs fall back to per-chunk scans).
+  Region identity and stale-read guards stay; writes always go over MCP, never through this
+  module. ``site_kit.World`` (``.mca`` parser) remains for non-BlockStore planners/audits —
+  LiveBlocks no longer uses it. Live MCP lists air for far/missing chunks (see audit §7);
+  ``None`` only appears when a scan omits a position (FakeScanMcp / filters).
 
 States are canonical block strings: ``minecraft:`` prefix, properties sorted
 (``minecraft:oak_stairs[facing=north,half=bottom]``). ``None`` means "chunk not loaded / unknown".
@@ -22,6 +24,8 @@ Pos = tuple[int, int, int]
 
 # MCP block_scan_region caps (docs/audits/region-block-reads.md §7).
 SCAN_VOLUME_CAP = 65536
+# When a read_many AABB would need more tiles than this, LiveBlocks scans per chunk instead.
+MAX_ENSURE_TILES = 64
 
 
 class BlockStoreError(RuntimeError):
@@ -255,6 +259,8 @@ def scan_tiles(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
     """Yield inclusive ``(lo, hi)`` boxes covering the AABB with volume ≤ ``cap``.
 
     Tall volumes are sliced on Y (cell-shaped 128×N×128 tiles), matching the §7 probe.
+    Wide footprints slice on X when that alone fits; when ``dz > cap`` (so a 1-wide
+    strip still exceeds), slice Z as well so recursion always makes progress.
 
     @param x0,y0,z0: inclusive min corner
     @param x1,y1,z1: inclusive max corner
@@ -270,16 +276,40 @@ def scan_tiles(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
     dx, dz = x1 - x0 + 1, z1 - z0 + 1
     footprint = dx * dz
     if footprint > cap:
-        # Rare: wide AABB — slice on X then Z so each slab fits.
+        # Wide AABB — slice on X when a strip fits; otherwise slice Z (dz > cap).
         x_span = max(1, cap // max(1, dz))
-        for xa in range(x0, x1 + 1, x_span):
-            xb = min(xa + x_span - 1, x1)
-            yield from scan_tiles(xa, y0, z0, xb, y1, z1, cap=cap)
+        if x_span * dz <= cap:
+            for xa in range(x0, x1 + 1, x_span):
+                xb = min(xa + x_span - 1, x1)
+                yield from scan_tiles(xa, y0, z0, xb, y1, z1, cap=cap)
+            return
+        z_span = min(dz, cap)
+        for za in range(z0, z1 + 1, z_span):
+            zb = min(za + z_span - 1, z1)
+            yield from scan_tiles(x0, y0, za, x1, y1, zb, cap=cap)
         return
     max_h = max(1, cap // footprint)
     for ya in range(y0, y1 + 1, max_h):
         yb = min(ya + max_h - 1, y1)
         yield (x0, ya, z0), (x1, yb, z1)
+
+
+def aabb_tile_lower_bound(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
+                          *, cap: int = SCAN_VOLUME_CAP) -> int:
+    """Lower bound on how many ``scan_tiles`` boxes an AABB needs (volume / cap).
+
+    Used to decide sparse fallback without materialising millions of tiles.
+
+    @param x0,y0,z0: inclusive min corner
+    @param x1,y1,z1: inclusive max corner
+    @param cap: max blocks per tile
+    @returns: at least 1; ``ceil(volume / cap)``
+    """
+    dx = abs(x1 - x0) + 1
+    dy = abs(y1 - y0) + 1
+    dz = abs(z1 - z0) + 1
+    vol = dx * dy * dz
+    return max(1, (vol + cap - 1) // cap)
 
 
 def _default_identity_check(region: Path) -> None:
@@ -401,6 +431,23 @@ class LiveBlocks:
                     # Listed → state (incl. air). Omitted → None (unloaded / filtered void).
                     self._cache[p] = found.get(p)
 
+    def _ensure_chunk_groups(self, missing: list[Pos]) -> None:
+        """Scan each chunk's needed AABB (sparse far-apart fallback).
+
+        @param missing: positions not yet in the cache
+        """
+        groups: dict[tuple[int, int], list[Pos]] = {}
+        for p in missing:
+            groups.setdefault((p[0] >> 4, p[2] >> 4), []).append(p)
+        for group in groups.values():
+            still = [p for p in group if p not in self._cache]
+            if not still:
+                continue
+            nxs, nys, nzs = zip(*still)
+            for lo, hi in scan_tiles(min(nxs), min(nys), min(nzs),
+                                     max(nxs), max(nys), max(nzs)):
+                self._scan_box(lo, hi)
+
     def _ensure(self, positions: Iterable[Pos]) -> None:
         missing = [tuple(p) for p in positions if tuple(p) not in self._cache]
         if not missing:
@@ -408,7 +455,14 @@ class LiveBlocks:
         xs = [p[0] for p in missing]
         ys = [p[1] for p in missing]
         zs = [p[2] for p in missing]
-        for lo, hi in scan_tiles(min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)):
+        x0, y0, z0 = min(xs), min(ys), min(zs)
+        x1, y1, z1 = max(xs), max(ys), max(zs)
+        # Huge / sparse AABB: do not tile the parent box (would be millions of
+        # empty scans). Fall back to per-chunk groups instead.
+        if aabb_tile_lower_bound(x0, y0, z0, x1, y1, z1) > MAX_ENSURE_TILES:
+            self._ensure_chunk_groups(missing)
+            return
+        for lo, hi in scan_tiles(x0, y0, z0, x1, y1, z1):
             need = [p for p in missing
                     if lo[0] <= p[0] <= hi[0] and lo[1] <= p[1] <= hi[1] and lo[2] <= p[2] <= hi[2]
                     and p not in self._cache]
