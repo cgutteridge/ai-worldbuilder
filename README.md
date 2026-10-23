@@ -2,13 +2,14 @@
 
 Reusable AI tool for building and refining Minecraft worlds from real-place evidence.
 
-One checkout can address many world repos under gitignored `worlds/`; exactly one world is **active**, selected by `active_world.py` (or env `AI_WORLDBUILDER_WORLD_ROOT`).
+One checkout can address many world repos under gitignored `worlds/`; exactly one world is **active**, selected by env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default).
 
 System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
 
 ## Active world
 
 ```bash
+export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/southampton-build
 python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT); print(gameworld_id())"
 python3 scripts/world_frame.py info
 ```

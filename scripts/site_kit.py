@@ -14,7 +14,7 @@ cell is written, including air (so excavation is explicit). apply():
      journal entry, then runs the journal follow-ups (lidar ghost strip / frontier).
 Guard and readback reports land in verification/site/<name>-*.json.
 """
-import json, math, os, struct, time, zlib
+import json, math, struct, time, zlib
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -25,8 +25,6 @@ REGION = Path(_CFG['region_path'])
 STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
 OUT = ROOT / 'verification/site'
 D = 'minecraft:overworld'
-# Explicit region override for bake-off sittings (folder under instance/saves/…).
-REGION_ENV = 'AI_WORLDBUILDER_REGION'
 ATTACH = ('door', 'sign', 'torch', 'lantern', 'pane', 'bars', 'bed', 'button', 'lever',
           'trapdoor', 'end_rod', 'chain', 'carpet', 'rail', 'ladder', 'vine', 'banner',
           'flower_pot', 'potted', 'candle', 'rod', 'campfire', 'scaffolding', 'sapling')
@@ -309,20 +307,17 @@ class PlannedWorld:
 
 
 def resolve_region(region=None) -> Path:
-    """Region folder for World readback: explicit arg, else env, else config.
+    """Region folder for World readback: explicit arg, else active world config.
 
-    Bake-off sittings play in the bakeoff save while ``config/world.json`` still
-    points at SouthamptonAI. Set ``AI_WORLDBUILDER_REGION`` (or pass ``region``)
-    so readback matches the open world.
+    The save always comes from the active world's ``config/world.json``
+    (``AI_WORLDBUILDER_WORLD_ROOT``). Pass ``region`` only for tests or
+    one-off probes against another folder.
 
-    @param region: optional region directory (wins over env and config)
+    @param region: optional region directory (wins over config)
     @returns: absolute path to the ``…/overworld/region`` folder
     """
     if region is not None:
         return Path(region)
-    env = os.environ.get(REGION_ENV)
-    if env:
-        return Path(env)
     return Path(REGION)
 
 
@@ -376,7 +371,7 @@ def mcp_reported_gameworld(*, region: Path | None = None) -> str | None:
 def ensure_region_matches_open_world(region=None) -> None:
     """Refuse when World region identity differs from the MCP-open save.
 
-    @param region: region override (same rules as :func:`resolve_region`)
+    @param region: optional region directory (same rules as :func:`resolve_region`)
     @raises SystemExit: when the open world and region target disagree
     """
     target = resolve_region(region)
@@ -391,8 +386,8 @@ def ensure_region_matches_open_world(region=None) -> None:
         return
     raise SystemExit(
         f'refuse apply: World region targets {expected!r} but MCP is serving '
-        f'{reported!r}. Set {REGION_ENV} to the open save\'s region folder '
-        f'(or open the matching world).'
+        f'{reported!r}. Point AI_WORLDBUILDER_WORLD_ROOT at the world whose '
+        f'config/world.json matches the open save (or open the matching world).'
     )
 
 
@@ -566,7 +561,7 @@ def primary_cell(positions) -> tuple[int, int]:
 
 
 def live_blocks():
-    """BlockStore over the active (or ``AI_WORLDBUILDER_REGION``) region files (tests patch this).
+    """BlockStore over the active world's region files (tests patch this).
 
     @returns: ``block_store.LiveBlocks``
     """

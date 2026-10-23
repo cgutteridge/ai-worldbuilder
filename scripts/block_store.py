@@ -220,7 +220,7 @@ class LiveBlocks:
 
     @classmethod
     def from_world_config(cls, **kwargs) -> 'LiveBlocks':
-        """Store for the resolved active (or ``AI_WORLDBUILDER_REGION``) region.
+        """Store for the active world's region (from ``config/world.json``).
 
         @returns: LiveBlocks
         """

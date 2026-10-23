@@ -4,8 +4,8 @@ Import this module from worldbuilder scripts and skills::
 
     from active_world import WORLD_ROOT, load_world_config, load_world_frame
 
-Edit ``WORLD_ROOT`` (or set env ``AI_WORLDBUILDER_WORLD_ROOT``) to switch the
-active world checkout. Exactly one world is active at a time.
+Set env ``AI_WORLDBUILDER_WORLD_ROOT`` to the active world checkout. Exactly one
+world is active at a time. There is no silent default: unset refuses.
 """
 from __future__ import annotations
 
@@ -14,12 +14,25 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Default: nested checkout under worlds/ (gitignored; each world is its own repo).
-_DEFAULT_WORLD = Path(__file__).resolve().parent / "worlds" / "southampton-build"
+WORLD_ENV = "AI_WORLDBUILDER_WORLD_ROOT"
 
-WORLD_ROOT: Path = Path(
-    os.environ.get("AI_WORLDBUILDER_WORLD_ROOT", str(_DEFAULT_WORLD))
-).expanduser().resolve()
+
+def _resolve_world_root() -> Path:
+    """Resolve the active world checkout from ``AI_WORLDBUILDER_WORLD_ROOT``.
+
+    @returns: absolute path to the world checkout
+    @raises RuntimeError: when the env var is unset or empty
+    """
+    raw = os.environ.get(WORLD_ENV)
+    if not raw or not str(raw).strip():
+        raise RuntimeError(
+            f"{WORLD_ENV} is unset. Set it to the active world checkout "
+            f"(e.g. export {WORLD_ENV}=$PWD/worlds/southampton-build)."
+        )
+    return Path(raw).expanduser().resolve()
+
+
+WORLD_ROOT: Path = _resolve_world_root()
 
 TOOL_ROOT: Path = Path(__file__).resolve().parent
 
