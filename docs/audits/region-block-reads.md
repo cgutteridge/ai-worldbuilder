@@ -219,11 +219,60 @@ not sparse (AABB of a plan still returns every block in the box).
 
 ### Decision gate (ADR 004 “Block read path”)
 
-Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps, so a later
-`LiveBlocks` MCP backend is viable (file task #56). Keep today’s region-file `LiveBlocks` until
-that lands: payload size, tiling, and lack of sparse/palette output still make the region reader
-the cheaper default for planners and full-cell readback. Per-position `block_get_state` stays
-rejected on speed alone.
+Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps.
+**Task #56 (2026-10-23):** `LiveBlocks` is MCP-backed (`block_scan_region`, Y-tiling, raised
+`limit`, verbose-text parse). BlockStore contract covered with FakeScanMcp / recorded fixtures
+(no live server in CI). Per-position `block_get_state` stays rejected on speed alone.
+`site_kit.World` (`.mca` parser) is **kept** for non-BlockStore planners/audits; LiveBlocks no
+longer opens region files. Payload size and lack of sparse/palette output still make full-cell
+planner reads expensive over MCP — migrate those callers to `BlockStore` (or keep `World`) as a
+follow-up, not a BlockStore fallback switch.
+
+### Live parity: `.mca` vs `LiveBlocks` (task #56, 2026-10-23, bakeoff)
+
+Server/MOTD as above; `AI_WORLDBUILDER_WORLD_ROOT` → bakeoff checkout. Compared
+`site_kit.World(region).block` vs `LiveBlocks.from_world_config().read` (MCP
+`block_scan_region` with `dimension` + `box`, same path as `LiveBlocks._scan_box`).
+
+| position | `.mca` | LiveBlocks / MCP | match |
+| --- | --- | --- | --- |
+| (6016, 50, −5632) stone | `minecraft:stone` | `minecraft:stone` | yes |
+| (6128, 50, −5546) air | `minecraft:air` | `minecraft:air` | yes |
+| (6128, 80, −5546) air | `minecraft:air` | `minecraft:air` | yes |
+| (6129, 50, −5545) air | `minecraft:air` | `minecraft:air` | yes |
+| (1 000 000, 64, 1 000 000) far | `None` (no chunk on disk) | `minecraft:air` | **no** |
+
+**Proved:** for positions in loaded / on-disk chunks, MCP LiveBlocks matches the `.mca`
+reader for both non-air and air (air is listed in the scan text, not omitted).
+
+**MCP gap (documented, not fixed here):** `block_scan_region` returns a listed
+`minecraft:air` for far coordinates with no region chunk on disk. LiveBlocks therefore
+cannot tell “unloaded / unknown” from air over MCP alone; `site_kit.World` still returns
+`None` for missing chunks. Unit tests that expect `None` for unloaded use FakeScanMcp’s
+`loaded_chunks` filter (omit from the response), which live MCP does not do.
+
+Truncated live air-tile capture (bakeoff, two-block box at y=50):
+
+```text
+[2]:
+  - position:
+    x: 6128
+    y: 50
+    z: -5546
+    state:
+      id: "minecraft:air"
+      lightLevel: 0
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+  - position:
+    x: 6129
+    y: 50
+    z: -5546
+    state:
+      id: "minecraft:air"
+      ...
+```
 
 ### Reconcile live check (same sitting)
 

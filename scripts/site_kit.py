@@ -561,7 +561,7 @@ def primary_cell(positions) -> tuple[int, int]:
 
 
 def live_blocks():
-    """BlockStore over the active world's region files (tests patch this).
+    """BlockStore over the active world via MCP ``block_scan_region`` (tests patch this).
 
     @returns: ``block_store.LiveBlocks``
     """
