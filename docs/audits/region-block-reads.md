@@ -6,10 +6,10 @@ and docs only. No live MCP call was made and no Minecraft save was touched.
 
 ## 1. Inventory
 
-Targets: **live** = the active world's save (`config/world.json` `region_path`, or
-`AI_WORLDBUILDER_REGION` for a bake-off save); **pristine** = `pristine_region_path`
+Targets: **live** = the active world's save (`config/world.json` `region_path` under
+`AI_WORLDBUILDER_WORLD_ROOT`); **pristine** = `pristine_region_path`
 (untouched vendor import); **snapshot** = `backups/regions/<stamp>-<name>/`; **bakeoff** = the
-bake-off save (`ghost_region_path`).
+bake-off save (`ghost_region_path`, or a separate world checkout with its own `world.json`).
 Fates: stays / MCP (replace via the seam) / T38 (deleted by task 38, pristine baseline) /
 T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae903f.
 
@@ -17,7 +17,7 @@ T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae
 
 | file:line | op | purpose | target | fate |
 | --- | --- | --- | --- | --- |
-| site_kit.py:21,323 `REGION`, `resolve_region` | read config/env | pick region dir | live or bakeoff (env) | stays (moves behind the seam) |
+| site_kit.py:21,311 `REGION`, `resolve_region` | read config | pick region dir | live (active world) | stays (moves behind the seam) |
 | site_kit.py:396-480 `World._chunk` | **read** (`read_bytes`, zlib, NBT) | parse chunk sections | any dir passed in | stays, as the one guarded reader |
 | site_kit.py:482 `block`, 497 `uniform_air` | read | block state; empty-section skip | any | stays |
 | site_kit.py:506 `World.light` | read (re-parses region bytes) | stored BlockLight/SkyLight | live | stays (only caller: site_audit.py:53) |
@@ -186,7 +186,8 @@ Shared contract suite parametrised over `MemoryBlocks` and `LiveBlocks(fixture_r
 
 Server: `minecraft_world` MOTD `cgutteridge - Bakeoff`, mod 1.1.0, paced at **60 requests/minute**
 (`mc_paced.Paced` default interval 1.1 s). Region identity checked with
-`AI_WORLDBUILDER_REGION=…/saves/bakeoff/…/region`.
+`AI_WORLDBUILDER_WORLD_ROOT` pointing at the bakeoff world checkout (its `config/world.json`
+`region_path`).
 
 ### Tools (schemas from `python3 scripts/mcp.py tools/list`)
 

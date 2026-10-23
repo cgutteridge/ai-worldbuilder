@@ -6,7 +6,7 @@
 
 | Path | Role |
 | --- | --- |
-| `active_world.py` | Importable pointer. Sets `WORLD_ROOT` (edit file or env `AI_WORLDBUILDER_WORLD_ROOT`). |
+| `active_world.py` | Importable pointer. Sets `WORLD_ROOT` from env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default). |
 | `TOOL_ROOT` | This checkout (scripts, skills, system providers, system tracker). |
 | `config/system-providers.json` | Nationwide+ reference feeds. |
 | `providers/<id>/` | System provider fetch/review/manage code (`package` field on catalogue rows). |
@@ -33,5 +33,5 @@ Offsets live only in the world frame. The system config does not duplicate them;
 
 ## Switch active world
 
-1. Point `WORLD_ROOT` at the other world checkout under `worlds/` (edit `active_world.py` or set the env var).
+1. Set `AI_WORLDBUILDER_WORLD_ROOT` to the other world checkout under `worlds/` (e.g. `export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`).
 2. Confirm: `python -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.

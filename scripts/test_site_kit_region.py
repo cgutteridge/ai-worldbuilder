@@ -1,4 +1,4 @@
-"""World region targeting and apply refuse-on-mismatch (ticket #35)."""
+"""World region targeting and apply refuse-on-mismatch (tickets #35, #57)."""
 from __future__ import annotations
 
 import os
@@ -11,31 +11,35 @@ import site_kit
 
 
 class TestResolveRegion(unittest.TestCase):
-    def test_env_overrides_config_default(self):
+    def test_default_uses_world_config_region(self):
+        """Without an explicit arg, region comes from active world config only."""
+        self.assertEqual(site_kit.resolve_region().resolve(), Path(site_kit.REGION).resolve())
+
+    def test_region_env_is_ignored(self):
+        """AI_WORLDBUILDER_REGION must not override the active world's save."""
         with tempfile.TemporaryDirectory() as d:
             override = Path(d) / 'bakeoff' / 'region'
             override.mkdir(parents=True)
             with mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGION': str(override)}):
-                self.assertEqual(site_kit.resolve_region().resolve(), override.resolve())
-
-    def test_explicit_argument_beats_env(self):
-        with tempfile.TemporaryDirectory() as d:
-            env_path = Path(d) / 'env-region'
-            arg_path = Path(d) / 'arg-region'
-            env_path.mkdir()
-            arg_path.mkdir()
-            with mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGION': str(env_path)}):
                 self.assertEqual(
-                    site_kit.resolve_region(arg_path).resolve(), arg_path.resolve()
+                    site_kit.resolve_region().resolve(), Path(site_kit.REGION).resolve()
+                )
+                self.assertNotEqual(
+                    site_kit.resolve_region().resolve(), override.resolve()
                 )
 
-    def test_world_default_uses_resolve_region(self):
+    def test_explicit_argument_beats_config(self):
         with tempfile.TemporaryDirectory() as d:
-            override = Path(d) / 'bakeoff-region'
-            override.mkdir()
-            with mock.patch.dict(os.environ, {'AI_WORLDBUILDER_REGION': str(override)}):
-                w = site_kit.World()
-            self.assertEqual(w.region.resolve(), override.resolve())
+            arg_path = Path(d) / 'arg-region'
+            arg_path.mkdir()
+            self.assertEqual(
+                site_kit.resolve_region(arg_path).resolve(), arg_path.resolve()
+            )
+
+    def test_world_default_uses_resolve_region(self):
+        self.assertEqual(
+            site_kit.World().region.resolve(), Path(site_kit.REGION).resolve()
+        )
 
 
 class TestGameworldFromRegion(unittest.TestCase):
@@ -62,8 +66,11 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
         ):
             with self.assertRaises(SystemExit) as ctx:
                 site_kit.ensure_region_matches_open_world(region)
-        self.assertIn('bakeoff', str(ctx.exception))
-        self.assertIn('SouthamptonAI', str(ctx.exception))
+        msg = str(ctx.exception)
+        self.assertIn('bakeoff', msg)
+        self.assertIn('SouthamptonAI', msg)
+        self.assertIn('AI_WORLDBUILDER_WORLD_ROOT', msg)
+        self.assertNotIn('AI_WORLDBUILDER_REGION', msg)
 
     def test_allows_when_names_match_casefold(self):
         region = Path('/instance/saves/bakeoff/dimensions/minecraft/overworld/region')

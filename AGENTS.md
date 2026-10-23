@@ -5,7 +5,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 
 ## Start
 
-1. Confirm active world: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
+1. Set the active world (required; there is no silent default): `export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/southampton-build` (or another checkout under `worlds/`). Confirm: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
 2. Sweep unmerged branches and leftover worktrees: `python3 scripts/ship_branch.py sweep` (ADR 005).
 3. System tracker first when work is **tool** engineering: read `tasks/index.json`. Parallel system tasks: project skill `parallel-task-wave` (not the world cell-orchestrator).
 4. If work is **world** (cell registry, issues, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
