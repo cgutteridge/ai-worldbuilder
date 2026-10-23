@@ -556,6 +556,15 @@
       "blockedBy": [],
       "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md \u00a77). block_scan_region is bulk and exact within volume\u226465536 and results\u2264limit (default 1024); ~1.5s for a full 128\u00d74\u00d7128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks.\nMerged task/56-liveblocks-mcp into main (c56174a + review fixes). LiveBlocks uses MCP block_scan_region; site_kit.World .mca kept. Bakeoff parity in docs/audits/region-block-reads.md \u00a77; MCP air vs .mca None for missing chunks documented.",
       "completed": "2026-10-23"
+    },
+    {
+      "id": 67,
+      "title": "Delete site_kit.World .mca reader once remaining callers use BlockStore",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Follow-up from #56 ship-branch review (nit). LiveBlocks now reads via MCP block_scan_region; site_kit.World remains for non-seam planners/audits. Migrate those callers to BlockStore, prove parity (including unloaded-chunk air-vs-None behaviour documented in docs/audits/region-block-reads.md), then delete the .mca reader. Optional: pin live MCP unloaded-chunk behaviour in test_block_store (FakeScanMcp currently filters loaded_chunks unlike the real server). Done 2026-10-23: merged task/67-delete-world-mca-reader (30a65ac tip); World is a BlockStore facade; .mca reader and nbt_min removed; batched prefetch on apply/ground/lidar column; dry apply prefetches, region gate live-only."
     }
   ]
 }
