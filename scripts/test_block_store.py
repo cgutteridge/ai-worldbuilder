@@ -1,94 +1,124 @@
-"""BlockStore contract: MemoryBlocks and LiveBlocks (over a tiny hand-built .mca) behave alike."""
+"""BlockStore contract: MemoryBlocks and MCP-backed LiveBlocks (fake scan text) behave alike."""
 from __future__ import annotations
 
-import builtins
-import struct
 import tempfile
 import unittest
-import zlib
 from pathlib import Path
-from unittest import mock
 
-import nbt_min as N
 from block_store import (BlockStoreError, LiveBlocks, MemoryBlocks, StaleRead, canonical_state,
-                         same_state)
+                         format_block_scan_text, parse_block_scan_text, same_state, scan_tiles)
 
 STONE = 'minecraft:stone'
 STAIRS = 'minecraft:oak_stairs[facing=north,half=bottom]'
+AIR = 'minecraft:air'
 
+# Recorded-shape sample from a live block_scan_region (task #49 / #56 probe).
+SAMPLE_STAIRS_SCAN = '''\
+[1]:
+  - position:
+    x: 6128
+    y: 80
+    z: -5546
+    state:
+      id: "minecraft:oak_stairs"
+      lightLevel: 0
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+        waterlogged: "false"
+        shape: straight
+        facing: east
+        half: top
+'''
 
-def _tag_state(state: str) -> N.Tag:
-    name, _, rest = state.partition('[')
-    fields = {'Name': N.Tag(N.STRING, name)}
-    if rest:
-        props = dict(kv.split('=') for kv in rest.rstrip(']').split(','))
-        fields['Properties'] = N.Tag(N.COMPOUND, {k: N.Tag(N.STRING, v) for k, v in props.items()})
-    return N.Tag(N.COMPOUND, fields)
-
-
-def _section(sy: int, blocks: dict, uniform: str | None) -> N.Tag:
-    """Section ``sy``: ``blocks`` maps (lx, ly, lz) to a state; the rest is air (or ``uniform``)."""
-    if uniform is not None:
-        palette, data = [uniform], None
-    else:
-        palette = ['minecraft:air'] + sorted({s for s in blocks.values()} - {'minecraft:air'})
-        bits = max(4, (len(palette) - 1).bit_length())
-        per = 64 // bits
-        longs = [0] * (-(-4096 // per))
-        for (lx, ly, lz), st in blocks.items():
-            i = ly * 256 + lz * 16 + lx
-            longs[i // per] |= palette.index(st) << ((i % per) * bits)
-        data = [v - (1 << 64) if v >= 1 << 63 else v for v in longs]
-    bs = {'palette': N.Tag(N.LIST, (N.COMPOUND, [_tag_state(s) for s in palette]))}
-    if data is not None:
-        bs['data'] = N.Tag(N.LONG_ARRAY, data)
-    return N.Tag(N.COMPOUND, {'Y': N.Tag(N.BYTE, sy), 'block_states': N.Tag(N.COMPOUND, bs)})
-
-
-def build_region(region: Path, blocks: dict, uniform: dict | None = None) -> None:
-    """Write ``r.<rx>.<rz>.mca`` files for ``{(x, y, z): state}`` (uniform: ``{(cx, sy, cz): state}``)."""
-    region.mkdir(parents=True, exist_ok=True)
-    chunks: dict = {}
-    for (x, y, z), st in blocks.items():
-        chunks.setdefault((x >> 4, z >> 4), {}).setdefault(y >> 4, {})[(x & 15, y & 15, z & 15)] = st
-    for (cx, sy, cz) in (uniform or {}):
-        chunks.setdefault((cx, cz), {}).setdefault(sy, {})
-    files: dict = {}
-    for (cx, cz), secs in chunks.items():
-        tags = [_section(sy, b, (uniform or {}).get((cx, sy, cz))) for sy, b in sorted(secs.items())]
-        root = N.Tag(N.COMPOUND, {'sections': N.Tag(N.LIST, (N.COMPOUND, tags))})
-        raw = bytes([N.COMPOUND]) + struct.pack('>H', 0) + N._write(root)
-        comp = zlib.compress(raw)
-        body = struct.pack('>I', len(comp) + 1) + b'\x02' + comp
-        files.setdefault((cx >> 5, cz >> 5), {})[(cx & 31) + (cz & 31) * 32] = body
-    for (rx, rz), entries in files.items():
-        header, payload = bytearray(8192), b''
-        for idx, body in sorted(entries.items()):
-            sectors = -(-len(body) // 4096)
-            struct.pack_into('>I', header, idx * 4, ((2 + len(payload) // 4096) << 8) | sectors)
-            payload += body.ljust(sectors * 4096, b'\0')
-        (region / f'r.{rx}.{rz}.mca').write_bytes(bytes(header) + payload)
-
-
-def make_store(kind: str, blocks: dict, tmp: Path, **kw):
-    """The same world as MemoryBlocks or as LiveBlocks over a built region."""
-    if kind == 'memory':
-        return MemoryBlocks(blocks)
-    region = tmp / 'saves' / 'w' / 'region'
-    build_region(region, blocks, kw.get('uniform'))
-    return LiveBlocks(region, allowed=[region], identity_check=lambda r: None,
-                      flusher=kw.get('flusher', lambda: None), settle_seconds=0)
+SAMPLE_AIR_TILE = '''\
+[2]:
+  - position:
+    x: 0
+    y: 64
+    z: 0
+    state:
+      id: "minecraft:air"
+      lightLevel: 15
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+  - position:
+    x: 1
+    y: 64
+    z: 0
+    state:
+      id: "minecraft:stone"
+      lightLevel: 0
+      hardness: 0
+      hasBlockEntity: false
+      properties:
+'''
 
 
 WORLD = {
     (0, 64, 0): STONE,
     (1, 64, 0): STAIRS,
-    (-1, 64, -1): 'minecraft:dirt',           # negative coordinates: chunk (-1, -1), region (-1, -1)
+    (-1, 64, -1): 'minecraft:dirt',
     (15, 70, 15): 'minecraft:glass',
-    (16, 70, 16): 'minecraft:glowstone',      # next chunk over
-    (511, 64, 0): 'minecraft:gravel',         # last column of region 0
-    (512, 64, 0): 'minecraft:sand',           # first column of region 1
+    (16, 70, 16): 'minecraft:glowstone',
+    (511, 64, 0): 'minecraft:gravel',
+    (512, 64, 0): 'minecraft:sand',
 }
+
+
+class FakeScanMcp:
+    """MCP stand-in: ``text('block_scan_region', …)`` from an in-memory world.
+
+    @param blocks: ``{pos: state}`` for loaded positions
+    @param loaded_chunks: optional ``{(cx, cz), …}``; positions outside are omitted (→ None)
+    @param max_volume: refuse scans larger than this (default 65536)
+    """
+
+    def __init__(self, blocks: dict, *, loaded_chunks: set | None = None,
+                 max_volume: int = 65536) -> None:
+        self.blocks = {tuple(p): canonical_state(s) for p, s in blocks.items()}
+        self.loaded_chunks = loaded_chunks
+        self.max_volume = max_volume
+        self.calls: list[tuple[str, dict]] = []
+
+    def text(self, name: str, args: dict) -> str:
+        self.calls.append((name, args))
+        if name != 'block_scan_region':
+            raise AssertionError(f'unexpected tool {name}')
+        box = args['box']
+        x0, y0, z0 = (int(box['from'][k]) for k in 'xyz')
+        x1, y1, z1 = (int(box['to'][k]) for k in 'xyz')
+        vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
+        if vol > self.max_volume:
+            raise RuntimeError(f'volume {vol} exceeds {self.max_volume}')
+        limit = int(args.get('limit', 1024))
+        found: dict = {}
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                for z in range(z0, z1 + 1):
+                    if self.loaded_chunks is not None and (x >> 4, z >> 4) not in self.loaded_chunks:
+                        continue
+                    pos = (x, y, z)
+                    found[pos] = self.blocks.get(pos, AIR)
+                    if len(found) >= limit:
+                        return format_block_scan_text(found)
+        return format_block_scan_text(found)
+
+    def call(self, name: str, args: dict):
+        self.calls.append((name, args))
+        return {'content': [{'type': 'text', 'text': 'ok'}]}
+
+
+def make_store(kind: str, blocks: dict, tmp: Path, **kw):
+    """MemoryBlocks or MCP LiveBlocks over the same ``blocks`` map."""
+    if kind == 'memory':
+        return MemoryBlocks(blocks)
+    region = tmp / 'saves' / 'w' / 'region'
+    region.mkdir(parents=True, exist_ok=True)
+    mcp = kw.get('mcp') or FakeScanMcp(blocks, loaded_chunks=kw.get('loaded_chunks'))
+    return LiveBlocks(region, allowed=[region], identity_check=lambda r: None,
+                      flusher=kw.get('flusher', lambda: None), settle_seconds=0, mcp=mcp)
 
 
 class BlockStoreContract:
@@ -149,37 +179,20 @@ class TestMemoryContract(BlockStoreContract, unittest.TestCase):
         self.assertEqual(store.read((0, 0, 0)), STONE)
 
 
-class TestLiveContract(BlockStoreContract, unittest.TestCase):
+class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
     kind = 'live'
 
-    def test_missing_section_in_loaded_chunk_is_air(self):
-        self.assertEqual(self.store.read((2, 200, 2)), 'minecraft:air')
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        # Only chunks that appear in WORLD are loaded; distant reads stay None.
+        loaded = {(x >> 4, z >> 4) for x, _y, z in WORLD}
+        self.mcp = FakeScanMcp(WORLD, loaded_chunks=loaded)
+        self.store = make_store('live', WORLD, self.tmp, mcp=self.mcp, loaded_chunks=loaded)
 
-    def test_uniform_single_palette_section_returns_palette_zero(self):
-        store = make_store('live', {}, self.tmp / 'u', uniform={(0, 4, 0): 'minecraft:water'})
-        self.assertEqual(store.read((3, 70, 3)), 'minecraft:water')
-
-    def test_each_region_file_is_read_once(self):
-        reads = []
-        real = Path.read_bytes
-
-        def counting(path):
-            reads.append(path.name)
-            return real(path)
-
-        with mock.patch.object(Path, 'read_bytes', counting):
-            store = make_store('live', WORLD, self.tmp / 'c')
-            store.read_many(list(WORLD) * 3)
-        self.assertEqual(sorted(reads), sorted(set(reads)))
-        self.assertEqual(set(reads), {'r.0.0.mca', 'r.1.0.mca', 'r.-1.-1.mca'})
-
-    def test_cache_is_stale_until_flush(self):
-        region = self.tmp / 'saves' / 'w' / 'region'
-        self.assertEqual(self.store.read((0, 64, 0)), STONE)
-        build_region(region, {**WORLD, (0, 64, 0): 'minecraft:clay'})
-        self.assertEqual(self.store.read((0, 64, 0)), STONE)          # cached chunk
-        self.store.flush()
-        self.assertEqual(self.store.read((0, 64, 0)), 'minecraft:clay')
+    def test_air_in_loaded_chunk_is_air(self):
+        self.assertEqual(self.store.read((2, 64, 2)), AIR)
 
     def test_read_after_write_refused_until_flush(self):
         self.store.mark_written()
@@ -190,52 +203,113 @@ class TestLiveContract(BlockStoreContract, unittest.TestCase):
         self.store.flush()
         self.assertEqual(self.store.read((0, 64, 0)), STONE)
 
-    def test_flush_calls_flusher_then_sleeps(self):
+    def test_flush_calls_flusher_and_clears_cache(self):
         calls = []
-        store = make_store('live', WORLD, self.tmp / 'f', flusher=lambda: calls.append('save'))
+        mcp = FakeScanMcp(WORLD, loaded_chunks={(0, 0)})
+        store = make_store('live', {(0, 64, 0): STONE}, self.tmp / 'f',
+                           mcp=mcp, flusher=lambda: calls.append('save'),
+                           loaded_chunks={(0, 0)})
+        self.assertEqual(store.read((0, 64, 0)), STONE)
+        n_before = len(mcp.calls)
         store.flush()
         self.assertEqual(calls, ['save'])
+        mcp.blocks[(0, 64, 0)] = 'minecraft:clay'
+        self.assertEqual(store.read((0, 64, 0)), 'minecraft:clay')
+        self.assertGreater(len(mcp.calls), n_before)
 
     def test_rejects_region_that_is_not_active_or_bakeoff(self):
         region = self.tmp / 'snapshot' / 'region'
-        build_region(region, WORLD)
+        region.mkdir(parents=True)
         with self.assertRaises(BlockStoreError):
             LiveBlocks(region, allowed=[self.tmp / 'saves' / 'w' / 'region'],
-                       identity_check=lambda r: None, flusher=lambda: None)
+                       identity_check=lambda r: None, flusher=lambda: None,
+                       mcp=FakeScanMcp({}))
 
     def test_identity_check_failure_aborts_construction(self):
-        region = self.tmp / 'saves' / 'w' / 'region'
+        region = self.tmp / 'id_fail' / 'region'
+        region.mkdir(parents=True)
 
         def refuse(_r):
             raise BlockStoreError('open world differs')
 
         with self.assertRaises(BlockStoreError):
-            LiveBlocks(region, allowed=[region], identity_check=refuse, flusher=lambda: None)
+            LiveBlocks(region, allowed=[region], identity_check=refuse, flusher=lambda: None,
+                       mcp=FakeScanMcp({}))
 
     def test_identity_check_runs_at_construction(self):
-        region = self.tmp / 'saves' / 'w' / 'region'
+        region = self.tmp / 'id_ok' / 'region'
+        region.mkdir(parents=True)
         seen = []
-        LiveBlocks(region, allowed=[region], identity_check=seen.append, flusher=lambda: None)
+        LiveBlocks(region, allowed=[region], identity_check=seen.append, flusher=lambda: None,
+                   mcp=FakeScanMcp({}))
         self.assertEqual(seen, [region])
 
-    def test_never_opens_a_file_for_writing(self):
-        real_open = builtins.open
-        modes = []
+    def test_read_many_tiles_tall_volumes(self):
+        """A tall AABB is split into volume≤65536 tiles; each scan raises limit to the tile size."""
+        # 128×8×128 = 131072 → two 128×4×128 tiles
+        blocks = {(x, y, z): STONE
+                  for x in (0, 127) for y in (0, 3, 4, 7) for z in (0, 127)}
+        loaded = {(0, 0)}
+        mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+        store = make_store('live', blocks, self.tmp / 'tile', mcp=mcp, loaded_chunks=loaded)
+        positions = [(0, y, 0) for y in range(8)] + [(127, y, 127) for y in range(8)]
+        got = store.read_many(positions)
+        self.assertEqual(got[(0, 0, 0)], STONE)
+        self.assertEqual(got[(0, 7, 0)], STONE)
+        scan_calls = [a for n, a in mcp.calls if n == 'block_scan_region']
+        self.assertGreaterEqual(len(scan_calls), 2)
+        for args in scan_calls:
+            box = args['box']
+            x0, y0, z0 = (int(box['from'][k]) for k in 'xyz')
+            x1, y1, z1 = (int(box['to'][k]) for k in 'xyz')
+            vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
+            self.assertLessEqual(vol, 65536)
+            self.assertEqual(args['limit'], vol)
 
-        def guarded(file, mode='r', *a, **k):
-            modes.append(mode)
-            if any(c in mode for c in 'wax+'):
-                raise AssertionError(f'write-mode open {file!r} {mode!r}')
-            return real_open(file, mode, *a, **k)
+    def test_scan_uses_raised_limit_not_default_1024(self):
+        mcp = FakeScanMcp({(0, 64, 0): STONE}, loaded_chunks={(0, 0)})
+        store = make_store('live', {(0, 64, 0): STONE}, self.tmp / 'lim',
+                           mcp=mcp, loaded_chunks={(0, 0)})
+        store.read((0, 64, 0))
+        args = mcp.calls[0][1]
+        # single-block tile: limit == volume (never the tool default of 1024)
+        self.assertEqual(args['limit'], 1)
 
-        with mock.patch.object(Path, 'write_bytes', side_effect=AssertionError('write_bytes')), \
-                mock.patch.object(Path, 'write_text', side_effect=AssertionError('write_text')), \
-                mock.patch('io.open', guarded):
-            self.store.read_many(list(WORLD))
-            self.store.flush()
-            self.store.read((0, 64, 0))
-        self.assertTrue(modes)
-        self.assertTrue(all(m == 'rb' for m in modes), modes)
+
+class TestParseBlockScanText(unittest.TestCase):
+    def test_recorded_stairs_sample(self):
+        got = parse_block_scan_text(SAMPLE_STAIRS_SCAN)
+        self.assertEqual(got[(6128, 80, -5546)],
+                         'minecraft:oak_stairs[facing=east,half=top,shape=straight,waterlogged=false]')
+
+    def test_air_and_stone_tile(self):
+        got = parse_block_scan_text(SAMPLE_AIR_TILE)
+        self.assertEqual(got[(0, 64, 0)], AIR)
+        self.assertEqual(got[(1, 64, 0)], STONE)
+
+    def test_empty_list(self):
+        self.assertEqual(parse_block_scan_text('[]'), {})
+
+    def test_round_trip_format(self):
+        blocks = {(1, 2, 3): STAIRS, (0, 0, 0): AIR}
+        text = format_block_scan_text(blocks)
+        self.assertEqual(parse_block_scan_text(text),
+                         {p: canonical_state(s) for p, s in blocks.items()})
+
+
+class TestScanTiles(unittest.TestCase):
+    def test_small_box_is_one_tile(self):
+        self.assertEqual(list(scan_tiles(0, 0, 0, 1, 1, 1)), [((0, 0, 0), (1, 1, 1))])
+
+    def test_tall_cell_slices_on_y(self):
+        # 128×100×128 needs 25 tiles of height 4
+        tiles = list(scan_tiles(0, 0, 0, 127, 99, 127))
+        self.assertEqual(len(tiles), 25)
+        for (lo, hi) in tiles:
+            vol = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+            self.assertLessEqual(vol, 65536)
+        self.assertEqual(tiles[0], ((0, 0, 0), (127, 3, 127)))
+        self.assertEqual(tiles[-1], ((0, 96, 0), (127, 99, 127)))
 
 
 class TestStateHelpers(unittest.TestCase):
@@ -251,7 +325,6 @@ class TestStateHelpers(unittest.TestCase):
         self.assertFalse(same_state('stone', 'minecraft:dirt'))
 
     def test_same_state_ignores_game_derived_connections(self):
-        # the game re-derives connections from neighbours after placement (R-006: 2 panes)
         self.assertTrue(same_state('glass_pane[east=true,west=true]',
                                    'minecraft:glass_pane[east=false,north=true,south=false,waterlogged=false,west=true]'))
         self.assertTrue(same_state('iron_bars[north=true]', 'minecraft:iron_bars[north=false,south=true]'))
@@ -268,7 +341,6 @@ class TestStateHelpers(unittest.TestCase):
         self.assertFalse(site_kit.same('oak_fence_gate[open=true]', 'minecraft:oak_fence_gate[open=false]'))
 
     def test_same_state_keeps_other_properties_on_connectables(self):
-        # gates are not connectables: facing/open/in_wall are the builder's choice
         self.assertFalse(same_state('oak_fence_gate[facing=north,open=true]',
                                     'minecraft:oak_fence_gate[facing=north,open=false]'))
         self.assertFalse(same_state('oak_fence_gate[facing=north]', 'minecraft:oak_fence_gate[facing=south]'))

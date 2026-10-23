@@ -219,11 +219,14 @@ not sparse (AABB of a plan still returns every block in the box).
 
 ### Decision gate (ADR 004 “Block read path”)
 
-Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps, so a later
-`LiveBlocks` MCP backend is viable (file task #56). Keep today’s region-file `LiveBlocks` until
-that lands: payload size, tiling, and lack of sparse/palette output still make the region reader
-the cheaper default for planners and full-cell readback. Per-position `block_get_state` stays
-rejected on speed alone.
+Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps.
+**Task #56 (2026-10-23):** `LiveBlocks` is MCP-backed (`block_scan_region`, Y-tiling, raised
+`limit`, verbose-text parse). BlockStore contract covered with FakeScanMcp / recorded fixtures
+(no live server in CI). Per-position `block_get_state` stays rejected on speed alone.
+`site_kit.World` (`.mca` parser) is **kept** for non-BlockStore planners/audits; LiveBlocks no
+longer opens region files. Payload size and lack of sparse/palette output still make full-cell
+planner reads expensive over MCP — migrate those callers to `BlockStore` (or keep `World`) as a
+follow-up, not a BlockStore fallback switch.
 
 ### Reconcile live check (same sitting)
 

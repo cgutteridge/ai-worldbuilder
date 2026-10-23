@@ -57,7 +57,7 @@ _Avoid_: region restore, repair-by-snapshot
 _Avoid_: using recover as a substitute for reconcile
 
 **BlockStore**:
-The one real seam under the journal, with `LiveBlocks` and `MemoryBlocks` adapters (tests use memory). Read path decided by task 39.
+The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`) and `MemoryBlocks` adapters (tests use memory). Read path: task 39 / #56.
 _Avoid_: region backup, snapshot
 
 **Feature** (registry):

@@ -1,23 +1,27 @@
-"""Block reads behind one seam: ``BlockStore`` (ADR 004 decision 6, audit task 39).
+"""Block reads behind one seam: ``BlockStore`` (ADR 004 decision 6, audit task 39 / #56).
 
 ``read`` / ``read_many`` / ``flush`` are everything the cell journal needs. Two adapters:
 
 - :class:`MemoryBlocks` is a dict, for tests and planned overlays.
-- :class:`LiveBlocks` wraps the read-only region parser ``site_kit.World`` with the audit guards:
-  files are only ever read (``rb``), only the active or bake-off region is accepted, a read after
-  a write is refused until :meth:`LiveBlocks.flush`, and a region/open-world identity check runs at
-  construction (injectable). Writes always go over MCP, never through this module.
+- :class:`LiveBlocks` reads the open world over MCP ``block_scan_region`` (tiled to volume
+  ≤ 65 536, ``limit`` raised to the tile size). Region identity and stale-read guards stay;
+  writes always go over MCP, never through this module. ``site_kit.World`` (``.mca`` parser)
+  remains for non-BlockStore planners/audits — LiveBlocks no longer uses it.
 
 States are canonical block strings: ``minecraft:`` prefix, properties sorted
 (``minecraft:oak_stairs[facing=north,half=bottom]``). ``None`` means "chunk not loaded / unknown".
 """
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Protocol, runtime_checkable
+from typing import Callable, Iterable, Iterator, Mapping, Protocol, runtime_checkable
 
 Pos = tuple[int, int, int]
+
+# MCP block_scan_region caps (docs/audits/region-block-reads.md §7).
+SCAN_VOLUME_CAP = 65536
 
 
 class BlockStoreError(RuntimeError):
@@ -152,6 +156,132 @@ class MemoryBlocks:
         self._dirty = False
 
 
+_PROP_LINE = re.compile(r'^(\w+):\s*(?:"([^"]*)"|(\S+))\s*$')
+
+
+def parse_block_scan_text(text: str) -> dict[Pos, str]:
+    """Parse MCP ``block_scan_region`` verbose text into canonical states.
+
+    @param text: tool text content (``[N]:`` header + YAML-ish records, or ``[]``)
+    @returns: ``{(x, y, z): canonical state}``
+    """
+    text = text.strip()
+    if not text or text == '[]':
+        return {}
+    out: dict[Pos, str] = {}
+    pos: dict[str, int] = {}
+    block_id_s: str | None = None
+    props: dict[str, str] = {}
+    in_props = False
+
+    def commit() -> None:
+        nonlocal block_id_s, props, pos, in_props
+        if block_id_s is not None and len(pos) == 3:
+            state = block_id_s
+            if props:
+                state += '[' + ','.join(f'{k}={props[k]}' for k in sorted(props)) + ']'
+            out[(pos['x'], pos['y'], pos['z'])] = canonical_state(state)
+        pos, block_id_s, props, in_props = {}, None, {}, False
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith('['):
+            continue
+        if line.startswith('- position:'):
+            commit()
+            continue
+        if line.startswith('state:'):
+            in_props = False
+            continue
+        if line == 'properties:':
+            in_props = True
+            continue
+        if in_props:
+            m = _PROP_LINE.match(line)
+            if m:
+                props[m.group(1)] = m.group(2) if m.group(2) is not None else m.group(3)
+            continue
+        if line.startswith('id:'):
+            block_id_s = line.split(':', 1)[1].strip().strip('"')
+            continue
+        if line.startswith(('x:', 'y:', 'z:')) and not in_props:
+            key, _, val = line.partition(':')
+            # Ignore nested ``position:`` under get_state; scan records put x/y/z under position.
+            if key.strip() in 'xyz':
+                pos[key.strip()] = int(val.strip())
+            continue
+        # lightLevel / hardness / hasBlockEntity — ignore
+    commit()
+    return out
+
+
+def format_block_scan_text(blocks: Mapping[Pos, str]) -> str:
+    """Build ``block_scan_region``-shaped text (for FakeScanMcp / recorded fixtures).
+
+    @param blocks: ``{pos: state}``
+    @returns: verbose scan text matching the live MCP shape
+    """
+    if not blocks:
+        return '[]'
+    lines = [f'[{len(blocks)}]:']
+    for (x, y, z), state in blocks.items():
+        st = canonical_state(state)
+        name, _, rest = st.partition('[')
+        lines.append('  - position:')
+        lines.append(f'    x: {x}')
+        lines.append(f'    y: {y}')
+        lines.append(f'    z: {z}')
+        lines.append('    state:')
+        lines.append(f'      id: "{name}"')
+        lines.append('      lightLevel: 0')
+        lines.append('      hardness: 0')
+        lines.append('      hasBlockEntity: false')
+        lines.append('      properties:')
+        if rest:
+            for kv in rest.rstrip(']').split(','):
+                if not kv:
+                    continue
+                k, _, v = kv.partition('=')
+                # Match live quirks: booleans often quoted, enums often bare.
+                if v in ('true', 'false'):
+                    lines.append(f'        {k}: "{v}"')
+                else:
+                    lines.append(f'        {k}: {v}')
+    return '\n'.join(lines)
+
+
+def scan_tiles(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
+               *, cap: int = SCAN_VOLUME_CAP) -> Iterator[tuple[Pos, Pos]]:
+    """Yield inclusive ``(lo, hi)`` boxes covering the AABB with volume ≤ ``cap``.
+
+    Tall volumes are sliced on Y (cell-shaped 128×N×128 tiles), matching the §7 probe.
+
+    @param x0,y0,z0: inclusive min corner
+    @param x1,y1,z1: inclusive max corner
+    @param cap: max blocks per tile (MCP volume limit)
+    @returns: iterator of ``((x0,y0,z0), (x1,y1,z1))`` tiles
+    """
+    if x0 > x1:
+        x0, x1 = x1, x0
+    if y0 > y1:
+        y0, y1 = y1, y0
+    if z0 > z1:
+        z0, z1 = z1, z0
+    dx, dz = x1 - x0 + 1, z1 - z0 + 1
+    footprint = dx * dz
+    if footprint > cap:
+        # Rare: wide AABB — slice on X then Z so each slab fits.
+        x_span = max(1, cap // max(1, dz))
+        for xa in range(x0, x1 + 1, x_span):
+            xb = min(xa + x_span - 1, x1)
+            yield from scan_tiles(xa, y0, z0, xb, y1, z1, cap=cap)
+        return
+    max_h = max(1, cap // footprint)
+    for ya in range(y0, y1 + 1, max_h):
+        yb = min(ya + max_h - 1, y1)
+        yield (x0, ya, z0), (x1, yb, z1)
+
+
 def _default_identity_check(region: Path) -> None:
     """Refuse when the region is not the save MCP has open (``site_kit`` rule).
 
@@ -171,17 +301,27 @@ def _default_flusher() -> None:
     Paced().call('server_save_all_worlds', {})
 
 
-class LiveBlocks:
-    """Read-only :class:`BlockStore` over the saved region files of the active or bake-off world.
+def _default_mcp():
+    """Live paced MCP client (``text`` + ``call``)."""
+    from mc_paced import Paced
+    return Paced()
 
-    @param region: ``…/overworld/region`` directory
+
+class LiveBlocks:
+    """Read-only :class:`BlockStore` over MCP ``block_scan_region`` for the active or bake-off world.
+
+    Guards (audit task 39): only the active or bake-off region is accepted; a region/open-world
+    identity check runs at construction; a read after a write is refused until :meth:`flush`.
+    Reads tile tall AABBs and raise ``limit`` to each tile's volume so results are exact.
+
+    @param region: ``…/overworld/region`` directory (identity / allow-list only; not parsed)
     @param allowed: regions this store may open (default: the resolved active region and the
         bake-off ``ghost_region_path`` from ``config/world.json``)
     @param identity_check: ``callable(region)`` raising when the region is not the MCP-open save
-        (default: ``site_kit.ensure_region_matches_open_world``); runs at construction
     @param flusher: ``callable()`` that saves the world (default: MCP ``server_save_all_worlds``)
-    @param world_factory: ``callable(region) -> object with block(x, y, z)`` (default ``site_kit.World``)
-    @param settle_seconds: pause after the save so files are on disk
+    @param mcp: client with ``text(name, args)`` (default: ``mc_paced.Paced``); tests inject fakes
+    @param dimension: MCP dimension id
+    @param settle_seconds: pause after the save so the server has flushed
     @param sleep: sleep function (tests)
     @raises BlockStoreError: when the region is not allowed or the identity check fails
     """
@@ -189,7 +329,8 @@ class LiveBlocks:
     def __init__(self, region: Path | str, *, allowed: Iterable[Path | str] | None = None,
                  identity_check: Callable[[Path], None] | None = None,
                  flusher: Callable[[], None] | None = None,
-                 world_factory: Callable[[Path], object] | None = None,
+                 mcp=None,
+                 dimension: str = 'minecraft:overworld',
                  settle_seconds: float = 3.0, sleep: Callable[[float], None] = time.sleep) -> None:
         self.region = Path(region)
         targets = list(allowed) if allowed is not None else self._configured_regions()
@@ -198,11 +339,18 @@ class LiveBlocks:
                 f'LiveBlocks refuses {self.region}: not the active or bake-off region')
         (identity_check or _default_identity_check)(self.region)
         self._flusher = flusher or _default_flusher
-        self._factory = world_factory or self._site_kit_world
+        self._mcp = mcp
+        self._mcp_factory = _default_mcp
+        self.dimension = dimension
         self._settle = settle_seconds
         self._sleep = sleep
-        self._world = self._factory(self.region)
+        self._cache: dict[Pos, str | None] = {}
         self._dirty = False
+
+    def _client(self):
+        if self._mcp is None:
+            self._mcp = self._mcp_factory()
+        return self._mcp
 
     @staticmethod
     def _configured_regions() -> list[Path]:
@@ -212,11 +360,6 @@ class LiveBlocks:
         if extra:
             out.append(Path(extra))
         return out
-
-    @staticmethod
-    def _site_kit_world(region: Path) -> object:
-        import site_kit
-        return site_kit.World(region)
 
     @classmethod
     def from_world_config(cls, **kwargs) -> 'LiveBlocks':
@@ -235,21 +378,68 @@ class LiveBlocks:
         if self._dirty:
             raise StaleRead('blocks were written since the last flush(); call flush() before reading')
 
+    def _scan_box(self, lo: Pos, hi: Pos) -> None:
+        """Fetch one tile into the cache. Positions omitted from the response are ``None``."""
+        x0, y0, z0 = lo
+        x1, y1, z1 = hi
+        vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
+        if vol > SCAN_VOLUME_CAP:
+            raise BlockStoreError(f'scan tile volume {vol} exceeds MCP cap {SCAN_VOLUME_CAP}')
+        from mc_paced import box
+        text = self._client().text('block_scan_region', {
+            'dimension': self.dimension,
+            'box': box(list(lo), list(hi)),
+            'limit': vol,
+        })
+        found = parse_block_scan_text(text)
+        if len(found) > vol:
+            raise BlockStoreError('block_scan_region returned more blocks than the tile volume')
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                for z in range(z0, z1 + 1):
+                    p = (x, y, z)
+                    # Listed → state (incl. air). Omitted → None (unloaded / filtered void).
+                    self._cache[p] = found.get(p)
+
+    def _ensure(self, positions: Iterable[Pos]) -> None:
+        missing = [tuple(p) for p in positions if tuple(p) not in self._cache]
+        if not missing:
+            return
+        xs = [p[0] for p in missing]
+        ys = [p[1] for p in missing]
+        zs = [p[2] for p in missing]
+        for lo, hi in scan_tiles(min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)):
+            need = [p for p in missing
+                    if lo[0] <= p[0] <= hi[0] and lo[1] <= p[1] <= hi[1] and lo[2] <= p[2] <= hi[2]
+                    and p not in self._cache]
+            if not need:
+                continue
+            # Shrink to positions still needed so sparse outliers do not scan a
+            # whole empty slab of the parent AABB.
+            nxs, nys, nzs = zip(*need)
+            for slo, shi in scan_tiles(min(nxs), min(nys), min(nzs),
+                                       max(nxs), max(nys), max(nzs)):
+                self._scan_box(slo, shi)
+
     def read(self, pos: Pos) -> str | None:
-        """@returns: block state, None when the chunk is absent
+        """@returns: block state, None when the chunk is absent / omitted from the scan
         @raises StaleRead: after ``mark_written()`` until ``flush()``"""
         self._guard()
-        return self._world.block(*pos)
+        p = tuple(pos)
+        self._ensure([p])
+        return self._cache[p]
 
     def read_many(self, positions: Iterable[Pos]) -> dict[Pos, str | None]:
-        """@returns: ``{pos: state}`` keyed as passed (each chunk is parsed once)
+        """@returns: ``{pos: state}`` keyed as passed (AABB tiled into MCP scans)
         @raises StaleRead: after ``mark_written()`` until ``flush()``"""
         self._guard()
-        return {tuple(p): self._world.block(*p) for p in positions}
+        pos_list = [tuple(p) for p in positions]
+        self._ensure(pos_list)
+        return {p: self._cache[p] for p in pos_list}
 
     def flush(self) -> None:
-        """Save the world, wait, drop the chunk cache, clear the stale-read guard."""
+        """Save the world, wait, drop the scan cache, clear the stale-read guard."""
         self._flusher()
         self._sleep(self._settle)
-        self._world = self._factory(self.region)
+        self._cache.clear()
         self._dirty = False

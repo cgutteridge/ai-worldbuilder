@@ -35,7 +35,7 @@ meaning: cell markers, clean-ups). `Ticket.abandon(reason)` finishes a begun ent
 recovery tool; it owns nothing). An open `issue` note keeps a cell from `done` (`left`: `issue <ref>`). `apply` is `callable(Writes) -> None`:
 write `Writes.cells` over MCP and nothing else (no readback, no registry, no flush needed).
 `ghosts` is `callable(cell, 'ground'|'features') -> {pos: state} | {} | None` (None: cannot plan).
-`BlockStore`: `read(pos)`, `read_many(positions)`, `flush()`. `MemoryBlocks` (tests), `LiveBlocks` (region files).
+`BlockStore`: `read(pos)`, `read_many(positions)`, `flush()`. `MemoryBlocks` (tests), `LiveBlocks` (MCP `block_scan_region`).
 
 `CellView` mirrors `RegistryStore`: `ground` none|ghost|ghost+features|generated; `ghost` (ground, features:
 placeholder mass expected now); `features` of `(id, 'in-progress'|'built')`; `marker` bool; `hold`; `notes`
