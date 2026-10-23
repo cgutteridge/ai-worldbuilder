@@ -1,5 +1,6 @@
 {
   "pack": "v1",
+  "world": "bakeoff",
   "cell": [48, -44],
   "cell_note": "SUSU (B42) / south Library Square",
   "ghost_cells": [[47, -45], [48, -45], [49, -45], [47, -44], [48, -44], [49, -44], [47, -43], [48, -43], [49, -43]],
