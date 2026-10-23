@@ -1,8 +1,8 @@
 {
   "id": "R-006",
-  "status": "ready",
+  "status": "scored",
   "created": "2026-10-22T15:24:53Z",
-  "scored_at": null,
+  "scored_at": "2026-10-23T15:29:23Z",
   "task": "feature_design",
   "pack": "v1",
   "pack_brief": "packs/v1/BRIEF.md",
@@ -64,31 +64,31 @@
   "kind": "cold",
   "parent_round": null,
   "repair_brief": null,
-  "mech_gate": null,
+  "mech_gate": "pass",
   "interview": {
     "axes": {
       "massing": {
-        "grade": null,
+        "grade": "fail",
         "note": null
       },
       "openings": {
-        "grade": null,
+        "grade": "fail",
         "note": null
       },
       "roof_greeblies": {
-        "grade": null,
+        "grade": "fail",
         "note": null
       },
       "materials": {
-        "grade": null,
+        "grade": "pass",
         "note": null
       },
       "keep": {
-        "grade": null,
+        "grade": "fail",
         "note": null
       }
     },
-    "why": null,
+    "why": "Massing: building not sitting correctly on the lidar ground, and too much surrounding ground (user, after ghost-feature strip). Openings: fail (window/door rhythm and door count not right vs refs; 42-B door skipped; read from one small photo). Roof/greeblies: fail; built a 284-block glazed atrium inferred from lidar no-return gaps that the real aerial does not show, one plant box only, three real glazed domes seen in evidence but not built. Materials: pass (brick + red terracotta, no SUSU lettering). Keep: tear down.",
     "repair_brief_for_next": null,
     "questions": [
       "massing: shape/roof vs real refs",
@@ -99,28 +99,28 @@
       "why (if not great): what is wrong vs refs; repair brief?"
     ]
   },
-  "overall": null,
+  "overall": "fail",
   "critical_axes": [
     "massing",
     "keep"
   ],
   "photos": {
-    "square_south": null,
-    "street_front": null,
-    "aerial_top": null,
-    "real_refs_note": null
+    "square_south": "worlds/bakeoff/verification/site/r006-cameras/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r006-cameras/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r006-cameras/aerial_top.png",
+    "real_refs_note": "Cameras taken by parent after apply, 2x downscale. square_south: eye (6192,70,-5612) facing (6192,55,-5564), north of SUSU over ghost terrain. street_front: eye (6192,62,-5585) facing (6192,54,-5564), elevated over ghost terrain so not true street level. aerial_top: spectator at (6185,190,-5536) looking straight down; game-mode chat line visible. Real-reference pairing not done."
   },
   "usage": {
     "input_tokens": null,
     "output_tokens": null,
-    "total_tokens": null,
+    "total_tokens": 265527,
     "cache_read_tokens": null,
     "cache_write_tokens": null,
-    "requests": null,
+    "requests": 97,
     "cost_usd": null,
-    "source": null,
-    "recorded_at": null,
-    "notes": null
+    "source": "agent-report",
+    "recorded_at": "2026-10-23T15:29:26Z",
+    "notes": "Subagent task notification: 265,527 subagent tokens, 97 tool uses (requests = tool uses, not API calls); input/output not split."
   },
   "sitting": {
     "checklist": [
@@ -137,5 +137,5 @@
       "Interview + score; then usage paste (need-you if counts unknown)"
     ]
   },
-  "notes": ""
+  "notes": "Haiku 5.5 high effort. Apply seq 37 landed 'mismatched' (2 glass_pane connection states at door 42-A, cosmetic), so the automatic ghost-feature strip did not run; parent stripped ghost features in cells (47,-44),(48,-44),(48,-43) by hand (seq 39/41/43) before interview. Footprint osm=3924 readable=4190 pad=266 cover=100%, walls left at the 24 degree OSM angle (not squared). Build script: worlds/bakeoff/site/builds/r006_haiku_high_susu.py. Subagent usage 265,527 total tokens (not split), 97 tool uses, ~23 min. Interview deferred to the user after strip; cameras taken before strip (extra shot square_south_ghosts_stripped.png)."
 }
