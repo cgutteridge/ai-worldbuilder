@@ -528,6 +528,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From bake-off R-006 retro. `lidar_ghost apply` with AI_WORLDBUILDER_REGION pointing at the bakeoff save, while AI_WORLDBUILDER_WORLD_ROOT defaulted to southampton-build, ran 33 builds into the bakeoff save and wrote the journal into southampton-build/registry: region and registry were resolved independently, and the existing gate only compares the region to the MCP-open save. Decided (grill): (1) Remove AI_WORLDBUILDER_REGION entirely (site_kit.REGION_ENV / resolve_region env branch, block_store._configured_regions docstrings, test_site_kit_region.py env tests, docs/audits/region-block-reads.md mentions); the save always comes from the active world's config/world.json (worlds/bakeoff now has its own). (2) Remove the silent default in active_world.py (_DEFAULT_WORLD = southampton-build): if AI_WORLDBUILDER_WORLD_ROOT is unset, refuse with a message saying to set it; update AGENTS.md start step and any script/test that relies on the default (tests set the env or patch). (3) Reword the 'MCP is serving X' refusal (site_kit.py ~L393) to name AI_WORLDBUILDER_WORLD_ROOT. World repair tools (cell_registry.py reconcile, site_recover.py, site_cleanup.py) stay available in any world, they just need the variable set. No stray journal remains in southampton-build/registry (checked 2026-10-22). Done 2026-10-23: merged via ship_branch (task/57-world-save-mismatch); APPROVE."
+    },
+    {
+      "id": 58,
+      "title": "Bake-off open and repair refuse outside the bake-off world; instructions prefix every command with the world",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "From R-006 retro. In scripts/model_bakeoff.py, the CLI `open` and `repair` commands (NOT open_round(), which tests call with temp roots) check active_world.gameworld_id() against a `world` key added to model-bakeoffs/config.json (value 'bakeoff'; worlds/bakeoff) and refuse otherwise, printing the exact prefix `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`. Agent shells do not keep exports between calls, so SKILL.md and PROTOCOL.md must say to prefix every bake-off command with that variable (not a one-off `export`). Does not restrict world repair tools. Pairs with the no-default-world task (#57). Done 2026-10-23: merged task/58-bakeoff-world-guard (4cf25c6 tip); ship-branch APPROVE after import fix."
     }
   ]
 }
