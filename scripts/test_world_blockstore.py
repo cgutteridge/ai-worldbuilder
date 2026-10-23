@@ -36,6 +36,28 @@ class TestWorldBlockStoreFacade(unittest.TestCase):
         col[(0, 60, 0)] = 'minecraft:stone'
         self.assertEqual(World(store=MemoryBlocks(col)).ground(0, 0, top=70, bottom=50), 60)
 
+    def test_ground_batches_via_read_many(self):
+        class Counting(MemoryBlocks):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                self.read_calls = 0
+                self.read_many_calls = 0
+
+            def read(self, pos):
+                self.read_calls += 1
+                return super().read(pos)
+
+            def read_many(self, positions):
+                self.read_many_calls += 1
+                return super().read_many(positions)
+
+        col = {(0, y, 0): 'minecraft:air' for y in range(51, 71)}
+        col[(0, 50, 0)] = 'minecraft:stone'
+        store = Counting(col)
+        self.assertEqual(World(store=store).ground(0, 0, top=70, bottom=50), 50)
+        self.assertEqual(store.read_many_calls, 1)
+        # MemoryBlocks.read_many delegates to read(); LiveBlocks batches without per-Y MCP.
+
     def test_lazy_default_store_is_live_blocks(self):
         with tempfile.TemporaryDirectory() as d:
             region = Path(d) / 'region'

@@ -99,10 +99,19 @@ class View:
     def __init__(self, blocks):
         self.blocks = blocks
 
+    def prefetch(self, positions) -> None:
+        """Warm the underlying store cache (no-op-compatible with ``World.prefetch``).
+
+        @param positions: iterable of ``(x, y, z)``
+        """
+        self.blocks.read_many(positions)
+
     def block(self, x, y, z):
         return self.blocks.read((x, y, z)) or AIR
 
     def ground(self, x, z, top=140, bottom=40):
+        column = [(x, y, z) for y in range(top, bottom - 1, -1)]
+        self.prefetch(column)
         for y in range(top, bottom, -1):
             if self.block(x, y, z) != AIR:
                 return y

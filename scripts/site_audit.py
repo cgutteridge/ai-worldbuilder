@@ -37,6 +37,11 @@ def norm(st):
 prefix = sys.argv[1] if len(sys.argv) > 1 else ''
 latest = latest_cells(prefix=prefix)          # cell journal: latest recorded plan per build, later wins
 w = World()
+# Batch block reads (plan cells + walkable neighbours); light stays per walkable cell (MCP get_state).
+warm = set(latest)
+warm.update((x, y + 1, z) for x, y, z in latest)
+warm.update((x, y - 1, z) for x, y, z in latest)
+w.prefetch(warm)
 drift, dark, walk = {}, [], 0
 for q, (name, st) in latest.items():
     a = w.block(*q)
@@ -45,7 +50,9 @@ for q, (name, st) in latest.items():
     x, y, z = q
     if bid(st) == 'minecraft:air' and not solid(a) and not solid(w.block(x, y + 1, z)) and solid(w.block(x, y - 1, z)):
         walk += 1
-        if not w.light(x, y, z):
+        lvl = w.light(x, y, z)
+        # None = light unavailable (non-live store / parse miss); do not count as dark.
+        if lvl is not None and lvl == 0:
             dark.append(q)
 rep = {
     'time': time.strftime('%Y-%m-%d %H:%M'), 'prefix': prefix, 'cells': len(latest),

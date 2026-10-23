@@ -65,7 +65,7 @@ T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae
 | scripts/dryrun_reset.py:246-251 | `logout_gate.require_logged_out` | guard that wipe | live | stays |
 | scripts/logout_gate.py (whole file, uses `session.lock`, MCP probe) | guard | gate region rewrites | live/bakeoff | stays only for dryrun_reset; drop the `region_backup` import (F1) |
 | scripts/registry_verify.py:168-195 | exists (`is_file` on `r.X.Z.mca`) | `--check-world` presence check | live | stays (no content read); candidate for the seam later |
-| scripts/nbt_min.py:104 (`open(path,'wb')`, gzip) | write | NBT writer for structure/level files, not .mca | n/a | stays; not a region writer |
+| ~~scripts/nbt_min.py~~ | — | was only used by the deleted `.mca` World parser (#67) | n/a | **deleted** |
 | scripts/lidar_heightmap.py:311-314 | exists/glob `r.*.mca` | locate the pristine clone | pristine | **T38** |
 | tests: test_region_backup.py, test_registry_repair.py:133,144, test_dryrun_reset.py:43, test_logout_gate.py, test_site_cleanup.py:32 | write fake `r.0.0.mca` bytes in tmp | fixtures | tmp | **T40** (first three region_backup/repair), dryrun_reset + logout_gate + cleanup stay |
 

@@ -14,7 +14,7 @@ cell is written, including air (so excavation is explicit). apply():
      journal entry, then runs the journal follow-ups (lidar ghost strip / frontier).
 Guard and readback reports land in verification/site/<name>-*.json.
 """
-import json, math, re, time
+import json, math, time
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -390,9 +390,6 @@ def ensure_region_matches_open_world(region=None) -> None:
     )
 
 
-_LIGHT_LEVEL = re.compile(r'lightLevel:\s*(\d+)')
-
-
 class World:
     """Duck-typed block access over a :class:`block_store.BlockStore`.
 
@@ -426,8 +423,19 @@ class World:
                 self._store = LiveBlocks.from_world_config()
         return self._store
 
+    def prefetch(self, positions) -> None:
+        """Warm the store cache for many positions in as few MCP scans as possible.
+
+        Call this before a loop of :meth:`block` over a known set (plan cells, a column, …).
+
+        @param positions: iterable of ``(x, y, z)``
+        """
+        self._blocks().read_many(positions)
+
     def block(self, x, y, z):
         """Block state at ``(x, y, z)``, or None when the store reports unloaded/unknown.
+
+        Prefer :meth:`prefetch` or :meth:`ground` for columns / plan volumes so MCP is batched.
 
         @param x: block X
         @param y: block Y
@@ -457,10 +465,10 @@ class World:
         return True
 
     def light(self, x, y, z, kind='BlockLight'):
-        """Light level via MCP ``block_get_state`` when the store is LiveBlocks.
+        """Light level via the store when supported (LiveBlocks: MCP ``block_get_state``).
 
         SkyLight and BlockLight are not distinguished on the MCP tool (one ``lightLevel``).
-        MemoryStores and other fakes return None.
+        Stores without light support return None.
 
         @param x: block X
         @param y: block Y
@@ -470,19 +478,15 @@ class World:
         """
         del kind  # MCP exposes a single lightLevel
         store = self._blocks()
-        client = getattr(store, '_client', None)
-        if client is None:
+        fn = getattr(store, 'light', None)
+        if fn is None:
             return None
-        from mc_paced import xyz
-        text = client().text('block_get_state', {
-            'dimension': getattr(store, 'dimension', D),
-            'position': xyz([x, y, z]),
-        })
-        m = _LIGHT_LEVEL.search(text or '')
-        return int(m.group(1)) if m else None
+        return fn((x, y, z))
 
     def ground(self, x, z, top=140, bottom=40):
         """Highest non-air, non-plant Y in the column (same skip list as before).
+
+        Batches the column with ``read_many`` (one MCP tile set, not one scan per Y).
 
         @param x: block X
         @param z: block Z
@@ -493,8 +497,18 @@ class World:
         skip = ('water', 'leaves', '_log', 'short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy',
                 'dandelion', 'kelp', 'seagrass', 'bush', 'litter', 'vine', 'daisy', 'bluet', 'orchid',
                 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom')
+        column = [(x, y, z) for y in range(top, bottom - 1, -1)]
+        # Batch via BlockStore when this is a real World (has ``_store`` from __init__).
+        # Test fakes that only override ``block`` and skip __init__ stay on the per-Y path.
+        if hasattr(self, '_store'):
+            states = self._blocks().read_many(column)
+            def at(yy):
+                return states.get((x, yy, z))
+        else:
+            def at(yy):
+                return self.block(x, yy, z)
         for y in range(top, bottom, -1):
-            b = self.block(x, y, z)
+            b = at(y)
             if b and b.split('[')[0].removeprefix('minecraft:') not in AIR_IDS and not any(k in b for k in skip):
                 return y
         return bottom
@@ -774,6 +788,23 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     OUT.mkdir(parents=True, exist_ok=True)
     lo, hi = plan.bounds()
     w = World()
+    # Live path: region gate before any LiveBlocks construct (prefetch / first read).
+    # Dry path: skip MCP warm-up so offline / patched readers still work; production dry
+    # that calls ``World.block`` will still open LiveBlocks on first miss.
+    if not dry:
+        ensure_region_matches_open_world()
+        warm = set(plan.cells)
+        warm.update((x, y - 1, z) for x, y, z in plan.cells)
+        for (x, y, z), st in plan.cells.items():
+            n = bid(st)[10:]
+            if n.endswith('_door') and 'half=lower' in st:
+                face = st.split('facing=')[1].split(',')[0].rstrip(']')
+                sides = ((1, 0), (-1, 0)) if face in ('north', 'south') else ((0, 1), (0, -1))
+                for dx, dz in sides:
+                    for dy in (0, 1):
+                        warm.add((x + dx, y + dy, z + dz))
+                warm.add((x, y + 2, z))
+        w.prefetch(warm)
     # lint: posts (fences, walls, bars) over half-height blocks float by half a block
     floats = []
     for (x, y, z), st in plan.cells.items():
@@ -860,7 +891,6 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     print(f'{plan.name}: {len(plan.cells)} cells in {len(boxes)} boxes; bounds {lo}..{hi}; no clashes')
     if dry:
         return
-    ensure_region_matches_open_world()      # bake-off: refuse when region ≠ MCP-open save
     import site_lock
     site_lock.check()                       # single-builder rule: refuse without the world lock
     m = Paced()
