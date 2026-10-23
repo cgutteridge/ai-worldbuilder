@@ -57,8 +57,8 @@ _Avoid_: region restore, repair-by-snapshot
 _Avoid_: using recover as a substitute for reconcile
 
 **BlockStore**:
-The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`) and `MemoryBlocks` adapters (tests use memory). Read path: task 39 / #56.
-_Avoid_: region backup, snapshot
+The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`) and `MemoryBlocks` adapters (tests use memory). Read path: task 39 / #56 / #67. Planners that still say `World` use a duck-typed facade over this seam; there is no `.mca` reader.
+_Avoid_: region backup, snapshot, parsing region files for block state
 
 **Feature** (registry):
 A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches.

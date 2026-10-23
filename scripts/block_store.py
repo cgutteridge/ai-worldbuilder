@@ -6,8 +6,8 @@
 - :class:`LiveBlocks` reads the open world over MCP ``block_scan_region`` (tiled to volume
   ≤ 65 536, ``limit`` raised to the tile size; sparse AABBs fall back to per-chunk scans).
   Region identity and stale-read guards stay; writes always go over MCP, never through this
-  module. ``site_kit.World`` (``.mca`` parser) remains for non-BlockStore planners/audits —
-  LiveBlocks no longer uses it. Live MCP lists air for far/missing chunks (see audit §7);
+  module. ``site_kit.World`` is a duck-typed facade over this seam (default LiveBlocks);
+  the ``.mca`` parser is gone. Live MCP lists air for far/missing chunks (see audit §7);
   ``None`` only appears when a scan omits a position (FakeScanMcp / filters).
 
 States are canonical block strings: ``minecraft:`` prefix, properties sorted
@@ -490,6 +490,24 @@ class LiveBlocks:
         pos_list = [tuple(p) for p in positions]
         self._ensure(pos_list)
         return {p: self._cache[p] for p in pos_list}
+
+    def light(self, pos: Pos) -> int | None:
+        """Block light at ``pos`` via MCP ``block_get_state`` (one call; not for bulk scans).
+
+        The tool exposes a single ``lightLevel`` (not separate BlockLight / SkyLight).
+
+        @param pos: (x, y, z)
+        @returns: 0–15, or None when the response has no lightLevel
+        @raises StaleRead: after ``mark_written()`` until ``flush()``
+        """
+        self._guard()
+        from mc_paced import xyz
+        text = self._client().text('block_get_state', {
+            'dimension': self.dimension,
+            'position': xyz(list(pos)),
+        })
+        m = re.search(r'lightLevel:\s*(\d+)', text or '')
+        return int(m.group(1)) if m else None
 
     def flush(self) -> None:
         """Save the world, wait, drop the scan cache, clear the stale-read guard."""

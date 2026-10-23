@@ -65,7 +65,7 @@ T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae
 | scripts/dryrun_reset.py:246-251 | `logout_gate.require_logged_out` | guard that wipe | live | stays |
 | scripts/logout_gate.py (whole file, uses `session.lock`, MCP probe) | guard | gate region rewrites | live/bakeoff | stays only for dryrun_reset; drop the `region_backup` import (F1) |
 | scripts/registry_verify.py:168-195 | exists (`is_file` on `r.X.Z.mca`) | `--check-world` presence check | live | stays (no content read); candidate for the seam later |
-| scripts/nbt_min.py:104 (`open(path,'wb')`, gzip) | write | NBT writer for structure/level files, not .mca | n/a | stays; not a region writer |
+| ~~scripts/nbt_min.py~~ | — | was only used by the deleted `.mca` World parser (#67) | n/a | **deleted** |
 | scripts/lidar_heightmap.py:311-314 | exists/glob `r.*.mca` | locate the pristine clone | pristine | **T38** |
 | tests: test_region_backup.py, test_registry_repair.py:133,144, test_dryrun_reset.py:43, test_logout_gate.py, test_site_cleanup.py:32 | write fake `r.0.0.mca` bytes in tmp | fixtures | tmp | **T40** (first three region_backup/repair), dryrun_reset + logout_gate + cleanup stay |
 
@@ -222,11 +222,10 @@ not sparse (AABB of a plan still returns every block in the box).
 Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps.
 **Task #56 (2026-10-23):** `LiveBlocks` is MCP-backed (`block_scan_region`, Y-tiling, raised
 `limit`, verbose-text parse). BlockStore contract covered with FakeScanMcp / recorded fixtures
-(no live server in CI). Per-position `block_get_state` stays rejected on speed alone.
-`site_kit.World` (`.mca` parser) is **kept** for non-BlockStore planners/audits; LiveBlocks no
-longer opens region files. Payload size and lack of sparse/palette output still make full-cell
-planner reads expensive over MCP — migrate those callers to `BlockStore` (or keep `World`) as a
-follow-up, not a BlockStore fallback switch.
+(no live server in CI). Per-position `block_get_state` stays rejected for bulk reads (light probes only).
+**Task #67:** `site_kit.World` is a duck-typed facade over LiveBlocks; the `.mca` parser is
+**deleted**. Planners/audits that still call `World().block` hit MCP. Payload size and lack of
+sparse/palette output still make full-cell planner reads expensive over MCP.
 
 ### Live parity: `.mca` vs `LiveBlocks` (task #56, 2026-10-23, bakeoff)
 
@@ -245,11 +244,12 @@ Server/MOTD as above; `AI_WORLDBUILDER_WORLD_ROOT` → bakeoff checkout. Compare
 **Proved:** for positions in loaded / on-disk chunks, MCP LiveBlocks matches the `.mca`
 reader for both non-air and air (air is listed in the scan text, not omitted).
 
-**MCP gap (documented, not fixed here):** `block_scan_region` returns a listed
+**MCP gap (documented, accepted under #67):** `block_scan_region` returns a listed
 `minecraft:air` for far coordinates with no region chunk on disk. LiveBlocks therefore
-cannot tell “unloaded / unknown” from air over MCP alone; `site_kit.World` still returns
-`None` for missing chunks. Unit tests that expect `None` for unloaded use FakeScanMcp’s
-`loaded_chunks` filter (omit from the response), which live MCP does not do.
+cannot tell “unloaded / unknown” from air over MCP alone. Unit tests that expect `None` for
+unloaded use FakeScanMcp’s `loaded_chunks` filter (omit from the response); a separate test
+pins the unfiltered FakeScanMcp path (lists air, like live MCP). Callers already treat
+`None` and air alike via `or ''` / `or 'minecraft:air'`.
 
 Truncated live air-tile capture (bakeoff, two-block box at y=50):
 

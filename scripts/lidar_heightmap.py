@@ -62,10 +62,14 @@ def _id(b) -> str:
 def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
     """Scan one column top-down.
 
-    @param world: object with block(x, y, z) (and optionally uniform_air)
+    @param world: object with block(x, y, z) (and optionally uniform_air / prefetch)
     @returns: (h, base, roof, kind); zeros when the column is empty
     """
     skip = getattr(world, 'uniform_air', None)
+    # Batch MCP / BlockStore reads for the whole column when the world supports it.
+    warm = getattr(world, 'prefetch', None)
+    if warm is not None:
+        warm((x, y, z) for y in range(top, 0, -1))
     h = base = roof = 0
     tree = False
     y = top
