@@ -258,7 +258,14 @@ class TestStateHelpers(unittest.TestCase):
         self.assertTrue(same_state('oak_fence[east=true]', 'minecraft:oak_fence[east=false,north=true]'))
         self.assertTrue(same_state('stone_brick_wall[up=true,north=low]',
                                    'minecraft:stone_brick_wall[up=false,north=none]'))
+        self.assertTrue(same_state('copper_bars[north=true]', 'minecraft:copper_bars[north=false]'))
         self.assertFalse(same_state('glass_pane[east=true]', 'minecraft:stained_glass_pane[east=true]'))
+
+    def test_site_kit_same_delegates(self):
+        import site_kit
+        self.assertTrue(site_kit.same('glass_pane[east=true,west=true]',
+                                      'minecraft:glass_pane[east=false,north=true,west=true]'))
+        self.assertFalse(site_kit.same('oak_fence_gate[open=true]', 'minecraft:oak_fence_gate[open=false]'))
 
     def test_same_state_keeps_other_properties_on_connectables(self):
         # gates are not connectables: facing/open/in_wall are the builder's choice

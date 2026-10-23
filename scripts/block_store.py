@@ -58,7 +58,7 @@ _CONNECTION_PROPS = frozenset({'north', 'south', 'east', 'west', 'up'})
 
 def _game_derives_connections(block: str) -> bool:
     name = block.removeprefix('minecraft:')
-    return name.endswith(('_pane', '_fence', '_wall')) or name == 'iron_bars'
+    return name.endswith(('_pane', '_fence', '_wall', '_bars'))
 
 
 def same_state(planned: str, actual: str | None) -> bool:
