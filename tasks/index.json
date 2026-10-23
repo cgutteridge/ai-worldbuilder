@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 68,
-  "tasks": []
+  "nextTaskId": 69,
+  "tasks": [
+    {
+      "id": 68,
+      "title": "Ground-only lidar ghosts with DSM\u2212DTM top colours",
+      "status": "doing",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Grill 2026-10-23/24: remove volumetric feature ghosts (unreliable strip). Keep ground ghosts on same frontier/ensure. Tops per column: light_gray_concrete (DSM\u2212DTM\u22480), gray_concrete (1\u20132), black_concrete (>2); stone fill; same height math. Journal ground none|ghost|generated only (no ghost+features / ghost-features pass for new work). Delete strip/leftover feature-ghost paths. Docs ADR003/v2/glossary. Bake-off reset/protocol ground-only; no Southampton strip; lazy ensure repaints tops."
+    }
+  ]
 }
