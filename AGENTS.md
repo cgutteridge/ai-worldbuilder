@@ -6,8 +6,9 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 ## Start
 
 1. Confirm active world: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
-2. System tracker first when work is **tool** engineering: read `tasks/index.json`. Parallel system tasks: shared skill `parallel-task-wave` (not the world cell-orchestrator).
-3. If work is **world** (cell registry, issues, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
+2. Sweep unmerged branches and leftover worktrees: `python3 scripts/ship_branch.py sweep` (ADR 005).
+3. System tracker first when work is **tool** engineering: read `tasks/index.json`. Parallel system tasks: project skill `parallel-task-wave` (not the world cell-orchestrator).
+4. If work is **world** (cell registry, issues, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.
 
 ## Always
 
@@ -17,6 +18,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 - Sound cues: `python3 ~/Projects/agent-soundboard/scripts/play.py <id>` (`done`, `need-you`, `error`).
 - Once per clone: `python3 scripts/install_git_hooks.py` (blocks system-tracker edits on `task/*` branches; runs `scripts/run_tests.py`).
 - Review judgement: `CODING_STANDARDS.md` (mechanical rules live in the hook).
+- **Branch gate (ADR 005):** code goes on `task/*` branches and through the ship-branch skill / `ship_branch.py merge` unless the owner opts out. Tracker-only and docs-only edits commit straight to `main` under the pre-commit checks — no `tracker/*` branches.
 
 ## Where things live
 

@@ -31,8 +31,17 @@ pre-commit hook. Mechanical rules belong in `.githooks/` /
   `cell_sources.provider_package_dir` / catalogue `home` — do not hard-code a
   single root when both are in play.
 
-## Parallel waves
+## Branch gate and parallel waves
 
-- Worker branches (`task/…`) commit code and tests only. Tracker archive is an
-  orchestrator hop after merge. The pre-commit hook enforces the file rule;
-  review still catches “done” claims that never landed on `main`.
+- Code lands on `task/…` and ships via `.claude/skills/ship-branch/SKILL.md` →
+  `python3 scripts/ship_branch.py merge <branch>` (ADR 005). Owner opt-outs:
+  `no review` / `skip review`, `leave on branch` / `don't merge`, ticket
+  `review: skip`.
+- Tracker-only and docs-only edits go straight to `main`. Do not invent
+  `tracker/*` branches.
+- Worker branches commit code and tests only. Tracker archive is an
+  orchestrator hop after merge. Waves use `.claude/skills/parallel-task-wave/`
+  (project override): orchestrator runs ship-branch before each merge.
+- The pre-commit hook enforces tracker ownership on `task/*`; review still
+  catches “done” claims that never landed on `main`.
+- Start and project `done` run `ship_branch.py sweep` so strays stay visible.
