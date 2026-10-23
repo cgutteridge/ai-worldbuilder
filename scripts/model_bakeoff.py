@@ -22,10 +22,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import active_world
-from atomic_json import write_json
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import active_world  # noqa: E402
+from atomic_json import write_json  # noqa: E402
+
 DEFAULT_BAKEOFFS = ROOT / 'model-bakeoffs'
 # Prefix every bake-off CLI call (agent shells do not keep a one-off export).
 BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'

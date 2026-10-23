@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -351,6 +354,35 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 r'(?i)export\s+AI_WORLDBUILDER_WORLD_ROOT',
                 msg=f'{name} must not teach a one-off export',
             )
+
+    def test_cli_subprocess_status_imports(self):
+        """Running the script as ``python3 scripts/model_bakeoff.py`` must find active_world."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            world = root / 'world'
+            (world / 'config').mkdir(parents=True)
+            (world / 'config' / 'world.json').write_text(
+                json.dumps({'gameworld_id': 'bakeoff', 'region_path': str(world)}),
+                encoding='utf-8',
+            )
+            env = os.environ.copy()
+            env['AI_WORLDBUILDER_WORLD_ROOT'] = str(world)
+            script = TOOL_ROOT / 'scripts' / 'model_bakeoff.py'
+            result = subprocess.run(
+                [sys.executable, str(script), '--root', str(root), 'status'],
+                cwd=str(TOOL_ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f'stdout={result.stdout!r} stderr={result.stderr!r}',
+            )
+            self.assertNotIn('ModuleNotFoundError', result.stderr)
 
 
 if __name__ == '__main__':
