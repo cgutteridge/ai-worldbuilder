@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 67,
-  "tasks": []
+  "nextTaskId": 68,
+  "tasks": [
+    {
+      "id": 67,
+      "title": "Delete site_kit.World .mca reader once remaining callers use BlockStore",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Follow-up from #56 ship-branch review (nit). LiveBlocks now reads via MCP block_scan_region; site_kit.World remains for non-seam planners/audits. Migrate those callers to BlockStore, prove parity (including unloaded-chunk air-vs-None behaviour documented in docs/audits/region-block-reads.md), then delete the .mca reader. Optional: pin live MCP unloaded-chunk behaviour in test_block_store (FakeScanMcp currently filters loaded_chunks unlike the real server)."
+    }
+  ]
 }
