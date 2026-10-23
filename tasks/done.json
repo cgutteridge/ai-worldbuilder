@@ -519,6 +519,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "From R-006 retro. A multi-minute apply printed nothing until the end, was backgrounded, and when killed (exit 144) it was unclear whether it had completed. Decided (grill): print one progress line per cell to stderr, flushed (stdout stays the final JSON); end with a summary counting builds by journal status (landed / mismatched / abandoned / skipped); install a SIGTERM handler (SIGINT already raises) so the process exits cleanly and names any cell still in flight with `cell_registry.py reconcile`. Do NOT release the site lock on kill: apply never claims it, `site_lock.py claim` does, and it spans the whole sitting. Code: providers/ukdefra-lidar/manage/lidar_ghost.py (ensure_cells, main). Done 2026-10-23: merged 2e5141b via 7f92d5f (task/60-lidar-ghost-progress); ship-branch APPROVE (nits only)."
+    },
+    {
+      "id": 57,
+      "title": "Make world and save impossible to mismatch: drop the region override and the silent default world",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From bake-off R-006 retro. `lidar_ghost apply` with AI_WORLDBUILDER_REGION pointing at the bakeoff save, while AI_WORLDBUILDER_WORLD_ROOT defaulted to southampton-build, ran 33 builds into the bakeoff save and wrote the journal into southampton-build/registry: region and registry were resolved independently, and the existing gate only compares the region to the MCP-open save. Decided (grill): (1) Remove AI_WORLDBUILDER_REGION entirely (site_kit.REGION_ENV / resolve_region env branch, block_store._configured_regions docstrings, test_site_kit_region.py env tests, docs/audits/region-block-reads.md mentions); the save always comes from the active world's config/world.json (worlds/bakeoff now has its own). (2) Remove the silent default in active_world.py (_DEFAULT_WORLD = southampton-build): if AI_WORLDBUILDER_WORLD_ROOT is unset, refuse with a message saying to set it; update AGENTS.md start step and any script/test that relies on the default (tests set the env or patch). (3) Reword the 'MCP is serving X' refusal (site_kit.py ~L393) to name AI_WORLDBUILDER_WORLD_ROOT. World repair tools (cell_registry.py reconcile, site_recover.py, site_cleanup.py) stay available in any world, they just need the variable set. No stray journal remains in southampton-build/registry (checked 2026-10-22). Done 2026-10-23: merged via ship_branch (task/57-world-save-mismatch); APPROVE."
     }
   ]
 }

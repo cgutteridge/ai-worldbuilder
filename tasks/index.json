@@ -13,15 +13,6 @@
       "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md §7). block_scan_region is bulk and exact within volume≤65536 and results≤limit (default 1024); ~1.5s for a full 128×4×128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
     },
     {
-      "id": 57,
-      "title": "Make world and save impossible to mismatch: drop the region override and the silent default world",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From bake-off R-006 retro. `lidar_ghost apply` with AI_WORLDBUILDER_REGION pointing at the bakeoff save, while AI_WORLDBUILDER_WORLD_ROOT defaulted to southampton-build, ran 33 builds into the bakeoff save and wrote the journal into southampton-build/registry: region and registry were resolved independently, and the existing gate only compares the region to the MCP-open save. Decided (grill): (1) Remove AI_WORLDBUILDER_REGION entirely (site_kit.REGION_ENV / resolve_region env branch, block_store._configured_regions docstrings, test_site_kit_region.py env tests, docs/audits/region-block-reads.md mentions); the save always comes from the active world's config/world.json (worlds/bakeoff now has its own). (2) Remove the silent default in active_world.py (_DEFAULT_WORLD = southampton-build): if AI_WORLDBUILDER_WORLD_ROOT is unset, refuse with a message saying to set it; update AGENTS.md start step and any script/test that relies on the default (tests set the env or patch). (3) Reword the 'MCP is serving X' refusal (site_kit.py ~L393) to name AI_WORLDBUILDER_WORLD_ROOT. World repair tools (cell_registry.py reconcile, site_recover.py, site_cleanup.py) stay available in any world, they just need the variable set. No stray journal remains in southampton-build/registry (checked 2026-10-22)."
-    },
-    {
       "id": 58,
       "title": "Bake-off open and repair refuse outside the bake-off world; instructions prefix every command with the world",
       "status": "todo",
