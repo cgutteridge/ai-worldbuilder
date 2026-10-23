@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 67,
-  "tasks": [
-    {
-      "id": 56,
-      "title": "Give LiveBlocks an MCP backend and drop the region-file parser",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "From #49 / audit F2 (docs/audits/region-block-reads.md \u00a77). block_scan_region is bulk and exact within volume\u226465536 and results\u2264limit (default 1024); ~1.5s for a full 128\u00d74\u00d7128 tile but ~11MB verbose text, no palette+index, not sparse. ADR 004: callers stay on BlockStore; swap LiveBlocks to MCP (tile tall cells, raise/page limit, parse text or ask for a compact encoding), keep MemoryBlocks for tests, delete the .mca reader once parity is proven. Until then keep the guarded region LiveBlocks."
-    }
-  ]
+  "tasks": []
 }
