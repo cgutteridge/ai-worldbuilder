@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Offline audit of every kit build against the saved world (no MCP calls).
+"""Audit every kit build against the live world via BlockStore / MCP.
 
 Drift: cells whose current block differs from what the latest build placed (cell journal).
-Dark: walkable cells inside builds with block light 0.
+Dark: walkable cells inside builds with lightLevel 0 (``block_get_state``).
 
   python3 scripts/site_audit.py [prefix]
-Writes verification/site/audits/<date>-<prefix>.json. Save the world first.
+Writes verification/site/audits/<date>-<prefix>.json. Needs minecraft_world MCP; flush/save first.
 """
 import json
 import sys

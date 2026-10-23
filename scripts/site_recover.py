@@ -19,7 +19,7 @@ land-or-not decision here reads the world through ``reconcile`` (its in-flight f
 Decision, per in-flight entry touching the cell (conservative: when unsure it reports and does nothing):
   * lock held and fresh (heartbeat < site_lock.STALE_MIN) -> refuse; the run may still be alive.
   * lock stale but owned by someone other than the entry's owner -> refuse (unsure).
-  * flush the world, compare the recorded plan with the region files:
+  * flush the world, compare the recorded plan via BlockStore (MCP):
       (``reconcile`` in-flight finding on the cell: planned blocks vs the world)
       all planned blocks match -> entry finished 'landed' (recovered). A staged pass mask is
       published; an aborted mask undo also gets its bookkeeping finished (mask_undo.finish_undo).
@@ -58,7 +58,11 @@ def _registry():
 
 
 class _SavedWorld:
-    """BlockStore over an injected world: ``flush`` saves it, then re-opens a fresh view to read."""
+    """BlockStore over an injected factory: ``flush`` saves, then opens a fresh store to read.
+
+    ``world_factory`` may return a :class:`block_store.BlockStore` (``read`` / ``read_many``)
+    or a duck-typed ``World`` with ``block(x, y, z)``.
+    """
 
     def __init__(self, flush, world_factory):
         self._flush, self._factory, self.world = flush, world_factory, None
@@ -68,10 +72,16 @@ class _SavedWorld:
         self.world = self._factory()
 
     def read(self, pos):
-        return self.world.block(*pos)
+        w = self.world
+        if hasattr(w, 'read'):
+            return w.read(pos)
+        return w.block(*pos)
 
     def read_many(self, positions):
-        return {tuple(p): self.world.block(*p) for p in positions}
+        w = self.world
+        if hasattr(w, 'read_many'):
+            return w.read_many(positions)
+        return {tuple(p): w.block(*p) for p in positions}
 
 
 def lock_state() -> dict:
@@ -124,7 +134,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
     import cell_registry
     import site_kit
     flush = flush or _flush
-    world_factory = world_factory or site_kit.World
+    world_factory = world_factory or site_kit.live_blocks
     cell = tuple(cell)
     store = _SavedWorld(flush, world_factory)
     reg = cell_registry.open_registry(blocks=store, ghosts=None)
@@ -161,9 +171,8 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
         drift = reg.reconcile([cell])                     # flushes the world, then compares the recorded plans
     except (JournalError, OSError, BlockStoreError) as exc:
         res['action'] = 'unsure'
-        say(f'could not flush the world ({exc}); reading stale region files would mislead. Nothing done.')
+        say(f'could not flush the world ({exc}); reading without flush would mislead. Nothing done.')
         return res
-    world = store.world
     mine = [i for i in drift.by_kind('in-flight') if i.seq == e.seq]
     mismatches = mine[0].count if mine else 0
     say(f'live world vs plan: {len(planned)} planned, {mismatches} mismatches')
@@ -198,7 +207,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
                 import mask_undo
                 mask_undo.finish_undo(cell, e.pass_, e.meta.get('undo_plan') or e.plan)
                 say("mask undo bookkeeping finished (mask archived)")
-            ticket.finish({p: world.block(*p) for p in planned})
+            ticket.finish(store.read_many(planned))
             release_stale()
         return res
 

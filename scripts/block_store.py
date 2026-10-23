@@ -6,8 +6,8 @@
 - :class:`LiveBlocks` reads the open world over MCP ``block_scan_region`` (tiled to volume
   ≤ 65 536, ``limit`` raised to the tile size; sparse AABBs fall back to per-chunk scans).
   Region identity and stale-read guards stay; writes always go over MCP, never through this
-  module. ``site_kit.World`` (``.mca`` parser) remains for non-BlockStore planners/audits —
-  LiveBlocks no longer uses it. Live MCP lists air for far/missing chunks (see audit §7);
+  module. ``site_kit.World`` is a duck-typed facade over this seam (default LiveBlocks);
+  the ``.mca`` parser is gone. Live MCP lists air for far/missing chunks (see audit §7);
   ``None`` only appears when a scan omits a position (FakeScanMcp / filters).
 
 States are canonical block strings: ``minecraft:`` prefix, properties sorted

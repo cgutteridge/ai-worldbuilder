@@ -14,11 +14,10 @@ cell is written, including air (so excavation is explicit). apply():
      journal entry, then runs the journal follow-ups (lidar ghost strip / frontier).
 Guard and readback reports land in verification/site/<name>-*.json.
 """
-import json, math, struct, time, zlib
+import json, math, re, time
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
-import nbt_min as N  # noqa: E402
 
 _CFG = json.loads((ROOT / 'config/world.json').read_text())
 REGION = Path(_CFG['region_path'])
@@ -391,106 +390,106 @@ def ensure_region_matches_open_world(region=None) -> None:
     )
 
 
+_LIGHT_LEVEL = re.compile(r'lightLevel:\s*(\d+)')
+
+
 class World:
-    """Read-only block access from the saved region files."""
+    """Duck-typed block access over a :class:`block_store.BlockStore`.
 
-    def __init__(self, region=None):
-        """
-        @param region: region directory, or None to use :func:`resolve_region`
-        """
-        self.region = resolve_region(region)
-        self.chunks = {}
-        self.files = {}
+    Default store is :class:`block_store.LiveBlocks` (MCP ``block_scan_region``) for the
+    active world. Inject ``store=`` in tests. The old ``.mca`` region parser is gone;
+    unloaded / omitted chunks follow the BlockStore contract (``None`` under FakeScanMcp
+    with ``loaded_chunks``; live MCP lists ``minecraft:air`` — see
+    ``docs/audits/region-block-reads.md`` §7).
+    """
 
-    def _chunk(self, cx, cz):
-        k = (cx, cz)
-        if k in self.chunks:
-            return self.chunks[k]
-        rx, rz = cx >> 5, cz >> 5
-        f = self.region / f'r.{rx}.{rz}.mca'
-        if f not in self.files:
-            self.files[f] = f.read_bytes() if f.exists() else b''
-        data = self.files[f]
-        secs = None
-        if data:
-            idx = (cx & 31) + (cz & 31) * 32
-            off = struct.unpack_from('>I', data, idx * 4)[0]
-            if off:
-                sec = (off >> 8) * 4096
-                ln = struct.unpack_from('>I', data, sec)[0]
-                if data[sec + 4] == 2:
-                    buf = zlib.decompress(data[sec + 5:sec + 4 + ln])
-                    n = struct.unpack_from('>H', buf, 1)[0]
-                    c = N._read(buf, 3 + n, buf[0])[0].value
-                    secs = {}
-                    for s in c['sections'].value[1]:
-                        s = s.value
-                        bs = s.get('block_states')
-                        if not bs:
-                            continue
-                        pal = []
-                        for p in bs.value['palette'].value[1]:
-                            p = p.value
-                            props = p.get('Properties')
-                            st = p['Name'].value
-                            if props:
-                                st += '[' + ','.join(f'{k}={v.value}' for k, v in sorted(props.value.items())) + ']'
-                            pal.append(st)
-                        bits = max(4, math.ceil(math.log2(len(pal))))      # once per section, not once per block read
-                        secs[s['Y'].value] = (pal, bs.value['data'].value if 'data' in bs.value else None,
-                                              bits, 64 // bits)
-        self.chunks[k] = secs
-        return secs
+    def __init__(self, region=None, *, store=None):
+        """
+        @param region: region directory for identity / ``self.region`` (ignored when ``store``
+            already carries a ``region``)
+        @param store: BlockStore to read; default is lazy LiveBlocks for the active world
+        """
+        self._store = store
+        self._region_arg = region
+        if store is not None and getattr(store, 'region', None) is not None:
+            self.region = Path(store.region)
+        else:
+            self.region = resolve_region(region)
+
+    def _blocks(self):
+        """Lazy LiveBlocks so ``World().region`` works in unit tests without MCP."""
+        if self._store is None:
+            from block_store import LiveBlocks
+            if self._region_arg is not None:
+                self._store = LiveBlocks(self.region)
+            else:
+                self._store = LiveBlocks.from_world_config()
+        return self._store
 
     def block(self, x, y, z):
-        secs = self._chunk(x >> 4, z >> 4)
-        if secs is None:
-            return None
-        s = secs.get(y >> 4)
-        if s is None:
-            return 'minecraft:air'
-        pal, longs, bits, per = s
-        if longs is None:
-            return pal[0]
-        i = ((y & 15) * 256) + ((z & 15) * 16) + (x & 15)
-        L = longs[i // per] & ((1 << 64) - 1)
-        return pal[(L >> ((i % per) * bits)) & ((1 << bits) - 1)]
+        """Block state at ``(x, y, z)``, or None when the store reports unloaded/unknown.
+
+        @param x: block X
+        @param y: block Y
+        @param z: block Z
+        @returns: canonical state string, or None
+        """
+        return self._blocks().read((x, y, z))
 
     def uniform_air(self, x, y, z, airs) -> bool:
-        """True when the 16-block section holding (x, y, z) is absent or one block whose id (no properties) is in ``airs``.
+        """True when every block in the 16-high section is unloaded or its id is in ``airs``.
 
-        Lets a top-down column scan jump a whole empty section; block() would return the same answer 16 times.
+        Replaces the old section-palette shortcut: samples the column via ``read_many``.
+
+        @param x: block X
+        @param y: any Y in the section
+        @param z: block Z
+        @param airs: set/tuple of namespaced air ids (e.g. ``minecraft:air``)
+        @returns: True when the section may be skipped in a top-down scan
         """
-        secs = self._chunk(x >> 4, z >> 4)
-        if secs is None:
-            return True                                   # block() gives None here, which callers read as air
-        s = secs.get(y >> 4)
-        return s is None or (s[1] is None and s[0][0].split('[')[0] in airs)
+        y0 = (y >> 4) << 4
+        positions = [(x, yy, z) for yy in range(y0, y0 + 16)]
+        for st in self._blocks().read_many(positions).values():
+            if st is None:
+                continue
+            if st.split('[')[0] not in airs:
+                return False
+        return True
 
     def light(self, x, y, z, kind='BlockLight'):
-        """Stored light level (BlockLight or SkyLight) from the region file; None if absent."""
-        key = ('L', kind, x >> 4, z >> 4)
-        if key not in self.chunks:
-            self._chunk(x >> 4, z >> 4)
-            rx, rz = x >> 9, z >> 9
-            data = self.files[self.region / f'r.{rx}.{rz}.mca']
-            idx = ((x >> 4) & 31) + ((z >> 4) & 31) * 32
-            off = struct.unpack_from('>I', data, idx * 4)[0]
-            sec = (off >> 8) * 4096
-            ln = struct.unpack_from('>I', data, sec)[0]
-            buf = zlib.decompress(data[sec + 5:sec + 4 + ln])
-            n = struct.unpack_from('>H', buf, 1)[0]
-            c = N._read(buf, 3 + n, buf[0])[0].value
-            self.chunks[key] = {s.value['Y'].value: s.value[kind].value
-                                for s in c['sections'].value[1] if kind in s.value}
-        arr = self.chunks[key].get(y >> 4)
-        if arr is None:
+        """Light level via MCP ``block_get_state`` when the store is LiveBlocks.
+
+        SkyLight and BlockLight are not distinguished on the MCP tool (one ``lightLevel``).
+        MemoryStores and other fakes return None.
+
+        @param x: block X
+        @param y: block Y
+        @param z: block Z
+        @param kind: ignored (kept for call-site compatibility)
+        @returns: 0–15, or None when unavailable
+        """
+        del kind  # MCP exposes a single lightLevel
+        store = self._blocks()
+        client = getattr(store, '_client', None)
+        if client is None:
             return None
-        i = (y & 15) * 256 + (z & 15) * 16 + (x & 15)
-        b = arr[i >> 1]
-        return (b >> 4) & 15 if i & 1 else b & 15
+        from mc_paced import xyz
+        text = client().text('block_get_state', {
+            'dimension': getattr(store, 'dimension', D),
+            'position': xyz([x, y, z]),
+        })
+        m = _LIGHT_LEVEL.search(text or '')
+        return int(m.group(1)) if m else None
 
     def ground(self, x, z, top=140, bottom=40):
+        """Highest non-air, non-plant Y in the column (same skip list as before).
+
+        @param x: block X
+        @param z: block Z
+        @param top: scan start Y
+        @param bottom: scan floor Y
+        @returns: ground Y, or ``bottom`` when none found
+        """
         skip = ('water', 'leaves', '_log', 'short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy',
                 'dandelion', 'kelp', 'seagrass', 'bush', 'litter', 'vine', 'daisy', 'bluet', 'orchid',
                 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom')
@@ -1040,10 +1039,13 @@ def _bring_player(m, lo, hi, reach=80):
 
 
 def readback(plan, world=None):
-    """Read every planned cell back from a world view (default: the saved region files).
+    """Read every planned cell back (default: :class:`World` over LiveBlocks / MCP).
+
+    Prefer :func:`live_blocks` + ``read_many`` for journal finish; this helper remains for
+    one-off probes that pass a duck-typed ``world.block``.
 
     @param plan: Plan
-    @param world: object with ``block(x, y, z)``
+    @param world: object with ``block(x, y, z)`` (default: :class:`World`)
     @returns: {'planned', 'mismatches', 'mismatch_sample', 'checked'}
     """
     w = world or World()

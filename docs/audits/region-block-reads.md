@@ -222,11 +222,10 @@ not sparse (AABB of a plan still returns every block in the box).
 Bulk MCP read **exists and is exact** inside the 65 536-volume / `limit` caps.
 **Task #56 (2026-10-23):** `LiveBlocks` is MCP-backed (`block_scan_region`, Y-tiling, raised
 `limit`, verbose-text parse). BlockStore contract covered with FakeScanMcp / recorded fixtures
-(no live server in CI). Per-position `block_get_state` stays rejected on speed alone.
-`site_kit.World` (`.mca` parser) is **kept** for non-BlockStore planners/audits; LiveBlocks no
-longer opens region files. Payload size and lack of sparse/palette output still make full-cell
-planner reads expensive over MCP — migrate those callers to `BlockStore` (or keep `World`) as a
-follow-up, not a BlockStore fallback switch.
+(no live server in CI). Per-position `block_get_state` stays rejected for bulk reads (light probes only).
+**Task #67:** `site_kit.World` is a duck-typed facade over LiveBlocks; the `.mca` parser is
+**deleted**. Planners/audits that still call `World().block` hit MCP. Payload size and lack of
+sparse/palette output still make full-cell planner reads expensive over MCP.
 
 ### Live parity: `.mca` vs `LiveBlocks` (task #56, 2026-10-23, bakeoff)
 
@@ -245,11 +244,12 @@ Server/MOTD as above; `AI_WORLDBUILDER_WORLD_ROOT` → bakeoff checkout. Compare
 **Proved:** for positions in loaded / on-disk chunks, MCP LiveBlocks matches the `.mca`
 reader for both non-air and air (air is listed in the scan text, not omitted).
 
-**MCP gap (documented, not fixed here):** `block_scan_region` returns a listed
+**MCP gap (documented, accepted under #67):** `block_scan_region` returns a listed
 `minecraft:air` for far coordinates with no region chunk on disk. LiveBlocks therefore
-cannot tell “unloaded / unknown” from air over MCP alone; `site_kit.World` still returns
-`None` for missing chunks. Unit tests that expect `None` for unloaded use FakeScanMcp’s
-`loaded_chunks` filter (omit from the response), which live MCP does not do.
+cannot tell “unloaded / unknown” from air over MCP alone. Unit tests that expect `None` for
+unloaded use FakeScanMcp’s `loaded_chunks` filter (omit from the response); a separate test
+pins the unfiltered FakeScanMcp path (lists air, like live MCP). Callers already treat
+`None` and air alike via `or ''` / `or 'minecraft:air'`.
 
 Truncated live air-tile capture (bakeoff, two-block box at y=50):
 
