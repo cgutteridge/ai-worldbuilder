@@ -24,6 +24,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
+import sys
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
@@ -44,6 +46,54 @@ FOOTPRINT_OK = 'lidar ghost massing (ADR 004); not a real feature build'
 AIR = 'minecraft:air'
 
 HeightsFn = Callable[[int, int, int, int], dict[str, Any]]
+
+# Cell currently being planned/applied; SIGTERM names it so the operator can reconcile.
+_in_flight_cell: tuple[int, int] | None = None
+
+
+def set_in_flight_cell(cell: tuple[int, int] | None) -> None:
+    """Record which cell ``ensure_cells`` is working on (tests and the SIGTERM handler).
+
+    @param cell: (tx, tz), or None when idle
+    """
+    global _in_flight_cell
+    _in_flight_cell = tuple(cell) if cell is not None else None
+
+
+def handle_sigterm(signum: int, frame) -> None:  # noqa: ARG001
+    """Exit cleanly on SIGTERM; name any in-flight cell and point at reconcile.
+
+    Does not release the site lock (apply never claims it; ``site_lock.py claim`` does).
+
+    @param signum: signal number
+    @param frame: interrupted stack frame (unused)
+    """
+    cell = _in_flight_cell
+    if cell is not None:
+        msg = (f'lidar_ghost: stopped by SIGTERM while cell {cell[0]},{cell[1]} was in flight; '
+               f'run cell_registry.py reconcile')
+    else:
+        msg = ('lidar_ghost: stopped by SIGTERM; '
+               'run cell_registry.py reconcile if a cell was left begun')
+    print(msg, file=sys.stderr, flush=True)
+    raise SystemExit(128 + signal.SIGTERM)
+
+
+def _progress(msg: str) -> None:
+    """One progress/summary line on stderr, flushed so it shows while apply runs."""
+    print(msg, file=sys.stderr, flush=True)
+
+
+def summarise_statuses(counts: dict[str, int]) -> str:
+    """Format the apply summary line from journal-status tallies.
+
+    @param counts: keys ``landed`` / ``mismatched`` / ``abandoned`` / ``skipped``
+    @returns: one summary line (without trailing newline)
+    """
+    return (f"lidar_ghost: summary landed={counts.get('landed', 0)} "
+            f"mismatched={counts.get('mismatched', 0)} "
+            f"abandoned={counts.get('abandoned', 0)} "
+            f"skipped={counts.get('skipped', 0)}")
 
 
 def ghost_owners_for(cell: tuple[int, int]) -> frozenset[str]:
@@ -263,38 +313,57 @@ def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[st
     Unlike ``CellRegistry.ensure`` this also serves cells outside the frontier (an explicit
     ``--cell``, or the focus ring before any real work).
 
+    Prints one flushed progress line per cell on stderr, then a summary counting builds by
+    journal status (``landed`` / ``mismatched`` / ``abandoned`` / ``skipped``). Stdout is left
+    for the caller (CLI JSON).
+
     @param reg: ``CellRegistry`` with a ghost planner
     @param cells: target cells
     @param apply: journal writer (``site_kit.McpWriter``); None = dry run
     @param force: re-plan layers already present
     @returns: per-cell reports
     """
+    targets = [tuple(c) for c in cells]
+    n = len(targets)
     reports = []
-    for cell in cells:
-        cell = tuple(cell)
-        rep: dict[str, Any] = {'cell': list(cell), 'dry': apply is None, 'actions': []}
-        reports.append(rep)
-        view = reg.cell(cell)
-        if view.in_flight:
-            rep['skipped'] = 'in-flight'
-            continue
-        want_ground, want_features = needs(view, force=force)
-        if not (want_ground or want_features):
-            rep['skipped'] = 'layers-complete'
-            continue
-        for layer, wanted in (('ground', want_ground), ('features', want_features)):
-            if not wanted:
-                rep[f'{layer}_skip'] = 'real-ground' if layer == 'ground' else 'present-or-real-feature'
+    counts = {'landed': 0, 'mismatched': 0, 'abandoned': 0, 'skipped': 0}
+    try:
+        for i, cell in enumerate(targets, 1):
+            set_in_flight_cell(cell)
+            _progress(f'lidar_ghost: cell {cell[0]},{cell[1]} ({i}/{n})')
+            rep: dict[str, Any] = {'cell': list(cell), 'dry': apply is None, 'actions': []}
+            reports.append(rep)
+            view = reg.cell(cell)
+            if view.in_flight:
+                rep['skipped'] = 'in-flight'
+                counts['skipped'] += 1
                 continue
-            build = cell_builds(reg, cell, layer)
-            if build is None:
-                rep['skipped'] = 'no-lidar'
-                break
-            rep[layer] = _stats(build.cells)
-            rep['actions'].append(f'plan-{layer}')
-            if apply is not None:
-                reg.change(build, apply)
-                rep['actions'].append(f'apply-{layer}')
+            want_ground, want_features = needs(view, force=force)
+            if not (want_ground or want_features):
+                rep['skipped'] = 'layers-complete'
+                counts['skipped'] += 1
+                continue
+            for layer, wanted in (('ground', want_ground), ('features', want_features)):
+                if not wanted:
+                    rep[f'{layer}_skip'] = (
+                        'real-ground' if layer == 'ground' else 'present-or-real-feature')
+                    continue
+                build = cell_builds(reg, cell, layer)
+                if build is None:
+                    rep['skipped'] = 'no-lidar'
+                    counts['skipped'] += 1
+                    break
+                rep[layer] = _stats(build.cells)
+                rep['actions'].append(f'plan-{layer}')
+                if apply is not None:
+                    receipt = reg.change(build, apply)
+                    rep['actions'].append(f'apply-{layer}')
+                    status = receipt.status
+                    rep.setdefault('statuses', []).append(status)
+                    counts[status] = counts.get(status, 0) + 1
+    finally:
+        set_in_flight_cell(None)
+    _progress(summarise_statuses(counts))
     return reports
 
 
@@ -421,6 +490,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     dry = a.cmd != 'apply'
+    if a.cmd == 'apply':
+        # SIGINT already raises KeyboardInterrupt; SIGTERM would otherwise leave exit 144 unclear.
+        signal.signal(signal.SIGTERM, handle_sigterm)
     reg, writer = _session(dry, heights_fn, depth)
     cells = targets_for(reg, focus, a.ring, include_focus=a.include_focus, frontier_when_seeded=False)
     reports = ensure_cells(reg, cells, apply=writer, force=a.force)
