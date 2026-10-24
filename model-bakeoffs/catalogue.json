@@ -9,13 +9,13 @@
           "id": "composer-2.5",
           "tier": "low",
           "label": "Composer 2.5",
-          "bulk_ok": true
+          "bulk_ok": false
         },
         {
           "id": "grok-4.7",
           "tier": "mid",
           "label": "Grok 4.7",
-          "bulk_ok": true
+          "bulk_ok": false
         }
       ]
     },
