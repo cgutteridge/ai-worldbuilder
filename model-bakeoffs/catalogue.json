@@ -40,6 +40,12 @@
           "tier": "mid",
           "label": "Claude Sonnet 5.5 (low effort)",
           "bulk_ok": true
+        },
+        {
+          "id": "claude-sonnet-5-5-medium",
+          "tier": "mid",
+          "label": "Claude Sonnet 5.5 (medium effort)",
+          "bulk_ok": true
         }
       ]
     }
