@@ -4,7 +4,7 @@
   "cell": [48, -44],
   "cell_note": "SUSU (B42) / south Library Square",
   "ghost_cells": [[47, -45], [48, -45], [49, -45], [47, -44], [48, -44], [49, -44], [47, -43], [48, -43], [49, -43]],
-  "active_tiers": ["low", "mid"],
+  "active_tiers": ["low", "mid", "high"],
   "tasks": ["feature_design", "look", "greeblies", "trees"],
   "pilot_task": "feature_design",
   "axes": ["massing", "openings", "roof_greeblies", "materials", "keep"],

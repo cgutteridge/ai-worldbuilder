@@ -52,6 +52,12 @@
           "tier": "mid",
           "label": "Claude Sonnet 5.5 (high effort)",
           "bulk_ok": true
+        },
+        {
+          "id": "claude-opus-5-5-low",
+          "tier": "high",
+          "label": "Claude Opus 5.5 (low effort)",
+          "bulk_ok": true
         }
       ]
     },
