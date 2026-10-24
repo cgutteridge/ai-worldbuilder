@@ -1,8 +1,8 @@
 {
   "id": "R-011",
-  "status": "ready",
+  "status": "scored",
   "created": "2026-10-24T16:31:18Z",
-  "scored_at": null,
+  "scored_at": "2026-10-24T17:05:31Z",
   "task": "feature_design",
   "pack": "v1",
   "pack_brief": "packs/v1/BRIEF.md",
@@ -88,7 +88,7 @@
         "note": null
       }
     },
-    "why": null,
+    "why": "User assessment: mixed great, pass and fail elements; walls are missing and the model is not airtight, but overall good. Overall pass explicitly awarded; individual axis grades not specified.",
     "repair_brief_for_next": null,
     "questions": [
       "massing: shape/roof vs real refs",
@@ -99,7 +99,7 @@
       "why (if not great): what is wrong vs refs; repair brief?"
     ]
   },
-  "overall": null,
+  "overall": "pass",
   "critical_axes": [
     "massing",
     "keep"
