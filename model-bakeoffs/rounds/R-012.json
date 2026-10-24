@@ -1,8 +1,8 @@
 {
   "id": "R-012",
-  "status": "ready",
+  "status": "scored",
   "created": "2026-10-24T17:38:47Z",
-  "scored_at": null,
+  "scored_at": "2026-10-24T18:13:03Z",
   "task": "feature_design",
   "pack": "v1",
   "pack_brief": "packs/v1/BRIEF.md",
@@ -64,7 +64,7 @@
   "kind": "cold",
   "parent_round": null,
   "repair_brief": null,
-  "mech_gate": null,
+  "mech_gate": "pass",
   "interview": {
     "axes": {
       "massing": {
@@ -88,7 +88,7 @@
         "note": null
       }
     },
-    "why": null,
+    "why": "Interview: user graded overall 'low-great' (great, at the low end); per-axis grades not given.",
     "repair_brief_for_next": null,
     "questions": [
       "massing: shape/roof vs real refs",
@@ -99,28 +99,28 @@
       "why (if not great): what is wrong vs refs; repair brief?"
     ]
   },
-  "overall": null,
+  "overall": "great",
   "critical_axes": [
     "massing",
     "keep"
   ],
   "photos": {
-    "square_south": null,
-    "street_front": null,
-    "aerial_top": null,
-    "real_refs_note": null
+    "square_south": "worlds/bakeoff/verification/site/r012-shots/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r012-shots/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r012-shots/aerial_top.png",
+    "real_refs_note": "reference/portals/42-A..D.jpg; real aerial crop worlds/bakeoff/verification/site/r012-shots/real_aerial.png"
   },
   "usage": {
-    "input_tokens": null,
-    "output_tokens": null,
-    "total_tokens": null,
-    "cache_read_tokens": null,
-    "cache_write_tokens": null,
-    "requests": null,
+    "input_tokens": 110,
+    "output_tokens": 20495,
+    "total_tokens": 5782812,
+    "cache_read_tokens": 5674591,
+    "cache_write_tokens": 87616,
+    "requests": 55,
     "cost_usd": null,
-    "source": null,
-    "recorded_at": null,
-    "notes": null
+    "source": "api",
+    "recorded_at": "2026-10-24T18:14:27Z",
+    "notes": "Summed per-request API usage from the Claude Code session transcript (55 unique claude-opus-5-5 responses, 17:41-18:14Z). Includes the short post-sitting scoring/usage turns. total = input+output+cache read+cache write."
   },
   "sitting": {
     "checklist": [
@@ -137,5 +137,5 @@
       "Interview + score; then usage paste (need-you if counts unknown)"
     ]
   },
-  "notes": ""
+  "notes": "Cold design by Claude Opus 5.5 low. OSM way33830305 footprint osm=3924 readable=3943 pad=34 cover=99.62% (3x3 close+open, no halo). Evidence table + plan: worlds/bakeoff/site/builds/r012_susu.py (OSM, DEFRA DSM/DTM 2m, portals 42-A..D, aerial z18). Baseline: undo r011_susu (journal 260) then nine ground-only ghosts regenerated with --force; status all complete, reconcile clean. Apply journal 280: 20416 planned, 0 mismatches; 1069 parapet slabs promoted to full blocks by fill. Disclosure: while learning script conventions the agent read the R-011 build script docstring (prior evidence summary) before gathering its own evidence; design derived from fresh raw queries. Fixed cameras reused from r011_capture (protocol cameras). Lock released."
 }
