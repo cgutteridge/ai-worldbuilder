@@ -54,6 +54,18 @@
           "bulk_ok": true
         }
       ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "models": [
+        {
+          "id": "gpt-6.1-sol-low",
+          "tier": "low",
+          "label": "GPT-6.1 Sol (low reasoning)",
+          "bulk_ok": true
+        }
+      ]
     }
   ]
 }

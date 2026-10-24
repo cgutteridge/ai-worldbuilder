@@ -1,0 +1,141 @@
+{
+  "id": "R-010",
+  "status": "scored",
+  "created": "2026-10-24T16:06:42Z",
+  "scored_at": "2026-10-24T16:26:01Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "low",
+  "tool": {
+    "id": "codex",
+    "name": "Codex"
+  },
+  "model": {
+    "id": "gpt-6.1-sol-low",
+    "label": "GPT-6.1 Sol (low reasoning)",
+    "tier": "low",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": "pass",
+        "note": null
+      },
+      "openings": {
+        "grade": "pass",
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": "pass",
+        "note": null
+      },
+      "materials": {
+        "grade": "pass",
+        "note": null
+      },
+      "keep": {
+        "grade": "pass",
+        "note": null
+      }
+    },
+    "why": null,
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "pass",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/square_south.png",
+    "street_front": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/street_front.png",
+    "aerial_top": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/aerial_top.png",
+    "real_refs_note": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/real_aerial.png; portal refs /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/reference/portals/42-A.jpg and 42-B.jpg; camera coordinates /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/cameras.json"
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": null
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Regenerate the ground-only ghost baseline with `lidar_ghost apply` (coloured tops; no feature columns; no region restore, ADR 004)",
+      "Confirm the 3\u00d73 ghost baseline around (48,-44) is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=codex model=gpt-6.1-sol-low only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ]
+  },
+  "notes": "Cold sitting in progress. Active gameworld bakeoff and server MOTD cgutteridge - Bakeoff verified. Sole apply owner codex-r010. Evidence: worlds/bakeoff/site/bakeoffs/R-010-evidence.md. Initial sandbox denied localhost before any write, leaving ghost focus entry begun; resolving by reconcile --fix. Ghost apply preserves real ownership, so prior real build is removed via sanctioned journal Undo before clean baseline verification. Footprint osm=3924 readable=4024 pad=146 cover=98.8%. Usage unavailable; leave null. Completed: full nine-cell baseline reconcile clean and all ghost status complete; prior build removed via journal Undo214. r010_susu applied via feature_build subclass + site_kit, journal216, planned136865/mismatches0, 2534 fills/31987 changed; structure backup southampton_refine:before_r010_susu. Footprint check OK; roof lint no ridge jogs. Evidence and plan under worlds/bakeoff/site/bakeoffs/R-010-evidence.md and site/builds/r010_susu.{json,py}. Contact sheet worlds/bakeoff/verification/site/r010_susu-contact.png. Fixed camera metadata includes aligned aerial crop (roof planeY60,FOV70), original capture preserved. Lock released; world saved. Interview pending, all subjective grades/overall null. Usage not exposed to agent and remains null. Visual limitations for interview: facade piers are abstracted/heavy; compound roof subdivisions and exact plant arrangement simplified; external cafe railings/signage not reproduced exactly."
+}
