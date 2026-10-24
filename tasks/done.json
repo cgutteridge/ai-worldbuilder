@@ -565,6 +565,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Follow-up from #56 ship-branch review (nit). LiveBlocks now reads via MCP block_scan_region; site_kit.World remains for non-seam planners/audits. Migrate those callers to BlockStore, prove parity (including unloaded-chunk air-vs-None behaviour documented in docs/audits/region-block-reads.md), then delete the .mca reader. Optional: pin live MCP unloaded-chunk behaviour in test_block_store (FakeScanMcp currently filters loaded_chunks unlike the real server). Done 2026-10-23: merged task/67-delete-world-mca-reader (30a65ac tip); World is a BlockStore facade; .mca reader and nbt_min removed; batched prefetch on apply/ground/lidar column; dry apply prefetches, region gate live-only."
+    },
+    {
+      "id": 68,
+      "title": "Ground-only lidar ghosts with DSM\u2212DTM top colours",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Grill 2026-10-23/24: remove volumetric feature ghosts (unreliable strip). Keep ground ghosts on same frontier/ensure. Tops per column: light_gray_concrete (DSM\u2212DTM\u22480), gray_concrete (1\u20132), black_concrete (>2); stone fill; same height math. Journal ground none|ghost|generated only (no ghost+features / ghost-features pass for new work). Delete strip/leftover feature-ghost paths. Docs ADR003/v2/glossary. Bake-off reset/protocol ground-only; no Southampton strip; lazy ensure repaints tops. Done 2026-10-24: ground-only ghosts; coloured tops; strip/leftovers removed; docs/bake-off updated."
     }
   ]
 }
