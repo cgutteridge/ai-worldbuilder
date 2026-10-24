@@ -64,6 +64,12 @@
           "tier": "low",
           "label": "GPT-6.1 Sol (low reasoning)",
           "bulk_ok": true
+        },
+        {
+          "id": "gpt-6.1-sol-medium",
+          "tier": "low",
+          "label": "GPT-6.1 Sol (medium reasoning)",
+          "bulk_ok": true
         }
       ]
     }

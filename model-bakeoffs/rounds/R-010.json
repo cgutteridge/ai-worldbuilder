@@ -111,16 +111,16 @@
     "real_refs_note": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/real_aerial.png; portal refs /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/reference/portals/42-A.jpg and 42-B.jpg; camera coordinates /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/cameras.json"
   },
   "usage": {
-    "input_tokens": null,
-    "output_tokens": null,
-    "total_tokens": null,
-    "cache_read_tokens": null,
-    "cache_write_tokens": null,
+    "input_tokens": 9337754,
+    "output_tokens": 22073,
+    "total_tokens": 9359827,
+    "cache_read_tokens": 9206144,
+    "cache_write_tokens": 0,
     "requests": null,
     "cost_usd": null,
-    "source": null,
-    "recorded_at": null,
-    "notes": null
+    "source": "agent-report",
+    "recorded_at": "2026-10-24T16:35:45Z",
+    "notes": "Exact cumulative Codex rollout token_count counters, agent session 01a16ea9-6e88-73f3-8d31-644a6ad01240; input includes cached input. Uncached input=131610; reasoning output=7722 (subset of output, not additional). Excludes parent orchestration and auto-review guardian. USD cost and spend allocation unavailable."
   },
   "sitting": {
     "checklist": [
@@ -137,5 +137,70 @@
       "Interview + score; then usage paste (need-you if counts unknown)"
     ]
   },
-  "notes": "Cold sitting in progress. Active gameworld bakeoff and server MOTD cgutteridge - Bakeoff verified. Sole apply owner codex-r010. Evidence: worlds/bakeoff/site/bakeoffs/R-010-evidence.md. Initial sandbox denied localhost before any write, leaving ghost focus entry begun; resolving by reconcile --fix. Ghost apply preserves real ownership, so prior real build is removed via sanctioned journal Undo before clean baseline verification. Footprint osm=3924 readable=4024 pad=146 cover=98.8%. Usage unavailable; leave null. Completed: full nine-cell baseline reconcile clean and all ghost status complete; prior build removed via journal Undo214. r010_susu applied via feature_build subclass + site_kit, journal216, planned136865/mismatches0, 2534 fills/31987 changed; structure backup southampton_refine:before_r010_susu. Footprint check OK; roof lint no ridge jogs. Evidence and plan under worlds/bakeoff/site/bakeoffs/R-010-evidence.md and site/builds/r010_susu.{json,py}. Contact sheet worlds/bakeoff/verification/site/r010_susu-contact.png. Fixed camera metadata includes aligned aerial crop (roof planeY60,FOV70), original capture preserved. Lock released; world saved. Interview pending, all subjective grades/overall null. Usage not exposed to agent and remains null. Visual limitations for interview: facade piers are abstracted/heavy; compound roof subdivisions and exact plant arrangement simplified; external cafe railings/signage not reproduced exactly."
+  "notes": "Cold sitting in progress. Active gameworld bakeoff and server MOTD cgutteridge - Bakeoff verified. Sole apply owner codex-r010. Evidence: worlds/bakeoff/site/bakeoffs/R-010-evidence.md. Initial sandbox denied localhost before any write, leaving ghost focus entry begun; resolving by reconcile --fix. Ghost apply preserves real ownership, so prior real build is removed via sanctioned journal Undo before clean baseline verification. Footprint osm=3924 readable=4024 pad=146 cover=98.8%. Usage unavailable; leave null. Completed: full nine-cell baseline reconcile clean and all ghost status complete; prior build removed via journal Undo214. r010_susu applied via feature_build subclass + site_kit, journal216, planned136865/mismatches0, 2534 fills/31987 changed; structure backup southampton_refine:before_r010_susu. Footprint check OK; roof lint no ridge jogs. Evidence and plan under worlds/bakeoff/site/bakeoffs/R-010-evidence.md and site/builds/r010_susu.{json,py}. Contact sheet worlds/bakeoff/verification/site/r010_susu-contact.png. Fixed camera metadata includes aligned aerial crop (roof planeY60,FOV70), original capture preserved. Lock released; world saved. Interview pending, all subjective grades/overall null. Usage not exposed to agent and remains null. Visual limitations for interview: facade piers are abstracted/heavy; compound roof subdivisions and exact plant arrangement simplified; external cafe railings/signage not reproduced exactly. Usage/timing backfilled by parent from exact Codex subagent rollout after user requested telemetry; earlier unavailable-usage statements describe the original handoff only. See usage, timing and telemetry fields.",
+  "timing": {
+    "started_at": "2026-10-24T16:06:00.138Z",
+    "completed_at": "2026-10-24T16:24:01.889Z",
+    "elapsed_seconds": 1081.751,
+    "source": "Codex subagent session metadata to final token_count event",
+    "scope": "Entire subagent run including baseline, evidence/design, apply/readback, captures and round notes; excludes parent cleanup/interview",
+    "phase_breakdown": null
+  },
+  "telemetry": {
+    "agent_session_id": "01a16ea9-6e88-73f3-8d31-644a6ad01240",
+    "source_log": "/Users/cjg/.codex/sessions/2026/10/24/rollout-2026-10-24T17-06-00-01a16ea9-6e88-73f3-8d31-644a6ad01240.jsonl",
+    "model": "gpt-6.1-sol",
+    "reasoning_effort": "low",
+    "context_capacity_tokens": 475000,
+    "spend_allocation_tokens": null,
+    "uncached_input_tokens": 131610,
+    "reasoning_output_tokens": 7722,
+    "account_limits_at_first_usage": {
+      "limit_id": "codex",
+      "limit_name": null,
+      "primary": {
+        "used_percent": 3.0,
+        "window_minutes": 300,
+        "resets_at": 1792874946
+      },
+      "secondary": {
+        "used_percent": 3.0,
+        "window_minutes": 10080,
+        "resets_at": 1793434650
+      },
+      "credits": {
+        "has_credits": false,
+        "unlimited": false,
+        "balance": null
+      },
+      "individual_limit": null,
+      "spend_control_reached": null,
+      "plan_type": "team",
+      "rate_limit_reached_type": null
+    },
+    "account_limits_at_last_usage": {
+      "limit_id": "codex",
+      "limit_name": null,
+      "primary": {
+        "used_percent": 24.0,
+        "window_minutes": 300,
+        "resets_at": 1792874946
+      },
+      "secondary": {
+        "used_percent": 6.0,
+        "window_minutes": 10080,
+        "resets_at": 1793434650
+      },
+      "credits": {
+        "has_credits": false,
+        "unlimited": false,
+        "balance": null
+      },
+      "individual_limit": null,
+      "spend_control_reached": null,
+      "plan_type": "team",
+      "rate_limit_reached_type": null
+    },
+    "account_limits_caveat": "Shared account snapshots, include concurrent parent and auto-review activity; not isolated model token use or cost."
+  }
 }

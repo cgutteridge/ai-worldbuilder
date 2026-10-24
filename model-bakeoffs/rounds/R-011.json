@@ -1,0 +1,240 @@
+{
+  "id": "R-011",
+  "status": "ready",
+  "created": "2026-10-24T16:31:18Z",
+  "scored_at": null,
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "low",
+  "tool": {
+    "id": "codex",
+    "name": "Codex"
+  },
+  "model": {
+    "id": "gpt-6.1-sol-medium",
+    "label": "GPT-6.1 Sol (medium reasoning)",
+    "tier": "low",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": null,
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": null,
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "worlds/bakeoff/verification/site/r011-shots/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r011-shots/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r011-shots/aerial_top.png",
+    "real_refs_note": "square_south/street_front paired with real portals42-A/B/C/D; aerial_top paired with r011-shots/real_aerial.png derived from original z18 XYZ mosaic bbox6140,-5584,6230,-5490. Exact R010 camera poses reused. Native capture3024x1898, crop scaled2x to1220x1274 and rotated180degrees north-up; full raw frame preserved. Metadata cameras.json."
+  },
+  "usage": {
+    "input_tokens": 11693748,
+    "output_tokens": 21327,
+    "total_tokens": 11715075,
+    "cache_read_tokens": 11553024,
+    "cache_write_tokens": 0,
+    "requests": null,
+    "cost_usd": null,
+    "source": "agent-report",
+    "recorded_at": "2026-10-24T16:58:58.387594+00:00",
+    "notes": "Exact cumulative Codex rollout token_count counters. Input includes cached input; reasoning output is a subset of output. Excludes parent orchestration and auto-review guardian. USD cost and spend allocation unavailable."
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Regenerate the ground-only ghost baseline with `lidar_ghost apply` (coloured tops; no feature columns; no region restore, ADR 004)",
+      "Confirm the 3\u00d73 ghost baseline around (48,-44) is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=codex model=gpt-6.1-sol-medium only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ]
+  },
+  "notes": "Cold independent evidence/design by GPT-6.1 Sol medium. OSM way33830305: osm3924 readable3917 pad57 cover98.37%. Evidence table and plan: worlds/bakeoff/site/builds/r011_susu.py. Real portals42-A/B/C/D and aerial reference/aerial/susu/mosaic-z18-3x3-centre-130054-87835.png; measured DEFRA roof datums59/61 north,52 west,56/57/59 rear. Baseline requires sanctioned undo of r010_susu then nine ground-only ghosts, no region restore. Timing recorded separately; evidence/design overlaps baseline. Parent owns exact usage extraction from rollout logs. Mechanical gate passed: journal238 landed,40500 checked,0 mismatches,2453 fill boxes,14893 changed,no clashes. Nine baseline ghost regenerations landed; final full nine-cell reconcile clean. Site lock released and world saved. Interview pending; subjective axes/overall remain null. No prior Minecraft builds used as design evidence.",
+  "phase_timing": {
+    "clock": "UTC",
+    "run_started_at": "2026-10-24T16:30:54.364Z",
+    "round_opened_at": "2026-10-24T16:31:18Z",
+    "undo_journal_started_at": "2026-10-24T16:32:08Z",
+    "undo_landed_at": "2026-10-24T16:32:16Z",
+    "baseline_first_journal_at": "2026-10-24T16:32:52Z",
+    "osm_evidence_saved_at": "2026-10-24T16:32:46.603874Z",
+    "lidar_evidence_saved_at": "2026-10-24T16:32:56.967542Z",
+    "design_script_first_saved_at": "2026-10-24T16:34:39.614923Z",
+    "offline_preview_finished_at": "2026-10-24T16:34:50.843899Z",
+    "overlap_note": "Evidence/design and offline preview ran while nine-cell baseline regenerated; durations must not be summed.",
+    "baseline_reconcile_finished_at": "2026-10-24T16:53:56.795521+00:00",
+    "apply_invoked_at": "2026-10-24T16:54:50.795570+00:00",
+    "baseline_refresh_landed_at": "2026-10-24T16:42:45Z",
+    "apply_journal_started_at": "2026-10-24T16:56:00Z",
+    "apply_readback_landed_at": "2026-10-24T16:56:19Z",
+    "captures_started_at": "2026-10-24T16:56:48.213628Z",
+    "square_south_captured_at": "2026-10-24T16:56:52.927073Z",
+    "street_front_captured_at": "2026-10-24T16:56:57.601520Z",
+    "aerial_top_captured_at": "2026-10-24T16:57:02.565372Z",
+    "ready_for_interview_at": "2026-10-24T16:58:12.579822+00:00",
+    "overhead_note": "An early read-only reconcile was interrupted while ghost regeneration was active; final required all-nine reconcile then passed cleanly. First apply invocation rejected unsupported stage before world writes, corrected to feature-r011_susu. Captures succeeded first time; aerial pairing initially lacked pyproj, corrected to existing world_frame projection helper and screenshot crop scaled for native resolution.",
+    "durations_seconds": {
+      "undo_journal": 8,
+      "baseline_journal_span": 593.0,
+      "apply_journal_and_readback": 19,
+      "three_camera_capture_span": 14.351744,
+      "run_to_ready": 1638.215822,
+      "baseline_refresh_to_reconcile_finished": 671.795521
+    },
+    "captures_pairing_save_finished_at": "2026-10-24T16:57:52.131298Z"
+  },
+  "telemetry": {
+    "agent_session_id": "01a16ec0-3b5d-7b80-91a0-376cee1a31ce",
+    "source_log": "/Users/cjg/.codex/sessions/2026/10/24/rollout-2026-10-24T17-30-54-01a16ec0-3b5d-7b80-91a0-376cee1a31ce.jsonl",
+    "model": "gpt-6.1-sol",
+    "reasoning_effort": "medium",
+    "context_capacity_tokens": 475000,
+    "spend_allocation_tokens": null,
+    "uncached_input_tokens": 140724,
+    "reasoning_output_tokens": 4167,
+    "last_usage_at": "2026-10-24T16:58:45.112Z",
+    "account_limits_at_first_usage": {
+      "limit_id": "codex",
+      "limit_name": null,
+      "primary": {
+        "used_percent": 25.0,
+        "window_minutes": 300,
+        "resets_at": 1792874946
+      },
+      "secondary": {
+        "used_percent": 7.0,
+        "window_minutes": 10080,
+        "resets_at": 1793434650
+      },
+      "credits": {
+        "has_credits": false,
+        "unlimited": false,
+        "balance": null
+      },
+      "individual_limit": null,
+      "spend_control_reached": null,
+      "plan_type": "team",
+      "rate_limit_reached_type": null
+    },
+    "account_limits_at_last_usage": {
+      "limit_id": "codex",
+      "limit_name": null,
+      "primary": {
+        "used_percent": 53.0,
+        "window_minutes": 300,
+        "resets_at": 1792874946
+      },
+      "secondary": {
+        "used_percent": 11.0,
+        "window_minutes": 10080,
+        "resets_at": 1793434650
+      },
+      "credits": {
+        "has_credits": false,
+        "unlimited": false,
+        "balance": null
+      },
+      "individual_limit": null,
+      "spend_control_reached": null,
+      "plan_type": "team",
+      "rate_limit_reached_type": null
+    },
+    "account_limits_caveat": "Shared account snapshots include concurrent parent and auto-review activity; not isolated model token use or cost."
+  },
+  "timing": {
+    "started_at": "2026-10-24T16:30:54.364Z",
+    "completed_at": "2026-10-24T16:58:12.579822+00:00",
+    "elapsed_seconds": 1638.215822,
+    "source": "Codex session start and ready-for-interview timestamp; detailed anchors in phase_timing",
+    "scope": "Entire subagent run to interview-ready, including baseline/evidence/design/apply/captures; excludes parent telemetry and interview",
+    "phase_breakdown": "phase_timing"
+  }
+}
