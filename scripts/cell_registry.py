@@ -8,7 +8,7 @@ no setters. Open the active world's registry with :func:`open_registry`.
 
 Per-cell view (folded, never stored)::
 
-    ground: none | ghost | ghost+features | generated
+    ground: none | ghost | generated
     trees, decor: bool
     features: (id, in-progress | built) for every feature plan touching the cell
     marker: bool (single marker)   hold: reason | None   notes: coverage warnings, reviews, issues

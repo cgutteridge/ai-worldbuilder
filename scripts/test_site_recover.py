@@ -458,7 +458,7 @@ class TestUndo(Aborted):
 
 
 class TestFollowUps(Base):
-    """A landed real apply runs the journal follow-ups: frontier ghosts, ghost strips (ring 1 here)."""
+    """A landed real apply runs the journal follow-ups: frontier ghost ground (ring 1 here)."""
 
     def setUp(self):
         self.planned = []
@@ -466,9 +466,9 @@ class TestFollowUps(Base):
         def ghosts(cell, layer):
             self.planned.append((cell, layer))
             x0, z0 = cell[0] * 128, cell[1] * 128
-            if layer == 'ground':
-                return {(x0, 50, z0): 'minecraft:gray_concrete'}
-            return {(x0, 51, z0): 'minecraft:light_gray_concrete'}
+            if layer != 'ground':
+                raise AssertionError(f'unexpected layer {layer!r}')
+            return {(x0, 50, z0): 'minecraft:light_gray_concrete'}
         self.ghosts = ghosts
         super().setUp()
 
@@ -477,40 +477,22 @@ class TestFollowUps(Base):
         reg = self.reg()
         ring = {(CELL[0] + dx, CELL[1] + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)} - {CELL}
         self.assertEqual({c for c, v in reg.view().items() if v.ghost.ground}, ring)
-        self.assertEqual({c for c, v in reg.view().items() if v.ghost.features}, ring | {CELL})   # grey over real ground too
         self.assertEqual(reg.cell(CELL).ground, 'generated')
-        self.assertEqual(self.blocks.read((49 * 128, 50, -44 * 128)), 'minecraft:gray_concrete')
+        self.assertEqual(self.blocks.read((49 * 128, 50, -44 * 128)), 'minecraft:light_gray_concrete')
         self.assertEqual(reg.follow_ups(), ())
 
-    def test_feature_over_ghost_features_strips_them(self):
+    def test_feature_apply_does_not_require_ghost_feature_strip(self):
         from cell_journal import CellRegistry
         reg = CellRegistry(self.t, self.blocks)
         x0, z0 = CELL[0] * 128, CELL[1] * 128
-        for b in (Build('ghost_48_m44_ground', 'ghost-ground', {(x0, 50, z0): 'minecraft:gray_concrete'}, cell=CELL),
-                  Build('ghost_48_m44_features', 'ghost-features',
-                        {(X0, 62, Z0): 'minecraft:light_gray_concrete',
-                         (X0 + 1, 63, Z0): 'minecraft:light_gray_concrete'}, cell=CELL)):
-            reg.change(b, lambda w: self.blocks.write_many(w.cells))
+        reg.change(Build('ghost_48_m44_ground', 'ghost-ground',
+                         {(x0, 50, z0): 'minecraft:light_gray_concrete'}, cell=CELL),
+                   lambda w: self.blocks.write_many(w.cells))
         plan = make_plan()
-        plan.set(X0 + 1, 63, Z0, 'minecraft:bricks')                     # overwrites one ghost block, not the other
+        plan.set(X0 + 1, 63, Z0, 'minecraft:bricks')
         self.run_apply(plan)
-        self.assertEqual(self.blocks.read((X0, 62, Z0)), AIR)             # stripped by the follow-up
-        self.assertFalse(self.reg().cell(CELL).ghost.features)
-        self.assertEqual([e.plan for e in self.entries() if e.plan.startswith('ghost_strip')],
-                         ['ghost_strip_48_m44_features'])
-
-    def test_unrecorded_ghost_grey_fails_closed_and_stays_begun(self):
-        self.blocks.write((X0, 62, Z0), 'minecraft:light_gray_concrete')   # grey the journal never placed
-        self.blocks.flush()
-        plan = make_plan()
-        plan.set(X0, 63, Z0, 'minecraft:bricks')                           # the plan's Y span covers the grey
-        with self.assertRaises(SystemExit) as ctx:
-            self.run_apply(plan)
-        msg = str(ctx.exception)
-        self.assertIn('ghost feature leftover', msg)
-        self.assertIn('site_recover.py status', msg)
-        self.assertEqual(self.entry('p').status, 'begun')
-        self.assertTrue((site_kit.OUT / 'p-ghost-leftovers.json').exists())
+        self.assertEqual(self.reg().cell(CELL).ground, 'ghost')  # seed cell still ghost until real ground
+        self.assertEqual([e.plan for e in self.entries() if e.plan.startswith('ghost_strip')], [])
 
     def entry(self, plan):
         return self.entries(plan)[-1]

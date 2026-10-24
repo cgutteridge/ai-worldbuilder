@@ -148,15 +148,13 @@ BUILT plan in place to “fix” the world.
  Do not stack extra passes over the same ground (I-035).
  Next work: `python3 scripts/cell_registry.py next` (issues beat layers).
 
- Lidar ghosts (v2): docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
- `cell_marker --raise`, ring-2 frontier cells may show grey feature mass. On every
- **live feature apply**, the tool pre-strips recorded ghost features in the planned
- volume, then readback-fails if any unplanned `light_gray_concrete` remains in
- footprint / plan / cross-cell columns (ownership-less grey included). Do not
- delete grey by hand unless recovering from a failed apply. After a clean apply,
- `lidar_ghost.py status` must show `ghost-features` stripped/superseded on each
- cell the footprint touched. `feature_build` dry-run must still list full shell
- cells (it must not drop columns owned only by ghosts).
+ Lidar ghosts: docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
+ `cell_marker --raise`, ring-2 frontier cells get **ghost ground** only (DTM), with
+ top colour from DSM−DTM (`light_gray_concrete` ≈0, `gray_concrete` 1–2,
+ `black_concrete` >2) so you can check feature location against the footprint.
+ There are no volumetric feature ghosts and no ghost-feature strip on apply.
+ Real ground supersedes ghost ground. `feature_build` dry-run must still list full
+ shell cells (it must not drop columns owned only by ghost ground).
 
  1. Activate — raise the hazard-stripe marker (REQUIRED, first action on every new
     cell; it sets the registry marker = FOCUS, stays up across chats):

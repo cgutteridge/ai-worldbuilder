@@ -263,14 +263,15 @@ class PlanCellItems(unittest.TestCase):
         body = '\n'.join(H.plan_cell_items(48, -44, 1, self.gaps(features=[self.FEATURE]), [])[0][1])
         self.assertIn('lidar ghost frontier', body)
         self.assertIn('LIDAR_GHOST_RING=2', body)
-        self.assertIn('DTM ghost ground', body)
-        self.assertIn('Cross-cell', body)
+        self.assertIn('Ghost ground only', body)
+        self.assertIn('black_concrete', body)
         self.assertNotIn('neighbour lidar ghosts come with raise', body)
 
-    def test_layered_passes_describes_split_ghost_layers(self):
+    def test_layered_passes_describes_ghost_ground(self):
         body = '\n'.join(H.plan_cell_items(48, -44, 1, self.gaps(layers=True), [])[0][1])
         self.assertIn('supersedes ghost ground', body)
         self.assertIn('real refine started', body)
+        self.assertIn('Ghost ground only', body)
         self.assertNotIn('neighbour lidar ghosts come with raise', body)
 
 
@@ -288,7 +289,7 @@ class BriefLidarGhost(Base):
             brief = H.brief_text(item)
         self.assertIn('LIDAR GHOSTS', brief)
         self.assertIn('shims/lidar_ghost.py status --cell 48,-44', brief)
-        self.assertIn('DTM ghost ground', brief)
+        self.assertIn('Ghost ground only', brief)
 
 
 

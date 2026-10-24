@@ -11,7 +11,7 @@ cell is written, including air (so excavation is explicit). apply():
      solid blocks first and attachable blocks (doors, signs, torches...) after,
      then sign text and entities,
   5. saves the world, reads every planned cell back through the BlockStore and finishes the
-     journal entry, then runs the journal follow-ups (lidar ghost strip / frontier).
+     journal entry, then runs the journal follow-ups (frontier ghost ground).
 Guard and readback reports land in verification/site/<name>-*.json.
 """
 import json, math, time
@@ -520,22 +520,6 @@ def same(planned, actual):
     return same_state(planned, actual)
 
 
-def _feature_block_id() -> str:
-    """Canonical block id for lidar ghost feature mass (``light_gray_concrete``).
-
-    @returns: ``minecraft:…`` id string
-    """
-    try:
-        import lidar_ghost as lg
-        return full(lg.FEATURE_BLOCK)
-    except ImportError:
-        return 'minecraft:light_gray_concrete'
-
-
-def _is_ghost_features_owner(name: str) -> bool:
-    return str(name).startswith('ghost_') and str(name).endswith('_features')
-
-
 # --- the cell journal (ADR 004) ----------------------------------------------
 # Plan -> Build: Build(plan.name, pass, plan.cells, modifies, strict, mask summary, cell,
 # payload=plan, meta={structure, pending_mask, caller meta}). Signs and entities on the Plan are
@@ -671,40 +655,6 @@ def _journal_refusal(name, exc):
         return SystemExit(f'{name}: {exc}; an earlier apply was aborted '
                           '(python scripts/site_recover.py status)')
     return SystemExit(f'{name}: cell journal refused the apply: {exc}')
-
-
-def _ghost_leftovers(plan, blocks, registry=None):
-    """FEATURE_BLOCK cells the plan did not place, in every plan column across its Y span.
-
-    @param plan: feature plan
-    @param blocks: BlockStore (flushed)
-    @param registry: when given, skip positions a journal ghost-features owner still holds
-        (the follow-up strip clears those)
-    @returns: sorted positions
-    """
-    if not plan.cells:
-        return []
-    feature = _feature_block_id()
-    lo, hi = plan.bounds()
-    columns = {(x, z) for (x, _y, z) in plan.cells}
-    scan = [(x, y, z) for x, z in columns for y in range(lo[1], hi[1] + 1)
-            if (x, y, z) not in plan.cells or bid(plan.cells[(x, y, z)]) != feature]
-    actual = blocks.read_many(scan)
-    hits = [p for p in scan if actual[p] and bid(actual[p]) == feature]
-    if registry is not None and hits:
-        owned = registry.owned(hits)
-        hits = [p for p in hits if not (p in owned and _is_ghost_features_owner(owned[p][0]))]
-    return sorted(hits)
-
-
-def _leftover_exit(plan, leftovers, tail):
-    sample = leftovers[:40]
-    (OUT / f'{plan.name}-ghost-leftovers.json').write_text(
-        json.dumps({'leftovers': [list(p) for p in leftovers], 'sample': [list(p) for p in sample]}, indent=1))
-    return SystemExit(
-        f'{plan.name}: {len(leftovers)} ghost feature leftover(s) '
-        f'(unplanned {_feature_block_id()}), e.g. {sample[:5]}; '
-        f'see {plan.name}-ghost-leftovers.json; {tail} (python scripts/site_recover.py status)')
 
 
 def reset_to_base(build, records):
@@ -938,11 +888,6 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if rep['mismatches'] and (strict or mask is not None):
         raise SystemExit(f'{plan.name}: readback has {rep["mismatches"]} mismatches; journal entry '
                          f"{ticket.seq} left 'begun' (python scripts/site_recover.py status)")
-    feature = pass_ == 'feature' and (meta or {}).get('kind') not in ('ghost', 'undo')
-    if feature:
-        leftovers = _ghost_leftovers(plan, blocks, registry)
-        if leftovers:
-            raise _leftover_exit(plan, leftovers, f"journal entry {ticket.seq} left 'begun'")
     if mask is not None:
         import pass_mask
         pass_mask.write_mask(mask)          # publish only after a clean readback
@@ -953,14 +898,10 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         try:
             followed = registry.ensure(writer)
         except CellJournalError as exc:
-            raise SystemExit(f'{plan.name}: landed, but the journal follow-ups (ghost strip / frontier) '
+            raise SystemExit(f'{plan.name}: landed, but the journal follow-ups (frontier ghosts) '
                              f'failed: {exc} (python scripts/site_recover.py status)') from exc
         if followed:
             print('journal follow-ups:', json.dumps([[r.seq, r.status, r.planned] for r in followed])[:800])
-        if feature:
-            leftovers = _ghost_leftovers(plan, blocks)
-            if leftovers:
-                raise _leftover_exit(plan, leftovers, 'the feature landed but the ghost strip left them')
     return rep
 
 

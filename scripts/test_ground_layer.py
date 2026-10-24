@@ -197,7 +197,7 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertIn('highfield_q051_ur', ign)
         self.assertIn('highfield_48_m44_trees', ign)
         self.assertIn('ghost_48_m44_ground', ign)
-        self.assertIn('ghost_48_m44_features', ign)
+        self.assertNotIn('ghost_48_m44_features', ign)
         self.assertNotIn('highfield_48_m45_trees', ign)
 
 

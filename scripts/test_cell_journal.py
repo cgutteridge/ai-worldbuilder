@@ -241,10 +241,10 @@ class TestOwnership(Base):
 
     def test_ghost_owners_yield_and_never_clash(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
-        self.reg.change(Build('ghost_0_0_features', 'ghost-features', {P(0, 0, 0, 61): FEATURE_GREY}), self.apply)
-        self.build('house', 'feature', {P(0, 0, 0, 61): GLASS})       # over grey mass, no modifies needed
-        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
-        self.assertEqual(self.reg.owned([P(0, 0, 0, 61)]), {P(0, 0, 0, 61): ('house', GLASS)})
+        self.build('house', 'feature', {P(0, 0, 0, 60): GLASS})       # over ghost ground, no modifies needed
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 60)]), {P(0, 0, 0, 60): ('house', GLASS)})
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0), modifies=('house',))
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 60)]), {P(0, 0, 0, 60): ('ground_0_0', STONE)})
 
     def test_ghost_build_never_overwrites_real_work(self):
         self.build('house', 'feature', {P(0, 0): STONE})
@@ -369,65 +369,33 @@ class TestUndo(Base):
 class TestGhosts(Base):
     def planner(self, cell, layer):
         tx, tz = cell
-        if layer == 'ground':
-            return plan(tx, tz, GREY, y=60)
-        return {P(tx, tz, 0, 61): FEATURE_GREY, P(tx, tz, 1, 61): FEATURE_GREY}
+        if layer != 'ground':
+            raise AssertionError(f'unexpected layer {layer!r}')
+        return plan(tx, tz, GREY, y=60)
 
-    def test_ghost_features_need_ghost_or_real_ground_and_ghost_ground_not_over_real(self):
-        with self.assertRaises(Refused):
+    def test_ghost_features_build_is_refused_and_ghost_ground_not_over_real(self):
+        with self.assertRaises(Refused) as ctx:
             self.reg.change(Build('ghost_0_0_features', 'ghost-features', {P(0, 0, 0, 61): FEATURE_GREY}), self.apply)
+        self.assertIn('withdrawn', str(ctx.exception))
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
         with self.assertRaises(Refused):
             self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
-        self.reg.change(Build('ghost_0_0_features', 'ghost-features', {P(0, 0, 0, 61): FEATURE_GREY}), self.apply)
 
-    def test_ghost_ground_then_features_then_real_ground_supersedes_ghost_ground(self):
+    def test_ghost_ground_then_real_ground_supersedes(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
         self.assertEqual(self.reg.cell((0, 0)).ground, 'ghost')
-        self.reg.change(Build('ghost_0_0_features', 'ghost-features', {P(0, 0, 0, 61): FEATURE_GREY}), self.apply)
         v = self.reg.cell((0, 0))
-        self.assertEqual((v.ground, v.ghost.ground, v.ghost.features), ('ghost+features', True, True))
+        self.assertEqual((v.ground, v.ghost.ground), ('ghost', True))
         self.build('ground_0_0', 'ground', {P(0, 0, 0, 60): STONE}, cell=(0, 0))
         v = self.reg.cell((0, 0))
-        self.assertEqual((v.ground, v.ghost.ground, v.ghost.features), ('generated', False, True))
+        self.assertEqual((v.ground, v.ghost.ground), ('generated', False))
         self.assertEqual(self.reg.owned([P(0, 0, 1, 60)]), {})        # superseded ghost ground is no longer owned
 
-    def test_real_feature_strips_overlapping_ghost_features(self):
+    def test_real_feature_does_not_queue_ghost_feature_strips(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
-        ghost = {P(0, 0, i, y): FEATURE_GREY for i in range(3) for y in (61, 62)}
-        self.reg.change(Build('ghost_0_0_features', 'ghost-features', ghost), self.apply)
         rec = self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(0, 0, 0, 62): GLASS})
-        self.assertFalse(self.reg.cell((0, 0)).ghost.features)       # logically stripped at once
-        self.assertEqual([(b.plan, len(b.cells)) for b in rec.follow_ups],
-                         [('ghost_strip_0_0_features', 4)])           # ghost outside the footprint columns too
-        self.reg.ensure(self.apply)
-        self.assertEqual(self.reg.owned([P(0, 0, 1, 61)]), {})
-        self.assertEqual(self.blocks.read(P(0, 0, 1, 61)), AIR)
-
-    def test_real_feature_strips_ghost_in_every_cell_it_touches(self):
-        for c in (0, 1):
-            self.reg.change(Build(f'ghost_{c}_0_ground', 'ghost-ground', plan(c, 0, GREY, y=60), cell=(c, 0)), self.apply)
-            ghost = {P(c, 0, i, 61): FEATURE_GREY for i in range(3)}
-            self.reg.change(Build(f'ghost_{c}_0_features', 'ghost-features', ghost, cell=(c, 0)), self.apply)
-        self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(1, 0, 0, 61): GLASS})
-        self.reg.ensure(self.apply)
-        for c in (0, 1):
-            self.assertEqual(self.blocks.read(P(c, 0, 2, 61)), AIR)
+        self.assertEqual([b.plan for b in rec.follow_ups if 'strip' in b.plan], [])
         self.assertEqual(self.reg.follow_ups(), ())
-
-    def test_strip_follow_up_covers_leftover_ghost_in_footprint_columns(self):
-        self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
-        ghost = {P(0, 0, 0, y): FEATURE_GREY for y in (61, 62, 63)}
-        self.reg.change(Build('ghost_0_0_features', 'ghost-features', ghost), self.apply)
-        rec = self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(0, 0, 0, 63): GLASS})
-        self.assertEqual([(b.plan, set(b.cells)) for b in rec.follow_ups],
-                         [('ghost_strip_0_0_features', {P(0, 0, 0, 62)})])
-        drift = self.reg.reconcile()
-        self.assertEqual([i.kind for i in drift], ['ghost-stale'])
-        self.reg.ensure(self.apply)
-        self.assertEqual(self.blocks.read(P(0, 0, 0, 62)), AIR)
-        self.assertEqual(self.reg.follow_ups(), ())
-        self.assertEqual(len(self.reg.reconcile()), 0)
 
     def test_frontier_is_ring_two_around_cells_with_real_work(self):
         self.assertEqual(self.reg.frontier(), frozenset())
@@ -441,36 +409,36 @@ class TestGhosts(Base):
         self.assertEqual(len(self.reg.frontier(ring=1)), 9)
         self.assertEqual(self.reg.follow_ups(), ())                   # no planner: nothing to ensure
 
-    def test_ensure_plants_ghost_ground_and_features_across_the_frontier(self):
+    def test_ensure_plants_ghost_ground_across_the_frontier(self):
         reg = self.registry(ghosts=self.planner)
         rec = reg.change(Build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0)), self.apply)
         self.assertEqual({b.plan for b in rec.follow_ups}, {f'ghost_{x}_{z if z >= 0 else "m" + str(-z)}_ground'
                                                             for x in range(-2, 3) for z in range(-2, 3)
-                                                            if (x, z) != (0, 0)} | {'ghost_0_0_features'})
+                                                            if (x, z) != (0, 0)})
         done = reg.ensure(self.apply)
         self.assertEqual({r.status for r in done}, {'landed'})
-        self.assertEqual(reg.cell((2, 2)).ground, 'ghost+features')
+        self.assertEqual(reg.cell((2, 2)).ground, 'ghost')
         self.assertEqual(reg.cell((0, 0)).ground, 'generated')
-        self.assertTrue(reg.cell((0, 0)).ghost.features)
+        self.assertFalse(reg.cell((0, 0)).ghost.ground)
         self.assertEqual(reg.ensure(self.apply), [])                  # idempotent
         self.assertEqual(self.blocks.read(P(-2, -2, 0, 60)), GREY)
-        # a real feature in a cell stops ghost features being ensured there
-        reg.change(Build('house', 'feature', {P(1, 1, 0, 70): STONE}), self.apply)
-        self.assertNotIn((1, 1), [c for c, _ in reg._ghost_needs()])
+        # a cell that already has ghost ground is not re-listed
+        self.assertNotIn((2, 2), [c for c, _ in reg._ghost_needs()])
 
     def test_change_cascade_applies_follow_ups_and_ghost_never_covers_real_blocks(self):
         reg = self.registry(ghosts=self.planner)
         rec = reg.change(Build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0)), self.apply,
                          cascade=True)
-        self.assertGreater(len(rec.followed), 24)
+        self.assertGreater(len(rec.followed), 20)
         self.assertEqual(reg.follow_ups(), ())
-        self.assertEqual(reg.cell((-1, 0)).ground, 'ghost+features')
+        self.assertEqual(reg.cell((-1, 0)).ground, 'ghost')
 
     def test_empty_planner_result_is_a_landed_no_op_and_none_is_unfixable(self):
         reg = self.registry(ghosts=lambda c, l: {} if c == (0, 0) else None, ring=0)
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0), reg=reg)
         reg.ensure(self.apply)
-        self.assertTrue(reg.cell((0, 0)).ghost.features)           # an empty plan still lands: nothing to place
+        # seed cell already has real ground; ring 0 frontier is only the seed → nothing to ghost
+        self.assertEqual(reg.cell((0, 0)).ground, 'generated')
         self.assertEqual(reg.follow_ups(), ())
 
 
@@ -567,7 +535,7 @@ class TestReconcile(Base):
         reg = self.registry(ghosts=lambda c, l: plan(*c, GREY, y=60) if l == 'ground' else {}, ring=1)
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0), reg=reg)
         drift = reg.reconcile()
-        self.assertEqual(len(drift.by_kind('ghost-missing')), 9)       # 8 ring cells lack ground + the seed lacks features
+        self.assertEqual(len(drift.by_kind('ghost-missing')), 8)       # 8 ring cells lack ghost ground
         fixed = reg.reconcile(fix=True, apply=self.apply)
         self.assertTrue(fixed.clean)
         self.assertEqual(len(reg.reconcile()), 0)

@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Lidar ghosts v2: plan builders for placeholder massing (spec 2026-10, ADR 004).
+"""Lidar ghosts: DTM ground placeholders with DSM−DTM top colours (ADR 003/004).
 
-Placeholder massing near **worked** cells (real ground/trees/decor/features). Default
-Chebyshev frontier depth is 2 (``LIDAR_GHOST_RING``). No trees/decor ghosts.
+Placeholder ground near **worked** cells (real ground/trees/decor/features). Default
+Chebyshev frontier depth is 2 (``LIDAR_GHOST_RING``). No volumetric feature ghosts and
+no trees/decor ghosts.
 
-This module only *plans*: ``plan_ghost_ground`` / ``plan_ghost_features`` from lidar heights,
-wrapped as the cell journal's ghost planner (:func:`ghost_planner`). Ghost state is a view of
-the cell journal (``CellRegistry.view()`` ``ghost`` / ``ground``); the registry supersedes ghost
-ground under real ground, strips ghost features under real features and ensures the frontier
-as follow-up Builds after every real apply (``site_kit.apply``). Ghost owners yield to real
-owners and never clash.
+This module only *plans*: ``plan_ghost_ground`` from lidar heights, wrapped as the cell
+journal's ghost planner (:func:`ghost_planner`). Ghost state is a view of the cell journal
+(``CellRegistry.view()`` ``ghost`` / ``ground``); the registry supersedes ghost ground under
+real ground and ensures the frontier as follow-up Builds after every real apply
+(``site_kit.apply``). Ghost owners yield to real owners and never clash.
 
-  Owners:  ghost_<tx>_<tz>_ground / ghost_<tx>_<tz>_features   (passes ghost-ground / ghost-features)
+Top-block colour encodes DSM − DTM height per column (location check vs real features):
+
+  light_gray_concrete  ≈ 0
+  gray_concrete        1–2 blocks
+  black_concrete       > 2
+
+  Owner:  ghost_<tx>_<tz>_ground   (pass ghost-ground)
 
   python3 shims/lidar_ghost.py status --cell 48,-44 --ring 2
   python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2
@@ -39,9 +45,10 @@ from script_env import make_parser  # noqa: E402
 
 DEFAULT_RING = 2
 FILL_BOTTOM = 1                     # empty save has bedrock at y=0; fill solid above it
-GROUND_BLOCK = 'gray_concrete'      # DTM surface
+GROUND_BLOCK = 'light_gray_concrete'  # DTM surface, DSM − DTM ≈ 0
+FEATURE_LOW_BLOCK = 'gray_concrete'   # DSM − DTM 1–2
+FEATURE_HIGH_BLOCK = 'black_concrete'  # DSM − DTM > 2
 FILL_BLOCK = 'stone'                # under the surface
-FEATURE_BLOCK = 'light_gray_concrete'  # DSM − DTM mass
 FOOTPRINT_OK = 'lidar ghost massing (ADR 004); not a real feature build'
 AIR = 'minecraft:air'
 
@@ -97,12 +104,12 @@ def summarise_statuses(counts: dict[str, int]) -> str:
 
 
 def ghost_owners_for(cell: tuple[int, int]) -> frozenset[str]:
-    """Both ghost plan names for one cell (the owners a real ground pass ignores).
+    """Ghost plan name for one cell (the owner a real ground pass ignores).
 
     @param cell: (tx, tz)
     @returns: frozenset of owner names
     """
-    return frozenset({ghost_name(cell, 'ground'), ghost_name(cell, 'features')})
+    return frozenset({ghost_name(cell, 'ground')})
 
 
 def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
@@ -138,37 +145,22 @@ def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
     return dl.mc_heights(lidar, x0, z0, x1, z1)
 
 
+def top_block_for_feature_height(fh: int) -> str:
+    """Surface block id for a DSM − DTM integer height (same bands as the old columns).
+
+    @param fh: feature height in blocks (``<= 0`` → plain ground)
+    @returns: short block id (no ``minecraft:`` prefix)
+    """
+    if fh <= 0:
+        return GROUND_BLOCK
+    if fh <= 2:
+        return FEATURE_LOW_BLOCK
+    return FEATURE_HIGH_BLOCK
+
+
 def plan_ghost_ground(cell: tuple[int, int], heights: dict[str, Any] | None = None,
                       heights_fn: HeightsFn | None = None):
-    """Plan solid DTM terrain for one cell (fill + surface).
-
-    @param cell: (tx, tz)
-    @param heights: precomputed ``mc_heights`` for the cell box (tests)
-    @param heights_fn: sampler when ``heights`` is omitted
-    @returns: ``site_kit.Plan``
-    """
-    from site_kit import Plan
-
-    tx, tz = cell
-    x0, z0, x1, z1 = cellmath.bounds(cell)
-    h = heights if heights is not None else (heights_fn or default_heights)(x0, z0, x1, z1)
-    ground = np.asarray(h['ground_y'])
-    plan = Plan(ghost_name((tx, tz), 'ground'))
-    plan.outside_footprint_ok = FOOTPRINT_OK
-    for i, x in enumerate(range(x0, x1 + 1)):
-        for j, z in enumerate(range(z0, z1 + 1)):
-            gy = int(ground[i, j])
-            if gy < FILL_BOTTOM:
-                continue
-            for y in range(FILL_BOTTOM, gy):
-                plan.set(x, y, z, FILL_BLOCK)
-            plan.set(x, gy, z, GROUND_BLOCK)
-    return plan
-
-
-def plan_ghost_features(cell: tuple[int, int], heights: dict[str, Any] | None = None,
-                        heights_fn: HeightsFn | None = None):
-    """Plan grey DSM−DTM columns above ghost ground (no trees/decor).
+    """Plan solid DTM terrain for one cell (fill + colour-coded surface).
 
     @param cell: (tx, tz)
     @param heights: precomputed ``mc_heights`` for the cell box (tests)
@@ -182,16 +174,17 @@ def plan_ghost_features(cell: tuple[int, int], heights: dict[str, Any] | None = 
     h = heights if heights is not None else (heights_fn or default_heights)(x0, z0, x1, z1)
     ground = np.asarray(h['ground_y'])
     feature = np.asarray(h.get('feature', h.get('diff')))
-    plan = Plan(ghost_name((tx, tz), 'features'))
+    plan = Plan(ghost_name((tx, tz), 'ground'))
     plan.outside_footprint_ok = FOOTPRINT_OK
     for i, x in enumerate(range(x0, x1 + 1)):
         for j, z in enumerate(range(z0, z1 + 1)):
-            fh = int(feature[i, j])
-            if fh <= 0:
-                continue
             gy = int(ground[i, j])
-            for y in range(gy + 1, gy + fh + 1):
-                plan.set(x, y, z, FEATURE_BLOCK)
+            if gy < FILL_BOTTOM:
+                continue
+            for y in range(FILL_BOTTOM, gy):
+                plan.set(x, y, z, FILL_BLOCK)
+            fh = int(feature[i, j]) if feature.size else 0
+            plan.set(x, gy, z, top_block_for_feature_height(fh))
     return plan
 
 
@@ -233,13 +226,13 @@ def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
 
 
 def ghost_planner(heights_fn: HeightsFn | None = None) -> Callable[[tuple[int, int], str], dict | None]:
-    """The cell journal's ghost planner over the lidar plan builders.
+    """The cell journal's ghost planner over the lidar ground plan builder.
 
-    Heights are sampled once per cell and shared by both layers (a few cells are cached).
+    Heights are sampled once per cell (a few cells are cached).
 
     @param heights_fn: injectable sampler (tests / fixtures); default DEFRA cached tiles
-    @returns: ``planner(cell, 'ground'|'features') -> {pos: state}``; None when lidar tiles are not
-        cached for the cell (the registry then skips it)
+    @returns: ``planner(cell, 'ground') -> {pos: state}``; None when lidar tiles are not
+        cached for the cell (the registry then skips it). ``layer`` must be ``ground``.
     """
     cache: OrderedDict[tuple[int, int], dict | None] = OrderedDict()
 
@@ -257,14 +250,12 @@ def ghost_planner(heights_fn: HeightsFn | None = None) -> Callable[[tuple[int, i
         return cache[cell]
 
     def planner(cell: tuple[int, int], layer: str) -> dict | None:
+        if layer != 'ground':
+            raise ValueError(f'layer must be ground, got {layer!r}')
         h = heights(cell)
         if h is None:
             return None
-        if layer == 'ground':
-            return plan_ghost_ground(cell, heights=h).cells
-        if layer == 'features':
-            return plan_ghost_features(cell, heights=h).cells
-        raise ValueError(f'layer must be ground or features, got {layer!r}')
+        return plan_ghost_ground(cell, heights=h).cells
 
     return planner
 
@@ -276,27 +267,26 @@ def _stats(cells: dict) -> dict[str, int]:
     return {'blocks': len(cells), **dict(counts)}
 
 
-def needs(view, *, force: bool = False) -> tuple[bool, bool]:
-    """Which ghost layers a cell still needs, from its journal view.
+def needs(view, *, force: bool = False) -> bool:
+    """Whether a cell still needs ghost ground, from its journal view.
 
     @param view: ``CellView``
-    @param force: re-plan layers that are already present
-    @returns: (ghost ground, ghost features)
+    @param force: re-plan when ghost ground is already present (not over real ground)
+    @returns: True when ghost ground should be planned
     """
-    ground = view.ground == 'none' or (force and view.ground != 'generated')
-    features = not view.features and (force or not view.ghost.features) and (
-        ground or view.ground != 'none')
-    return ground, features
+    return view.ground == 'none' or (force and view.ground != 'generated')
 
 
-def cell_builds(reg, cell: tuple[int, int], layer: str):
-    """The ghost Build for one cell layer (positions owned by real builds are dropped).
+def cell_builds(reg, cell: tuple[int, int], layer: str = 'ground'):
+    """The ghost Build for one cell (positions owned by real builds are dropped).
 
     @param reg: ``CellRegistry`` with a ghost planner
     @param cell: (tx, tz)
-    @param layer: ``ground`` or ``features``
+    @param layer: must be ``ground``
     @returns: Build, or None when lidar cannot plan the cell
     """
+    if layer != 'ground':
+        raise ValueError(f'layer must be ground, got {layer!r}')
     from cell_journal import Build
     planned = reg.ghosts(cell, layer) if reg.ghosts is not None else None
     if planned is None:
@@ -308,7 +298,7 @@ def cell_builds(reg, cell: tuple[int, int], layer: str):
 
 
 def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[str, Any]]:
-    """Plan (``apply`` None) or apply the ghost layers each cell still needs.
+    """Plan (``apply`` None) or apply ghost ground each cell still needs.
 
     Unlike ``CellRegistry.ensure`` this also serves cells outside the frontier (an explicit
     ``--cell``, or the focus ring before any real work).
@@ -320,7 +310,7 @@ def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[st
     @param reg: ``CellRegistry`` with a ghost planner
     @param cells: target cells
     @param apply: journal writer (``site_kit.McpWriter``); None = dry run
-    @param force: re-plan layers already present
+    @param force: re-plan ghost ground already present
     @returns: per-cell reports
     """
     targets = [tuple(c) for c in cells]
@@ -338,29 +328,25 @@ def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[st
                 rep['skipped'] = 'in-flight'
                 counts['skipped'] += 1
                 continue
-            want_ground, want_features = needs(view, force=force)
-            if not (want_ground or want_features):
+            if not needs(view, force=force):
+                if view.ground == 'generated':
+                    rep['ground_skip'] = 'real-ground'
                 rep['skipped'] = 'layers-complete'
                 counts['skipped'] += 1
                 continue
-            for layer, wanted in (('ground', want_ground), ('features', want_features)):
-                if not wanted:
-                    rep[f'{layer}_skip'] = (
-                        'real-ground' if layer == 'ground' else 'present-or-real-feature')
-                    continue
-                build = cell_builds(reg, cell, layer)
-                if build is None:
-                    rep['skipped'] = 'no-lidar'
-                    counts['skipped'] += 1
-                    break
-                rep[layer] = _stats(build.cells)
-                rep['actions'].append(f'plan-{layer}')
-                if apply is not None:
-                    receipt = reg.change(build, apply)
-                    rep['actions'].append(f'apply-{layer}')
-                    status = receipt.status
-                    rep.setdefault('statuses', []).append(status)
-                    counts[status] = counts.get(status, 0) + 1
+            build = cell_builds(reg, cell, 'ground')
+            if build is None:
+                rep['skipped'] = 'no-lidar'
+                counts['skipped'] += 1
+                continue
+            rep['ground'] = _stats(build.cells)
+            rep['actions'].append('plan-ground')
+            if apply is not None:
+                receipt = reg.change(build, apply)
+                rep['actions'].append('apply-ground')
+                status = receipt.status
+                rep.setdefault('statuses', []).append(status)
+                counts[status] = counts.get(status, 0) + 1
     finally:
         set_in_flight_cell(None)
     _progress(summarise_statuses(counts))
@@ -380,18 +366,16 @@ def status_rows(reg, cells, ring: int) -> list[dict[str, Any]]:
     rows = []
     for c in cells:
         v = reg.cell(c)
-        ground, features = needs(v)
+        want = needs(v)
         rows.append({
             'cell': list(c),
             'in_frontier': (c in frontier) if seeds else None,
             'real_work': c in seeds,
             'real_ground': v.ground == 'generated',
             'feature_overlap': bool(v.features),
-            'needs_ghost_ground': ground,
-            'needs_ghost_features': features,
+            'needs_ghost_ground': want,
             'ghost_ground': 'applied' if v.ghost.ground else None,
-            'ghost_features': 'applied' if v.ghost.features else None,
-            'ghosts_complete': v.ghost.ground and v.ghost.features,
+            'ghosts_complete': bool(v.ghost.ground) or v.ground == 'generated',
             'in_flight': [f.plan for f in v.in_flight],
         })
     return rows
