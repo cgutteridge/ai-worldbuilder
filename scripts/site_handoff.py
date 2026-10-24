@@ -519,8 +519,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
         items.append((f'CELL {tx},{tz} (r={r}) layered passes: ground, trees, decor. RULES: ground.', [
             'Auto-queued: next in north-centre-then-clockwise order. The cell marker',
             f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} '
-            f'if not already. {_LIDAR_GHOST_V2_FRONTIER} Real ground here supersedes ghost ground; '
-            f'feature ghosts in this cell drop when real features overlap.',
+            f'if not already. {_LIDAR_GHOST_V2_FRONTIER} Real ground here supersedes ghost ground. '
+            f'{_LIDAR_GHOST_V2_SPLIT}',
             'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             'patrol sweep (each apply records itself in the cell journal);',
@@ -608,12 +608,9 @@ NO_GREEBLIES_SEEN = 'no greeblies seen'
 
 # Lidar ghost v2 handoff copy (docs/specs/lidar-ghost-v2-and-dryrun-reset.md).
 _LIDAR_GHOST_V2_SPLIT = (
-    'Split placeholders: DTM ghost ground until real ground-layer applies; DSM−DTM ghost features '
-    'until a real feature footprint overlaps that cell. Cross-cell footprints (home cell A, volume '
-    'into B): grey mass in B is stripped inside the planned volume immediately before live feature '
-    'fill (site_kit pre-strip); feature_build must not drop shell cells just because ghost features '
-    'owned the column. After apply, status on every touched cell should show ghost-features '
-    'stripped/superseded — not applied grey under the real shell.'
+    'Ghost ground only (DTM fill + surface). Top colour encodes DSM−DTM per column: '
+    'light_gray_concrete ≈0, gray_concrete 1–2, black_concrete >2 — for location checks against '
+    'real features. No volumetric feature ghosts. Real ground supersedes ghost ground.'
 )
 _LIDAR_GHOST_V2_FRONTIER = (
     'Frontier = Chebyshev ring around every cell with real refine started (default LIDAR_GHOST_RING=2). '

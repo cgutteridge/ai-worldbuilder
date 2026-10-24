@@ -14,7 +14,7 @@
   "sitting_steps": [
     "One apply owner for this sitting (parent recovery → interrupt the model subagent first)",
     "Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell",
-    "Regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004)",
+    "Regenerate the ground-only ghost baseline with `lidar_ghost apply` (coloured tops; no feature columns; no region restore, ADR 004)",
     "Confirm the 3×3 ghost baseline around {cell} is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
     "Claim site lock; build with that tool/model only",
     "Use tool={tool} model={model} only",

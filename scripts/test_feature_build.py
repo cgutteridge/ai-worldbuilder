@@ -131,13 +131,14 @@ class BuildPlanTest(unittest.TestCase):
         self.assertTrue(roof_ys, 'expected pitched brick slabs')
         self.assertGreaterEqual(max(roof_ys), eave)
 
-    def test_ghost_feature_owner_does_not_drop_shell_cells(self):
-        """Grey lidar mass must not shrink the offline plan (live apply overwrites)."""
+    def test_ghost_ground_owner_does_not_drop_shell_cells(self):
+        """Ghost ground must not shrink the offline plan (live apply overwrites)."""
         from journal_testkit import JournalWorld
         pos = (12, 50, 22)
         with JournalWorld() as jw:
-            jw.build('ghost_0_0_ground', 'ghost-ground', {(12, 40, 22): 'minecraft:gray_concrete'}, cell=(0, 0))
-            jw.build('ghost_0_0_features', 'ghost-features', {pos: 'minecraft:light_gray_concrete'}, cell=(0, 0))
+            jw.build('ghost_0_0_ground', 'ghost-ground',
+                     {(12, 40, 22): 'minecraft:light_gray_concrete', pos: 'minecraft:gray_concrete'},
+                     cell=(0, 0))
             plan = F.build(self.spec(storeys=2), footprints={'A': self.cells}, world=_StoneWorld())
         self.assertIn(pos, plan.cells)
 

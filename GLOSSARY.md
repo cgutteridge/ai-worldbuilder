@@ -99,5 +99,5 @@ A game save started without a prior city mesh from another generator. Refine mea
 _Avoid_: third-party generator refine (as the default workflow), lump sweep (as the definition of done)
 
 **Lidar ghost**:
-Placeholder ground and grey above-ground mass in a cell, taken only from national lidar composite terrain (DTM) and surface-minus-terrain (DSM − DTM). Exists so neighbouring cells show massing early; real ground and feature work replace it later. Frontier membership comes from the registry (real refine seeds a Chebyshev ring).
-_Avoid_: finished ground pass, real feature build, vendor lump, baseline height sketch
+Placeholder **ground** in a cell from national lidar composite terrain (DTM fill + surface). The surface block colour encodes DSM − DTM height per column (`light_gray_concrete` ≈0, `gray_concrete` 1–2, `black_concrete` >2) so agents can check feature location against the footprint. No volumetric feature ghosts. Real ground replaces ghost ground later. Frontier membership comes from the registry (real refine seeds a Chebyshev ring).
+_Avoid_: finished ground pass, real feature build, vendor lump, baseline height sketch, grey DSM−DTM columns

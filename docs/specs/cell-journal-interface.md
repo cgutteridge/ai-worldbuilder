@@ -30,15 +30,16 @@ Receipt(seq, status, planned, mismatches, sample, follow_ups, followed)
 CellView(cell, ground, ghost, trees, decor, features, in_flight, marker, hold, notes, done, left)
 ```
 
-Passes: `feature ground trees decor ghost-ground ghost-features other` (`other` owns blocks with no progress
-meaning: cell markers, clean-ups). `Ticket.abandon(reason)` finishes a begun entry `abandoned` (rolled back by a
+Passes: `feature ground trees decor ghost-ground other` (`other` owns blocks with no progress
+meaning: cell markers, clean-ups). Legacy `ghost-features` lines may still appear in old journals
+(ownership yields) but new `ghost-features` Builds are refused (task #68). `Ticket.abandon(reason)` finishes a begun entry `abandoned` (rolled back by a
 recovery tool; it owns nothing). An open `issue` note keeps a cell from `done` (`left`: `issue <ref>`). `apply` is `callable(Writes) -> None`:
 write `Writes.cells` over MCP and nothing else (no readback, no registry, no flush needed).
-`ghosts` is `callable(cell, 'ground'|'features') -> {pos: state} | {} | None` (None: cannot plan).
+`ghosts` is `callable(cell, 'ground') -> {pos: state} | {} | None` (None: cannot plan).
 `BlockStore`: `read(pos)`, `read_many(positions)`, `flush()`. `MemoryBlocks` (tests), `LiveBlocks` (MCP `block_scan_region`).
 
-`CellView` mirrors `RegistryStore`: `ground` none|ghost|ghost+features|generated; `ghost` (ground, features:
-placeholder mass expected now); `features` of `(id, 'in-progress'|'built')`; `marker` bool; `hold`; `notes`
+`CellView`: `ground` none|ghost|generated; `ghost.ground` whether ghost ground is expected now;
+`features` of `(id, 'in-progress'|'built')`; `marker` bool; `hold`; `notes`
 (open coverage warnings, reviews, issues); `done` and `left` use the old DONE rule and wording, plus
 `in-flight: <plan>`. Old `planned` feature status is gone (a feature exists once a Build for it is begun).
 

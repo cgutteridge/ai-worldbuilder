@@ -1,10 +1,11 @@
 # Lidar ghost v2 and empty-world dry-run reset
 
-**Status:** implemented; superseded in part by [ADR 004](../adr/004-cell-journal.md).
+**Status:** implemented; superseded in part by [ADR 004](../adr/004-cell-journal.md) and **task #68** (ground-only ghosts).
 **Supersedes in part:** [ADR 003](../adr/003-empty-world-and-lidar-ghosts.md) §3 (focus-only, ring 1, combined ground+features lifecycle).
 
-**Still valid (ADR 004 keeps these):** frontier ring depth 2 (env-configurable), split ghost ground / ghost features lifecycles, no tree/decor ghosts, lidar-only sources (composite DTM, DSM minus DTM).
-**Superseded by ADR 004:** ghost bookkeeping in STAGES (ghost state is now derived from the cell journal), the post-apply reconcile hook in `site_kit`, the `lidar_ghost` state functions, and `dryrun_reset` file wipes of STAGES/registry/verification (worlds are erased and recreated). Treat the Solution items on reset and ghost bookkeeping as history; read ADR 004 for the live design.
+**Still valid:** frontier ring depth 2 (env-configurable), no tree/decor ghosts, lidar-only sources (composite DTM; DSM − DTM for **top colour only**).
+**Withdrawn (task #68):** volumetric DSM−DTM feature ghosts, ghost-features journal pass for new work, strip/leftover checks. Ghost ground tops use `light_gray_concrete` / `gray_concrete` / `black_concrete` for DSM − DTM bands 0 / 1–2 / >2.
+**Superseded by ADR 004:** ghost bookkeeping in STAGES (ghost state is now derived from the cell journal), the post-apply reconcile hook in `site_kit`, the `lidar_ghost` state functions, and `dryrun_reset` file wipes of STAGES/registry/verification (worlds are erased and recreated). Treat historical Solution items on feature-ghost strip as withdrawn; read ADR 004 + task #68 for the live design.
 
 ## Problem Statement
 
@@ -13,7 +14,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 ## Solution
 
 1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the origin cell to seed the ghost frontier.
-2. **Lidar ghost v2** — Maintain a **frontier** of cells that should show placeholders: any cell with **real refine started** in the **registry** (ground, trees, decor, or feature) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** until **real ground** exists there, and **ghost features** until **real feature volume** overlaps that cell. **Strip** ghost-feature blocks in overlap volumes and update ghost bookkeeping so ensure does not skip. After **every successful apply** that counts as real work, **refresh** the frontier and reconcile ghosts.
+2. **Lidar ghost v2 (amended #68)** — Maintain a **frontier** of cells that should show placeholders: any cell with **real refine started** in the **registry** (ground, trees, decor, or feature) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** (DTM fill + colour-coded top from DSM − DTM) until **real ground** exists there. After **every successful apply** that counts as real work, **refresh** the frontier and ensure missing ghost ground.
 3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
 
 ## User Stories

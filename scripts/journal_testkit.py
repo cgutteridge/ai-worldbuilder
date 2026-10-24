@@ -67,18 +67,17 @@ class JournalWorld:
         @param decor: decor pass (needs ground)
         @param features: feature plan ids to land in the cell
         @param ghost_ground: ghost ground (before any real ground)
-        @param ghost_features: ghost feature mass (needs ghost or real ground)
+        @param ghost_features: withdrawn — must stay False (task #68)
         @param marker: raise the marker note
         @param y: base Y of the seeded rows
         """
+        if ghost_features:
+            raise ValueError('ghost_features seeding is withdrawn (task #68); use coloured ghost ground')
         x0, z0, _x1, _z1 = cellmath.bounds(cell)
         tag = f'{cell[0]}_{cell[1]}'.replace('-', 'm')
         if ghost_ground:
-            self.build(ghost_name(cell, 'ground'), 'ghost-ground', {(x0, y - 2, z0): 'minecraft:gray_concrete'},
-                       cell=cell)
-        if ghost_features:
-            self.build(ghost_name(cell, 'features'), 'ghost-features',
-                       {(x0 + 1, y + 5, z0 + 1): 'minecraft:light_gray_concrete'}, cell=cell)
+            self.build(ghost_name(cell, 'ground'), 'ghost-ground',
+                       {(x0, y - 2, z0): 'minecraft:light_gray_concrete'}, cell=cell)
         if ground:
             self.build(f'seed_{tag}_ground', 'ground', {(x0 + i, y, z0): 'minecraft:grass_block' for i in range(3)},
                        cell=cell)

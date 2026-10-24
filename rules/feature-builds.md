@@ -36,15 +36,12 @@ not extend `house_build` for odd shapes.
 Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
 `w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`).
 
-**Lidar ghost v2 (cross-cell):** After `cell_marker --raise`, frontier cells may
-show grey DSM−DTM placeholders. A feature whose footprint crosses a cell border
-must not leave that grey mass under the real shell: `site_kit.apply` pre-strips
-recorded ghost-feature blocks before fill, then fails closed if any unplanned
-`light_gray_concrete` remains in the footprint columns (including ownership-less
-grey). `feature_build` keeps plan cells where only `ghost_*_features` owned the
-column and adds ghost owners to `modifies` on live apply. Before handoff, run
-`python3 shims/lidar_ghost.py status --cell <home> --ring 2` and confirm every
-touched cell has `ghost-features` stripped/superseded where the build sits.
+**Lidar ghosts (ground only):** After `cell_marker --raise`, frontier cells show
+ghost ground with DSM−DTM top colours (not volumetric grey columns). Real features
+overwrite ghost ground where they sit (ghost owners yield). Use neighbouring
+coloured tops to judge whether the build sits on the right footprint. Before
+handoff, `python3 shims/lidar_ghost.py status --cell <home> --ring 2` should show
+ghost ground applied on frontier neighbours that still lack real ground.
 
 Greeblies and path-in-footprint are separate system tickets. After apply, run
 `python3 scripts/evidence_sheet.py <name>` (portal-facing cameras, top-down,

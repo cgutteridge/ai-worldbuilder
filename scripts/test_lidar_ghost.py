@@ -55,18 +55,15 @@ class NamingAndRing(unittest.TestCase):
         self.assertEqual(lg.neighbour_cells(focus, ring=0, include_focus=True), [focus])
         self.assertEqual(lg.neighbour_cells(focus, ring=0, include_focus=False), [])
 
-    def test_ghost_owners_for_encodes_negative_tz(self):
-        self.assertEqual(lg.ghost_owners_for((48, -44)),
-                         frozenset({'ghost_48_m44_ground', 'ghost_48_m44_features'}))
-        self.assertEqual(lg.ghost_owners_for((10, 3)),
-                         frozenset({'ghost_10_3_ground', 'ghost_10_3_features'}))
+    def test_ghost_owners_for_is_ground_only(self):
+        self.assertEqual(lg.ghost_owners_for((48, -44)), frozenset({'ghost_48_m44_ground'}))
+        self.assertEqual(lg.ghost_owners_for((10, 3)), frozenset({'ghost_10_3_ground'}))
 
 
 class PlanFromMockHeights(unittest.TestCase):
-    """Ground and feature plans from injectable samples (tiny synthetic cell)."""
+    """Ground plans from injectable samples (tiny synthetic cell)."""
 
     def setUp(self):
-        # Patch CELL to 2 so plans stay tiny; restore after.
         self._cell = cellmath.CELL
         cellmath.CELL = 2
         lg.cellmath.CELL = 2
@@ -79,31 +76,30 @@ class PlanFromMockHeights(unittest.TestCase):
         cell = (0, 0)
         h = _flat_heights(5, 0, *cellmath.bounds(cell))
         plan = lg.plan_ghost_ground(cell, heights=h)
-        # columns (0,0),(1,0),(0,1),(1,1); fill y=1..4 stone, y=5 gray_concrete
         self.assertEqual(plan.name, 'ghost_0_0_ground')
-        self.assertEqual(plan.cells[(0, 5, 0)], 'minecraft:gray_concrete')
+        self.assertEqual(plan.cells[(0, 5, 0)], 'minecraft:light_gray_concrete')
         self.assertEqual(plan.cells[(0, 1, 0)], 'minecraft:stone')
-        self.assertNotIn((0, 0, 0), plan.cells)  # bedrock layer left alone
-        self.assertEqual(len(plan.cells), 4 * 5)  # 4 cols × (4 fill + 1 top)
+        self.assertNotIn((0, 0, 0), plan.cells)
+        self.assertEqual(len(plan.cells), 4 * 5)
 
-    def test_features_are_grey_columns_above_ground(self):
-        cell = (0, 0)
-        h = _flat_heights(5, 3, *cellmath.bounds(cell))
-        plan = lg.plan_ghost_features(cell, heights=h)
-        self.assertEqual(plan.name, 'ghost_0_0_features')
-        self.assertEqual(plan.cells[(0, 6, 0)], 'minecraft:light_gray_concrete')
-        self.assertEqual(plan.cells[(0, 8, 0)], 'minecraft:light_gray_concrete')
-        self.assertNotIn((0, 5, 0), plan.cells)  # ground surface not owned by features
-        self.assertEqual(len(plan.cells), 4 * 3)
-
-    def test_zero_feature_skips_column(self):
+    def test_top_colour_bands_from_feature_height(self):
         cell = (0, 0)
         x0, z0, x1, z1 = cellmath.bounds(cell)
-        h = _flat_heights(4, 2, x0, z0, x1, z1)
+        h = _flat_heights(5, 0, x0, z0, x1, z1)
         h['feature'][0, 0] = 0
-        plan = lg.plan_ghost_features(cell, heights=h)
-        self.assertNotIn((x0, 5, z0), plan.cells)
-        self.assertIn((x0 + 1, 5, z0), plan.cells)
+        h['feature'][1, 0] = 2
+        h['feature'][0, 1] = 3
+        plan = lg.plan_ghost_ground(cell, heights=h)
+        self.assertEqual(plan.cells[(x0, 5, z0)], 'minecraft:light_gray_concrete')
+        self.assertEqual(plan.cells[(x0 + 1, 5, z0)], 'minecraft:gray_concrete')
+        self.assertEqual(plan.cells[(x0, 5, z0 + 1)], 'minecraft:black_concrete')
+        self.assertNotIn((x0, 6, z0), plan.cells)  # no volumetric columns
+
+    def test_top_block_for_feature_height_bands(self):
+        self.assertEqual(lg.top_block_for_feature_height(0), 'light_gray_concrete')
+        self.assertEqual(lg.top_block_for_feature_height(1), 'gray_concrete')
+        self.assertEqual(lg.top_block_for_feature_height(2), 'gray_concrete')
+        self.assertEqual(lg.top_block_for_feature_height(3), 'black_concrete')
 
 
 class _Tiny(unittest.TestCase):
@@ -132,43 +128,38 @@ class _Tiny(unittest.TestCase):
 
 
 class GhostPlannerAndNeeds(_Tiny):
-    """The registry's ghost planner wraps the lidar plan builders; needs come from the view."""
+    """The registry's ghost planner wraps the lidar plan builder; needs come from the view."""
 
-    def test_planner_wraps_plan_builders(self):
+    def test_planner_wraps_plan_builder(self):
         planner = lg.ghost_planner(self.heights)
         self.assertEqual(planner((0, 0), 'ground'), lg.plan_ghost_ground((0, 0), heights=self.heights(0, 0, 1, 1)).cells)
-        self.assertEqual(len(planner((0, 0), 'features')), 4)
+        with self.assertRaises(ValueError):
+            planner((0, 0), 'features')
 
     def test_planner_returns_none_without_lidar(self):
         def missing(*_b):
             raise LookupError('tile not cached')
         self.assertIsNone(lg.ghost_planner(missing)((0, 0), 'ground'))
 
-    def test_ensure_plans_both_layers_when_empty(self):
+    def test_ensure_plans_ground_when_empty(self):
         rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
         self.assertNotIn('skipped', rep)
         self.assertEqual(rep['ground']['blocks'], 4 * 5)
-        self.assertEqual(rep['features']['blocks'], 4 * 1)
-        self.assertEqual(self.jw.reg.view(), {})                         # dry run journals nothing
+        self.assertEqual(rep['ground']['gray_concrete'], 4)  # feature height 1 → grey tops
+        self.assertEqual(self.jw.reg.view(), {})
 
     def test_ensure_applies_and_then_skips_complete_cells(self):
         reg = self.registry()
         rep = lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)[0]
-        self.assertEqual(rep['actions'], ['plan-ground', 'apply-ground', 'plan-features', 'apply-features'])
+        self.assertEqual(rep['actions'], ['plan-ground', 'apply-ground'])
         v = reg.cell((0, 0))
-        self.assertEqual((v.ground, v.ghost.ground, v.ghost.features), ('ghost+features', True, True))
+        self.assertEqual((v.ground, v.ghost.ground), ('ghost', True))
         self.assertEqual(lg.ensure_cells(reg, [(0, 0)])[0]['skipped'], 'layers-complete')
 
-    def test_real_ground_skips_ghost_ground_but_still_wants_grey_mass(self):
+    def test_real_ground_skips_ghost_ground(self):
         self.real_ground((0, 0))
         rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
         self.assertEqual(rep['ground_skip'], 'real-ground')
-        self.assertIn('features', rep)
-
-    def test_real_feature_in_the_cell_means_no_grey_mass(self):
-        self.real_ground((0, 0))
-        self.jw.build('house', 'feature', {(0, 6, 0): 'minecraft:bricks'})
-        rep = lg.ensure_cells(self.registry(), [(0, 0)])[0]
         self.assertEqual(rep['skipped'], 'layers-complete')
 
     def test_ghost_plans_drop_positions_owned_by_real_builds(self):
@@ -186,9 +177,9 @@ class OnCellFocus(_Tiny):
         self.real_ground((1, 0))
         reps = lg.on_cell_focus((0, 0), dry=True, heights_fn=self.heights)
         by = {tuple(r['cell']): r for r in reps}
-        self.assertEqual(set(by), {(x, z) for x in range(-1, 4) for z in range(-2, 3)})   # Chebyshev 2 of the seed
+        self.assertEqual(set(by), {(x, z) for x in range(-1, 4) for z in range(-2, 3)})
         self.assertEqual(by[(1, 0)]['ground_skip'], 'real-ground')
-        self.assertIn('ground', by[(3, 2)])                             # two cells out is still ghosted
+        self.assertIn('ground', by[(3, 2)])
 
     def test_before_seeds_rings_the_focus_two_deep_and_skips_it(self):
         reps = lg.on_cell_focus((0, 0), dry=True, heights_fn=self.heights)
@@ -217,8 +208,8 @@ class OnCellFocus(_Tiny):
         self.real_ground((0, 0))
         self.real_ground((7, 0))
         targets = self.registry().frontier()
-        self.assertTrue({(x, 0) for x in (-2, 0, 2, 5, 7, 9)} <= targets)   # both seeds' ring-2 reach
-        self.assertFalse({(3, 0), (4, 0)} & targets)                    # gap beyond either seed's ring 2
+        self.assertTrue({(x, 0) for x in (-2, 0, 2, 5, 7, 9)} <= targets)
+        self.assertFalse({(3, 0), (4, 0)} & targets)
 
     def test_ring_from_env(self):
         with mock.patch.dict(os.environ, {'LIDAR_GHOST_RING': '3'}):
@@ -246,14 +237,13 @@ class ApplyProgress(_Tiny):
 
     def test_ensure_summary_counts_landed_and_skipped_builds(self):
         reg = self.registry()
-        lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)  # two builds land
+        lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)
         err = io.StringIO()
         with mock.patch('sys.stderr', err):
             lg.ensure_cells(reg, [(0, 0), (1, 0)], apply=self.jw.apply)
-        # (0,0) skipped (layers-complete); (1,0) ground+features both land
         summary = [ln for ln in err.getvalue().splitlines() if 'summary' in ln]
         self.assertEqual(len(summary), 1)
-        self.assertIn('landed=2', summary[0])
+        self.assertIn('landed=1', summary[0])
         self.assertIn('mismatched=0', summary[0])
         self.assertIn('abandoned=0', summary[0])
         self.assertIn('skipped=1', summary[0])
@@ -312,11 +302,10 @@ class CliDryRun(_Tiny):
 class GroundLayerIgnoresGhosts(unittest.TestCase):
     """Real ground pass may overwrite ghost owners."""
 
-    def test_ignored_builds_includes_ghost_owners(self):
+    def test_ignored_builds_includes_ghost_ground_owner(self):
         import ground_layer as gl
         ign = gl.ignored_builds((48, -44))
         self.assertIn('ghost_48_m44_ground', ign)
-        self.assertIn('ghost_48_m44_features', ign)
 
 
 class CellFeaturesGhostNotFeature(unittest.TestCase):
@@ -325,7 +314,6 @@ class CellFeaturesGhostNotFeature(unittest.TestCase):
     def test_ghost_names_are_not_feature_builds(self):
         import cell_features as cf
         self.assertFalse(cf.is_feature_build('ghost_48_m44_ground'))
-        self.assertFalse(cf.is_feature_build('ghost_48_m44_features'))
         self.assertTrue(cf.is_feature_build('b2_main'))
 
 

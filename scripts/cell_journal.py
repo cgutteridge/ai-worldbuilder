@@ -40,11 +40,13 @@ from block_store import BlockStore, Pos, block_id, same_state
 Cell = tuple[int, int]
 
 REAL_PASSES = ('feature', 'ground', 'trees', 'decor')
+# ghost-features remains readable for old journal lines (ownership still yields) but new
+# ghost-features Builds are refused — volumetric feature ghosts are withdrawn (task #68).
 GHOST_PASSES = ('ghost-ground', 'ghost-features')
 NEUTRAL_PASSES = ('other',)        # owns blocks, no progress meaning (cell markers, clean-ups)
 PASSES = REAL_PASSES + GHOST_PASSES + NEUTRAL_PASSES
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close')
-DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing', 'ghost-stale')
+DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
 AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
@@ -209,10 +211,9 @@ class Receipt:
 
 @dataclass(frozen=True)
 class GhostView:
-    """Grey placeholder mass expected in the world now."""
+    """Whether ghost ground is expected in the world now (DTM placeholder with coloured tops)."""
 
     ground: bool = False
-    features: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,8 +272,8 @@ class NoteView:
 class CellView:
     """Frozen per-cell state folded from the journal (mirrors the old RegistryStore record).
 
-    @param ground: ``none|ghost|ghost+features|generated``
-    @param ghost: placeholder mass expected in the world now
+    @param ground: ``none|ghost|generated``
+    @param ghost: whether ghost ground is expected in the world now
     @param done: ground generated, trees, decor, every feature built, no marker, no warnings, no open
         issue note, nothing in flight
     @param left: short human reasons work remains (same wording as ``what_is_left``)
@@ -397,7 +398,7 @@ def ghost_name(cell: Cell, layer: str) -> str:
     """Owner name of a cell's ghost plan, e.g. ``ghost_48_m44_ground``.
 
     @param cell: (tx, tz)
-    @param layer: ``ground`` or ``features``
+    @param layer: ``ground`` (or legacy ``features`` when reading old journal lines)
     @returns: plan name
     """
     return f'ghost_{cell[0]}_{_token(cell[1])}_{layer}'
@@ -542,7 +543,6 @@ class CellRegistry:
         self._plans: dict[str, list[int]] = {}
         self._begun: set[int] = set()
         self._notes: list[dict] = []
-        self._ghost_feature_cells: set[Cell] = set()
         self._touch()
 
     def _touch(self) -> None:
@@ -550,7 +550,6 @@ class CellRegistry:
         self._derived: dict[Cell, CellView] = {}
         self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
         self._note_cache: dict | None = None
-        self._strip_clean: set[int] = set()
 
     def _cell_of(self, pos: Pos) -> Cell:
         return cellmath.cell_of(pos[0], pos[2], self.cell_size)
@@ -593,8 +592,6 @@ class CellRegistry:
             prior = self._latest(e.plan)
             if prior is not None and prior.status == 'landed':
                 e.reopened = tuple(sorted(set(prior.cells) | set(cells)))
-        if e.kind == 'build' and e.pass_ == 'ghost-features' and not e.strip:
-            self._ghost_feature_cells.add(e.cell)
         self._entries[e.seq] = e
         self._begun.add(e.seq)
         for c in cells:
@@ -908,7 +905,7 @@ class CellRegistry:
         got = self._derived.get(cell)
         if got is not None:
             return got
-        real = ghost_ground = ghost_features = trees = decor = False
+        real = ghost_ground = trees = decor = False
         events: list[tuple[int, int, _Entry]] = []
         flight: list[InFlightView] = []
         for seq in self._by_cell.get(cell, ()):
@@ -934,17 +931,13 @@ class CellRegistry:
                 decor = True
             elif e.pass_ == 'ghost-ground' and mine:
                 ghost_ground = not real
-            elif e.pass_ == 'ghost-features' and mine:
-                ghost_features = not e.strip
-            elif e.pass_ == 'feature':
-                ghost_features = False                  # a real feature overlapping strips the ghost mass
+            # ghost-features journal lines (legacy) do not affect ground/ghost views
         feats = []
         for plan in self._plans:
             e = self._latest(plan)
             if e is not None and e.pass_ == 'feature' and cell in e.cells:
                 feats.append(FeatureState(plan, 'built' if e.status == 'landed' else 'in-progress'))
-        ground = 'generated' if real else (
-            'none' if not ghost_ground else ('ghost+features' if ghost_features else 'ghost'))
+        ground = 'generated' if real else ('ghost' if ghost_ground else 'none')
         ns = self._note_state()
         warns = ns['warn'].get(cell, {})
         notes = tuple(NoteView('coverage', k, v) for k, v in warns.items()) + tuple(
@@ -970,7 +963,7 @@ class CellRegistry:
         left += [f'in-flight: {f.plan}' for f in flight]
         done = (ground == 'generated' and trees and decor and not marker and not warns and not issues
                 and all(f.status == 'built' for f in feats) and not flight)
-        view = CellView(cell, ground, GhostView(ghost_ground, ghost_features), trees, decor, tuple(feats),
+        view = CellView(cell, ground, GhostView(ghost_ground), trees, decor, tuple(feats),
                         tuple(flight), marker, hold, notes, done, tuple(left))
         self._derived[cell] = view
         return view
@@ -1063,8 +1056,8 @@ class CellRegistry:
             raise Refused(f'{b.pass_} only on generated ground (cell {list(primary)} has ground={view.ground})')
         if b.pass_ == 'ghost-ground' and view.ground == 'generated':
             raise Refused(f'ghost ground over real ground (cell {list(primary)})')
-        if b.pass_ == 'ghost-features' and not strip and view.ground == 'none':
-            raise Refused(f'ghost features need ghost or real ground (cell {list(primary)} has none)')
+        if b.pass_ == 'ghost-features':
+            raise Refused('ghost-features is withdrawn; use coloured ghost ground tops (task #68)')
         owners = self._owners_in(positions, exclude=frozenset(b.modifies) | {b.plan})
         clash = {p: (o.plan, o.state, positions[p]) for p, o in owners.items()
                  if not o.ghost and o.state != positions[p]}
@@ -1234,36 +1227,7 @@ class CellRegistry:
         seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
         return Receipt(seq, 'landed')
 
-    # ---- follow-ups: strips and ghost ensure -----------------------------------------------
-    def _strip_builds(self, scope: set[Cell] | None = None) -> list[Build]:
-        """Air Builds for every ghost-feature block still owned in a cell a landed real feature touches.
-
-        Ghost feature state is per cell (a real feature strips the cell's ghost mass), so the strip
-        is cell-wide, not limited to the feature's own columns.
-        """
-        wanted: dict[Cell, dict[Pos, str]] = {}
-        for seq, e in self._entries.items():
-            if (e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed' or e.undone
-                    or seq in self._strip_clean or not (set(e.cells) & self._ghost_feature_cells)):
-                continue
-            found = False
-            for cell in e.cells:
-                if cell not in self._ghost_feature_cells or (scope is not None and cell not in scope):
-                    continue
-                if self._derive(cell).in_flight:
-                    continue
-                for pos, o in self._cell_owners(cell).items():
-                    if o.pass_ == 'ghost-features':
-                        wanted.setdefault(cell, {})[pos] = AIR
-                        found = True
-            if not found and scope is None:
-                self._strip_clean.add(seq)
-        out = []
-        for cell in sorted(wanted):
-            out.append(Build(f'ghost_strip_{cell[0]}_{_token(cell[1])}_features', 'ghost-features',
-                             wanted[cell], modifies=(ghost_name(cell, 'features'),), cell=cell))
-        return out
-
+    # ---- follow-ups: ghost ground ensure ---------------------------------------------------
     def _ghost_needs(self, scope: set[Cell] | None = None) -> list[tuple[Cell, str]]:
         needs = []
         for cell in sorted(self.frontier()):
@@ -1274,11 +1238,11 @@ class CellRegistry:
                 continue
             if v.ground == 'none':
                 needs.append((cell, 'ground'))
-            elif not v.ghost.features and not v.features:
-                needs.append((cell, 'features'))
         return needs
 
     def _ghost_build(self, cell: Cell, layer: str) -> Build | None:
+        if layer != 'ground':
+            return None
         planned = self.ghosts(cell, layer) if self.ghosts is not None else None
         if planned is None:
             return None
@@ -1289,16 +1253,15 @@ class CellRegistry:
         return Build(name, f'ghost-{layer}', positions, modifies=(name,), strict=True, cell=cell)
 
     def follow_ups(self, cells: Iterable[Cell] | None = None) -> tuple[Build, ...]:
-        """Builds still needed: ghost strips under real features, then ghost ground / features for
-        every frontier cell that lacks them (needs a ``ghosts`` planner). Idempotent and derived:
-        applying them removes them from this list.
+        """Builds still needed: ghost ground for every frontier cell that lacks it (needs a
+        ``ghosts`` planner). Idempotent and derived: applying them removes them from this list.
 
         @param cells: restrict to these cells (default all)
         @returns: Build intents for the caller to ``change``
         """
         self._sync()
         scope = None if cells is None else {tuple(c) for c in cells}
-        out = self._strip_builds(scope)
+        out: list[Build] = []
         for cell, layer in self._ghost_needs(scope):
             b = self._ghost_build(cell, layer)
             if b is not None:
@@ -1306,7 +1269,7 @@ class CellRegistry:
         return tuple(out)
 
     def ensure(self, apply: Apply, *, cells: Iterable[Cell] | None = None, rounds: int = 8) -> list[Receipt]:
-        """Apply follow-ups until none are left (ground first, then features, then strips).
+        """Apply follow-ups until none are left (frontier ghost ground).
 
         @param apply: block writer
         @param cells: restrict to these cells
@@ -1421,14 +1384,11 @@ class CellRegistry:
         if self.ghosts is not None:
             for cell, layer in self._ghost_needs(scope):
                 items.append(DriftItem(cell, 'ghost-missing', 0, 1, {}, (ghost_name(cell, layer),), False))
-        for b in self._strip_builds(scope):
-            items.append(DriftItem(b.cell, 'ghost-stale', 0, len(b.cells), {}, (b.plan,), False))
         if fix:
             self.ensure(apply, cells=scope)
             need = {c for c, _l in self._ghost_needs(scope)}
-            stale = {b.cell for b in self._strip_builds(scope)}
             items = [replace(i, fixed=True) if (i.kind == 'ghost-missing' and i.cell not in need)
-                     or (i.kind == 'ghost-stale' and i.cell not in stale) else i for i in items]
+                     else i for i in items]
         return Drift(tuple(items), upgraded)
 
     def _bad(self, planned: Mapping[Pos, str]) -> dict[Pos, list]:

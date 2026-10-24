@@ -50,8 +50,7 @@ def parse_stamp(s) -> datetime | None:
 
 STATUS = {'begun': 'applying', 'landed': 'applied', 'mismatched': 'applied-with-mismatches',
           'abandoned': 'rolled-back'}
-PASS_KEY = {'ground': 'ground-layer', 'trees': 'trees', 'decor': 'decor', 'ghost-ground': 'ghost-ground',
-            'ghost-features': 'ghost-features'}
+PASS_KEY = {'ground': 'ground-layer', 'trees': 'trees', 'decor': 'decor', 'ghost-ground': 'ghost-ground'}
 
 
 def stage_key(e) -> str:
