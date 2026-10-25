@@ -417,6 +417,20 @@ def warm_reads(world, positions) -> None:
         warm(positions)
 
 
+def forget_reads(world, positions) -> None:
+    """Drop ``positions`` from a live scan cache when ``world`` supports it; no-op for stubs.
+
+    Pair with :func:`warm_reads` for strip-bounded probes so retained cache does not
+    grow to the full bbox.
+
+    @param world: :class:`World` or any duck with optional ``forget``
+    @param positions: iterable of ``(x, y, z)``
+    """
+    cool = getattr(world, 'forget', None)
+    if cool is not None:
+        cool(positions)
+
+
 class World:
     """Duck-typed block access over a :class:`block_store.BlockStore`.
 
@@ -458,6 +472,18 @@ class World:
         @param positions: iterable of ``(x, y, z)``
         """
         self._blocks().read_many(positions)
+
+    def forget(self, positions) -> None:
+        """Drop ``positions`` from the store scan cache when the store supports it.
+
+        No-op for :class:`~block_store.MemoryBlocks`. Used with strip-warm probes so
+        retained LiveBlocks memory stays bounded.
+
+        @param positions: iterable of ``(x, y, z)``
+        """
+        cool = getattr(self._blocks(), 'forget', None)
+        if cool is not None:
+            cool(positions)
 
     def block(self, x, y, z):
         """Block state at ``(x, y, z)``, or None when the store reports unloaded/unknown.

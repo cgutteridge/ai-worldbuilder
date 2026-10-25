@@ -242,8 +242,10 @@ def probe_column(world, x: int, z: int, stack: int = 6) -> dict:
 def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     """Summarise ground and lidar tops over an inclusive bbox.
 
-    Prefetches the full probe volume once so per-column ground / lidar walks share
-    MCP tiles instead of scanning one block at a time.
+    Prefetches one X-strip at a time (Z-width × Y 0..200), then drops that strip
+    from the scan cache, so both the ensure position list and retained LiveBlocks
+    memory stay O(width × 201) instead of materialising a full cell bbox × 201
+    (~millions of tuples).
 
     @param world: site_kit.World
     @param x0: min X
@@ -252,22 +254,23 @@ def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     @param z1: max Z
     @returns: min/median/max stats
     """
-    from site_kit import warm_reads
-    # ground uses top=200..0; lidar_top uses 120..30 — warm the union once.
-    warm_reads(world, (
-        (x, y, z)
-        for x in range(x0, x1 + 1)
-        for z in range(z0, z1 + 1)
-        for y in range(0, 201)
-    ))
+    from site_kit import forget_reads, warm_reads
     grounds, tops, extr = [], [], []
     for x in range(x0, x1 + 1):
+        # ground() walks Y 0..200; lidar_top is covered by the same strip.
+        strip = [
+            (x, y, z)
+            for z in range(z0, z1 + 1)
+            for y in range(0, 201)
+        ]
+        warm_reads(world, strip)
         for z in range(z0, z1 + 1):
             yg = world.ground(x, z, top=200, bottom=0)
             yt = lidar_top(world, x, z)
             grounds.append(yg)
             tops.append(yt)
             extr.append(yt - yg)
+        forget_reads(world, strip)
     def _med(v):
         s = sorted(v)
         return s[len(s) // 2]
