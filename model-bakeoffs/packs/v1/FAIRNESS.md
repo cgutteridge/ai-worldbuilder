@@ -27,3 +27,7 @@ If `python3 -m http.server 8765` fails with address already in use, reuse the ex
 ## One apply owner
 
 One agent owns apply for the sitting. If the parent takes over recovery (restore / re-apply), interrupt or idle the model subagent first so two writers do not race.
+
+## Prior-round archive
+
+`worlds/bakeoff/archive/rounds/` is off-limits (baseline moves earlier `site/builds/` round artefacts there — a previous Minecraft build is not evidence).
