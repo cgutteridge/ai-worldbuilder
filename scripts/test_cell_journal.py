@@ -688,5 +688,32 @@ class TestAttachments(Base):
         self.assertEqual(self.applied[before].signs, (self.SIGN,))
         self.assertEqual(self.applied[before].entities, ())
 
+class TestBlobStorage(Base):
+    """Plan blobs are stored compressed; legacy uncompressed ``.json`` blobs still load."""
+
+    def blob_files(self):
+        return sorted((self.root / 'registry' / 'blobs').iterdir())
+
+    def test_blob_is_compressed_and_round_trips(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
+        (blob,) = self.blob_files()
+        self.assertIn(blob.suffix, ('.zst', '.gz'))
+        fresh = self.registry()
+        self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
+
+    def test_legacy_plain_json_blob_still_loads_and_is_not_duplicated(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
+        (blob,) = self.blob_files()
+        key = blob.name.split('.')[0]
+        reg = self.registry()
+        plain = (self.root / 'registry' / 'blobs' / f'{key}.json')
+        plain.write_bytes(reg._read_blob_bytes(key))
+        blob.unlink()
+        fresh = self.registry()
+        self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
+        self.assertEqual(fresh._store_blob(plan(0, 0, STONE, y=60)), key)
+        self.assertEqual([p.name for p in self.blob_files()], [plain.name])
+
+
 if __name__ == '__main__':
     unittest.main()
