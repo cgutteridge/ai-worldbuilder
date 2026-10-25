@@ -15,7 +15,7 @@
     {
       "id": 85,
       "title": "Validate pyproj against GDAL and add fictional-world coordinate fixtures",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -24,7 +24,7 @@
     {
       "id": 86,
       "title": "Add bidirectional XYZ tile positions, pixel offsets and batch conversion",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
