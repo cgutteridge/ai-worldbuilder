@@ -33,15 +33,6 @@
       "notes": "Retro 2026-10-25: parallel workers + pre-commit + ship tip/main melted CPU and hung suites. Do: only one full (default) run_tests invocation at a time for this repo (flock or equivalent); a second full run waits or fails fast with a clear message. Focused --only runs must not take that lock so workers can still check modules in parallel. Done when: two overlapping full runs cannot execute the suite body concurrently (test with a fake/slow seam or lock probe); --only still parallelisable; docs/docstring name the behaviour."
     },
     {
-      "id": 82,
-      "title": "Tracker-only commits skip the unit suite",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro 2026-10-25: archive commits on main still paid ~3.5min full suite; pre_commit_checks already has --skip-tests but the hook always runs check without it. Do: when staged paths are only the system tracker (tasks/index.json, tasks/done.json \u2014 and nothing else), pre-commit skips the unit suite while still enforcing tracker ownership / other cheap checks. Do not widen to arbitrary docs unless tests spell the allowlist. Done when: unit tests cover (a) tracker-only staged -> tests skipped, (b) tracker + code -> tests run, (c) worker branch tracker edits still blocked; hook path uses the auto-skip (no manual --skip-tests required for archives)."
-    },
-    {
       "id": 83,
       "title": "ship_branch tip vs main test policy",
       "status": "blocked",

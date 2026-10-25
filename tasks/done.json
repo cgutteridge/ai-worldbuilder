@@ -664,6 +664,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Found 2026-10-25 closing the R-013 thread: on main (attached HEAD), a tracker-only commit failed with 'worker branch must not edit the system tracker' because parallel-wave worktrees had just cut task/70..76 from main's HEAD. scripts/pre_commit_checks.py checkout_branch_names() adds every branch from `git branch --points-at HEAD` even when HEAD is attached to a non-worker branch, so forbidden_tracker_paths() sees task/* names. Fix: include points-at-HEAD branches only when HEAD is detached (current_branch() empty); attached HEAD uses the current branch alone. Keep the detached-HEAD bypass protection. Done when: unit tests cover (a) attached main with task/* at the same commit -> allowed, (b) detached HEAD with task/* at HEAD -> blocked, (c) attached task/* -> blocked. Archived 2026-10-25 after merge 1fd2382 (task/79-tracker-hook-points-at-head \u2192 main; code 33f2496). Reviewer APPROVE with nits only."
+    },
+    {
+      "id": 82,
+      "title": "Tracker-only commits skip the unit suite",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro 2026-10-25: archive commits on main still paid ~3.5min full suite; pre_commit_checks already has --skip-tests but the hook always runs check without it. Do: when staged paths are only the system tracker (tasks/index.json, tasks/done.json — and nothing else), pre-commit skips the unit suite while still enforcing tracker ownership / other cheap checks. Do not widen to arbitrary docs unless tests spell the allowlist. Done when: unit tests cover (a) tracker-only staged -> tests skipped, (b) tracker + code -> tests run, (c) worker branch tracker edits still blocked; hook path uses the auto-skip (no manual --skip-tests required for archives). Archived 2026-10-25 after merge 596b907 (task/82-tracker-only-skip-tests → main; code c7cec39)."
     }
   ]
 }
