@@ -44,14 +44,30 @@ def _dms(deg: int, minutes: int, seconds: float, hemi: str) -> float:
 
 # ---- British National Grid (EPSG:27700) ------------------------------------
 # Southampton O.S.O. FBM: bench-marks.org.uk/bm1150
+# With OSTN15 these agree to centimetres; Helmert fallback is ~metre-level.
 BNG_LAT, BNG_LON = 50.91313038, -1.40294699
 BNG_E, BNG_N = 442070.0, 112800.0
+# Helmert / no-grid path (same recording as test_world_frame.py).
+BNG_HELMERT_E = 442070.61748948053
+BNG_HELMERT_N = 112799.04379774761
 BNG_FRAME = _frame('EPSG:27700', 440000.0, 110000.0)
 # E/N → MC via offsets (north is −Z): x=2070, z=-2800
 BNG_MC = (2070, -2800)
 # West of origin → negative Minecraft X
 BNG_WEST_E, BNG_WEST_N = 439500.0, 111200.0
 BNG_WEST_MC = (-500, -1200)
+
+
+def _assert_bng_forward_en(testcase: unittest.TestCase, e: float, n: float) -> None:
+    """Assert WGS84→BNG against published FBM; tolerance depends on OSTN15."""
+    if wf.ostn15_grid_available():
+        testcase.assertAlmostEqual(e, BNG_E, delta=0.05)
+        testcase.assertAlmostEqual(n, BNG_N, delta=0.05)
+    else:
+        testcase.assertAlmostEqual(e, BNG_HELMERT_E, places=3)
+        testcase.assertAlmostEqual(n, BNG_HELMERT_N, places=3)
+        testcase.assertLess(abs(e - BNG_E), 5.0)
+        testcase.assertLess(abs(n - BNG_N), 5.0)
 
 # ---- WGS84 / UTM zone 18N (EPSG:32618) -------------------------------------
 # Zone central meridian: lon −75° → false easting 500000 exactly.
@@ -78,8 +94,7 @@ class BngFictionalFrameTest(unittest.TestCase):
     def test_frame_crs_and_forward_to_published_osgb(self):
         self.assertEqual(BNG_FRAME.crs, 'EPSG:27700')
         e, n = wf.wgs84_to_osgb(BNG_LAT, BNG_LON)
-        self.assertAlmostEqual(e, BNG_E, delta=0.05)
-        self.assertAlmostEqual(n, BNG_N, delta=0.05)
+        _assert_bng_forward_en(self, e, n)
 
     def test_projected_to_mc_known_and_negative_x(self):
         self.assertEqual(wf.osgb_to_mc(BNG_E, BNG_N, BNG_FRAME), BNG_MC)
@@ -101,7 +116,7 @@ class BngFictionalFrameTest(unittest.TestCase):
         pts = [(BNG_LAT, BNG_LON), (50.903, -1.4044)]
         batch = wf.wgs84_batch_to_osgb(pts)
         self.assertEqual(len(batch), 2)
-        self.assertAlmostEqual(batch[0][0], BNG_E, delta=0.05)
+        _assert_bng_forward_en(self, batch[0][0], batch[0][1])
         back = wf.osgb_batch_to_wgs84(batch)
         for (lat, lon), (blat, blon) in zip(pts, back):
             self.assertAlmostEqual(blat, lat, places=5)
@@ -109,7 +124,7 @@ class BngFictionalFrameTest(unittest.TestCase):
 
     def test_always_xy_lon_first_for_4326(self):
         e, n = wf.transform_epsg([(BNG_LON, BNG_LAT)], 'EPSG:4326', 'EPSG:27700')[0]
-        self.assertAlmostEqual(e, BNG_E, delta=0.05)
+        _assert_bng_forward_en(self, e, n)
         # Lat-first would not land near published National Grid.
         bad = wf.transform_epsg([(BNG_LAT, BNG_LON)], 'EPSG:4326', 'EPSG:27700')[0]
         self.assertGreater(abs(bad[0] - BNG_E), 1000.0)
