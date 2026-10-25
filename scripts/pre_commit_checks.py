@@ -5,6 +5,8 @@ Mechanical checks only:
 
 - On ``task/*`` worker branches, refuse staged edits to the system tracker
   (``tasks/index.json``, ``tasks/done.json``).
+- When staged paths are only those tracker files, skip provider-name audit and
+  the unit suite (archive commits on ``main``; #82).
 - Provider-name audit (#28): no new line-level hits outside allowed homes.
 - Wave lock helpers for the parallel-task-wave orchestrator (one open wave).
 
@@ -141,6 +143,21 @@ def forbidden_tracker_paths(branch_names: Iterable[str], paths: Iterable[str]) -
         return []
     hit = {p for p in paths if p in TRACKER_PATHS}
     return sorted(hit)
+
+
+def is_tracker_only_paths(paths: Iterable[str]) -> bool:
+    """Return True when staged paths are non-empty and only the system tracker.
+
+    Allowlist is exactly :data:`TRACKER_PATHS` (``tasks/index.json``,
+    ``tasks/done.json``). Empty staging or any other path is not tracker-only.
+
+    @param paths: staged file paths relative to the repo root
+    @returns: whether the commit is an archive-style tracker-only change
+    """
+    staged = list(paths)
+    if not staged:
+        return False
+    return all(p in TRACKER_PATHS for p in staged)
 
 
 def acquire_wave_lock(
@@ -300,9 +317,13 @@ def run_unit_tests(repo_root: Path) -> int:
 def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     """Run all pre-commit checks; print failures to stderr.
 
-    When ``AI_WORLDBUILDER_WORLD_ROOT`` is unset, skips world-dependent checks
-    (provider-name audit and unit suite) and prints :data:`UNSET_WORLD_MESSAGE`
-    as the final line (exit 1). Does not pin or default a world.
+    Tracker ownership always runs. Provider-name audit and the unit suite are
+    skipped when ``skip_tests`` is True, or when staged paths are tracker-only
+    (:func:`is_tracker_only_paths`) so archive commits on ``main`` need no
+    ``--skip-tests`` and no world. Otherwise, when
+    ``AI_WORLDBUILDER_WORLD_ROOT`` is unset, world-dependent checks are skipped
+    and :data:`UNSET_WORLD_MESSAGE` is printed as the final line (exit 1).
+    Does not pin or default a world.
 
     @param repo_root: repository root
     @param skip_tests: when True, skip provider audit and unit suite (ownership only)
@@ -319,7 +340,7 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
             file=sys.stderr,
         )
         return 1
-    if skip_tests:
+    if skip_tests or is_tracker_only_paths(paths):
         return 0
     # Provider audit imports script_env → active_world; unit tests need the
     # world too. Refuse early with a single last-line cause (no pin/default).
