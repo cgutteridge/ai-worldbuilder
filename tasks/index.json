@@ -1,17 +1,8 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 97,
+  "nextTaskId": 98,
   "tasks": [
-    {
-      "id": 95,
-      "title": "Bake-off world has no OSM vector_map; feature_build read another world's data",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "R-014 designer dry-run passed osm_root=../southampton-build/reference/vector_map because worlds/bakeoff lacks it, a cross-world read despite 'never touch southampton-build' (PROTOCOL.md). Decide: give bakeoff its own OSM clip, or make cross-world reference reads an explicit documented rule. Check whether earlier rounds (R-005..R-013) also read southampton-build data before comparing R-014 with them."
-    },
     {
       "id": 96,
       "title": "Move bake-off into its own folder, separate from the real project",
@@ -19,7 +10,16 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
-      "notes": "Goal: one distinct top-level folder in the main repo (e.g. bakeoff/) holding everything bake-off, so it cannot be mixed up with real world/tool work. Today it is scattered: model-bakeoffs/ (PROTOCOL, README, catalogue, config, packs, rounds, checks), scripts/model_bakeoff.py + test_model_bakeoff.py + feature_selection_check.py, skill .claude/skills/model-bakeoff, docs/model-bakeoffs.md, and the world checkout worlds/bakeoff (gitignored, own git repo). References to update: AGENTS.md, docs/active-world-contract.md, docs/audits/region-block-reads.md, rules/build-roles.md, scripts/run_tests.py, scripts/stale_terms_audit.py, tasks/done.json notes, the round JSONs (R-006..R-013), checks/feature-selection scenarios, and the 'refuse unless active world is bakeoff' guards in model_bakeoff.py. Open decisions: (1) does the bakeoff world checkout also move into the new folder or stay under worlds/ (active_world.py / AI_WORLDBUILDER_WORLD_ROOT expectations); (2) bake-off gets its own reference data (OSM vector_map clips etc.) so it never reads southampton-build; this absorbs #95; (3) shared code (feature_build, site_kit, world_frame) stays in scripts/ and is imported, not copied. Done when: nothing bake-off lives outside the folder except shared tool code, grep finds no stale paths, scripts/run_tests.py passes, `model_bakeoff.py status` works from the new location, and the R-014 record notes the move. Do not move mid-sitting: finish or park R-014 first. Ship via task/* branch."
+      "notes": "Goal: one distinct top-level folder in the main repo (e.g. bakeoff/) holding everything bake-off, so it cannot be mixed up with real world/tool work. Today it is scattered: model-bakeoffs/ (PROTOCOL, README, catalogue, config, packs, rounds, checks), scripts/model_bakeoff.py + test_model_bakeoff.py + feature_selection_check.py, skill .claude/skills/model-bakeoff, docs/model-bakeoffs.md, and the world checkout worlds/bakeoff (gitignored, own git repo). References to update: AGENTS.md, docs/active-world-contract.md, docs/audits/region-block-reads.md, rules/build-roles.md, scripts/run_tests.py, scripts/stale_terms_audit.py, tasks/done.json notes, the round JSONs (R-006..R-013), checks/feature-selection scenarios, and the 'refuse unless active world is bakeoff' guards in model_bakeoff.py. Open decisions: (1) does the bakeoff world checkout also move into the new folder or stay under worlds/ (active_world.py / AI_WORLDBUILDER_WORLD_ROOT expectations); (2) shared code (feature_build, site_kit, world_frame) stays in scripts/ and is imported, not copied. #95 symptom (bakeoff missing OSM clips / cross-world osm_root) fixed by on-disk copy 2026-10-25 \u2014 this ticket no longer absorbs that; OSM-as-normal-reference architecture is #97. Do not move mid-sitting: finish or park R-014 first. Ship via task/* branch."
+    },
+    {
+      "id": 97,
+      "title": "Treat OSM vector_map as a normal download/cache reference",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Architectural cause behind #95 (symptom fixed by copying clips into bakeoff). Desired end state: OSM / vector_map clips go through the same download \u2192 cache \u2192 project reference story as other evidence \u2014 not a bolted-on parallel loader. Once per project (shared across cells); rare or once-off use still hits the same cached reference. Today: imagery uses references_for_cell / manifest; OSM uses separate vector_map_clip_root / OSMIndex; Geofabrik (geofabrik-hampshire) is often checklist: false so cells do not pull clips the way they pull aerial. Desired: unify so OSM is downloaded/cached like other references; getter/guide paths treat it as a normal project-level reference under reference/vector_map (no cross-world osm_root=, no live symlink into another checkout as the primary story). Related: #95 closed as symptom copy; #96 is the bake-off folder move (do not start mid R-014) and is not the OSM unify. Do not reopen #93/#94. Implement on task/* when picked up \u2014 this ticket records the cause work, not a silent big unify in the #95 pass."
     }
   ]
 }

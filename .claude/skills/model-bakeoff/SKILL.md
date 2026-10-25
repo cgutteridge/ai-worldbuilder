@@ -24,6 +24,10 @@ AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py 
 
 `open` and `repair` refuse if the active world is not `bakeoff`.
 
+vector_map footprints come from `worlds/bakeoff/reference/vector_map/` (same
+default `OSMIndex` path as any world). Never pass `osm_root=` pointing at
+`southampton-build` or another world.
+
 ## Before acting
 
 1. Read `model-bakeoffs/PROTOCOL.md` and the pack brief + `packs/v1/FAIRNESS.md`.
