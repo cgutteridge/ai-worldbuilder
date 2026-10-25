@@ -146,6 +146,90 @@ class ShipBranchMergeTest(unittest.TestCase):
         self.assertNotIn('GIT_DIR', cleaned)
         self.assertNotIn('GIT_WORK_TREE', cleaned)
 
+    def test_busy_full_suite_lock_refuses_merge(self) -> None:
+        import run_tests
+
+        main_before = _git(self.root, 'rev-parse', 'HEAD')
+        with run_tests.full_suite_lock(self.root):
+            code = sb.merge_branch(
+                self.root, self.branch, run_tests=lambda _r: 0
+            )
+        self.assertEqual(code, 2)
+        self.assertEqual(_git(self.root, 'rev-parse', 'HEAD'), main_before)
+        self.assertIn(self.branch, self._branches())
+
+
+class TipTestPlanTest(unittest.TestCase):
+    """Map changed paths to --only modules; skip / full fallback (#83)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        scripts = self.root / 'scripts'
+        scripts.mkdir()
+        (scripts / 'test_foo.py').write_text(
+            'import unittest\n', encoding='utf-8'
+        )
+        (scripts / 'foo.py').write_text('x = 1\n', encoding='utf-8')
+        (scripts / 'bar.py').write_text('x = 2\n', encoding='utf-8')
+        # bar has no test_bar.py
+        shims = self.root / 'shims'
+        shims.mkdir()
+        (shims / 'foo.py').write_text('shim\n', encoding='utf-8')
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_map_test_module_and_impl_and_shim(self) -> None:
+        modules = sb.map_changed_paths_to_modules(
+            [
+                'scripts/test_foo.py',
+                'scripts/foo.py',
+                'shims/foo.py',
+                'scripts/bar.py',
+                'docs/plan.md',
+                'tasks/index.json',
+                'rules/process.md',
+                '.claude/skills/ship-branch/SKILL.md',
+                'providers/x/mod.py',
+            ],
+            self.root,
+        )
+        self.assertEqual(modules, ['test_foo'])
+
+    def test_plan_skip_docs_tracker_skill_only(self) -> None:
+        plan = sb.plan_tip_tests(
+            [
+                'docs/a.md',
+                'tasks/index.json',
+                '.claude/skills/x/SKILL.md',
+                'rules/process.md',
+            ],
+            self.root,
+        )
+        self.assertEqual(plan.kind, 'skip')
+        self.assertEqual(plan.modules, ())
+
+    def test_plan_only_when_mapping_nonempty(self) -> None:
+        plan = sb.plan_tip_tests(['scripts/foo.py'], self.root)
+        self.assertEqual(plan.kind, 'only')
+        self.assertEqual(plan.modules, ('test_foo',))
+
+    def test_plan_full_when_code_but_no_mapped_tests(self) -> None:
+        plan = sb.plan_tip_tests(['scripts/bar.py'], self.root)
+        self.assertEqual(plan.kind, 'full')
+
+    def test_plan_full_when_runner_or_hooks_touched(self) -> None:
+        for path in (
+            'scripts/run_tests.py',
+            'scripts/pre_commit_checks.py',
+            'scripts/ship_branch.py',
+            'scripts/install_git_hooks.py',
+            '.githooks/pre-commit',
+        ):
+            plan = sb.plan_tip_tests([path], self.root)
+            self.assertEqual(plan.kind, 'full', path)
+
 
 class ShipBranchSweepTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -265,7 +349,11 @@ class ShipBranchSweepTest(unittest.TestCase):
 
         # CLI path has no injected runner; stub run_unit_tests via attribute.
         original = sb.run_unit_tests
-        sb.run_unit_tests = lambda _r: 0  # type: ignore[assignment]
+
+        def _stub_tests(_repo: Path, **_kwargs: object) -> int:
+            return 0
+
+        sb.run_unit_tests = _stub_tests  # type: ignore[assignment]
         try:
             code = sb.main(
                 [
