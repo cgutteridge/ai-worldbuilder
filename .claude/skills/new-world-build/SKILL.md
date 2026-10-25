@@ -61,5 +61,5 @@ Done when checklist providers have `how` strings and `evaluate-data-source` woul
 
 ## Out of scope (stop)
 
-- Non-OSGB CRS beyond what `world_frame.transform_epsg` + gdal already do — ask the user; do not invent a new projection stack.
+- Non-OSGB CRS beyond what `world_frame.transform_epsg` (pyproj) already does — ask the user; do not invent a new projection stack.
 - Elevation backends other than the default national plugin — document the gap and `need-you`.

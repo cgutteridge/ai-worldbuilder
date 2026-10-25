@@ -84,7 +84,7 @@ _Avoid_: Type, source family keyed only by vendor
 
 **World frame**:
 How real geography maps into Minecraft: CRS, offsets, Y offset, bounds, anchor. Stored in the world’s `config/world-frame.json`; read via `scripts/world_frame.py`.
-_Avoid_: scattering OFFSET_E / SEA_LEVEL / gdal calls across scripts
+_Avoid_: scattering OFFSET_E / SEA_LEVEL / private CRS subprocesses across scripts
 
 **Anchor**:
 The real-world point mapped to Minecraft (0, 0) on the horizontal plane.
