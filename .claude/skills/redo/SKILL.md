@@ -42,9 +42,10 @@ Done when they are hovering and looking down at the target.
 
 1. **No feature** (`features` empty): tell the user there is no built feature at this column. Stop.
 2. **Ambiguous** (`primary` null, several `features`): tell them the names and to stand inside the one they want. Stop.
-3. Claim lock (`scripts/site_lock.py claim <owner> "redo <name>"`).
-4. **Hover** (above).
-5. **Evidence table first** (`rules/building-review.md` B57 / reflection step 1). Do **not** read the old build’s placed blocks or the old script’s material/geometry choices as reference. Keep only the re-run mechanism. Rewrite `scripts/<script>` from the table. Every row below must be filled in the script docstring before planning:
+3. Resolve build roles (`python3 scripts/build_roles.py show` or overrides). Name designer + builder in the session before applying.
+4. Claim lock (`scripts/site_lock.py claim <owner> "redo <name>"`) — builder role only when models differ (designer must not apply).
+5. **Hover** (above).
+6. **Evidence table first** (`rules/building-review.md` B57 / reflection step 1). Do **not** read the old build’s placed blocks or the old script’s material/geometry choices as reference. Keep only the re-run mechanism. Rewrite `scripts/<script>` (or `site/builds/<name>.json` for `feature_build`) from the table. Every row below must be filled in the script docstring before planning:
 
    | Fact | Source |
    | --- | --- |
@@ -57,9 +58,10 @@ Done when they are hovering and looking down at the target.
 
    Aerial sheet viewing: browser may refuse a new `file://` path — overwrite a sheet filename already opened under `instance/google-aerial/`, or serve that dir over `http://127.0.0.1` and open the http URL. Not seeing the sheet is not a reason to skip greeblies; stop and fix viewing.
 
-6. Dry run (shell + greeblies), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (and `--greeblies` if split). Readback 0.
-7. **Hover** again if the player moved during apply.
-8. Release lock. Cue `party-cheer`.
+   If designer ≠ builder: stop after the table + hand-off artefact; builder continues from the next step.
+7. Dry run (shell + greeblies), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (and `--greeblies` if split). Readback 0.
+8. **Hover** again if the player moved during apply.
+9. Release lock. Cue `party-cheer`.
 
 Done when readback is clean, the docstring has a greeblie list (or explicit none), greeblies are applied, they are hovering looking down, and the lock is released. Say what was rebuilt (name + script).
 
@@ -96,6 +98,21 @@ Claim lock `"redo ground <tx>,<tz>"`. **Hover** (above).
 4. **Hover** again if moved. Release lock. Cue `party-cheer`.
 
 Done when ground readback is clean. Trees/decor remain undone until an explicit `redo trees` / `redo decor`.
+
+## Build roles (every redo)
+
+Before designing or applying a feature / trees / decor redo, name designer and
+builder (defaults: `config/build-roles.json`; see `rules/build-roles.md`):
+
+```bash
+python3 scripts/build_roles.py show
+```
+
+Same model for both → one session (evidence table, then apply). Different
+models → designer session first (table + hand-off, no apply), then builder
+session (apply only). Feature hand-off is `site/builds/<name>.json` via
+`feature_build` when the build fits that path. Ghosts are not part of redo AI
+roles.
 
 ## Guards
 

@@ -44,9 +44,17 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 
 0. Take the JSON from `cell_registry.py next`. Kinds: `issue`, `layer` (ground|trees|decor), or `feature`.
 1. Raise the marker for the target cell if needed (`cell_marker.py --raise tx,tz` under SITE_OWNER) — `next` does not.
-2. Build: ONE blocking general-purpose Agent per task, foreground, one at a time. Prompt names the task JSON, points at `rules/`, and says: claim the lock with a unique owner, SITE_OWNER, readback 0 mismatches, patrol, clean apply lands the journal entry, release the lock, report in under 200 words.
-3. When the agent returns: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
-4. Report to the user in a few lines. Then stop at the stop point.
+2. **Build roles** (features, trees, decor — not ghosts): resolve designer + builder before spawning anyone:
+
+   ```bash
+   python3 scripts/build_roles.py show
+   # overrides: resolve --designer … --builder … --tool …
+   ```
+
+   Paste `scripts/build_roles.py resolve …` output (or `format_roles_block` text from `rules/build-roles.md`) into every agent prompt so both models are named. Same designer and builder → **one** blocking agent that still does evidence table then apply. Different models → **two** blocking agents in order: (1) designer only — evidence table + hand-off artefact, no apply; (2) builder only — claim lock, apply from the hand-off, readback, release. Hand-off: non-house feature → `site/builds/<name>.json` (`feature_build`); trees/decor → evidence table then layer script. Ground ghost apply stays mechanical (`lidar_ghost`) — no designer/builder.
+3. Build: blocking general-purpose Agent(s) per the roles above, foreground, one at a time. Prompt names the task JSON, points at `rules/` (+ `rules/build-roles.md` for feature/trees/decor), and says: claim the lock with a unique owner (builder only), SITE_OWNER, readback 0 mismatches, patrol, clean apply lands the journal entry, release the lock, report in under 200 words.
+4. When the agent(s) return: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
+5. Report to the user in a few lines. Then stop at the stop point.
 
 Snags go to ISSUES via `cell_registry.py add-issue` (reopens the target). Clean rebuilds auto-close matching issues.
 

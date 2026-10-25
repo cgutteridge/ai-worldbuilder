@@ -59,6 +59,11 @@ Street View / aerial). Do not copy a peer spec or a per-run build script. Do
 not extend `house_build` for odd shapes. Prefer `zones` over a custom
 `site_kit` script when one way has several roof plateaus.
 
+Designer / builder models: name both before writing the spec
+(`rules/build-roles.md`, `python3 scripts/build_roles.py show`). The JSON spec
+is the hand-off when designer and builder differ; the builder applies with
+`feature_build.py` and does not redesign massing from scratch.
+
 Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
 `w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`). For
 multi-plateau SUSU, add a `zones` entry as above and confirm 0 guard

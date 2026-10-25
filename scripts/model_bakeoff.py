@@ -163,13 +163,16 @@ def sitting_checklist(
 def is_hybrid_round(round_: dict) -> bool:
     """True when the round names a designer distinct from the builder.
 
+    Same designer and builder id is a single-model sitting that still records
+    both roles for clarity (see ``build_roles``); that is not hybrid.
+
     @param round_: round record
     @returns: whether this is a hybrid designer/builder sitting
     """
-    if round_.get('round_type') == 'hybrid':
-        return True
     designer = round_.get('designer')
-    return isinstance(designer, dict) and bool(designer.get('id'))
+    designer_id = designer.get('id') if isinstance(designer, dict) else None
+    builder_id = (round_.get('model') or {}).get('id')
+    return bool(designer_id and builder_id and designer_id != builder_id)
 
 
 def model_ref(row: dict) -> dict:
@@ -898,11 +901,13 @@ def open_round(
 ) -> dict:
     """Create a self-contained round record for one sitting.
 
-    ``model`` is always the **builder** (apply owner). Pass ``designer`` to open
-    a hybrid sitting: designer writes the evidence table / build spec; builder
-    applies. Hybrid rounds are excluded from the single-model ladder. Designer
-    and builder must have distinct transcript model prefixes (catalogue effort
-    suffixes stripped) so usage auto-split can tell them apart.
+    ``model`` is always the **builder** (apply owner). Pass ``designer`` to name
+    the design model. When designer differs from builder, this is a **hybrid**
+    sitting (designer writes the evidence table / build spec; builder applies;
+    excluded from the single-model ladder). When designer equals builder, both
+    roles are recorded but the sitting is single-model (one session). Hybrid
+    designer/builder pairs must have distinct transcript model prefixes
+    (catalogue effort suffixes stripped) so usage auto-split can tell them apart.
 
     @param root: bake-offs root
     @param tool: tool id
@@ -915,7 +920,7 @@ def open_round(
     @param force_mid: allow mid cold open before low unlocks (escape hatch)
     @param plan_pct: optional weekly plan % at sitting start (all models)
     @param build_scripts: optional source paths remembered for score-time copy
-    @param designer: optional designer model id (hybrid round)
+    @param designer: optional designer model id (defaults via CLI ``build_roles``)
     @param handoff: optional designer artefact path (spec/script) recorded now
     @returns: new round dict (also written to disk)
     """
@@ -931,9 +936,8 @@ def open_round(
         )
 
     designer_row = None
+    split_sessions = False
     if designer is not None:
-        if designer == model:
-            raise ValueError('designer must differ from builder (--model)')
         _tool_d, designer_row = find_model(catalogue, tool, designer)
         validate_catalogue_model(designer_row, role='designer')
         if designer_row.get('tier') not in cfg['active_tiers']:
@@ -941,16 +945,18 @@ def open_round(
                 f"designer model tier {designer_row.get('tier')!r} not in "
                 f"active_tiers {cfg['active_tiers']}"
             )
-        designer_prefix = transcript_model_prefix(designer_row['id'])
-        builder_prefix = transcript_model_prefix(model_row['id'])
-        if designer_prefix == builder_prefix:
-            raise ValueError(
-                'hybrid designer/builder share the same transcript model '
-                f'prefix {designer_prefix!r} after stripping effort suffixes '
-                f'({designer_row["id"]!r} / {model_row["id"]!r}); pick models '
-                'from different families so usage auto-split can tell them apart, '
-                'or record usage with --role'
-            )
+        split_sessions = designer_row['id'] != model_row['id']
+        if split_sessions:
+            designer_prefix = transcript_model_prefix(designer_row['id'])
+            builder_prefix = transcript_model_prefix(model_row['id'])
+            if designer_prefix == builder_prefix:
+                raise ValueError(
+                    'hybrid designer/builder share the same transcript model '
+                    f'prefix {designer_prefix!r} after stripping effort suffixes '
+                    f'({designer_row["id"]!r} / {model_row["id"]!r}); pick models '
+                    'from different families so usage auto-split can tell them '
+                    'apart, or record usage with --role'
+                )
 
     # Mid unlock applies to the builder (apply owner), not the designer.
     if model_row.get('tier') == 'mid' and kind == 'cold' and not force_mid:
@@ -966,7 +972,7 @@ def open_round(
     plan_pct = _validate_plan_pct(plan_pct, label='plan_pct_start')
     if plan_pct is not None:
         usage['plan_pct_start'] = plan_pct
-    round_type = 'hybrid' if designer_row else 'single'
+    round_type = 'hybrid' if split_sessions else 'single'
     if round_type == 'hybrid':
         usage['by_role'] = {
             'designer': usage_role_template(),
@@ -1009,7 +1015,7 @@ def open_round(
                 model=model_row['id'],
                 pack=pack,
                 round_id=round_id,
-                designer=designer_row['id'] if designer_row else None,
+                designer=designer_row['id'] if split_sessions else None,
             ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
@@ -1017,15 +1023,18 @@ def open_round(
     }
     if designer_row is not None:
         round_['designer'] = model_ref(designer_row)
-        round_['handoff'] = handoff_template()
+        if split_sessions:
+            round_['handoff'] = handoff_template()
     if round_['force_mid'] is None:
         del round_['force_mid']
     stored = [str(p) for p in _normalise_build_script_paths(build_scripts)]
     if stored:
         round_['build_scripts'] = stored
     if handoff is not None:
-        if designer_row is None:
-            raise ValueError('--handoff requires --designer (hybrid round)')
+        if not split_sessions:
+            raise ValueError(
+                '--handoff requires a hybrid round (designer distinct from builder)'
+            )
         set_handoff(round_, handoff)
     save_round(root, round_)
     return round_
@@ -2489,8 +2498,8 @@ def format_sitting(round_: dict) -> str:
         f"status: {round_['status']}",
         f"round_type: {round_.get('round_type') or 'single'}",
     ]
+    designer = round_.get('designer') or {}
     if is_hybrid_round(round_):
-        designer = round_.get('designer') or {}
         lines.append(
             f"builder (apply owner): {round_['tool']['id']} / "
             f"{round_['model']['label']} ({round_['model']['id']})"
@@ -2505,6 +2514,15 @@ def format_sitting(round_: dict) -> str:
         )
         kind_bit = f" kind={handoff.get('kind')}" if handoff.get('kind') else ''
         lines.append(f"handoff: {handoff_path}{kind_bit}")
+    elif designer.get('id'):
+        lines.append(
+            f"builder (apply owner): {round_['tool']['id']} / "
+            f"{round_['model']['label']} ({round_['model']['id']})"
+        )
+        lines.append(
+            f"designer: {designer.get('label') or designer.get('id')} "
+            f"({designer.get('id')}) — same model, one session"
+        )
     else:
         lines.append(
             f"tool/model: {round_['tool']['id']} / {round_['model']['label']} "
@@ -2639,7 +2657,12 @@ def main(argv: list[str] | None = None) -> int:
     p_open.add_argument(
         '--designer',
         default=None,
-        help='designer model id for a hybrid round (builder is --model / apply owner)',
+        help=(
+            'designer model id (builder is --model / apply owner). '
+            'When omitted, uses config/build-roles.json for the same tool, '
+            'or equals --model when the tool differs. Same id as --model = '
+            'one session; different ids = hybrid'
+        ),
     )
     p_open.add_argument(
         '--handoff',
@@ -2798,15 +2821,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.cmd == 'open':
             require_bakeoff_active_world(root)
+            from build_roles import resolve_roles
+
+            roles = resolve_roles(
+                designer=args.designer,
+                builder=args.model,
+                tool=args.tool,
+            )
             round_ = open_round(
                 root,
                 tool=args.tool,
-                model=args.model,
+                model=roles.builder,
                 task=args.task,
                 force_mid=bool(args.force_mid),
                 plan_pct=args.plan_pct,
                 build_scripts=args.build_scripts or None,
-                designer=args.designer,
+                designer=roles.designer,
                 handoff=args.handoff,
             )
             print(format_sitting(round_))

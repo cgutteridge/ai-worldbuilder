@@ -19,6 +19,20 @@ CLI: `python3 scripts/model_bakeoff.py` — see [README.md](README.md).
 
 
 
+### Designer / builder roles (shared with place refine)
+
+Every sitting names a **designer** and a **builder** model. Defaults:
+[`config/build-roles.json`](../config/build-roles.json) via
+`scripts/build_roles.py` (same file place refine uses). Place rules:
+[`rules/build-roles.md`](../rules/build-roles.md). Ghosts stay non-AI.
+
+- ``--model`` is always the **builder** (sole apply owner).
+- ``--designer`` omitted → config designer when ``--tool`` matches the config
+  tool; otherwise designer equals builder (both roles still recorded).
+- Designer id ≠ builder id → **hybrid** sitting (two sessions, hand-off,
+  usage `by_role`). Designer id = builder id → one session that still names
+  both roles.
+
 ### Hybrid designer / builder sittings
 
 Hypothesis (R-013 cost discussion): a dear model writes the evidence table + build
@@ -39,10 +53,9 @@ AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py 
 
 Rules:
 
-- ``--model`` is always the **builder** (sole apply owner). ``--designer`` writes
-  the hand-off only.
 - Record the hand-off artefact path (``--handoff`` on ``open`` or ``score``): a
-  build script today; later a ``feature_build`` spec once that path exists.
+  build script today; prefer a ``feature_build`` JSON spec when the build fits
+  that path.
 - Usage: prefer one transcript sum with no ``--role`` / ``--model-prefix`` — the
   CLI splits ``usage.by_role.designer`` and ``usage.by_role.builder`` by model id
   and sets top-level totals to the sum. Plan % stays on the shared top-level
