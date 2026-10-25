@@ -819,6 +819,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "R-014 designer dry-run passed osm_root=../southampton-build/reference/vector_map because worlds/bakeoff lacks it, a cross-world read despite 'never touch southampton-build' (PROTOCOL.md). Decide: give bakeoff its own OSM clip, or make cross-world reference reads an explicit documented rule. Check whether earlier rounds (R-005..R-013) also read southampton-build data before comparing R-014 with them. Fixed 2026-10-25 (symptom): copied real GeoJSON clips into worlds/bakeoff/reference/vector_map/ (from the populated tree behind southampton-build\u2019s vector_map\u2192osm symlink into Southampton Refine \u2014 not a live cross-world link). Default OSMIndex / feature_build with AI_WORLDBUILDER_WORLD_ROOT=worlds/bakeoff loads that tree without osm_root=. PROTOCOL.md + model-bakeoff skill updated: do not point osm_root at another world. Structural cause (OSM as normal download/cache/reference like other evidence) \u2192 new ticket #97; #96 folder move no longer needs to absorb this symptom."
+    },
+    {
+      "id": 97,
+      "title": "Treat OSM vector_map as a normal download/cache reference",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Architectural cause behind #95 (symptom fixed by copying clips into bakeoff). Desired end state: OSM / vector_map clips go through the same download \u2192 cache \u2192 project reference story as other evidence \u2014 not a bolted-on parallel loader. Once per project (shared across cells); rare or once-off use still hits the same cached reference. Today: imagery uses references_for_cell / manifest; OSM uses separate vector_map_clip_root / OSMIndex; Geofabrik (geofabrik-hampshire) is often checklist: false so cells do not pull clips the way they pull aerial. Desired: unify so OSM is downloaded/cached like other references; getter/guide paths treat it as a normal project-level reference under reference/vector_map (no cross-world osm_root=, no live symlink into another checkout as the primary story). Related: #95 closed as symptom copy; #96 is the bake-off folder move (do not start mid R-014) and is not the OSM unify. Do not reopen #93/#94. Implement on task/* when picked up \u2014 this ticket records the cause work, not a silent big unify in the #95 pass. Archived 2026-10-25 after merge 695ee96 (task/97-osm-vector-map-reference \u2192 main tip 7a93c9f). Ship-branch: tip tests green; reviewer CHANGES with nits only (unused helpers/docstring PBF name/MISSING-branch order) \u2014 no blockers; nits left as possible follow-up. Landed: vector_map_clips download\u2192cache\u2192reference contract; cell_sources guide/status; osm_root= production path = this world's reference/vector_map; docs/skills updated."
     }
   ]
 }

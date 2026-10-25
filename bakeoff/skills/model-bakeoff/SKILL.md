@@ -25,8 +25,11 @@ AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py 
 `open` and `repair` refuse if the active world is not `bakeoff`.
 
 vector_map footprints come from `worlds/bakeoff/reference/vector_map/` (same
-default `OSMIndex` path as any world). Never pass `osm_root=` pointing at
-`southampton-build` or another world.
+download → cache → project reference story as any world; see
+`scripts/vector_map_clips.py`). Never pass `osm_root=` pointing at
+`southampton-build` or another world. If clips are missing, copy a populated
+`reference/vector_map/` into bakeoff (real files) — recovery only, not a live
+symlink or cross-world read.
 
 ## Before acting
 

@@ -34,6 +34,6 @@ After each batch: run tests, then `check_provider_names.py --update-baseline` so
 | --- | --- |
 | Composite lidar world | `lidar_provider.composite_world()` |
 | Lidar tile client / helpers | `lidar_provider.tile_client()`, `.mc_box_en`, `.mc_heights` |
-| Vector-map clip tree | `vector_map_clips.vector_map_clip_root()` (prefers `reference/vector_map`) |
+| Vector-map download / cache / clip tree | `vector_map_clips` (`downloads_dir`, `reference_dir`, `vector_map_clip_root`, `project_status`) — type-named `reference/vector_map`, once per world |
 
 Catalogue rows that fill type `lidar` set `modules.world` / `modules.tiles` (paths under the provider package). Vendor filenames stay inside `providers/` and catalogues. Optional shims: `shims/lidar_world.py`, `shims/lidar_tiles.py`.

@@ -15,6 +15,13 @@ THE FIVE TYPES
 vector_map
   Footprints, roads, landuse, OSM tags, plan geometry.
   Tendency: authoritative for plan; weak for materials and storeys.
+  Layout (same download → cache → project reference story as other evidence):
+  regional source once under ``downloads/`` (e.g. Geofabrik ``.osm.pbf``), then
+  place clips under ``reference/vector_map/<place>/`` — once per world, shared
+  across cells. Glue: ``scripts/vector_map_clips.py`` (clip root + status).
+  Readers: ``OSMIndex`` / ``feature_build``. Do not use cross-world ``osm_root=``
+  or a live symlink into another checkout as the primary path; recovery is copy
+  into this world's ``reference/vector_map/``.
 
 poi_register
   Named entrances, protected trees, campus building ids, outline registers.
