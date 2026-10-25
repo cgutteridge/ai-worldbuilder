@@ -574,6 +574,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Grill 2026-10-23/24: remove volumetric feature ghosts (unreliable strip). Keep ground ghosts on same frontier/ensure. Tops per column: light_gray_concrete (DSM\u2212DTM\u22480), gray_concrete (1\u20132), black_concrete (>2); stone fill; same height math. Journal ground none|ghost|generated only (no ghost+features / ghost-features pass for new work). Delete strip/leftover feature-ghost paths. Docs ADR003/v2/glossary. Bake-off reset/protocol ground-only; no Southampton strip; lazy ensure repaints tops. Done 2026-10-24: ground-only ghosts; coloured tops; strip/leftovers removed; docs/bake-off updated."
+    },
+    {
+      "id": 69,
+      "title": "Footprint guard lets 4-high canopies through outside footprints",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Found in bake-off R-008: osm_footprints.guard() exempts anything <= BACK_RISE=4 outside the front zone (meant for garden sheds), so parasol canopies (red_concrete, 4 above ground) on open mapped ground between SUSU and the Retail Centre passed; no footprint-hits file was written and plan.outside_footprint_ok was never consulted. Fix options: treat roof-like blocks (concrete, slabs) as building-like at any height outside footprints, or add an explicit furniture category so open-ground furniture is allowed on purpose. Add a unit test. See model-bakeoffs/rounds/R-008.json why-block. Merged as 5bda1d3 (f63782f). Reviewer nits only (ROOF_LIKE narrow list; _bid sync note; frontage doc)."
     }
   ]
 }

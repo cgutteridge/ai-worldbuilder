@@ -4,15 +4,6 @@
   "nextTaskId": 78,
   "tasks": [
     {
-      "id": 69,
-      "title": "Footprint guard lets 4-high canopies through outside footprints",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Found in bake-off R-008: osm_footprints.guard() exempts anything <= BACK_RISE=4 outside the front zone (meant for garden sheds), so parasol canopies (red_concrete, 4 above ground) on open mapped ground between SUSU and the Retail Centre passed; no footprint-hits file was written and plan.outside_footprint_ok was never consulted. Fix options: treat roof-like blocks (concrete, slabs) as building-like at any height outside footprints, or add an explicit furniture category so open-ground furniture is allowed on purpose. Add a unit test. See model-bakeoffs/rounds/R-008.json why-block."
-    },
-    {
       "id": 70,
       "title": "Fail fast on the wrong Python interpreter",
       "status": "todo",
