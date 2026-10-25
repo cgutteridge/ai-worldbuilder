@@ -57,6 +57,62 @@ class TrackerOwnershipTest(unittest.TestCase):
         self.assertEqual(forbidden, ['tasks/index.json'])
 
 
+class CheckoutBranchNamesTest(unittest.TestCase):
+    """``checkout_branch_names`` must not treat sibling task/* tips as the checkout."""
+
+    def test_attached_main_ignores_task_tips_at_same_commit(self) -> None:
+        """Attached main with task/* at HEAD: current branch alone (tracker allowed)."""
+        root = Path('/tmp/repo')
+        with mock.patch.object(pcc, 'current_branch', return_value='main'):
+            with mock.patch.object(
+                pcc,
+                '_git',
+                return_value='main\ntask/70-foo\ntask/71-bar',
+            ) as git_mock:
+                names = pcc.checkout_branch_names(root)
+        self.assertEqual(names, ['main'])
+        git_mock.assert_not_called()
+        self.assertEqual(
+            pcc.forbidden_tracker_paths(names, ['tasks/index.json']),
+            [],
+        )
+
+    def test_detached_head_includes_task_tips_at_head(self) -> None:
+        """Detached HEAD still gathers points-at tips so task/* cannot bypass."""
+        root = Path('/tmp/repo')
+
+        def fake_git(_repo: Path, *args: str) -> str:
+            if args[:2] == ('branch', '--points-at'):
+                return 'task/70-foo\ntask/71-bar'
+            raise AssertionError(f'unexpected git args: {args!r}')
+
+        with mock.patch.object(pcc, 'current_branch', return_value=''):
+            with mock.patch.object(pcc, '_git', side_effect=fake_git):
+                names = pcc.checkout_branch_names(root)
+        self.assertEqual(names, ['task/70-foo', 'task/71-bar'])
+        self.assertEqual(
+            pcc.forbidden_tracker_paths(names, ['tasks/index.json']),
+            ['tasks/index.json'],
+        )
+
+    def test_attached_task_branch_uses_current_alone(self) -> None:
+        """Attached task/* checkout is still a worker branch (tracker blocked)."""
+        root = Path('/tmp/repo')
+        with mock.patch.object(
+            pcc,
+            'current_branch',
+            return_value='task/79-tracker-hook-points-at-head',
+        ):
+            with mock.patch.object(pcc, '_git') as git_mock:
+                names = pcc.checkout_branch_names(root)
+        self.assertEqual(names, ['task/79-tracker-hook-points-at-head'])
+        git_mock.assert_not_called()
+        self.assertEqual(
+            pcc.forbidden_tracker_paths(names, ['tasks/index.json']),
+            ['tasks/index.json'],
+        )
+
+
 class WaveLockTest(unittest.TestCase):
     def test_acquire_creates_lock_when_absent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

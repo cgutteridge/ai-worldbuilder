@@ -232,18 +232,21 @@ def current_branch(repo_root: Path) -> str:
 
 
 def checkout_branch_names(repo_root: Path) -> list[str]:
-    """Branch names that apply to this checkout (current + tips at HEAD).
+    """Branch names that apply to this checkout for tracker ownership.
 
-    Detached HEAD still returns local branches that point at HEAD, so a
-    ``task/…`` worktree cannot bypass the tracker rule by detaching.
+    Attached HEAD uses the current branch alone. Points-at-HEAD tips are
+    included only when HEAD is detached, so a ``task/…`` worktree cannot
+    bypass the tracker rule by detaching, while ``main`` (or any non-worker
+    branch) is not blocked merely because fresh ``task/…`` branches share
+    the same commit tip.
 
     @param repo_root: repository root
     @returns: unique branch names, current first when set
     """
-    names: list[str] = []
     current = current_branch(repo_root)
     if current:
-        names.append(current)
+        return [current]
+    names: list[str] = []
     try:
         pointed = _git(
             repo_root,
