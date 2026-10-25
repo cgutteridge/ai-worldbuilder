@@ -304,6 +304,19 @@ class PlannedWorld:
             return self.cells[pos]
         return 'minecraft:air' if pos in self.ignore else self.world.block(x, y, z)
 
+    def prefetch(self, positions) -> None:
+        """Warm the underlying world for positions not served from the plan overlay.
+
+        Positions in ``self.cells`` (or ``ignore``) are answered locally and must not
+        trigger live MCP scans.
+
+        @param positions: iterable of ``(x, y, z)``
+        """
+        warm = getattr(self.world, 'prefetch', None)
+        if warm is None:
+            return
+        warm(p for p in positions if p not in self.cells and p not in self.ignore)
+
 
 def resolve_region(region=None) -> Path:
     """Region folder for World readback: explicit arg, else active world config.
