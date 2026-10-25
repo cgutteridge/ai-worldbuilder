@@ -243,6 +243,7 @@ def is_ignored_for_test_mapping(rel_path: str) -> bool:
         'rules/',
         'skills/',
         '.claude/skills/',
+        'bakeoff/skills/',
         'providers/',
         'worlds/',
     ):
@@ -262,7 +263,7 @@ def is_tip_test_skip_path(rel_path: str) -> bool:
     if is_docs_only_path(rel_path):
         return True
     normalised = _norm_rel(rel_path)
-    for prefix in ('skills/', '.claude/skills/', 'rules/'):
+    for prefix in ('skills/', '.claude/skills/', 'bakeoff/skills/', 'rules/'):
         if normalised == prefix.rstrip('/') or normalised.startswith(prefix):
             return True
     return False
@@ -274,16 +275,25 @@ def map_changed_paths_to_modules(
 ) -> list[str]:
     """Map ``main...branch`` paths to ``run_tests --only`` module stems.
 
-    Rules: ``scripts/test_foo.py`` → ``test_foo``; ``scripts/foo.py`` or
-    ``shims/foo.py`` → ``test_foo`` only when ``scripts/test_foo.py`` exists.
+    Rules: ``scripts/test_foo.py`` or ``bakeoff/test_foo.py`` → ``test_foo``;
+    ``scripts/foo.py``, ``bakeoff/foo.py``, or ``shims/foo.py`` → ``test_foo``
+    only when the matching test module exists under ``scripts/`` or ``bakeoff/``.
     Docs/skills/tasks/rules/providers/worlds are ignored.
 
     @param paths: changed paths relative to the repo root
-    @param repo_root: checkout used to probe for ``scripts/test_*.py``
+    @param repo_root: checkout used to probe for ``scripts/test_*.py`` /
+        ``bakeoff/test_*.py``
     @returns: sorted unique module stems
     """
     scripts = repo_root / 'scripts'
+    bakeoff = repo_root / 'bakeoff'
     found: set[str] = set()
+
+    def _has_test(stem: str) -> bool:
+        return (scripts / f'{stem}.py').is_file() or (
+            bakeoff / f'{stem}.py'
+        ).is_file()
+
     for raw in paths:
         normalised = _norm_rel(raw)
         if is_ignored_for_test_mapping(normalised):
@@ -295,13 +305,23 @@ def map_changed_paths_to_modules(
                 found.add(stem)
                 continue
             candidate = f'test_{stem}'
-            if (scripts / f'{candidate}.py').is_file():
+            if _has_test(candidate):
+                found.add(candidate)
+            continue
+        if normalised.startswith('bakeoff/') and normalised.endswith('.py'):
+            name = Path(normalised).name
+            stem = Path(name).stem
+            if stem.startswith('test_'):
+                found.add(stem)
+                continue
+            candidate = f'test_{stem}'
+            if _has_test(candidate):
                 found.add(candidate)
             continue
         if normalised.startswith('shims/') and normalised.endswith('.py'):
             stem = Path(normalised).stem
             candidate = f'test_{stem}'
-            if (scripts / f'{candidate}.py').is_file():
+            if _has_test(candidate):
                 found.add(candidate)
     return sorted(found)
 

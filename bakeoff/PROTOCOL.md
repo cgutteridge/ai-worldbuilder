@@ -15,7 +15,7 @@ Find the cheapest **bulk-work** model that is good enough for high-judgement pla
 - Records are **self-contained** (`rounds/R-NNN.json`) so a round never depends on chat history.
 - **One apply owner** per sitting. Parent recovery must interrupt the model subagent before re-apply.
 
-CLI: `python3 scripts/model_bakeoff.py` — see [README.md](README.md).
+CLI: `python3 bakeoff/model_bakeoff.py` — see [README.md](README.md).
 
 
 
@@ -41,13 +41,13 @@ pile up. Measure with the same usage units as single-model rounds (transcript su
 + weekly plan % delta).
 
 ```bash
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py open \
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py open \
   --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low \
   --plan-pct 50
 # after the designer writes the artefact:
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py score R-NNN \
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py score R-NNN \
   ... --handoff worlds/bakeoff/site/builds/rNNN_susu.py --plan-pct 52
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-NNN \
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py usage R-NNN \
   --from-transcript ~/.claude/projects/.../<session>.jsonl
 ```
 
@@ -70,7 +70,7 @@ Rules:
 Bake-offs run in their own world checkout, `worlds/bakeoff/` (Minecraft save `bakeoff`, own cell registry). Agent shells do not keep exports between calls, so **prefix every** bake-off command with `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff` (not a one-off `export`). Never run a sitting against `southampton-build`. The CLI `open` and `repair` commands refuse unless the active world is `bakeoff`.
 
 ```bash
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py open --tool cursor --model composer
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py open --tool cursor --model composer
 ```
 
 Canonical sitting steps are the `sitting_steps` list in [config.json](config.json). `open` / `show` copy that list onto each new round’s checklist and sitting card (with `{tool}` / `{model}` / `{pack}` / `{cell}` filled in). Do not duplicate the sequence in other docs — edit `config.json` once. Existing rounds R-004..R-006 keep their historical checklists.
@@ -123,12 +123,12 @@ Each round has a `usage` block. **Cross-model cost comparison** uses the same tw
 
 ```bash
 # at open / score — weekly plan % (same meter for every model)
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py score R-014 ... --plan-pct 47 --wallclock-min 35 --interruptions "host reboot ~6 min"
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py score R-014 ... --plan-pct 47 --wallclock-min 35 --interruptions "host reboot ~6 min"
 
 # after the sitting — sum the session transcript (subagent jsonl paths work the same;
 # a parent session.jsonl also includes session/subagents/*.jsonl when present)
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-014 \
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py usage R-014 \
   --from-transcript ~/.claude/projects/.../<session>.jsonl --model-prefix claude-opus-5-5
 ```
 
@@ -139,7 +139,7 @@ Optional on the usage block: `wallclock_min`, `interruptions`. `status` prints `
 Cursor UI paste remains fine when that is all you have:
 
 ```bash
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-002 --input 12000 --output 3000 --source cursor-ui
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py usage R-002 --input 12000 --output 3000 --source cursor-ui
 ```
 
 Leave nulls rather than inventing counts. `source` is one of: `cursor-ui`, `api`, `agent-report`, `estimate`, `unknown`.

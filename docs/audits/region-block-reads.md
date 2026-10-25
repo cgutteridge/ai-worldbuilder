@@ -56,7 +56,7 @@ T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae
 | region_backup.py:340-367 (`shutil.move` of `site/*`) | move | ghost restore resets ownership files | place memory | **T40** |
 | region_backup.py:379-440 `restore` (`shutil.copy2` into region, checksum, `copytree`/`rmtree` registry) | **write/overwrite** | restore .mca | snapshot -> live or bakeoff | **T40** |
 | scripts/registry_repair.py:221-245 (`RB._copy_regions`) + 232-235 gate | copy | pre-repair backup | live -> snapshot | **T40** |
-| scripts/model_bakeoff.py:849-877 (`rb.restore(region_dir=...)`), 467 | write (via region_backup) | bakeoff ghost restore | snapshot -> bakeoff | **T40** |
+| bakeoff/model_bakeoff.py:849-877 (`rb.restore(region_dir=...)`), 467 | write (via region_backup) | bakeoff ghost restore | snapshot -> bakeoff | **T40** |
 | scripts/decor_layer.py:233, ground_layer.py:636, mask_undo.py:123 | subprocess `region_backup.py snap` | pre-apply snap | live -> snapshot | **T40** |
 | scripts/geo.py:315 | message text naming `region_backup.py snap` | hint | n/a | **T40** (text) |
 | scripts/site_stages.py:25, 60-66 (`SNAPSHOTS.glob`) | list dirs | find newest snapshot dir for a stage | snapshot | **T40** |

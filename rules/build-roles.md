@@ -35,4 +35,4 @@ Hand-off artefacts:
 
 Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
 hybrid scoring and ghost baseline stay bake-off-only
-([model-bakeoffs/PROTOCOL.md](../model-bakeoffs/PROTOCOL.md)).
+([bakeoff/PROTOCOL.md](../bakeoff/PROTOCOL.md)).

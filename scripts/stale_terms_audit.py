@@ -31,7 +31,7 @@ SCAN_DIRS: tuple[str, ...] = (
     'rules',
     '.claude/skills',
     'templates',
-    'model-bakeoffs',
+    'bakeoff',
 )
 
 ROOT_FILES: tuple[str, ...] = (
@@ -104,7 +104,7 @@ def _iter_scan_files(root: Path) -> list[Path]:
             if not p.is_file():
                 continue
             # Bake-off round JSON may quote historical checklist lines; skip.
-            if dirname == 'model-bakeoffs' and p.parent.name == 'rounds':
+            if dirname == 'bakeoff' and p.parent.name == 'rounds':
                 continue
             if p.suffix.lower() not in TEXT_SUFFIXES and p.name != 'SKILL.md':
                 if p.suffix.lower() not in {'.md', '.txt'}:

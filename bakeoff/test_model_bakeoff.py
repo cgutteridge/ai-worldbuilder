@@ -43,7 +43,7 @@ SEED_SITTING_STEPS = [
     'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
     (
         'Reset the 3×3 ghost baseline: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py baseline {{id}}` '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py baseline {{id}}` '
         '(undoes prior feature builds, lidar_ghost apply --force, reconcile)'
     ),
     'Claim site lock; build with that tool/model only',
@@ -53,7 +53,7 @@ SEED_SITTING_STEPS = [
     'Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)',
     (
         'Apply, then capture fixed cameras: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py capture {{id}}`; '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py capture {{id}}`; '
         'release lock'
     ),
     'Interview + score; then usage paste (need-you if counts unknown)',
@@ -63,13 +63,13 @@ SEED_SITTING_STEPS_HYBRID = [
     'One apply owner: builder ({model}); designer ({designer}) writes hand-off only',
     (
         'Reset baseline: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py baseline {{id}}`'
+        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py baseline {{id}}`'
     ),
     'Designer ({designer}): write evidence + hand-off; do not apply',
     'Builder ({model}): apply from hand-off only',
     (
         'Capture: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py capture {{id}}`'
+        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py capture {{id}}`'
     ),
     'Interview + score; usage transcript splits designer/builder',
 ]
@@ -589,11 +589,11 @@ class TestModelBakeoff(unittest.TestCase):
             arts = scored['artefacts']
             self.assertEqual(
                 arts['build_scripts'],
-                ['model-bakeoffs/rounds/R-001/r001_susu.py'],
+                ['bakeoff/rounds/R-001/r001_susu.py'],
             )
             self.assertEqual(
                 arts['cameras'],
-                'model-bakeoffs/rounds/R-001/cameras.json',
+                'bakeoff/rounds/R-001/cameras.json',
             )
             disk = MB.load_round(root, 'R-001')
             self.assertEqual(disk['artefacts'], arts)
@@ -649,8 +649,8 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertEqual(
                 scored['artefacts']['build_scripts'],
                 [
-                    'model-bakeoffs/rounds/R-001/r001_susu.py',
-                    'model-bakeoffs/rounds/R-001/r001_susu.json',
+                    'bakeoff/rounds/R-001/r001_susu.py',
+                    'bakeoff/rounds/R-001/r001_susu.json',
                 ],
             )
 
@@ -728,7 +728,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
         skill = (TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md').read_text(
             encoding='utf-8',
         )
-        protocol = (TOOL_ROOT / 'model-bakeoffs' / 'PROTOCOL.md').read_text(encoding='utf-8')
+        protocol = (TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md').read_text(encoding='utf-8')
         for text, name in ((skill, 'SKILL.md'), (protocol, 'PROTOCOL.md')):
             self.assertIn(BAKEOFF_WORLD_PREFIX, text, msg=name)
             self.assertRegex(
@@ -746,9 +746,9 @@ class TestBakeoffWorldGuard(unittest.TestCase):
         """Operator docs must point at config.json sitting_steps, not duplicate them."""
         paths = [
             TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md',
-            TOOL_ROOT / 'model-bakeoffs' / 'PROTOCOL.md',
-            TOOL_ROOT / 'model-bakeoffs' / 'README.md',
-            TOOL_ROOT / 'docs' / 'model-bakeoffs.md',
+            TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md',
+            TOOL_ROOT / 'bakeoff' / 'README.md',
+            TOOL_ROOT / 'bakeoff' / 'OVERVIEW.md',
         ]
         for path in paths:
             text = path.read_text(encoding='utf-8')
@@ -760,7 +760,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             )
 
     def test_cli_subprocess_status_imports(self):
-        """Running the script as ``python3 scripts/model_bakeoff.py`` must find active_world."""
+        """Running the script as ``python3 bakeoff/model_bakeoff.py`` must find active_world."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _seed(root)
@@ -772,7 +772,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             )
             env = os.environ.copy()
             env['AI_WORLDBUILDER_WORLD_ROOT'] = str(world)
-            script = TOOL_ROOT / 'scripts' / 'model_bakeoff.py'
+            script = TOOL_ROOT / 'bakeoff' / 'model_bakeoff.py'
             result = subprocess.run(
                 [sys.executable, str(script), '--root', str(root), 'status'],
                 cwd=str(TOOL_ROOT),
@@ -1372,7 +1372,7 @@ class HybridRoundTests(unittest.TestCase):
             self.assertEqual(scored['handoff']['path'], str(handoff))
             self.assertEqual(
                 scored['artefacts']['build_scripts'],
-                [f"model-bakeoffs/rounds/{scored['id']}/r_hybrid_susu.py"],
+                [f"bakeoff/rounds/{scored['id']}/r_hybrid_susu.py"],
             )
             updated = MB.record_usage(
                 root,

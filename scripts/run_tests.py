@@ -5,10 +5,11 @@
   python3 scripts/run_tests.py --only test_model_bakeoff
   python3 scripts/run_tests.py --only test_run_tests --only test_ship_branch
 
-``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``),
-not a path. Repeat the flag (or pass it multiple times) to select several
-modules. With no ``--only`` flags the runner discovers the full ``test_*.py``
-suite under ``scripts/`` as before. An unknown stem fails with a clear error.
+``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``
+or ``bakeoff/test_foo.py``), not a path. Repeat the flag (or pass it multiple
+times) to select several modules. With no ``--only`` flags the runner discovers
+the full ``test_*.py`` suite under ``scripts/`` and ``bakeoff/``. An unknown
+stem fails with a clear error.
 
 Full discover (no ``--only``) takes a fail-fast advisory flock on
 ``<git-common-dir>/ai-worldbuilder-full-suite.lock`` (shared across worktrees).
@@ -66,7 +67,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description=(
-            'Run stdlib unit tests under scripts/. '
+            'Run stdlib unit tests under scripts/ and bakeoff/. '
             'Optional --only selects module stems (test_foo).'
         )
     )
@@ -77,8 +78,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest='only',
         default=None,
         help=(
-            'unittest module stem under scripts/ (e.g. test_model_bakeoff); '
-            'repeatable. Default: discover all test_*.py modules.'
+            'unittest module stem under scripts/ or bakeoff/ '
+            '(e.g. test_model_bakeoff); repeatable. Default: discover all '
+            'test_*.py modules.'
         ),
     )
     parser.add_argument(
@@ -179,25 +181,52 @@ def full_suite_lock(
         os.close(fd)
 
 
+def _ensure_on_path(directory: Path) -> None:
+    """Prepend ``directory`` to ``sys.path`` when missing.
+
+    @param directory: directory that should be importable
+    """
+    text = str(directory.resolve())
+    if text not in sys.path:
+        sys.path.insert(0, text)
+
+
 def load_suite(
     scripts_dir: Path,
     *,
     only: Sequence[str] | None = None,
+    extra_dirs: Sequence[Path] | None = None,
 ) -> unittest.TestSuite:
-    """Build a test suite from ``scripts_dir``.
+    """Build a test suite from ``scripts_dir`` and optional extra roots.
 
-    @param scripts_dir: directory containing ``test_*.py`` modules
+    @param scripts_dir: primary directory containing ``test_*.py`` modules
     @param only: module stems to load; None discovers all ``test_*.py`` files
+    @param extra_dirs: additional roots (e.g. ``bakeoff/``) searched after
+        ``scripts_dir`` for discover and ``--only``
     @returns: loaded suite
     @raises UnknownTestModule: when a named stem has no ``<stem>.py`` file
     """
+    # Prefer bakeoff/ ahead of scripts/ so real modules win over thin shims
+    # if unittest.discover reorders sys.path.
+    extras = [d for d in (extra_dirs or ()) if d.is_dir()]
+    dirs = [*extras, scripts_dir] if extras else [scripts_dir]
+    for directory in dirs:
+        if directory.is_dir():
+            _ensure_on_path(directory)
     loader = unittest.TestLoader()
     if not only:
-        return loader.discover(str(scripts_dir), pattern='test_*.py')
+        suite = unittest.TestSuite()
+        for directory in dirs:
+            if directory.is_dir():
+                suite.addTests(
+                    loader.discover(str(directory), pattern='test_*.py')
+                )
+        # discover() may insert start_dir at sys.path[0]; put extras first again.
+        for directory in reversed(extras):
+            _ensure_on_path(directory)
+        return suite
     suite = unittest.TestSuite()
-    scripts_text = str(scripts_dir.resolve())
-    if scripts_text not in sys.path:
-        sys.path.insert(0, scripts_text)
+    dir_labels = ', '.join(str(d) for d in dirs)
     for name in only:
         stem = name.strip()
         if not stem or '/' in stem or '\\' in stem or stem.endswith('.py'):
@@ -205,11 +234,16 @@ def load_suite(
                 f'unknown test module {name!r}: expected a stem like '
                 f'test_foo (not a path)'
             )
-        path = (scripts_dir / f'{stem}.py').resolve()
-        if not path.is_file():
+        path: Path | None = None
+        for directory in dirs:
+            candidate = (directory / f'{stem}.py').resolve()
+            if candidate.is_file():
+                path = candidate
+                break
+        if path is None:
             raise UnknownTestModule(
-                f'unknown test module {stem!r}: no file {path.name} under '
-                f'{scripts_dir}'
+                f'unknown test module {stem!r}: no file {stem}.py under '
+                f'{dir_labels}'
             )
         # Load from the concrete file so stems resolve under a custom
         # scripts_dir (tests) and stale sys.modules entries cannot win.
@@ -283,7 +317,7 @@ def _run_suite(suite: unittest.TestSuite) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Discover and run ``test_*.py`` modules under ``scripts/``.
+    """Discover and run ``test_*.py`` modules under ``scripts/`` and ``bakeoff/``.
 
     With ``--only``, runs only the named module stems (no full-suite lock).
     Without flags, discovers the full suite under the advisory flock.
@@ -295,16 +329,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     scripts = Path(__file__).resolve().parent
     root = scripts.parent
+    bakeoff = root / 'bakeoff'
     shims = root / 'shims'
-    for path in (shims, scripts):
-        text = str(path)
-        if text not in sys.path:
-            sys.path.insert(0, text)
+    # bakeoff last in this loop → first on sys.path (ahead of scripts/ shims).
+    for path in (shims, scripts, bakeoff):
+        if path.is_dir():
+            _ensure_on_path(path)
 
     def _load_and_run() -> int:
         with unit_test_world():
             try:
-                suite = load_suite(scripts, only=args.only)
+                suite = load_suite(
+                    scripts,
+                    only=args.only,
+                    extra_dirs=(bakeoff,) if bakeoff.is_dir() else (),
+                )
             except UnknownTestModule as exc:
                 print(f'run_tests: {exc}', file=sys.stderr)
                 return 1

@@ -35,3 +35,7 @@ Offsets live only in the world frame. The system config does not duplicate them;
 
 1. Set `AI_WORLDBUILDER_WORLD_ROOT` to the other world checkout under `worlds/` (e.g. `export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`).
 2. Confirm: `python -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
+
+The bake-off **framework** (CLI, rounds, skill) lives under tool-repo `bakeoff/`;
+the bake-off **world checkout** stays at `worlds/bakeoff/` and is selected via
+`AI_WORLDBUILDER_WORLD_ROOT` like any other world.

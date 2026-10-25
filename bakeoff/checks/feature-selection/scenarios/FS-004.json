@@ -15,7 +15,7 @@
     "portals / buildings registers for names"
   ],
   "forbidden": [
-    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Reading bakeoff/checks/feature-selection/keys/",
     "Applying blocks or writing a build script",
     "Dilating / padding the OSM footprint"
   ]
