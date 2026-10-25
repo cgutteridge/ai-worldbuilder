@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 80,
+  "nextTaskId": 84,
   "tasks": [
     {
       "id": 78,
@@ -11,6 +11,47 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From the R-013 cost discussion (2026-10-24). Data: Sonnet medium/high = pass at ~1 pt weekly plan usage (R-009 43->44%); Opus 5.5 low/medium = great (R-012 5.78M, R-013 7.57M transcript tokens, R-013 45->47% weekly). Opus output is small (R-013: 38k output vs 7.27M cache reads over 59 turns), so cost is turn count x context, not authorship. Hypothesis: Opus low writes the evidence table + build spec in few turns; Sonnet medium executes (apply, recover, capture) where turns pile up. Do: extend model-bakeoffs/PROTOCOL.md + scripts/model_bakeoff.py so a round can name a designer model and a builder model (e.g. `open --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low`), with the hand-off artefact (spec/script path) recorded and usage split per model; keep one apply owner (builder). Measure with task 75 units (transcript sums + plan % delta). Run >= 2 sittings before drawing conclusions (single sittings cannot separate pass from great). Cheaper still once task 76 lets the designer emit a feature_build spec instead of a custom script. Done when: the round type exists with tests and at least two hybrid sittings are scored and compared against R-009/R-012. Code+tests merged 2026-10-25 as e0e85ee (task/78-bakeoff-hybrid-designer-builder \u2192 main; 74c028b + fix 7d410b3). Round type exists (--designer/--handoff, sitting_steps_hybrid, usage by_role). Still open: run \u22652 hybrid sittings (score + usage) and compare vs R-009/R-012; wave worker could not run live Claude Code + Minecraft + interview."
+    },
+    {
+      "id": 80,
+      "title": "run_tests module selection (--only)",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro 2026-10-25 (suite/swarm): full suite ~762 cases / ~217s; waves re-run it everywhere. Do: extend scripts/run_tests.py so callers can select one or more test modules (e.g. --only test_model_bakeoff or multiple names); default with no flags remains the full discover suite. Unit-test the selection (subset runs only those modules; unknown name fails clearly; no flags = full). Optional nicety: map a changed scripts/foo.py to test_foo when documenting for ship-branch, but the CLI seam is the done gate. Done when: --only is documented in the runner docstring, covered by tests, and full suite behaviour unchanged without flags."
+    },
+    {
+      "id": 81,
+      "title": "Single-flight full suite (concurrency lock)",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [
+        80
+      ],
+      "notes": "Retro 2026-10-25: parallel workers + pre-commit + ship tip/main melted CPU and hung suites. Do: only one full (default) run_tests invocation at a time for this repo (flock or equivalent); a second full run waits or fails fast with a clear message. Focused --only runs must not take that lock so workers can still check modules in parallel. Done when: two overlapping full runs cannot execute the suite body concurrently (test with a fake/slow seam or lock probe); --only still parallelisable; docs/docstring name the behaviour."
+    },
+    {
+      "id": 82,
+      "title": "Tracker-only commits skip the unit suite",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro 2026-10-25: archive commits on main still paid ~3.5min full suite; pre_commit_checks already has --skip-tests but the hook always runs check without it. Do: when staged paths are only the system tracker (tasks/index.json, tasks/done.json \u2014 and nothing else), pre-commit skips the unit suite while still enforcing tracker ownership / other cheap checks. Do not widen to arbitrary docs unless tests spell the allowlist. Done when: unit tests cover (a) tracker-only staged -> tests skipped, (b) tracker + code -> tests run, (c) worker branch tracker edits still blocked; hook path uses the auto-skip (no manual --skip-tests required for archives)."
+    },
+    {
+      "id": 83,
+      "title": "ship_branch tip vs main test policy",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [
+        80,
+        81
+      ],
+      "notes": "Retro 2026-10-25: ship_branch runs full suite on tip then again on main (~7min/ticket). Do: tip check uses focused --only (from branch diff / changed modules) or skips a redundant full tip suite; always run the full suite on main after merge (under the single-flight lock from #81). Update .claude/skills/ship-branch/SKILL.md so agents match. Done when: merge path no longer runs two full suites by default; post-merge main full suite still gates success; tests cover the tip vs main policy seam."
     }
   ]
 }
