@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge a tested task branch into main, then clean up; sweep strays.
+"""Merge a tested task branch into main, then clean up and push; sweep strays.
 
 Branch-gate policy: code lands on ``task/*`` branches and always ends merged.
 
@@ -11,8 +11,10 @@ tip (skip for docs/tracker/skill-only; full suite when mapping is empty but
 code changed, or when the runner / pre-commit / ship_branch / git hooks
 changed). After tip tests pass it takes the full-suite flock; if busy it
 refuses the merge. Under the lock it merges ``--no-ff``, runs the full suite
-on main with ``--parent-holds-lock``, then releases. Main failures leave the
-merge (no auto-revert). Sweep uses the same ``merge_branch`` policy.
+on main with ``--parent-holds-lock``, then cleans up. After the lock releases,
+it pushes main to its upstream (or ``origin``). Main test failures leave the
+merge (no auto-revert). Use ``--no-push`` to keep the merge local only.
+Sweep uses the same ``merge_branch`` policy.
 
 ``sweep`` lists local branches not merged into main and leftover linked
 worktrees. Each unmerged branch is labelled tracker/docs-only or code (with
@@ -370,6 +372,72 @@ def _delete_branch(repo_root: Path, branch: str) -> None:
     _git(repo_root, 'branch', '-d', branch)
 
 
+def resolve_push_target(
+    repo_root: Path,
+    branch: str,
+) -> tuple[str, str] | None:
+    """Remote and remote-branch name to push ``branch`` to.
+
+    Prefers the configured upstream (``branch@{upstream}``). Falls back to
+    ``origin/<branch>`` when that remote exists, else the sole configured
+    remote if there is exactly one.
+
+    @param repo_root: repository root
+    @param branch: local branch to publish
+    @returns: ``(remote, remote_branch)``, or None when nowhere to push
+    """
+    result = _git(
+        repo_root,
+        'rev-parse',
+        '--abbrev-ref',
+        f'{branch}@{{upstream}}',
+        check=False,
+    )
+    if result.returncode == 0:
+        upstream = (result.stdout or '').strip()
+        if '/' in upstream:
+            remote, remote_branch = upstream.split('/', 1)
+            if remote and remote_branch:
+                return remote, remote_branch
+    remotes = [line for line in _git_out(repo_root, 'remote').splitlines() if line]
+    if 'origin' in remotes:
+        return 'origin', branch
+    if len(remotes) == 1:
+        return remotes[0], branch
+    return None
+
+
+def push_branch(repo_root: Path, branch: str) -> int:
+    """Push ``branch`` to its resolved remote target.
+
+    @param repo_root: repository root (should already be on ``branch``)
+    @param branch: local branch to publish
+    @returns: 0 on success, 1 when no target or ``git push`` fails
+    """
+    target = resolve_push_target(repo_root, branch)
+    if target is None:
+        print(
+            f'ship_branch: merge succeeded locally but cannot push: '
+            f'no upstream for {branch!r} and no origin remote',
+            file=sys.stderr,
+        )
+        return 1
+    remote, remote_branch = target
+    print(f'ship_branch: pushing {branch!r} to {remote}/{remote_branch}…')
+    try:
+        _git(repo_root, 'push', remote, f'{branch}:{remote_branch}')
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or exc.stdout or str(exc)).strip()
+        print(
+            f'ship_branch: push of {branch!r} to {remote}/{remote_branch} '
+            f'failed: {err}',
+            file=sys.stderr,
+        )
+        return 1
+    print(f'ship_branch: pushed {branch!r} to {remote}/{remote_branch}')
+    return 0
+
+
 def _run_tip_tests(
     tip_checkout: Path,
     branch: str,
@@ -411,19 +479,22 @@ def merge_branch(
     *,
     main_branch: str = 'main',
     run_tests: RunTestsFn | None = None,
+    push: bool = True,
 ) -> int:
-    """Test ``branch``, merge into main under the full-suite lock, re-test.
+    """Test ``branch``, merge into main under the full-suite lock, re-test, push.
 
     Tip tests prefer ``run_tests --only`` from the path map; see module
     docstring. After tip green, acquires the full-suite flock (fail-fast); if
     busy, refuses the merge. Under the lock: ``--no-ff`` merge, full suite on
-    main with parent-holds-lock, cleanup. Main failures leave the merge.
+    main with parent-holds-lock, cleanup. After the lock releases, pushes
+    ``main_branch`` unless ``push`` is False. Main failures leave the merge.
 
     @param repo_root: primary checkout (must be able to check out ``main_branch``)
     @param branch: local branch to merge
     @param main_branch: destination branch (default ``main``)
     @param run_tests: optional test runner for tip and main (tests); default
         uses path mapping + ``scripts/run_tests.py``
+    @param push: when True (default), push ``main_branch`` after a green merge
     @returns: 0 on success, 1 on failure, 2 when the full-suite lock is busy
     """
     root = repo_root.resolve()
@@ -484,6 +555,7 @@ def merge_branch(
                 pass
         return tip_code
 
+    removed: Path | None = None
     try:
         with run_tests_mod.full_suite_lock(root):
             print(
@@ -515,7 +587,6 @@ def merge_branch(
                 )
                 return main_code
 
-            removed = None
             try:
                 removed = _remove_worktree_if_present(root, branch)
                 _delete_branch(root, branch)
@@ -527,15 +598,6 @@ def merge_branch(
                     file=sys.stderr,
                 )
                 return 1
-
-            extra = (
-                f'; removed worktree {removed}' if removed is not None else ''
-            )
-            print(
-                f"ship_branch: merged {branch!r} into {main_branch!r} "
-                f'and deleted the local branch{extra}'
-            )
-            return 0
     except run_tests_mod.FullSuiteLocked as exc:
         print(
             f'ship_branch: full-suite lock busy; merge of {branch!r} refused. '
@@ -548,6 +610,19 @@ def merge_branch(
             except subprocess.CalledProcessError:
                 pass
         return run_tests_mod.EXIT_LOCKED
+
+    if push:
+        push_code = push_branch(root, main_branch)
+        if push_code != 0:
+            return push_code
+
+    extra = f'; removed worktree {removed}' if removed is not None else ''
+    pushed = f' and pushed {main_branch!r}' if push else ''
+    print(
+        f"ship_branch: merged {branch!r} into {main_branch!r} "
+        f'and deleted the local branch{extra}{pushed}'
+    )
+    return 0
 
 def is_docs_only_path(rel_path: str) -> bool:
     """Whether a changed path is allowed on a tracker/docs-only branch.
@@ -765,19 +840,21 @@ def sweep(
     merge_docs_only: bool = False,
     prompt: PromptFn | None = None,
     run_tests: RunTestsFn | None = None,
+    push: bool = True,
 ) -> int:
     """Report unmerged branches and leftover worktrees; optionally merge docs.
 
     Code strays are never merged or deleted. Tracker/docs-only strays are
     merged when ``merge_docs_only`` is set, or when a prompt returns True
     (default prompt runs only when stdin is a TTY and ``merge_docs_only`` is
-    false).
+    false). Merges use the same ``push`` policy as ``merge_branch``.
 
     @param repo_root: primary checkout used for merge targets
     @param main_branch: integration branch (default ``main``)
     @param merge_docs_only: merge all tracker/docs-only strays without prompting
     @param prompt: optional yes/no callback (tests); default is interactive TTY
     @param run_tests: optional test runner passed through to ``merge_branch``
+    @param push: when True (default), push ``main_branch`` after each green merge
     @returns: 0 when reporting (and any requested merges) succeed; 1 on failure
     """
     root = repo_root.resolve()
@@ -854,6 +931,7 @@ def sweep(
             stray.name,
             main_branch=main_branch,
             run_tests=run_tests,
+            push=push,
         )
         if code != 0:
             return code
@@ -868,7 +946,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         description=(
-            'Merge a tested task branch into main, then clean up; '
+            'Merge a tested task branch into main, then clean up and push; '
             'or sweep unmerged branches and leftover worktrees.'
         ),
     )
@@ -876,7 +954,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     merge_p = sub.add_parser(
         'merge',
-        help='test branch tip, merge --no-ff into main, re-test, clean up',
+        help=(
+            'test branch tip, merge --no-ff into main, re-test, '
+            'clean up, push'
+        ),
     )
     merge_p.add_argument('branch', help='local branch to merge')
     merge_p.add_argument(
@@ -889,6 +970,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         '--main-branch',
         default='main',
         help='destination branch (default: main)',
+    )
+    merge_p.add_argument(
+        '--no-push',
+        action='store_true',
+        help='keep the merge local only (skip pushing main)',
     )
 
     sweep_p = sub.add_parser(
@@ -919,6 +1005,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             'non-TTY runs report only'
         ),
     )
+    sweep_p.add_argument(
+        '--no-push',
+        action='store_true',
+        help=(
+            'when merging docs-only strays, keep those merges local '
+            '(skip pushing main)'
+        ),
+    )
 
     args = parser.parse_args(argv)
     root = (
@@ -929,12 +1023,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             root,
             args.branch,
             main_branch=args.main_branch,
+            push=not args.no_push,
         )
     if args.cmd == 'sweep':
         return sweep(
             root,
             main_branch=args.main_branch,
             merge_docs_only=args.merge_docs_only,
+            push=not args.no_push,
         )
     return 2
 

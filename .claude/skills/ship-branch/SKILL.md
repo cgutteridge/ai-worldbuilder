@@ -89,8 +89,9 @@ On `APPROVE` (or after skip-review with green tests):
 python3 scripts/ship_branch.py merge <branch>
 ```
 
-Done when that command exits 0. Do not merge by hand; do not push unless the
-owner asked.
+Done when that command exits 0. It merges into `main`, re-tests, cleans up the
+local branch, and pushes `main` to its upstream (or `origin`). Do not merge by
+hand. Use `--no-push` only when the owner asks to keep the merge local.
 
 ## Stop (cap or any halt)
 
