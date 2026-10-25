@@ -13,15 +13,6 @@
       "notes": "Retro R-013 fairness: worlds/bakeoff/site/builds/ holds r010..r013 SUSU build scripts, lidar/osm caches and capture scripts next to where the model writes its own; R-012 disclosed reading the R-011 docstring (prior evidence summary). Pack rule: a previous Minecraft build is not evidence. Do: as part of `model_bakeoff.py baseline` (task 72) move prior round artefacts matching `r0NN_*` out of site/builds/ into an archive dir the brief tells the model not to use (e.g. worlds/bakeoff/archive/rounds/<id>/), and have `open` warn if any are still present. Add one line to packs/v1/FAIRNESS.md (not BRIEF.md, which is frozen) naming the archive as off-limits. Done when: after baseline, site/builds/ contains no earlier-round files; open warns on leftovers; test covers the move. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
     },
     {
-      "id": 75,
-      "title": "Bake-off usage: same unit every round (transcript sum + plan %)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Retro R-013: usage is recorded in incomparable units (Claude subagent totals ~200k with no cache split; Codex rollout counters; Claude Code transcript sums incl. cache reads ~5-7M; weekly plan % only sometimes), so Sonnet vs Opus cost could not be compared. Do in scripts/model_bakeoff.py: (1) `usage R-NNN --from-transcript <path.jsonl> [--model-prefix claude-opus-5-5]` that sums per-response API usage de-duplicated by message id (input, output, cache_read, cache_write, requests, first/last timestamp) and records source=api; this is the script hand-written in R-012/R-013. Support subagent transcripts too. (2) Add optional plan-usage fields `plan_pct_start` / `plan_pct_end` (weekly, all models) to the usage block, settable on `open` and `score` (`--plan-pct N`), plus `wallclock_min` and `interruptions` notes. (3) Document in model-bakeoffs/PROTOCOL.md Usage section that cross-model cost comparison uses plan % delta + transcript sums, and that agent-report subagent totals are not comparable. Done when: unit test sums a fixture transcript with duplicate message ids correctly; status output shows plan % delta where present."
-    },
-    {
       "id": 77,
       "title": "Bake-off round record keeps its build script",
       "status": "todo",
