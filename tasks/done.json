@@ -672,7 +672,27 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Retro 2026-10-25: archive commits on main still paid ~3.5min full suite; pre_commit_checks already has --skip-tests but the hook always runs check without it. Do: when staged paths are only the system tracker (tasks/index.json, tasks/done.json — and nothing else), pre-commit skips the unit suite while still enforcing tracker ownership / other cheap checks. Do not widen to arbitrary docs unless tests spell the allowlist. Done when: unit tests cover (a) tracker-only staged -> tests skipped, (b) tracker + code -> tests run, (c) worker branch tracker edits still blocked; hook path uses the auto-skip (no manual --skip-tests required for archives). Archived 2026-10-25 after merge 596b907 (task/82-tracker-only-skip-tests → main; code c7cec39)."
+      "notes": "Retro 2026-10-25: archive commits on main still paid ~3.5min full suite; pre_commit_checks already has --skip-tests but the hook always runs check without it. Do: when staged paths are only the system tracker (tasks/index.json, tasks/done.json \u2014 and nothing else), pre-commit skips the unit suite while still enforcing tracker ownership / other cheap checks. Do not widen to arbitrary docs unless tests spell the allowlist. Done when: unit tests cover (a) tracker-only staged -> tests skipped, (b) tracker + code -> tests run, (c) worker branch tracker edits still blocked; hook path uses the auto-skip (no manual --skip-tests required for archives). Archived 2026-10-25 after merge 596b907 (task/82-tracker-only-skip-tests \u2192 main; code c7cec39)."
+    },
+    {
+      "id": 80,
+      "title": "run_tests module selection (--only)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro 2026-10-25 (suite/swarm): full suite ~762 cases / ~217s; waves re-run it everywhere. Do: extend scripts/run_tests.py so callers can select one or more test modules (e.g. --only test_model_bakeoff or multiple names); default with no flags remains the full discover suite. Unit-test the selection (subset runs only those modules; unknown name fails clearly; no flags = full). Optional nicety: map a changed scripts/foo.py to test_foo when documenting for ship-branch, but the CLI seam is the done gate. Done when: --only is documented in the runner docstring, covered by tests, and full suite behaviour unchanged without flags. Done when: --only documented, covered by tests, full suite unchanged without flags. Landed on main as 13541a5 (Add run_tests --only module stem selection (#80)); reachable via a8fe7bb (world-independent-tests merge) with 9ad8a42. Alternate tip task/80-run-tests-only-wt @ a99b2ff not merged (duplicate lineage)."
+    },
+    {
+      "id": 81,
+      "title": "Single-flight full suite (concurrency lock)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [
+        80
+      ],
+      "notes": "Retro 2026-10-25: parallel workers + pre-commit + ship tip/main melted CPU and hung suites. Do: only one full (default) run_tests invocation at a time for this repo (flock or equivalent); a second full run waits or fails fast with a clear message. Focused --only runs must not take that lock so workers can still check modules in parallel. Done when: two overlapping full runs cannot execute the suite body concurrently (test with a fake/slow seam or lock probe); --only still parallelisable; docs/docstring name the behaviour. Done when: overlapping full runs cannot execute suite body concurrently; --only parallelisable; docs name behaviour. Landed on main as 9ad8a42 (Add fail-fast full-suite flock for run_tests (#81)); reachable via a8fe7bb. Alternate tip task/81-full-suite-lock-wt @ 1aa972d not merged (duplicate lineage)."
     }
   ]
 }
