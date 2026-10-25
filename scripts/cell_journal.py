@@ -410,9 +410,28 @@ def ghost_name(cell: Cell, layer: str) -> str:
     return f'ghost_{cell[0]}_{_token(cell[1])}_{layer}'
 
 
+def _encode_runs(cells: Mapping[Pos, str]) -> list[list]:
+    """Column run-length form of a plan: sorted ``[x, z, y0, y1, state]`` runs of identical vertical blocks."""
+    runs: list[list] = []
+    for x, z, y, state in sorted((p[0], p[2], p[1], st) for p, st in cells.items()):
+        last = runs[-1] if runs else None
+        if last and last[0] == x and last[1] == z and last[3] == y - 1 and last[4] == state:
+            last[3] = y
+        else:
+            runs.append([x, z, y, y, state])
+    return runs
+
+
+def _decode_runs(runs: Iterable[list]) -> dict[Pos, str]:
+    out: dict[Pos, str] = {}
+    for x, z, y0, y1, state in runs:
+        for y in range(y0, y1 + 1):
+            out[(x, y, z)] = state
+    return out
+
+
 def _blob_key(cells: Mapping[Pos, str]) -> tuple[str, bytes]:
-    body = json.dumps({f'{x},{y},{z}': s for (x, y, z), s in cells.items()},
-                      sort_keys=True, separators=(',', ':')).encode('utf-8')
+    body = json.dumps({'rle': _encode_runs(cells)}, separators=(',', ':')).encode('utf-8')
     return hashlib.sha256(body).hexdigest()[:32], body
 
 
@@ -763,7 +782,10 @@ class CellRegistry:
             raw = json.loads(self._read_blob_bytes(key))
         except (OSError, ValueError) as exc:
             raise JournalError(f'plan blob {key} unreadable: {exc}') from exc
-        got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
+        if 'rle' in raw and len(raw) == 1:
+            got = _decode_runs(raw['rle'])
+        else:  # legacy: {"x,y,z": state}
+            got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
         self._blob_cache[key] = got
         while len(self._blob_cache) > 16:
             self._blob_cache.popitem(last=False)
