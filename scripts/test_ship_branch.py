@@ -1,4 +1,9 @@
-"""Tests for ship_branch.merge and sweep using throwaway git repositories."""
+"""Tests for ship_branch.merge and sweep using throwaway git repositories.
+
+Pure helpers (``_git_env``, ``classify_changed_paths``, tip-plan path policy)
+live in TestCase classes that create neither a Git repository nor commits.
+Merge, sweep, worktree, and lock behaviour keep real temporary repositories.
+"""
 
 from __future__ import annotations
 
@@ -45,7 +50,77 @@ def _add_branch_commit(root: Path, branch: str, filename: str, body: str) -> Non
     _git(root, 'checkout', 'main')
 
 
+class ShipBranchGitEnvTest(unittest.TestCase):
+    """Pure ``_git_env`` behaviour — no repository fixture."""
+
+    def test_git_env_clears_hook_overrides(self) -> None:
+        """Inherited GIT_DIR must not pin throwaway-repo commands to the host."""
+        poisoned = dict(os.environ)
+        poisoned['GIT_DIR'] = '/nonexistent/git-dir'
+        poisoned['GIT_WORK_TREE'] = '/nonexistent/work-tree'
+        cleaned = sb._git_env(poisoned)
+        self.assertNotIn('GIT_DIR', cleaned)
+        self.assertNotIn('GIT_WORK_TREE', cleaned)
+
+
+class ClassifyChangedPathsTest(unittest.TestCase):
+    """Pure path classification — no repository fixture."""
+
+    def test_classify_docs_only_allowlist(self) -> None:
+        self.assertEqual(
+            sb.classify_changed_paths(['tasks/index.json', 'docs/plans/x.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['AGENTS.md', 'CODING_STANDARDS.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['rules/process.md']),
+            'tracker/docs-only',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['scripts/ship_branch.py']),
+            'code',
+        )
+        self.assertEqual(
+            sb.classify_changed_paths(['tasks/index.json', 'scripts/foo.py']),
+            'code',
+        )
+
+
+class TipTestPlanPathPolicyTest(unittest.TestCase):
+    """Tip-plan kinds decided from path rules alone — no tree fixture."""
+
+    def test_plan_skip_docs_tracker_skill_only(self) -> None:
+        # repo_root unused when every path is tip-test-skip.
+        plan = sb.plan_tip_tests(
+            [
+                'docs/a.md',
+                'tasks/index.json',
+                '.claude/skills/x/SKILL.md',
+                'rules/process.md',
+            ],
+            Path('/nonexistent-repo-root'),
+        )
+        self.assertEqual(plan.kind, 'skip')
+        self.assertEqual(plan.modules, ())
+
+    def test_plan_full_when_runner_or_hooks_touched(self) -> None:
+        for path in (
+            'scripts/run_tests.py',
+            'scripts/pre_commit_checks.py',
+            'scripts/ship_branch.py',
+            'scripts/install_git_hooks.py',
+            '.githooks/pre-commit',
+        ):
+            plan = sb.plan_tip_tests([path], Path('/nonexistent-repo-root'))
+            self.assertEqual(plan.kind, 'full', path)
+
+
 class ShipBranchMergeTest(unittest.TestCase):
+    """Merge / worktree / lock integration against a real temporary repository."""
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name) / 'repo'
@@ -137,15 +212,6 @@ class ShipBranchMergeTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(sb.current_branch(self.root), 'main')
 
-    def test_git_env_clears_hook_overrides(self) -> None:
-        """Inherited GIT_DIR must not pin throwaway-repo commands to the host."""
-        poisoned = dict(os.environ)
-        poisoned['GIT_DIR'] = '/nonexistent/git-dir'
-        poisoned['GIT_WORK_TREE'] = '/nonexistent/work-tree'
-        cleaned = sb._git_env(poisoned)
-        self.assertNotIn('GIT_DIR', cleaned)
-        self.assertNotIn('GIT_WORK_TREE', cleaned)
-
     def test_busy_full_suite_lock_refuses_merge(self) -> None:
         import run_tests
 
@@ -159,8 +225,8 @@ class ShipBranchMergeTest(unittest.TestCase):
         self.assertIn(self.branch, self._branches())
 
 
-class TipTestPlanTest(unittest.TestCase):
-    """Map changed paths to --only modules; skip / full fallback (#83)."""
+class TipTestPlanMappingTest(unittest.TestCase):
+    """Map changed paths to --only modules; needs a scripts/ tree, not Git."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -197,19 +263,6 @@ class TipTestPlanTest(unittest.TestCase):
         )
         self.assertEqual(modules, ['test_foo'])
 
-    def test_plan_skip_docs_tracker_skill_only(self) -> None:
-        plan = sb.plan_tip_tests(
-            [
-                'docs/a.md',
-                'tasks/index.json',
-                '.claude/skills/x/SKILL.md',
-                'rules/process.md',
-            ],
-            self.root,
-        )
-        self.assertEqual(plan.kind, 'skip')
-        self.assertEqual(plan.modules, ())
-
     def test_plan_only_when_mapping_nonempty(self) -> None:
         plan = sb.plan_tip_tests(['scripts/foo.py'], self.root)
         self.assertEqual(plan.kind, 'only')
@@ -219,19 +272,10 @@ class TipTestPlanTest(unittest.TestCase):
         plan = sb.plan_tip_tests(['scripts/bar.py'], self.root)
         self.assertEqual(plan.kind, 'full')
 
-    def test_plan_full_when_runner_or_hooks_touched(self) -> None:
-        for path in (
-            'scripts/run_tests.py',
-            'scripts/pre_commit_checks.py',
-            'scripts/ship_branch.py',
-            'scripts/install_git_hooks.py',
-            '.githooks/pre-commit',
-        ):
-            plan = sb.plan_tip_tests([path], self.root)
-            self.assertEqual(plan.kind, 'full', path)
-
 
 class ShipBranchSweepTest(unittest.TestCase):
+    """Sweep / stray-branch integration against a real temporary repository."""
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name) / 'repo'
@@ -244,28 +288,6 @@ class ShipBranchSweepTest(unittest.TestCase):
     def _branches(self) -> set[str]:
         out = _git(self.root, 'branch', '--format=%(refname:short)')
         return {line for line in out.splitlines() if line}
-
-    def test_classify_docs_only_allowlist(self) -> None:
-        self.assertEqual(
-            sb.classify_changed_paths(['tasks/index.json', 'docs/plans/x.md']),
-            'tracker/docs-only',
-        )
-        self.assertEqual(
-            sb.classify_changed_paths(['AGENTS.md', 'CODING_STANDARDS.md']),
-            'tracker/docs-only',
-        )
-        self.assertEqual(
-            sb.classify_changed_paths(['rules/process.md']),
-            'tracker/docs-only',
-        )
-        self.assertEqual(
-            sb.classify_changed_paths(['scripts/ship_branch.py']),
-            'code',
-        )
-        self.assertEqual(
-            sb.classify_changed_paths(['tasks/index.json', 'scripts/foo.py']),
-            'code',
-        )
 
     def test_detects_unmerged_and_labels_code_vs_docs(self) -> None:
         _add_branch_commit(
