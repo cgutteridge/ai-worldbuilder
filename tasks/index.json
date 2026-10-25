@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 78,
-  "tasks": [
-    {
-      "id": 74,
-      "title": "Keep earlier rounds' build scripts out of the next sitting's view",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro R-013 fairness: worlds/bakeoff/site/builds/ holds r010..r013 SUSU build scripts, lidar/osm caches and capture scripts next to where the model writes its own; R-012 disclosed reading the R-011 docstring (prior evidence summary). Pack rule: a previous Minecraft build is not evidence. Do: as part of `model_bakeoff.py baseline` (task 72) move prior round artefacts matching `r0NN_*` out of site/builds/ into an archive dir the brief tells the model not to use (e.g. worlds/bakeoff/archive/rounds/<id>/), and have `open` warn if any are still present. Add one line to packs/v1/FAIRNESS.md (not BRIEF.md, which is frozen) naming the archive as off-limits. Done when: after baseline, site/builds/ contains no earlier-round files; open warns on leftovers; test covers the move. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
-    }
-  ]
+  "tasks": []
 }
