@@ -693,6 +693,15 @@
         80
       ],
       "notes": "Retro 2026-10-25: parallel workers + pre-commit + ship tip/main melted CPU and hung suites. Do: only one full (default) run_tests invocation at a time for this repo (flock or equivalent); a second full run waits or fails fast with a clear message. Focused --only runs must not take that lock so workers can still check modules in parallel. Done when: two overlapping full runs cannot execute the suite body concurrently (test with a fake/slow seam or lock probe); --only still parallelisable; docs/docstring name the behaviour. Done when: overlapping full runs cannot execute suite body concurrently; --only parallelisable; docs name behaviour. Landed on main as 9ad8a42 (Add fail-fast full-suite flock for run_tests (#81)); reachable via a8fe7bb. Alternate tip task/81-full-suite-lock-wt @ 1aa972d not merged (duplicate lineage)."
+    },
+    {
+      "id": 83,
+      "title": "ship_branch tip vs main test policy",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro 2026-10-25: ship_branch runs full suite on tip then again on main (~7min/ticket). Do: tip check uses focused --only (from branch diff / changed modules) or skips a redundant full tip suite; always run the full suite on main after merge (under the single-flight lock from #81). Update .claude/skills/ship-branch/SKILL.md so agents match. Done when: merge path no longer runs two full suites by default; post-merge main full suite still gates success; tests cover the tip vs main policy seam. Archived 2026-10-25 after merge aed90ee (task/83-ship-tip-main-tests \u2192 main; code b177f45). Earlier empty tip c44d0d1/cd01f77 had the commit message only; real tip/--only + full-suite-lock merge path restored from stash and re-shipped."
     }
   ]
 }
