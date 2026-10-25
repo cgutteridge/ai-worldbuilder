@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import pre_commit_checks as pcc
 
@@ -94,6 +96,115 @@ class WaveLockTest(unittest.TestCase):
             with self.assertRaises(pcc.WaveLockError):
                 pcc.release_wave_lock(root, holder='orch-b')
             self.assertTrue((root / pcc.WAVE_LOCK_NAME).exists())
+
+
+class CheckSummaryFormatTest(unittest.TestCase):
+    """One-line summaries printed after each pre-commit check."""
+
+    def test_ok_summary_without_counts(self) -> None:
+        self.assertEqual(
+            pcc.format_check_summary('provider-name audit', ok=True),
+            'provider-name audit: OK',
+        )
+
+    def test_ok_summary_with_total(self) -> None:
+        self.assertEqual(
+            pcc.format_check_summary('unit tests', ok=True, failed=0, total=412),
+            'unit tests: OK',
+        )
+
+    def test_failed_summary_includes_counts(self) -> None:
+        self.assertEqual(
+            pcc.format_check_summary('unit tests', ok=False, failed=3, total=412),
+            'unit tests: FAILED 3/412',
+        )
+
+    def test_failed_audit_summary(self) -> None:
+        self.assertEqual(
+            pcc.format_check_summary('provider-name audit', ok=False),
+            'provider-name audit: FAILED',
+        )
+
+
+class FailureExcerptTest(unittest.TestCase):
+    """Failing test ids + capped tracebacks for quiet pre-commit output."""
+
+    def test_caps_traceback_to_last_n_lines(self) -> None:
+        traceback = '\n'.join(f'line-{i}' for i in range(1, 51))
+        excerpt = pcc.format_failure_excerpt(
+            'pkg.mod.TestCase.test_foo',
+            traceback,
+            max_lines=40,
+        )
+        lines = excerpt.splitlines()
+        self.assertEqual(lines[0], 'FAIL pkg.mod.TestCase.test_foo')
+        self.assertEqual(lines[1], 'line-11')
+        self.assertEqual(lines[-1], 'line-50')
+        self.assertEqual(len(lines), 41)
+
+    def test_short_traceback_unchanged(self) -> None:
+        traceback = 'Traceback (most recent call last):\n  AssertionError'
+        excerpt = pcc.format_failure_excerpt('a.b.T.t', traceback, max_lines=40)
+        self.assertEqual(
+            excerpt,
+            'FAIL a.b.T.t\nTraceback (most recent call last):\n  AssertionError',
+        )
+
+    def test_formats_multiple_failures(self) -> None:
+        report = pcc.format_failure_report(
+            [
+                ('mod.T.test_a', 'tb-a\nend-a'),
+                ('mod.T.test_b', 'tb-b\nend-b'),
+            ],
+            max_lines=40,
+        )
+        self.assertIn('FAIL mod.T.test_a', report)
+        self.assertIn('FAIL mod.T.test_b', report)
+        self.assertIn('end-a', report)
+        self.assertIn('end-b', report)
+
+
+class UnsetWorldEarlyExitTest(unittest.TestCase):
+    """World-dependent checks skipped when AI_WORLDBUILDER_WORLD_ROOT is unset."""
+
+    def test_unset_world_skips_checks_and_prints_cause_last(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k != pcc.WORLD_ENV}
+        printed: list[str] = []
+
+        def capture_print(*args: object, **_kwargs: object) -> None:
+            printed.append(' '.join(str(a) for a in args))
+
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+                with mock.patch.object(pcc, 'staged_paths', return_value=[]):
+                    with mock.patch.object(
+                        pcc, 'run_provider_name_audit', return_value=0
+                    ) as audit:
+                        with mock.patch.object(pcc, 'run_unit_tests') as tests:
+                            with mock.patch('builtins.print', side_effect=capture_print):
+                                code = pcc.run_pre_commit(Path('/tmp/repo'))
+
+        self.assertEqual(code, 1)
+        audit.assert_not_called()
+        tests.assert_not_called()
+        self.assertTrue(printed, 'expected at least the unset-world line')
+        self.assertEqual(printed[-1], pcc.UNSET_WORLD_MESSAGE)
+
+    def test_set_world_runs_unit_tests(self) -> None:
+        env = {**os.environ, pcc.WORLD_ENV: '/tmp/fake-world'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+                with mock.patch.object(pcc, 'staged_paths', return_value=[]):
+                    with mock.patch.object(
+                        pcc, 'run_provider_name_audit', return_value=0
+                    ):
+                        with mock.patch.object(
+                            pcc, 'run_unit_tests', return_value=0
+                        ) as tests:
+                            with mock.patch('builtins.print'):
+                                code = pcc.run_pre_commit(Path('/tmp/repo'))
+        self.assertEqual(code, 0)
+        tests.assert_called_once()
 
 
 if __name__ == '__main__':

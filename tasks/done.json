@@ -574,6 +574,42 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Grill 2026-10-23/24: remove volumetric feature ghosts (unreliable strip). Keep ground ghosts on same frontier/ensure. Tops per column: light_gray_concrete (DSM\u2212DTM\u22480), gray_concrete (1\u20132), black_concrete (>2); stone fill; same height math. Journal ground none|ghost|generated only (no ghost+features / ghost-features pass for new work). Delete strip/leftover feature-ghost paths. Docs ADR003/v2/glossary. Bake-off reset/protocol ground-only; no Southampton strip; lazy ensure repaints tops. Done 2026-10-24: ground-only ghosts; coloured tops; strip/leftovers removed; docs/bake-off updated."
+    },
+    {
+      "id": 69,
+      "title": "Footprint guard lets 4-high canopies through outside footprints",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Found in bake-off R-008: osm_footprints.guard() exempts anything <= BACK_RISE=4 outside the front zone (meant for garden sheds), so parasol canopies (red_concrete, 4 above ground) on open mapped ground between SUSU and the Retail Centre passed; no footprint-hits file was written and plan.outside_footprint_ok was never consulted. Fix options: treat roof-like blocks (concrete, slabs) as building-like at any height outside footprints, or add an explicit furniture category so open-ground furniture is allowed on purpose. Add a unit test. See model-bakeoffs/rounds/R-008.json why-block. Merged as 5bda1d3 (f63782f). Reviewer nits only (ROOF_LIKE narrow list; _bid sync note; frontage doc)."
+    },
+    {
+      "id": 72,
+      "title": "model_bakeoff.py baseline: one command to reset the 3x3 ghost baseline",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Retro R-013: the sitting step 'regenerate the ghost baseline' hides an undo of the previous round's build that has no CLI (agent read scripts/site_kit.py to find `site_kit.undo('<plan>')`). Also: `lidar_ghost` lives in shims/ not scripts/; `cell_registry.py reconcile` takes the cell positionally; `site_kit.apply(stage='feature')` is invalid (None or 'feature-<name>'). Do: add `model_bakeoff.py baseline R-NNN` that (a) refuses unless the active world is bakeoff and the site lock is held by the caller's SITE_OWNER (or claims it), (b) finds every non-undone feature build in the 3x3 ghost_cells from the journal and undoes it via site_kit.undo with meta {'round': id}, (c) runs `lidar_ghost apply --cell 48,-44 --ring 1 --include-focus --force`, (d) checks `lidar_ghost status` ghosts_complete for all nine and `cell_registry reconcile <cell>` clean for each, (e) prints a short report and records it in the round JSON (e.g. `baseline: {undone: [...], journal_seqs: [...], clean: true}`). Replace the two baseline steps in model-bakeoffs/config.json sitting_steps with this single command (full command line). Optionally expose `site_kit undo <plan>` as a CLI too. Done when: unit tests with a fake journal/MCP cover undo-selection and refusal paths; a dry `--plan` flag lists what would be undone; sitting card shows the one command. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff.  Merged as cdf0960 (1e03ac5). Reviewer nits only."
+    },
+    {
+      "id": 70,
+      "title": "Fail fast on the wrong Python interpreter",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: after a reboot bare `python3` resolved to Apple /usr/bin/python3 (3.9, no numpy) instead of Homebrew 3.14. Symptoms were misleading: `TypeError: unsupported operand |` at scripts/site_kit.py:65 (PEP 604 annotation), `No module named numpy` in shims/lidar_query.py, and a red pre-commit. Do: (1) at the top of scripts/script_env.py (imported by nearly every script/shim) check `sys.version_info >= (3, 10)` and that numpy imports; otherwise `raise SystemExit(f'needs python3 >= 3.10 with numpy (Homebrew); got {sys.executable} {sys.version.split()[0]}')`. Check also covers scripts that import active_world first: put the guard in active_world.py if it is imported earlier than script_env. (2) Record the expected version where tools read it (`.python-version` and/or `requires-python` in a pyproject). (3) .githooks/pre-commit runs bare `python3`: make it fail with the same message (the guard covers it once pre_commit_checks imports the guarded module, or add an explicit check in the hook). Done when: running `/usr/bin/python3 scripts/site_kit.py`-style entry points, `shims/lidar_query.py --help` and the hook under 3.9 each print the one-line message and exit non-zero; unit test for the guard; run_tests.py green under Homebrew python. Merged as b523972 (a80daff). Review APPROVE."
+    },
+    {
+      "id": 71,
+      "title": "Pre-commit: quiet output, unset-world cause as last line",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: a tracker-only commit failed the hook and the cause (`AI_WORLDBUILDER_WORLD_ROOT is unset`) was buried after ~69 KB of verbose unittest output (agent output overflowed to a file). Do NOT pin or default a world (owner: pinning caused more issues than it helped). Do in scripts/pre_commit_checks.py (+ scripts/run_tests.py if needed): (1) run tests non-verbose; on failure print only the failing test ids + their tracebacks, capped (e.g. last 40 lines each), then a one-line summary per check (`unit tests: FAILED 3/412`, `provider-name audit: OK`). (2) Before running world-dependent checks, if AI_WORLDBUILDER_WORLD_ROOT is unset, skip running them and print as the final line: `pre-commit: AI_WORLDBUILDER_WORLD_ROOT is unset; export it to an active world checkout (see AGENTS.md Start) and retry`, exit non-zero. Done when: a clean commit prints <= ~10 lines; an unset-world commit prints the cause as its last line without running tests; a failing test shows its id and traceback within a short output; tests for the summary formatting. Merged as ff22965 (8391168). Reviewer nits only."
     }
   ]
 }

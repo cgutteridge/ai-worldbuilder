@@ -19,6 +19,13 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = TOOL_ROOT / "scripts"
 SHIMS = TOOL_ROOT / "shims"
 
+if str(TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOL_ROOT))
+
+import python_runtime  # noqa: E402
+
+python_runtime.ensure_python_runtime()
+
 
 def ensure_import_paths() -> None:
     """Put ``shims/`` then ``scripts/`` on ``sys.path`` for provider + glue imports.

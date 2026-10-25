@@ -1,0 +1,5 @@
+[project]
+name = "ai-worldbuilder"
+version = "0"
+requires-python = ">=3.10"
+description = "Build and refine Minecraft worlds from real-place evidence"
