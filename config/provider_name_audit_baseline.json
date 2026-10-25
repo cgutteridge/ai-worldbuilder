@@ -1,27 +1,4 @@
 {
   "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here.",
-  "keys": [
-    "rules/feature-builds.md:34",
-    "rules/feature-builds.md:55",
-    "scripts/feature_build.py:130",
-    "scripts/feature_build.py:136",
-    "scripts/feature_build.py:137",
-    "scripts/feature_build.py:140",
-    "scripts/feature_build.py:249",
-    "scripts/feature_build.py:262",
-    "scripts/feature_build.py:270",
-    "scripts/feature_build.py:308",
-    "scripts/feature_build.py:311",
-    "scripts/feature_build.py:313",
-    "scripts/feature_build.py:315",
-    "scripts/feature_build.py:317",
-    "scripts/feature_build.py:318",
-    "scripts/feature_build.py:319",
-    "scripts/feature_build.py:39",
-    "scripts/feature_build.py:556",
-    "scripts/feature_build.py:650",
-    "scripts/feature_build.py:680",
-    "scripts/feature_build.py:685",
-    "scripts/feature_build.py:689"
-  ]
+  "keys": []
 }

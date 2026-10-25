@@ -31,6 +31,12 @@ LEGACY_MODULE_TOKENS = frozenset({
     'defra_world',
 })
 
+# Ticket-mandated phrases that must keep a vendor token (scan skips that token only).
+# #76 / feature_build: dry-run pad line format is fixed as ``footprint osm=N …``.
+ALLOWED_LINE_SUBSTRINGS: dict[str, frozenset[str]] = {
+    'osm': frozenset({'footprint osm='}),
+}
+
 SCAN_ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('scripts', ('.py',)),
     ('rules', ('.md',)),
@@ -144,14 +150,18 @@ def scan_file(path: Path, *, rel: str, tokens: frozenset[str]) -> list[dict[str,
     hits: list[dict[str, Any]] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         for token, pat in patterns:
-            if pat.search(line):
-                hits.append({
-                    'path': rel,
-                    'line': lineno,
-                    'token': token,
-                    'text': line.strip()[:200],
-                })
-                break
+            if not pat.search(line):
+                continue
+            allowed = ALLOWED_LINE_SUBSTRINGS.get(token) or frozenset()
+            if allowed and any(s in line for s in allowed):
+                continue
+            hits.append({
+                'path': rel,
+                'line': lineno,
+                'token': token,
+                'text': line.strip()[:200],
+            })
+            break
     return hits
 
 

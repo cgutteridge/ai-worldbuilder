@@ -31,7 +31,7 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   places mirrored hinges and stays framed (`door_frame_issues`). Dry run
   prints each beside the portal name. Absent → legacy front/rear spruce.
 - optional `zones` — per-label lidar roof plateaus **within one footprint**
-  (one OSM way, several flat roof heights). Use when a single `storeys`
+  (one vector way, several flat roof heights). Use when a single `storeys`
   count cannot express terraced roofs (e.g. SUSU w33830305 with plateaus at
   41/45/46/47/48/50 m AOD). Example:
 

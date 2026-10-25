@@ -127,17 +127,17 @@ def erode_mask(mask: np.ndarray, k: int = 3) -> np.ndarray:
     return _sw(a, (k, k)).min(axis=(2, 3)).astype(bool)
 
 
-def square_footprint(osm: np.ndarray) -> np.ndarray:
+def square_footprint(outline: np.ndarray) -> np.ndarray:
     """Kill 1-block stairs: morphological close then open (no fixed halo).
 
     Works on a temporary False-padded copy so masses that touch the array
     rim are not eaten by constant-0 erode (and not grown into a halo).
 
-    @param osm: boolean OSM footprint mask
-    @returns: readable massing mask (same shape as ``osm``)
+    @param outline: boolean vector-way footprint mask
+    @returns: readable massing mask (same shape as ``outline``)
     """
     pad = 2
-    m = np.pad(osm.astype(bool), pad, constant_values=False)
+    m = np.pad(outline.astype(bool), pad, constant_values=False)
     readable = erode_mask(dilate_mask(m))
     readable = dilate_mask(erode_mask(readable))
     return readable[pad:-pad, pad:-pad]
@@ -246,7 +246,7 @@ def bucket_zones(
 
 def assign_roof_zones(
     dsm: np.ndarray,
-    osm: np.ndarray,
+    outline: np.ndarray,
     levels: list[int] | list[float] | str,
     xs: np.ndarray,
     zs: np.ndarray,
@@ -259,7 +259,7 @@ def assign_roof_zones(
     coordinates for each cell (needed for rotated bucketing).
 
     @param dsm: DSM metres AOD
-    @param osm: boolean OSM footprint
+    @param outline: boolean vector-way footprint
     @param levels: plateau list or ``\"auto\"``
     @param xs: world x grid
     @param zs: world z grid
@@ -267,7 +267,7 @@ def assign_roof_zones(
     @param axis_deg: degrees or ``\"auto\"`` (PCA of readable cells)
     @returns: ``(readable, zone, levels_used, axis_deg_used)``
     """
-    readable = square_footprint(osm)
+    readable = square_footprint(outline)
     med = _win(dsm.astype(float), 5, np.median)
     if levels == 'auto':
         levels_used: list = auto_plateau_levels(med, readable)
@@ -305,18 +305,18 @@ def edge_wall_expose(roof: dict, ground: dict, cell: tuple[int, int]) -> int:
     return min(top_of((x + dx, z + dz)) for dx, dz in N4)
 
 
-def footprint_pad_line(osm: np.ndarray, readable: np.ndarray) -> str:
+def footprint_pad_line(outline: np.ndarray, readable: np.ndarray) -> str:
     """Format the bake-off footprint pad line.
 
-    @param osm: OSM boolean mask
+    @param outline: vector-way boolean mask
     @param readable: squared readable mask
-    @returns: ``footprint osm=N readable=M pad=P cover=C%``
+    @returns: ``footprint osm=N readable=M pad=P cover=C%`` (ticket-mandated wording)
     """
-    n_osm = int(osm.sum())
+    n_outline = int(outline.sum())
     n_read = int(readable.sum())
-    pad = int((readable & ~osm).sum())
-    cover = 100.0 * (readable & osm).sum() / n_osm if n_osm else 0.0
-    return f'footprint osm={n_osm} readable={n_read} pad={pad} cover={cover:.2f}%'
+    pad = int((readable & ~outline).sum())
+    cover = 100.0 * (readable & outline).sum() / n_outline if n_outline else 0.0
+    return f'footprint osm={n_outline} readable={n_read} pad={pad} cover={cover:.2f}%'
 
 
 def cells_to_mask(cells: set, x0: int, z0: int, width: int, depth: int) -> np.ndarray:
@@ -553,7 +553,7 @@ class Build:
         @param osm_root: optional vector-map clip root for ``OSMIndex`` (tests / alternate trees)
         @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
             (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
-            When omitted, zoned labels fetch composite lidar via ``defra_lidar.mc_heights``.
+            When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
         """
         self.spec = spec
         self.name = spec['name']
@@ -647,9 +647,15 @@ class Build:
         zs = [c[1] for c in f.cells]
         x0, x1 = min(xs) - 1, max(xs) + 1
         z0, z1 = min(zs) - 1, max(zs) + 1
-        import defra_lidar as dl
-        lid = dl.DefraLidar(download=False)
-        h = dl.mc_heights(lid, x0, z0, x1, z1)
+        import lidar_provider as lp
+        lidar = lp.tile_client(download=False)
+        e0, n0, e1, n1 = lp.mc_box_en(x0, z0, x1, z1)
+        if lidar.missing('DTM', e0, n0, e1, n1) or lidar.missing('DSM', e0, n0, e1, n1):
+            raise SystemExit(
+                f'{self.name}: lidar DTM/DSM cache missing for zones on {f.no} '
+                f'bbox=({x0},{z0})-({x1},{z1})'
+            )
+        h = lp.mc_heights(lidar, x0, z0, x1, z1)
         # mc_heights is [x - x0, z - z0]; convert to [z, x] for zone helpers
         return {
             'x0': x0,
@@ -677,16 +683,16 @@ class Build:
             dsm = np.asarray(grids['dsm'], dtype=float)
             ground = np.asarray(grids['ground_y'])
             depth, width = dsm.shape
-            osm = cells_to_mask(f.cells, x0, z0, width, depth)
+            outline = cells_to_mask(f.cells, x0, z0, width, depth)
             zz, xx = np.mgrid[0:depth, 0:width]
             xs = xx + x0
             zs = zz + z0
             readable, zone, _levels, _axis = assign_roof_zones(
-                dsm, osm, cfg['levels'], xs, zs,
+                dsm, outline, cfg['levels'], xs, zs,
                 bucket=int(cfg.get('bucket', 4)),
                 axis_deg=cfg.get('axis_deg', 'auto'),
             )
-            self._zone_pad_lines.append(footprint_pad_line(osm, readable))
+            self._zone_pad_lines.append(footprint_pad_line(outline, readable))
             new_cells = mask_to_cells(readable, x0, z0)
             roof: dict = {}
             gy: dict = {}
@@ -1327,6 +1333,27 @@ class Build:
             else:
                 self.roof_pitched(hs, own)
 
+    def _prune_outside_guard_hits(self) -> None:
+        """Drop outside fringe the vector-map guard flags, without wiping door stoops.
+
+        Roof-overhang slabs are always removed. When a label is zoned, non-slab
+        hits on columns owned by those zoned features are also removed (expanded
+        readable mass the clip index may not cover). Stoops sit one step outside
+        the mass, so they are kept — zoning must not delete every outside block.
+
+        @returns: None
+        """
+        zoned_cols = {
+            c for f in self.features
+            if getattr(f, 'zone_roof', None)
+            for c in f.cells
+        }
+        for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
+            if 'slab' in v[0]:
+                del self.p.cells[q]
+            elif (q[0], q[2]) in zoned_cols:
+                del self.p.cells[q]
+
     def build(self) -> Plan:
         """Produce the offline plan for this feature build.
 
@@ -1360,11 +1387,7 @@ class Build:
             self.windows(f)
         self.roof()
         if self.idx is not None:
-            # Drop roof-overhang slabs always; with zones also drop stoops that
-            # wandered past the near-footprint margin so dry-run stays at 0 outside.
-            for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
-                if 'slab' in v[0] or self._zone_pad_lines:
-                    del self.p.cells[q]
+            self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
         for q in list(self.p.cells):
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
