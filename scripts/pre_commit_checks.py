@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -23,10 +24,90 @@ from typing import Iterable, Sequence
 
 TRACKER_PATHS = frozenset({'tasks/index.json', 'tasks/done.json'})
 WAVE_LOCK_NAME = '.wave-lock'
+WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'
+UNSET_WORLD_MESSAGE = (
+    'pre-commit: AI_WORLDBUILDER_WORLD_ROOT is unset; '
+    'export it to an active world checkout (see AGENTS.md Start) and retry'
+)
+DEFAULT_TRACEBACK_LINES = 40
 
 
 class WaveLockError(RuntimeError):
     """Raised when a wave lock cannot be acquired or is held by another orchestrator."""
+
+
+def format_check_summary(
+    name: str,
+    *,
+    ok: bool,
+    failed: int = 0,
+    total: int = 0,
+) -> str:
+    """Return a one-line status summary for a pre-commit check.
+
+    @param name: check label (e.g. ``unit tests``, ``provider-name audit``)
+    @param ok: whether the check passed
+    @param failed: number of failing cases (used when ``ok`` is False and total > 0)
+    @param total: total cases run (used when ``ok`` is False)
+    @returns: single-line summary such as ``unit tests: FAILED 3/412``
+    """
+    if ok:
+        return f'{name}: OK'
+    if total > 0:
+        return f'{name}: FAILED {failed}/{total}'
+    return f'{name}: FAILED'
+
+
+def format_failure_excerpt(
+    test_id: str,
+    traceback: str,
+    *,
+    max_lines: int = DEFAULT_TRACEBACK_LINES,
+    label: str = 'FAIL',
+) -> str:
+    """Format one failing test id with a capped traceback.
+
+    @param test_id: unittest id (``module.Class.method``)
+    @param traceback: full failure/error traceback text
+    @param max_lines: keep only the last N traceback lines
+    @param label: ``FAIL`` or ``ERROR``
+    @returns: multi-line block starting with ``FAIL <id>`` / ``ERROR <id>``
+    """
+    tb_lines = traceback.rstrip('\n').splitlines()
+    if len(tb_lines) > max_lines:
+        tb_lines = tb_lines[-max_lines:]
+    body = '\n'.join(tb_lines)
+    if body:
+        return f'{label} {test_id}\n{body}'
+    return f'{label} {test_id}'
+
+
+def format_failure_report(
+    failures: Sequence[tuple[str, str]],
+    *,
+    max_lines: int = DEFAULT_TRACEBACK_LINES,
+    label: str = 'FAIL',
+) -> str:
+    """Format several failing test excerpts separated by blank lines.
+
+    @param failures: sequence of ``(test_id, traceback)`` pairs
+    @param max_lines: traceback line cap per failure
+    @param label: ``FAIL`` or ``ERROR``
+    @returns: combined report text (empty when ``failures`` is empty)
+    """
+    blocks = [
+        format_failure_excerpt(test_id, tb, max_lines=max_lines, label=label)
+        for test_id, tb in failures
+    ]
+    return '\n\n'.join(blocks)
+
+
+def world_root_is_set() -> bool:
+    """Return True when ``AI_WORLDBUILDER_WORLD_ROOT`` is set to a non-empty value.
+
+    @returns: whether the active-world env var is usable
+    """
+    return bool(os.environ.get(WORLD_ENV, '').strip())
 
 
 def is_worker_branch(branch: str) -> bool:
@@ -174,15 +255,29 @@ def checkout_branch_names(repo_root: Path) -> list[str]:
 def run_provider_name_audit(repo_root: Path) -> int:
     """Fail when new provider-id wording appears outside allowed homes (#28).
 
+    Captures the audit CLI's own chatter and prints a one-line summary instead.
+
     @param repo_root: repository root
     @returns: process exit code from ``scripts/check_provider_names.py``
     """
     script = repo_root / 'scripts' / 'check_provider_names.py'
-    return subprocess.call([sys.executable, str(script)], cwd=repo_root / 'scripts')
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=repo_root / 'scripts',
+        capture_output=True,
+        text=True,
+    )
+    ok = result.returncode == 0
+    if not ok:
+        detail = (result.stderr or result.stdout or '').rstrip()
+        if detail:
+            print(detail, file=sys.stderr)
+    print(format_check_summary('provider-name audit', ok=ok), file=sys.stderr)
+    return result.returncode
 
 
 def run_unit_tests(repo_root: Path) -> int:
-    """Run the repo's stdlib unit test suite.
+    """Run the repo's stdlib unit test suite (quiet reporter).
 
     @param repo_root: repository root
     @returns: process exit code from ``scripts/run_tests.py``
@@ -193,6 +288,10 @@ def run_unit_tests(repo_root: Path) -> int:
 
 def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     """Run all pre-commit checks; print failures to stderr.
+
+    When ``AI_WORLDBUILDER_WORLD_ROOT`` is unset, skips world-dependent checks
+    (provider-name audit and unit suite) and prints :data:`UNSET_WORLD_MESSAGE`
+    as the final line (exit 1). Does not pin or default a world.
 
     @param repo_root: repository root
     @param skip_tests: when True, skip provider audit and unit suite (ownership only)
@@ -211,14 +310,15 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
         return 1
     if skip_tests:
         return 0
+    # Provider audit imports script_env → active_world; unit tests need the
+    # world too. Refuse early with a single last-line cause (no pin/default).
+    if not world_root_is_set():
+        print(UNSET_WORLD_MESSAGE, file=sys.stderr)
+        return 1
     code = run_provider_name_audit(repo_root)
     if code != 0:
-        print('pre-commit: provider-name audit failed', file=sys.stderr)
         return code
-    code = run_unit_tests(repo_root)
-    if code != 0:
-        print('pre-commit: unit tests failed', file=sys.stderr)
-    return code
+    return run_unit_tests(repo_root)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
