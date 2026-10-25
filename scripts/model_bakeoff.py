@@ -11,6 +11,7 @@
   python3 scripts/model_bakeoff.py repair R-001 --brief "raise ridge one block"
   python3 scripts/model_bakeoff.py baseline R-001
   python3 scripts/model_bakeoff.py baseline R-001 --plan
+  python3 scripts/model_bakeoff.py capture R-001
 
 Records live under ``model-bakeoffs/`` (tool repo). See ``model-bakeoffs/README.md``.
 """
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -121,7 +123,7 @@ def sitting_checklist(
 
 
 def require_bakeoff_active_world(root: Path) -> None:
-    """Refuse CLI open/repair/baseline unless the active world matches config ``world``.
+    """Refuse CLI open/repair/baseline/capture unless the active world matches config ``world``.
 
     Library helpers such as ``open_round`` are not guarded (tests use temp roots).
     Does not restrict world repair tools outside this CLI.
@@ -138,9 +140,91 @@ def require_bakeoff_active_world(root: Path) -> None:
     actual = active_world.gameworld_id()
     if actual != expected:
         raise RuntimeError(
-            f'bake-off open/repair/baseline requires world {expected!r} '
+            f'bake-off open/repair/baseline/capture requires world {expected!r} '
             f'(active is {actual!r}); prefix every command with {BAKEOFF_WORLD_PREFIX}'
         )
+
+
+def round_shots_slug(round_id: str) -> str:
+    """Filesystem slug for a round's shot folder (``R-013`` → ``r013``).
+
+    @param round_id: round id
+    @returns: lower-case slug without hyphens
+    """
+    return round_id.lower().replace('-', '')
+
+
+def shots_rel_dir(world_id: str, round_id: str) -> str:
+    """Repo-relative shot directory for a round.
+
+    @param world_id: config ``world`` (e.g. ``bakeoff``)
+    @param round_id: round id
+    @returns: e.g. ``worlds/bakeoff/verification/site/r013-shots``
+    """
+    return f'worlds/{world_id}/verification/site/{round_shots_slug(round_id)}-shots'
+
+
+def scale_aerial_crop(
+    crop_pixels: list[int] | tuple[int, ...],
+    capture_width: int,
+    *,
+    base_width: int = 1512,
+) -> tuple[int, int, int, int]:
+    """Scale reference aerial crop box to the actual capture width.
+
+    @param crop_pixels: ``[left, top, right, bottom]`` at ``base_width``
+    @param capture_width: actual ``aerial_top`` PNG width
+    @param base_width: width the crop was authored against
+    @returns: scaled integer crop box
+    """
+    if base_width <= 0:
+        raise ValueError(f'base_width must be positive, got {base_width}')
+    if len(crop_pixels) != 4:
+        raise ValueError(f'aerial_crop_pixels must have 4 ints, got {crop_pixels!r}')
+    scale = capture_width / base_width
+    return tuple(round(float(q) * scale) for q in crop_pixels)  # type: ignore[return-value]
+
+
+def photos_map_for_shots(
+    shots_rel: str,
+    *,
+    camera_names: list[str] | tuple[str, ...] | None = None,
+    portals_note: str = 'reference/portals/42-A..D.jpg',
+) -> dict[str, str]:
+    """Build the round ``photos`` map pointing at captured shot paths.
+
+    @param shots_rel: repo-relative shots directory
+    @param camera_names: camera keys (default square_south / street_front / aerial_top)
+    @param portals_note: short note for portal reference photos
+    @returns: photos dict suitable for the round JSON
+    """
+    names = list(camera_names or ('square_south', 'street_front', 'aerial_top'))
+    photos: dict[str, str] = {name: f'{shots_rel}/{name}.png' for name in names}
+    photos['real_refs_note'] = f'{portals_note}; real aerial crop {shots_rel}/real_aerial.png'
+    return photos
+
+
+def xyz_pixel_from_wgs84(
+    lat: float,
+    lon: float,
+    *,
+    zoom: int,
+    origin_tx: float,
+    origin_ty: float,
+) -> tuple[float, float]:
+    """Project WGS84 to mosaic-local pixel coords for an XYZ tile origin.
+
+    @param lat: latitude
+    @param lon: longitude
+    @param zoom: XYZ zoom level
+    @param origin_tx: mosaic west edge tile X (float OK)
+    @param origin_ty: mosaic north edge tile Y (float OK)
+    @returns: ``(u, v)`` pixels in the mosaic image
+    """
+    n = 2 ** zoom
+    tx = (lon + 180.0) / 360.0 * n
+    ty = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
+    return (tx - origin_tx) * 256.0, (ty - origin_ty) * 256.0
 
 
 def load_catalogue(root: Path) -> dict:
@@ -1088,6 +1172,199 @@ def run_baseline(
     return report
 
 
+def _default_capture_view(
+    eye: list[float],
+    look: list[float],
+    dest: Path,
+    *,
+    downscale: int = 1,
+) -> Path:
+    """Capture one client view via ``evidence_sheet._capture_view``."""
+    from evidence_sheet import _capture_view
+
+    return _capture_view(eye, look, dest, downscale=downscale)
+
+
+def _default_save_world() -> None:
+    """Flush the live Minecraft world to disk."""
+    from mc_paced import Paced
+
+    Paced().call('server_save_all_worlds', {'flush': True})
+
+
+def _default_mc_to_wgs84(x: float, z: float) -> tuple[float, float]:
+    """Minecraft X/Z → WGS84 (active world frame)."""
+    from world_frame import mc_to_wgs84
+
+    return mc_to_wgs84(x, z)
+
+
+def load_capture_config(cfg: dict) -> dict[str, Any]:
+    """Return the ``capture`` block from bake-off config.
+
+    @param cfg: loaded config.json
+    @returns: capture settings
+    @raises ValueError: when the block or required cameras are missing
+    """
+    cap = cfg.get('capture')
+    if not isinstance(cap, dict):
+        raise ValueError('config.json missing capture camera table')
+    cameras = cap.get('cameras')
+    if not isinstance(cameras, dict) or not cameras:
+        raise ValueError('config.json capture.cameras must be a non-empty object')
+    for name in ('square_south', 'street_front', 'aerial_top'):
+        if name not in cameras:
+            raise ValueError(f'config.json capture.cameras missing {name!r}')
+    return cap
+
+
+def format_capture_report(report: dict) -> str:
+    """Short human report for a capture run.
+
+    @param report: capture report dict
+    @returns: text
+    """
+    shots = report.get('shots_dir') or ''
+    lines = [
+        f"capture {report.get('round_id')}: wrote {shots}",
+        f"  photos: {', '.join(report.get('photo_keys') or [])}",
+    ]
+    if report.get('aerial_crop'):
+        lines.append(f"  aerial_crop: {report['aerial_crop']}")
+    return '\n'.join(lines)
+
+
+def run_capture(
+    root: Path,
+    round_id: str,
+    *,
+    world_root: Path | None = None,
+    capture_fn: Callable[..., Path] | None = None,
+    save_world_fn: Callable[[], Any] | None = None,
+    mc_to_wgs84_fn: Callable[[float, float], tuple[float, float]] | None = None,
+    pair_only: bool = False,
+) -> dict[str, Any]:
+    """Capture fixed interview cameras for a round and fill its ``photos`` map.
+
+    Writes PNGs under ``<world>/verification/site/<slug>-shots/``, crops
+    ``aerial_top``, writes matching ``real_aerial.png`` from the configured
+    mosaic, saves the world, and updates the round JSON.
+
+    @param root: bake-offs root
+    @param round_id: round to capture
+    @param world_root: active world checkout (default ``active_world.WORLD_ROOT``)
+    @param capture_fn: injectable ``(eye, look, dest, *, downscale=1) → Path``
+    @param save_world_fn: injectable world flush (tests)
+    @param mc_to_wgs84_fn: injectable MC→WGS84 for real aerial crop (tests)
+    @param pair_only: skip live captures; re-crop aerial from existing full frame
+    @returns: capture report dict
+    @raises RuntimeError: wrong active world
+    @raises ValueError: missing capture config
+    @raises FileNotFoundError: missing round or mosaic / prior frame
+    """
+    require_bakeoff_active_world(root)
+    cfg = load_config(root)
+    cap = load_capture_config(cfg)
+    world_id = str(cfg.get('world') or 'bakeoff')
+    wroot = Path(world_root) if world_root is not None else Path(active_world.WORLD_ROOT)
+    load_round(root, round_id)  # ensure exists before writing files
+
+    shots_rel = shots_rel_dir(world_id, round_id)
+    out = wroot / 'verification' / 'site' / f'{round_shots_slug(round_id)}-shots'
+    out.mkdir(parents=True, exist_ok=True)
+
+    cameras: dict[str, Any] = dict(cap['cameras'])
+    capture = capture_fn or _default_capture_view
+    if not pair_only:
+        for name, cam in cameras.items():
+            eye = list(cam['eye'])
+            look = list(cam['look'])
+            capture(eye, look, out / f'{name}.png', downscale=1)
+
+    crop_pixels = list(cap.get('aerial_crop_pixels') or [451, 156, 1061, 793])
+    base_width = int(cap.get('aerial_crop_base_width') or 1512)
+    rotation = int(cap.get('aerial_rotation_degrees') or 180)
+    bbox = list(cap.get('aerial_bbox_mc') or [6140, -5584, 6230, -5490])
+
+    metadata: dict[str, Any] = {
+        'cameras': cameras,
+        'aerial_bbox_mc': bbox,
+        'FOV': cap.get('FOV', 70),
+        'reference_plane_y': cap.get('reference_plane_y', 60),
+        'aerial_crop_pixels': crop_pixels,
+    }
+    (out / 'cameras.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
+
+    from PIL import Image
+
+    full_path = out / 'aerial_top-full.png'
+    if not pair_only:
+        Image.open(out / 'aerial_top.png').save(full_path)
+    if not full_path.is_file():
+        raise FileNotFoundError(
+            f'missing {full_path}; run capture without --pair-only first'
+        )
+    im = Image.open(full_path)
+    crop = scale_aerial_crop(crop_pixels, im.width, base_width=base_width)
+    im.crop(crop).rotate(rotation).save(out / 'aerial_top.png')
+    metadata['actual_capture_size'] = list(im.size)
+    metadata['actual_aerial_crop_pixels'] = list(crop)
+    metadata['aerial_rotation_degrees'] = rotation
+    (out / 'cameras.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
+
+    real_cfg = dict(cap.get('real_aerial') or {})
+    mosaic_rel = real_cfg.get(
+        'mosaic',
+        'reference/aerial/susu/mosaic-z18-3x3-centre-130054-87835.png',
+    )
+    mosaic_path = wroot / mosaic_rel
+    if not mosaic_path.is_file():
+        raise FileNotFoundError(f'real aerial mosaic missing: {mosaic_path}')
+    origin = list(real_cfg.get('xyz_origin') or [130053, 87834])
+    zoom = int(real_cfg.get('zoom') or 18)
+    resize = list(real_cfg.get('resize') or [610, 637])
+    wgs84 = mc_to_wgs84_fn or _default_mc_to_wgs84
+    x0, z0, x1, z1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    corners = [
+        xyz_pixel_from_wgs84(
+            *wgs84(x, z),
+            zoom=zoom,
+            origin_tx=float(origin[0]),
+            origin_ty=float(origin[1]),
+        )
+        for x in (x0, x1)
+        for z in (z0, z1)
+    ]
+    us, vs = zip(*corners)
+    real = Image.open(mosaic_path)
+    real.crop((min(us), min(vs), max(us), max(vs))).resize(
+        (int(resize[0]), int(resize[1]))
+    ).save(out / 'real_aerial.png')
+
+    save = save_world_fn or _default_save_world
+    save()
+
+    portals_note = str(cap.get('portals_note') or 'reference/portals/42-A..D.jpg')
+    photos = photos_map_for_shots(
+        shots_rel,
+        camera_names=list(cameras.keys()),
+        portals_note=portals_note,
+    )
+    round_ = load_round(root, round_id)
+    round_['photos'] = photos
+    save_round(root, round_)
+
+    return {
+        'round_id': round_id,
+        'shots_dir': shots_rel,
+        'shots_abs': str(out),
+        'photos': photos,
+        'photo_keys': list(photos.keys()),
+        'aerial_crop': list(crop),
+        'at': utc_now(),
+    }
+
+
 def format_status(root: Path) -> str:
     """Human status report.
 
@@ -1284,6 +1561,17 @@ def main(argv: list[str] | None = None) -> int:
         help='list feature plans that would be undone; change nothing',
     )
 
+    p_cap = sub.add_parser(
+        'capture',
+        help='fixed interview cameras from config; write shots + fill round photos',
+    )
+    p_cap.add_argument('round_id')
+    p_cap.add_argument(
+        '--pair-only',
+        action='store_true',
+        help='skip live view capture; re-crop aerial from aerial_top-full.png',
+    )
+
     args = ap.parse_args(argv)
     root = bakeoffs_root(args.root)
 
@@ -1373,6 +1661,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.plan_only:
                 for t in report.get('targets') or []:
                     print(f"  would undo {t['plan']} (journal seq {t['seq']})")
+            return 0
+        if args.cmd == 'capture':
+            report = run_capture(
+                root,
+                args.round_id,
+                pair_only=bool(args.pair_only),
+            )
+            print(format_capture_report(report))
             return 0
     except (ValueError, KeyError, FileNotFoundError, RuntimeError) as exc:
         print(f'error: {exc}', file=sys.stderr)
