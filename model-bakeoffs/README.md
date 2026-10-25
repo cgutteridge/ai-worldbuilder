@@ -1,6 +1,6 @@
 # Model bake-offs
 
-Framework for comparing **bulk-work** models on place design/review — **one model per sitting**, records that stand alone so you can stop and resume anytime.
+Framework for comparing **bulk-work** models on place design/review — **one model per sitting** by default (or a **hybrid** designer + builder sitting), records that stand alone so you can stop and resume anytime.
 
 Protocol detail: [PROTOCOL.md](PROTOCOL.md). Short pointer from docs: [../docs/model-bakeoffs.md](../docs/model-bakeoffs.md).
 
@@ -40,7 +40,10 @@ python3 scripts/model_bakeoff.py add-model --tool cursor --id opus --tier high -
 python3 scripts/model_bakeoff.py status
 python3 scripts/model_bakeoff.py next
 python3 scripts/model_bakeoff.py open --tool cursor --model composer-2.5
-# follow the sitting_steps checklist printed by open/show
+# hybrid: builder is --model (apply owner); designer writes the hand-off
+python3 scripts/model_bakeoff.py open --tool claude-code \
+  --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low
+# follow the sitting_steps / sitting_steps_hybrid checklist printed by open/show
 python3 scripts/model_bakeoff.py score R-001 --mech-gate pass --overall pass \
   --axis massing=pass --axis openings=pass --axis roof_greeblies=pass \
   --axis materials=pass --axis keep=pass --why "ridge a bit low"

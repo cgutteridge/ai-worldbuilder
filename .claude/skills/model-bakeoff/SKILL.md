@@ -6,7 +6,7 @@ description: >-
   the bake-off ghost.
 ---
 
-One model per sitting. Records under `model-bakeoffs/`. CLI: `python3 scripts/model_bakeoff.py`.
+One model per sitting by default, or a hybrid designer + builder sitting (`open --model <builder> --designer <designer>`). Records under `model-bakeoffs/`. CLI: `python3 scripts/model_bakeoff.py`.
 
 ## Active world
 
