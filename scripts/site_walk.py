@@ -9,7 +9,7 @@ Feet cell passable if feet and head are non-solid and the block below is solid
 import sys
 from collections import deque
 
-from site_kit import World
+from site_kit import World, warm_reads
 
 OPEN_EXACT = {
     'air', 'cave_air', 'light', 'water', 'lantern', 'soul_lantern', 'end_rod', 'iron_chain',
@@ -38,6 +38,9 @@ def solid(b):
 def walk(w, start, goal, box):
     """BFS walkability from start to goal inside an XZ box.
 
+    Prefetches the search box over a Y band around start/goal so neighbour probes
+    reuse MCP tiles instead of one scan per block.
+
     @param w: site_kit.World
     @param start: (x,y,z) feet position
     @param goal: (x,y,z) feet position
@@ -45,6 +48,15 @@ def walk(w, start, goal, box):
     @returns: path list, or None if unreachable
     """
     x0, z0, x1, z1 = box
+    # Feet / head / below / step-up headroom (± a few for stairs).
+    y_lo = min(start[1], goal[1]) - 4
+    y_hi = max(start[1], goal[1]) + 6
+    warm_reads(w, (
+        (x, y, z)
+        for x in range(x0, x1 + 1)
+        for z in range(z0, z1 + 1)
+        for y in range(y_lo, y_hi + 1)
+    ))
 
     def ok(x, y, z):
         return (x0 <= x <= x1 and z0 <= z <= z1 and not solid(w.block(x, y, z))

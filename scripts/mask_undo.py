@@ -26,7 +26,7 @@ from script_env import ROOT  # noqa: E402
 
 from ground_layer import bare, ignored_builds, plan_name  # noqa: E402
 from pass_mask import PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
-from site_kit import Plan, World, apply, same, undo  # noqa: E402
+from site_kit import Plan, World, apply, same, undo, warm_reads  # noqa: E402
 
 
 def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path | None = None) -> Path | None:
@@ -93,7 +93,10 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
         raise SystemExit('mask integrity check failed; file does not match its sha256')
     to_air, conflicts = [], []
     shared = shared_positions(mask)          # a crown merged with another cell's: that mask still owns it
-    for pos, expected in sorted(mask_placements(mask).items()):
+    placements = mask_placements(mask)
+    # Known mask positions: one batched warm, not one MCP scan per crown voxel.
+    warm_reads(world, (pos for pos in placements if pos not in shared))
+    for pos, expected in sorted(placements.items()):
         if pos in shared:
             continue
         live_block = world.block(*pos)

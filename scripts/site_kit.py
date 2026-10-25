@@ -403,6 +403,20 @@ def ensure_region_matches_open_world(region=None) -> None:
     )
 
 
+def warm_reads(world, positions) -> None:
+    """Prefetch ``positions`` when ``world`` supports it; no-op for stubs.
+
+    Call before a loop of ``block(x, y, z)`` over a known set so LiveBlocks can batch
+    MCP ``block_scan_region`` calls (one scan per tile, not one per block).
+
+    @param world: :class:`World`, :class:`PlannedWorld`, or any duck with optional ``prefetch``
+    @param positions: iterable of ``(x, y, z)``
+    """
+    warm = getattr(world, 'prefetch', None)
+    if warm is not None:
+        warm(positions)
+
+
 class World:
     """Duck-typed block access over a :class:`block_store.BlockStore`.
 
