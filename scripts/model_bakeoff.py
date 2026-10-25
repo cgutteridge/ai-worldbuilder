@@ -10,8 +10,10 @@
   python3 scripts/model_bakeoff.py usage R-001 --input 12000 --output 3000 --source cursor-ui
   python3 scripts/model_bakeoff.py usage R-001 --from-transcript ~/.claude/projects/.../session.jsonl --model-prefix claude-opus-5-5
   python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
+  python3 scripts/model_bakeoff.py open --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low
   python3 scripts/model_bakeoff.py score R-001 --overall great --plan-pct 47 ...
   python3 scripts/model_bakeoff.py score R-001 --build-script worlds/bakeoff/site/builds/r013_susu.py ...
+  python3 scripts/model_bakeoff.py usage R-001 --from-transcript session.jsonl  # hybrid: splits by_role
   python3 scripts/model_bakeoff.py repair R-001 --brief "raise ridge one block"
   python3 scripts/model_bakeoff.py baseline R-001
   python3 scripts/model_bakeoff.py baseline R-001 --plan
@@ -54,6 +56,9 @@ USAGE_SOURCES = (
     'estimate',
     'unknown',
 )
+ROUND_TYPES = ('single', 'hybrid')
+USAGE_ROLES = ('designer', 'builder')
+HANDOFF_KINDS = ('script', 'spec', 'other')
 
 
 def bakeoffs_root(path: Path | None = None) -> Path:
@@ -98,33 +103,221 @@ def sitting_checklist(
     model: str,
     pack: str,
     round_id: str = 'R-NNN',
+    designer: str | None = None,
 ) -> list[str]:
-    """Render ``sitting_steps`` from config with round-specific fields.
+    """Render sitting steps from config with round-specific fields.
 
-    Placeholders: ``{tool}``, ``{model}``, ``{pack}``, ``{cell}`` (e.g. ``(48,-44)``),
+    Uses ``sitting_steps_hybrid`` when ``designer`` is set (else ``sitting_steps``).
+    Placeholders: ``{tool}``, ``{model}`` (builder / apply owner), ``{designer}``,
+    ``{builder}`` (same as ``{model}``), ``{pack}``, ``{cell}`` (e.g. ``(48,-44)``),
     ``{id}`` (round id).
 
     @param cfg: bake-off config (must include ``sitting_steps``)
     @param tool: tool id for this round
-    @param model: model id for this round
+    @param model: builder model id (apply owner)
     @param pack: pack id for this round
     @param round_id: round id for ``{id}`` (default ``R-NNN``)
+    @param designer: optional designer model id (hybrid rounds)
     @returns: checklist strings for the round record / open card
-    @raises ValueError: when ``sitting_steps`` is missing or empty
+    @raises ValueError: when the chosen steps list is missing or empty
     """
-    steps = cfg.get('sitting_steps')
+    key = 'sitting_steps_hybrid' if designer else 'sitting_steps'
+    steps = cfg.get(key)
+    if designer and (not isinstance(steps, list) or not steps):
+        steps = cfg.get('sitting_steps')
     if not isinstance(steps, list) or not steps:
-        raise ValueError('config.json missing non-empty sitting_steps list')
+        raise ValueError(f'config.json missing non-empty {key} list')
     cell = cfg.get('cell') or []
     cell_s = f'({cell[0]},{cell[1]})' if len(cell) >= 2 else ''
     ctx = {
         'tool': tool,
         'model': model,
+        'builder': model,
+        'designer': designer or '',
         'pack': pack,
         'cell': cell_s,
         'id': round_id,
     }
     return [str(step).format(**ctx) for step in steps]
+
+
+def is_hybrid_round(round_: dict) -> bool:
+    """True when the round names a designer distinct from the builder.
+
+    @param round_: round record
+    @returns: whether this is a hybrid designer/builder sitting
+    """
+    if round_.get('round_type') == 'hybrid':
+        return True
+    designer = round_.get('designer')
+    return isinstance(designer, dict) and bool(designer.get('id'))
+
+
+def model_ref(row: dict) -> dict:
+    """Compact model identity for a round record.
+
+    @param row: catalogue model row
+    @returns: id/label/tier/bulk_ok dict
+    """
+    return {
+        'id': row['id'],
+        'label': row.get('label') or row['id'],
+        'tier': row['tier'],
+        'bulk_ok': bool(row.get('bulk_ok', True)),
+    }
+
+
+def handoff_kind_for_path(path: Path | str) -> str:
+    """Classify a hand-off artefact path as script, spec, or other.
+
+    @param path: file path
+    @returns: one of HANDOFF_KINDS
+    """
+    suf = Path(path).suffix.lower()
+    if suf == '.py':
+        return 'script'
+    if suf == '.json':
+        return 'spec'
+    return 'other'
+
+
+def handoff_template(path: Path | str | None = None) -> dict:
+    """Empty or path-filled hand-off block for a hybrid round.
+
+    @param path: optional designer artefact path (spec or build script)
+    @returns: handoff dict
+    """
+    if path is None:
+        return {'path': None, 'kind': None, 'recorded_at': None}
+    p = Path(path)
+    return {
+        'path': str(p),
+        'kind': handoff_kind_for_path(p),
+        'recorded_at': utc_now(),
+    }
+
+
+def set_handoff(round_: dict, path: Path | str) -> dict:
+    """Record the designer→builder hand-off artefact on a round.
+
+    @param round_: round record (mutated)
+    @param path: artefact path (script or feature_build spec)
+    @returns: the handoff dict stored on the round
+    """
+    block = handoff_template(path)
+    round_['handoff'] = block
+    # Also remember for score-time artefact copy when it is a build script.
+    p = Path(path)
+    if p.suffix.lower() in ARTEFACT_TEXT_SUFFIXES:
+        stored = list(round_.get('build_scripts') or [])
+        s = str(p)
+        if s not in stored:
+            stored.append(s)
+            round_['build_scripts'] = stored
+    return block
+
+
+def validate_catalogue_model(row: dict, *, role: str) -> None:
+    """Refuse models that are not bulk_ok or outside active tiers (caller checks tier).
+
+    @param row: catalogue model row
+    @param role: human label for errors (builder / designer)
+    """
+    mid = row.get('id')
+    if not row.get('bulk_ok', True):
+        raise ValueError(f'{role} model {mid!r} is not bulk_ok — skip for bake-offs')
+
+
+def usage_role_template() -> dict:
+    """Empty per-role usage counts (designer or builder).
+
+    @returns: token/request fields only (plan % stays on the top-level usage block)
+    """
+    return {
+        'input_tokens': None,
+        'output_tokens': None,
+        'total_tokens': None,
+        'cache_read_tokens': None,
+        'cache_write_tokens': None,
+        'requests': None,
+        'cost_usd': None,
+        'source': None,
+        'recorded_at': None,
+        'notes': None,
+        'first_timestamp': None,
+        'last_timestamp': None,
+        'model_prefix': None,
+    }
+
+
+def _sum_usage_dicts(parts: list[dict]) -> dict[str, int | None]:
+    """Add numeric usage fields across role blocks (None-safe).
+
+    @param parts: usage-like dicts
+    @returns: summed counts (None when every part left that field None)
+    """
+    keys = (
+        'input_tokens',
+        'output_tokens',
+        'total_tokens',
+        'cache_read_tokens',
+        'cache_write_tokens',
+        'requests',
+    )
+    out: dict[str, int | None] = {}
+    for key in keys:
+        vals = [p.get(key) for p in parts if p.get(key) is not None]
+        out[key] = sum(int(v) for v in vals) if vals else None
+    return out
+
+
+def _apply_counts_to_usage_block(
+    block: dict,
+    *,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    requests: int | None = None,
+    cost_usd: float | None = None,
+    source: str | None = None,
+    notes: str | None = None,
+    first_timestamp: str | None = None,
+    last_timestamp: str | None = None,
+    model_prefix: str | None = None,
+) -> dict:
+    """Merge non-None count fields into a usage / by_role block.
+
+    @param block: mutable usage dict
+    @returns: block
+    """
+    updates = {
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'total_tokens': total_tokens,
+        'cache_read_tokens': cache_read_tokens,
+        'cache_write_tokens': cache_write_tokens,
+        'requests': requests,
+        'cost_usd': cost_usd,
+        'notes': notes,
+        'first_timestamp': first_timestamp,
+        'last_timestamp': last_timestamp,
+        'model_prefix': model_prefix,
+    }
+    for key, value in updates.items():
+        if value is not None:
+            block[key] = value
+    if (
+        block.get('total_tokens') is None
+        and block.get('input_tokens') is not None
+        and block.get('output_tokens') is not None
+    ):
+        block['total_tokens'] = int(block['input_tokens']) + int(block['output_tokens'])
+    if source is not None:
+        block['source'] = source
+    block['recorded_at'] = utc_now()
+    return block
 
 
 def require_bakeoff_active_world(root: Path) -> None:
@@ -388,6 +581,8 @@ def scored_cold_rounds(rounds: list[dict], task: str, pack: str) -> dict[tuple, 
             continue
         if r.get('kind') != 'cold' or r.get('status') != 'scored':
             continue
+        if is_hybrid_round(r):
+            continue
         key = cold_key(task, r['tool']['id'], r['model']['id'], pack)
         out[key] = r
     return out
@@ -405,6 +600,8 @@ def mid_unlocked(rounds: list[dict], task: str, pack: str) -> bool:
         if r.get('task') != task or r.get('pack') != pack:
             continue
         if r.get('kind') != 'cold' or r.get('status') != 'scored':
+            continue
+        if is_hybrid_round(r):
             continue
         if r.get('tier') != 'low':
             continue
@@ -460,6 +657,7 @@ def suggest_next(root: Path, task: str | None = None) -> dict | None:
             if r.get('task') == task
             and r.get('pack') == pack
             and r.get('kind') == 'cold'
+            and not is_hybrid_round(r)
             and r.get('tool', {}).get('id') == row['tool']
             and r.get('model', {}).get('id') == row['model']
         ]
@@ -674,12 +872,18 @@ def open_round(
     force_mid: bool = False,
     plan_pct: int | None = None,
     build_scripts: list[Path | str] | None = None,
+    designer: str | None = None,
+    handoff: Path | str | None = None,
 ) -> dict:
     """Create a self-contained round record for one sitting.
 
+    ``model`` is always the **builder** (apply owner). Pass ``designer`` to open
+    a hybrid sitting: designer writes the evidence table / build spec; builder
+    applies. Hybrid rounds are excluded from the single-model ladder.
+
     @param root: bake-offs root
     @param tool: tool id
-    @param model: model id
+    @param model: builder model id (apply owner)
     @param task: task id (default pilot)
     @param kind: cold | repair
     @param attempt: 1..max_attempts
@@ -688,18 +892,34 @@ def open_round(
     @param force_mid: allow mid cold open before low unlocks (escape hatch)
     @param plan_pct: optional weekly plan % at sitting start (all models)
     @param build_scripts: optional source paths remembered for score-time copy
+    @param designer: optional designer model id (hybrid round)
+    @param handoff: optional designer artefact path (spec/script) recorded now
     @returns: new round dict (also written to disk)
     """
     cfg = load_config(root)
     catalogue = load_catalogue(root)
     task = task or cfg['pilot_task']
     tool_row, model_row = find_model(catalogue, tool, model)
-    if not model_row.get('bulk_ok', True):
-        raise ValueError(f'model {model!r} is not bulk_ok — skip for bake-offs')
+    validate_catalogue_model(model_row, role='builder')
     if model_row.get('tier') not in cfg['active_tiers']:
         raise ValueError(
-            f"model tier {model_row.get('tier')!r} not in active_tiers {cfg['active_tiers']}"
+            f"builder model tier {model_row.get('tier')!r} not in active_tiers "
+            f"{cfg['active_tiers']}"
         )
+
+    designer_row = None
+    if designer is not None:
+        if designer == model:
+            raise ValueError('designer must differ from builder (--model)')
+        _tool_d, designer_row = find_model(catalogue, tool, designer)
+        validate_catalogue_model(designer_row, role='designer')
+        if designer_row.get('tier') not in cfg['active_tiers']:
+            raise ValueError(
+                f"designer model tier {designer_row.get('tier')!r} not in "
+                f"active_tiers {cfg['active_tiers']}"
+            )
+
+    # Mid unlock applies to the builder (apply owner), not the designer.
     if model_row.get('tier') == 'mid' and kind == 'cold' and not force_mid:
         if not mid_unlocked(list_rounds(root), task, cfg['pack']):
             raise ValueError(
@@ -713,6 +933,12 @@ def open_round(
     plan_pct = _validate_plan_pct(plan_pct, label='plan_pct_start')
     if plan_pct is not None:
         usage['plan_pct_start'] = plan_pct
+    round_type = 'hybrid' if designer_row else 'single'
+    if round_type == 'hybrid':
+        usage['by_role'] = {
+            'designer': usage_role_template(),
+            'builder': usage_role_template(),
+        }
     round_: dict[str, Any] = {
         'id': round_id,
         'status': 'ready',
@@ -721,14 +947,10 @@ def open_round(
         'task': task,
         'pack': pack,
         'pack_brief': f'packs/{pack}/BRIEF.md',
+        'round_type': round_type,
         'tier': model_row['tier'],
         'tool': {'id': tool_row['id'], 'name': tool_row.get('name') or tool_row['id']},
-        'model': {
-            'id': model_row['id'],
-            'label': model_row.get('label') or model_row['id'],
-            'tier': model_row['tier'],
-            'bulk_ok': bool(model_row.get('bulk_ok', True)),
-        },
+        'model': model_ref(model_row),
         'cell': list(cfg['cell']),
         'cell_note': cfg.get('cell_note'),
         'ghost_cells': [list(c) for c in cfg.get('ghost_cells') or []],
@@ -754,16 +976,24 @@ def open_round(
                 model=model_row['id'],
                 pack=pack,
                 round_id=round_id,
+                designer=designer_row['id'] if designer_row else None,
             ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
         'force_mid': bool(force_mid) or None,
     }
+    if designer_row is not None:
+        round_['designer'] = model_ref(designer_row)
+        round_['handoff'] = handoff_template()
     if round_['force_mid'] is None:
         del round_['force_mid']
     stored = [str(p) for p in _normalise_build_script_paths(build_scripts)]
     if stored:
         round_['build_scripts'] = stored
+    if handoff is not None:
+        if designer_row is None:
+            raise ValueError('--handoff requires --designer (hybrid round)')
+        set_handoff(round_, handoff)
     save_round(root, round_)
     return round_
 
@@ -1034,6 +1264,7 @@ def score_round(
     wallclock_min: int | None = None,
     interruptions: str | None = None,
     build_scripts: list[Path | str] | None = None,
+    handoff: Path | str | None = None,
     world_root: Path | None = None,
     list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
 ) -> dict:
@@ -1042,7 +1273,8 @@ def score_round(
     Also copies the round's build script(s) and capture metadata into
     ``model-bakeoffs/rounds/R-NNN/`` and records repo-relative paths under
     ``artefacts``. Script paths come from ``build_scripts``, paths stored at
-    open, or the journal plan name tagged with this round id.
+    open, the hybrid ``handoff`` path, or the journal plan name tagged with
+    this round id.
 
     @param root: bake-offs root
     @param round_id: round id
@@ -1056,6 +1288,7 @@ def score_round(
     @param wallclock_min: optional active wall-clock minutes
     @param interruptions: optional interruption notes for the usage block
     @param build_scripts: optional source paths to copy (overrides stored/journal)
+    @param handoff: optional designer hand-off artefact path (hybrid rounds)
     @param world_root: world checkout for journal / cameras.json resolution
     @param list_entries_fn: injectable journal listing (tests)
     @returns: updated round
@@ -1116,6 +1349,10 @@ def score_round(
 
     round_['status'] = 'scored'
     round_['scored_at'] = utc_now()
+    if handoff is not None:
+        if not is_hybrid_round(round_):
+            raise ValueError('handoff requires a hybrid round (--designer at open)')
+        set_handoff(round_, handoff)
     if build_scripts:
         round_['build_scripts'] = [
             str(p) for p in _normalise_build_script_paths(build_scripts)
@@ -1152,11 +1389,18 @@ def record_usage(
     last_timestamp: str | None = None,
     from_transcript: Path | str | None = None,
     model_prefix: str | None = None,
+    role: str | None = None,
 ) -> dict:
     """Attach token/cost usage to a round (merge; does not clear omitted fields).
 
     Prefer ``--from-transcript`` (sets ``source=api``) or the tool usage UI
     (`source=cursor-ui`). Leave nulls rather than inventing counts.
+
+    Hybrid rounds: omit ``role`` with ``from_transcript`` to auto-split into
+    ``usage.by_role.designer`` / ``usage.by_role.builder`` (model id prefixes)
+    and set top-level totals to the sum. Pass ``role=designer|builder`` to
+    record one side (optionally with ``model_prefix``). Weekly ``plan_pct_*``
+    stays on the top-level usage block (shared meter).
 
     @param root: bake-offs root
     @param round_id: round id
@@ -1178,9 +1422,125 @@ def record_usage(
     @param last_timestamp: last API response timestamp (from transcript)
     @param from_transcript: Claude Code session/subagent jsonl (or directory)
     @param model_prefix: filter transcript models (e.g. ``claude-opus-5-5``)
+    @param role: ``designer`` / ``builder`` for hybrid per-model usage
     @returns: updated round
     """
+    if role is not None and role not in USAGE_ROLES:
+        raise ValueError(f'role must be one of {USAGE_ROLES}, got {role!r}')
+
+    round_ = load_round(root, round_id)
+    hybrid = is_hybrid_round(round_)
+    if role is not None and not hybrid:
+        raise ValueError('role= requires a hybrid round (--designer at open)')
+
+    # Auto-split hybrid transcript into by_role when no explicit role/prefix.
+    if (
+        from_transcript is not None
+        and hybrid
+        and role is None
+        and model_prefix is None
+    ):
+        designer_id = (round_.get('designer') or {}).get('id')
+        builder_id = (round_.get('model') or {}).get('id')
+        if not designer_id or not builder_id:
+            raise ValueError('hybrid round missing designer/model ids')
+        usage = dict(round_.get('usage') or usage_template())
+        by_role = dict(usage.get('by_role') or {})
+        role_notes = []
+        for role_name, prefix in (
+            ('designer', designer_id),
+            ('builder', builder_id),
+        ):
+            summed = sum_transcript_usage(from_transcript, model_prefix=prefix)
+            block = dict(by_role.get(role_name) or usage_role_template())
+            _apply_counts_to_usage_block(
+                block,
+                input_tokens=summed['input_tokens'],
+                output_tokens=summed['output_tokens'],
+                total_tokens=summed['total_tokens'],
+                cache_read_tokens=summed['cache_read_tokens'],
+                cache_write_tokens=summed['cache_write_tokens'],
+                requests=summed['requests'],
+                source='api',
+                first_timestamp=summed['first_timestamp'],
+                last_timestamp=summed['last_timestamp'],
+                model_prefix=prefix,
+                notes=(
+                    f'Summed {role_name} API usage from transcript '
+                    f'({summed["requests"]} unique {prefix} responses). '
+                    f'total = input+output+cache read+cache write.'
+                ),
+            )
+            by_role[role_name] = block
+            role_notes.append(f'{role_name}={summed["total_tokens"]}')
+        usage['by_role'] = by_role
+        totals = _sum_usage_dicts([by_role['designer'], by_role['builder']])
+        _apply_counts_to_usage_block(
+            usage,
+            input_tokens=totals['input_tokens'],
+            output_tokens=totals['output_tokens'],
+            total_tokens=totals['total_tokens'],
+            cache_read_tokens=totals['cache_read_tokens'],
+            cache_write_tokens=totals['cache_write_tokens'],
+            requests=totals['requests'],
+            source='api',
+            notes=(
+                'Hybrid split from transcript: '
+                + ', '.join(role_notes)
+                + '. total = designer+builder (input+output+cache).'
+            ),
+            first_timestamp=min(
+                t
+                for t in (
+                    by_role['designer'].get('first_timestamp'),
+                    by_role['builder'].get('first_timestamp'),
+                )
+                if t
+            )
+            if any(
+                by_role[r].get('first_timestamp') for r in USAGE_ROLES
+            )
+            else None,
+            last_timestamp=max(
+                t
+                for t in (
+                    by_role['designer'].get('last_timestamp'),
+                    by_role['builder'].get('last_timestamp'),
+                )
+                if t
+            )
+            if any(by_role[r].get('last_timestamp') for r in USAGE_ROLES)
+            else None,
+        )
+        plan_pct_start = _validate_plan_pct(plan_pct_start, label='plan_pct_start')
+        plan_pct_end = _validate_plan_pct(plan_pct_end, label='plan_pct_end')
+        if plan_pct_start is not None:
+            usage['plan_pct_start'] = plan_pct_start
+        if plan_pct_end is not None:
+            usage['plan_pct_end'] = plan_pct_end
+        if wallclock_min is not None:
+            if (
+                not isinstance(wallclock_min, int)
+                or isinstance(wallclock_min, bool)
+                or wallclock_min < 0
+            ):
+                raise ValueError(
+                    f'wallclock_min must be a non-negative int, got {wallclock_min!r}'
+                )
+            usage['wallclock_min'] = wallclock_min
+        if interruptions is not None:
+            usage['interruptions'] = interruptions
+        round_['usage'] = usage
+        save_round(root, round_)
+        return round_
+
     if from_transcript is not None:
+        if role is not None and model_prefix is None:
+            model_prefix = (
+                (round_.get('designer') or {}).get('id')
+                if role == 'designer'
+                else (round_.get('model') or {}).get('id')
+            )
         summed = sum_transcript_usage(from_transcript, model_prefix=model_prefix)
         input_tokens = summed['input_tokens']
         output_tokens = summed['output_tokens']
@@ -1196,9 +1556,10 @@ def record_usage(
             span = ''
             if first_timestamp and last_timestamp:
                 span = f', {first_timestamp}–{last_timestamp}'
+            role_bit = f'{role} ' if role else ''
             notes = (
                 f'Summed per-request API usage from transcript '
-                f'({requests} unique {prefix_bit} responses{span}). '
+                f'({requests} unique {role_bit}{prefix_bit} responses{span}). '
                 f'total = input+output+cache read+cache write.'
             )
 
@@ -1222,35 +1583,73 @@ def record_usage(
     plan_pct_start = _validate_plan_pct(plan_pct_start, label='plan_pct_start')
     plan_pct_end = _validate_plan_pct(plan_pct_end, label='plan_pct_end')
 
-    round_ = load_round(root, round_id)
     usage = dict(round_.get('usage') or usage_template())
-    updates: dict[str, Any] = {
-        'input_tokens': input_tokens,
-        'output_tokens': output_tokens,
-        'total_tokens': total_tokens,
-        'cache_read_tokens': cache_read_tokens,
-        'cache_write_tokens': cache_write_tokens,
-        'requests': requests,
-        'cost_usd': cost_usd,
-        'notes': notes,
-        'plan_pct_start': plan_pct_start,
-        'plan_pct_end': plan_pct_end,
-        'wallclock_min': wallclock_min,
-        'interruptions': interruptions,
-        'first_timestamp': first_timestamp,
-        'last_timestamp': last_timestamp,
-    }
-    for key, value in updates.items():
-        if value is not None:
-            usage[key] = value
-    if (
-        usage.get('total_tokens') is None
-        and usage.get('input_tokens') is not None
-        and usage.get('output_tokens') is not None
-    ):
-        # Manual UI paste: input+output only. Transcript path sets total including cache.
-        usage['total_tokens'] = int(usage['input_tokens']) + int(usage['output_tokens'])
-    usage['source'] = source
+    if role is not None:
+        by_role = dict(usage.get('by_role') or {})
+        block = dict(by_role.get(role) or usage_role_template())
+        _apply_counts_to_usage_block(
+            block,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+            requests=requests,
+            cost_usd=cost_usd,
+            source=source,
+            notes=notes,
+            first_timestamp=first_timestamp,
+            last_timestamp=last_timestamp,
+            model_prefix=model_prefix,
+        )
+        by_role[role] = block
+        # Ensure the other role key exists for hybrid.
+        other = 'builder' if role == 'designer' else 'designer'
+        by_role.setdefault(other, usage_role_template())
+        usage['by_role'] = by_role
+        totals = _sum_usage_dicts(
+            [by_role.get('designer') or {}, by_role.get('builder') or {}]
+        )
+        _apply_counts_to_usage_block(
+            usage,
+            input_tokens=totals['input_tokens'],
+            output_tokens=totals['output_tokens'],
+            total_tokens=totals['total_tokens'],
+            cache_read_tokens=totals['cache_read_tokens'],
+            cache_write_tokens=totals['cache_write_tokens'],
+            requests=totals['requests'],
+            source=source,
+        )
+    else:
+        _apply_counts_to_usage_block(
+            usage,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+            requests=requests,
+            cost_usd=cost_usd,
+            source=source,
+            notes=notes,
+            first_timestamp=first_timestamp,
+            last_timestamp=last_timestamp,
+            model_prefix=model_prefix,
+        )
+
+    if plan_pct_start is not None:
+        usage['plan_pct_start'] = plan_pct_start
+    if plan_pct_end is not None:
+        usage['plan_pct_end'] = plan_pct_end
+    if wallclock_min is not None:
+        usage['wallclock_min'] = wallclock_min
+    if interruptions is not None:
+        usage['interruptions'] = interruptions
+    # Top-level source for non-role path already set; for role path keep api/source.
+    if role is None or from_transcript is not None:
+        usage['source'] = source
+    elif usage.get('source') is None:
+        usage['source'] = source
     usage['recorded_at'] = utc_now()
     round_['usage'] = usage
     save_round(root, round_)
@@ -2001,9 +2400,16 @@ def format_status(root: Path) -> str:
             )
         usage_bit = f" tokens={tok}" if tok is not None else ''
         usage_bit += plan_pct_delta_bit(usage)
+        model_bit = f"{r['tool']['id']}/{r['model']['id']}"
+        if is_hybrid_round(r):
+            designer_id = (r.get('designer') or {}).get('id') or '?'
+            model_bit = (
+                f"{r['tool']['id']}/builder={r['model']['id']}"
+                f"+designer={designer_id}"
+            )
         lines.append(
             f"  {r['id']} {r['status']:11} {r['tier']:4} "
-            f"{r['tool']['id']}/{r['model']['id']} "
+            f"{model_bit} "
             f"task={r['task']} attempt={r['attempt']} {r['kind']} "
             f"overall={r.get('overall')}{usage_bit}"
         )
@@ -2035,29 +2441,69 @@ def format_sitting(round_: dict) -> str:
     lines = [
         f"=== {round_['id']} — one sitting ===",
         f"status: {round_['status']}",
-        f"tool/model: {round_['tool']['id']} / {round_['model']['label']} ({round_['model']['id']})",
-        f"tier: {round_['tier']}  kind: {round_['kind']}  attempt: {round_['attempt']}",
-        f"task: {round_['task']}  pack: {round_['pack']}  cell: {tuple(round_['cell'])}",
-        f"brief: model-bakeoffs/{round_['pack_brief']}",
+        f"round_type: {round_.get('round_type') or 'single'}",
     ]
+    if is_hybrid_round(round_):
+        designer = round_.get('designer') or {}
+        lines.append(
+            f"builder (apply owner): {round_['tool']['id']} / "
+            f"{round_['model']['label']} ({round_['model']['id']})"
+        )
+        lines.append(
+            f"designer: {designer.get('label') or designer.get('id')} "
+            f"({designer.get('id')})"
+        )
+        handoff = round_.get('handoff') or {}
+        handoff_path = handoff.get('path') or (
+            '(unset — record with open/score --handoff)'
+        )
+        kind_bit = f" kind={handoff.get('kind')}" if handoff.get('kind') else ''
+        lines.append(f"handoff: {handoff_path}{kind_bit}")
+    else:
+        lines.append(
+            f"tool/model: {round_['tool']['id']} / {round_['model']['label']} "
+            f"({round_['model']['id']})"
+        )
+    lines.extend(
+        [
+            f"tier: {round_['tier']}  kind: {round_['kind']}  attempt: {round_['attempt']}",
+            f"task: {round_['task']}  pack: {round_['pack']}  cell: {tuple(round_['cell'])}",
+            f"brief: model-bakeoffs/{round_['pack_brief']}",
+        ]
+    )
     if round_.get('repair_brief'):
         lines.append(f"repair_brief: {round_['repair_brief']}")
     if round_.get('parent_round'):
         lines.append(f"parent: {round_['parent_round']}")
     lines.append('')
+    steps_src = (
+        'sitting_steps_hybrid' if is_hybrid_round(round_) else 'sitting_steps'
+    )
     lines.append(
-        'Sequence (do not skip) — from model-bakeoffs/config.json sitting_steps:'
+        f'Sequence (do not skip) — from model-bakeoffs/config.json {steps_src}:'
     )
     for item in round_.get('sitting', {}).get('checklist') or []:
         lines.append(f'  - {item}')
     usage = round_.get('usage') or {}
-    if any(usage.get(k) is not None for k in ('input_tokens', 'output_tokens', 'total_tokens', 'cost_usd')):
+    if any(
+        usage.get(k) is not None
+        for k in ('input_tokens', 'output_tokens', 'total_tokens', 'cost_usd')
+    ):
         lines.append('')
         lines.append(
             f"usage: in={usage.get('input_tokens')} out={usage.get('output_tokens')} "
             f"total={usage.get('total_tokens')} cost_usd={usage.get('cost_usd')} "
             f"source={usage.get('source')}"
         )
+        by_role = usage.get('by_role') or {}
+        for role_name in USAGE_ROLES:
+            block = by_role.get(role_name) or {}
+            if block.get('total_tokens') is not None:
+                lines.append(
+                    f"  {role_name}: total={block.get('total_tokens')} "
+                    f"requests={block.get('requests')} "
+                    f"prefix={block.get('model_prefix')}"
+                )
     lines.append('')
     lines.append('When finished:')
     lines.append(
@@ -2066,11 +2512,19 @@ def format_sitting(round_: dict) -> str:
         '--axis massing=pass --axis keep=pass '
         '# …all axes…'
     )
+    if is_hybrid_round(round_):
+        lines.append(
+            f"  python3 scripts/model_bakeoff.py usage {round_['id']} "
+            '--from-transcript <session.jsonl>  # splits designer/builder'
+        )
+    else:
+        lines.append(
+            f"  python3 scripts/model_bakeoff.py usage {round_['id']} "
+            '--input N --output M --source cursor-ui'
+        )
     lines.append(
-        f"  python3 scripts/model_bakeoff.py usage {round_['id']} "
-        '--input N --output M --source cursor-ui'
+        '  (if Cursor usage UI has no numbers: leave usage null — do not invent)'
     )
-    lines.append('  (if Cursor usage UI has no numbers: leave usage null — do not invent)')
     return '\n'.join(lines)
 
 
@@ -2136,6 +2590,17 @@ def main(argv: list[str] | None = None) -> int:
         dest='build_scripts',
         help='build script path to remember for score-time artefact copy (repeatable)',
     )
+    p_open.add_argument(
+        '--designer',
+        default=None,
+        help='designer model id for a hybrid round (builder is --model / apply owner)',
+    )
+    p_open.add_argument(
+        '--handoff',
+        type=Path,
+        default=None,
+        help='designer hand-off artefact path (spec or build script); hybrid only',
+    )
 
     p_score = sub.add_parser('score', help='record interview grades for a round')
     p_score.add_argument('round_id')
@@ -2170,6 +2635,12 @@ def main(argv: list[str] | None = None) -> int:
         help='build script to copy into model-bakeoffs/rounds/R-NNN/ (repeatable; '
         'else uses open --build-script or journal plan for this round)',
     )
+    p_score.add_argument(
+        '--handoff',
+        type=Path,
+        default=None,
+        help='designer hand-off artefact path to record + copy (hybrid rounds)',
+    )
 
     p_repair = sub.add_parser('repair', help='open attempt N+1 with a repair brief')
     p_repair.add_argument('round_id')
@@ -2190,6 +2661,13 @@ def main(argv: list[str] | None = None) -> int:
         '--model-prefix',
         default=None,
         help='with --from-transcript: keep models starting with this id (e.g. claude-opus-5-5)',
+    )
+    p_usage.add_argument(
+        '--role',
+        default=None,
+        choices=USAGE_ROLES,
+        help='hybrid only: record designer or builder usage (auto-split if omitted '
+        'with --from-transcript)',
     )
     p_usage.add_argument('--input', type=int, default=None, dest='input_tokens')
     p_usage.add_argument('--output', type=int, default=None, dest='output_tokens')
@@ -2282,6 +2760,8 @@ def main(argv: list[str] | None = None) -> int:
                 force_mid=bool(args.force_mid),
                 plan_pct=args.plan_pct,
                 build_scripts=args.build_scripts or None,
+                designer=args.designer,
+                handoff=args.handoff,
             )
             print(format_sitting(round_))
             print(f"\nwrote {round_path(root, round_['id'])}")
@@ -2308,6 +2788,7 @@ def main(argv: list[str] | None = None) -> int:
                 wallclock_min=args.wallclock_min,
                 interruptions=args.interruptions,
                 build_scripts=args.build_scripts or None,
+                handoff=args.handoff,
             )
             arts = round_.get('artefacts') or {}
             scripts = arts.get('build_scripts') or []
@@ -2341,6 +2822,7 @@ def main(argv: list[str] | None = None) -> int:
                 interruptions=args.interruptions,
                 from_transcript=args.from_transcript,
                 model_prefix=args.model_prefix,
+                role=args.role,
             )
             u = round_['usage']
             plan_bit = plan_pct_delta_bit(u)
@@ -2353,6 +2835,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"cost_usd={u.get('cost_usd')} source={u.get('source')}"
                 f"{plan_bit}"
             )
+            by_role = u.get('by_role') or {}
+            for role_name in USAGE_ROLES:
+                block = by_role.get(role_name) or {}
+                if block.get('total_tokens') is not None:
+                    print(
+                        f"  {role_name}: total={block.get('total_tokens')} "
+                        f"requests={block.get('requests')} "
+                        f"prefix={block.get('model_prefix')}"
+                    )
             return 0
         if args.cmd == 'show':
             round_ = load_round(root, args.round_id)

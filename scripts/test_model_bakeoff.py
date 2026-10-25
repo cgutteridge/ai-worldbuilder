@@ -59,6 +59,21 @@ SEED_SITTING_STEPS = [
     'Interview + score; then usage paste (need-you if counts unknown)',
 ]
 
+SEED_SITTING_STEPS_HYBRID = [
+    'One apply owner: builder ({model}); designer ({designer}) writes hand-off only',
+    (
+        'Reset baseline: '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py baseline {{id}}`'
+    ),
+    'Designer ({designer}): write evidence + hand-off; do not apply',
+    'Builder ({model}): apply from hand-off only',
+    (
+        'Capture: '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py capture {{id}}`'
+    ),
+    'Interview + score; usage transcript splits designer/builder',
+]
+
 
 def _fake_entry(
     *,
@@ -103,7 +118,7 @@ def _seed(root: Path) -> None:
             'cell': [48, -44],
             'cell_note': 'test',
             'ghost_cells': [[48, -44]],
-            'active_tiers': ['low', 'mid'],
+            'active_tiers': ['low', 'mid', 'high'],
             'tasks': ['feature_design'],
             'pilot_task': 'feature_design',
             'axes': ['massing', 'keep'],
@@ -111,6 +126,7 @@ def _seed(root: Path) -> None:
             'max_attempts': 3,
             'grades': ['fail', 'pass', 'great'],
             'sitting_steps': list(SEED_SITTING_STEPS),
+            'sitting_steps_hybrid': list(SEED_SITTING_STEPS_HYBRID),
             'capture': dict(SEED_CAPTURE),
         },
     )
@@ -157,6 +173,22 @@ def _seed(root: Path) -> None:
             ],
         },
     )
+
+
+def _add_hybrid_designer(root: Path) -> None:
+    """Register a bulk-ok high designer model for hybrid tests (idempotent)."""
+    try:
+        MB.add_model(
+            root,
+            tool='cursor',
+            model_id='opus-low',
+            tier='high',
+            label='Opus low',
+            bulk_ok=True,
+        )
+    except ValueError as exc:
+        if 'already on' not in str(exc):
+            raise
 
 
 class TestModelBakeoff(unittest.TestCase):
@@ -1160,5 +1192,179 @@ class TestCapture(unittest.TestCase):
             self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
 
 
+
+class HybridRoundTests(unittest.TestCase):
+    """Designer + builder hybrid sittings."""
+
+    def _unlock_mid(self, root: Path) -> None:
+        _add_hybrid_designer(root)
+        low = MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+        MB.score_round(
+            root,
+            low['id'],
+            overall='pass',
+            axes={'massing': 'pass', 'keep': 'pass'},
+        )
+
+    def test_open_hybrid_round_records_designer_and_checklist(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            self._unlock_mid(root)
+            handoff = root / 'design_handoff.py'
+            handoff.write_text('PLAN = "r_hybrid"\n', encoding='utf-8')
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='sonnet',
+                designer='opus-low',
+                task='feature_design',
+                handoff=handoff,
+                plan_pct=50,
+            )
+            self.assertEqual(round_['round_type'], 'hybrid')
+            self.assertEqual(round_['model']['id'], 'sonnet')
+            self.assertEqual(round_['designer']['id'], 'opus-low')
+            self.assertEqual(round_['handoff']['path'], str(handoff))
+            self.assertEqual(round_['handoff']['kind'], 'script')
+            self.assertIn('by_role', round_['usage'])
+            checklist = '\n'.join(round_['sitting']['checklist'])
+            self.assertIn('opus-low', checklist)
+            self.assertIn('sonnet', checklist)
+            self.assertIn('hand-off', checklist)
+            self.assertNotIn('Use tool=cursor model=sonnet only', checklist)
+            card = MB.format_sitting(round_)
+            self.assertIn('builder (apply owner)', card)
+            self.assertIn('designer:', card)
+            self.assertIn(str(handoff), card)
+
+    def test_hybrid_designer_must_differ_from_builder(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            with self.assertRaises(ValueError) as ctx:
+                MB.open_round(
+                    root,
+                    tool='cursor',
+                    model='composer',
+                    designer='composer',
+                    task='feature_design',
+                )
+            self.assertIn('differ', str(ctx.exception))
+
+    def test_hybrid_excluded_from_ladder_and_mid_unlock(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            _add_hybrid_designer(root)
+            with self.assertRaises(ValueError):
+                MB.open_round(
+                    root,
+                    tool='cursor',
+                    model='sonnet',
+                    designer='opus-low',
+                    task='feature_design',
+                )
+            self._unlock_mid(root)
+            hybrid = MB.open_round(
+                root,
+                tool='cursor',
+                model='sonnet',
+                designer='opus-low',
+                task='feature_design',
+            )
+            MB.score_round(
+                root,
+                hybrid['id'],
+                overall='great',
+                axes={'massing': 'great', 'keep': 'great'},
+            )
+            scored = MB.scored_cold_rounds(
+                MB.list_rounds(root), 'feature_design', 'v1'
+            )
+            self.assertNotIn(
+                MB.cold_key('feature_design', 'cursor', 'sonnet', 'v1'),
+                scored,
+            )
+            # Hybrid must not block a later single-model sonnet cold open.
+            single = MB.open_round(
+                root, tool='cursor', model='sonnet', task='feature_design'
+            )
+            self.assertEqual(single['round_type'], 'single')
+            self.assertNotIn('designer', single)
+
+    def test_hybrid_usage_split_and_score_handoff_copy(self):
+        fixture = (
+            Path(__file__).resolve().parent
+            / 'testdata'
+            / 'bakeoff_transcript_hybrid.jsonl'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            self._unlock_mid(root)
+            handoff = root / 'r_hybrid_susu.py'
+            handoff.write_text('PLAN = "r_hybrid_susu"\n', encoding='utf-8')
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='sonnet',
+                designer='opus-low',
+                task='feature_design',
+                plan_pct=50,
+            )
+            scored = MB.score_round(
+                root,
+                round_['id'],
+                overall='pass',
+                axes={'massing': 'pass', 'keep': 'pass'},
+                plan_pct=52,
+                handoff=handoff,
+            )
+            self.assertEqual(scored['handoff']['path'], str(handoff))
+            self.assertEqual(
+                scored['artefacts']['build_scripts'],
+                [f"model-bakeoffs/rounds/{scored['id']}/r_hybrid_susu.py"],
+            )
+            updated = MB.record_usage(
+                root,
+                round_['id'],
+                from_transcript=fixture,
+            )
+            u = updated['usage']
+            self.assertEqual(u['source'], 'api')
+            self.assertEqual(u['by_role']['designer']['total_tokens'], 89)
+            self.assertEqual(u['by_role']['designer']['requests'], 2)
+            self.assertEqual(u['by_role']['designer']['model_prefix'], 'opus-low')
+            self.assertEqual(u['by_role']['builder']['total_tokens'], 217)
+            self.assertEqual(u['by_role']['builder']['requests'], 2)
+            self.assertEqual(u['total_tokens'], 89 + 217)
+            self.assertEqual(u['plan_pct_start'], 50)
+            self.assertEqual(u['plan_pct_end'], 52)
+            status = MB.format_status(root)
+            self.assertIn('designer=opus-low', status)
+            self.assertIn('plan=50%→52% (Δ+2)', status)
+
+    def test_live_config_has_hybrid_sitting_steps(self):
+        cfg = MB.load_config(MB.DEFAULT_BAKEOFFS)
+        steps = cfg.get('sitting_steps_hybrid')
+        self.assertIsInstance(steps, list)
+        self.assertGreaterEqual(len(steps), 1)
+        joined = '\n'.join(steps)
+        self.assertIn('{designer}', joined)
+        self.assertIn('{model}', joined)
+        self.assertIn('hand-off', joined)
+        self.assertIn('model_bakeoff.py baseline', joined)
+        self.assertIn('model_bakeoff.py capture', joined)
+
+    def test_protocol_documents_hybrid_open_flags(self):
+        proto = (MB.DEFAULT_BAKEOFFS / 'PROTOCOL.md').read_text(encoding='utf-8')
+        self.assertIn('--designer', proto)
+        self.assertIn('by_role', proto)
+        self.assertIn('sitting_steps_hybrid', proto)
+
+
+
 if __name__ == '__main__':
     unittest.main()
+

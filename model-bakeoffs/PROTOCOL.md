@@ -8,7 +8,7 @@ Find the cheapest **bulk-work** model that is good enough for high-judgement pla
 
 ## How we run (current)
 
-- **One model per sitting.** Open a round, regenerate the ghost baseline, run, interview, score, stop. Next sitting can be days later.
+- **One model per sitting** (default), or a **hybrid** designer + builder sitting (below). Open a round, regenerate the ghost baseline, run, interview, score, stop. Next sitting can be days later.
 - **Catalogue first:** models available to you in each tool when you have tokens (`catalogue.json`).
 - **Ladder:** all `low` bulk models for the pilot task, then `mid` only if **any** low cold score was not `great`.
 - **No Azure matrix required** for v1; Azure remains optional later for controlled cross-checks.
@@ -16,6 +16,41 @@ Find the cheapest **bulk-work** model that is good enough for high-judgement pla
 - **One apply owner** per sitting. Parent recovery must interrupt the model subagent before re-apply.
 
 CLI: `python3 scripts/model_bakeoff.py` — see [README.md](README.md).
+
+
+
+### Hybrid designer / builder sittings
+
+Hypothesis (R-013 cost discussion): a dear model writes the evidence table + build
+spec in few turns; a cheaper model executes (apply, recover, capture) where turns
+pile up. Measure with the same usage units as single-model rounds (transcript sums
++ weekly plan % delta).
+
+```bash
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py open \
+  --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low \
+  --plan-pct 50
+# after the designer writes the artefact:
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py score R-NNN \
+  ... --handoff worlds/bakeoff/site/builds/rNNN_susu.py --plan-pct 52
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-NNN \
+  --from-transcript ~/.claude/projects/.../<session>.jsonl
+```
+
+Rules:
+
+- ``--model`` is always the **builder** (sole apply owner). ``--designer`` writes
+  the hand-off only.
+- Record the hand-off artefact path (``--handoff`` on ``open`` or ``score``): a
+  build script today; later a ``feature_build`` spec once that path exists.
+- Usage: prefer one transcript sum with no ``--role`` / ``--model-prefix`` — the
+  CLI splits ``usage.by_role.designer`` and ``usage.by_role.builder`` by model id
+  and sets top-level totals to the sum. Plan % stays on the shared top-level
+  meter. Optional ``--role designer|builder`` records one side.
+- Hybrid rounds use ``sitting_steps_hybrid`` in [config.json](config.json) and are
+  **excluded from the single-model ladder** (`next` / mid unlock).
+- Run at least two scored hybrid sittings before drawing cost/quality conclusions.
+  Compare against single-model anchors (e.g. R-009 Sonnet, R-012 Opus low).
 
 ### Sitting sequence (world)
 
