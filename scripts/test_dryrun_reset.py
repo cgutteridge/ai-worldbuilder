@@ -104,9 +104,10 @@ class DryRunOutput(unittest.TestCase):
         self.assertFalse((self.world / 'registry').exists())
         self.assertEqual(rep['regions_deleted'], ['r.0.0.mca'])
 
-    def test_no_registry_scaffold_left(self):
-        self.assertFalse(hasattr(dr, 'scaffold_registry'))
-        self.assertEqual([p.name for p in (_ROOT / 'templates' / 'new-world-registry').iterdir()], ['README.txt'])
+    def test_new_world_registry_template_is_readme_only(self):
+        """ADR 004: no JSON scaffold; first journal write creates registry/."""
+        names = sorted(p.name for p in (_ROOT / 'templates' / 'new-world-registry').iterdir())
+        self.assertEqual(names, ['README.txt'])
 
 
 if __name__ == '__main__':

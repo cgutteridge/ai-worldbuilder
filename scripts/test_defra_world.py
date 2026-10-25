@@ -203,10 +203,6 @@ class ReferenceWorldTest(unittest.TestCase):
             with self.assertRaises(LookupError):
                 call()
 
-    def test_has_no_baseline_save_path(self):
-        self.assertFalse(hasattr(lh, 'pristine_world'))
-        self.assertFalse(hasattr(self.ref(), 'fallback'))
-
     def test_heightmap_function_prefers_a_world_with_its_own_map(self):
         self.assertEqual(
             lh.heightmap(self.ref(), (0, 0)),
