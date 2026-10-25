@@ -21,7 +21,7 @@ Done when the user has named place, anchor, and rough bbox.
 ## 1. World frame
 
 1. Write `config/world-frame.json`: `crs`, `anchor`, `offsets`, `bounds_mc`, `y_offset` (placeholder), elevation plugin.
-2. Confirm conversions: `.venv/bin/python scripts/world_frame.py info` and `to-mc` / `to-wgs84` for the anchor.
+2. Confirm conversions: `.venv/bin/python scripts/world_frame.py info` and `to-mc` / `to-wgs84` for the anchor. For XYZ tile codes and pixel offsets use `to-wm` / `from-wm` (or `batch-wm`); do not add a second mercator path.
 3. Create the save from the template (refuse if the target exists):
 
 ```bash

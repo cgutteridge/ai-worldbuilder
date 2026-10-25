@@ -7,6 +7,10 @@ query keys — never a folder-per-tile tree.
   MC tiles:  128×128 block cells  →  \"128:{tx}:{tz}\"   (sparse)
   WM tiles:  web-mercator XYZ     →  \"{z}/{x}/{y}\"     (aerial fetch unit)
 
+  Tile *positions* and pixel offsets: use ``scripts/world_frame.py``
+  (``to-wm`` / ``from-wm`` / ``batch-wm``). This manifest only indexes imagery;
+  ``deg2num`` / ``num2deg`` here are re-exports from ``world_frame``.
+
   python3 scripts/ref_manifest.py add PATH --place SO173SF --kind aerial \\
       --source hampshire-hub --useful yes --models footprint,roof \\
       [--url URL] [--wm 18/130062/87838] [--at 6949,-5345] [--bbox x0,z0,x1,z1]

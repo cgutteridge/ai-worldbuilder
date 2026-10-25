@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Place geometry hub: convert, probe, slope, views, survey bboxes, party pitch, tiles.
 
+Prefer ``scripts/world_frame.py`` for single-point and batch XYZ tile positions
+(``to-wm`` / ``from-wm`` / ``batch-wm``). This module's ``convert`` is MC/OSGB/WGS84
+triples for place work; ``tiles`` lists mosaic ids for aerial fetch — not a second
+coordinate-conversion implementation.
+
   python3 scripts/geo.py convert --mc 5652,-2492
   python3 scripts/geo.py convert --wgs84 50.903,-1.4044
   python3 scripts/geo.py convert --osgb 441900,112100 --json
@@ -30,8 +35,9 @@ from script_env import ROOT  # noqa: E402
 
 from geodetic import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
 from osgb import in_bounds, load_offsets, to_mc, to_osgb  # noqa: E402
-from ref_manifest import deg2num, mc_tiles_for_bbox, num2deg, wm_tile_bbox_mc  # noqa: E402
+from ref_manifest import mc_tiles_for_bbox  # noqa: E402
 from terrace import snap_slope  # noqa: E402
+from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402
 
 SKIP_LIDAR_TOP = ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
 

@@ -7,7 +7,7 @@
 
 1. **Types** are stable evidence classes (`vector_map`, `poi_register`, `aerial`, `streetlevel`, `lidar`) documented in `reference/TYPES.txt`. Rules name types; providers are place-local.
 2. **Providers** live in `config/place-sources.json` (provider-primary rows with `types: [...]`). Cell checklist / `--record` keys are provider ids; `google` aliases to `google-satellite`.
-3. **World frame** is canonical in `config/world-frame.json`, accessed via `scripts/world_frame.py` (WGS84, OSGB/EPSG, MC, cell, web-mercator XYZ, Y offset). Legacy `osgb.py` / `geodetic.py` wrap it.
+3. **World frame** is canonical in `config/world-frame.json`, accessed via `scripts/world_frame.py` (WGS84, OSGB/EPSG, MC, cell, web-mercator XYZ tile positions with logical 256-px `east_px`/`south_px`, Y offset). Legacy `osgb.py` / `geodetic.py` wrap it. Agents use `to-wm` / `from-wm` / `batch-wm` for XYZ; do not add competing conversion CLIs. Tile-image fetch and evidence sheets remain separate capabilities.
 4. Review language: **Aerial Review** (registry issues / layer reopen), not Google Review. (`site/AERIAL-REVIEW.txt` retired with the cell-registry cut-over.)
 5. New-world Y offset is a human checkpoint after `lidar_extremes` over an agreed bbox (≥ 5 km × 5 km recommended).
 

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import re
 import shutil
@@ -432,6 +431,8 @@ def xyz_pixel_from_wgs84(
 ) -> tuple[float, float]:
     """Project WGS84 to mosaic-local pixel coords for an XYZ tile origin.
 
+    Delegates slippy-map maths to ``world_frame.tile_float``.
+
     @param lat: latitude
     @param lon: longitude
     @param zoom: XYZ zoom level
@@ -439,10 +440,10 @@ def xyz_pixel_from_wgs84(
     @param origin_ty: mosaic north edge tile Y (float OK)
     @returns: ``(u, v)`` pixels in the mosaic image
     """
-    n = 2 ** zoom
-    tx = (lon + 180.0) / 360.0 * n
-    ty = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
-    return (tx - origin_tx) * 256.0, (ty - origin_ty) * 256.0
+    from world_frame import WM_TILE_PX, tile_float  # noqa: WPS433
+
+    tx, ty = tile_float(lat, lon, zoom)
+    return (tx - origin_tx) * WM_TILE_PX, (ty - origin_ty) * WM_TILE_PX
 
 
 def load_catalogue(root: Path) -> dict:

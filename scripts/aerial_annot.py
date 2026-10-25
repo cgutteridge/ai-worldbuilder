@@ -6,10 +6,10 @@
 mosaic defaults to the portswood z18 3x3; any mosaic-z18-NxN-centre-X-Y.png
 works. extra.geojson (EPSG:27700) adds non-building outlines (parking etc.) in blue.
 """
-import sys, math, re, json
+import sys, re, json
 from pathlib import Path; sys.path.insert(0, str(Path(__file__).resolve().parent))
 from osgb import to_osgb
-from world_frame import osgb_batch_to_wgs84
+from world_frame import osgb_batch_to_wgs84, wgs84_to_wm_global_px
 from osm_footprints import OSMIndex
 from PIL import Image, ImageDraw
 MOS=sys.argv[4] if len(sys.argv)>4 else 'reference/aerial/portswood-x-broadlands/mosaic-z18-3x3-centre-130063-87836.png'
@@ -19,12 +19,11 @@ img=Image.open(MOS).convert('RGB')
 def px(pts):
     if not pts: return []
     ll=osgb_batch_to_wgs84([to_osgb(x,z) for x,z in pts])
-    res=[]
-    for lat,lon in ll:
-        n=2**Z
-        X=(lon+180)/360*n*256; Y=(1-math.log(math.tan(math.radians(lat))+1/math.cos(math.radians(lat)))/math.pi)/2*n*256
-        res.append((X-OX,Y-OY))
-    return res
+    out=[]
+    for lat, lon in ll:
+        X, Y = wgs84_to_wm_global_px(lat, lon, Z)
+        out.append((X - OX, Y - OY))
+    return out
 x0,z0,x1,z1=map(int,sys.argv[1].split(',')); S=int(sys.argv[3]) if len(sys.argv)>3 else 4
 corners=px([(x0,z0),(x1,z0),(x0,z1),(x1,z1)])
 xs=[c[0] for c in corners]; ys=[c[1] for c in corners]
