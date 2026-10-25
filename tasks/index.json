@@ -4,24 +4,6 @@
   "nextTaskId": 78,
   "tasks": [
     {
-      "id": 70,
-      "title": "Fail fast on the wrong Python interpreter",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro R-013: after a reboot bare `python3` resolved to Apple /usr/bin/python3 (3.9, no numpy) instead of Homebrew 3.14. Symptoms were misleading: `TypeError: unsupported operand |` at scripts/site_kit.py:65 (PEP 604 annotation), `No module named numpy` in shims/lidar_query.py, and a red pre-commit. Do: (1) at the top of scripts/script_env.py (imported by nearly every script/shim) check `sys.version_info >= (3, 10)` and that numpy imports; otherwise `raise SystemExit(f'needs python3 >= 3.10 with numpy (Homebrew); got {sys.executable} {sys.version.split()[0]}')`. Check also covers scripts that import active_world first: put the guard in active_world.py if it is imported earlier than script_env. (2) Record the expected version where tools read it (`.python-version` and/or `requires-python` in a pyproject). (3) .githooks/pre-commit runs bare `python3`: make it fail with the same message (the guard covers it once pre_commit_checks imports the guarded module, or add an explicit check in the hook). Done when: running `/usr/bin/python3 scripts/site_kit.py`-style entry points, `shims/lidar_query.py --help` and the hook under 3.9 each print the one-line message and exit non-zero; unit test for the guard; run_tests.py green under Homebrew python."
-    },
-    {
-      "id": 71,
-      "title": "Pre-commit: quiet output, unset-world cause as last line",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro R-013: a tracker-only commit failed the hook and the cause (`AI_WORLDBUILDER_WORLD_ROOT is unset`) was buried after ~69 KB of verbose unittest output (agent output overflowed to a file). Do NOT pin or default a world (owner: pinning caused more issues than it helped). Do in scripts/pre_commit_checks.py (+ scripts/run_tests.py if needed): (1) run tests non-verbose; on failure print only the failing test ids + their tracebacks, capped (e.g. last 40 lines each), then a one-line summary per check (`unit tests: FAILED 3/412`, `provider-name audit: OK`). (2) Before running world-dependent checks, if AI_WORLDBUILDER_WORLD_ROOT is unset, skip running them and print as the final line: `pre-commit: AI_WORLDBUILDER_WORLD_ROOT is unset; export it to an active world checkout (see AGENTS.md Start) and retry`, exit non-zero. Done when: a clean commit prints <= ~10 lines; an unset-world commit prints the cause as its last line without running tests; a failing test shows its id and traceback within a short output; tests for the summary formatting."
-    },
-    {
       "id": 73,
       "title": "model_bakeoff.py capture: fixed interview cameras from config",
       "status": "todo",
