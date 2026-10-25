@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sys
 import unittest
-from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -11,7 +10,6 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'shims'))
 
 import cell_features as cf  # noqa: E402
-import portals as pt  # noqa: E402
 import site_handoff as sh  # noqa: E402
 
 
@@ -35,38 +33,6 @@ class TestCellFeatures(unittest.TestCase):
                                             (48, -43), (47, -43), (47, -44), (47, -45)])
         self.assertEqual(len(set(sh.ring_cells(2))), 16)
 
-
-class TestPortals(unittest.TestCase):
-    def test_store_loaded_and_merged(self):
-        ps = pt.load()
-        self.assertGreater(len(ps), 250)
-        self.assertEqual(len({p['id'] for p in ps}), len(ps))          # the register's per-photo duplicates merged
-        p = next(p for p in ps if p['id'] == '63A-A')
-        self.assertEqual(len(p['images']), 2)
-
-    def test_mc_coordinates_match_the_map(self):
-        # Union building 42 sits in cell 48,-44 (x 6144.., z -5632..)
-        self.assertTrue(any(p['building'] == '42' for p in pt.in_cell(48, -44)))
-        self.assertEqual(sorted(p['id'] for p in pt.building('32')), ['32-A', '32-B', '32-C'])
-
-    def test_image_url_swaps_width(self):
-        u = 'https://data.southampton.ac.uk/image-archive/building-portals/200/42-A.jpg'
-        self.assertEqual(pt.image_url(u), u.replace('/200/', '/800/'))
-        self.assertEqual(pt.image_url(u, 1600), u.replace('/200/', '/1600/'))
-        with self.assertRaises(ValueError):
-            pt.image_url(u, 500)
-
-    def test_for_footprint_takes_entrances_on_the_wall(self):
-        ring = [[(0, 0), (10, 0), (10, 10), (0, 10)]]
-        fake = [{'id': 'a', 'x': 5, 'z': -2}, {'id': 'b', 'x': 5, 'z': 0.5}, {'id': 'c', 'x': 5, 'z': -20}]
-        with mock.patch.object(pt, 'load', return_value=fake):
-            self.assertEqual([p['id'] for p in pt.for_footprint(ring)], ['b', 'a'])
-
-    def test_door_specs_skips_far_portals(self):
-        cells = {(x, z) for x in range(0, 10) for z in range(0, 10)}
-        fake = [{'id': 'a', 'x': 10, 'z': 4}, {'id': 'b', 'x': 40, 'z': 4}]
-        with mock.patch.object(pt, 'load', return_value=fake):
-            self.assertEqual(pt.door_specs(cells), [(None, 10, 4, 0)])
 
 
 if __name__ == '__main__':

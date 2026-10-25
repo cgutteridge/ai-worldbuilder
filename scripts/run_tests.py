@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Run stdlib unit tests for scripts in this repository (no Minecraft required).
 
-  export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/southampton-build
   python3 scripts/run_tests.py
   python3 scripts/run_tests.py --only test_model_bakeoff
   python3 scripts/run_tests.py --only test_run_tests --only test_ship_branch
@@ -14,7 +13,7 @@ suite under ``scripts/`` as before. An unknown stem fails with a clear error.
 Full discover (no ``--only``) takes a fail-fast advisory flock on
 ``<git-common-dir>/ai-worldbuilder-full-suite.lock`` (shared across worktrees).
 A second overlapping full run exits ``2`` immediately (no wait); real test
-failures and unset world still exit ``1``. ``--only`` never takes the lock.
+failures still exit ``1``. ``--only`` never takes the lock.
 When a parent already holds the lock (``--parent-holds-lock`` or env
 ``AI_WORLDBUILDER_FULL_SUITE_LOCK_HELD=1``), the child skips acquire so
 ``ship_branch`` can re-enter under the same lock.
@@ -23,7 +22,8 @@ Quiet by default: on success prints one summary line; on failure prints each
 failing test id with a capped traceback, then a one-line summary. Exits 0 when
 all tests pass, 1 otherwise (or 2 when locked out of a full run). Use before
 handoff or in CI.
-Requires ``AI_WORLDBUILDER_WORLD_ROOT`` (no silent default world).
+Always uses disposable test-world configuration, ignoring any selected world.
+No Minecraft save, world checkout, evidence cache or extracted assets are required.
 """
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import TextIO
 
 import pre_commit_checks as pcc
+from unit_test_world import unit_test_world
 
 WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'
 PARENT_HOLDS_LOCK_ENV = 'AI_WORLDBUILDER_FULL_SUITE_LOCK_HELD'
@@ -288,16 +289,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     Without flags, discovers the full suite under the advisory flock.
 
     @param argv: optional CLI args (without program name)
-    @returns: 0 success, 1 test failure / unset world / unknown module,
+    @returns: 0 success, 1 test failure / unknown module,
         2 when locked out of a full run
     """
-    if not os.environ.get(WORLD_ENV, '').strip():
-        print(
-            f'{WORLD_ENV} is unset. Set it before running tests '
-            f'(e.g. export {WORLD_ENV}=$PWD/worlds/southampton-build).',
-            file=sys.stderr,
-        )
-        return 1
     args = parse_args(argv)
     scripts = Path(__file__).resolve().parent
     root = scripts.parent
@@ -308,12 +302,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.path.insert(0, text)
 
     def _load_and_run() -> int:
-        try:
-            suite = load_suite(scripts, only=args.only)
-        except UnknownTestModule as exc:
-            print(f'run_tests: {exc}', file=sys.stderr)
-            return 1
-        return _run_suite(suite)
+        with unit_test_world():
+            try:
+                suite = load_suite(scripts, only=args.only)
+            except UnknownTestModule as exc:
+                print(f'run_tests: {exc}', file=sys.stderr)
+                return 1
+            return _run_suite(suite)
 
     if args.only:
         return _load_and_run()

@@ -3,14 +3,13 @@
 
   python3 -m unittest scripts/test_roof_lint.py
 """
-import json
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-from roof_lint import OUT, ridge_jogs  # noqa: E402
+from roof_lint import ridge_jogs  # noqa: E402
 
 T = 'minecraft:deepslate_tile'
 
@@ -61,20 +60,6 @@ class RidgeJogTest(unittest.TestCase):
                 cells[(x, 50 - d, rz + d)] = f'{T}_stairs[facing=north,half=bottom]'
         self.assertEqual([j['axis'] for j in ridge_jogs(cells)], ['z'])
 
-
-class RecordedBuildsTest(unittest.TestCase):
-    """Regression: every committed verification/site/*-cells.json stays jog-free."""
-
-    def test_all_recorded_build_cells_have_no_ridge_jogs(self):
-        bad = []
-        for f in sorted(OUT.glob('*-cells.json')):
-            name = f.name[: -len('-cells.json')]
-            raw = json.loads(f.read_text())
-            cells = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
-            jogs = ridge_jogs(cells)
-            if jogs:
-                bad.append(f'{name} ({len(jogs)} jog(s))')
-        self.assertEqual(bad, [], 'ridge jogs in recorded builds: ' + ', '.join(bad))
 
 
 if __name__ == '__main__':

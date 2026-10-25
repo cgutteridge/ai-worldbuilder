@@ -170,28 +170,6 @@ class CliDryRunTest(unittest.TestCase):
             self.assertEqual(app.call_args.kwargs.get('dry'), True)
 
 
-class SuFixtureDryRunTest(unittest.TestCase):
-    """Seam: committed SU spec dry-runs end-to-end via feature_build (no --apply)."""
-
-    def test_susu_spec_dry_runs(self):
-        from script_env import ROOT
-        spec_path = ROOT / 'site/builds/susu_42.json'
-        if not spec_path.exists():
-            self.skipTest('site/builds/susu_42.json not in active world yet')
-        # World reference/osm is gitignored; fall back to donor clips when empty.
-        world_osm = ROOT / 'reference/osm'
-        donor_osm = Path('/Users/cjg/Projects/Southampton Refine/reference/osm')
-        osm_root = world_osm if any(world_osm.glob('*/*.geojson')) else donor_osm
-        if not any(Path(osm_root).glob('*/*.geojson')):
-            self.skipTest('OSM clips unavailable for w33830305 resolution')
-        spec = F.load_spec(spec_path)
-        self.assertEqual(spec['ways'].get('33830305'), 'SU')
-        # Production path: OSMIndex (neighbours) + real site_kit dry apply; mock preview only.
-        with mock.patch.object(F, 'preview'):
-            plan = F.run(spec_path, do_apply=False, world=F.World(), osm_root=osm_root)
-        self.assertGreater(len(plan.cells), 10000)
-
-
 class FacadeSpecTest(unittest.TestCase):
     """Seam: load_spec accepts per-face facade rows; rejects bad storey/face/height."""
 

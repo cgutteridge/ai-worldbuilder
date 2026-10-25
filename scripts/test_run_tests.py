@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -112,6 +113,42 @@ class ModuleSelectionTest(unittest.TestCase):
             self._write_pair(scripts)
             suite = run_tests.load_suite(scripts, only=None)
             self.assertEqual(suite.countTestCases(), 2)
+
+
+class WorldIsolationTest(unittest.TestCase):
+    """The runner must work without a checkout and ignore selected-world data."""
+
+    def test_fixture_clears_and_restores_hook_git_environment(self) -> None:
+        from unit_test_world import unit_test_world
+
+        poisoned = {'GIT_DIR': '/invalid/repo', 'GIT_INDEX_FILE': '/invalid/index'}
+        with mock.patch.dict(os.environ, poisoned):
+            with unit_test_world():
+                self.assertNotIn('GIT_DIR', os.environ)
+                self.assertNotIn('GIT_INDEX_FILE', os.environ)
+            self.assertEqual(os.environ['GIT_DIR'], poisoned['GIT_DIR'])
+            self.assertEqual(os.environ['GIT_INDEX_FILE'], poisoned['GIT_INDEX_FILE'])
+
+    def test_runner_uses_fixture_with_unset_or_invalid_world(self) -> None:
+        runner = Path(__file__).with_name('run_tests.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = Path(tmp) / 'selected-world'
+            selected.mkdir()
+            (selected / 'sentinel').write_text('untouched')
+            for world in (None, str(selected)):
+                with self.subTest(world=world):
+                    env = dict(os.environ)
+                    env.pop(run_tests.WORLD_ENV, None)
+                    if world is not None:
+                        env[run_tests.WORLD_ENV] = world
+                    env['AI_WORLDBUILDER_REGISTRY_ROOT'] = str(selected)
+                    result = subprocess.run(
+                        [sys.executable, str(runner), '--only', 'test_cellmath'],
+                        env=env, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([p.name for p in selected.iterdir()], ['sentinel'])
+            self.assertEqual((selected / 'sentinel').read_text(), 'untouched')
 
 
 class FullSuiteLockTest(unittest.TestCase):

@@ -31,6 +31,15 @@ pre-commit hook. Mechanical rules belong in `.githooks/` /
   `cell_sources.provider_package_dir` / catalogue `home` — do not hard-code a
   single root when both are in play.
 
+## Unit tests
+
+- `python3 scripts/run_tests.py` runs against disposable configuration, with no
+  selected world required. Both full and focused runs ignore active-world data.
+- Test tool behaviour with explicit synthetic inputs, temporary files and provider
+  doubles. Do not read a world's builds, registry, evidence, extracted assets or
+  local provider implementations. Tests for world-owned providers belong with
+  those providers in the world repository.
+
 ## Branch gate and parallel waves
 
 - Code lands on `task/…` and ships via `.claude/skills/ship-branch/SKILL.md` →
