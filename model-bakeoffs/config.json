@@ -20,7 +20,27 @@
     "Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)",
     "Build from evidence table — not a previous Minecraft build",
     "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
-    "Apply, capture fixed cameras, release lock",
+    "Apply, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py capture {id}`; release lock",
     "Interview + score; then usage paste (need-you if counts unknown)"
-  ]
+  ],
+  "capture": {
+    "cameras": {
+      "square_south": {"eye": [6205, 57, -5593], "look": [6195, 56, -5565]},
+      "street_front": {"eye": [6204, 56, -5576], "look": [6200, 55, -5563]},
+      "aerial_top": {"eye": [6185, 160, -5537], "look": [6185, 40, -5536.99]}
+    },
+    "aerial_bbox_mc": [6140, -5584, 6230, -5490],
+    "FOV": 70,
+    "reference_plane_y": 60,
+    "aerial_crop_pixels": [451, 156, 1061, 793],
+    "aerial_crop_base_width": 1512,
+    "aerial_rotation_degrees": 180,
+    "real_aerial": {
+      "mosaic": "reference/aerial/susu/mosaic-z18-3x3-centre-130054-87835.png",
+      "xyz_origin": [130053, 87834],
+      "zoom": 18,
+      "resize": [610, 637]
+    },
+    "portals_note": "reference/portals/42-A..D.jpg"
+  }
 }
