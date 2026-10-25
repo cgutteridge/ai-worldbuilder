@@ -4,15 +4,6 @@
   "nextTaskId": 78,
   "tasks": [
     {
-      "id": 73,
-      "title": "model_bakeoff.py capture: fixed interview cameras from config",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro R-013: each round copies the previous round's capture script (r013_capture.py = sed of r012_capture.py) under worlds/bakeoff/site/builds/. Do: move the camera table (square_south, street_front, aerial_top eye/look, aerial bbox [6140,-5584,6230,-5490], FOV, crop/rotation) into model-bakeoffs/config.json (or packs/v1) and add `model_bakeoff.py capture R-NNN` that captures via evidence_sheet._capture_view, writes shots to worlds/bakeoff/verification/site/<round>-shots/, writes the matching real_aerial.png crop from reference/aerial/susu, saves the world, and fills the round's `photos` map. Point sitting_steps 'capture fixed cameras' at it. Done when: per-round capture scripts are no longer needed; a unit test covers the photos-map/crop maths with a stubbed capture function. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
-    },
-    {
       "id": 74,
       "title": "Keep earlier rounds' build scripts out of the next sitting's view",
       "status": "todo",
