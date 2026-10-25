@@ -46,7 +46,11 @@ write `Writes.cells` over MCP and nothing else (no readback, no registry, no flu
 ## Journal
 
 `<world>/registry/journal.jsonl`, append-only, one JSON line each, `seq` strictly increasing. Plan content
-lives in `registry/blobs/<hash>.json` (written and fsynced before the `begin` line). Lines: `begin`
+lives in `registry/blobs/<hash>.json.zst` (Python 3.14+) or `<hash>.json.gz` (older), written and fsynced
+before the `begin` line. The body is column run-length encoded, `{"rle": [[x, z, y0, y1, state], ...]}`
+sorted by x, z, y, and `<hash>` is the sha256 prefix of that body. Plain `<hash>.json` blobs holding the old
+`{"x,y,z": state}` dict still read. A `.zst` blob cannot be read on Python < 3.14, so open a registry with an
+interpreter at least as new as the one that wrote it. Corrupt or malformed blobs raise `JournalError`. Lines: `begin`
 (build/undo), `finish` (`landed` | `mismatched`), `note`, `repair` (informational).
 
 ## Invariants
