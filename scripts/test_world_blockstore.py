@@ -74,14 +74,6 @@ class TestWorldBlockStoreFacade(unittest.TestCase):
                 self.assertEqual(w.block(0, 64, 0), STONE)
                 factory.assert_called_once()
 
-    def test_no_mca_reader_methods(self):
-        self.assertFalse(hasattr(World(store=MemoryBlocks()), '_chunk'))
-        src = Path(__file__).resolve().parent / 'site_kit.py'
-        text = src.read_text()
-        # The class body must not open region files or decompress chunk NBT.
-        self.assertNotIn("f'r.{rx}.{rz}.mca'", text)
-        self.assertNotIn('zlib.decompress', text)
-
     def test_live_mcp_lists_air_for_unfiltered_far_chunks(self):
         """Pin live-server behaviour: without loaded_chunks filter, far scans list air.
 

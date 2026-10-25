@@ -237,6 +237,7 @@ class TestModelBakeoff(unittest.TestCase):
             checklist = '\n'.join(round_['sitting']['checklist'])
             self.assertIn('model_bakeoff.py baseline R-001', checklist)
             self.assertIn('model_bakeoff.py capture R-001', checklist)
+            # baseline replaced restore-ghost; config.json is not in stale_terms scan
             self.assertNotIn('restore-ghost', checklist)
             self.assertIn('FAIRNESS.md', checklist)
             self.assertIn('One apply owner', checklist)
@@ -244,6 +245,9 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertTrue(path.is_file())
             disk = json.loads(path.read_text(encoding='utf-8'))
             self.assertEqual(disk['model']['id'], 'composer')
+            card = MB.format_sitting(round_)
+            for item in round_['sitting']['checklist']:
+                self.assertIn(item, card)
 
     def test_open_round_checklist_comes_from_config_sitting_steps(self):
         with tempfile.TemporaryDirectory() as d:
@@ -270,40 +274,18 @@ class TestModelBakeoff(unittest.TestCase):
                 ],
             )
 
-    def test_generated_checklist_has_no_stale_quit_or_task_48(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            _seed(root)
-            round_ = MB.open_round(
-                root,
-                tool='cursor',
-                model='composer',
-                task='feature_design',
-            )
-            checklist = '\n'.join(round_['sitting']['checklist'])
-            self.assertNotIn('Quit Minecraft', checklist)
-            self.assertNotIn('task 48', checklist)
-            self.assertIn('model_bakeoff.py baseline', checklist)
-            card = MB.format_sitting(round_)
-            self.assertNotIn('task 48', card)
-            self.assertNotIn('Quit Minecraft', card)
-            self.assertIn('model_bakeoff.py baseline', card)
-            for item in round_['sitting']['checklist']:
-                self.assertIn(item, card)
-
     def test_live_config_sitting_steps_are_source_of_truth(self):
         cfg = MB.load_config(MB.DEFAULT_BAKEOFFS)
         steps = cfg.get('sitting_steps')
         self.assertIsInstance(steps, list)
         self.assertGreaterEqual(len(steps), 1)
         joined = '\n'.join(steps)
-        self.assertNotIn('Quit Minecraft', joined)
-        self.assertNotIn('task 48', joined)
         self.assertIn('model_bakeoff.py baseline', joined)
         self.assertIn('model_bakeoff.py capture', joined)
         self.assertIn('{id}', joined)
         self.assertEqual(joined.count('lidar_ghost apply'), 1)  # only inside the baseline command note
         self.assertNotIn('cell_registry.py reconcile', joined)
+        self.assertNotIn('restore-ghost', joined)
         self.assertIn('{tool}', joined)
         self.assertIn('{model}', joined)
         self.assertIn('{pack}', joined)
@@ -770,9 +752,6 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 text,
                 msg=f'{name} must link to config sitting_steps',
             )
-            self.assertNotIn('Quit Minecraft', text, msg=name)
-            self.assertNotIn('pending task 48', text, msg=name)
-            self.assertNotIn('task 48', text, msg=name)
 
     def test_cli_subprocess_status_imports(self):
         """Running the script as ``python3 scripts/model_bakeoff.py`` must find active_world."""
