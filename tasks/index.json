@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 98,
-  "tasks": [
-    {
-      "id": 96,
-      "title": "Move bake-off into its own folder, separate from the real project",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Goal: one distinct top-level folder in the main repo (e.g. bakeoff/) holding everything bake-off, so it cannot be mixed up with real world/tool work. Today it is scattered: model-bakeoffs/ (PROTOCOL, README, catalogue, config, packs, rounds, checks), scripts/model_bakeoff.py + test_model_bakeoff.py + feature_selection_check.py, skill .claude/skills/model-bakeoff, docs/model-bakeoffs.md, and the world checkout worlds/bakeoff (gitignored, own git repo). References to update: AGENTS.md, docs/active-world-contract.md, docs/audits/region-block-reads.md, rules/build-roles.md, scripts/run_tests.py, scripts/stale_terms_audit.py, tasks/done.json notes, the round JSONs (R-006..R-013), checks/feature-selection scenarios, and the 'refuse unless active world is bakeoff' guards in model_bakeoff.py. Open decisions: (1) does the bakeoff world checkout also move into the new folder or stay under worlds/ (active_world.py / AI_WORLDBUILDER_WORLD_ROOT expectations); (2) shared code (feature_build, site_kit, world_frame) stays in scripts/ and is imported, not copied. #95 symptom (bakeoff missing OSM clips / cross-world osm_root) fixed by on-disk copy 2026-10-25 \u2014 this ticket no longer absorbs that; OSM-as-normal-reference architecture is #97. Do not move mid-sitting: finish or park R-014 first. Ship via task/* branch."
-    }
-  ]
+  "tasks": []
 }
