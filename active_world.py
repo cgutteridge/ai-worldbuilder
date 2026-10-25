@@ -14,6 +14,10 @@ import os
 from pathlib import Path
 from typing import Any
 
+import python_runtime
+
+python_runtime.ensure_python_runtime()
+
 WORLD_ENV = "AI_WORLDBUILDER_WORLD_ROOT"
 
 

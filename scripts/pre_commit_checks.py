@@ -22,6 +22,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Sequence
 
+_TOOL_ROOT = Path(__file__).resolve().parent.parent
+if str(_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_TOOL_ROOT))
+
+import python_runtime  # noqa: E402
+
+python_runtime.ensure_python_runtime()
+
 TRACKER_PATHS = frozenset({'tasks/index.json', 'tasks/done.json'})
 WAVE_LOCK_NAME = '.wave-lock'
 WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'

@@ -21,6 +21,10 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 if str(TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOL_ROOT))
 
+import python_runtime  # noqa: E402
+
+python_runtime.ensure_python_runtime()
+
 from active_world import WORLD_ROOT  # noqa: E402
 
 ROOT = WORLD_ROOT
