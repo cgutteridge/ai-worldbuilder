@@ -67,7 +67,27 @@ Later: `look`, `greeblies`, `trees`. Soft tasks (orchestrator / apply plumbing) 
 
 ## Usage (tokens / cost)
 
-Each round has a `usage` block (`input_tokens`, `output_tokens`, `total_tokens`, optional `cost_usd`, `source`). Record after the sitting when the tool shows numbers — Cursor rarely exposes them to the agent, so paste from the usage UI:
+Each round has a `usage` block. **Cross-model cost comparison** uses the same two units every round:
+
+1. **Weekly plan % delta** (all models on the subscription): `plan_pct_start` at `open`, `plan_pct_end` at `score` via `--plan-pct N`.
+2. **Claude Code / API transcript sums** (`source=api`): per-response usage de-duplicated by message id, including cache read/write. `total` = input + output + cache read + cache write.
+
+```bash
+# at open / score — weekly plan % (same meter for every model)
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py score R-014 ... --plan-pct 47 --wallclock-min 35 --interruptions "host reboot ~6 min"
+
+# after the sitting — sum the session transcript (subagent jsonl paths work the same;
+# a parent session.jsonl also includes session/subagents/*.jsonl when present)
+AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-014 \
+  --from-transcript ~/.claude/projects/.../<session>.jsonl --model-prefix claude-opus-5-5
+```
+
+Optional on the usage block: `wallclock_min`, `interruptions`. `status` prints `plan=45%→47% (Δ+2)` when both plan fields are set.
+
+**Do not compare** Cursor/Claude **agent-report** subagent totals (~hundreds of k, no cache split) with Codex rollout counters or with transcript sums that include cache reads (millions). Those units are not interchangeable — leave them as notes only, or replace with a transcript sum + plan %.
+
+Cursor UI paste remains fine when that is all you have:
 
 ```bash
 AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py usage R-002 --input 12000 --output 3000 --source cursor-ui
