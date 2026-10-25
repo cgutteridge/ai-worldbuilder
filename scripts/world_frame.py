@@ -581,9 +581,11 @@ def _validate_wgs84(lat: float, lon: float) -> tuple[float, float]:
     lon = _require_finite(lon, 'longitude')
     if lon < -180.0 or lon >= 180.0:
         raise ValueError(f'longitude must be in [-180, 180), got {lon}')
-    if lat < -WM_MAX_LAT or lat > WM_MAX_LAT:
+    # Exclusive of ±WM_MAX_LAT: at the exact poles tile_float can emit y==n or
+    # negative south_px that reverse conversion then rejects.
+    if lat <= -WM_MAX_LAT or lat >= WM_MAX_LAT:
         raise ValueError(
-            f'latitude must be in [{-WM_MAX_LAT}, {WM_MAX_LAT}], got {lat}',
+            f'latitude must be in ({-WM_MAX_LAT}, {WM_MAX_LAT}), got {lat}',
         )
     return lat, lon
 
@@ -640,14 +642,30 @@ def wgs84_to_wm_position(lat: float, lon: float, zoom: int) -> dict:
     zoom = _validate_zoom(zoom)
     lat, lon = _validate_wgs84(lat, lon)
     fx, fy = tile_float(lat, lon, zoom)
+    n = float(1 << zoom)
+    # Clamp into [0, n) so float noise near the Web Mercator poles never
+    # yields an out-of-range tile index or offset outside [0, 256).
+    eps = 1e-12
+    fx = min(max(fx, 0.0), n - eps)
+    fy = min(max(fy, 0.0), n - eps)
     tx, ty = int(fx), int(fy)
+    east_px = (fx - tx) * WM_TILE_PX
+    south_px = (fy - ty) * WM_TILE_PX
+    if east_px < 0.0:
+        east_px = 0.0
+    if south_px < 0.0:
+        south_px = 0.0
+    if east_px >= WM_TILE_PX:
+        east_px = WM_TILE_PX - eps
+    if south_px >= WM_TILE_PX:
+        south_px = WM_TILE_PX - eps
     return {
         'zoom': zoom,
         'x': tx,
         'y': ty,
         'tile': f'{zoom}/{tx}/{ty}',
-        'east_px': (fx - tx) * WM_TILE_PX,
-        'south_px': (fy - ty) * WM_TILE_PX,
+        'east_px': east_px,
+        'south_px': south_px,
     }
 
 

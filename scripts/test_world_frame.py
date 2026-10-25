@@ -316,6 +316,13 @@ class WmTilePositionValidationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             wf.wgs84_to_wm_position(-(wf.WM_MAX_LAT + 0.01), 0.0, 1)
 
+    def test_reject_exact_web_mercator_latitude_limits(self):
+        # Exact ±WM_MAX_LAT must not emit invalid tile y / south_px.
+        with self.assertRaises(ValueError):
+            wf.wgs84_to_wm_position(wf.WM_MAX_LAT, 0.0, 5)
+        with self.assertRaises(ValueError):
+            wf.wgs84_to_wm_position(-wf.WM_MAX_LAT, 0.0, 5)
+
     def test_reject_non_finite(self):
         with self.assertRaises(ValueError):
             wf.wgs84_to_wm_position(float('nan'), 0.0, 1)
