@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Sound cues (Southampton Refine)
 
+**Top-level agents only** — play cues only from the agent the user triggered. Do **not** play from subagents, Task runners, worktree workers, or other nested agents; only the user-facing parent may cue.
+
 Play short audio so the user hears status without reading chat. Same CLI as other projects:
 
 ```bash
