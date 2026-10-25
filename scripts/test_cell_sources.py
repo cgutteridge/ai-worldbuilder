@@ -149,12 +149,12 @@ class TestStaleRefresh(unittest.TestCase):
             'bbox_mc': [128, 256, 255, 383],  # covers cell 1,2 fully
             'useful': 'yes',
         }
-        with mock.patch('cell_sources.references_for_cell', return_value=[hit]):
+        family = {'kind': 'aerial', 'tags': ['hampshire-hub'], 'how': 'inspect fixture'}
+        with mock.patch.dict(cs.SOURCE_FAMILIES, {'hampshire-hub': family}), \
+                mock.patch('cell_sources.references_for_cell', return_value=[hit]):
             with mock.patch('cell_sources.cell_coverage', return_value=1.0):
                 st = cs.source_status(1, 2, today=self.today)
-        hub = st.get('hampshire-hub')
-        if hub is None:
-            self.skipTest('hampshire-hub not in active SOURCE_FAMILIES')
+        hub = st['hampshire-hub']
         self.assertEqual(hub['state'], 'stale')
         self.assertEqual(hub['was'], 'have')
 
@@ -261,27 +261,26 @@ class TestDualRootPackage(unittest.TestCase):
             path,
         )
 
-    def test_world_package_dir_when_present(self):
-        from script_env import ROOT, resolve_provider_package
+    def test_world_package_dir(self):
+        from script_env import resolve_provider_package
 
-        data = cs.load_place_sources()
-        local_with_pkg = [
-            p
-            for p in data.get('providers') or []
-            if p.get('home') == 'world' and p.get('package')
-        ]
-        if not local_with_pkg:
-            self.skipTest('active world has no local providers with package')
-        row = local_with_pkg[0]
-        path = cs.provider_package_dir(row['id'], data)
-        self.assertIsNotNone(path)
-        self.assertTrue(path.is_dir())
-        self.assertEqual(path, (ROOT / row['package']).resolve())
-        self.assertEqual(cs.provider_home(row['id'], data), 'world')
-        self.assertEqual(
-            resolve_provider_package(row['package'], home='world'),
-            path,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp).resolve()
+            package = world / 'providers' / 'local-demo'
+            package.mkdir(parents=True)
+            local = world / 'local-providers.json'
+            local.write_text(json.dumps({'providers': [
+                {'id': 'local-demo', 'package': 'providers/local-demo'},
+            ]}))
+            with mock.patch.object(cs, 'LOCAL_PROVIDERS', local), \
+                    mock.patch('script_env.ROOT', world):
+                data = cs.load_place_sources()
+                self.assertEqual(cs.provider_home('local-demo', data), 'world')
+                self.assertEqual(cs.provider_package_dir('local-demo', data), package)
+                self.assertEqual(
+                    resolve_provider_package('providers/local-demo', home='world'),
+                    package,
+                )
 
     def test_no_package_returns_none(self):
         self.assertIsNone(cs.provider_package_dir('rightmove'))

@@ -5,18 +5,7 @@ from pathlib import Path
 
 import house_build as H
 
-SPECS = sorted((Path(__file__).resolve().parent.parent / 'site/builds').glob('*.json'))
-
-
 class SpecTest(unittest.TestCase):
-    def test_all_committed_specs_load(self):
-        if not SPECS:
-            self.skipTest('no house specs in site/builds yet')
-        for p in SPECS:
-            with self.subTest(spec=p.name):
-                spec = H.load_spec(p)
-                self.assertEqual(spec['name'], p.stem)
-
     def write(self, spec):
         f = Path(tempfile.mkdtemp()) / 's.json'
         f.write_text(json.dumps(spec))

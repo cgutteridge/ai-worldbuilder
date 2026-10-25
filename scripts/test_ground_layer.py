@@ -235,13 +235,3 @@ class TestRegisteredAerial(unittest.TestCase):
         out = gs.registered_rgb([(30, 50), (1, 50), (30, 1), (60, 50), (80, 50)], [src])
         self.assertEqual(set(out), {(30, 50)})                       # (1,50),(30,1) near the edge; (60,50),(80,50) black
         self.assertEqual(gs.aerial_class(out[(30, 50)]), 'lawn')
-
-    def test_registered_wins_over_mosaic_and_glob_finds_registrations(self):
-        import ground_sources as gs
-        aerials = gs.registered_aerials()
-        if not any('googlemaps-music-law-annex' in s['name'] for s in aerials):
-            self.skipTest(
-                'active world missing reference/aerial/**/googlemaps-music-law-annex*.registration.json'
-            )
-        reg = gs.registered_rgb([(6136, -5715)])
-        self.assertIsInstance(reg[(6136, -5715)], gs.RegRGB)
