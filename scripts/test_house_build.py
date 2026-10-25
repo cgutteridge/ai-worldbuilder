@@ -7,7 +7,9 @@ import house_build as H
 
 class SpecTest(unittest.TestCase):
     def write(self, spec):
-        f = Path(tempfile.mkdtemp()) / 's.json'
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        f = Path(tmp.name) / 's.json'
         f.write_text(json.dumps(spec))
         return f
 

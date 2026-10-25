@@ -19,7 +19,9 @@ class LoadSpecTest(unittest.TestCase):
     """Seam: load_spec validates and fills defaults."""
 
     def write(self, spec: dict) -> Path:
-        path = Path(tempfile.mkdtemp()) / 's.json'
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 's.json'
         path.write_text(json.dumps(spec))
         return path
 
@@ -159,22 +161,24 @@ class CliDryRunTest(unittest.TestCase):
             'groups': [{'nos': ['A'], 'front': 'N'}],
             'floor_min': 50,
         }
-        d = Path(tempfile.mkdtemp())
-        spec_path = d / 'cli_feature.json'
-        spec_path.write_text(json.dumps(spec))
-        with mock.patch.object(F, 'preview') as prev, mock.patch.object(F, 'apply') as app:
-            plan = F.run(spec_path, do_apply=False, footprints={'A': cells}, world=_StoneWorld())
-            self.assertGreater(len(plan.cells), 0)
-            prev.assert_called_once()
-            app.assert_called_once()
-            self.assertEqual(app.call_args.kwargs.get('dry'), True)
+        with tempfile.TemporaryDirectory() as d:
+            spec_path = Path(d) / 'cli_feature.json'
+            spec_path.write_text(json.dumps(spec))
+            with mock.patch.object(F, 'preview') as prev, mock.patch.object(F, 'apply') as app:
+                plan = F.run(spec_path, do_apply=False, footprints={'A': cells}, world=_StoneWorld())
+                self.assertGreater(len(plan.cells), 0)
+                prev.assert_called_once()
+                app.assert_called_once()
+                self.assertEqual(app.call_args.kwargs.get('dry'), True)
 
 
 class FacadeSpecTest(unittest.TestCase):
     """Seam: load_spec accepts per-face facade rows; rejects bad storey/face/height."""
 
     def write(self, spec: dict) -> Path:
-        path = Path(tempfile.mkdtemp()) / 's.json'
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 's.json'
         path.write_text(json.dumps(spec))
         return path
 
@@ -381,7 +385,9 @@ class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones; refuses bad from/levels/pitched roof."""
 
     def write(self, spec: dict) -> Path:
-        path = Path(tempfile.mkdtemp()) / 's.json'
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 's.json'
         path.write_text(json.dumps(spec))
         return path
 
