@@ -11,15 +11,6 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Retro R-013 fairness: worlds/bakeoff/site/builds/ holds r010..r013 SUSU build scripts, lidar/osm caches and capture scripts next to where the model writes its own; R-012 disclosed reading the R-011 docstring (prior evidence summary). Pack rule: a previous Minecraft build is not evidence. Do: as part of `model_bakeoff.py baseline` (task 72) move prior round artefacts matching `r0NN_*` out of site/builds/ into an archive dir the brief tells the model not to use (e.g. worlds/bakeoff/archive/rounds/<id>/), and have `open` warn if any are still present. Add one line to packs/v1/FAIRNESS.md (not BRIEF.md, which is frozen) naming the archive as off-limits. Done when: after baseline, site/builds/ contains no earlier-round files; open warns on leftovers; test covers the move. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
-    },
-    {
-      "id": 77,
-      "title": "Bake-off round record keeps its build script",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro R-013: the round's evidence table + build script live in the gitignored world checkout (worlds/bakeoff/site/builds/r013_susu.py), so the tool-repo commit scoring the round (b151838) does not contain them and the record is not self-contained. Do: on `model_bakeoff.py score` copy the round's build script(s) and capture metadata into model-bakeoffs/rounds/R-NNN/ (like the existing R-008-photos / R-009-photos dirs) and record the paths in the round JSON (`artefacts`). Take the script path from a new `open`/`score` flag or from the plan name in the journal entry the round's apply recorded. Skip large binaries (npz) and screenshots unless already the convention. Done when: scoring a round leaves its build script under model-bakeoffs/rounds/R-NNN/ and the JSON points at it; test covers the copy. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
     }
   ]
 }

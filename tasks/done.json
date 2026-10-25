@@ -637,6 +637,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Retro R-013: usage is recorded in incomparable units (Claude subagent totals ~200k with no cache split; Codex rollout counters; Claude Code transcript sums incl. cache reads ~5-7M; weekly plan % only sometimes), so Sonnet vs Opus cost could not be compared. Do in scripts/model_bakeoff.py: (1) `usage R-NNN --from-transcript <path.jsonl> [--model-prefix claude-opus-5-5]` that sums per-response API usage de-duplicated by message id (input, output, cache_read, cache_write, requests, first/last timestamp) and records source=api; this is the script hand-written in R-012/R-013. Support subagent transcripts too. (2) Add optional plan-usage fields `plan_pct_start` / `plan_pct_end` (weekly, all models) to the usage block, settable on `open` and `score` (`--plan-pct N`), plus `wallclock_min` and `interruptions` notes. (3) Document in model-bakeoffs/PROTOCOL.md Usage section that cross-model cost comparison uses plan % delta + transcript sums, and that agent-report subagent totals are not comparable. Done when: unit test sums a fixture transcript with duplicate message ids correctly; status output shows plan % delta where present. Merged as b4baee5 (feb975b). Review APPROVE with nits."
+    },
+    {
+      "id": 77,
+      "title": "Bake-off round record keeps its build script",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: the round's evidence table + build script live in the gitignored world checkout (worlds/bakeoff/site/builds/r013_susu.py), so the tool-repo commit scoring the round (b151838) does not contain them and the record is not self-contained. Do: on `model_bakeoff.py score` copy the round's build script(s) and capture metadata into model-bakeoffs/rounds/R-NNN/ (like the existing R-008-photos / R-009-photos dirs) and record the paths in the round JSON (`artefacts`). Take the script path from a new `open`/`score` flag or from the plan name in the journal entry the round's apply recorded. Skip large binaries (npz) and screenshots unless already the convention. Done when: scoring a round leaves its build script under model-bakeoffs/rounds/R-NNN/ and the JSON points at it; test covers the copy. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff.  Merged as afb1f96 (ac51523). Reviewer nits only."
     }
   ]
 }
