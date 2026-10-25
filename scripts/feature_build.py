@@ -550,7 +550,10 @@ class Build:
         @param spec: validated feature spec
         @param footprints: optional ``{label: set[(x,z)]}`` (else OSMIndex from ways)
         @param world: optional ``World``-like with ``block(x,y,z)`` (else live ``World()``)
-        @param osm_root: optional vector-map clip root for ``OSMIndex`` (tests / alternate trees)
+        @param osm_root: optional vector-map clip root for ``OSMIndex`` (unit-test /
+            fixture trees only). Production always uses this world's
+            ``reference/vector_map`` via ``vector_map_clips.vector_map_clip_root``;
+            do not point at another world's clips.
         @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
             (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
             When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
@@ -1477,7 +1480,7 @@ def build(
     @param spec: validated feature spec
     @param footprints: optional label→cells map (tests / offline)
     @param world: optional World-like
-    @param osm_root: optional vector-map clip root
+    @param osm_root: optional clip root (tests / fixtures only; not cross-world)
     @param zone_data: optional lidar grids for zoned labels (tests)
     @returns: Plan
     """
@@ -1500,7 +1503,7 @@ def run(
     @param do_apply: when True, live apply; otherwise dry run
     @param footprints: optional label→cells map
     @param world: optional World-like
-    @param osm_root: optional vector-map clip root
+    @param osm_root: optional clip root (tests / fixtures only; not cross-world)
     @param zone_data: optional lidar grids for zoned labels (tests)
     @returns: Plan
     """
