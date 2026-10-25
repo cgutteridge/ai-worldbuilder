@@ -619,6 +619,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Retro R-013: each round copies the previous round's capture script (r013_capture.py = sed of r012_capture.py) under worlds/bakeoff/site/builds/. Do: move the camera table (square_south, street_front, aerial_top eye/look, aerial bbox [6140,-5584,6230,-5490], FOV, crop/rotation) into model-bakeoffs/config.json (or packs/v1) and add `model_bakeoff.py capture R-NNN` that captures via evidence_sheet._capture_view, writes shots to worlds/bakeoff/verification/site/<round>-shots/, writes the matching real_aerial.png crop from reference/aerial/susu, saves the world, and fills the round's `photos` map. Point sitting_steps 'capture fixed cameras' at it. Done when: per-round capture scripts are no longer needed; a unit test covers the photos-map/crop maths with a stubbed capture function. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff.  Merged as ef8e284 (8ebc32a). Reviewer nits only."
+    },
+    {
+      "id": 76,
+      "title": "feature_build: per-zone roof heights within one footprint",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Retro R-012/R-013: rules/feature-builds.md requires scripts/feature_build.py, but its spec takes one `storeys` count per OSM way (STOREY_H=3), so SUSU (one way, w33830305, with lidar roof plateaus at 41/45/46/47/48/50 m AOD terraced into a ~10 m slope) cannot be expressed; both Opus rounds wrote ~340-line custom site_kit scripts, the most expensive and error-prone part of a sitting and the gap weaker models fail on. Do: add an optional spec key (e.g. `zones: {\"<label>\": {\"from\": \"lidar\", \"levels\": [..] | \"auto\", \"bucket\": 4, \"axis_deg\": \"auto\"}}`) that splits a footprint into flat roof zones: 5x5 median DSM, snap to plateau levels, mode-filter, then bucket on the building's rotated grid so zone edges are straight runs; walls run from local lidar ground up so downhill faces gain storeys; parapet on every roof edge including zone steps. Reuse existing facades/doors/roofs per zone label. Keep the 1-block-stair squaring and print the `footprint osm=N readable=M pad=P cover=C%` line. Reference implementation to read (not copy verbatim): worlds/bakeoff/site/builds/r013_susu.py (evidence() and build()). Update rules/feature-builds.md. Done when: a SUSU spec using zones dry-runs end-to-end with 0 guard failures, and unit tests cover zone snapping, bucketing and edge-wall exposure with a fixture height grid. Merged as 50be794 (001e1ae + d703ea5 fixer). Review APPROVE after blockers fixed."
     }
   ]
 }

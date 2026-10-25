@@ -54,6 +54,26 @@ class ScanFile(unittest.TestCase):
             self.assertEqual(hits, [])
 
 
+    def test_allows_mandated_footprint_osm_phrase(self):
+        """Ticket #76 pad line may keep the ``footprint osm=`` token."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules = root / 'rules'
+            rules.mkdir()
+            (rules / 'feature-builds.md').write_text(
+                'Dry run prints `footprint osm=N readable=M pad=P cover=C%`.\n'
+                'Do not say bare osm elsewhere.\n'
+            )
+            allow = pna.default_allow_prefixes(root)
+            hits = pna.scan_tree(
+                root, tokens={'osm'}, allow_prefixes=allow,
+                scan_roots=[('rules', ('.md',))],
+            )
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]['line'], 2)
+            self.assertIn('bare osm', hits[0]['text'])
+
+
 class Baseline(unittest.TestCase):
     """Baseline compare catches new violations only."""
 
