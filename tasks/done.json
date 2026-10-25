@@ -801,6 +801,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Count block_scan_region calls in LiveBlocks; warn on stderr past N tiny scans per store lifetime. Never raise (a hard failure mid-apply is worse than slow). Optional: drop if the test-level scan-call bound in the batching task is enough. Possible later ticket: shorter Paced interval for read-only scans. Merged task/94-tiny-scan-warn (53b0b29) via ship_branch; tiny=vol\u226416, warn after 50, never raise."
+    },
+    {
+      "id": 93,
+      "title": "Sweep other scripts for per-block live-read loops",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "After the feature_build fix, audit .block( loops in geo, plant_cell_canopy, site_recover, site_walk, entrances, cell_marker, mask_undo, osm_footprints. Fix only real hot loops by prefetch. Audit first. Merged task/93-live-read-sweep (16d3297) via ship_branch. Hot + prefetched: geo, plant_cell_canopy, site_walk, entrances, cell_marker, mask_undo. Fine / left alone: site_recover (already read_many); osm_footprints (street_surface uses batched ground(); CLI frontage light)."
     }
   ]
 }

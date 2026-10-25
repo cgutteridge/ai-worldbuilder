@@ -4,15 +4,6 @@
   "nextTaskId": 97,
   "tasks": [
     {
-      "id": 93,
-      "title": "Sweep other scripts for per-block live-read loops",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "After the feature_build fix, audit .block( loops in geo, plant_cell_canopy, site_recover, site_walk, entrances, cell_marker, mask_undo, osm_footprints. Fix only real hot loops by prefetch. Audit first."
-    },
-    {
       "id": 95,
       "title": "Bake-off world has no OSM vector_map; feature_build read another world's data",
       "status": "todo",
