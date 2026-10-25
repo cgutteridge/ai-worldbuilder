@@ -19,13 +19,11 @@ BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
 
 SEED_SITTING_STEPS = [
     'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
-    'Regenerate the ghost baseline with `lidar_ghost apply` (no region restore, ADR 004)',
     'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
     (
-        'Confirm the 3×3 ghost baseline around {cell} is complete and clean: '
-        '`cell_registry.py reconcile` over the nine cells and '
-        '`lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; '
-        'regenerate any incomplete cell with `lidar_ghost apply --force`'
+        'Reset the 3×3 ghost baseline: '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py baseline {{id}}` '
+        '(undoes prior feature builds, lidar_ghost apply --force, reconcile)'
     ),
     'Claim site lock; build with that tool/model only',
     'Use tool={tool} model={model} only',
@@ -35,6 +33,38 @@ SEED_SITTING_STEPS = [
     'Apply, capture fixed cameras, release lock',
     'Interview + score; then usage paste (need-you if counts unknown)',
 ]
+
+
+def _fake_entry(
+    *,
+    seq: int,
+    plan: str,
+    pass_: str = 'feature',
+    kind: str = 'build',
+    cell: tuple[int, int] = (48, -44),
+    cells: tuple[tuple[int, int], ...] | None = None,
+    status: str = 'landed',
+    undone: bool = False,
+):
+    """Minimal journal EntryView for baseline selection tests."""
+    from cell_journal import EntryView
+
+    cell_t = tuple(cell)
+    touch = tuple(cells) if cells is not None else (cell_t,)
+    return EntryView(
+        seq=seq,
+        kind=kind,
+        plan=plan,
+        pass_=pass_,
+        cell=cell_t,
+        cells=touch,
+        status=status,
+        undone=undone,
+        n=1,
+        owner='test',
+        ts='2026-01-01T00:00:00Z',
+        meta={},
+    )
 
 
 def _seed(root: Path) -> None:
@@ -126,7 +156,7 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertIn('usage', round_)
             self.assertIsNone(round_['usage']['total_tokens'])
             checklist = '\n'.join(round_['sitting']['checklist'])
-            self.assertIn('lidar_ghost apply', checklist)
+            self.assertIn('model_bakeoff.py baseline R-001', checklist)
             self.assertNotIn('restore-ghost', checklist)
             self.assertIn('FAIRNESS.md', checklist)
             self.assertIn('One apply owner', checklist)
@@ -173,11 +203,11 @@ class TestModelBakeoff(unittest.TestCase):
             checklist = '\n'.join(round_['sitting']['checklist'])
             self.assertNotIn('Quit Minecraft', checklist)
             self.assertNotIn('task 48', checklist)
-            self.assertIn('complete and clean', checklist)
+            self.assertIn('model_bakeoff.py baseline', checklist)
             card = MB.format_sitting(round_)
             self.assertNotIn('task 48', card)
             self.assertNotIn('Quit Minecraft', card)
-            self.assertIn('complete and clean', card)
+            self.assertIn('model_bakeoff.py baseline', card)
             for item in round_['sitting']['checklist']:
                 self.assertIn(item, card)
 
@@ -189,8 +219,10 @@ class TestModelBakeoff(unittest.TestCase):
         joined = '\n'.join(steps)
         self.assertNotIn('Quit Minecraft', joined)
         self.assertNotIn('task 48', joined)
-        self.assertIn('lidar_ghost apply', joined)
-        self.assertIn('complete and clean', joined)
+        self.assertIn('model_bakeoff.py baseline', joined)
+        self.assertIn('{id}', joined)
+        self.assertEqual(joined.count('lidar_ghost apply'), 1)  # only inside the baseline command note
+        self.assertNotIn('cell_registry.py reconcile', joined)
         self.assertIn('{tool}', joined)
         self.assertIn('{model}', joined)
         self.assertIn('{pack}', joined)
@@ -484,6 +516,201 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 msg=f'stdout={result.stdout!r} stderr={result.stderr!r}',
             )
             self.assertNotIn('ModuleNotFoundError', result.stderr)
+
+
+class TestBaseline(unittest.TestCase):
+    """Undo selection, refusal, and --plan for ``baseline`` (fake journal / lock)."""
+
+    def test_selects_non_undone_feature_builds_in_ghost_cells(self):
+        ghost = [(47, -44), (48, -44), (49, -44)]
+        entries = [
+            _fake_entry(seq=1, plan='old-susu', cells=((48, -44),), undone=True),
+            _fake_entry(seq=2, plan='trees-pass', pass_='trees', cells=((48, -44),)),
+            _fake_entry(seq=3, plan='ghost-g', pass_='ghost-ground', cells=((47, -44),)),
+            _fake_entry(seq=4, plan='r012-susu', cells=((48, -44), (49, -44))),
+            _fake_entry(seq=5, plan='outside', cell=(10, 10), cells=((10, 10),)),
+            _fake_entry(seq=6, plan='begun-build', cells=((47, -44),), status='begun'),
+            _fake_entry(seq=7, plan='r013-susu', cells=((47, -44),)),
+            _fake_entry(seq=8, plan='undo:r011', kind='undo', cells=((48, -44),)),
+        ]
+        targets = MB.select_feature_undo_targets(entries, ghost)
+        self.assertEqual(
+            [(t['plan'], t['seq']) for t in targets],
+            [('r013-susu', 7), ('r012-susu', 4)],
+        )
+
+    def test_dedupes_same_plan_keeps_latest_seq(self):
+        ghost = [(48, -44)]
+        entries = [
+            _fake_entry(seq=1, plan='susu', cells=((48, -44),), undone=True),
+            _fake_entry(seq=9, plan='susu', cells=((48, -44),)),
+            _fake_entry(seq=10, plan='susu', cells=((48, -44),)),
+        ]
+        targets = MB.select_feature_undo_targets(entries, ghost)
+        self.assertEqual([(t['plan'], t['seq']) for t in targets], [('susu', 10)])
+
+    def test_baseline_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'):
+                with self.assertRaises(RuntimeError) as ctx:
+                    MB.run_baseline(root, 'R-001', plan_only=True)
+            self.assertIn(BAKEOFF_WORLD_PREFIX, str(ctx.exception))
+
+    def test_baseline_refuses_without_site_owner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            env = {k: v for k, v in os.environ.items() if k != 'SITE_OWNER'}
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch.dict(os.environ, env, clear=True):
+                with self.assertRaises(RuntimeError) as ctx:
+                    MB.run_baseline(
+                        root,
+                        'R-001',
+                        plan_only=False,
+                        list_entries_fn=lambda _cells: [],
+                        undo_fn=lambda *_a, **_k: None,
+                        lidar_apply_fn=lambda: None,
+                        lidar_status_fn=lambda: {'cells': []},
+                        reconcile_fn=lambda _c: True,
+                    )
+            self.assertIn('SITE_OWNER', str(ctx.exception))
+
+    def test_baseline_refuses_lock_held_by_other(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            other_lock = {
+                'owner': 'other',
+                'task': 'busy',
+                'heartbeat': 9e12,
+                'claimed_at': 'now',
+            }
+
+            def boom_claim(*_a, **_k):
+                raise AssertionError('must not claim over a fresh foreign lock')
+
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch.dict(os.environ, {'SITE_OWNER': 'me'}), \
+                    mock.patch('model_bakeoff._lock_read', return_value=other_lock), \
+                    mock.patch('model_bakeoff._lock_fresh', return_value=True), \
+                    mock.patch('model_bakeoff._lock_claim', side_effect=boom_claim):
+                with self.assertRaises(RuntimeError) as ctx:
+                    MB.run_baseline(
+                        root,
+                        'R-001',
+                        list_entries_fn=lambda _cells: [],
+                        undo_fn=lambda *_a, **_k: None,
+                        lidar_apply_fn=lambda: None,
+                        lidar_status_fn=lambda: {'cells': []},
+                        reconcile_fn=lambda _c: True,
+                    )
+            self.assertIn('other', str(ctx.exception))
+
+    def test_plan_lists_without_undo_or_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            entries = [
+                _fake_entry(seq=4, plan='r012-susu', cells=((48, -44),)),
+                _fake_entry(seq=7, plan='r013-susu', cells=((48, -44),)),
+            ]
+            undos: list[str] = []
+            applies: list[int] = []
+
+            def capture_undo(plan, *, meta=None):
+                undos.append(plan)
+                return mock.Mock(seq=99)
+
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'):
+                report = MB.run_baseline(
+                    root,
+                    'R-001',
+                    plan_only=True,
+                    list_entries_fn=lambda _cells: entries,
+                    undo_fn=capture_undo,
+                    lidar_apply_fn=lambda: applies.append(1),
+                    lidar_status_fn=lambda: {'cells': []},
+                    reconcile_fn=lambda _c: True,
+                )
+            self.assertEqual(report['undone'], ['r013-susu', 'r012-susu'])
+            self.assertEqual(report['plan_only'], True)
+            self.assertEqual(undos, [])
+            self.assertEqual(applies, [])
+            disk = MB.load_round(root, 'R-001')
+            self.assertNotIn('baseline', disk)
+
+    def test_baseline_undoes_applies_and_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            cfg = MB.load_config(root)
+            cfg['ghost_cells'] = [[48, -44], [49, -44]]
+            MB.write_json(root / 'config.json', cfg)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            entries = [
+                _fake_entry(seq=4, plan='r012-susu', cells=((48, -44),)),
+            ]
+            undos: list[tuple] = []
+            claims: list[tuple] = []
+
+            def undo(plan, *, meta=None):
+                undos.append((plan, meta))
+                return mock.Mock(seq=42)
+
+            def status():
+                return {
+                    'cells': [
+                        {'cell': [48, -44], 'ghosts_complete': True},
+                        {'cell': [49, -44], 'ghosts_complete': True},
+                    ],
+                }
+
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch.dict(os.environ, {'SITE_OWNER': 'agent'}), \
+                    mock.patch('model_bakeoff._lock_read', return_value=None), \
+                    mock.patch('model_bakeoff._lock_fresh', return_value=False), \
+                    mock.patch(
+                        'model_bakeoff._lock_claim',
+                        side_effect=lambda owner, task: claims.append((owner, task)),
+                    ), \
+                    mock.patch('model_bakeoff._lock_check', return_value=None):
+                report = MB.run_baseline(
+                    root,
+                    'R-001',
+                    list_entries_fn=lambda cells: entries,
+                    undo_fn=undo,
+                    lidar_apply_fn=lambda: 'applied',
+                    lidar_status_fn=status,
+                    reconcile_fn=lambda cell: True,
+                )
+            self.assertEqual(undos, [('r012-susu', {'round': 'R-001'})])
+            self.assertEqual(report['undone'], ['r012-susu'])
+            self.assertEqual(report['journal_seqs'], [42])
+            self.assertTrue(report['clean'])
+            self.assertEqual(claims, [('agent', 'model_bakeoff baseline R-001')])
+            disk = MB.load_round(root, 'R-001')
+            self.assertEqual(disk['baseline']['undone'], ['r012-susu'])
+            self.assertEqual(disk['baseline']['journal_seqs'], [42])
+            self.assertTrue(disk['baseline']['clean'])
+
+    def test_cli_baseline_plan_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            err = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+                    mock.patch('sys.stderr', err):
+                rc = MB.main(['--root', str(root), 'baseline', 'R-001', '--plan'])
+            self.assertEqual(rc, 2)
+            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
 
 
 if __name__ == '__main__':

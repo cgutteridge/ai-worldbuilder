@@ -1021,3 +1021,40 @@ def readback(plan, world=None):
     """
     w = world or World()
     return _readback_report(plan, {p: w.block(*p) for p in plan.cells})
+
+
+def main(argv: list | None = None) -> int:
+    """Thin CLI: ``undo <plan>`` (bake-off / recovery convenience).
+
+    @param argv: optional arg list (defaults to ``sys.argv[1:]``)
+    @returns: exit code
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description='site_kit CLI (undo a recorded plan through the cell journal)',
+    )
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    p_undo = sub.add_parser('undo', help='erase a plan name via site_kit.undo')
+    p_undo.add_argument('plan', help='plan name as recorded in the journal')
+    p_undo.add_argument(
+        '--round',
+        default=None,
+        help='optional bake-off round id stored in undo meta',
+    )
+    p_undo.add_argument(
+        '--no-strict',
+        action='store_true',
+        help='pass strict=False to undo (default: strict)',
+    )
+    args = ap.parse_args(argv)
+    if args.cmd == 'undo':
+        meta = {'round': args.round} if args.round else None
+        receipt = undo(args.plan, strict=not args.no_strict, meta=meta)
+        print(f'undo {args.plan}: seq={receipt.seq} status={receipt.status}')
+        return 0
+    return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

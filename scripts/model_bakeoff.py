@@ -9,6 +9,8 @@
   python3 scripts/model_bakeoff.py score R-001 --overall great --axis massing=great --axis keep=great
   python3 scripts/model_bakeoff.py usage R-001 --input 12000 --output 3000 --source cursor-ui
   python3 scripts/model_bakeoff.py repair R-001 --brief "raise ridge one block"
+  python3 scripts/model_bakeoff.py baseline R-001
+  python3 scripts/model_bakeoff.py baseline R-001 --plan
 
 Records live under ``model-bakeoffs/`` (tool repo). See ``model-bakeoffs/README.md``.
 """
@@ -16,11 +18,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -86,15 +90,18 @@ def sitting_checklist(
     tool: str,
     model: str,
     pack: str,
+    round_id: str = 'R-NNN',
 ) -> list[str]:
     """Render ``sitting_steps`` from config with round-specific fields.
 
-    Placeholders: ``{tool}``, ``{model}``, ``{pack}``, ``{cell}`` (e.g. ``(48,-44)``).
+    Placeholders: ``{tool}``, ``{model}``, ``{pack}``, ``{cell}`` (e.g. ``(48,-44)``),
+    ``{id}`` (round id).
 
     @param cfg: bake-off config (must include ``sitting_steps``)
     @param tool: tool id for this round
     @param model: model id for this round
     @param pack: pack id for this round
+    @param round_id: round id for ``{id}`` (default ``R-NNN``)
     @returns: checklist strings for the round record / open card
     @raises ValueError: when ``sitting_steps`` is missing or empty
     """
@@ -103,12 +110,18 @@ def sitting_checklist(
         raise ValueError('config.json missing non-empty sitting_steps list')
     cell = cfg.get('cell') or []
     cell_s = f'({cell[0]},{cell[1]})' if len(cell) >= 2 else ''
-    ctx = {'tool': tool, 'model': model, 'pack': pack, 'cell': cell_s}
+    ctx = {
+        'tool': tool,
+        'model': model,
+        'pack': pack,
+        'cell': cell_s,
+        'id': round_id,
+    }
     return [str(step).format(**ctx) for step in steps]
 
 
 def require_bakeoff_active_world(root: Path) -> None:
-    """Refuse CLI open/repair unless the active world matches config ``world``.
+    """Refuse CLI open/repair/baseline unless the active world matches config ``world``.
 
     Library helpers such as ``open_round`` are not guarded (tests use temp roots).
     Does not restrict world repair tools outside this CLI.
@@ -125,7 +138,7 @@ def require_bakeoff_active_world(root: Path) -> None:
     actual = active_world.gameworld_id()
     if actual != expected:
         raise RuntimeError(
-            f'bake-off open/repair requires world {expected!r} '
+            f'bake-off open/repair/baseline requires world {expected!r} '
             f'(active is {actual!r}); prefix every command with {BAKEOFF_WORLD_PREFIX}'
         )
 
@@ -504,6 +517,7 @@ def open_round(
                 tool=tool_row['id'],
                 model=model_row['id'],
                 pack=pack,
+                round_id=round_id,
             ),
         },
         'notes': 'opened with --force-mid' if force_mid else '',
@@ -765,6 +779,315 @@ def add_model(
     raise KeyError(f'unknown tool {tool!r} — add-tool first')
 
 
+def select_feature_undo_targets(
+    entries: list[Any],
+    ghost_cells: list[list[int]] | list[tuple[int, int]],
+) -> list[dict[str, Any]]:
+    """Pick non-undone feature builds that touch the 3×3 ghost cells.
+
+    Skips undone, begun, non-feature, and non-build entries. Same plan name is
+    deduped to the latest seq. Newest plans are listed first (safer undo order).
+
+    @param entries: journal EntryView-like objects (``.plan``, ``.pass_``, …)
+    @param ghost_cells: cells that make up the bake-off baseline ring
+    @returns: list of ``{plan, seq}`` dicts
+    """
+    scope = {tuple(c) for c in ghost_cells}
+    latest: dict[str, int] = {}
+    for e in entries:
+        if getattr(e, 'kind', None) != 'build':
+            continue
+        if getattr(e, 'pass_', None) != 'feature':
+            continue
+        if getattr(e, 'undone', False):
+            continue
+        if getattr(e, 'status', None) == 'begun':
+            continue
+        cells = {tuple(c) for c in (getattr(e, 'cells', None) or ())}
+        if getattr(e, 'cell', None) is not None:
+            cells.add(tuple(e.cell))
+        if not cells & scope:
+            continue
+        plan = e.plan
+        seq = int(e.seq)
+        if plan not in latest or seq > latest[plan]:
+            latest[plan] = seq
+    return [
+        {'plan': plan, 'seq': seq}
+        for plan, seq in sorted(latest.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
+def _lock_read() -> dict | None:
+    """Read ``site/LOCK.json`` (indirection for tests)."""
+    import site_lock
+
+    return site_lock.read()
+
+
+def _lock_fresh(lk: dict | None) -> bool:
+    """Whether ``lk`` is a fresh site lock (indirection for tests)."""
+    import site_lock
+
+    return bool(site_lock.fresh(lk))
+
+
+def _lock_claim(owner: str, task: str) -> None:
+    """Claim the site lock (indirection for tests)."""
+    import site_lock
+
+    site_lock.claim(owner, task)
+
+
+def _lock_check(owner: str | None = None) -> None:
+    """Refresh heartbeat for the held lock (indirection for tests)."""
+    import site_lock
+
+    site_lock.check(owner)
+
+
+def ensure_baseline_lock(round_id: str, *, owner: str | None = None) -> str:
+    """Require SITE_OWNER; claim the lock if free/stale, refuse if held by another.
+
+    @param round_id: round id (for the claim task string)
+    @param owner: lock owner (default ``SITE_OWNER``)
+    @returns: owner id that holds the lock
+    @raises RuntimeError: when SITE_OWNER is unset or another owner holds a fresh lock
+    """
+    owner = owner or os.environ.get('SITE_OWNER')
+    if not owner:
+        raise RuntimeError(
+            'SITE_OWNER is not set; claim first '
+            '(SITE_OWNER=<you> / scripts/site_lock.py claim …) then retry baseline'
+        )
+    lk = _lock_read()
+    if _lock_fresh(lk) and lk is not None and lk.get('owner') != owner:
+        raise RuntimeError(
+            f'World lock held by {lk.get("owner")!r} '
+            f'(task={lk.get("task")!r}); release or wait before baseline'
+        )
+    if not (_lock_fresh(lk) and lk is not None and lk.get('owner') == owner):
+        _lock_claim(owner, f'model_bakeoff baseline {round_id}')
+    else:
+        _lock_check(owner)
+    return owner
+
+
+def _default_list_feature_entries(ghost_cells: list[list[int]]) -> list[Any]:
+    """Load journal entries that touch ``ghost_cells`` (view-only registry)."""
+    import cell_registry
+
+    cells = [tuple(c) for c in ghost_cells]
+    reg = cell_registry.open_registry(blocks=None, ghosts=None)
+    return list(reg.entries(cells=cells))
+
+
+def _default_undo(plan: str, *, meta: dict | None = None) -> Any:
+    """Undo a plan via ``site_kit.undo``."""
+    import site_kit
+
+    return site_kit.undo(plan, meta=meta)
+
+
+def _default_lidar_apply(focus: tuple[int, int]) -> None:
+    """Run ``shims/lidar_ghost.py apply --cell … --ring 1 --include-focus --force``."""
+    script = ROOT / 'shims' / 'lidar_ghost.py'
+    cmd = [
+        sys.executable,
+        str(script),
+        'apply',
+        '--cell',
+        f'{focus[0]},{focus[1]}',
+        '--ring',
+        '1',
+        '--include-focus',
+        '--force',
+    ]
+    result = subprocess.run(cmd, cwd=str(ROOT), check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'lidar_ghost apply failed (exit {result.returncode}): '
+            f'{(result.stderr or result.stdout or "").strip()[:500]}'
+        )
+
+
+def _default_lidar_status(focus: tuple[int, int]) -> dict:
+    """Run ``shims/lidar_ghost.py status`` and parse JSON stdout."""
+    script = ROOT / 'shims' / 'lidar_ghost.py'
+    cmd = [
+        sys.executable,
+        str(script),
+        'status',
+        '--cell',
+        f'{focus[0]},{focus[1]}',
+        '--ring',
+        '1',
+        '--include-focus',
+    ]
+    result = subprocess.run(cmd, cwd=str(ROOT), check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'lidar_ghost status failed (exit {result.returncode}): '
+            f'{(result.stderr or result.stdout or "").strip()[:500]}'
+        )
+    return json.loads(result.stdout)
+
+
+def _default_reconcile_clean(cell: tuple[int, int]) -> bool:
+    """True when ``cell_registry reconcile <cell>`` reports no drift."""
+    import cell_registry
+    import site_kit
+
+    reg = cell_registry.open_registry(blocks=site_kit.live_blocks())
+    drift = reg.reconcile([cell])
+    return bool(drift.clean)
+
+
+def ghosts_complete_for_cells(status: dict, ghost_cells: list[list[int]]) -> bool:
+    """True when every ghost cell row has ``ghosts_complete``.
+
+    @param status: parsed ``lidar_ghost status`` JSON
+    @param ghost_cells: expected cells
+    @returns: whether all nine (or configured) cells are complete
+    """
+    by_cell = {}
+    for row in status.get('cells') or []:
+        c = row.get('cell')
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            by_cell[(int(c[0]), int(c[1]))] = bool(row.get('ghosts_complete'))
+    for gc in ghost_cells:
+        key = (int(gc[0]), int(gc[1]))
+        if not by_cell.get(key):
+            return False
+    return True
+
+
+def format_baseline_report(report: dict) -> str:
+    """Short human report for a baseline run.
+
+    @param report: baseline report dict
+    @returns: text
+    """
+    lines = [
+        f"baseline {report.get('round_id')}: "
+        f"{'PLAN' if report.get('plan_only') else 'done'}",
+        f"  undone: {', '.join(report.get('undone') or []) or '(none)'}",
+    ]
+    if not report.get('plan_only'):
+        lines.append(f"  journal_seqs: {report.get('journal_seqs') or []}")
+        lines.append(f"  clean: {report.get('clean')}")
+        if report.get('incomplete'):
+            lines.append(f"  incomplete: {report['incomplete']}")
+    return '\n'.join(lines)
+
+
+def run_baseline(
+    root: Path,
+    round_id: str,
+    *,
+    plan_only: bool = False,
+    list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
+    undo_fn: Callable[..., Any] | None = None,
+    lidar_apply_fn: Callable[[], Any] | None = None,
+    lidar_status_fn: Callable[[], dict] | None = None,
+    reconcile_fn: Callable[[tuple[int, int]], bool] | None = None,
+) -> dict[str, Any]:
+    """Reset the 3×3 ghost baseline for a round: undo features, re-ghost, verify.
+
+    Refuses unless the active world matches config ``world``. Real runs also
+    require ``SITE_OWNER`` and the site lock (claims it when free).
+
+    @param root: bake-offs root
+    @param round_id: round to record the baseline report on
+    @param plan_only: list undo targets only (no lock, undo, apply, or round write)
+    @param list_entries_fn: injectable journal listing (tests)
+    @param undo_fn: injectable ``undo(plan, meta=…)`` (tests)
+    @param lidar_apply_fn: injectable ghost apply (tests)
+    @param lidar_status_fn: injectable status JSON (tests)
+    @param reconcile_fn: injectable per-cell clean check (tests)
+    @returns: baseline report dict
+    @raises RuntimeError: world / lock / MCP step failure
+    """
+    require_bakeoff_active_world(root)
+    cfg = load_config(root)
+    round_ = load_round(root, round_id)
+    ghost_cells = [list(c) for c in (round_.get('ghost_cells') or cfg.get('ghost_cells') or [])]
+    if not ghost_cells:
+        raise RuntimeError('no ghost_cells on round or config')
+    focus = tuple(round_.get('cell') or cfg.get('cell') or [])
+    if len(focus) < 2:
+        raise RuntimeError('round/config missing focus cell')
+    focus_t = (int(focus[0]), int(focus[1]))
+
+    list_entries = list_entries_fn or _default_list_feature_entries
+    targets = select_feature_undo_targets(list_entries(ghost_cells), ghost_cells)
+    undone = [t['plan'] for t in targets]
+
+    if plan_only:
+        return {
+            'round_id': round_id,
+            'plan_only': True,
+            'undone': undone,
+            'targets': targets,
+            'ghost_cells': ghost_cells,
+            'journal_seqs': [],
+            'clean': None,
+        }
+
+    ensure_baseline_lock(round_id)
+    undo = undo_fn or _default_undo
+    journal_seqs: list[int] = []
+    for plan in undone:
+        receipt = undo(plan, meta={'round': round_id})
+        seq = getattr(receipt, 'seq', None)
+        if seq is not None:
+            journal_seqs.append(int(seq))
+
+    apply = lidar_apply_fn or (lambda: _default_lidar_apply(focus_t))
+    apply()
+
+    status_fn = lidar_status_fn or (lambda: _default_lidar_status(focus_t))
+    status = status_fn()
+    ghosts_ok = ghosts_complete_for_cells(status, ghost_cells)
+
+    recon = reconcile_fn or _default_reconcile_clean
+    incomplete: list[str] = []
+    if not ghosts_ok:
+        incomplete.append('lidar_ghost status: not all ghosts_complete')
+    for gc in ghost_cells:
+        cell = (int(gc[0]), int(gc[1]))
+        if not recon(cell):
+            incomplete.append(f'reconcile {cell[0]},{cell[1]}: drift')
+
+    clean = not incomplete
+    report = {
+        'round_id': round_id,
+        'plan_only': False,
+        'undone': undone,
+        'targets': targets,
+        'ghost_cells': ghost_cells,
+        'journal_seqs': journal_seqs,
+        'clean': clean,
+        'incomplete': incomplete or None,
+        'at': utc_now(),
+    }
+    round_ = load_round(root, round_id)
+    round_['baseline'] = {
+        'undone': undone,
+        'journal_seqs': journal_seqs,
+        'clean': clean,
+        'at': report['at'],
+    }
+    if incomplete:
+        round_['baseline']['incomplete'] = incomplete
+    save_round(root, round_)
+    if not clean:
+        raise RuntimeError(
+            'baseline finished but not clean: ' + '; '.join(incomplete)
+        )
+    return report
+
+
 def format_status(root: Path) -> str:
     """Human status report.
 
@@ -949,6 +1272,18 @@ def main(argv: list[str] | None = None) -> int:
     p_show = sub.add_parser('show', help='print a round JSON path / sitting card')
     p_show.add_argument('round_id')
 
+    p_base = sub.add_parser(
+        'baseline',
+        help='undo feature builds in ghost_cells, lidar_ghost apply --force, reconcile',
+    )
+    p_base.add_argument('round_id')
+    p_base.add_argument(
+        '--plan',
+        action='store_true',
+        dest='plan_only',
+        help='list feature plans that would be undone; change nothing',
+    )
+
     args = ap.parse_args(argv)
     root = bakeoffs_root(args.root)
 
@@ -1031,6 +1366,13 @@ def main(argv: list[str] | None = None) -> int:
             print(format_sitting(round_))
             print()
             print(json.dumps(round_, indent=2))
+            return 0
+        if args.cmd == 'baseline':
+            report = run_baseline(root, args.round_id, plan_only=bool(args.plan_only))
+            print(format_baseline_report(report))
+            if args.plan_only:
+                for t in report.get('targets') or []:
+                    print(f"  would undo {t['plan']} (journal seq {t['seq']})")
             return 0
     except (ValueError, KeyError, FileNotFoundError, RuntimeError) as exc:
         print(f'error: {exc}', file=sys.stderr)

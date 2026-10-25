@@ -574,6 +574,24 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Grill 2026-10-23/24: remove volumetric feature ghosts (unreliable strip). Keep ground ghosts on same frontier/ensure. Tops per column: light_gray_concrete (DSM\u2212DTM\u22480), gray_concrete (1\u20132), black_concrete (>2); stone fill; same height math. Journal ground none|ghost|generated only (no ghost+features / ghost-features pass for new work). Delete strip/leftover feature-ghost paths. Docs ADR003/v2/glossary. Bake-off reset/protocol ground-only; no Southampton strip; lazy ensure repaints tops. Done 2026-10-24: ground-only ghosts; coloured tops; strip/leftovers removed; docs/bake-off updated."
+    },
+    {
+      "id": 69,
+      "title": "Footprint guard lets 4-high canopies through outside footprints",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Found in bake-off R-008: osm_footprints.guard() exempts anything <= BACK_RISE=4 outside the front zone (meant for garden sheds), so parasol canopies (red_concrete, 4 above ground) on open mapped ground between SUSU and the Retail Centre passed; no footprint-hits file was written and plan.outside_footprint_ok was never consulted. Fix options: treat roof-like blocks (concrete, slabs) as building-like at any height outside footprints, or add an explicit furniture category so open-ground furniture is allowed on purpose. Add a unit test. See model-bakeoffs/rounds/R-008.json why-block. Merged as 5bda1d3 (f63782f). Reviewer nits only (ROOF_LIKE narrow list; _bid sync note; frontage doc)."
+    },
+    {
+      "id": 72,
+      "title": "model_bakeoff.py baseline: one command to reset the 3x3 ghost baseline",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Retro R-013: the sitting step 'regenerate the ghost baseline' hides an undo of the previous round's build that has no CLI (agent read scripts/site_kit.py to find `site_kit.undo('<plan>')`). Also: `lidar_ghost` lives in shims/ not scripts/; `cell_registry.py reconcile` takes the cell positionally; `site_kit.apply(stage='feature')` is invalid (None or 'feature-<name>'). Do: add `model_bakeoff.py baseline R-NNN` that (a) refuses unless the active world is bakeoff and the site lock is held by the caller's SITE_OWNER (or claims it), (b) finds every non-undone feature build in the 3x3 ghost_cells from the journal and undoes it via site_kit.undo with meta {'round': id}, (c) runs `lidar_ghost apply --cell 48,-44 --ring 1 --include-focus --force`, (d) checks `lidar_ghost status` ghosts_complete for all nine and `cell_registry reconcile <cell>` clean for each, (e) prints a short report and records it in the round JSON (e.g. `baseline: {undone: [...], journal_seqs: [...], clean: true}`). Replace the two baseline steps in model-bakeoffs/config.json sitting_steps with this single command (full command line). Optionally expose `site_kit undo <plan>` as a CLI too. Done when: unit tests with a fake journal/MCP cover undo-selection and refusal paths; a dry `--plan` flag lists what would be undone; sitting card shows the one command. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff.  Merged as cdf0960 (1e03ac5). Reviewer nits only."
     }
   ]
 }
