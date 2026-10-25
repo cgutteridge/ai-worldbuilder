@@ -274,15 +274,19 @@ def bush_voxels(x: int, z: int, ground_y: int) -> dict[tuple[int, int, int], str
 def volume_clear(w: World, voxels: dict, ground_y: int, taken: set) -> bool:
     """Every voxel above the lawn must be air or plant life and not owned by another build.
 
+    Prefetches above-lawn voxels when ``w`` supports it so the clear check is not one
+    MCP scan per block.
+
     @param w: live world reader
     @param voxels: planned voxels for one tree or bush
     @param ground_y: lawn surface Y
     @param taken: voxels owned by other builds
     @returns: True when the volume is free to plant into
     """
-    for (x, y, z) in voxels:
-        if y <= ground_y:
-            continue
+    from site_kit import warm_reads
+    above = [(x, y, z) for (x, y, z) in voxels if y > ground_y]
+    warm_reads(w, above)
+    for (x, y, z) in above:
         if (x, y, z) in taken:
             return False
         s = short_id(w.block(x, y, z))

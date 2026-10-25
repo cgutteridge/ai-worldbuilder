@@ -7,7 +7,7 @@ really there: a double door needs 6 cells of straight wall, a single door 5, a n
 """
 from __future__ import annotations
 
-from site_kit import PlannedWorld
+from site_kit import PlannedWorld, warm_reads
 
 FACE = {(1, 0): 'east', (-1, 0): 'west', (0, 1): 'south', (0, -1): 'north'}
 WALL, GLASS = 'white_concrete', 'glass'
@@ -20,11 +20,15 @@ GROUNDISH = ('air', 'cave_air', 'grass_block', 'dirt', 'coarse_dirt', 'podzol', 
 def top(world, x, z):
     """Highest solid, non-foliage block of a column (y).
 
+    Prefetches the column when ``world`` supports it so the Y walk is not one MCP
+    scan per block.
+
     @param world: site_kit.World
     @param x: block X
     @param z: block Z
     @returns: y
     """
+    warm_reads(world, ((x, y, z) for y in range(46, 76)))
     for y in range(75, 45, -1):
         b = (world.block(x, y, z) or 'minecraft:air').split('[')[0][10:]
         if b not in ('air', 'cave_air', 'void_air') and 'leaves' not in b and 'log' not in b and 'trapdoor' not in b \
@@ -48,6 +52,20 @@ def wall_cell(cells, px, pz, width='single', world=None, facing=None):
     @returns: (x, z, dx, dz, distance squared) or None; (x, z) is the door cell (k = 0)
     """
     lo, hi = WIDTHS[width]
+    if world is not None:
+        # Outside columns used by top() plus wall cells at door-height probes.
+        outs = {
+            (x + dx, z + dz)
+            for (x, z) in cells
+            for dx, dz in FACE
+            if (facing is None or (dx, dz) == tuple(facing))
+            and (x + dx, z + dz) not in cells
+        }
+        warm_reads(world, (
+            (x, y, z)
+            for x, z in outs | set(cells)
+            for y in range(46, 76)
+        ))
     best = None
     for (x, z) in sorted(cells):
         for dx, dz in FACE:
@@ -195,6 +213,16 @@ def flatten(plan, world, cells, px, pz, notes, ks=range(-2, 4), check_walls=True
             return None
     plane = max(edge.values())
     added = 0
+    # Source wall columns + outside tops for the flush stretch.
+    flush_cols = set()
+    for k, e in edge.items():
+        sx, sz = x + k * ax + dx * e, z + k * az + dz * e
+        flush_cols.add((sx, sz))
+        for step in range(e + 1, plane + 1):
+            tx, tz = x + k * ax + dx * step, z + k * az + dz * step
+            flush_cols.add((tx, tz))
+            flush_cols.add((tx + dx, tz + dz))
+    warm_reads(world, ((cx, y, cz) for cx, cz in flush_cols for y in range(46, 76)))
     for k, e in edge.items():
         sx, sz = x + k * ax + dx * e, z + k * az + dz * e              # this column's wall cell
         ytop = max((y for y in range(48, 70) if (world.block(sx, y, sz) or 'minecraft:air').split('[')[0][10:] not in GROUNDISH
@@ -216,9 +244,13 @@ def _project_wall(plan, world, x, z, dx, dz, y0, lo, hi, distance):
     """
     ax, az = abs(dz), abs(dx)
     columns = []
+    sources = []
     for k in range(lo, hi + 1):
         tx, tz = x + k * ax, z + k * az
         sx, sz = tx - dx * distance, tz - dz * distance
+        sources.append((tx, tz, sx, sz))
+    warm_reads(world, ((sx, y, sz) for _, _, sx, sz in sources for y in range(y0, 70)))
+    for tx, tz, sx, sz in sources:
         wall = {y: world.block(sx, y, sz) for y in range(y0, 70)}
         wall = {y: b for y, b in wall.items() if b and b.split('[')[0].replace('minecraft:', '') not in GROUNDISH}
         if not wall:

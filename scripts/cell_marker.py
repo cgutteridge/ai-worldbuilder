@@ -39,7 +39,7 @@ from script_env import ROOT  # noqa: E402
 
 import coverage as cov  # noqa: E402
 import site_kit  # noqa: E402
-from site_kit import Plan, World, apply, bid  # noqa: E402
+from site_kit import Plan, World, apply, bid, warm_reads  # noqa: E402
 
 HEIGHT_ABOVE = 30
 GROUND_SAMPLE_STEP = 16
@@ -220,7 +220,10 @@ def _clear_positions(tx: int, tz: int, world: World, registry: dict[str, str],
     ys = list(marker_y_band(base)) if base is not None else []
     if extra_y is not None:
         ys.append(extra_y)
-    for x, z in perimeter_columns(tx, tz):
+    ring = perimeter_columns(tx, tz)
+    if ys:
+        warm_reads(world, ((x, y, z) for x, z in ring for y in ys))
+    for x, z in ring:
         for y in ys:
             if is_marker_wool(world.block(x, y, z)):
                 positions.add((x, y, z))
@@ -251,8 +254,11 @@ def _strip_legacy_wool(
     base = reference_ground_y(world, tx, tz)
     if base is None:
         return
-    for x, z in perimeter_columns(tx, tz):
-        for y in marker_y_band(base):
+    band = list(marker_y_band(base))
+    ring = perimeter_columns(tx, tz)
+    warm_reads(world, ((x, y, z) for x, z in ring for y in band if y != y_ring))
+    for x, z in ring:
+        for y in band:
             if y == y_ring:
                 continue
             pos = (x, y, z)
@@ -306,6 +312,7 @@ def plan_raise(tx: int, tz: int, world: World | None = None) -> tuple[Plan, dict
         return plan, stats
     _strip_legacy_wool(plan, tx, tz, world, name, owned, y_ring, stats)
     ring = perimeter_columns(tx, tz)
+    warm_reads(world, ((x, y_ring, z) for x, z in ring))
     for i, (x, z) in enumerate(ring):
         pos = (x, y_ring, z)
         if _occupied_by_other(owned, pos, name):
@@ -349,6 +356,7 @@ def plan_clear(tx: int, tz: int, world: World | None = None,
     registry_positions = {
         tuple(int(v) for v in key.split(',')) for key in registry
     }
+    warm_reads(world, candidates)
     for pos in sorted(candidates):
         if pos not in registry_positions and is_marker_wool(world.block(*pos)):
             stats['sweep_extra'] += 1

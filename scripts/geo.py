@@ -194,6 +194,9 @@ def pitch_deg_to_slope(deg: float) -> dict:
 def lidar_top(world, x: int, z: int, ymax: int = 120, ymin: int = 30) -> int:
     """Top solid block Y of the given world, skipping vegetation/air.
 
+    Prefetches the column when ``world`` supports it so the Y walk is not one MCP
+    scan per block.
+
     @param world: site_kit.World
     @param x: column X
     @param z: column Z
@@ -201,6 +204,8 @@ def lidar_top(world, x: int, z: int, ymax: int = 120, ymin: int = 30) -> int:
     @param ymin: stop Y
     @returns: top Y of mass
     """
+    from site_kit import warm_reads
+    warm_reads(world, ((x, y, z) for y in range(ymin, ymax + 1)))
     y = ymax
     while y > ymin:
         b = world.block(x, y, z) or 'minecraft:air'
@@ -219,8 +224,11 @@ def probe_column(world, x: int, z: int, stack: int = 6) -> dict:
     @param stack: lines above ground to include
     @returns: probe record
     """
+    from site_kit import warm_reads
     yg = world.ground(x, z, top=200, bottom=0)
     yt = lidar_top(world, x, z)
+    stack_pos = [(x, yg + k, z) for k in range(stack + 1)]
+    warm_reads(world, stack_pos)
     blocks = [world.block(x, yg + k, z) for k in range(stack + 1)]
     return {
         'mc': {'x': x, 'z': z},
@@ -234,6 +242,9 @@ def probe_column(world, x: int, z: int, stack: int = 6) -> dict:
 def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     """Summarise ground and lidar tops over an inclusive bbox.
 
+    Prefetches the full probe volume once so per-column ground / lidar walks share
+    MCP tiles instead of scanning one block at a time.
+
     @param world: site_kit.World
     @param x0: min X
     @param z0: min Z
@@ -241,6 +252,14 @@ def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     @param z1: max Z
     @returns: min/median/max stats
     """
+    from site_kit import warm_reads
+    # ground uses top=200..0; lidar_top uses 120..30 — warm the union once.
+    warm_reads(world, (
+        (x, y, z)
+        for x in range(x0, x1 + 1)
+        for z in range(z0, z1 + 1)
+        for y in range(0, 201)
+    ))
     grounds, tops, extr = [], [], []
     for x in range(x0, x1 + 1):
         for z in range(z0, z1 + 1):
