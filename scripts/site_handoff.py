@@ -1099,27 +1099,26 @@ def announce_ready():
     return True
 
 
-def move_player_creative_view(view):
+def move_player_creative_view(view, why=None):
     """Set creative mode and teleport the player to the handoff viewpoint.
 
     @param view: dict from ``parse_view`` (``pos``, optional ``look``)
+    @param why: optional explanation; default names the viewpoint coordinates
     @returns: None
     @raises: Exception on MCP failure (caller may catch)
     """
-    from mc_paced import D, UUID, Paced, xyz
+    from mc_player import move_player
 
-    m = Paced()
     p = view['pos']
-    m.tell(f'Moving you to {p[0]:g},{p[1]:g},{p[2]:g} in creative to show the change.')
-    m.call('player_set_gamemode', {'uuid': UUID, 'gamemode': 'creative'})
-    args = {
-        'uuid': UUID,
-        'dimension': D,
-        'position': xyz(view['pos']),
-    }
-    if view.get('look') is not None:
-        args['facing'] = xyz(view['look'])
-    m.call('entity_teleport', args)
+    reason = why or (
+        f'Moving you to {p[0]:g},{p[1]:g},{p[2]:g} in creative to show the change.'
+    )
+    move_player(
+        why=reason,
+        position=view['pos'],
+        facing=view.get('look'),
+        gamemode='creative',
+    )
     pos = view['pos']
     print(f'Player -> creative at {pos[0]:g},{pos[1]:g},{pos[2]:g}', end='')
     if view.get('look') is not None:
@@ -1362,7 +1361,11 @@ def cmd_end(argv):
         return 3
     if view is not None:
         try:
-            move_player_creative_view(view)
+            view_why = (
+                f'Handoff {done}: moving you in creative to show the change.'
+                if done else None
+            )
+            move_player_creative_view(view, why=view_why)
         except Exception as e:
             print(f'WARNING: could not move player ({e}). MCP running?', file=sys.stderr)
             print('         Re-run with Minecraft + Fabric MCP, or pass --skip-view.',

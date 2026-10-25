@@ -593,9 +593,18 @@ class McpWriter:
         if not plan.cells:
             return
         lo, hi = plan.bounds()
+        label = getattr(plan, 'name', None) or writes.plan
+        pass_ = getattr(writes, 'pass_', None) or 'build'
+        why = f'Applying {label} ({pass_})'
         # fills into unloaded chunks silently do nothing: if the player is far from the build,
         # hop them (spectator) over it while filling, then put them back exactly
-        restore = _bring_player(m, lo, hi)
+        restore = _bring_player(
+            m, lo, hi,
+            why=f'{why}: moving you over the build so chunks load; I will put you back.',
+        )
+        if restore is None:
+            from mc_player import tell_player
+            tell_player(why, m=m)
         boxes = plan.boxes()
         for i in range(0, len(boxes), 8000):
             chunk = boxes[i:i + 8000]
@@ -977,11 +986,20 @@ def _readback_report(plan, actual):
             'checked': time.strftime('%Y-%m-%d %H:%M:%S')}
 
 
-def _bring_player(m, lo, hi, reach=80):
+def _bring_player(m, lo, hi, reach=80, why=None):
     """If the player is more than `reach` blocks (XZ) from the build's centre, teleport them in
-    spectator mode above it and wait for chunks; return a function that restores them."""
+    spectator mode above it and wait for chunks; return a function that restores them.
+
+    @param m: paced MCP client
+    @param lo: plan low corner
+    @param hi: plan high corner
+    @param reach: max XZ distance before a hop is needed
+    @param why: required explanation when hopping (plan/pass context)
+    @returns: restore callable, or None when no hop
+    """
     import math, re
-    from mc_paced import UUID, xyz
+    from mc_paced import UUID
+    from mc_player import move_player, restore_player
     info = m.text('player_get_info', {'uuid': UUID})
     num = lambda k: float(re.search(rf'{k}: (-?[\d.]+)', info).group(1))
     px, py, pz = num('x'), num('y'), num('z')
@@ -990,9 +1008,15 @@ def _bring_player(m, lo, hi, reach=80):
     cx, cz = (lo[0] + hi[0]) / 2, (lo[2] + hi[2]) / 2
     if math.hypot(px - cx, pz - cz) <= reach:
         return None
-    m.tell(f'Moving you to {cx:.0f},{cz:.0f} (spectator) so the build area loads; I will put you back.')
-    m.call('player_set_gamemode', {'uuid': UUID, 'gamemode': 'spectator'})
-    m.call('entity_teleport', {'uuid': UUID, 'dimension': D, 'position': xyz([cx, hi[1] + 20, cz])})
+    hop_why = why or (
+        f'Moving you to {cx:.0f},{cz:.0f} (spectator) so the build area loads; I will put you back.'
+    )
+    move_player(
+        why=hop_why,
+        position=[cx, hi[1] + 20, cz],
+        gamemode='spectator',
+        m=m,
+    )
     time.sleep(6)
     print(f'  (moved player to {cx:.0f},{cz:.0f} to load chunks; will put them back)')
 
@@ -1001,9 +1025,7 @@ def _bring_player(m, lo, hi, reach=80):
         # facing the way they were (yaw/pitch turned into a look-at point), and their own game mode.
         yr, pr = math.radians(yaw), math.radians(pitch)
         look = [px - math.sin(yr) * math.cos(pr) * 10, py + 1.62 - math.sin(pr) * 10, pz + math.cos(yr) * math.cos(pr) * 10]
-        m.call('entity_teleport', {'uuid': UUID, 'dimension': D, 'position': xyz([px, py, pz]), 'facing': {'x': look[0], 'y': look[1], 'z': look[2]}})
-        m.call('player_set_gamemode', {'uuid': UUID, 'gamemode': mode})
-        m.tell('Put you back where you were.')
+        restore_player(position=[px, py, pz], facing=look, gamemode=mode, m=m)
     return restore
 
 

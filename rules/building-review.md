@@ -51,6 +51,9 @@ One building per review. Skip any building that already has an open feature issu
  - **Do not move the user.** Observe with `player_list_online`, `view_capture` and `block_render_region` (server-side, no client).
    Teleport only on request (the user said "you moved me" and "don't move me"). `site_kit.apply` still moves them when they are
    more than 80 blocks from a build, but puts them back exactly where they were afterwards (f4c536c).
+   Every player move goes through `scripts/mc_player.py` (scripts import `move_player`; agents use the CLI) with a non-empty
+   `--why` / `why=` naming the feature, pass, or place — Minecraft chat shows `[AI-builder] …` before the hop. Do not call
+   raw MCP `entity_teleport` / `player_set_gamemode` for the player.
  - **Browser pane.** It refuses some new `file://` paths. Write the sheet over a filename it has already opened (instance/google-aerial/)
    and navigate again. `google_aerial.py --marks cells.json` paints live cells (tile, membrane, colour patches) on the aerial sheet.
 

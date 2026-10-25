@@ -21,7 +21,7 @@ class TestTell(unittest.TestCase):
         name, args = m.sent[0]
         assert name == 'player_send_message'
         assert args['uuid'] == mc_paced.UUID
-        assert args['message'] == '[Refine] moving you'
+        assert args['message'] == '[AI-builder] moving you'
 
     def test_failure_does_not_raise(self):
         _Fake(fail=True).tell('moving you')

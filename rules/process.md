@@ -289,6 +289,10 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
  - ONE builder at a time. Claim site/LOCK.json with scripts/site_lock.py
    before any world change or player-moving capture. site_kit.apply()
    refuses without it (env SITE_OWNER must match). Stale after 90 min.
+ - Player moves: import `mc_player.move_player(why=…)` from scripts, or
+   `python3 scripts/mc_player.py move --why "…" …` from an agent. Why is
+   required and is spoken in Minecraft as `[AI-builder] …` before the
+   hop. No raw MCP player teleport.
  - Apply path: site_kit.apply() journals `begun` before any live write and
    `landed`/`mismatched` after readback (CellRegistry). An unfinished `begun`
    entry keeps the cell from DONE.

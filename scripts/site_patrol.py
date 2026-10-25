@@ -55,7 +55,8 @@ def views(n=8, seed=None, downscale=4):
     @param seed: optional RNG seed
     @returns: (out_dir, shots_list)
     """
-    from mc_paced import D, UUID, Paced, xyz
+    from mc_paced import UUID, Paced
+    from mc_player import move_player
     import site_lock
     site_lock.check()
     R = random.Random(seed)
@@ -76,19 +77,23 @@ def views(n=8, seed=None, downscale=4):
     out.mkdir(parents=True, exist_ok=True)
     m, v = Paced(), Paced(8766)
     info = m.text('player_get_info', {'uuid': UUID})
-    num = lambda k: float(re.search(rf'{k}: (-?[\d.]+)', info).group(1))
     mode = re.search(r'gameMode: (\w+)', info).group(1)
     shots = []
-    m.tell(f'Patrol: moving you through {len(spots)} spots in spectator for screenshots; your game mode returns after.')
-    m.call('player_set_gamemode', {'uuid': UUID, 'gamemode': 'spectator'})
+    move_player(
+        why=f'Patrol: moving you through {len(spots)} spots in spectator for screenshots; your game mode returns after.',
+        gamemode='spectator',
+        m=m,
+    )
     try:
         for i, (x, y, z) in enumerate(spots):
             a = R.uniform(0, 2 * math.pi)
             look = [x + 0.5 + 12 * math.cos(a), y + 1.2, z + 0.5 + 12 * math.sin(a)]
-            m.call('entity_teleport', {
-                'uuid': UUID, 'dimension': D,
-                'position': xyz([x + 0.5, y, z + 0.5]), 'facing': xyz(look),
-            })
+            move_player(
+                why=f'Patrol: screenshot {i + 1}/{len(spots)}',
+                position=[x + 0.5, y, z + 0.5],
+                facing=look,
+                m=m,
+            )
             time.sleep(4)
             r = v.call('view_capture', {'downscale': downscale, 'close_screen': True})
             for b in r['content']:
@@ -97,8 +102,11 @@ def views(n=8, seed=None, downscale=4):
                     pth.write_bytes(base64.b64decode(b['data']))
                     shots.append({'file': pth.name, 'pos': [x, y, z], 'look': [round(c, 1) for c in look]})
     finally:
-        m.call('player_set_gamemode', {'uuid': UUID, 'gamemode': mode})
-        m.tell('Patrol finished; game mode restored (you stay at the last spot).')
+        move_player(
+            why='Patrol finished; game mode restored (you stay at the last spot).',
+            gamemode=mode,
+            m=m,
+        )
     try:
         from contact_sheet import make_sheet
         make_sheet([out / s['file'] for s in shots], out / 'contact.png')
