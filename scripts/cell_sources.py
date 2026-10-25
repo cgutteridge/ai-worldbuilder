@@ -2,9 +2,10 @@
 """Build or refresh a committed sources guide for one 128×128 coverage cell.
 
 Run once when a cell is activated (before the build batch), not at every session
-start. Fetches are listed as commands; imagery stays local + manifest (see
-reference/LOGGING.txt). This chat should judge primary aerial/street once —
-not Read every asset.
+start. Fetches are listed as commands; imagery and vector_map both live under
+this world's ``reference/`` (aerial via manifest; vector_map clips under
+``reference/vector_map`` — see ``vector_map_clips``). This chat should judge
+primary aerial/street once — not Read every asset.
 
   python3 scripts/cell_sources.py --cell 48,-44
   python3 scripts/cell_sources.py --cell 48,-44 --write
@@ -41,6 +42,7 @@ from geo import tiles_for_bbox  # noqa: E402
 from ground_sources import cell_coverage, mc_tile_for_cell, references_for_cell  # noqa: E402
 from osgb import to_osgb  # noqa: E402
 from osm_footprints import OSMIndex  # noqa: E402
+import vector_map_clips as vmc  # noqa: E402
 
 SITE = ROOT / 'site'
 CELLS = SITE / 'cells'
@@ -377,7 +379,10 @@ def coverage_summary(tx: int, tz: int) -> list[str]:
 
 
 def manifest_summary(tx: int, tz: int) -> list[str]:
-    """Primary aerial/street manifest ids for the cell.
+    """Primary aerial/street/map manifest ids for the cell.
+
+    ``kind=map`` rows are optional ledger entries for vector_map clips already
+    under ``reference/vector_map`` (same download → cache → reference story).
 
     @param tx: cell X
     @param tz: cell Z
@@ -388,6 +393,7 @@ def manifest_summary(tx: int, tz: int) -> list[str]:
     aerial_any = [r for r in refs if r.get('kind') == 'aerial' and cell_coverage(r, tx, tz) >= MIN_AERIAL_COVERAGE]
     aerial_yes = [r for r in aerial_any if r.get('useful') == 'yes']
     street = [r for r in refs if r.get('kind') in ('street', 'facade') and r.get('useful') in ('yes', 'maybe')]
+    maps = [r for r in refs if r.get('kind') == 'map' and r.get('useful') in ('yes', 'maybe')]
     lines = [f'  mc_tile {tile}  manifest rows overlapping: {len(refs)}']
     if aerial_yes:
         r = aerial_yes[0]
@@ -402,6 +408,58 @@ def manifest_summary(tx: int, tz: int) -> list[str]:
         lines.append(f'  street/facade useful/maybe: {len(street)} (e.g. {street[0]["id"]})')
     else:
         lines.append('  street: none tagged — Commons / KartaView near cell centre if fronts matter')
+    if maps:
+        lines.append(f'  vector_map (kind=map) useful/maybe: {len(maps)} (e.g. {maps[0]["id"]})')
+    else:
+        lines.append(
+            '  vector_map (kind=map): none in manifest — clips still load from '
+            f'{vmc.REFERENCE_DIRNAME}/ when present (project-level; optional --add)'
+        )
+    return lines
+
+
+def vector_map_guide_lines(tx: int, tz: int, *, idx: OSMIndex | None = None) -> list[str]:
+    """Guide lines for the project-level vector_map reference + this cell.
+
+    vector_map is downloaded/cached once per world under ``reference/vector_map``
+    (shared across cells). Cell coverage comes from ``OSMIndex`` over that tree.
+
+    @param tx: cell X
+    @param tz: cell Z
+    @param idx: optional shared OSMIndex
+    @returns: indented guide lines
+    """
+    status = vmc.project_status()
+    osm = osm_summary(tx, tz, idx)
+    lines = [
+        f'vector_map (type {vmc.TYPE}; project reference {status["reference"].relative_to(ROOT) if status["reference"].is_relative_to(ROOT) else status["reference"]})',
+    ]
+    if status['ready']:
+        rel = (
+            status['path'].relative_to(ROOT)
+            if status['path'].is_relative_to(ROOT)
+            else status['path']
+        )
+        note = ' (legacy folder)' if status['legacy_fallback'] else ''
+        lines.append(f'  project clips: HAVE  {status["clip_count"]} geojson under {rel}{note}')
+    else:
+        lines.append(
+            f'  project clips: MISSING — download PBF into {status["downloads"].name}/, '
+            f'then extract into {vmc.REFERENCE_DIRNAME}/<place>/ (this world only)'
+        )
+    lines += [
+        f'  OSM clip covers cell centre: {"yes" if osm["osm_covered_centre"] else "NO — extract covering this cell before trusting footprints"}',
+        f'  named streets in cell: {", ".join(osm["streets"][:10]) or "(none named)"}',
+        f'  building footprints overlapping: {osm["buildings"]}',
+        f'  natural=tree / landuse=forest polygons (rare): {osm["osm_tree_or_forest_polygons"]}',
+        '  Geocraft procedural trees are not surveyed — back-garden canopy from aerial only.',
+        '  Do not pass osm_root= to another world; recovery is copy into this world\'s '
+        f'{vmc.REFERENCE_DIRNAME}/ (real files, not a live symlink).',
+    ]
+    if osm['areas']:
+        lines.append('  area tags (top):')
+        for label, n in osm['areas']:
+            lines.append(f'    {label} ×{n}')
     return lines
 
 
@@ -646,7 +704,7 @@ def source_checklist(tx: int, tz: int, *, today: date | None = None) -> list[str
 
 
 def fetch_commands(tx: int, tz: int) -> list[str]:
-    """Suggested CLI to fetch aerial if manifest gap (no download here).
+    """Suggested CLI to fetch aerial / vector_map if gaps (no download here).
 
     @param tx: cell X
     @param tz: cell Z
@@ -657,6 +715,7 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
     rec = tiles_for_bbox(bbox, 18, 3)
     cx, cz = rec['centre_mc']
     e, n = to_osgb(cx, cz)
+    vm = vmc.project_status()
     return [
         f'python3 shims/google_aerial.py sheet --cell {tx},{tz}   # ALWAYS: look-only, then --record google-satellite',
         f'python3 scripts/ref_manifest.py find --xz {cx},{cz}',
@@ -665,6 +724,10 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
         '# COVERAGE: check the z19 aerial actually covers the whole cell (it can stop short, e.g. 47,-43 west of ~x6058). '
         'If not, use the zoomed-out (z18) mosaic for the gap: the manifest `find` above lists what covers this cell, else fetch it with the geo.py line below.',
         f'# ref_manifest.py add … --useful yes --models footprint,roof,landscape --at {cx},{cz}',
+        f'# vector_map: PBF cache under {vm["downloads"].name}/ → extract → '
+        f'reference/{vmc.REFERENCE_DIRNAME}/<place>/ (once per project; this world only)',
+        f'python3 scripts/osm_extract.py --cell {tx},{tz} --layers buildings,highways '
+        f'--place PLACE --add   # world provider shim; writes reference/{vmc.REFERENCE_DIRNAME}/',
         f'python3 scripts/osm_footprints.py frontage --bbox {x0},{z0},{x1},{z1}',
         f'python3 scripts/coverage.py status --cell {tx},{tz} --list',
         f'python3 scripts/coverage.py gaps --area highfield',
@@ -714,23 +777,11 @@ def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
         'primary aerial + one street Read (rules/reference-token-budget.md).',
         '',
         f'MC bbox (inclusive): {x0},{z0},{x1},{z1}',
-        f'OSM clip covers cell centre: {"yes" if osm["osm_covered_centre"] else "NO — osm_extract before trusting footprints"}',
         '',
         'MANIFEST (reference/manifest.jsonl)',
     ]
     parts.extend(manifest_summary(tx, tz))
-    parts += [
-        '',
-        'vector_map (reference/vector_map clips via osm_footprints.OSMIndex)',
-        f'  named streets in cell: {", ".join(osm["streets"][:10]) or "(none named)"}',
-        f'  building footprints overlapping: {osm["buildings"]}',
-        f'  natural=tree / landuse=forest polygons (rare): {osm["osm_tree_or_forest_polygons"]}',
-        '  Geocraft procedural trees are not surveyed — back-garden canopy from aerial only.',
-    ]
-    if osm['areas']:
-        parts.append('  area tags (top):')
-        for label, n in osm['areas']:
-            parts.append(f'    {label} ×{n}')
+    parts += ['', *vector_map_guide_lines(tx, tz, idx=idx)]
     parts += ['', 'COVERAGE PARCELS', *coverage_summary(tx, tz)]
     parts += ['', 'CROSS-ZONE (generated on --write)', *_cross_zone_lines(tx, tz)]
     parts += [

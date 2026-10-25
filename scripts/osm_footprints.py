@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Vector-map building footprints + named streets in Minecraft coords — the frontage authority.
 
-Reads every map clip under the vector-map clip tree (written by osm_extract.py, WGS84),
-reprojects it once to OSGB (EPSG:27700, via ogr2ogr; cached under
-verification/site/osm27700/) and converts to MC X/Z with osgb.py.
+Reads every map clip under this world's ``reference/vector_map`` tree (see
+``vector_map_clips``: download PBF → ``downloads/`` → extract → project reference).
+Clips are written by the place's osm_extract provider (WGS84), reprojected once to
+OSGB (EPSG:27700, via ogr2ogr; cached under verification/site/osm27700/) and
+converted to MC X/Z with osgb.py. Optional ``root=`` / ``osm_root=`` is a test
+seam for alternate trees — not a cross-world production path.
 
 Why this exists (I-009, 11 Oct 2026): façade builds placed a brick front wall
 on the pavement of Broadlands Road because the "street edge" was guessed from

@@ -52,12 +52,13 @@ Play `need-you` and **stop** until the user confirms the offset. Do not apply wo
 
 1. Author `config/local-providers.json` for the place (required types covered by system + local together: at least `vector_map`, `lidar`, one `aerial`). Reuse system providers; do not copy nationwide feeds into the world repo.
 2. Point at worldbuilder `reference/TYPES.txt` and start a place `reference/SOURCES.txt` catalogue.
-3. Scaffold place memory:
+3. **vector_map (once per project):** download the regional source into this world's `downloads/` (cache), extract place clips into `reference/vector_map/<place>/` via the local vector_map provider shim. Shared across cells; do not symlink or `osm_root=` into another world. Contract: `scripts/vector_map_clips.py`.
+4. Scaffold place memory:
    - `templates/new-world-site/` → world checkout `site/` (ISSUES, NOTES, COVERAGE, REVIEWS, cells/, thin stubs for process docs).
    - Registry: nothing to copy. `registry/` is created by the first journal write (`templates/new-world-registry/README.txt`, ADR 004).
    Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do **not** create retired progress files under site/ — `cell_registry.py verify` treats them as leftovers. Progress starts empty; tools populate the journal.
 
-Done when checklist providers have `how` strings and `evaluate-data-source` would not flag an empty type slot that the place needs.
+Done when checklist providers have `how` strings, `evaluate-data-source` would not flag an empty type slot that the place needs, and vector_map clips (if required) land under this world's `reference/vector_map/` via the download/cache contract.
 
 ## Out of scope (stop)
 
