@@ -17,6 +17,27 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
 
 
+SEED_CAPTURE = {
+    'cameras': {
+        'square_south': {'eye': [6205, 57, -5593], 'look': [6195, 56, -5565]},
+        'street_front': {'eye': [6204, 56, -5576], 'look': [6200, 55, -5563]},
+        'aerial_top': {'eye': [6185, 160, -5537], 'look': [6185, 40, -5536.99]},
+    },
+    'aerial_bbox_mc': [6140, -5584, 6230, -5490],
+    'FOV': 70,
+    'reference_plane_y': 60,
+    'aerial_crop_pixels': [451, 156, 1061, 793],
+    'aerial_crop_base_width': 1512,
+    'aerial_rotation_degrees': 180,
+    'real_aerial': {
+        'mosaic': 'reference/aerial/susu/mosaic-z18-3x3-centre-130054-87835.png',
+        'xyz_origin': [130053, 87834],
+        'zoom': 18,
+        'resize': [610, 637],
+    },
+    'portals_note': 'reference/portals/42-A..D.jpg',
+}
+
 SEED_SITTING_STEPS = [
     'One apply owner for this sitting (parent recovery → interrupt the model subagent first)',
     'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
@@ -30,7 +51,11 @@ SEED_SITTING_STEPS = [
     'Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)',
     'Build from evidence table — not a previous Minecraft build',
     'Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)',
-    'Apply, capture fixed cameras, release lock',
+    (
+        'Apply, then capture fixed cameras: '
+        f'`{BAKEOFF_WORLD_PREFIX} python3 scripts/model_bakeoff.py capture {{id}}`; '
+        'release lock'
+    ),
     'Interview + score; then usage paste (need-you if counts unknown)',
 ]
 
@@ -86,6 +111,7 @@ def _seed(root: Path) -> None:
             'max_attempts': 3,
             'grades': ['fail', 'pass', 'great'],
             'sitting_steps': list(SEED_SITTING_STEPS),
+            'capture': dict(SEED_CAPTURE),
         },
     )
     MB.write_json(
@@ -157,6 +183,7 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertIsNone(round_['usage']['total_tokens'])
             checklist = '\n'.join(round_['sitting']['checklist'])
             self.assertIn('model_bakeoff.py baseline R-001', checklist)
+            self.assertIn('model_bakeoff.py capture R-001', checklist)
             self.assertNotIn('restore-ghost', checklist)
             self.assertIn('FAIRNESS.md', checklist)
             self.assertIn('One apply owner', checklist)
@@ -220,12 +247,17 @@ class TestModelBakeoff(unittest.TestCase):
         self.assertNotIn('Quit Minecraft', joined)
         self.assertNotIn('task 48', joined)
         self.assertIn('model_bakeoff.py baseline', joined)
+        self.assertIn('model_bakeoff.py capture', joined)
         self.assertIn('{id}', joined)
         self.assertEqual(joined.count('lidar_ghost apply'), 1)  # only inside the baseline command note
         self.assertNotIn('cell_registry.py reconcile', joined)
         self.assertIn('{tool}', joined)
         self.assertIn('{model}', joined)
         self.assertIn('{pack}', joined)
+        cap = cfg.get('capture')
+        self.assertIsInstance(cap, dict)
+        self.assertIn('square_south', cap.get('cameras') or {})
+        self.assertEqual(cap.get('aerial_bbox_mc'), [6140, -5584, 6230, -5490])
 
     def test_record_usage_sums_total(self):
         with tempfile.TemporaryDirectory() as d:
@@ -709,6 +741,140 @@ class TestBaseline(unittest.TestCase):
             with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
                     mock.patch('sys.stderr', err):
                 rc = MB.main(['--root', str(root), 'baseline', 'R-001', '--plan'])
+            self.assertEqual(rc, 2)
+            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+
+
+class TestCapture(unittest.TestCase):
+    """Photos-map / aerial-crop maths and stubbed ``capture`` runs."""
+
+    def test_scale_aerial_crop_doubles_at_2x_width(self):
+        crop = MB.scale_aerial_crop([451, 156, 1061, 793], 3024, base_width=1512)
+        self.assertEqual(crop, (902, 312, 2122, 1586))
+
+    def test_scale_aerial_crop_identity_at_base_width(self):
+        box = (451, 156, 1061, 793)
+        self.assertEqual(MB.scale_aerial_crop(box, 1512), box)
+
+    def test_photos_map_paths(self):
+        photos = MB.photos_map_for_shots('worlds/bakeoff/verification/site/r013-shots')
+        self.assertEqual(
+            photos['square_south'],
+            'worlds/bakeoff/verification/site/r013-shots/square_south.png',
+        )
+        self.assertEqual(
+            photos['street_front'],
+            'worlds/bakeoff/verification/site/r013-shots/street_front.png',
+        )
+        self.assertEqual(
+            photos['aerial_top'],
+            'worlds/bakeoff/verification/site/r013-shots/aerial_top.png',
+        )
+        self.assertIn('real_aerial.png', photos['real_refs_note'])
+        self.assertIn('42-A..D.jpg', photos['real_refs_note'])
+
+    def test_shots_rel_dir_slug(self):
+        self.assertEqual(MB.round_shots_slug('R-013'), 'r013')
+        self.assertEqual(
+            MB.shots_rel_dir('bakeoff', 'R-013'),
+            'worlds/bakeoff/verification/site/r013-shots',
+        )
+
+    def test_capture_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'):
+                with self.assertRaises(RuntimeError) as ctx:
+                    MB.run_capture(root, 'R-001', capture_fn=lambda *_a, **_k: Path('.'))
+            self.assertIn(BAKEOFF_WORLD_PREFIX, str(ctx.exception))
+
+    def test_run_capture_stubbed_fills_photos_and_crops(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / 'bakeoffs'
+            world = Path(d) / 'world'
+            root.mkdir()
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+
+            mosaic_path = world / SEED_CAPTURE['real_aerial']['mosaic']
+            mosaic_path.parent.mkdir(parents=True)
+            # 3×3 tile mosaic at z18 → 768×768; origin matches xyz_origin.
+            Image.new('RGB', (768, 768), (40, 120, 40)).save(mosaic_path)
+
+            captured: list[str] = []
+            saves: list[int] = []
+
+            def stub_capture(eye, look, dest, *, downscale=1):
+                del eye, look, downscale
+                name = dest.stem
+                captured.append(name)
+                # 2× reference width so crop maths are non-trivial.
+                size = (3024, 1898) if name == 'aerial_top' else (800, 500)
+                Image.new('RGB', size, (10, 20, 30)).save(dest)
+                return dest
+
+            def stub_wgs84(x, z):
+                # Real bakeoff-frame corners for aerial_bbox_mc (pixels stay in 768²).
+                table = {
+                    (6140.0, -5584.0): (50.9346157479733, -1.39814603731417),
+                    (6140.0, -5490.0): (50.9337704992432, -1.39815695900008),
+                    (6230.0, -5584.0): (50.9346091242402, -1.39686531341435),
+                    (6230.0, -5490.0): (50.933763875326, -1.39687625828209),
+                }
+                return table[(float(x), float(z))]
+
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'):
+                report = MB.run_capture(
+                    root,
+                    'R-001',
+                    world_root=world,
+                    capture_fn=stub_capture,
+                    save_world_fn=lambda: saves.append(1),
+                    mc_to_wgs84_fn=stub_wgs84,
+                )
+
+            self.assertEqual(sorted(captured), ['aerial_top', 'square_south', 'street_front'])
+            self.assertEqual(saves, [1])
+            self.assertEqual(report['aerial_crop'], [902, 312, 2122, 1586])
+            shots = world / 'verification' / 'site' / 'r001-shots'
+            self.assertTrue((shots / 'square_south.png').is_file())
+            self.assertTrue((shots / 'street_front.png').is_file())
+            self.assertTrue((shots / 'aerial_top.png').is_file())
+            self.assertTrue((shots / 'aerial_top-full.png').is_file())
+            self.assertTrue((shots / 'real_aerial.png').is_file())
+            with Image.open(shots / 'real_aerial.png') as real_im:
+                self.assertEqual(real_im.size, (610, 637))
+            meta = json.loads((shots / 'cameras.json').read_text(encoding='utf-8'))
+            self.assertEqual(meta['actual_aerial_crop_pixels'], [902, 312, 2122, 1586])
+            self.assertEqual(meta['aerial_rotation_degrees'], 180)
+
+            disk = MB.load_round(root, 'R-001')
+            self.assertEqual(
+                disk['photos']['square_south'],
+                'worlds/bakeoff/verification/site/r001-shots/square_south.png',
+            )
+            self.assertEqual(
+                disk['photos']['aerial_top'],
+                'worlds/bakeoff/verification/site/r001-shots/aerial_top.png',
+            )
+            self.assertIn(
+                'worlds/bakeoff/verification/site/r001-shots/real_aerial.png',
+                disk['photos']['real_refs_note'],
+            )
+
+    def test_cli_capture_refuses_wrong_world(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            err = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+                    mock.patch('sys.stderr', err):
+                rc = MB.main(['--root', str(root), 'capture', 'R-001'])
             self.assertEqual(rc, 2)
             self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
 
