@@ -946,6 +946,85 @@ class TestBaseline(unittest.TestCase):
             self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
 
 
+    def test_baseline_archives_prior_round_builds(self):
+        """baseline moves r0NN_* out of site/builds into archive/rounds/<id>/."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            world = Path(d) / 'world'
+            _seed(root)
+            MB.open_round(root, tool='cursor', model='composer', task='feature_design')
+            builds = world / 'site' / 'builds'
+            builds.mkdir(parents=True)
+            (builds / 'r012_susu.py').write_text('# prior\n', encoding='utf-8')
+            (builds / 'r011-lidar.npz').write_bytes(b'npz')
+            (builds / 'r013_capture.py').write_text('# cap\n', encoding='utf-8')
+            (builds / 'notes.txt').write_text('keep me\n', encoding='utf-8')
+            (builds / 'R-009_legacy.py').write_text('# not r0NN_\n', encoding='utf-8')
+
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch.dict(os.environ, {'SITE_OWNER': 'agent'}), \
+                    mock.patch('model_bakeoff._lock_read', return_value=None), \
+                    mock.patch('model_bakeoff._lock_fresh', return_value=False), \
+                    mock.patch('model_bakeoff._lock_claim'), \
+                    mock.patch('model_bakeoff._lock_check', return_value=None):
+                report = MB.run_baseline(
+                    root,
+                    'R-001',
+                    world_root=world,
+                    list_entries_fn=lambda _cells: [],
+                    undo_fn=lambda *_a, **_k: mock.Mock(seq=1),
+                    lidar_apply_fn=lambda: None,
+                    lidar_status_fn=lambda: {
+                        'cells': [
+                            {'cell': c, 'ghosts_complete': True}
+                            for c in MB.load_config(root)['ghost_cells']
+                        ],
+                    },
+                    reconcile_fn=lambda _c: True,
+                )
+
+            self.assertEqual(
+                sorted(report['archived']),
+                ['r011-lidar.npz', 'r012_susu.py', 'r013_capture.py'],
+            )
+            self.assertEqual(report['archive_dir'], 'worlds/bakeoff/archive/rounds/R-001')
+            dest = world / 'archive' / 'rounds' / 'R-001'
+            self.assertTrue((dest / 'r012_susu.py').is_file())
+            self.assertTrue((dest / 'r011-lidar.npz').is_file())
+            self.assertTrue((dest / 'r013_capture.py').is_file())
+            left = sorted(p.name for p in builds.iterdir())
+            self.assertEqual(left, ['R-009_legacy.py', 'notes.txt'])
+            disk = MB.load_round(root, 'R-001')
+            self.assertEqual(
+                sorted(disk['baseline']['archived']),
+                ['r011-lidar.npz', 'r012_susu.py', 'r013_capture.py'],
+            )
+
+    def test_open_warns_on_prior_round_build_leftovers(self):
+        """CLI open prints a warning when site/builds still has r0NN_* files."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            world = Path(d) / 'world'
+            _seed(root)
+            builds = world / 'site' / 'builds'
+            builds.mkdir(parents=True)
+            (builds / 'r012_susu.py').write_text('# leftover\n', encoding='utf-8')
+            err = io.StringIO()
+            out = io.StringIO()
+            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+                    mock.patch('active_world.WORLD_ROOT', world), \
+                    mock.patch('sys.stderr', err), \
+                    mock.patch('sys.stdout', out):
+                rc = MB.main([
+                    '--root', str(root),
+                    'open', '--tool', 'cursor', '--model', 'composer',
+                ])
+            self.assertEqual(rc, 0)
+            self.assertIn('earlier-round artefacts', err.getvalue())
+            self.assertIn('r012_susu.py', err.getvalue())
+            self.assertIn('archive/rounds', err.getvalue())
+
+
 class TestCapture(unittest.TestCase):
     """Photos-map / aerial-crop maths and stubbed ``capture`` runs."""
 

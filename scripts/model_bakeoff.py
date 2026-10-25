@@ -1549,6 +1549,86 @@ def ghosts_complete_for_cells(status: dict, ghost_cells: list[list[int]]) -> boo
     return True
 
 
+# Earlier-round build artefacts left in site/builds/ (r010_susu.py, r011-lidar.npz, …).
+# A previous Minecraft build is not evidence — baseline archives these before the sitting.
+PRIOR_ROUND_BUILD_RE = re.compile(r'^r\d{3}[_-]', re.IGNORECASE)
+
+
+def site_builds_dir(world_root: Path) -> Path:
+    """``<world>/site/builds`` where models write sitting scripts.
+
+    @param world_root: active world checkout
+    @returns: builds directory path (may not exist yet)
+    """
+    return Path(world_root) / 'site' / 'builds'
+
+
+def archive_rounds_dir(world_root: Path, round_id: str) -> Path:
+    """Off-limits archive for prior-round artefacts cleared by baseline.
+
+    @param world_root: active world checkout
+    @param round_id: sitting id that triggered the archive (e.g. ``R-014``)
+    @returns: ``<world>/archive/rounds/<id>/``
+    """
+    return Path(world_root) / 'archive' / 'rounds' / round_id
+
+
+def list_prior_round_build_artefacts(builds_dir: Path) -> list[Path]:
+    """List ``r0NN_*`` / ``r0NN-*`` files still under ``site/builds/``.
+
+    @param builds_dir: ``site/builds`` directory
+    @returns: sorted file paths (not directories)
+    """
+    builds = Path(builds_dir)
+    if not builds.is_dir():
+        return []
+    found: list[Path] = []
+    for path in builds.iterdir():
+        if path.is_file() and PRIOR_ROUND_BUILD_RE.match(path.name):
+            found.append(path)
+    return sorted(found, key=lambda p: p.name.lower())
+
+
+def archive_prior_round_builds(world_root: Path, round_id: str) -> list[str]:
+    """Move earlier-round artefacts from ``site/builds/`` into ``archive/rounds/<id>/``.
+
+    @param world_root: active world checkout
+    @param round_id: sitting id owning this archive folder
+    @returns: basenames that were moved (empty if none)
+    """
+    builds = site_builds_dir(world_root)
+    sources = list_prior_round_build_artefacts(builds)
+    if not sources:
+        return []
+    dest_dir = archive_rounds_dir(world_root, round_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    for src in sources:
+        dest = dest_dir / src.name
+        if dest.exists():
+            dest.unlink()
+        shutil.move(str(src), str(dest))
+        moved.append(src.name)
+    return moved
+
+
+def format_prior_round_builds_warning(names: list[str]) -> str | None:
+    """Human warning when ``site/builds/`` still holds earlier-round artefacts.
+
+    @param names: leftover basenames
+    @returns: warning text, or None when the floor is clear
+    """
+    if not names:
+        return None
+    shown = ', '.join(names[:8])
+    extra = f' (+{len(names) - 8} more)' if len(names) > 8 else ''
+    return (
+        'warning: site/builds/ still has earlier-round artefacts '
+        f'({shown}{extra}); run baseline to move them under archive/rounds/ '
+        '(off-limits — a previous Minecraft build is not evidence)'
+    )
+
+
 def format_baseline_report(report: dict) -> str:
     """Short human report for a baseline run.
 
@@ -1560,9 +1640,16 @@ def format_baseline_report(report: dict) -> str:
         f"{'PLAN' if report.get('plan_only') else 'done'}",
         f"  undone: {', '.join(report.get('undone') or []) or '(none)'}",
     ]
-    if not report.get('plan_only'):
+    if report.get('plan_only'):
+        would = report.get('would_archive') or []
+        lines.append(f"  would_archive: {', '.join(would) or '(none)'}")
+    else:
         lines.append(f"  journal_seqs: {report.get('journal_seqs') or []}")
         lines.append(f"  clean: {report.get('clean')}")
+        archived = report.get('archived') or []
+        lines.append(f"  archived: {', '.join(archived) or '(none)'}")
+        if report.get('archive_dir'):
+            lines.append(f"  archive_dir: {report['archive_dir']}")
         if report.get('incomplete'):
             lines.append(f"  incomplete: {report['incomplete']}")
     return '\n'.join(lines)
@@ -1573,6 +1660,7 @@ def run_baseline(
     round_id: str,
     *,
     plan_only: bool = False,
+    world_root: Path | None = None,
     list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
     undo_fn: Callable[..., Any] | None = None,
     lidar_apply_fn: Callable[[], Any] | None = None,
@@ -1582,11 +1670,14 @@ def run_baseline(
     """Reset the 3×3 ghost baseline for a round: undo features, re-ghost, verify.
 
     Refuses unless the active world matches config ``world``. Real runs also
-    require ``SITE_OWNER`` and the site lock (claims it when free).
+    require ``SITE_OWNER`` and the site lock (claims it when free). Moves
+    earlier-round ``r0NN_*`` artefacts out of ``site/builds/`` into
+    ``archive/rounds/<id>/`` so the next sitting cannot treat them as evidence.
 
     @param root: bake-offs root
     @param round_id: round to record the baseline report on
     @param plan_only: list undo targets only (no lock, undo, apply, or round write)
+    @param world_root: world checkout (default ``active_world.WORLD_ROOT``)
     @param list_entries_fn: injectable journal listing (tests)
     @param undo_fn: injectable ``undo(plan, meta=…)`` (tests)
     @param lidar_apply_fn: injectable ghost apply (tests)
@@ -1605,6 +1696,8 @@ def run_baseline(
     if len(focus) < 2:
         raise RuntimeError('round/config missing focus cell')
     focus_t = (int(focus[0]), int(focus[1]))
+    wroot = Path(world_root) if world_root is not None else Path(active_world.WORLD_ROOT)
+    prior_names = [p.name for p in list_prior_round_build_artefacts(site_builds_dir(wroot))]
 
     list_entries = list_entries_fn or _default_list_feature_entries
     targets = select_feature_undo_targets(list_entries(ghost_cells), ghost_cells)
@@ -1619,9 +1712,16 @@ def run_baseline(
             'ghost_cells': ghost_cells,
             'journal_seqs': [],
             'clean': None,
+            'would_archive': prior_names,
         }
 
     ensure_baseline_lock(round_id)
+    archived = archive_prior_round_builds(wroot, round_id)
+    archive_rel = None
+    if archived:
+        world_id = str(cfg.get('world') or 'bakeoff')
+        archive_rel = f'worlds/{world_id}/archive/rounds/{round_id}'
+
     undo = undo_fn or _default_undo
     journal_seqs: list[int] = []
     for plan in undone:
@@ -1654,6 +1754,8 @@ def run_baseline(
         'targets': targets,
         'ghost_cells': ghost_cells,
         'journal_seqs': journal_seqs,
+        'archived': archived,
+        'archive_dir': archive_rel,
         'clean': clean,
         'incomplete': incomplete or None,
         'at': utc_now(),
@@ -1662,9 +1764,12 @@ def run_baseline(
     round_['baseline'] = {
         'undone': undone,
         'journal_seqs': journal_seqs,
+        'archived': archived,
         'clean': clean,
         'at': report['at'],
     }
+    if archive_rel:
+        round_['baseline']['archive_dir'] = archive_rel
     if incomplete:
         round_['baseline']['incomplete'] = incomplete
     save_round(root, round_)
@@ -2180,6 +2285,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(format_sitting(round_))
             print(f"\nwrote {round_path(root, round_['id'])}")
+            leftovers = [
+                p.name
+                for p in list_prior_round_build_artefacts(
+                    site_builds_dir(Path(active_world.WORLD_ROOT))
+                )
+            ]
+            warn = format_prior_round_builds_warning(leftovers)
+            if warn:
+                print(warn, file=sys.stderr)
             return 0
         if args.cmd == 'score':
             round_ = score_round(
