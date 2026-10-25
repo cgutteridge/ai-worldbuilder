@@ -4,6 +4,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from block_store import (BlockStoreError, LiveBlocks, MemoryBlocks, StaleRead, aabb_tile_lower_bound,
                          canonical_state, format_block_scan_text, parse_block_scan_text, same_state,
@@ -144,8 +145,12 @@ def make_store(kind: str, blocks: dict, tmp: Path, **kw):
     region = tmp / 'saves' / 'w' / 'region'
     region.mkdir(parents=True, exist_ok=True)
     mcp = kw.get('mcp') or FakeScanMcp(blocks, loaded_chunks=kw.get('loaded_chunks'))
+    live_kw = {k: kw[k] for k in (
+        'tiny_scan_max_volume', 'tiny_scan_warn_after',
+    ) if k in kw}
     return LiveBlocks(region, allowed=[region], identity_check=lambda r: None,
-                      flusher=kw.get('flusher', lambda: None), settle_seconds=0, mcp=mcp)
+                      flusher=kw.get('flusher', lambda: None), settle_seconds=0, mcp=mcp,
+                      **live_kw)
 
 
 class BlockStoreContract:
@@ -323,6 +328,60 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
             vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
             self.assertLessEqual(vol, 65536)
             self.assertLessEqual(vol, 16)  # single-block (or tiny) per chunk group
+
+    def test_many_tiny_scans_warn_once_on_stderr(self):
+        """Unbatched single-block reads trip one stderr warning after the threshold; never raise."""
+        import io
+        from block_store import TINY_SCAN_MAX_VOLUME
+
+        n = 5
+        blocks = {(i, 64, 0): STONE for i in range(n)}
+        loaded = {(i >> 4, 0) for i in range(n)}
+        mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+        store = make_store(
+            'live', blocks, self.tmp / 'tiny_warn', mcp=mcp, loaded_chunks=loaded,
+            tiny_scan_warn_after=n,
+        )
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            for i in range(n):
+                self.assertEqual(store.read((i, 64, 0)), STONE)
+        self.assertEqual(store.tiny_scan_count, n)
+        text = err.getvalue()
+        self.assertIn('tiny block_scan_region', text)
+        self.assertIn(f'volume ≤ {TINY_SCAN_MAX_VOLUME}', text)
+        self.assertIn('Not raising', text)
+        # Further tiny scans must not re-warn or raise.
+        more = {(n, 64, 0): STONE}
+        mcp.blocks.update(more)
+        mcp.loaded_chunks = loaded | {(n >> 4, 0)}
+        err2 = io.StringIO()
+        with mock.patch('sys.stderr', err2):
+            self.assertEqual(store.read((n, 64, 0)), STONE)
+        self.assertEqual(err2.getvalue(), '')
+        self.assertEqual(store.tiny_scan_count, n + 1)
+
+    def test_batched_read_many_stays_quiet(self):
+        """One AABB read_many of many positions must not count as many tiny scans or warn."""
+        import io
+
+        # 8×1×8 = 64 > TINY_SCAN_MAX_VOLUME (16) → one non-tiny scan
+        positions = [(x, 64, z) for x in range(8) for z in range(8)]
+        blocks = {p: STONE for p in positions}
+        loaded = {(0, 0)}
+        mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+        store = make_store(
+            'live', blocks, self.tmp / 'batch_quiet', mcp=mcp, loaded_chunks=loaded,
+            tiny_scan_warn_after=1,  # would fire on any tiny scan
+        )
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            got = store.read_many(positions)
+        self.assertEqual(got[(0, 64, 0)], STONE)
+        self.assertEqual(store.tiny_scan_count, 0)
+        self.assertEqual(err.getvalue(), '')
+        scans = [a for name, a in mcp.calls if name == 'block_scan_region']
+        self.assertEqual(len(scans), 1)
 
 
 class TestParseBlockScanText(unittest.TestCase):
