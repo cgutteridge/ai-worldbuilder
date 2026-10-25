@@ -68,7 +68,7 @@ class GeoPrefetchTest(unittest.TestCase):
         rec = geo.probe_bbox(world, 0, 0, 7, 7)
         self.assertEqual(rec['columns'], 64)
         self.assertEqual(rec['lidar_top_y']['median'], 50)
-        # Naive path ≈ 64 columns × ~90 Y reads; batched AABB is a handful of tiles.
+        # Strip-warm (one X row × Y 0..200) then cached ground/lidar — not one scan per Y.
         self.assertLessEqual(_scans(mcp), 32, f'too many scans: {_scans(mcp)}')
 
 

@@ -242,8 +242,9 @@ def probe_column(world, x: int, z: int, stack: int = 6) -> dict:
 def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     """Summarise ground and lidar tops over an inclusive bbox.
 
-    Prefetches the full probe volume once so per-column ground / lidar walks share
-    MCP tiles instead of scanning one block at a time.
+    Prefetches one X-strip at a time (width × Y 0..200) so ground / lidar walks
+    share MCP tiles without materialising the full bbox × 201 positions in memory
+    (a cell-sized box would be millions of tuples).
 
     @param world: site_kit.World
     @param x0: min X
@@ -253,15 +254,14 @@ def probe_bbox(world, x0: int, z0: int, x1: int, z1: int) -> dict:
     @returns: min/median/max stats
     """
     from site_kit import warm_reads
-    # ground uses top=200..0; lidar_top uses 120..30 — warm the union once.
-    warm_reads(world, (
-        (x, y, z)
-        for x in range(x0, x1 + 1)
-        for z in range(z0, z1 + 1)
-        for y in range(0, 201)
-    ))
     grounds, tops, extr = [], [], []
     for x in range(x0, x1 + 1):
+        # Strip warm: ground uses top=200..0; lidar_top uses 120..30 — union once per row.
+        warm_reads(world, (
+            (x, y, z)
+            for z in range(z0, z1 + 1)
+            for y in range(0, 201)
+        ))
         for z in range(z0, z1 + 1):
             yg = world.ground(x, z, top=200, bottom=0)
             yt = lidar_top(world, x, z)
