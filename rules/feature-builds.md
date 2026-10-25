@@ -12,7 +12,9 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
 
 - `name` — plan / cells-record name
 - `ways` — `{osm_way_id: label}` footprints to build
-- `storeys` — `{label: int >= 1}` clear storeys (each 3 blocks high)
+- `storeys` — `{label: int >= 1}` clear storeys (each 3 blocks high); with
+  `zones`, this is the facade storey grid count (openings still use
+  `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>}}`
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
@@ -28,13 +30,39 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   Pick `block` with `block_reference.py` from the portal photo. `leaves: 2`
   places mirrored hinges and stays framed (`door_frame_issues`). Dry run
   prints each beside the portal name. Absent → legacy front/rear spruce.
+- optional `zones` — per-label lidar roof plateaus **within one footprint**
+  (one OSM way, several flat roof heights). Use when a single `storeys`
+  count cannot express terraced roofs (e.g. SUSU w33830305 with plateaus at
+  41/45/46/47/48/50 m AOD). Example:
+
+  ```json
+  "zones": {
+    "SU": {
+      "from": "lidar",
+      "levels": [41, 45, 46, 47, 48, 50],
+      "bucket": 4,
+      "axis_deg": "auto"
+    }
+  }
+  ```
+
+  Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
+  median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
+  bucket on the building's rotated grid so zone edges are straight runs.
+  Walls rise from **local** lidar ground so downhill faces gain storeys;
+  parapet on every roof edge including zone steps. Facades, doors, and
+  roofs reuse the same label keys. Requires `roofs[label].kind == "flat"`.
+  Dry run prints `footprint osm=N readable=M pad=P cover=C%`.
 
 Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial). Do not copy a peer spec or a per-run build script. Do
-not extend `house_build` for odd shapes.
+not extend `house_build` for odd shapes. Prefer `zones` over a custom
+`site_kit` script when one way has several roof plateaus.
 
 Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
-`w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`).
+`w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`). For
+multi-plateau SUSU, add a `zones` entry as above and confirm 0 guard
+failures on dry-run.
 
 **Lidar ghosts (ground only):** After `cell_marker --raise`, frontier cells show
 ghost ground with DSM−DTM top colours (not volumetric grey columns). Real features

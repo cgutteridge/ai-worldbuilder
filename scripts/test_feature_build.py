@@ -9,6 +9,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 import feature_build as F
 from site_kit import door_frame_issues
 
@@ -43,6 +45,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['floor'], 'smooth_stone')
         self.assertEqual(spec['facades'], {})
         self.assertEqual(spec['doors'], {})
+        self.assertEqual(spec['zones'], {})
 
     def test_missing_key_bad_front_unknown_label_bad_storeys_refused(self):
         good = self.good()
@@ -394,6 +397,179 @@ class DoorSpecBuildTest(unittest.TestCase):
         self.assertEqual(len(uppers), 2, uppers)
         for (x, y, z), _ in lowers + uppers:
             self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
+
+
+class ZonesSpecTest(unittest.TestCase):
+    """Seam: load_spec accepts zones; refuses bad from/levels/pitched roof."""
+
+    def write(self, spec: dict) -> Path:
+        path = Path(tempfile.mkdtemp()) / 's.json'
+        path.write_text(json.dumps(spec))
+        return path
+
+    def good(self) -> dict:
+        return {
+            'name': 'zones_demo',
+            'ways': {'1': 'A'},
+            'storeys': {'A': 4},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'N'}],
+            'zones': {
+                'A': {'from': 'lidar', 'levels': [41, 45, 50], 'bucket': 4, 'axis_deg': 'auto'},
+            },
+        }
+
+    def test_loads_zones_defaults(self):
+        spec = F.load_spec(self.write(self.good()))
+        self.assertEqual(spec['zones']['A']['levels'], [41, 45, 50])
+        self.assertEqual(spec['zones']['A']['bucket'], 4)
+        self.assertEqual(spec['zones']['A']['axis_deg'], 'auto')
+
+    def test_auto_levels_accepted(self):
+        g = self.good()
+        g['zones']['A']['levels'] = 'auto'
+        spec = F.load_spec(self.write(g))
+        self.assertEqual(spec['zones']['A']['levels'], 'auto')
+
+    def test_bad_zones_refused(self):
+        good = self.good()
+        pitched = {
+            **good,
+            'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}},
+        }
+        cases = [
+            {**good, 'zones': {'B': {'from': 'lidar', 'levels': [40]}}},
+            {**good, 'zones': {'A': {'from': 'osm', 'levels': [40]}}},
+            {**good, 'zones': {'A': {'from': 'lidar', 'levels': []}}},
+            {**good, 'zones': {'A': {'from': 'lidar', 'levels': 'nope'}}},
+            {**good, 'zones': {'A': {'from': 'lidar', 'levels': [40], 'bucket': 0}}},
+            pitched,
+        ]
+        for bad in cases:
+            with self.subTest(bad=bad.get('zones') or bad.get('roofs')):
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write(bad))
+
+
+class ZoneMathTest(unittest.TestCase):
+    """Seam: zone snapping, bucketing, and edge-wall exposure on a fixture grid."""
+
+    def test_snap_to_levels_nearest_plateau(self):
+        h = np.array([[40.2, 44.8], [46.1, 49.7]], dtype=float)
+        got = F.snap_to_levels(h, [41, 45, 46, 50])
+        self.assertEqual(got.tolist(), [[41.0, 45.0], [46.0, 50.0]])
+
+    def test_bucket_zones_one_level_per_rotated_cell(self):
+        # 8×4 footprint on axis 0: two 4-wide buckets along x should each take a mode
+        zone = np.zeros((4, 8), dtype=float)
+        zone[:, :4] = 41
+        zone[:, 4:] = 50
+        zone[1, 3] = 50  # speck in the left bucket → mode stays 41
+        zone[2, 5] = 41  # speck in the right bucket → mode stays 50
+        mask = np.ones_like(zone, dtype=bool)
+        zz, xx = np.mgrid[0:4, 0:8]
+        out = F.bucket_zones(zone, mask, xx, zz, bucket=4, axis_deg=0.0)
+        self.assertTrue(np.all(out[:, :4] == 41))
+        self.assertTrue(np.all(out[:, 4:] == 50))
+
+    def test_edge_wall_expose_exterior_and_zone_step(self):
+        # Three columns: downhill ground 40, mid roof 50, high roof 54; outside east
+        roof = {(10, 20): 50, (11, 20): 54}
+        ground = {
+            (9, 20): 40, (10, 20): 42, (11, 20): 42, (12, 20): 42,
+            (10, 19): 42, (10, 21): 42, (11, 19): 42, (11, 21): 42,
+        }
+        # West neighbour of (10,20) is outside → top is ground 40
+        self.assertEqual(F.edge_wall_expose(roof, ground, (10, 20)), 40)
+        # East neighbour of (10,20) is higher roof 54; west outside 40 → expose 40
+        # Zone step: from high roof looking west onto 50
+        self.assertEqual(F.edge_wall_expose(roof, ground, (11, 20)), 42)
+
+    def test_assign_roof_zones_pipeline_square_snap_bucket(self):
+        # 6×6 OSM with a 1-block stair notch; two DSM plateaus
+        osm = np.ones((6, 6), dtype=bool)
+        osm[0, 5] = False  # notch / spur
+        dsm = np.full((6, 6), 41.0)
+        dsm[:, 3:] = 50.0
+        zz, xx = np.mgrid[0:6, 0:6]
+        readable, zone, levels, axis = F.assign_roof_zones(
+            dsm, osm, [41, 50], xx, zz, bucket=3, axis_deg=0.0,
+        )
+        self.assertEqual(levels, [41, 50])
+        self.assertEqual(axis, 0.0)
+        self.assertGreaterEqual(int(readable.sum()), int(osm.sum()) - 2)
+        self.assertIn(41.0, set(zone[readable].tolist()))
+        self.assertIn(50.0, set(zone[readable].tolist()))
+        line = F.footprint_pad_line(osm, readable)
+        self.assertTrue(line.startswith('footprint osm='))
+        self.assertIn('readable=', line)
+        self.assertIn('pad=', line)
+        self.assertIn('cover=', line)
+
+
+class ZoneBuildTest(unittest.TestCase):
+    """Seam: build() with injected zone grids places parapets and downhill walls."""
+
+    def setUp(self):
+        # 6×4 rectangle at x=10..15, z=20..23
+        self.cells = {(x, z) for x in range(10, 16) for z in range(20, 24)}
+        # [z, x] grids covering x0=9..16, z0=19..24
+        self.x0, self.z0 = 9, 19
+        depth, width = 6, 8  # z 19..24, x 9..16
+        dsm = np.full((depth, width), 45.0)
+        dsm[:, 4:] = 50.0  # x >= 13 → higher plateau
+        ground = np.full((depth, width), 40)  # block Y
+        ground[:, :2] = 38  # downhill on the west fringe
+        self.zone_data = {
+            'A': {'dsm': dsm, 'ground_y': ground, 'x0': self.x0, 'z0': self.z0},
+        }
+
+    def spec(self):
+        return {
+            'name': 'unit_zones',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 3},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 40,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'zones': {
+                'A': {'from': 'lidar', 'levels': [45, 50], 'bucket': 2, 'axis_deg': 0},
+            },
+        }
+
+    def test_zoned_build_parapet_and_variable_roof(self):
+        buf = io.StringIO()
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(buf):
+            plan = F.build(
+                self.spec(), footprints={'A': self.cells}, world=_StoneWorld(),
+                zone_data=self.zone_data,
+            )
+        out = buf.getvalue()
+        self.assertIn('footprint osm=', out)
+        # Low and high roof decks present
+        low_roof = [(x, z) for (x, y, z), st in plan.cells.items()
+                    if y == 45 and st == 'minecraft:smooth_stone' and (x, z) in self.cells]
+        high_roof = [(x, z) for (x, y, z), st in plan.cells.items()
+                     if y == 50 and st == 'minecraft:smooth_stone' and (x, z) in self.cells]
+        self.assertTrue(low_roof, 'expected 45 m plateau roof cells')
+        self.assertTrue(high_roof, 'expected 50 m plateau roof cells')
+        # Parapet above at least one roof edge
+        parapets = [pos for pos, st in plan.cells.items() if st == 'minecraft:smooth_stone' and pos[1] in (46, 51)]
+        self.assertTrue(parapets, 'expected parapet on roof edges')
+        # Downhill / exterior wall above neighbour ground: west face should show bricks above ground
+        west_wall = [
+            y for (x, y, z), st in plan.cells.items()
+            if x == 10 and z == 21 and 'bricks' in st and y > 40
+        ]
+        self.assertTrue(west_wall, 'expected exposed wall on west face')
 
 
 if __name__ == '__main__':
