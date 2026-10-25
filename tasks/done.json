@@ -655,6 +655,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Retro R-013 fairness: worlds/bakeoff/site/builds/ holds r010..r013 SUSU build scripts, lidar/osm caches and capture scripts next to where the model writes its own; R-012 disclosed reading the R-011 docstring (prior evidence summary). Pack rule: a previous Minecraft build is not evidence. Do: as part of `model_bakeoff.py baseline` (task 72) move prior round artefacts matching `r0NN_*` out of site/builds/ into an archive dir the brief tells the model not to use (e.g. worlds/bakeoff/archive/rounds/<id>/), and have `open` warn if any are still present. Add one line to packs/v1/FAIRNESS.md (not BRIEF.md, which is frozen) naming the archive as off-limits. Done when: after baseline, site/builds/ contains no earlier-round files; open warns on leftovers; test covers the move. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff.\nArchived 2026-10-25 after merge 7b55c5c (task/74-bakeoff-archive-rounds \u2192 main)."
+    },
+    {
+      "id": 79,
+      "title": "Pre-commit tracker rule blocks main while fresh task/* branches point at HEAD",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Found 2026-10-25 closing the R-013 thread: on main (attached HEAD), a tracker-only commit failed with 'worker branch must not edit the system tracker' because parallel-wave worktrees had just cut task/70..76 from main's HEAD. scripts/pre_commit_checks.py checkout_branch_names() adds every branch from `git branch --points-at HEAD` even when HEAD is attached to a non-worker branch, so forbidden_tracker_paths() sees task/* names. Fix: include points-at-HEAD branches only when HEAD is detached (current_branch() empty); attached HEAD uses the current branch alone. Keep the detached-HEAD bypass protection. Done when: unit tests cover (a) attached main with task/* at the same commit -> allowed, (b) detached HEAD with task/* at HEAD -> blocked, (c) attached task/* -> blocked. Archived 2026-10-25 after merge 1fd2382 (task/79-tracker-hook-points-at-head \u2192 main; code 33f2496). Reviewer APPROVE with nits only."
     }
   ]
 }

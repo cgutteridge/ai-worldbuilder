@@ -11,15 +11,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From the R-013 cost discussion (2026-10-24). Data: Sonnet medium/high = pass at ~1 pt weekly plan usage (R-009 43->44%); Opus 5.5 low/medium = great (R-012 5.78M, R-013 7.57M transcript tokens, R-013 45->47% weekly). Opus output is small (R-013: 38k output vs 7.27M cache reads over 59 turns), so cost is turn count x context, not authorship. Hypothesis: Opus low writes the evidence table + build spec in few turns; Sonnet medium executes (apply, recover, capture) where turns pile up. Do: extend model-bakeoffs/PROTOCOL.md + scripts/model_bakeoff.py so a round can name a designer model and a builder model (e.g. `open --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low`), with the hand-off artefact (spec/script path) recorded and usage split per model; keep one apply owner (builder). Measure with task 75 units (transcript sums + plan % delta). Run >= 2 sittings before drawing conclusions (single sittings cannot separate pass from great). Cheaper still once task 76 lets the designer emit a feature_build spec instead of a custom script. Done when: the round type exists with tests and at least two hybrid sittings are scored and compared against R-009/R-012."
-    },
-    {
-      "id": 79,
-      "title": "Pre-commit tracker rule blocks main while fresh task/* branches point at HEAD",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Found 2026-10-25 closing the R-013 thread: on main (attached HEAD), a tracker-only commit failed with 'worker branch must not edit the system tracker' because parallel-wave worktrees had just cut task/70..76 from main's HEAD. scripts/pre_commit_checks.py checkout_branch_names() adds every branch from `git branch --points-at HEAD` even when HEAD is attached to a non-worker branch, so forbidden_tracker_paths() sees task/* names. Fix: include points-at-HEAD branches only when HEAD is detached (current_branch() empty); attached HEAD uses the current branch alone. Keep the detached-HEAD bypass protection. Done when: unit tests cover (a) attached main with task/* at the same commit -> allowed, (b) detached HEAD with task/* at HEAD -> blocked, (c) attached task/* -> blocked."
     }
   ]
 }
