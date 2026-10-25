@@ -14,24 +14,24 @@
   "sitting_steps": [
     "One apply owner for this sitting (parent recovery → interrupt the model subagent first)",
     "Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell",
-    "Reset the 3×3 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py baseline {id}` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
+    "Reset the 3×3 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py baseline {id}` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
     "Claim site lock; build with that tool/model only",
     "Use tool={tool} model={model} only",
     "Read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md (and repair_brief if kind=repair)",
     "Build from evidence table — not a previous Minecraft build",
     "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
-    "Apply, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py capture {id}`; release lock",
+    "Apply, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py capture {id}`; release lock",
     "Interview + score; then usage paste (need-you if counts unknown)"
   ],
   "sitting_steps_hybrid": [
     "One apply owner for this sitting: the builder ({model}); parent recovery must interrupt the builder subagent first",
     "Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell",
-    "Reset the 3×3 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py baseline {id}` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
+    "Reset the 3×3 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py baseline {id}` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
     "Designer ({designer}) only: read packs/{pack}/BRIEF.md + packs/{pack}/FAIRNESS.md; write the evidence table + build spec/script (do not apply)",
     "Record the hand-off path: `open`/`score --handoff <path>` (spec or script the builder will run)",
     "Builder ({model}) only: claim site lock; apply from the hand-off artefact — do not redesign massing",
     "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
-    "Builder applies, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 scripts/model_bakeoff.py capture {id}`; release lock",
+    "Builder applies, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py capture {id}`; release lock",
     "Interview + score; then usage from transcript (auto-splits designer vs builder) + plan % (need-you if counts unknown)"
   ],
   "capture": {

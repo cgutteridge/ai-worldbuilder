@@ -12,7 +12,7 @@
     "portals / buildings registers (entrance 40-A / 40-B Stags)"
   ],
   "forbidden": [
-    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Reading bakeoff/checks/feature-selection/keys/",
     "Applying blocks or writing a build script",
     "Dilating / padding the OSM footprint"
   ]

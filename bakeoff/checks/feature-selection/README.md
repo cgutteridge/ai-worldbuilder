@@ -9,10 +9,10 @@ Not an A/B bake-off. One model (default: **Composer**) answers paper-only prompt
 | `runs/` | Optional answer dumps from a sitting |
 
 ```bash
-python3 scripts/feature_selection_check.py list
-python3 scripts/feature_selection_check.py brief FS-001
+python3 bakeoff/feature_selection_check.py list
+python3 bakeoff/feature_selection_check.py brief FS-001
 # …new Cursor chat, model = Composer only, paste the brief, get JSON answer…
-python3 scripts/feature_selection_check.py grade FS-001 --answer path/to/answer.json
+python3 bakeoff/feature_selection_check.py grade FS-001 --answer path/to/answer.json
 ```
 
 Protocol: [PROTOCOL.md](PROTOCOL.md).

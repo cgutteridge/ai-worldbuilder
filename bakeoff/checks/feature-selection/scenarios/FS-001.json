@@ -16,7 +16,7 @@
     "lidar look-only if useful for height notes (not required)"
   ],
   "forbidden": [
-    "Reading model-bakeoffs/checks/feature-selection/keys/",
+    "Reading bakeoff/checks/feature-selection/keys/",
     "Applying blocks or writing a build script",
     "Treating a previous Minecraft build as evidence",
     "Dilating / padding the OSM footprint for 'readable' massing"

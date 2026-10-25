@@ -1,8 +1,8 @@
 {
-  "id": "R-008",
+  "id": "R-009",
   "status": "scored",
-  "created": "2026-10-24T11:50:20Z",
-  "scored_at": "2026-10-24T13:25:19Z",
+  "created": "2026-10-24T13:26:52Z",
+  "scored_at": "2026-10-24T14:13:46Z",
   "task": "feature_design",
   "pack": "v1",
   "pack_brief": "packs/v1/BRIEF.md",
@@ -12,8 +12,8 @@
     "name": "Claude Code"
   },
   "model": {
-    "id": "claude-sonnet-5-5-medium",
-    "label": "Claude Sonnet 5.5 (medium effort)",
+    "id": "claude-sonnet-5-5-high",
+    "label": "Claude Sonnet 5.5 (high effort)",
     "tier": "mid",
     "bulk_ok": true
   },
@@ -72,7 +72,7 @@
         "note": null
       },
       "openings": {
-        "grade": "pass",
+        "grade": "fail",
         "note": null
       },
       "roof_greeblies": {
@@ -88,7 +88,7 @@
         "note": null
       }
     },
-    "why": "Greeblies weak pass: stray red carpet bits near parasols, yellow plant units not placed, flat aerial look. Parasols/tables on the Piazza terrace stand outside the OSM footprint (liked, but beyond evidence); site_kit footprint guard let the 4-high canopies through via BACK_RISE=4 (tool gap, not counted against model). Follow-up: tidy carpet bits.",
+    "why": "Openings fail (non-critical): some are poor - concourse diagonal staircase wall yields black/brick corner cells instead of glazing, too many solid blocks, not very evocative. Greeblies weak pass: SW stair/plant tower is a 7-high flat grey slab from lidar only (no photo evidence), reads as a stray wall (snapshot weird_wall_user_view.png). Massing good. Keep pass overall. Note: model saw other rounds' scratch files in scratchpad/instance but says it did not use them.",
     "repair_brief_for_next": null,
     "questions": [
       "massing: shape/roof vs real refs",
@@ -105,22 +105,22 @@
     "keep"
   ],
   "photos": {
-    "square_south": "model-bakeoffs/rounds/R-008-photos/square_south.png",
-    "street_front": "model-bakeoffs/rounds/R-008-photos/street_front.png",
-    "aerial_top": "model-bakeoffs/rounds/R-008-photos/aerial_top.png",
+    "square_south": "bakeoff/rounds/R-009-photos/square_south.png",
+    "street_front": "bakeoff/rounds/R-009-photos/street_front.png",
+    "aerial_top": "bakeoff/rounds/R-009-photos/aerial_top.png",
     "real_refs_note": null
   },
   "usage": {
     "input_tokens": null,
     "output_tokens": null,
-    "total_tokens": 197359,
+    "total_tokens": 241331,
     "cache_read_tokens": null,
     "cache_write_tokens": null,
-    "requests": 66,
+    "requests": 91,
     "cost_usd": null,
     "source": "agent-report",
-    "recorded_at": "2026-10-24T13:13:01Z",
-    "notes": "Subagent total tokens (no in/out split), 66 tool uses; wall-clock 921s (15m21s) excl. MCP outage and baseline prep; script applied 3x (1 own-bug readback fix, 1 accidental no-op)"
+    "recorded_at": "2026-10-24T13:43:22Z",
+    "notes": "Subagent total tokens (no in/out split), 91 tool uses; wall-clock 875s (14m35s); no retries, first apply clean; weekly plan usage 43%->44% (rough, other work may contribute)"
   },
   "sitting": {
     "checklist": [
@@ -129,7 +129,7 @@
       "Regenerate the ground-only ghost baseline with `lidar_ghost apply` (coloured tops; no feature columns; no region restore, ADR 004)",
       "Confirm the 3\u00d73 ghost baseline around (48,-44) is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
       "Claim site lock; build with that tool/model only",
-      "Use tool=claude-code model=claude-sonnet-5-5-medium only",
+      "Use tool=claude-code model=claude-sonnet-5-5-high only",
       "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
       "Build from evidence table \u2014 not a previous Minecraft build",
       "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
@@ -137,5 +137,5 @@
       "Interview + score; then usage paste (need-you if counts unknown)"
     ]
   },
-  "notes": "Sonnet 5.5 medium effort. Apply seq 188, readback 0 mismatches. footprint osm=4360 readable=4354 pad=9 cover=99.7%. Script worlds/bakeoff/site/builds/r008_sonnet_medium_susu.py. Wall-clock 921s (15m21s), 66 tool uses, 197,359 tokens (subagent total)."
+  "notes": "Sonnet 5.5 high effort. Apply seq 192, readback 0 mismatches, no retries. footprint osm=4442 readable=4432 pad=10 cover=99.5%. Script worlds/bakeoff/site/builds/R-009_claude-sonnet-5-5-high_susu.py. Wall-clock 875s (14m35s), 91 tool uses, 241,331 tokens (subagent total)."
 }

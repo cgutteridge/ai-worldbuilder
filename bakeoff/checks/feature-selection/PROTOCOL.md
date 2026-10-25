@@ -6,7 +6,7 @@ See whether a bulk model can **select the right building** and **state its exclu
 
 ## Out of scope
 
-- A/B model ladders (use `model-bakeoffs/rounds/` for that)
+- A/B model ladders (use `bakeoff/rounds/` for that)
 - Apply / ghost restore
 - Minecraft-readable dilation (±1–2 fringe). Scoring treats outer pad as fail.
 

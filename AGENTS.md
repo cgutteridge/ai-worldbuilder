@@ -35,7 +35,7 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | Shared scripts | `scripts/` (cross-provider glue) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
-| Model bake-offs (design/review tiers) | `model-bakeoffs/` + `scripts/model_bakeoff.py` + skill `model-bakeoff` ([docs/model-bakeoffs.md](docs/model-bakeoffs.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |
+| Model bake-offs (design/review tiers) | `bakeoff/` + `bakeoff/model_bakeoff.py` + skill `model-bakeoff` ([bakeoff/OVERVIEW.md](bakeoff/OVERVIEW.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](docs/specs/lidar-ghost-v2-and-dryrun-reset.md), [docs/plans/southampton-dryrun-001.md](docs/plans/southampton-dryrun-001.md) |
 | Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / reconcile; mess in a cell → `reconcile [--fix]`; interrupted apply → `site_recover.py`; ADR 004) |
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; erases the registry so the journal starts fresh; also clears leftover retired progress files) |

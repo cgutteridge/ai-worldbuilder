@@ -1,5 +1,5 @@
 {
-  "_comment": "Models you can actually pick when a tool has quota. tier=low|mid|high; bulk_ok=false means skip for bake-offs (too dear for bulk). Add with: python3 scripts/model_bakeoff.py add-model ...",
+  "_comment": "Models you can actually pick when a tool has quota. tier=low|mid|high; bulk_ok=false means skip for bake-offs (too dear for bulk). Add with: python3 bakeoff/model_bakeoff.py add-model ...",
   "tools": [
     {
       "id": "cursor",
