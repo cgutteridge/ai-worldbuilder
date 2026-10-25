@@ -12,7 +12,7 @@
   recorded plans through a caller-supplied ``apply`` callable.
 
 Ownership (later build wins, air cancels, ghost owners yield and never clash) is a private projection
-rebuilt from the journal and the plan blobs in ``registry/blobs/<hash>.json``. Nothing here restores
+rebuilt from the journal and the plan blobs in ``registry/blobs/<hash>.json[.zst|.gz]``. Nothing here restores
 or snapshots regions (ADR 004 decision a).
 
 Journal lines (JSON, one per line; ``seq`` strictly increasing)::
@@ -25,6 +25,7 @@ Journal lines (JSON, one per line; ``seq`` strictly increasing)::
 from __future__ import annotations
 
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -33,6 +34,11 @@ from collections import Counter, OrderedDict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping
+
+try:  # Python 3.14+: about 6x smaller than gzip on plan blobs, same load speed
+    from compression import zstd as _zstd
+except ImportError:
+    _zstd = None
 
 import cellmath
 from block_store import BlockStore, Pos, block_id, same_state
@@ -404,9 +410,28 @@ def ghost_name(cell: Cell, layer: str) -> str:
     return f'ghost_{cell[0]}_{_token(cell[1])}_{layer}'
 
 
+def _encode_runs(cells: Mapping[Pos, str]) -> list[list]:
+    """Column run-length form of a plan: sorted ``[x, z, y0, y1, state]`` runs of identical vertical blocks."""
+    runs: list[list] = []
+    for x, z, y, state in sorted((p[0], p[2], p[1], st) for p, st in cells.items()):
+        last = runs[-1] if runs else None
+        if last and last[0] == x and last[1] == z and last[3] == y - 1 and last[4] == state:
+            last[3] = y
+        else:
+            runs.append([x, z, y, y, state])
+    return runs
+
+
+def _decode_runs(runs: Iterable[list]) -> dict[Pos, str]:
+    out: dict[Pos, str] = {}
+    for x, z, y0, y1, state in runs:
+        for y in range(y0, y1 + 1):
+            out[(x, y, z)] = state
+    return out
+
+
 def _blob_key(cells: Mapping[Pos, str]) -> tuple[str, bytes]:
-    body = json.dumps({f'{x},{y},{z}': s for (x, y, z), s in cells.items()},
-                      sort_keys=True, separators=(',', ':')).encode('utf-8')
+    body = json.dumps({'rle': _encode_runs(cells)}, separators=(',', ':')).encode('utf-8')
     return hashlib.sha256(body).hexdigest()[:32], body
 
 
@@ -711,16 +736,23 @@ class CellRegistry:
             os.close(fd)
 
     # ---- plan blobs ------------------------------------------------------------------------
+    def _blob_paths(self, key: str) -> list[Path]:
+        """Every on-disk spelling of a blob, preferred first (``.json`` is the legacy uncompressed form)."""
+        return [self.blob_dir / f'{key}.json{ext}' for ext in ('.zst', '.gz', '')]
+
     def _store_blob(self, cells: Mapping[Pos, str]) -> str:
         key, body = _blob_key(cells)
-        path = self.blob_dir / f'{key}.json'
         try:
-            if path.exists():
+            if any(p.exists() for p in self._blob_paths(key)):
                 return key
             self.blob_dir.mkdir(parents=True, exist_ok=True)
+            if _zstd is not None:
+                path, data = self.blob_dir / f'{key}.json.zst', _zstd.compress(body, level=3)
+            else:
+                path, data = self.blob_dir / f'{key}.json.gz', gzip.compress(body, 6, mtime=0)
             tmp = path.with_name(f'.{key}.{os.getpid()}.tmp')
             with open(tmp, 'wb') as fh:
-                fh.write(body)
+                fh.write(data)
                 fh.flush()
                 os.fsync(fh.fileno())
             tmp.replace(path)
@@ -728,16 +760,32 @@ class CellRegistry:
             raise JournalError(f'cannot store plan blob {key}: {exc}') from exc
         return key
 
+    def _read_blob_bytes(self, key: str) -> bytes:
+        for path in self._blob_paths(key):
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                continue
+            if path.suffix == '.zst':
+                if _zstd is None:
+                    raise OSError(f'{path.name} needs Python 3.14+ (compression.zstd)')
+                return _zstd.decompress(data)
+            return gzip.decompress(data) if path.suffix == '.gz' else data
+        raise FileNotFoundError(f'no blob file for {key}')
+
     def _blob(self, key: str) -> dict[Pos, str]:
         got = self._blob_cache.get(key)
         if got is not None:
             self._blob_cache.move_to_end(key)
             return got
         try:
-            raw = json.loads((self.blob_dir / f'{key}.json').read_bytes())
+            raw = json.loads(self._read_blob_bytes(key))
         except (OSError, ValueError) as exc:
             raise JournalError(f'plan blob {key} unreadable: {exc}') from exc
-        got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
+        if 'rle' in raw and len(raw) == 1:
+            got = _decode_runs(raw['rle'])
+        else:  # legacy: {"x,y,z": state}
+            got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
         self._blob_cache[key] = got
         while len(self._blob_cache) > 16:
             self._blob_cache.popitem(last=False)

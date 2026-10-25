@@ -341,7 +341,7 @@ class TestRecover(Aborted):
         with self.assertRaises(RuntimeError):
             sr.recover(CELL, apply=True, flush=lambda: (_ for _ in ()).throw(RuntimeError('bug')),
                        loader=lambda n, o: self.fail('must not load'))
-        for blob in (self.t / 'registry' / 'blobs').glob('*.json'):
+        for blob in (self.t / 'registry' / 'blobs').glob('*.json*'):
             blob.unlink()
         res = self.recover(loader=lambda n, o: self.fail('must not load'))
         self.assertEqual(res['action'], 'unsure')

@@ -688,5 +688,41 @@ class TestAttachments(Base):
         self.assertEqual(self.applied[before].signs, (self.SIGN,))
         self.assertEqual(self.applied[before].entities, ())
 
+class TestBlobStorage(Base):
+    """Plan blobs are stored compressed; legacy uncompressed ``.json`` blobs still load."""
+
+    def blob_files(self):
+        return sorted((self.root / 'registry' / 'blobs').iterdir())
+
+    def test_blob_is_compressed_and_round_trips(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
+        (blob,) = self.blob_files()
+        self.assertIn(blob.suffix, ('.zst', '.gz'))
+        fresh = self.registry()
+        self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
+
+    def test_legacy_plain_json_blob_still_loads_and_is_not_duplicated(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
+        (blob,) = self.blob_files()
+        key = blob.name.split('.')[0]
+        reg = self.registry()
+        plain = (self.root / 'registry' / 'blobs' / f'{key}.json')
+        v1 = {f'{x},{y},{z}': st for (x, y, z), st in plan(0, 0, STONE, y=60).items()}
+        plain.write_bytes(json.dumps(v1).encode())
+        blob.unlink()
+        fresh = self.registry()
+        self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
+        self.assertEqual([p.name for p in self.blob_files()], [plain.name])
+
+    def test_column_runs_round_trip_with_gaps_mixed_states_and_negatives(self):
+        from cell_journal import _decode_runs, _encode_runs
+        cells = {(-3, 5, -7): STONE, (-3, 6, -7): STONE, (-3, 8, -7): STONE,
+                 (-3, 9, -7): 'minecraft:dirt', (4, 5, -7): STONE, (-3, 5, 2): STONE}
+        runs = _encode_runs(cells)
+        self.assertEqual(len(runs), 5)  # y5-6 merge; gap at y7, state change at y9, two more columns
+        self.assertEqual(_decode_runs(runs), cells)
+        self.assertEqual(_encode_runs({}), [])
+
+
 if __name__ == '__main__':
     unittest.main()
