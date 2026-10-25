@@ -49,10 +49,34 @@ FURNITURE = ('_wall', '_fence', 'fence_gate', 'leaves', '_log', '_wood', 'lanter
              'sign', 'banner', 'iron_bars', 'end_rod', 'torch', 'flower', 'bush', 'azalea',
              'sapling', 'grass', 'fern', 'vine', 'potted', 'flower_pot', 'hopper', 'cauldron',
              'lightning_rod', 'button', 'lever', 'composter', 'barrel', 'scaffolding')
+# Roof plates / canopy solids: never use the back-garden shed height exemption
+# (R-008: red_concrete parasols at BACK_RISE on open terrace passed as sheds).
+ROOF_LIKE = ('_concrete', '_slab')
 AIRS = ('minecraft:air', 'minecraft:cave_air', 'minecraft:light', 'minecraft:void_air', 'minecraft:water')
 MAX_RISE = 2      # front zone (street side of the house line): boundary walls/hedges only
 BACK_RISE = 4     # back gardens: sheds / outbuildings up to ~4 blocks (cite the aerial)
 MARGIN = 2        # footprint dilation (projection + raster error is ~1-2 blocks)
+
+
+def _bid(state: str) -> str:
+    """Namespaced block id without ``[blockstate]`` (same contract as ``site_kit.bid``).
+
+    Kept local so ``guard()`` unit tests need no live ``site_kit`` / world.json.
+
+    @param state: plan cell value (optional ``minecraft:``, optional blockstate)
+    @returns: e.g. ``minecraft:red_concrete`` or ``minecraft:smooth_stone_slab``
+    """
+    head = state.split('[', 1)[0]
+    return head if ':' in head else 'minecraft:' + head
+
+
+def _roof_like(block_id: str) -> bool:
+    """True if ``block_id`` is a roof/canopy solid that must not use BACK_RISE.
+
+    @param block_id: namespaced id without blockstate (``_bid`` output)
+    @returns: whether the block counts as building-like at any rise above MAX_RISE
+    """
+    return any(k in block_id for k in ROOF_LIKE)
 
 
 def _projected(src: Path) -> Path:
@@ -220,10 +244,11 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
 
     @param cells: {(x, y, z): state}
     @param world: object with ``ground(x, z)`` for the ground reference (default: lidar composite world)
-    Front zone (street side of the house line): max MAX_RISE. Back gardens: BACK_RISE.
+    @param idx: optional OSMIndex (tests inject a stub; default loads the clip tree)
+    Front zone (street side of the house line): max MAX_RISE. Back gardens: BACK_RISE
+    for non-roof-like blocks (sheds); concrete / slabs above MAX_RISE are always building-like.
     @returns: {'outside': {pos: [state, rise, zone, street, dist]}, 'blind': [pos...]} (blind = no map clip or no cached lidar)
     """
-    from site_kit import bid
     idx = idx or OSMIndex()
     if world is None:
         import lidar_provider
@@ -232,7 +257,7 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
     ground = {}
     out, blind = {}, []
     for (x, y, z), st in cells.items():
-        b = bid(st)
+        b = _bid(st)
         if b in AIRS or any(k in b for k in FURNITURE):
             continue
         covered = idx.covered(x, z)
@@ -251,7 +276,9 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
             blind.append((x, y, z))
             continue
         front = idx.front_zone(x, z)
-        if not front and rise <= BACK_RISE:
+        # Shed exemption is for timber/brick outbuildings — not concrete or slab roofs
+        # (those need outside_footprint_ok when they sit on open mapped ground).
+        if not front and rise <= BACK_RISE and not _roof_like(b):
             continue          # back-garden shed / outbuilding height
         s = idx.nearest_street(x, z)
         out[(x, y, z)] = [st, rise, 'front' if front else 'back',
