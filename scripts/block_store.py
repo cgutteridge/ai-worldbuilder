@@ -16,6 +16,7 @@ States are canonical block strings: ``minecraft:`` prefix, properties sorted
 from __future__ import annotations
 
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping, Protocol, runtime_checkable
@@ -26,6 +27,14 @@ Pos = tuple[int, int, int]
 SCAN_VOLUME_CAP = 65536
 # When a read_many AABB would need more tiles than this, LiveBlocks scans per chunk instead.
 MAX_ENSURE_TILES = 64
+# A scan is "tiny" when its inclusive AABB volume is at most this. Unbatched ``read()``
+# loops produce volume-1 tiles; intentional cell tiles are up to SCAN_VOLUME_CAP.
+# Matches the sparse-fallback tests' notion of a tiny per-chunk scan (≤16).
+TINY_SCAN_MAX_VOLUME = 16
+# After this many tiny scans on one LiveBlocks instance, emit one stderr warning
+# (never raise — a hard failure mid-apply is worse than slow). At the default
+# 1.1 s MCP pace, 50 tiny scans already burn ~55 s of wall time.
+TINY_SCAN_WARN_AFTER = 50
 
 
 class BlockStoreError(RuntimeError):
@@ -353,6 +362,10 @@ class LiveBlocks:
     @param dimension: MCP dimension id
     @param settle_seconds: pause after the save so the server has flushed
     @param sleep: sleep function (tests)
+    @param tiny_scan_max_volume: inclusive AABB volume at or below which a scan counts as tiny
+        (default :data:`TINY_SCAN_MAX_VOLUME`)
+    @param tiny_scan_warn_after: emit one stderr warning after this many tiny scans in the
+        store's lifetime (default :data:`TINY_SCAN_WARN_AFTER`); never raises
     @raises BlockStoreError: when the region is not allowed or the identity check fails
     """
 
@@ -361,7 +374,9 @@ class LiveBlocks:
                  flusher: Callable[[], None] | None = None,
                  mcp=None,
                  dimension: str = 'minecraft:overworld',
-                 settle_seconds: float = 3.0, sleep: Callable[[float], None] = time.sleep) -> None:
+                 settle_seconds: float = 3.0, sleep: Callable[[float], None] = time.sleep,
+                 tiny_scan_max_volume: int = TINY_SCAN_MAX_VOLUME,
+                 tiny_scan_warn_after: int = TINY_SCAN_WARN_AFTER) -> None:
         self.region = Path(region)
         targets = list(allowed) if allowed is not None else self._configured_regions()
         if self.region.resolve() not in {Path(t).resolve() for t in targets}:
@@ -376,6 +391,10 @@ class LiveBlocks:
         self._sleep = sleep
         self._cache: dict[Pos, str | None] = {}
         self._dirty = False
+        self._tiny_scan_max_volume = tiny_scan_max_volume
+        self._tiny_scan_warn_after = tiny_scan_warn_after
+        self.tiny_scan_count = 0
+        self._tiny_scan_warned = False
 
     def _client(self):
         if self._mcp is None:
@@ -408,6 +427,25 @@ class LiveBlocks:
         if self._dirty:
             raise StaleRead('blocks were written since the last flush(); call flush() before reading')
 
+    def _note_tiny_scan(self, volume: int) -> None:
+        """Count a tiny scan; warn once on stderr after the threshold (never raise).
+
+        @param volume: inclusive AABB volume of the scan about to run
+        """
+        if volume > self._tiny_scan_max_volume:
+            return
+        self.tiny_scan_count += 1
+        if self._tiny_scan_warned or self.tiny_scan_count < self._tiny_scan_warn_after:
+            return
+        self._tiny_scan_warned = True
+        print(
+            f'LiveBlocks: {self.tiny_scan_count} tiny block_scan_region scans '
+            f'(AABB volume ≤ {self._tiny_scan_max_volume}) on this store — '
+            f'batch with prefetch/read_many so MCP is not paced one block at a time. '
+            f'Not raising; further tiny scans will not warn again.',
+            file=sys.stderr,
+        )
+
     def _scan_box(self, lo: Pos, hi: Pos) -> None:
         """Fetch one tile into the cache. Positions omitted from the response are ``None``."""
         x0, y0, z0 = lo
@@ -415,6 +453,7 @@ class LiveBlocks:
         vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
         if vol > SCAN_VOLUME_CAP:
             raise BlockStoreError(f'scan tile volume {vol} exceeds MCP cap {SCAN_VOLUME_CAP}')
+        self._note_tiny_scan(vol)
         from mc_paced import box
         text = self._client().text('block_scan_region', {
             'dimension': self.dimension,
