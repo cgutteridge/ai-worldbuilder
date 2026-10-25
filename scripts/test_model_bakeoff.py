@@ -283,6 +283,80 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertEqual(updated['usage']['source'], 'cursor-ui')
             self.assertIsNotNone(updated['usage']['recorded_at'])
 
+    def test_sum_transcript_dedupes_message_ids(self):
+        fixture = (
+            Path(__file__).resolve().parent
+            / 'testdata'
+            / 'bakeoff_transcript_dup_ids.jsonl'
+        )
+        summed = MB.sum_transcript_usage(fixture, model_prefix='claude-opus-5-5')
+        # msg_dup appears twice; msg_b once; sonnet filtered out
+        self.assertEqual(summed['requests'], 2)
+        self.assertEqual(summed['input_tokens'], 13)
+        self.assertEqual(summed['output_tokens'], 27)
+        self.assertEqual(summed['cache_read_tokens'], 150)
+        self.assertEqual(summed['cache_write_tokens'], 7)
+        self.assertEqual(summed['total_tokens'], 13 + 27 + 150 + 7)
+        self.assertEqual(summed['first_timestamp'], '2026-10-24T17:00:10.000Z')
+        self.assertEqual(summed['last_timestamp'], '2026-10-24T17:01:00.000Z')
+
+    def test_sum_transcript_includes_subagents(self):
+        fixture = (
+            Path(__file__).resolve().parent
+            / 'testdata'
+            / 'bakeoff_transcript_session.jsonl'
+        )
+        summed = MB.sum_transcript_usage(fixture, model_prefix='claude-opus-5-5')
+        self.assertEqual(summed['requests'], 2)
+        self.assertEqual(summed['input_tokens'], 5)
+        self.assertEqual(summed['output_tokens'], 8)
+        self.assertEqual(summed['cache_read_tokens'], 30)
+        self.assertEqual(summed['cache_write_tokens'], 4)
+        self.assertEqual(summed['total_tokens'], 47)
+
+    def test_record_usage_from_transcript_and_plan_pct_status(self):
+        fixture = (
+            Path(__file__).resolve().parent
+            / 'testdata'
+            / 'bakeoff_transcript_dup_ids.jsonl'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='composer',
+                task='feature_design',
+                plan_pct=45,
+            )
+            self.assertEqual(round_['usage']['plan_pct_start'], 45)
+            MB.score_round(
+                root,
+                round_['id'],
+                overall='great',
+                axes={'massing': 'great', 'keep': 'great'},
+                plan_pct=47,
+                wallclock_min=35,
+                interruptions='host reboot ~6 min',
+            )
+            updated = MB.record_usage(
+                root,
+                round_['id'],
+                from_transcript=fixture,
+                model_prefix='claude-opus-5-5',
+            )
+            u = updated['usage']
+            self.assertEqual(u['source'], 'api')
+            self.assertEqual(u['requests'], 2)
+            self.assertEqual(u['total_tokens'], 197)
+            self.assertEqual(u['plan_pct_start'], 45)
+            self.assertEqual(u['plan_pct_end'], 47)
+            self.assertEqual(u['wallclock_min'], 35)
+            self.assertEqual(u['interruptions'], 'host reboot ~6 min')
+            status = MB.format_status(root)
+            self.assertIn('plan=45%→47% (Δ+2)', status)
+
     def test_next_prefers_low_before_mid(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

@@ -45,7 +45,10 @@ python3 scripts/model_bakeoff.py score R-001 --mech-gate pass --overall pass \
   --axis massing=pass --axis openings=pass --axis roof_greeblies=pass \
   --axis materials=pass --axis keep=pass --why "ridge a bit low"
 
-# token/cost after the sitting (paste from Cursor usage UI when you can)
+# plan % at open / score; transcript sum after the sitting (see PROTOCOL.md Usage)
+python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
+python3 scripts/model_bakeoff.py usage R-001 --from-transcript ~/.claude/projects/.../session.jsonl --model-prefix claude-opus-5-5
+# or paste from Cursor usage UI when that is all you have
 python3 scripts/model_bakeoff.py usage R-001 --input 12000 --output 3000 --source cursor-ui
 
 # optional second attempt same model

@@ -8,6 +8,9 @@
   python3 scripts/model_bakeoff.py open --tool cursor --model composer --task feature_design
   python3 scripts/model_bakeoff.py score R-001 --overall great --axis massing=great --axis keep=great
   python3 scripts/model_bakeoff.py usage R-001 --input 12000 --output 3000 --source cursor-ui
+  python3 scripts/model_bakeoff.py usage R-001 --from-transcript ~/.claude/projects/.../session.jsonl --model-prefix claude-opus-5-5
+  python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
+  python3 scripts/model_bakeoff.py score R-001 --overall great --plan-pct 47 ...
   python3 scripts/model_bakeoff.py repair R-001 --brief "raise ridge one block"
   python3 scripts/model_bakeoff.py baseline R-001
   python3 scripts/model_bakeoff.py baseline R-001 --plan
@@ -498,8 +501,9 @@ def interview_template(cfg: dict) -> dict:
 def usage_template() -> dict:
     """Empty token/cost block for a new round.
 
-    Cursor (and most agent UIs) rarely expose exact tokens to the agent; paste
-    from the tool's usage panel after the sitting when you can.
+    Prefer Claude Code / API transcript sums (``source=api``) plus weekly
+    ``plan_pct_start`` / ``plan_pct_end`` for cross-model cost comparison.
+    Cursor UI paste remains fine when that is all you have.
 
     @returns: usage dict with null counts
     """
@@ -511,9 +515,147 @@ def usage_template() -> dict:
         'cache_write_tokens': None,
         'requests': None,
         'cost_usd': None,
+        'plan_pct_start': None,
+        'plan_pct_end': None,
+        'wallclock_min': None,
+        'interruptions': None,
         'source': None,
         'recorded_at': None,
         'notes': None,
+        'first_timestamp': None,
+        'last_timestamp': None,
+    }
+
+
+def _validate_plan_pct(value: int | None, *, label: str = 'plan_pct') -> int | None:
+    """Require a weekly plan percentage in 0..100, or None.
+
+    @param value: percentage or None
+    @param label: field name for errors
+    @returns: value unchanged when valid
+    """
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 100:
+        raise ValueError(f'{label} must be an int 0..100, got {value!r}')
+    return value
+
+
+def _transcript_paths(path: Path) -> list[Path]:
+    """Resolve a transcript path to one or more Claude Code JSONL files.
+
+    A session file ``<id>.jsonl`` also pulls in ``<id>/subagents/*.jsonl`` when
+    present. A directory yields every ``*.jsonl`` under it (recursive).
+
+    @param path: session jsonl, subagent jsonl, or directory
+    @returns: existing jsonl paths (deduped, sorted)
+    """
+    path = Path(path).expanduser().resolve()
+    found: list[Path] = []
+    if path.is_dir():
+        found.extend(sorted(path.rglob('*.jsonl')))
+    elif path.is_file():
+        found.append(path)
+        if path.suffix == '.jsonl':
+            sub_dir = path.with_suffix('') / 'subagents'
+            if sub_dir.is_dir():
+                found.extend(sorted(sub_dir.glob('*.jsonl')))
+    else:
+        raise FileNotFoundError(f'transcript not found: {path}')
+    # Preserve order but drop duplicates
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for p in found:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    if not out:
+        raise FileNotFoundError(f'no .jsonl under {path}')
+    return out
+
+
+def sum_transcript_usage(
+    path: Path | str,
+    *,
+    model_prefix: str | None = None,
+) -> dict[str, Any]:
+    """Sum per-response API usage from a Claude Code transcript (JSONL).
+
+    De-duplicates by ``message.id`` (Claude Code often repeats the same
+    assistant turn on multiple lines). Optional ``model_prefix`` keeps only
+    models whose id starts with that string (e.g. ``claude-opus-5-5``).
+    ``total_tokens`` = input + output + cache_read + cache_write.
+
+    @param path: session ``.jsonl``, subagent ``.jsonl``, or a directory of them
+    @param model_prefix: optional model id prefix filter
+    @returns: counts plus first/last timestamps (ISO strings from the file)
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for jsonl in _transcript_paths(Path(path)):
+        with jsonl.open(encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get('type') != 'assistant':
+                    continue
+                msg = obj.get('message') or {}
+                if not isinstance(msg, dict):
+                    continue
+                model = msg.get('model') or ''
+                if model_prefix and not str(model).startswith(model_prefix):
+                    continue
+                mid = msg.get('id')
+                usage = msg.get('usage')
+                if not mid or not isinstance(usage, dict):
+                    continue
+                # First sighting wins (same id → same usage; later lines are echoes)
+                if mid in by_id:
+                    continue
+                by_id[mid] = {
+                    'usage': usage,
+                    'timestamp': obj.get('timestamp'),
+                    'model': model,
+                }
+
+    input_tokens = 0
+    output_tokens = 0
+    cache_read_tokens = 0
+    cache_write_tokens = 0
+    timestamps: list[str] = []
+    for row in by_id.values():
+        u = row['usage']
+        input_tokens += int(u.get('input_tokens') or 0)
+        output_tokens += int(u.get('output_tokens') or 0)
+        cache_read_tokens += int(
+            u.get('cache_read_input_tokens')
+            if u.get('cache_read_input_tokens') is not None
+            else u.get('cache_read_tokens') or 0
+        )
+        cache_write_tokens += int(
+            u.get('cache_creation_input_tokens')
+            if u.get('cache_creation_input_tokens') is not None
+            else u.get('cache_write_tokens') or 0
+        )
+        ts = row.get('timestamp')
+        if isinstance(ts, str) and ts:
+            timestamps.append(ts)
+    timestamps.sort()
+    total = input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
+    return {
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'cache_read_tokens': cache_read_tokens,
+        'cache_write_tokens': cache_write_tokens,
+        'total_tokens': total,
+        'requests': len(by_id),
+        'first_timestamp': timestamps[0] if timestamps else None,
+        'last_timestamp': timestamps[-1] if timestamps else None,
+        'model_prefix': model_prefix,
     }
 
 
@@ -528,6 +670,7 @@ def open_round(
     parent_round: str | None = None,
     repair_brief: str | None = None,
     force_mid: bool = False,
+    plan_pct: int | None = None,
 ) -> dict:
     """Create a self-contained round record for one sitting.
 
@@ -540,6 +683,7 @@ def open_round(
     @param parent_round: parent id for repairs
     @param repair_brief: repair text for kind=repair
     @param force_mid: allow mid cold open before low unlocks (escape hatch)
+    @param plan_pct: optional weekly plan % at sitting start (all models)
     @returns: new round dict (also written to disk)
     """
     cfg = load_config(root)
@@ -561,6 +705,10 @@ def open_round(
 
     round_id = next_round_id(root)
     pack = cfg['pack']
+    usage = usage_template()
+    plan_pct = _validate_plan_pct(plan_pct, label='plan_pct_start')
+    if plan_pct is not None:
+        usage['plan_pct_start'] = plan_pct
     round_: dict[str, Any] = {
         'id': round_id,
         'status': 'ready',
@@ -594,7 +742,7 @@ def open_round(
             'aerial_top': None,
             'real_refs_note': None,
         },
-        'usage': usage_template(),
+        'usage': usage,
         'sitting': {
             'checklist': sitting_checklist(
                 cfg,
@@ -643,6 +791,9 @@ def score_round(
     why: str | None = None,
     notes: str | None = None,
     axis_notes: dict[str, str] | None = None,
+    plan_pct: int | None = None,
+    wallclock_min: int | None = None,
+    interruptions: str | None = None,
 ) -> dict:
     """Record interview grades on a round.
 
@@ -654,6 +805,9 @@ def score_round(
     @param why: why-not-great text
     @param notes: free notes
     @param axis_notes: optional per-axis notes
+    @param plan_pct: optional weekly plan % at sitting end (all models)
+    @param wallclock_min: optional active wall-clock minutes
+    @param interruptions: optional interruption notes for the usage block
     @returns: updated round
     """
     cfg = load_config(root)
@@ -692,6 +846,24 @@ def score_round(
     round_['interview']['why'] = why
     if notes is not None:
         round_['notes'] = notes
+
+    plan_pct = _validate_plan_pct(plan_pct, label='plan_pct_end')
+    if wallclock_min is not None and (
+        not isinstance(wallclock_min, int)
+        or isinstance(wallclock_min, bool)
+        or wallclock_min < 0
+    ):
+        raise ValueError(f'wallclock_min must be a non-negative int, got {wallclock_min!r}')
+    if plan_pct is not None or wallclock_min is not None or interruptions is not None:
+        usage = dict(round_.get('usage') or usage_template())
+        if plan_pct is not None:
+            usage['plan_pct_end'] = plan_pct
+        if wallclock_min is not None:
+            usage['wallclock_min'] = wallclock_min
+        if interruptions is not None:
+            usage['interruptions'] = interruptions
+        round_['usage'] = usage
+
     round_['status'] = 'scored'
     round_['scored_at'] = utc_now()
     save_round(root, round_)
@@ -711,11 +883,19 @@ def record_usage(
     cost_usd: float | None = None,
     source: str = 'unknown',
     notes: str | None = None,
+    plan_pct_start: int | None = None,
+    plan_pct_end: int | None = None,
+    wallclock_min: int | None = None,
+    interruptions: str | None = None,
+    first_timestamp: str | None = None,
+    last_timestamp: str | None = None,
+    from_transcript: Path | str | None = None,
+    model_prefix: str | None = None,
 ) -> dict:
     """Attach token/cost usage to a round (merge; does not clear omitted fields).
 
-    Prefer numbers from the tool's usage UI (`source=cursor-ui`). Agents often
-    cannot read tokens themselves — leave nulls rather than inventing counts.
+    Prefer ``--from-transcript`` (sets ``source=api``) or the tool usage UI
+    (`source=cursor-ui`). Leave nulls rather than inventing counts.
 
     @param root: bake-offs root
     @param round_id: round id
@@ -726,10 +906,41 @@ def record_usage(
     @param cache_write_tokens: optional cache write tokens
     @param requests: optional billable request count
     @param cost_usd: optional USD cost
-    @param source: where the numbers came from (see USAGE_SOURCES)
+    @param source: where the numbers came from (see USAGE_SOURCES); ignored when
+        ``from_transcript`` is set (forced to ``api``)
     @param notes: free text (e.g. parent+subagent split)
+    @param plan_pct_start: weekly plan % at sitting start
+    @param plan_pct_end: weekly plan % at sitting end
+    @param wallclock_min: active wall-clock minutes
+    @param interruptions: interruption notes
+    @param first_timestamp: first API response timestamp (from transcript)
+    @param last_timestamp: last API response timestamp (from transcript)
+    @param from_transcript: Claude Code session/subagent jsonl (or directory)
+    @param model_prefix: filter transcript models (e.g. ``claude-opus-5-5``)
     @returns: updated round
     """
+    if from_transcript is not None:
+        summed = sum_transcript_usage(from_transcript, model_prefix=model_prefix)
+        input_tokens = summed['input_tokens']
+        output_tokens = summed['output_tokens']
+        cache_read_tokens = summed['cache_read_tokens']
+        cache_write_tokens = summed['cache_write_tokens']
+        total_tokens = summed['total_tokens']
+        requests = summed['requests']
+        first_timestamp = summed['first_timestamp']
+        last_timestamp = summed['last_timestamp']
+        source = 'api'
+        if notes is None:
+            prefix_bit = model_prefix or 'all models'
+            span = ''
+            if first_timestamp and last_timestamp:
+                span = f', {first_timestamp}–{last_timestamp}'
+            notes = (
+                f'Summed per-request API usage from transcript '
+                f'({requests} unique {prefix_bit} responses{span}). '
+                f'total = input+output+cache read+cache write.'
+            )
+
     if source not in USAGE_SOURCES:
         raise ValueError(f'source must be one of {USAGE_SOURCES}, got {source!r}')
     for label, value in (
@@ -739,11 +950,16 @@ def record_usage(
         ('cache_read_tokens', cache_read_tokens),
         ('cache_write_tokens', cache_write_tokens),
         ('requests', requests),
+        ('wallclock_min', wallclock_min),
     ):
-        if value is not None and (not isinstance(value, int) or value < 0):
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
             raise ValueError(f'{label} must be a non-negative int, got {value!r}')
     if cost_usd is not None and cost_usd < 0:
         raise ValueError(f'cost_usd must be >= 0, got {cost_usd!r}')
+    plan_pct_start = _validate_plan_pct(plan_pct_start, label='plan_pct_start')
+    plan_pct_end = _validate_plan_pct(plan_pct_end, label='plan_pct_end')
 
     round_ = load_round(root, round_id)
     usage = dict(round_.get('usage') or usage_template())
@@ -756,6 +972,12 @@ def record_usage(
         'requests': requests,
         'cost_usd': cost_usd,
         'notes': notes,
+        'plan_pct_start': plan_pct_start,
+        'plan_pct_end': plan_pct_end,
+        'wallclock_min': wallclock_min,
+        'interruptions': interruptions,
+        'first_timestamp': first_timestamp,
+        'last_timestamp': last_timestamp,
     }
     for key, value in updates.items():
         if value is not None:
@@ -765,12 +987,32 @@ def record_usage(
         and usage.get('input_tokens') is not None
         and usage.get('output_tokens') is not None
     ):
+        # Manual UI paste: input+output only. Transcript path sets total including cache.
         usage['total_tokens'] = int(usage['input_tokens']) + int(usage['output_tokens'])
     usage['source'] = source
     usage['recorded_at'] = utc_now()
     round_['usage'] = usage
     save_round(root, round_)
     return round_
+
+
+def plan_pct_delta_bit(usage: dict) -> str:
+    """Format plan % start→end (and delta) for status lines when both set.
+
+    @param usage: round usage block
+    @returns: short suffix (may be empty)
+    """
+    start = usage.get('plan_pct_start')
+    end = usage.get('plan_pct_end')
+    if start is not None and end is not None:
+        delta = int(end) - int(start)
+        sign = '+' if delta > 0 else ''
+        return f' plan={start}%→{end}% (Δ{sign}{delta})'
+    if start is not None:
+        return f' plan_start={start}%'
+    if end is not None:
+        return f' plan_end={end}%'
+    return ''
 
 
 def open_repair(root: Path, parent_id: str, brief: str) -> dict:
@@ -1392,6 +1634,7 @@ def format_status(root: Path) -> str:
                 else f"{usage['input_tokens']}+?"
             )
         usage_bit = f" tokens={tok}" if tok is not None else ''
+        usage_bit += plan_pct_delta_bit(usage)
         lines.append(
             f"  {r['id']} {r['status']:11} {r['tier']:4} "
             f"{r['tool']['id']}/{r['model']['id']} "
@@ -1513,6 +1756,12 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='allow opening mid even if low has not unlocked it (escape hatch)',
     )
+    p_open.add_argument(
+        '--plan-pct',
+        type=int,
+        default=None,
+        help='weekly plan usage %% at sitting start (all models; 0..100)',
+    )
 
     p_score = sub.add_parser('score', help='record interview grades for a round')
     p_score.add_argument('round_id')
@@ -1521,6 +1770,23 @@ def main(argv: list[str] | None = None) -> int:
     p_score.add_argument('--mech-gate', default='pass', choices=('pass', 'fail'))
     p_score.add_argument('--why', default=None)
     p_score.add_argument('--notes', default=None)
+    p_score.add_argument(
+        '--plan-pct',
+        type=int,
+        default=None,
+        help='weekly plan usage %% at sitting end (all models; 0..100)',
+    )
+    p_score.add_argument(
+        '--wallclock-min',
+        type=int,
+        default=None,
+        help='active wall-clock minutes for the sitting',
+    )
+    p_score.add_argument(
+        '--interruptions',
+        default=None,
+        help='short interruption notes (stored on the usage block)',
+    )
 
     p_repair = sub.add_parser('repair', help='open attempt N+1 with a repair brief')
     p_repair.add_argument('round_id')
@@ -1528,9 +1794,20 @@ def main(argv: list[str] | None = None) -> int:
 
     p_usage = sub.add_parser(
         'usage',
-        help='record token/cost usage for a round (paste from tool usage UI when possible)',
+        help='record token/cost usage (prefer --from-transcript; else paste from UI)',
     )
     p_usage.add_argument('round_id')
+    p_usage.add_argument(
+        '--from-transcript',
+        type=Path,
+        default=None,
+        help='Claude Code session/subagent .jsonl (or dir); sums API usage, source=api',
+    )
+    p_usage.add_argument(
+        '--model-prefix',
+        default=None,
+        help='with --from-transcript: keep models starting with this id (e.g. claude-opus-5-5)',
+    )
     p_usage.add_argument('--input', type=int, default=None, dest='input_tokens')
     p_usage.add_argument('--output', type=int, default=None, dest='output_tokens')
     p_usage.add_argument('--total', type=int, default=None, dest='total_tokens')
@@ -1542,9 +1819,23 @@ def main(argv: list[str] | None = None) -> int:
         '--source',
         default='unknown',
         choices=USAGE_SOURCES,
-        help='where the numbers came from (default unknown)',
+        help='where the numbers came from (default unknown; forced to api with --from-transcript)',
     )
     p_usage.add_argument('--notes', default=None)
+    p_usage.add_argument(
+        '--plan-pct-start',
+        type=int,
+        default=None,
+        help='weekly plan %% at sitting start (0..100)',
+    )
+    p_usage.add_argument(
+        '--plan-pct-end',
+        type=int,
+        default=None,
+        help='weekly plan %% at sitting end (0..100)',
+    )
+    p_usage.add_argument('--wallclock-min', type=int, default=None)
+    p_usage.add_argument('--interruptions', default=None)
 
     p_show = sub.add_parser('show', help='print a round JSON path / sitting card')
     p_show.add_argument('round_id')
@@ -1606,6 +1897,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=args.model,
                 task=args.task,
                 force_mid=bool(args.force_mid),
+                plan_pct=args.plan_pct,
             )
             print(format_sitting(round_))
             print(f"\nwrote {round_path(root, round_['id'])}")
@@ -1619,6 +1911,9 @@ def main(argv: list[str] | None = None) -> int:
                 mech_gate=args.mech_gate,
                 why=args.why,
                 notes=args.notes,
+                plan_pct=args.plan_pct,
+                wallclock_min=args.wallclock_min,
+                interruptions=args.interruptions,
             )
             print(f"scored {round_['id']} overall={round_['overall']}")
             return 0
@@ -1641,12 +1936,23 @@ def main(argv: list[str] | None = None) -> int:
                 cost_usd=args.cost_usd,
                 source=args.source,
                 notes=args.notes,
+                plan_pct_start=args.plan_pct_start,
+                plan_pct_end=args.plan_pct_end,
+                wallclock_min=args.wallclock_min,
+                interruptions=args.interruptions,
+                from_transcript=args.from_transcript,
+                model_prefix=args.model_prefix,
             )
             u = round_['usage']
+            plan_bit = plan_pct_delta_bit(u)
             print(
                 f"usage {round_['id']}: in={u.get('input_tokens')} "
                 f"out={u.get('output_tokens')} total={u.get('total_tokens')} "
+                f"cache_read={u.get('cache_read_tokens')} "
+                f"cache_write={u.get('cache_write_tokens')} "
+                f"requests={u.get('requests')} "
                 f"cost_usd={u.get('cost_usd')} source={u.get('source')}"
+                f"{plan_bit}"
             )
             return 0
         if args.cmd == 'show':
