@@ -37,6 +37,8 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
 
 - Merge is always via `ship_branch.py merge` (or an explicit owner opt-out), not
   an ad-hoc `git merge` that skips tip/main tests.
+- A successful merge pushes `main` to its upstream (or `origin`) unless
+  `--no-push` is set; a failed push leaves the local merge in place.
 - Unmerged code branches accumulate until the owner reviews or deletes them;
   sweep only reports them.
 - Bootstrap tickets that introduced the gate (#61–#65) used orchestrator manual

@@ -151,7 +151,9 @@ class ShipBranchMergeTest(unittest.TestCase):
             calls.append(sb.current_branch(repo))
             return 0
 
-        code = sb.merge_branch(self.root, self.branch, run_tests=runner)
+        code = sb.merge_branch(
+            self.root, self.branch, run_tests=runner, push=False
+        )
         self.assertEqual(code, 0)
         self.assertEqual(calls, [self.branch, 'main'])
         self.assertEqual(sb.current_branch(self.root), 'main')
@@ -170,7 +172,9 @@ class ShipBranchMergeTest(unittest.TestCase):
             calls.append(sb.current_branch(repo))
             return 1
 
-        code = sb.merge_branch(self.root, self.branch, run_tests=runner)
+        code = sb.merge_branch(
+            self.root, self.branch, run_tests=runner, push=False
+        )
         self.assertEqual(code, 1)
         self.assertEqual(calls, [self.branch])
         self.assertEqual(_git(self.root, 'rev-parse', 'HEAD'), main_before)
@@ -189,7 +193,9 @@ class ShipBranchMergeTest(unittest.TestCase):
             # Tip green; post-merge main red.
             return 0 if branch == self.branch else 1
 
-        code = sb.merge_branch(self.root, self.branch, run_tests=runner)
+        code = sb.merge_branch(
+            self.root, self.branch, run_tests=runner, push=False
+        )
         self.assertEqual(code, 1)
         self.assertEqual(calls, [self.branch, 'main'])
         self.assertEqual(sb.current_branch(self.root), 'main')
@@ -201,13 +207,21 @@ class ShipBranchMergeTest(unittest.TestCase):
         self.assertIsNotNone(sb.worktree_path_for_branch(self.root, self.branch))
 
     def test_missing_branch_reports_and_exits(self) -> None:
-        code = sb.merge_branch(self.root, 'task/does-not-exist', run_tests=lambda _r: 0)
+        code = sb.merge_branch(
+            self.root, 'task/does-not-exist', run_tests=lambda _r: 0, push=False
+        )
         self.assertEqual(code, 1)
         self.assertEqual(sb.current_branch(self.root), 'main')
 
     def test_cli_merge_missing_branch(self) -> None:
         code = sb.main(
-            ['merge', 'task/does-not-exist', '--repo-root', str(self.root)],
+            [
+                'merge',
+                'task/does-not-exist',
+                '--repo-root',
+                str(self.root),
+                '--no-push',
+            ],
         )
         self.assertEqual(code, 1)
         self.assertEqual(sb.current_branch(self.root), 'main')
@@ -218,11 +232,43 @@ class ShipBranchMergeTest(unittest.TestCase):
         main_before = _git(self.root, 'rev-parse', 'HEAD')
         with run_tests.full_suite_lock(self.root):
             code = sb.merge_branch(
-                self.root, self.branch, run_tests=lambda _r: 0
+                self.root, self.branch, run_tests=lambda _r: 0, push=False
             )
         self.assertEqual(code, 2)
         self.assertEqual(_git(self.root, 'rev-parse', 'HEAD'), main_before)
         self.assertIn(self.branch, self._branches())
+
+    def test_green_merge_without_remote_fails_push(self) -> None:
+        """Default push=True with no origin leaves the merge but exits 1."""
+        code = sb.merge_branch(
+            self.root, self.branch, run_tests=lambda _r: 0
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(sb.current_branch(self.root), 'main')
+        self.assertIn(self.branch, self._head_subject())
+        self.assertNotIn(self.branch, self._branches())
+        self.assertIsNone(sb.resolve_push_target(self.root, 'main'))
+
+    def test_green_merge_pushes_to_origin(self) -> None:
+        bare = Path(self._tmp.name) / 'remote.git'
+        _git(self.root, 'clone', '--bare', str(self.root), str(bare))
+        _git(self.root, 'remote', 'add', 'origin', str(bare))
+        _git(self.root, 'push', '-u', 'origin', 'main')
+        remote_before = _git(bare, 'rev-parse', 'main')
+
+        code = sb.merge_branch(
+            self.root, self.branch, run_tests=lambda _r: 0
+        )
+        self.assertEqual(code, 0)
+        self.assertNotEqual(_git(bare, 'rev-parse', 'main'), remote_before)
+        self.assertEqual(
+            _git(self.root, 'rev-parse', 'main'),
+            _git(bare, 'rev-parse', 'main'),
+        )
+        self.assertEqual(
+            sb.resolve_push_target(self.root, 'main'),
+            ('origin', 'main'),
+        )
 
 
 class TipTestPlanMappingTest(unittest.TestCase):
@@ -325,7 +371,12 @@ class ShipBranchSweepTest(unittest.TestCase):
 
         buf = io.StringIO()
         with redirect_stdout(buf):
-            code = sb.sweep(self.root, prompt=lambda _q: False, run_tests=lambda _r: 0)
+            code = sb.sweep(
+                self.root,
+                prompt=lambda _q: False,
+                run_tests=lambda _r: 0,
+                push=False,
+            )
         self.assertEqual(code, 0)
         out = buf.getvalue()
         self.assertIn(str(wt.resolve()), out)
@@ -346,6 +397,7 @@ class ShipBranchSweepTest(unittest.TestCase):
                 self.root,
                 merge_docs_only=True,
                 run_tests=lambda _r: 0,
+                push=False,
             )
         self.assertEqual(code, 0)
         out = buf.getvalue()
@@ -383,6 +435,7 @@ class ShipBranchSweepTest(unittest.TestCase):
                     '--repo-root',
                     str(self.root),
                     '--merge-docs-only',
+                    '--no-push',
                 ],
             )
         finally:
@@ -402,6 +455,7 @@ class ShipBranchSweepTest(unittest.TestCase):
             self.root,
             merge_docs_only=True,
             run_tests=lambda _r: 0,
+            push=False,
         )
         self.assertEqual(code, 0)
         self.assertEqual(_git(self.root, 'rev-parse', 'main'), main_before)
