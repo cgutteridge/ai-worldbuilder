@@ -106,7 +106,8 @@ def views(n=8, seed=None, downscale=4):
             why='Patrol finished; game mode restored (you stay at the last spot).',
             gamemode=mode,
             m=m,
-        )    try:
+        )
+    try:
         from contact_sheet import make_sheet
         make_sheet([out / s['file'] for s in shots], out / 'contact.png')
     except Exception:

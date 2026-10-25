@@ -64,19 +64,27 @@ def move_player(*, why: str, position=None, facing=None, gamemode=None, m=None):
 def restore_player(*, position, facing=None, gamemode=None, m=None):
     """Put the player back after a temporary hop; chats a fixed restore line.
 
+    Teleports first, then restores gamemode (same order as the old apply hop).
+
     @param position: ``[x,y,z]`` to restore
     @param facing: optional look-at ``[x,y,z]``
     @param gamemode: optional mode to restore
     @param m: optional ``Paced`` client
     @returns: the paced client used
     """
-    return move_player(
-        why=RESTORE_WHY,
-        position=position,
-        facing=facing,
-        gamemode=gamemode,
-        m=m,
-    )
+    client = m or Paced()
+    client.tell(RESTORE_WHY)
+    args = {
+        'uuid': UUID,
+        'dimension': D,
+        'position': xyz(position),
+    }
+    if facing is not None:
+        args['facing'] = xyz(facing)
+    client.call('entity_teleport', args)
+    if gamemode is not None:
+        client.call('player_set_gamemode', {'uuid': UUID, 'gamemode': gamemode})
+    return client
 
 
 def tell_player(why: str, m=None):

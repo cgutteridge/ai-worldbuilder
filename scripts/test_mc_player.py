@@ -53,6 +53,19 @@ class TestMovePlayer(unittest.TestCase):
         m = _Fake()
         mc_player.restore_player(position=[1, 2, 3], gamemode='creative', m=m)
         self.assertEqual(m.sent[0][1]['message'], f'[AI-builder] {mc_player.RESTORE_WHY}')
+        self.assertEqual([n for n, _ in m.sent], [
+            'player_send_message', 'entity_teleport', 'player_set_gamemode',
+        ])
+
+    def test_edited_callers_compile(self):
+        import py_compile
+        from pathlib import Path
+        root = Path(__file__).resolve().parent
+        for name in (
+            'site_patrol.py', 'site_views.py', 'evidence_sheet.py',
+            'site_kit.py', 'site_handoff.py', 'mc_player.py',
+        ):
+            py_compile.compile(root / name, doraise=True)
 
     def test_cli_move_requires_why(self):
         with self.assertRaises(SystemExit) as cm:
