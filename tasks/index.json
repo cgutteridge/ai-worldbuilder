@@ -4,34 +4,21 @@
   "nextTaskId": 97,
   "tasks": [
     {
-      "id": 92,
-      "title": "Batch feature_build live-world reads (prefetch before hot loops)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Found in bake-off R-014: feature_build dry-run took 40+ min because surf/top_solid/floor_y (feature_build.py ~601/624/854/868), the leaves filter (~1393) and clearing columns (~752/756) read one block per block_scan_region call, and mc_paced.Paced(1.1s) throttles each (server answers <10ms). Fix: call self.live.prefetch(positions) (World.prefetch, site_kit ~426, uses read_many) per feature before each hot loop; leave the block() loops alone so results are identical by construction. Guard with getattr(self.live,'prefetch',None) for fakes; overlay must not prefetch cells served from .cells; prefetch inside plan construction (StaleRead after mark_written). Test: counting fake MCP via LiveBlocks(mcp=fake,...) asserting identical plan vs per-block path and an upper bound on scan calls. Measure one 65k-volume scan latency before claiming seconds. Then record commit hash + 'speed only, outputs identical' in R-014 notes."
-    },
-    {
       "id": 93,
       "title": "Sweep other scripts for per-block live-read loops",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        92
-      ],
+      "blockedBy": [],
       "notes": "After the feature_build fix, audit .block( loops in geo, plant_cell_canopy, site_recover, site_walk, entrances, cell_marker, mask_undo, osm_footprints. Fix only real hot loops by prefetch. Audit first."
     },
     {
       "id": 94,
       "title": "Warn when LiveBlocks issues many tiny scans",
-      "status": "blocked",
+      "status": "todo",
       "priority": "low",
       "complexity": "s",
-      "blockedBy": [
-        92
-      ],
+      "blockedBy": [],
       "notes": "Count block_scan_region calls in LiveBlocks; warn on stderr past N tiny scans per store lifetime. Never raise (a hard failure mid-apply is worse than slow). Optional: drop if the test-level scan-call bound in the batching task is enough. Possible later ticket: shorter Paced interval for read-only scans."
     },
     {
