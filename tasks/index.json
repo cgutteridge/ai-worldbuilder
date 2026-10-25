@@ -15,7 +15,7 @@
     {
       "id": 84,
       "title": "Use pyproj for coordinate conversion instead of GDAL subprocesses",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -46,7 +46,7 @@
     {
       "id": 87,
       "title": "Include active-world contract tests in the default unit suite",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -55,7 +55,7 @@
     {
       "id": 88,
       "title": "Clean up temporary directories created by unit tests",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -64,7 +64,7 @@
     {
       "id": 89,
       "title": "Prune migration-era test assertions that do not protect behaviour",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [],
