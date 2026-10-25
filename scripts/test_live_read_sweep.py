@@ -65,11 +65,34 @@ class GeoPrefetchTest(unittest.TestCase):
                 blocks.update(_column(x, z))
         world, mcp, tmp = _live(blocks)
         self.addCleanup(tmp.cleanup)
+        store = world._blocks()
+        strip_cap = 8 * 201  # one X × Z-width 8 × Y 0..200
+        prefetch_sizes: list[int] = []
+        cache_peaks: list[int] = []
+        real_prefetch = world.prefetch
+
+        def spy_prefetch(positions):
+            pos_list = list(positions)
+            prefetch_sizes.append(len(pos_list))
+            real_prefetch(pos_list)
+            cache_peaks.append(len(store._cache))
+
+        world.prefetch = spy_prefetch
         rec = geo.probe_bbox(world, 0, 0, 7, 7)
         self.assertEqual(rec['columns'], 64)
         self.assertEqual(rec['lidar_top_y']['median'], 50)
-        # Strip-warm (one X row × Y 0..200) then cached ground/lidar — not one scan per Y.
+        # Eight X-strips, each tiled — not one MCP scan per Y walk.
         self.assertLessEqual(_scans(mcp), 32, f'too many scans: {_scans(mcp)}')
+        self.assertTrue(prefetch_sizes, 'expected strip warm_reads calls')
+        self.assertTrue(
+            all(n <= strip_cap for n in prefetch_sizes),
+            f'prefetch exceeded strip cap {strip_cap}: {prefetch_sizes}',
+        )
+        self.assertTrue(
+            all(n <= strip_cap for n in cache_peaks),
+            f'cache peak exceeded strip cap {strip_cap}: {cache_peaks}',
+        )
+        self.assertEqual(len(store._cache), 0, 'strips should be forgotten after use')
 
 
 class SiteWalkPrefetchTest(unittest.TestCase):

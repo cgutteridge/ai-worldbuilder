@@ -548,6 +548,17 @@ class LiveBlocks:
         m = re.search(r'lightLevel:\s*(\d+)', text or '')
         return int(m.group(1)) if m else None
 
+    def forget(self, positions: Iterable[Pos]) -> None:
+        """Drop ``positions`` from the scan cache without saving or clearing the rest.
+
+        Use after a bounded strip warm when later strips must not keep growing
+        retained memory. Does not touch the world on disk.
+
+        @param positions: ``(x, y, z)`` tuples previously read or prefetched
+        """
+        for p in positions:
+            self._cache.pop(tuple(p), None)
+
     def flush(self) -> None:
         """Save the world, wait, drop the scan cache, clear the stale-read guard."""
         self._flusher()
