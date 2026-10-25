@@ -28,6 +28,17 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  Dry run prints glazed share per storey per face.
+  zones          optional per-label lidar roof plateaus within one footprint:
+                   {"<label>": {"from": "lidar",
+                     "levels": [<m AOD>, ...] | "auto",
+                     "bucket"?: 4, "axis_deg"?: "auto" | <deg>}}
+                 Splits the mass into flat roof zones (5×5 median DSM, snap to
+                 plateau levels, mode-filter, bucket on the building's rotated
+                 grid). Walls rise from local lidar ground so downhill faces gain
+                 storeys; parapet on every roof edge including zone steps.
+                 Prints ``footprint osm=N readable=M pad=P cover=C%``. Requires
+                 ``roofs[label].kind == "flat"``. Facades/doors/roofs reuse the
+                 same label keys.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
 Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
@@ -40,14 +51,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
+from collections import Counter
 from pathlib import Path
+
+import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view as _sw
 
 from script_env import ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
 from site_kit import Plan, World, apply, preview  # noqa: E402
+from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
 GROUND = (
@@ -58,9 +75,276 @@ GROUND = (
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
 OPP = {'N': 'S', 'S': 'N', 'W': 'E', 'E': 'W'}
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
+N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})
+ZONE_FROM = frozenset({'lidar'})
+PARAPET = 'smooth_stone'
+
+
+# ---- lidar roof zones (pure helpers; fixture grids in tests) --------------------
+
+def _win(a: np.ndarray, k: int, fn) -> np.ndarray:
+    """Apply ``fn`` over a k×k sliding window with edge padding.
+
+    @param a: 2-D array
+    @param k: odd window size
+    @param fn: reducer over the last two axes (e.g. ``np.median``, ``np.max``)
+    @returns: same shape as ``a``
+    """
+    pad = k // 2
+    return fn(_sw(np.pad(a, pad, mode='edge'), (k, k)), axis=(2, 3))
+
+
+def dilate_mask(mask: np.ndarray, k: int = 3) -> np.ndarray:
+    """Boolean dilate (max filter).
+
+    Uses constant-0 padding so a mass that touches the array rim does not
+    grow when the window hangs off the edge (edge-pad would treat outside as
+    solid and turn close/open into a halo).
+
+    @param mask: boolean footprint
+    @param k: odd window size
+    @returns: dilated boolean mask
+    """
+    pad = k // 2
+    a = np.pad(mask.astype(np.uint8), pad, constant_values=0)
+    return _sw(a, (k, k)).max(axis=(2, 3)).astype(bool)
+
+
+def erode_mask(mask: np.ndarray, k: int = 3) -> np.ndarray:
+    """Boolean erode (min filter).
+
+    Constant-0 padding (see ``dilate_mask``).
+
+    @param mask: boolean footprint
+    @param k: odd window size
+    @returns: eroded boolean mask
+    """
+    pad = k // 2
+    a = np.pad(mask.astype(np.uint8), pad, constant_values=0)
+    return _sw(a, (k, k)).min(axis=(2, 3)).astype(bool)
+
+
+def square_footprint(outline: np.ndarray) -> np.ndarray:
+    """Kill 1-block stairs: morphological close then open (no fixed halo).
+
+    Works on a temporary False-padded copy so masses that touch the array
+    rim are not eaten by constant-0 erode (and not grown into a halo).
+
+    @param outline: boolean vector-way footprint mask
+    @returns: readable massing mask (same shape as ``outline``)
+    """
+    pad = 2
+    m = np.pad(outline.astype(bool), pad, constant_values=False)
+    readable = erode_mask(dilate_mask(m))
+    readable = dilate_mask(erode_mask(readable))
+    return readable[pad:-pad, pad:-pad]
+
+
+def snap_to_levels(heights: np.ndarray, levels: list[int] | list[float]) -> np.ndarray:
+    """Snap each cell to the nearest plateau level.
+
+    @param heights: height grid (e.g. 5×5 median DSM, metres AOD)
+    @param levels: plateau levels in the same units
+    @returns: integer (or float) level per cell, same shape as ``heights``
+    """
+    lv = np.asarray(levels, dtype=float)
+    if lv.size == 0:
+        raise ValueError('levels must be non-empty')
+    idx = np.abs(heights[..., None] - lv).argmin(-1)
+    return lv[idx]
+
+
+def mode_filter(zone: np.ndarray, mask: np.ndarray, k: int = 5) -> np.ndarray:
+    """Replace each masked cell with the mode of its k×k neighbourhood.
+
+    @param zone: discrete level grid
+    @param mask: cells to filter (outside left unchanged)
+    @param k: odd window size
+    @returns: mode-filtered copy of ``zone``
+    """
+    pad = k // 2
+    zp = np.pad(np.where(mask, zone, np.nan), pad, constant_values=np.nan)
+    out = zone.copy()
+    rows, cols = zone.shape
+    for r in range(rows):
+        for c in range(cols):
+            if not mask[r, c]:
+                continue
+            w = zp[r:r + k, c:c + k].ravel()
+            w = w[~np.isnan(w)]
+            if w.size:
+                out[r, c] = Counter(w.tolist()).most_common(1)[0][0]
+    return out
+
+
+def auto_plateau_levels(med: np.ndarray, mask: np.ndarray, min_cells: int = 8) -> list[int]:
+    """Derive plateau levels from rounded median DSM inside the mask.
+
+    @param med: 5×5 median DSM (metres AOD)
+    @param mask: readable footprint
+    @param min_cells: drop sparse metre bins
+    @returns: sorted integer metres AOD
+    """
+    if not mask.any():
+        return []
+    vals = np.round(med[mask]).astype(int)
+    counts = Counter(vals.tolist())
+    levels = sorted(v for v, n in counts.items() if n >= min_cells)
+    return levels or sorted(counts.keys())
+
+
+def footprint_axis_deg(xs: np.ndarray, zs: np.ndarray) -> float:
+    """Long-axis angle of a footprint from PCA (degrees, atan2 of z over x).
+
+    @param xs: block x of footprint cells
+    @param zs: block z of footprint cells
+    @returns: degrees
+    """
+    pts = np.column_stack([xs.astype(float), zs.astype(float)])
+    pts -= pts.mean(axis=0)
+    if len(pts) < 2:
+        return 0.0
+    cov = pts.T @ pts / len(pts)
+    _evals, evecs = np.linalg.eigh(cov)
+    vx, vz = evecs[:, -1]
+    return float(math.degrees(math.atan2(vz, vx)))
+
+
+def bucket_zones(
+    zone: np.ndarray,
+    mask: np.ndarray,
+    xs: np.ndarray,
+    zs: np.ndarray,
+    bucket: int = 4,
+    axis_deg: float = 0.0,
+) -> np.ndarray:
+    """One level per bucket cell on the building's rotated grid (straight zone edges).
+
+    @param zone: snapped level grid (same indexing as ``mask``)
+    @param mask: readable footprint
+    @param xs: world x per cell (same shape as ``zone``)
+    @param zs: world z per cell (same shape as ``zone``)
+    @param bucket: bucket size in blocks along the rotated axes
+    @param axis_deg: building long-axis degrees
+    @returns: bucketed zone grid
+    """
+    if bucket < 1:
+        raise ValueError('bucket must be >= 1')
+    ca, sa = math.cos(math.radians(axis_deg)), math.sin(math.radians(axis_deg))
+    u = xs * ca + zs * sa
+    v = -xs * sa + zs * ca
+    key = np.floor(u / bucket).astype(int) * 100_000 + np.floor(v / bucket).astype(int)
+    out = zone.copy()
+    for k in np.unique(key[mask]):
+        sel = (key == k) & mask
+        out[sel] = Counter(zone[sel].tolist()).most_common(1)[0][0]
+    return out
+
+
+def assign_roof_zones(
+    dsm: np.ndarray,
+    outline: np.ndarray,
+    levels: list[int] | list[float] | str,
+    xs: np.ndarray,
+    zs: np.ndarray,
+    bucket: int = 4,
+    axis_deg: float | str = 'auto',
+) -> tuple[np.ndarray, np.ndarray, list, float]:
+    """Full zone pipeline: square → 5×5 median → snap → mode-filter → bucket.
+
+    Arrays share the same 2-D indexing (row/col). ``xs``/``zs`` hold world block
+    coordinates for each cell (needed for rotated bucketing).
+
+    @param dsm: DSM metres AOD
+    @param outline: boolean vector-way footprint
+    @param levels: plateau list or ``\"auto\"``
+    @param xs: world x grid
+    @param zs: world z grid
+    @param bucket: rotated-grid bucket size
+    @param axis_deg: degrees or ``\"auto\"`` (PCA of readable cells)
+    @returns: ``(readable, zone, levels_used, axis_deg_used)``
+    """
+    readable = square_footprint(outline)
+    med = _win(dsm.astype(float), 5, np.median)
+    if levels == 'auto':
+        levels_used: list = auto_plateau_levels(med, readable)
+    else:
+        levels_used = list(levels)
+    if not levels_used:
+        raise ValueError('no plateau levels (empty list / auto found none)')
+    zone = snap_to_levels(med, levels_used)
+    zone = mode_filter(zone, readable)
+    if axis_deg == 'auto':
+        axis_used = footprint_axis_deg(xs[readable], zs[readable]) if readable.any() else 0.0
+    else:
+        axis_used = float(axis_deg)
+    zone = bucket_zones(zone, readable, xs, zs, bucket=bucket, axis_deg=axis_used)
+    return readable, zone, levels_used, axis_used
+
+
+def edge_wall_expose(roof: dict, ground: dict, cell: tuple[int, int]) -> int:
+    """Lowest neighbour top (roof if built-on, else ground); wall faces above this.
+
+    Matches the R-013 column rule: walls run from local ground up, but only the
+    band above the shortest neighbouring top is an exterior face.
+
+    @param roof: ``{(x, z): roof_y}`` built columns
+    @param ground: ``{(x, z): ground_y}`` (at least neighbourhood of ``cell``)
+    @param cell: column to evaluate
+    @returns: expose y — wall blocks with ``y > expose`` face outside / a step
+    """
+    def top_of(q: tuple[int, int]) -> int:
+        if q in roof:
+            return roof[q]
+        return ground.get(q, -999)
+
+    x, z = cell
+    return min(top_of((x + dx, z + dz)) for dx, dz in N4)
+
+
+def footprint_pad_line(outline: np.ndarray, readable: np.ndarray) -> str:
+    """Format the bake-off footprint pad line.
+
+    @param outline: vector-way boolean mask
+    @param readable: squared readable mask
+    @returns: ``footprint osm=N readable=M pad=P cover=C%`` (ticket-mandated wording)
+    """
+    n_outline = int(outline.sum())
+    n_read = int(readable.sum())
+    pad = int((readable & ~outline).sum())
+    cover = 100.0 * (readable & outline).sum() / n_outline if n_outline else 0.0
+    return f'footprint osm={n_outline} readable={n_read} pad={pad} cover={cover:.2f}%'
+
+
+def cells_to_mask(cells: set, x0: int, z0: int, width: int, depth: int) -> np.ndarray:
+    """Rasterise ``(x, z)`` cells onto a ``[z, x]`` boolean grid (row = z).
+
+    @param cells: footprint columns
+    @param x0: min x of grid
+    @param z0: min z of grid
+    @param width: size in x
+    @param depth: size in z
+    @returns: boolean array shape ``(depth, width)``
+    """
+    mask = np.zeros((depth, width), dtype=bool)
+    for x, z in cells:
+        mask[z - z0, x - x0] = True
+    return mask
+
+
+def mask_to_cells(mask: np.ndarray, x0: int, z0: int) -> set:
+    """Inverse of ``cells_to_mask``.
+
+    @param mask: ``[z, x]`` boolean grid
+    @param x0: min x
+    @param z0: min z
+    @returns: set of ``(x, z)``
+    """
+    zs, xs = np.nonzero(mask)
+    return {(int(x0 + x), int(z0 + z)) for z, x in zip(zs, xs)}
 
 
 def pane(axis: str) -> str:
@@ -104,6 +388,7 @@ def load_spec(path) -> dict:
     spec.setdefault('floor', 'smooth_stone')
     spec.setdefault('doors', {})
     spec.setdefault('facades', {})
+    spec.setdefault('zones', {})
     labels = set(spec['ways'].values())
     for lab, n in spec['storeys'].items():
         if lab not in labels:
@@ -124,7 +409,46 @@ def load_spec(path) -> dict:
                 raise SystemExit(f'{path}: label {no} needs a way, storeys and roof')
     _validate_doors(path, spec)
     _validate_facades(path, spec, labels)
+    _validate_zones(path, spec, labels)
     return spec
+
+
+def _validate_zones(path, spec: dict, labels: set) -> None:
+    """Validate optional per-label lidar roof-zone config.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: known way labels
+    @raises SystemExit: on invalid zone entries
+    """
+    zones = spec.get('zones') or {}
+    if not isinstance(zones, dict):
+        raise SystemExit(f'{path}: zones must be an object')
+    for lab, row in zones.items():
+        if lab not in labels:
+            raise SystemExit(f'{path}: zones label {lab} has no way')
+        if not isinstance(row, dict):
+            raise SystemExit(f'{path}: zones[{lab}] must be an object')
+        if row.get('from') not in ZONE_FROM:
+            raise SystemExit(f'{path}: zones[{lab}].from must be one of {sorted(ZONE_FROM)}')
+        levels = row.get('levels')
+        if levels != 'auto':
+            if not isinstance(levels, list) or not levels:
+                raise SystemExit(f'{path}: zones[{lab}].levels must be a non-empty list or \"auto\"')
+            for lv in levels:
+                if not isinstance(lv, (int, float)):
+                    raise SystemExit(f'{path}: zones[{lab}].levels entries must be numbers')
+        bucket = row.get('bucket', 4)
+        if not isinstance(bucket, int) or bucket < 1:
+            raise SystemExit(f'{path}: zones[{lab}].bucket must be int >= 1')
+        row.setdefault('bucket', 4)
+        axis = row.get('axis_deg', 'auto')
+        if axis != 'auto' and not isinstance(axis, (int, float)):
+            raise SystemExit(f'{path}: zones[{lab}].axis_deg must be \"auto\" or a number')
+        row.setdefault('axis_deg', 'auto')
+        roof = spec['roofs'].get(lab) or {}
+        if roof.get('kind') != 'flat':
+            raise SystemExit(f'{path}: zones[{lab}] requires roofs[{lab}].kind == \"flat\"')
 
 
 def _validate_doors(path, spec: dict) -> None:
@@ -214,12 +538,22 @@ class Feature:
 class Build:
     """Plan a non-house feature from a validated spec."""
 
-    def __init__(self, spec: dict, footprints: dict | None = None, world=None, osm_root=None):
+    def __init__(
+        self,
+        spec: dict,
+        footprints: dict | None = None,
+        world=None,
+        osm_root=None,
+        zone_data: dict | None = None,
+    ):
         """
         @param spec: validated feature spec
         @param footprints: optional ``{label: set[(x,z)]}`` (else OSMIndex from ways)
         @param world: optional ``World``-like with ``block(x,y,z)`` (else live ``World()``)
         @param osm_root: optional vector-map clip root for ``OSMIndex`` (tests / alternate trees)
+        @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
+            (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
+            When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
         """
         self.spec = spec
         self.name = spec['name']
@@ -229,6 +563,7 @@ class Build:
         self.keep = set()
         self.p = Plan(self.name)
         self.live = world if world is not None else World()
+        self.zone_data = zone_data or {}
         by_no = {k: set(v) for k, v in (footprints or {}).items()}
         if footprints is None:
             idx = osm_footprints.OSMIndex(root=osm_root) if osm_root is not None else osm_footprints.OSMIndex()
@@ -252,6 +587,7 @@ class Build:
             for c in f.cells:
                 self.owner[c] = k
         self.by_no_all = by_no
+        self._zone_pad_lines: list[str] = []
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
@@ -295,14 +631,115 @@ class Build:
                 y = max(y, self.spec['floor_min'])
         return y
 
+    def _feature_has_zones(self, f: Feature) -> bool:
+        """True when this label has a zones entry in the spec."""
+        return f.no in (self.spec.get('zones') or {})
+
+    def _load_zone_grids(self, f: Feature) -> dict:
+        """DSM + ground_y grids for a zoned feature (injected or composite lidar).
+
+        @param f: feature mass (uses current ``f.cells`` bbox)
+        @returns: ``{dsm, ground_y, x0, z0}`` with ``[z, x]`` arrays
+        """
+        if f.no in self.zone_data:
+            return self.zone_data[f.no]
+        xs = [c[0] for c in f.cells]
+        zs = [c[1] for c in f.cells]
+        x0, x1 = min(xs) - 1, max(xs) + 1
+        z0, z1 = min(zs) - 1, max(zs) + 1
+        import lidar_provider as lp
+        lidar = lp.tile_client(download=False)
+        e0, n0, e1, n1 = lp.mc_box_en(x0, z0, x1, z1)
+        if lidar.missing('DTM', e0, n0, e1, n1) or lidar.missing('DSM', e0, n0, e1, n1):
+            raise SystemExit(
+                f'{self.name}: lidar DTM/DSM cache missing for zones on {f.no} '
+                f'bbox=({x0},{z0})-({x1},{z1})'
+            )
+        h = lp.mc_heights(lidar, x0, z0, x1, z1)
+        # mc_heights is [x - x0, z - z0]; convert to [z, x] for zone helpers
+        return {
+            'x0': x0,
+            'z0': z0,
+            'dsm': np.asarray(h['dsm']).T,
+            'ground_y': np.asarray(h['ground_y']).T,
+        }
+
+    def prepare_zones(self) -> None:
+        """Square footprints and assign lidar roof zones for zoned labels.
+
+        Expands ``f.cells`` to the readable mask, fills ``zone_roof`` /
+        ``zone_ground`` / ``zone_level``, refreshes ``owner``, and records the
+        pad line for dry-run print.
+        """
+        zones_spec = self.spec.get('zones') or {}
+        if not zones_spec:
+            return
+        for f in self.features:
+            if f.no not in zones_spec:
+                continue
+            cfg = zones_spec[f.no]
+            grids = self._load_zone_grids(f)
+            x0, z0 = int(grids['x0']), int(grids['z0'])
+            dsm = np.asarray(grids['dsm'], dtype=float)
+            ground = np.asarray(grids['ground_y'])
+            depth, width = dsm.shape
+            outline = cells_to_mask(f.cells, x0, z0, width, depth)
+            zz, xx = np.mgrid[0:depth, 0:width]
+            xs = xx + x0
+            zs = zz + z0
+            readable, zone, _levels, _axis = assign_roof_zones(
+                dsm, outline, cfg['levels'], xs, zs,
+                bucket=int(cfg.get('bucket', 4)),
+                axis_deg=cfg.get('axis_deg', 'auto'),
+            )
+            self._zone_pad_lines.append(footprint_pad_line(outline, readable))
+            new_cells = mask_to_cells(readable, x0, z0)
+            roof: dict = {}
+            gy: dict = {}
+            zl: dict = {}
+            for z in range(depth):
+                for x in range(width):
+                    if not readable[z, x]:
+                        continue
+                    wx, wz = x0 + x, z0 + z
+                    roof[(wx, wz)] = metres_aod_to_y(float(zone[z, x]))
+                    gy[(wx, wz)] = int(ground[z, x])
+                    zl[(wx, wz)] = int(round(float(zone[z, x])))
+            # neighbourhood ground for expose() outside the mass
+            for z in range(depth):
+                for x in range(width):
+                    wx, wz = x0 + x, z0 + z
+                    gy.setdefault((wx, wz), int(ground[z, x]))
+            f.cells = new_cells
+            f.zone_roof = roof
+            f.zone_ground = gy
+            f.zone_level = zl
+            if roof:
+                f.b = int(statistics.median(gy[c] for c in roof))
+        # rebuild ownership after readable expansion
+        self.owner = {}
+        for k, f in enumerate(self.features):
+            for c in f.cells:
+                self.owner[c] = k
+        for f in self.features:
+            self.by_no_all[f.no] = set(f.cells)
+
     def clear(self):
         cols = set()
         for (x, z) in self.owner:
             cols.update((x + dx, z + dz) for dx in (-2, -1, 0, 1, 2) for dz in (-2, -1, 0, 1, 2))
         self.cols = cols
-        top_clear = max(f.b + f.storeys * STOREY_H + 8 for f in self.features)
+        tops = []
+        for f in self.features:
+            if getattr(f, 'zone_roof', None):
+                tops.append(max(f.zone_roof.values()) + 4)
+            else:
+                tops.append(f.b + f.storeys * STOREY_H + 8)
+        top_clear = max(tops)
         for x, z in cols:
             nearest = min(self.features, key=lambda f: min(max(abs(x - c[0]), abs(z - c[1])) for c in f.cells))
+            if (x, z) in self.owner and getattr(nearest, 'zone_roof', None):
+                continue  # shell_zoned owns these columns
             b = nearest.b
             if (x, z) in self.foreign or (x, z) in self.shared:
                 continue
@@ -348,6 +785,54 @@ class Build:
                 self.set(x, y, z, 'air')
             for s in range(1, f.storeys):
                 self.set(x, b + s * STOREY_H, z, self.floor_mat)
+
+    def shell_zoned(self, k: int, f: Feature) -> None:
+        """Per-column shell from local lidar ground up to snapped roof zones.
+
+        Walls only where a neighbour top is lower (exterior or zone step).
+        Parapet on every roof edge including zone steps. Interior floor slabs
+        follow the facade storey rhythm from ``f.b`` (median ground).
+
+        @param k: feature index (ownership / wall rivalry)
+        @param f: feature with ``zone_roof`` / ``zone_ground`` filled
+        """
+        del k  # ownership already baked into f.cells; kept for call-site parity
+        roof = f.zone_roof
+        gy = f.zone_ground
+        rm = f.roof['material']
+        datum = f.b
+
+        def top_of(q: tuple[int, int]) -> int:
+            return roof[q] if q in roof else gy.get(q, -999)
+
+        f.walls = set()
+        for c, ry in roof.items():
+            if any(top_of((c[0] + dx, c[1] + dz)) < ry for dx, dz in N4):
+                f.walls.add(c)
+            # also treat N8 ownership edge as wall for doors/facades
+            for dx, dz in N8:
+                if (c[0] + dx, c[1] + dz) not in roof:
+                    f.walls.add(c)
+                    break
+        f.inner = set(roof) - f.walls
+        for (x, z), ry in roof.items():
+            g = gy[(x, z)]
+            expose = edge_wall_expose(roof, gy, (x, z))
+            for y in range(g - 4, g):
+                self.set(x, y, z, 'stone')
+            self.set(x, g, z, self.floor_mat)
+            for y in range(g + 1, ry):
+                if y > expose:
+                    self.set(x, y, z, self.wall)
+                elif (y - datum) % STOREY_H == 0 and y > g:
+                    self.set(x, y, z, self.floor_mat)
+                else:
+                    self.set(x, y, z, 'air')
+            self.set(x, ry, z, rm)
+            if any(top_of((x + dx, z + dz)) < ry for dx, dz in N4):
+                self.set(x, ry + 1, z, PARAPET)
+            else:
+                self.set(x, ry + 1, z, 'air')
 
     def framed(self, f: Feature, cand, d):
         """Door candidates with a wall cell on both sides along the wall.
@@ -494,9 +979,9 @@ class Build:
                 else:
                     cells = sorted([c0, pair], key=lambda c: c[0] * lat[0] + c[1] * lat[1])
             hinges = ('left',) if leaves == 1 else ('left', 'right')
-            b = f.b
+            b = self._column_floor(f, cells[0])
             for cell, hinge in zip(cells, hinges):
-                self._set_door_leaf(cell, face, block, hinge, b)
+                self._set_door_leaf(cell, face, block, hinge, self._column_floor(f, cell))
                 placed.add(cell)
                 f.door_cells.add(cell)
             dx, dz = DIRS[face]
@@ -508,6 +993,18 @@ class Build:
                 f'at {cells[0][0]},{b + 1},{cells[0][1]} facing {FACE[face]}'
             )
 
+    def _column_floor(self, f: Feature, cell: tuple[int, int]) -> int:
+        """Floor y at a column (local lidar ground when zoned, else ``f.b``).
+
+        @param f: feature mass
+        @param cell: ``(x, z)``
+        @returns: floor block y
+        """
+        gy = getattr(f, 'zone_ground', None)
+        if gy is not None and cell in gy:
+            return int(gy[cell])
+        return f.b
+
     def default_doors(self, k: int, f: Feature):
         """Legacy front and rear single spruce doors when the spec has no ``doors`` map.
 
@@ -515,7 +1012,6 @@ class Build:
         @param f: feature mass
         """
         del k  # call-site parity with doors()
-        b = f.b
         front = f.front
         r = OPP[front]
         cand = self._door_candidates(f, front)
@@ -541,9 +1037,10 @@ class Build:
             c0 = min(cand, key=lambda c: abs(c[1] - mid))
         f.door = c0
         f.door_cells = {c0}
-        self._set_door_leaf(c0, front, 'spruce_door', 'left', b)
+        b0 = self._column_floor(f, c0)
+        self._set_door_leaf(c0, front, 'spruce_door', 'left', b0)
         fx, fz = DIRS[front]
-        self.step_out((c0[0] + fx, c0[1] + fz), front, b)
+        self.step_out((c0[0] + fx, c0[1] + fz), front, b0)
         cand = self._door_candidates(f, r)
         if cand:
             if r in 'NS':
@@ -558,9 +1055,10 @@ class Build:
                 c1 = min(cc, key=lambda c: abs(c[1] - m))
             f.rear = c1
             f.door_cells.add(c1)
-            self._set_door_leaf(c1, r, 'spruce_door', 'right', b)
+            b1 = self._column_floor(f, c1)
+            self._set_door_leaf(c1, r, 'spruce_door', 'right', b1)
             sx, sz = c1[0] + DIRS[r][0], c1[1] + DIRS[r][1]
-            self.step_out((sx, sz), r, b)
+            self.step_out((sx, sz), r, b1)
         else:
             f.rear = None
 
@@ -656,6 +1154,18 @@ class Build:
                 cells.add(q)
         return cells
 
+    def _column_roof_y(self, f: Feature, cell: tuple[int, int]) -> int | None:
+        """Roof y for a column when zoned; ``None`` means uniform-storey shell.
+
+        @param f: feature mass
+        @param cell: ``(x, z)``
+        @returns: roof block y or ``None``
+        """
+        roof = getattr(f, 'zone_roof', None)
+        if roof is None:
+            return None
+        return roof.get(cell)
+
     def windows(self, f: Feature):
         """Punch openings from the facade table, or placeholder pier rhythm if absent."""
         facades = (self.spec.get('facades') or {}).get(f.no)
@@ -681,8 +1191,11 @@ class Build:
                     for c, role in zip(run, roles):
                         if c in door:
                             continue
+                        ry = self._column_roof_y(f, c)
                         for dy in range(STOREY_H):
                             y = base + dy
+                            if ry is not None and y >= ry:
+                                continue
                             if role == 'W' and dy >= STOREY_H - glazed_h:
                                 self.set(c[0], y, c[1], pane(axis))
                             elif wall_mat != self.wall:
@@ -712,8 +1225,12 @@ class Build:
             if par % (3 if diag else 2):
                 continue
             axis = 'z' if d in 'EW' else 'x'
+            ry = self._column_roof_y(f, c)
             for s in range(f.storeys):
-                self.set(c[0], b + s * STOREY_H + 2, c[1], pane(axis))
+                y = b + s * STOREY_H + 2
+                if ry is not None and y >= ry:
+                    continue
+                self.set(c[0], y, c[1], pane(axis))
 
     def glazed_share_report(self) -> list[str]:
         """Glazed share of each storey per face (for dry-run photo compare).
@@ -802,7 +1319,9 @@ class Build:
     def roof(self):
         todo = []
         for g in self.groups:
-            hs = [f for f in self.features if f.group is g]
+            hs = [f for f in self.features if f.group is g and not getattr(f, 'zone_roof', None)]
+            if not hs:
+                continue
             if g['mode'] == 'group':
                 todo.append((hs, set().union(*[f.cells for f in hs])))
             else:
@@ -814,37 +1333,61 @@ class Build:
             else:
                 self.roof_pitched(hs, own)
 
+    def _prune_outside_guard_hits(self) -> None:
+        """Drop outside fringe the vector-map guard flags, without wiping door stoops.
+
+        Roof-overhang slabs are always removed. When a label is zoned, non-slab
+        hits on columns owned by those zoned features are also removed (expanded
+        readable mass the clip index may not cover). Stoops sit one step outside
+        the mass, so they are kept — zoning must not delete every outside block.
+
+        @returns: None
+        """
+        zoned_cols = {
+            c for f in self.features
+            if getattr(f, 'zone_roof', None)
+            for c in f.cells
+        }
+        for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
+            if 'slab' in v[0]:
+                del self.p.cells[q]
+            elif (q[0], q[2]) in zoned_cols:
+                del self.p.cells[q]
+
     def build(self) -> Plan:
         """Produce the offline plan for this feature build.
 
         @returns: ``site_kit.Plan``
         """
-        all_cells = set(self.owner)
         if self.idx is not None:
             self.foreign = {c for c in self.idx.cells() if c not in self.owner}
         else:
             self.foreign = set()
-        self.by_no_all_cells = all_cells | self.foreign
-        self.shared = {(x + dx, z + dz) for (x, z) in self.foreign for dx, dz in N8} - self.foreign - set(self.owner)
+        self.by_no_all_cells = set(self.owner) | self.foreign
         for f in self.features:
-            f.b = self.floor_y(f)
+            if not self._feature_has_zones(f):
+                f.b = self.floor_y(f)
+        self.prepare_zones()
+        self.by_no_all_cells = set(self.owner) | self.foreign
+        self.shared = {(x + dx, z + dz) for (x, z) in self.foreign for dx, dz in N8} - self.foreign - set(self.owner)
         for g in self.groups:
-            hs = [f for f in self.features if f.group is g]
-            if g['mode'] == 'group':
+            hs = [f for f in self.features if f.group is g and not getattr(f, 'zone_roof', None)]
+            if g['mode'] == 'group' and hs:
                 bb = min(f.b for f in hs)
                 for f in hs:
                     f.b = bb
         self.clear()
         for k, f in enumerate(self.features):
-            self.shell(k, f)
+            if getattr(f, 'zone_roof', None):
+                self.shell_zoned(k, f)
+            else:
+                self.shell(k, f)
         for k, f in enumerate(self.features):
             self.doors(k, f)
             self.windows(f)
         self.roof()
         if self.idx is not None:
-            for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
-                if 'slab' in v[0]:
-                    del self.p.cells[q]
+            self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
         for q in list(self.p.cells):
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
@@ -855,9 +1398,16 @@ class Build:
         owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
         for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
+        for line in self._zone_pad_lines:
+            print(line)
         for f in self.features:
-            print(f.no, 'b', f.b, 'storeys', f.storeys, 'cells', len(f.cells),
-                  'door', getattr(f, 'door', None), 'rear', getattr(f, 'rear', None))
+            bits = [
+                f.no, 'b', f.b, 'storeys', f.storeys, 'cells', len(f.cells),
+                'door', getattr(f, 'door', None), 'rear', getattr(f, 'rear', None),
+            ]
+            if getattr(f, 'zone_roof', None):
+                bits.append(f'zones={sorted(set(f.zone_level.values()))}')
+            print(*bits)
         for line in self.glazed_share_report():
             print(line)
         for line in self.footprint_overlap_report():
@@ -885,19 +1435,35 @@ class Build:
         return lines
 
 
-def build(spec: dict, footprints: dict | None = None, world=None, osm_root=None) -> Plan:
+def build(
+    spec: dict,
+    footprints: dict | None = None,
+    world=None,
+    osm_root=None,
+    zone_data: dict | None = None,
+) -> Plan:
     """Build a feature plan from a validated spec.
 
     @param spec: validated feature spec
     @param footprints: optional label→cells map (tests / offline)
     @param world: optional World-like
     @param osm_root: optional vector-map clip root
+    @param zone_data: optional lidar grids for zoned labels (tests)
     @returns: Plan
     """
-    return Build(spec, footprints=footprints, world=world, osm_root=osm_root).build()
+    return Build(
+        spec, footprints=footprints, world=world, osm_root=osm_root, zone_data=zone_data,
+    ).build()
 
 
-def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world=None, osm_root=None) -> Plan:
+def run(
+    spec_path,
+    do_apply: bool = False,
+    footprints: dict | None = None,
+    world=None,
+    osm_root=None,
+    zone_data: dict | None = None,
+) -> Plan:
     """Load spec, build plan, preview, and site_kit.apply (dry unless do_apply).
 
     @param spec_path: path to site/builds/<name>.json
@@ -905,10 +1471,13 @@ def run(spec_path, do_apply: bool = False, footprints: dict | None = None, world
     @param footprints: optional label→cells map
     @param world: optional World-like
     @param osm_root: optional vector-map clip root
+    @param zone_data: optional lidar grids for zoned labels (tests)
     @returns: Plan
     """
     spec = load_spec(spec_path)
-    plan = build(spec, footprints=footprints, world=world, osm_root=osm_root)
+    plan = build(
+        spec, footprints=footprints, world=world, osm_root=osm_root, zone_data=zone_data,
+    )
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
