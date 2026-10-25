@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
   "nextTaskId": 92,
-  "tasks": [
-    {
-      "id": 78,
-      "title": "Build roles strategy: designer + builder for place refine and bake-off",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Expanded from bake-off hybrid (R-013 cost discussion). Every feature/trees/decor unit of work must explicitly name a designer model and a builder model (defaults: config/build-roles.json via scripts/build_roles.py; overridable per task/sitting). Same id \u2192 one session that still names both roles; different ids \u2192 designer writes hand-off (no apply), builder is sole apply owner. Ghosts stay non-AI. Bake-off open uses the same defaults when --designer is omitted. Code merged 2026-10-25: config/build-roles.json + build_roles module/tests; rules/build-roles.md; cell-orchestrator + redo + feature-builds + model-bakeoff PROTOCOL/skills wired; open_round allows same-model with both roles recorded; hybrid still requires distinct ids + usage by_role (earlier hybrid round type: e0e85ee / 74c028b + 7d410b3). Still open: run \u22652 hybrid bake-off sittings (score + usage) and compare vs R-009/R-012; live Claude Code + Minecraft + interview (not done in this code pass)."
-    }
-  ]
+  "tasks": []
 }
