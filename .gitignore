@@ -12,3 +12,7 @@
 /worlds/*/
 !/worlds/README.md
 .worktrees/
+
+# Ephemeral MCP/view captures (regenerated locally; see scripts/site_views.py)
+/verification/site/views/*.png
+

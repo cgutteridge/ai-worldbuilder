@@ -51,7 +51,7 @@ class TestGameworldFromRegion(unittest.TestCase):
 
     def test_southampton_ai(self):
         region = Path(
-            '/Users/x/saves/SouthamptonAI/dimensions/minecraft/overworld/region'
+            '/instance/saves/SouthamptonAI/dimensions/minecraft/overworld/region'
         )
         self.assertEqual(site_kit.gameworld_id_from_region(region), 'SouthamptonAI')
 

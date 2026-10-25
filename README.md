@@ -2,6 +2,8 @@
 
 Reusable AI tool for building and refining Minecraft worlds from real-place evidence.
 
+Licence: [MIT](LICENSE).
+
 One checkout can address many world repos under gitignored `worlds/`; exactly one world is **active**, selected by env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default).
 
 System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
