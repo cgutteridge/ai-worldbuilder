@@ -720,6 +720,42 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "User-requested test refinement 2026-10-25. scripts/test_ship_branch.py creates and commits a temporary Git repository in shared setUp even for pure helpers such as environment cleanup and changed-path classification. Move pure-function cases into TestCase classes without repository setup; retain real temporary Git repositories for merge, branch, worktree, lock and cleanup integration behaviour. Audit neighbouring setup for the same unnecessary work, without adding mocking that removes useful Git integration coverage. Preserve isolation from inherited Git hook variables. Done when: pure cases create no repository or commits, repository-backed behavioural coverage remains intact, focused tests pass and a timing/setup-count comparison demonstrates the removed setup work. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 2/5 (#91, #90, #87, #88, #89). Second: remove Git init/commit setup from pure-function tests. The original audit measured about 10 seconds for the ship_branch module overall; only unnecessary setup is in scope, not all integration-test runtime. | Merged 2026-10-25 via ship_branch (task/90-pure-ship-branch-tests → main, 9c39e40 / merge 0d143d3). Pure helpers off Git fixtures; ~15.3s→~11.9s focused. Ship-branch review APPROVE."
+    },
+    {
+      "id": 84,
+      "title": "Use pyproj for coordinate conversion instead of GDAL subprocesses",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "User request 2026-10-25: replace GDAL for individual coordinate conversion and remove references that prescribe it for that purpose. This is explicitly NOT a blanket GDAL ban: retain appropriate uses for bulk geospatial file processing, including lidar/raster processing. Replace scripts/world_frame.py _gdal_transform/gdaltransform subprocesses with cached in-process pyproj Transformer instances, including the existing small-batch point conversion APIs. Preserve public interfaces, coordinate ordering (explicit always_xy), inverse conversions, empty-input behaviour and supported CRS handling; keep world_frame as the shared conversion boundary and geodetic.py/osgb.py as compatibility wrappers. Add pyproj to the project dependency/setup mechanism. Audit other point-conversion subprocess call sites and migrate them through the shared boundary. Update current docstrings, CLI help, setup instructions, skills and tests that describe GDAL/gdaltransform as required for point conversion (known starting points: scripts/world_frame.py, scripts/geodetic.py, scripts/geo.py, .claude/skills/new-world-build/SKILL.md); retain historical ADR context and legitimate bulk-processing references. Verify transformation accuracy against independent fixed reference coordinates, including a documented policy for OSTN15 grid availability/fallback, rather than assuming pyproj and the current GDAL installation choose identical transformations. Unit tests must use explicit fixtures and require neither an active world nor a GDAL executable. Done when: point-conversion paths run in-process through pyproj with no GDAL subprocess dependency; tests cover forward/inverse values, axis order, small batches and empty inputs; relevant current references are updated; appropriate bulk-file GDAL workflows remain supported. | Merged 2026-10-25 ship_branch (48fb93a / merge 6d2c3b0). Point conversion via pyproj; GDAL retained for bulk. Review APPROVE (nits only)."
+    },
+    {
+      "id": 87,
+      "title": "Include active-world contract tests in the default unit suite",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "User-requested test refinement 2026-10-25. tests/test_active_world.py contains fixture-based contract tests but scripts/run_tests.py discovers only scripts/test_*.py. Include these contracts exactly once in the default suite, preferably by moving the module into the canonical scripts/ test location so --only can select it without a second discovery mechanism. Preserve refusal when the production active-world pointer is unset, identity/config loading and other existing contracts. Ensure tests isolate and restore environment variables, sys.modules and cached frame state so import order cannot change the rest of the suite. Tests must use temporary fictional world configuration, never a real checkout. Done when: the default runner executes the contracts, focused selection works, the suite passes with no active world selected, and no real-world dependency is introduced. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 3/5 (#91, #90, #87, #88, #89). Third: restore missing contract coverage after the two direct runtime improvements; this closes a coverage gap rather than speeding up the suite. | Merged 2026-10-25 ship_branch (f5d3d75 / merge 608d4d5). Moved contracts to scripts/test_active_world.py. Review APPROVE."
+    },
+    {
+      "id": 88,
+      "title": "Clean up temporary directories created by unit tests",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "User-requested test refinement 2026-10-25. Replace unmanaged tempfile.mkdtemp() sites in scripts/test_house_build.py and scripts/test_feature_build.py (five sites identified in the review) with TemporaryDirectory contexts or test-owned TemporaryDirectory instances registered through addCleanup. Audit the remaining unit suite for equivalent unowned temporary directories. Preserve fixture lifetimes through the assertions and guarantee cleanup on failures as well as successful tests. Avoid unrelated test rewrites. Done when: all affected fixture directories have explicit cleanup ownership, affected modules pass and repeated focused runs leave no directories created by those tests behind. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 4/5 (#91, #90, #87, #88, #89). Fourth: fix temporary-directory ownership and disk leaks; useful hygiene, with no demonstrated substantial runtime saving. | Merged 2026-10-25 ship_branch (28cddcc / merge 199e7cd). TemporaryDirectory/addCleanup for house/feature build tests. Review APPROVE."
+    },
+    {
+      "id": 89,
+      "title": "Prune migration-era test assertions that do not protect behaviour",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "User-requested test refinement 2026-10-25. Review assertions against removed private methods, production source substrings and historical ticket wording. Starting examples: scripts/test_world_blockstore.py test_no_mca_reader_methods, scripts/test_model_bakeoff.py documentation wording checks, and hasattr checks in test_dryrun_reset.py/test_defra_world.py. Judge each against current accepted requirements: retain meaningful architecture/safety contracts, replace brittle implementation assertions with observable behavioural checks where useful, and delete obsolete historical assertions without replacement when no current contract remains. Do not blanket-delete documentation or negative tests. Done when: each reviewed assertion is retained with a current rationale, replaced by a meaningful behavioural check, or removed as obsolete; the change description records the decisions; affected modules and the full fixture-based suite pass. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 5/5 (#91, #90, #87, #88, #89). Fifth: prune brittle historical assertions selectively; maintainability improvement, with little demonstrated runtime benefit. Do not remove meaningful coverage merely to reduce test count. | Merged 2026-10-25 ship_branch (bd30c74 / merge 74d298b). Pruned migration-era assertions with recorded decisions. Review APPROVE (nits only)."
     }
   ]
 }
