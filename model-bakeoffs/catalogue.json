@@ -58,6 +58,12 @@
           "tier": "high",
           "label": "Claude Opus 5.5 (low effort)",
           "bulk_ok": true
+        },
+        {
+          "id": "claude-opus-5-5-medium",
+          "tier": "high",
+          "label": "Claude Opus 5.5 (medium effort)",
+          "bulk_ok": true
         }
       ]
     },

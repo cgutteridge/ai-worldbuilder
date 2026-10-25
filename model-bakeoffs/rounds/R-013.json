@@ -1,0 +1,141 @@
+{
+  "id": "R-013",
+  "status": "scored",
+  "created": "2026-10-24T18:26:35Z",
+  "scored_at": "2026-10-25T00:36:40Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "tier": "high",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-opus-5-5-medium",
+    "label": "Claude Opus 5.5 (medium effort)",
+    "tier": "high",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": "Interview: user graded overall 'great'; per-axis grades not given.",
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "great",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "worlds/bakeoff/verification/site/r013-shots/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r013-shots/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r013-shots/aerial_top.png",
+    "real_refs_note": "reference/portals/42-A..D.jpg; real aerial crop worlds/bakeoff/verification/site/r013-shots/real_aerial.png"
+  },
+  "usage": {
+    "input_tokens": 118,
+    "output_tokens": 37716,
+    "total_tokens": 7567427,
+    "cache_read_tokens": 7270562,
+    "cache_write_tokens": 259031,
+    "requests": 59,
+    "cost_usd": null,
+    "source": "api",
+    "recorded_at": "2026-10-25T00:36:49Z",
+    "notes": "Summed per-request API usage from the Claude Code session transcript (59 unique claude-opus-5-5 responses, 18:26Z-00:36Z incl. idle wait for interview). total = input+output+cache read+cache write. Wallclock active ~35 min (19:26-20:01 BST incl. ~6 min host reboot). Weekly plan usage (all models) 45% -> 47%."
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting (parent recovery \u2192 interrupt the model subagent first)",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Regenerate the ground-only ghost baseline with `lidar_ghost apply` (coloured tops; no feature columns; no region restore, ADR 004)",
+      "Confirm the 3\u00d73 ghost baseline around (48,-44) is complete and clean: `cell_registry.py reconcile` over the nine cells and `lidar_ghost status --cell 48,-44 --ring 1 --include-focus`; regenerate any incomplete cell with `lidar_ghost apply --force`",
+      "Claim site lock; build with that tool/model only",
+      "Use tool=claude-code model=claude-opus-5-5-medium only",
+      "Read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md (and repair_brief if kind=repair)",
+      "Build from evidence table \u2014 not a previous Minecraft build",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Apply, capture fixed cameras, release lock",
+      "Interview + score; then usage paste (need-you if counts unknown)"
+    ]
+  },
+  "notes": "Cold design by Claude Opus 5.5 medium. OSM way33830305 footprint osm=3917 readable=3933 pad=31 cover=99.62% (3x3 close+open, no halo). Evidence table + plan: worlds/bakeoff/site/builds/r013_susu.py (OSM, DEFRA DSM/DTM 1m, portals 42-A..D, aerial z18). Massing: lidar roof plateaus {41,45,46,47,48,50} m snapped per column, mode-filtered and bucketed 4x4 on the 24deg building grid; walls from local ground so downhill faces show extra storeys. Custom site_kit script rather than feature_build (multi-zone terraced roof per single OSM way). Baseline: undo r012_susu (journal 282) then nine ground-only ghosts regenerated with --force; status all complete, reconcile clean. Apply journal 302: 44510 planned, 0 mismatches. Fixed cameras reused (r013_capture.py, copy of protocol cameras). Lock released. Interruption: host reboot mid-undo (~19:27-19:32 BST), nothing journalled; post-reboot shell used system python3.9 until switched to homebrew python."
+}
