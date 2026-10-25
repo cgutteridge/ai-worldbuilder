@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 70,
+  "nextTaskId": 78,
   "tasks": [
     {
       "id": 69,
@@ -11,6 +11,80 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Found in bake-off R-008: osm_footprints.guard() exempts anything <= BACK_RISE=4 outside the front zone (meant for garden sheds), so parasol canopies (red_concrete, 4 above ground) on open mapped ground between SUSU and the Retail Centre passed; no footprint-hits file was written and plan.outside_footprint_ok was never consulted. Fix options: treat roof-like blocks (concrete, slabs) as building-like at any height outside footprints, or add an explicit furniture category so open-ground furniture is allowed on purpose. Add a unit test. See model-bakeoffs/rounds/R-008.json why-block."
+    },
+    {
+      "id": 70,
+      "title": "Fail fast on the wrong Python interpreter",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: after a reboot bare `python3` resolved to Apple /usr/bin/python3 (3.9, no numpy) instead of Homebrew 3.14. Symptoms were misleading: `TypeError: unsupported operand |` at scripts/site_kit.py:65 (PEP 604 annotation), `No module named numpy` in shims/lidar_query.py, and a red pre-commit. Do: (1) at the top of scripts/script_env.py (imported by nearly every script/shim) check `sys.version_info >= (3, 10)` and that numpy imports; otherwise `raise SystemExit(f'needs python3 >= 3.10 with numpy (Homebrew); got {sys.executable} {sys.version.split()[0]}')`. Check also covers scripts that import active_world first: put the guard in active_world.py if it is imported earlier than script_env. (2) Record the expected version where tools read it (`.python-version` and/or `requires-python` in a pyproject). (3) .githooks/pre-commit runs bare `python3`: make it fail with the same message (the guard covers it once pre_commit_checks imports the guarded module, or add an explicit check in the hook). Done when: running `/usr/bin/python3 scripts/site_kit.py`-style entry points, `shims/lidar_query.py --help` and the hook under 3.9 each print the one-line message and exit non-zero; unit test for the guard; run_tests.py green under Homebrew python."
+    },
+    {
+      "id": 71,
+      "title": "Pre-commit: quiet output, unset-world cause as last line",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: a tracker-only commit failed the hook and the cause (`AI_WORLDBUILDER_WORLD_ROOT is unset`) was buried after ~69 KB of verbose unittest output (agent output overflowed to a file). Do NOT pin or default a world (owner: pinning caused more issues than it helped). Do in scripts/pre_commit_checks.py (+ scripts/run_tests.py if needed): (1) run tests non-verbose; on failure print only the failing test ids + their tracebacks, capped (e.g. last 40 lines each), then a one-line summary per check (`unit tests: FAILED 3/412`, `provider-name audit: OK`). (2) Before running world-dependent checks, if AI_WORLDBUILDER_WORLD_ROOT is unset, skip running them and print as the final line: `pre-commit: AI_WORLDBUILDER_WORLD_ROOT is unset; export it to an active world checkout (see AGENTS.md Start) and retry`, exit non-zero. Done when: a clean commit prints <= ~10 lines; an unset-world commit prints the cause as its last line without running tests; a failing test shows its id and traceback within a short output; tests for the summary formatting."
+    },
+    {
+      "id": 72,
+      "title": "model_bakeoff.py baseline: one command to reset the 3x3 ghost baseline",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Retro R-013: the sitting step 'regenerate the ghost baseline' hides an undo of the previous round's build that has no CLI (agent read scripts/site_kit.py to find `site_kit.undo('<plan>')`). Also: `lidar_ghost` lives in shims/ not scripts/; `cell_registry.py reconcile` takes the cell positionally; `site_kit.apply(stage='feature')` is invalid (None or 'feature-<name>'). Do: add `model_bakeoff.py baseline R-NNN` that (a) refuses unless the active world is bakeoff and the site lock is held by the caller's SITE_OWNER (or claims it), (b) finds every non-undone feature build in the 3x3 ghost_cells from the journal and undoes it via site_kit.undo with meta {'round': id}, (c) runs `lidar_ghost apply --cell 48,-44 --ring 1 --include-focus --force`, (d) checks `lidar_ghost status` ghosts_complete for all nine and `cell_registry reconcile <cell>` clean for each, (e) prints a short report and records it in the round JSON (e.g. `baseline: {undone: [...], journal_seqs: [...], clean: true}`). Replace the two baseline steps in model-bakeoffs/config.json sitting_steps with this single command (full command line). Optionally expose `site_kit undo <plan>` as a CLI too. Done when: unit tests with a fake journal/MCP cover undo-selection and refusal paths; a dry `--plan` flag lists what would be undone; sitting card shows the one command. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
+    },
+    {
+      "id": 73,
+      "title": "model_bakeoff.py capture: fixed interview cameras from config",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: each round copies the previous round's capture script (r013_capture.py = sed of r012_capture.py) under worlds/bakeoff/site/builds/. Do: move the camera table (square_south, street_front, aerial_top eye/look, aerial bbox [6140,-5584,6230,-5490], FOV, crop/rotation) into model-bakeoffs/config.json (or packs/v1) and add `model_bakeoff.py capture R-NNN` that captures via evidence_sheet._capture_view, writes shots to worlds/bakeoff/verification/site/<round>-shots/, writes the matching real_aerial.png crop from reference/aerial/susu, saves the world, and fills the round's `photos` map. Point sitting_steps 'capture fixed cameras' at it. Done when: per-round capture scripts are no longer needed; a unit test covers the photos-map/crop maths with a stubbed capture function. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
+    },
+    {
+      "id": 74,
+      "title": "Keep earlier rounds' build scripts out of the next sitting's view",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        72
+      ],
+      "notes": "Retro R-013 fairness: worlds/bakeoff/site/builds/ holds r010..r013 SUSU build scripts, lidar/osm caches and capture scripts next to where the model writes its own; R-012 disclosed reading the R-011 docstring (prior evidence summary). Pack rule: a previous Minecraft build is not evidence. Do: as part of `model_bakeoff.py baseline` (task 72) move prior round artefacts matching `r0NN_*` out of site/builds/ into an archive dir the brief tells the model not to use (e.g. worlds/bakeoff/archive/rounds/<id>/), and have `open` warn if any are still present. Add one line to packs/v1/FAIRNESS.md (not BRIEF.md, which is frozen) naming the archive as off-limits. Done when: after baseline, site/builds/ contains no earlier-round files; open warns on leftovers; test covers the move. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
+    },
+    {
+      "id": 75,
+      "title": "Bake-off usage: same unit every round (transcript sum + plan %)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Retro R-013: usage is recorded in incomparable units (Claude subagent totals ~200k with no cache split; Codex rollout counters; Claude Code transcript sums incl. cache reads ~5-7M; weekly plan % only sometimes), so Sonnet vs Opus cost could not be compared. Do in scripts/model_bakeoff.py: (1) `usage R-NNN --from-transcript <path.jsonl> [--model-prefix claude-opus-5-5]` that sums per-response API usage de-duplicated by message id (input, output, cache_read, cache_write, requests, first/last timestamp) and records source=api; this is the script hand-written in R-012/R-013. Support subagent transcripts too. (2) Add optional plan-usage fields `plan_pct_start` / `plan_pct_end` (weekly, all models) to the usage block, settable on `open` and `score` (`--plan-pct N`), plus `wallclock_min` and `interruptions` notes. (3) Document in model-bakeoffs/PROTOCOL.md Usage section that cross-model cost comparison uses plan % delta + transcript sums, and that agent-report subagent totals are not comparable. Done when: unit test sums a fixture transcript with duplicate message ids correctly; status output shows plan % delta where present."
+    },
+    {
+      "id": 76,
+      "title": "feature_build: per-zone roof heights within one footprint",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Retro R-012/R-013: rules/feature-builds.md requires scripts/feature_build.py, but its spec takes one `storeys` count per OSM way (STOREY_H=3), so SUSU (one way, w33830305, with lidar roof plateaus at 41/45/46/47/48/50 m AOD terraced into a ~10 m slope) cannot be expressed; both Opus rounds wrote ~340-line custom site_kit scripts, the most expensive and error-prone part of a sitting and the gap weaker models fail on. Do: add an optional spec key (e.g. `zones: {\"<label>\": {\"from\": \"lidar\", \"levels\": [..] | \"auto\", \"bucket\": 4, \"axis_deg\": \"auto\"}}`) that splits a footprint into flat roof zones: 5x5 median DSM, snap to plateau levels, mode-filter, then bucket on the building's rotated grid so zone edges are straight runs; walls run from local lidar ground up so downhill faces gain storeys; parapet on every roof edge including zone steps. Reuse existing facades/doors/roofs per zone label. Keep the 1-block-stair squaring and print the `footprint osm=N readable=M pad=P cover=C%` line. Reference implementation to read (not copy verbatim): worlds/bakeoff/site/builds/r013_susu.py (evidence() and build()). Update rules/feature-builds.md. Done when: a SUSU spec using zones dry-runs end-to-end with 0 guard failures, and unit tests cover zone snapping, bucketing and edge-wall exposure with a fixture height grid."
+    },
+    {
+      "id": 77,
+      "title": "Bake-off round record keeps its build script",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Retro R-013: the round's evidence table + build script live in the gitignored world checkout (worlds/bakeoff/site/builds/r013_susu.py), so the tool-repo commit scoring the round (b151838) does not contain them and the record is not self-contained. Do: on `model_bakeoff.py score` copy the round's build script(s) and capture metadata into model-bakeoffs/rounds/R-NNN/ (like the existing R-008-photos / R-009-photos dirs) and record the paths in the round JSON (`artefacts`). Take the script path from a new `open`/`score` flag or from the plan name in the journal entry the round's apply recorded. Skip large binaries (npz) and screenshots unless already the convention. Done when: scoring a round leaves its build script under model-bakeoffs/rounds/R-NNN/ and the JSON points at it; test covers the copy. Prefix world commands with AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff. "
     }
   ]
 }
