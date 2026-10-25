@@ -22,15 +22,6 @@
       "notes": "Retro R-013: usage is recorded in incomparable units (Claude subagent totals ~200k with no cache split; Codex rollout counters; Claude Code transcript sums incl. cache reads ~5-7M; weekly plan % only sometimes), so Sonnet vs Opus cost could not be compared. Do in scripts/model_bakeoff.py: (1) `usage R-NNN --from-transcript <path.jsonl> [--model-prefix claude-opus-5-5]` that sums per-response API usage de-duplicated by message id (input, output, cache_read, cache_write, requests, first/last timestamp) and records source=api; this is the script hand-written in R-012/R-013. Support subagent transcripts too. (2) Add optional plan-usage fields `plan_pct_start` / `plan_pct_end` (weekly, all models) to the usage block, settable on `open` and `score` (`--plan-pct N`), plus `wallclock_min` and `interruptions` notes. (3) Document in model-bakeoffs/PROTOCOL.md Usage section that cross-model cost comparison uses plan % delta + transcript sums, and that agent-report subagent totals are not comparable. Done when: unit test sums a fixture transcript with duplicate message ids correctly; status output shows plan % delta where present."
     },
     {
-      "id": 76,
-      "title": "feature_build: per-zone roof heights within one footprint",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Retro R-012/R-013: rules/feature-builds.md requires scripts/feature_build.py, but its spec takes one `storeys` count per OSM way (STOREY_H=3), so SUSU (one way, w33830305, with lidar roof plateaus at 41/45/46/47/48/50 m AOD terraced into a ~10 m slope) cannot be expressed; both Opus rounds wrote ~340-line custom site_kit scripts, the most expensive and error-prone part of a sitting and the gap weaker models fail on. Do: add an optional spec key (e.g. `zones: {\"<label>\": {\"from\": \"lidar\", \"levels\": [..] | \"auto\", \"bucket\": 4, \"axis_deg\": \"auto\"}}`) that splits a footprint into flat roof zones: 5x5 median DSM, snap to plateau levels, mode-filter, then bucket on the building's rotated grid so zone edges are straight runs; walls run from local lidar ground up so downhill faces gain storeys; parapet on every roof edge including zone steps. Reuse existing facades/doors/roofs per zone label. Keep the 1-block-stair squaring and print the `footprint osm=N readable=M pad=P cover=C%` line. Reference implementation to read (not copy verbatim): worlds/bakeoff/site/builds/r013_susu.py (evidence() and build()). Update rules/feature-builds.md. Done when: a SUSU spec using zones dry-runs end-to-end with 0 guard failures, and unit tests cover zone snapping, bucketing and edge-wall exposure with a fixture height grid."
-    },
-    {
       "id": 77,
       "title": "Bake-off round record keeps its build script",
       "status": "todo",
