@@ -701,18 +701,62 @@ class TestBlobStorage(Base):
         fresh = self.registry()
         self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
 
-    def test_legacy_plain_json_blob_still_loads_and_is_not_duplicated(self):
+    def test_legacy_plain_json_blob_referenced_by_old_key_still_loads(self):
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
         (blob,) = self.blob_files()
-        key = blob.name.split('.')[0]
-        reg = self.registry()
-        plain = (self.root / 'registry' / 'blobs' / f'{key}.json')
-        v1 = {f'{x},{y},{z}': st for (x, y, z), st in plan(0, 0, STONE, y=60).items()}
-        plain.write_bytes(json.dumps(v1).encode())
+        new_key = blob.name.split('.')[0]
+        old_key = 'a' * 32
         blob.unlink()
+        v1 = {f'{x},{y},{z}': st for (x, y, z), st in plan(0, 0, STONE, y=60).items()}
+        (self.root / 'registry' / 'blobs' / f'{old_key}.json').write_text(json.dumps(v1))
+        journal = self.root / 'registry' / 'journal.jsonl'
+        journal.write_text(journal.read_text().replace(new_key, old_key))
         fresh = self.registry()
         self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
-        self.assertEqual([p.name for p in self.blob_files()], [plain.name])
+
+    def test_storing_the_same_plan_twice_keeps_one_blob(self):
+        cells = plan(0, 0, STONE, y=60)
+        self.assertEqual(self.reg._store_blob(cells), self.reg._store_blob(dict(cells)))
+        self.assertEqual(len(self.blob_files()), 1)
+
+    def test_gzip_is_written_and_read_when_zstd_is_unavailable(self):
+        with mock.patch('cell_journal._zstd', None):
+            key = self.reg._store_blob(plan(0, 0, STONE, y=60))
+            (blob,) = self.blob_files()
+            self.assertEqual(blob.name, f'{key}.json.gz')
+            self.assertEqual(self.registry()._blob(key), plan(0, 0, STONE, y=60))
+
+    def test_zst_blob_without_zstd_is_a_clear_journal_error(self):
+        key = self.reg._store_blob(plan(0, 0, STONE, y=60))
+        if not any(p.suffix == '.zst' for p in self.blob_files()):
+            self.skipTest('this Python writes gzip, not zstd')
+        with mock.patch('cell_journal._zstd', None):
+            with self.assertRaisesRegex(JournalError, r'needs Python 3\.14'):
+                self.registry()._blob(key)
+
+    def corrupt(self, key, suffix, data):
+        blobs = self.root / 'registry' / 'blobs'
+        blobs.mkdir(parents=True, exist_ok=True)
+        for p in blobs.iterdir():
+            p.unlink()
+        (blobs / f'{key}.json{suffix}').write_bytes(data)
+        return self.registry()
+
+    def test_corrupt_or_truncated_blobs_raise_journal_error(self):
+        import gzip
+        good = gzip.compress(b'{"rle":[[0,0,1,2,"minecraft:stone"]]}')
+        cases = [('.gz', b'not gzip at all'), ('.gz', good[:-6]), ('.zst', b'not zstd at all'),
+                 ('', b'{"rle": [[1, 2'), ('', b'{"rle": [[0, 0, 1]]}'), ('', b'{"rle": 5}'),
+                 ('', b'[1, 2]'), ('', b'{"1,2": "x"}')]
+        for suffix, data in cases:
+            with self.subTest(suffix=suffix, data=data[:24]):
+                reg = self.corrupt('b' * 32, suffix, data)
+                with self.assertRaises(JournalError):
+                    reg._blob('b' * 32)
+
+    def test_empty_plan_blob_round_trips(self):
+        key = self.reg._store_blob({})
+        self.assertEqual(self.registry()._blob(key), {})
 
     def test_column_runs_round_trip_with_gaps_mixed_states_and_negatives(self):
         from cell_journal import _decode_runs, _encode_runs

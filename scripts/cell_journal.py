@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import time
+import zlib
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -39,6 +40,10 @@ try:  # Python 3.14+: about 6x smaller than gzip on plan blobs, same load speed
     from compression import zstd as _zstd
 except ImportError:
     _zstd = None
+
+# Corrupt or truncated compressed data surfaces as these; re-typed to OSError so callers see JournalError.
+_DECOMPRESS_ERRORS: tuple[type[Exception], ...] = (EOFError, zlib.error) + (
+    (_zstd.ZstdError,) if _zstd is not None else ())
 
 import cellmath
 from block_store import BlockStore, Pos, block_id, same_state
@@ -761,16 +766,24 @@ class CellRegistry:
         return key
 
     def _read_blob_bytes(self, key: str) -> bytes:
+        """Decompressed bytes of a blob. Raises ``OSError`` when missing, corrupt, or ``.zst`` on Python < 3.14.
+
+        Portability limit: ``.zst`` blobs (written on 3.14+) are unreadable on older Pythons; the gzip
+        fallback is only what older interpreters *write*. Open a registry with the interpreter that wrote it.
+        """
         for path in self._blob_paths(key):
             try:
                 data = path.read_bytes()
             except FileNotFoundError:
                 continue
-            if path.suffix == '.zst':
-                if _zstd is None:
-                    raise OSError(f'{path.name} needs Python 3.14+ (compression.zstd)')
-                return _zstd.decompress(data)
-            return gzip.decompress(data) if path.suffix == '.gz' else data
+            try:
+                if path.suffix == '.zst':
+                    if _zstd is None:
+                        raise OSError(f'{path.name} needs Python 3.14+ (compression.zstd)')
+                    return _zstd.decompress(data)
+                return gzip.decompress(data) if path.suffix == '.gz' else data
+            except _DECOMPRESS_ERRORS as exc:
+                raise OSError(f'{path.name} is corrupt: {exc}') from exc
         raise FileNotFoundError(f'no blob file for {key}')
 
     def _blob(self, key: str) -> dict[Pos, str]:
@@ -780,12 +793,14 @@ class CellRegistry:
             return got
         try:
             raw = json.loads(self._read_blob_bytes(key))
-        except (OSError, ValueError) as exc:
+            if 'rle' in raw and len(raw) == 1:
+                got = _decode_runs(raw['rle'])
+            else:  # legacy keys are "x,y,z" strings, so they can never be exactly {'rle'}
+                got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
+                if any(len(pos) != 3 for pos in got):
+                    raise ValueError('legacy blob key is not "x,y,z"')
+        except (OSError, ValueError, TypeError, AttributeError, LookupError) as exc:
             raise JournalError(f'plan blob {key} unreadable: {exc}') from exc
-        if 'rle' in raw and len(raw) == 1:
-            got = _decode_runs(raw['rle'])
-        else:  # legacy: {"x,y,z": state}
-            got = {tuple(int(v) for v in k.split(',')): s for k, s in raw.items()}
         self._blob_cache[key] = got
         while len(self._blob_cache) > 16:
             self._blob_cache.popitem(last=False)
