@@ -11,6 +11,7 @@
   python3 scripts/model_bakeoff.py usage R-001 --from-transcript ~/.claude/projects/.../session.jsonl --model-prefix claude-opus-5-5
   python3 scripts/model_bakeoff.py open --tool claude-code --model claude-opus-5-5-medium --plan-pct 45
   python3 scripts/model_bakeoff.py score R-001 --overall great --plan-pct 47 ...
+  python3 scripts/model_bakeoff.py score R-001 --build-script worlds/bakeoff/site/builds/r013_susu.py ...
   python3 scripts/model_bakeoff.py repair R-001 --brief "raise ridge one block"
   python3 scripts/model_bakeoff.py baseline R-001
   python3 scripts/model_bakeoff.py baseline R-001 --plan
@@ -25,6 +26,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -671,6 +673,7 @@ def open_round(
     repair_brief: str | None = None,
     force_mid: bool = False,
     plan_pct: int | None = None,
+    build_scripts: list[Path | str] | None = None,
 ) -> dict:
     """Create a self-contained round record for one sitting.
 
@@ -684,6 +687,7 @@ def open_round(
     @param repair_brief: repair text for kind=repair
     @param force_mid: allow mid cold open before low unlocks (escape hatch)
     @param plan_pct: optional weekly plan % at sitting start (all models)
+    @param build_scripts: optional source paths remembered for score-time copy
     @returns: new round dict (also written to disk)
     """
     cfg = load_config(root)
@@ -757,6 +761,9 @@ def open_round(
     }
     if round_['force_mid'] is None:
         del round_['force_mid']
+    stored = [str(p) for p in _normalise_build_script_paths(build_scripts)]
+    if stored:
+        round_['build_scripts'] = stored
     save_round(root, round_)
     return round_
 
@@ -781,6 +788,238 @@ def overall_from_axes(axes: dict[str, str], critical: list[str]) -> str:
     raise RuntimeError('unreachable')
 
 
+
+ARTEFACT_TEXT_SUFFIXES = ('.py', '.json')
+ARTEFACT_SKIP_SUFFIXES = {
+    '.npz',
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.webp',
+    '.gif',
+    '.tif',
+    '.tiff',
+}
+
+
+def round_artefacts_dir(root: Path, round_id: str) -> Path:
+    """Directory for a round's copied build scripts and capture metadata.
+
+    Lives beside ``R-NNN.json`` as ``rounds/R-NNN/`` (same pattern as the older
+    ``R-008-photos`` folders).
+
+    @param root: bake-offs root
+    @param round_id: e.g. R-013
+    @returns: absolute artefacts directory
+    """
+    return root / 'rounds' / round_id
+
+
+def artefacts_rel_path(round_id: str, filename: str) -> str:
+    """Repo-relative path under ``model-bakeoffs/rounds/R-NNN/``.
+
+    @param round_id: round id
+    @param filename: basename inside the artefacts dir
+    @returns: e.g. ``model-bakeoffs/rounds/R-013/r013_susu.py``
+    """
+    return f'model-bakeoffs/rounds/{round_id}/{filename}'
+
+
+def feature_plans_for_round(entries: list[Any], round_id: str) -> list[str]:
+    """Plan names from feature builds tagged with ``meta.round == round_id``.
+
+    Dedupes to the latest journal seq per plan.
+
+    @param entries: journal EntryView-like objects
+    @param round_id: round id stored on apply (e.g. R-013)
+    @returns: plan names, newest first
+    """
+    latest: dict[str, int] = {}
+    for e in entries:
+        if getattr(e, 'kind', None) != 'build':
+            continue
+        if getattr(e, 'pass_', None) != 'feature':
+            continue
+        meta = getattr(e, 'meta', None) or {}
+        if meta.get('round') != round_id:
+            continue
+        plan = getattr(e, 'plan', None)
+        if not plan:
+            continue
+        seq = int(e.seq)
+        if plan not in latest or seq > latest[plan]:
+            latest[plan] = seq
+    return [
+        plan
+        for plan, _seq in sorted(latest.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
+def resolve_plan_build_files(world_root: Path, plan: str) -> list[Path]:
+    """Locate text build sources for a journal plan under ``site/builds/``.
+
+    Prefers ``.py`` then ``.json``. Skips large binaries (``.npz``) and images.
+
+    @param world_root: active world checkout
+    @param plan: journal plan name (e.g. ``r013_susu``)
+    @returns: existing source files to copy
+    """
+    builds = Path(world_root) / 'site' / 'builds'
+    out: list[Path] = []
+    for suf in ARTEFACT_TEXT_SUFFIXES:
+        candidate = builds / f'{plan}{suf}'
+        if candidate.is_file() and candidate.suffix.lower() not in ARTEFACT_SKIP_SUFFIXES:
+            out.append(candidate)
+    return out
+
+
+def _normalise_build_script_paths(paths: list[Path | str] | None) -> list[Path]:
+    """Turn CLI / round-stored script paths into Path objects.
+
+    @param paths: optional list of paths
+    @returns: Path list (empty when none)
+    """
+    out: list[Path] = []
+    for raw in paths or []:
+        p = Path(raw)
+        if p.suffix.lower() in ARTEFACT_SKIP_SUFFIXES:
+            continue
+        out.append(p)
+    return out
+
+
+def collect_build_script_sources(
+    root: Path,
+    round_: dict,
+    *,
+    build_scripts: list[Path | str] | None = None,
+    world_root: Path | None = None,
+    list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
+) -> list[Path]:
+    """Resolve build-script sources for a round (flag → stored → journal plan).
+
+    Order of preference:
+
+    1. Explicit ``build_scripts`` (score / open flag).
+    2. Paths already stored on the round from ``open --build-script``.
+    3. Journal feature plans with ``meta.round`` matching this round, resolved
+       under ``<world>/site/builds/<plan>.{py,json}``.
+
+    @param root: bake-offs root (unused; kept for call-site symmetry)
+    @param round_: round record
+    @param build_scripts: explicit source paths
+    @param world_root: world checkout for journal / plan resolution
+    @param list_entries_fn: injectable journal listing (tests)
+    @returns: absolute-or-as-given source paths to copy (deduped by resolve)
+    """
+    del root  # call-site symmetry with copy_round_artefacts
+    explicit = _normalise_build_script_paths(build_scripts)
+    if explicit:
+        return explicit
+
+    stored = _normalise_build_script_paths(round_.get('build_scripts'))
+    if stored:
+        return stored
+
+    wroot = Path(world_root) if world_root is not None else None
+    if wroot is None:
+        try:
+            wroot = Path(active_world.WORLD_ROOT)
+        except Exception:
+            return []
+    ghost_cells = [list(c) for c in (round_.get('ghost_cells') or [])]
+    if not ghost_cells:
+        return []
+    list_entries = list_entries_fn or _default_list_feature_entries
+    try:
+        entries = list_entries(ghost_cells)
+    except Exception:
+        return []
+    sources: list[Path] = []
+    seen: set[Path] = set()
+    for plan in feature_plans_for_round(entries, round_['id']):
+        for src in resolve_plan_build_files(wroot, plan):
+            key = src.resolve() if src.exists() else src
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append(src)
+    return sources
+
+
+def copy_round_artefacts(
+    root: Path,
+    round_: dict,
+    *,
+    build_scripts: list[Path | str] | None = None,
+    world_root: Path | None = None,
+    list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
+) -> dict[str, Any]:
+    """Copy build scripts + capture metadata into ``rounds/R-NNN/``.
+
+    Skips large binaries (``.npz``) and screenshots. Capture metadata is
+    ``cameras.json`` from the round's shots directory when present.
+
+    @param root: bake-offs root
+    @param round_: round record (must include ``id``)
+    @param build_scripts: optional explicit source paths
+    @param world_root: world checkout (journal + cameras.json)
+    @param list_entries_fn: injectable journal listing (tests)
+    @returns: ``artefacts`` map for the round JSON (repo-relative paths)
+    """
+    round_id = round_['id']
+    sources = collect_build_script_sources(
+        root,
+        round_,
+        build_scripts=build_scripts,
+        world_root=world_root,
+        list_entries_fn=list_entries_fn,
+    )
+
+    wroot = Path(world_root) if world_root is not None else None
+    if wroot is None:
+        try:
+            wroot = Path(active_world.WORLD_ROOT)
+        except Exception:
+            wroot = None
+    cameras_src: Path | None = None
+    if wroot is not None:
+        candidate = (
+            wroot
+            / 'verification'
+            / 'site'
+            / f'{round_shots_slug(round_id)}-shots'
+            / 'cameras.json'
+        )
+        if candidate.is_file():
+            cameras_src = candidate
+
+    if not sources and cameras_src is None:
+        return {'build_scripts': []}
+
+    dest_dir = round_artefacts_dir(root, round_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_scripts: list[str] = []
+    for src in sources:
+        src_path = Path(src)
+        if not src_path.is_file():
+            raise FileNotFoundError(f'build script not found: {src_path}')
+        if src_path.suffix.lower() in ARTEFACT_SKIP_SUFFIXES:
+            continue
+        dest = dest_dir / src_path.name
+        shutil.copy2(src_path, dest)
+        copied_scripts.append(artefacts_rel_path(round_id, dest.name))
+
+    artefacts: dict[str, Any] = {'build_scripts': copied_scripts}
+    if cameras_src is not None:
+        cameras_dest = dest_dir / 'cameras.json'
+        shutil.copy2(cameras_src, cameras_dest)
+        artefacts['cameras'] = artefacts_rel_path(round_id, 'cameras.json')
+
+    return artefacts
+
+
 def score_round(
     root: Path,
     round_id: str,
@@ -794,8 +1033,16 @@ def score_round(
     plan_pct: int | None = None,
     wallclock_min: int | None = None,
     interruptions: str | None = None,
+    build_scripts: list[Path | str] | None = None,
+    world_root: Path | None = None,
+    list_entries_fn: Callable[[list[list[int]]], list[Any]] | None = None,
 ) -> dict:
     """Record interview grades on a round.
+
+    Also copies the round's build script(s) and capture metadata into
+    ``model-bakeoffs/rounds/R-NNN/`` and records repo-relative paths under
+    ``artefacts``. Script paths come from ``build_scripts``, paths stored at
+    open, or the journal plan name tagged with this round id.
 
     @param root: bake-offs root
     @param round_id: round id
@@ -808,6 +1055,9 @@ def score_round(
     @param plan_pct: optional weekly plan % at sitting end (all models)
     @param wallclock_min: optional active wall-clock minutes
     @param interruptions: optional interruption notes for the usage block
+    @param build_scripts: optional source paths to copy (overrides stored/journal)
+    @param world_root: world checkout for journal / cameras.json resolution
+    @param list_entries_fn: injectable journal listing (tests)
     @returns: updated round
     """
     cfg = load_config(root)
@@ -866,6 +1116,17 @@ def score_round(
 
     round_['status'] = 'scored'
     round_['scored_at'] = utc_now()
+    if build_scripts:
+        round_['build_scripts'] = [
+            str(p) for p in _normalise_build_script_paths(build_scripts)
+        ]
+    round_['artefacts'] = copy_round_artefacts(
+        root,
+        round_,
+        build_scripts=build_scripts,
+        world_root=world_root,
+        list_entries_fn=list_entries_fn,
+    )
     save_round(root, round_)
     return round_
 
@@ -1762,6 +2023,14 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help='weekly plan usage %% at sitting start (all models; 0..100)',
     )
+    p_open.add_argument(
+        '--build-script',
+        action='append',
+        default=[],
+        type=Path,
+        dest='build_scripts',
+        help='build script path to remember for score-time artefact copy (repeatable)',
+    )
 
     p_score = sub.add_parser('score', help='record interview grades for a round')
     p_score.add_argument('round_id')
@@ -1786,6 +2055,15 @@ def main(argv: list[str] | None = None) -> int:
         '--interruptions',
         default=None,
         help='short interruption notes (stored on the usage block)',
+    )
+    p_score.add_argument(
+        '--build-script',
+        action='append',
+        default=[],
+        type=Path,
+        dest='build_scripts',
+        help='build script to copy into model-bakeoffs/rounds/R-NNN/ (repeatable; '
+        'else uses open --build-script or journal plan for this round)',
     )
 
     p_repair = sub.add_parser('repair', help='open attempt N+1 with a repair brief')
@@ -1898,6 +2176,7 @@ def main(argv: list[str] | None = None) -> int:
                 task=args.task,
                 force_mid=bool(args.force_mid),
                 plan_pct=args.plan_pct,
+                build_scripts=args.build_scripts or None,
             )
             print(format_sitting(round_))
             print(f"\nwrote {round_path(root, round_['id'])}")
@@ -1914,8 +2193,14 @@ def main(argv: list[str] | None = None) -> int:
                 plan_pct=args.plan_pct,
                 wallclock_min=args.wallclock_min,
                 interruptions=args.interruptions,
+                build_scripts=args.build_scripts or None,
             )
-            print(f"scored {round_['id']} overall={round_['overall']}")
+            arts = round_.get('artefacts') or {}
+            scripts = arts.get('build_scripts') or []
+            extra = f" artefacts={len(scripts)} script(s)" if scripts else ''
+            if arts.get('cameras'):
+                extra += ' +cameras'
+            print(f"scored {round_['id']} overall={round_['overall']}{extra}")
             return 0
         if args.cmd == 'repair':
             require_bakeoff_active_world(root)

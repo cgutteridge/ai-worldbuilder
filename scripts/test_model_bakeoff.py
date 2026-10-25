@@ -492,6 +492,133 @@ class TestModelBakeoff(unittest.TestCase):
             azure = next(t for t in cat['tools'] if t['id'] == 'azure')
             self.assertEqual(azure['models'][0]['id'], 'gpt-mini')
 
+    def test_score_copies_build_script_artefacts(self):
+        """Score copies build script + cameras.json into rounds/R-NNN/."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / 'bakeoffs'
+            world = Path(d) / 'world'
+            root.mkdir()
+            _seed(root)
+
+            builds = world / 'site' / 'builds'
+            builds.mkdir(parents=True)
+            script = builds / 'r001_susu.py'
+            script.write_text(
+                '"""R-001 evidence table + build script.\n"""\nPLAN = "r001_susu"\n',
+                encoding='utf-8',
+            )
+            # Sidecar binary / screenshots must not be copied.
+            (builds / 'r001-lidar.npz').write_bytes(b'not-a-real-npz')
+            (builds / 'skip_me.png').write_bytes(b'fake-png')
+
+            shots = world / 'verification' / 'site' / 'r001-shots'
+            shots.mkdir(parents=True)
+            cameras = {
+                'cameras': {
+                    'square_south': {'eye': [1, 2, 3], 'look': [4, 5, 6]},
+                }
+            }
+            (shots / 'cameras.json').write_text(
+                json.dumps(cameras, indent=2) + '\n', encoding='utf-8'
+            )
+            (shots / 'square_south.png').write_bytes(b'fake-shot')
+
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='composer',
+                task='feature_design',
+                build_scripts=[script],
+            )
+            self.assertEqual(round_['build_scripts'], [str(script)])
+
+            scored = MB.score_round(
+                root,
+                round_['id'],
+                overall='pass',
+                axes={'massing': 'pass', 'keep': 'pass'},
+                world_root=world,
+            )
+
+            art_dir = root / 'rounds' / 'R-001'
+            self.assertTrue((art_dir / 'r001_susu.py').is_file())
+            self.assertTrue((art_dir / 'cameras.json').is_file())
+            self.assertFalse((art_dir / 'r001-lidar.npz').exists())
+            self.assertFalse((art_dir / 'skip_me.png').exists())
+            self.assertFalse((art_dir / 'square_south.png').exists())
+            self.assertIn(
+                'evidence table',
+                (art_dir / 'r001_susu.py').read_text(encoding='utf-8'),
+            )
+
+            arts = scored['artefacts']
+            self.assertEqual(
+                arts['build_scripts'],
+                ['model-bakeoffs/rounds/R-001/r001_susu.py'],
+            )
+            self.assertEqual(
+                arts['cameras'],
+                'model-bakeoffs/rounds/R-001/cameras.json',
+            )
+            disk = MB.load_round(root, 'R-001')
+            self.assertEqual(disk['artefacts'], arts)
+
+    def test_score_resolves_build_script_from_journal_plan(self):
+        """Without --build-script, score uses journal plan → site/builds/<plan>.py."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / 'bakeoffs'
+            world = Path(d) / 'world'
+            root.mkdir()
+            _seed(root)
+
+            builds = world / 'site' / 'builds'
+            builds.mkdir(parents=True)
+            (builds / 'r001_susu.py').write_text('# from journal\n', encoding='utf-8')
+            (builds / 'r001_susu.json').write_text(
+                '{"name": "r001_susu"}\n', encoding='utf-8'
+            )
+            (builds / 'r001-lidar.npz').write_bytes(b'npz')
+
+            round_ = MB.open_round(
+                root, tool='cursor', model='composer', task='feature_design'
+            )
+            from cell_journal import EntryView
+
+            tagged = EntryView(
+                seq=10,
+                kind='build',
+                plan='r001_susu',
+                pass_='feature',
+                cell=(48, -44),
+                cells=((47, -44), (48, -44), (48, -43)),
+                status='landed',
+                undone=False,
+                n=1,
+                owner='test',
+                ts='2026-01-01T00:00:00Z',
+                meta={'round': 'R-001'},
+            )
+
+            scored = MB.score_round(
+                root,
+                round_['id'],
+                overall='pass',
+                axes={'massing': 'pass', 'keep': 'pass'},
+                world_root=world,
+                list_entries_fn=lambda _cells: [tagged],
+            )
+            art_dir = root / 'rounds' / 'R-001'
+            self.assertTrue((art_dir / 'r001_susu.py').is_file())
+            self.assertTrue((art_dir / 'r001_susu.json').is_file())
+            self.assertFalse((art_dir / 'r001-lidar.npz').exists())
+            self.assertEqual(
+                scored['artefacts']['build_scripts'],
+                [
+                    'model-bakeoffs/rounds/R-001/r001_susu.py',
+                    'model-bakeoffs/rounds/R-001/r001_susu.json',
+                ],
+            )
+
 
 class TestBakeoffWorldGuard(unittest.TestCase):
     """CLI open/repair must run only against the bake-off world."""
@@ -939,6 +1066,7 @@ class TestCapture(unittest.TestCase):
                 'worlds/bakeoff/verification/site/r001-shots/real_aerial.png',
                 disk['photos']['real_refs_note'],
             )
+
 
     def test_cli_capture_refuses_wrong_world(self):
         with tempfile.TemporaryDirectory() as d:
