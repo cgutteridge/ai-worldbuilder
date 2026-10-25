@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from contact_sheet import make_sheet
-from mc_paced import D, UUID, Paced, xyz
+from mc_paced import UUID, Paced
 
 RES = {'--hires': 1, '--midres': 2}
 LOWRES = 4
@@ -213,20 +213,26 @@ def main():
     if not names:
         raise SystemExit('No views registered yet — add entries to site_views.VIEWS')
     OUT.mkdir(parents=True, exist_ok=True)
+    from mc_player import move_player
+
     w, v = Paced(), Paced(8766)
     shots = []
     info = w.text('player_get_info', {'uuid': UUID})
-    num = lambda k: float(re.search(rf'{k}: (-?[\d.]+)', info).group(1))
     mode = re.search(r'gameMode: (\w+)', info).group(1)
-    w.tell(f'Views: moving you through {len(names)} viewpoints in spectator for screenshots; your game mode returns after.')
-    w.call('player_set_gamemode', {'uuid': UUID, 'gamemode': 'spectator'})
+    move_player(
+        why=f'Views: moving you through {len(names)} viewpoints in spectator for screenshots; your game mode returns after.',
+        gamemode='spectator',
+        m=w,
+    )
     try:
         for name in names:
             pos, look = VIEWS[name]
-            w.call('entity_teleport', {
-                'uuid': UUID, 'dimension': D,
-                'position': xyz(pos), 'facing': xyz(look),
-            })
+            move_player(
+                why=f'Views: capturing {name}',
+                position=pos,
+                facing=look,
+                m=w,
+            )
             time.sleep(4)
             r = v.call('view_capture', {'downscale': downscale, 'close_screen': True})
             for b in r['content']:
@@ -236,8 +242,11 @@ def main():
                     shots.append(path)
                     print(path, flush=True)
     finally:
-        w.call('player_set_gamemode', {'uuid': UUID, 'gamemode': mode})
-        w.tell('Views finished; game mode restored (you stay at the last viewpoint).')
+        move_player(
+            why='Views finished; game mode restored (you stay at the last viewpoint).',
+            gamemode=mode,
+            m=w,
+        )
     sheet = make_sheet(shots, OUT / f'{prefix or "views-"}contact.png')
     if sheet:
         print(f'CONTACT SHEET: {sheet}  (read this one image; open single views only for detail)')

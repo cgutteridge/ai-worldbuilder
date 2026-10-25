@@ -40,10 +40,10 @@ class Paced:
     def tell(self, message):
         """Chat the player (before and after any tool moves them). A failed message never stops the work.
 
-        @param message: text shown in the player's chat, prefixed [Refine]
+        @param message: text shown in the player's chat, prefixed [AI-builder]
         """
         try:
-            self.call('player_send_message', {'uuid': UUID, 'message': f'[Refine] {message}'})
+            self.call('player_send_message', {'uuid': UUID, 'message': f'[AI-builder] {message}'})
         except Exception as e:  # noqa: BLE001
             print(f'  (could not message player: {e})')
 

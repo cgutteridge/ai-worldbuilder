@@ -33,7 +33,14 @@ Always put the player above the target, looking straight down — before the fir
 
 1. Centre: feature footprint midpoint, or cell centre (`tx*128+64`, `tz*128+64`).
 2. Height: top of the target + ~20 (feature top from its cells / lidar; cell: surface + 40 is fine).
-3. `entity_teleport` to that `x,y,z` with `facing` a point on the ground at the same `x,z` (look straight down). Spectator or creative.
+3. Move with the required-why CLI (not raw `entity_teleport`). `--why` names the target, e.g. hovering over the feature or cell for the redo. Face a point on the ground at the same `x,z` (look straight down). Spectator or creative:
+
+   ```bash
+   .venv/bin/python scripts/mc_player.py move \
+     --why "Hovering over oakdene_court so you can see the redo" \
+     --pos x,y,z --facing x,y,z --gamemode spectator
+   ```
+
 4. Do not restore their old spot.
 
 Done when they are hovering and looking down at the target.

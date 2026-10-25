@@ -220,22 +220,30 @@ def aerial_crop_bbox(bbox: tuple[int, int, int, int], out: Path, pad: int = 8, s
     return out
 
 
-def _capture_view(eye: list[float], look: list[float], dest: Path, downscale: int = 4) -> Path:
+def _capture_view(
+    eye: list[float],
+    look: list[float],
+    dest: Path,
+    downscale: int = 4,
+    why: str = 'Evidence sheet: capturing a view',
+    m=None,
+) -> Path:
     """Teleport the player and write one client screenshot to ``dest``.
 
     @param eye: camera position
     @param look: look-at point
     @param dest: output PNG
     @param downscale: view_capture downscale factor
+    @param why: non-empty explanation for the teleport
+    @param m: optional paced world client to reuse
     @returns: ``dest``
     """
-    from mc_paced import D, UUID, Paced, xyz
+    from mc_paced import Paced
+    from mc_player import move_player
 
-    w, v = Paced(), Paced(8766)
-    w.call('entity_teleport', {
-        'uuid': UUID, 'dimension': D,
-        'position': xyz(eye), 'facing': xyz(look),
-    })
+    w = m or Paced()
+    v = Paced(8766)
+    move_player(why=why, position=eye, facing=look, m=w)
     time.sleep(4)
     r = v.call('view_capture', {'downscale': downscale, 'close_screen': True})
     for b in r['content']:
@@ -314,19 +322,25 @@ def build_evidence_sheet(
 
     live_capture = capture is None and use_minecraft
     capture_fn = capture
-    if capture_fn is None and use_minecraft:
-        capture_fn = lambda eye, look, dest: _capture_view(eye, look, dest, downscale)
+    world_m = None
     aerial_fn = aerial_fn or aerial_crop_bbox
 
     mode = None
     if live_capture:
         from mc_paced import UUID, Paced
+        from mc_player import move_player
         import re as _re
-        w = Paced()
-        info = w.text('player_get_info', {'uuid': UUID})
+        world_m = Paced()
+        info = world_m.text('player_get_info', {'uuid': UUID})
         mode = _re.search(r'gameMode: (\w+)', info).group(1)
-        w.tell(f'Evidence sheet: capturing {len(portals)} portal view(s) + top-down for {name}.')
-        w.call('player_set_gamemode', {'uuid': UUID, 'gamemode': 'spectator'})
+        move_player(
+            why=f'Evidence sheet: capturing {len(portals)} portal view(s) + top-down for {name}.',
+            gamemode='spectator',
+            m=world_m,
+        )
+
+        def capture_fn(eye, look, dest, *, why):
+            return _capture_view(eye, look, dest, downscale, why=why, m=world_m)
 
     try:
         for p in portals:
@@ -337,17 +351,29 @@ def build_evidence_sheet(
             if capture_fn is not None:
                 eye, look = portal_facing_camera(p['x'], p['z'], cx, cz)
                 dest = shots_dir / f'portal-{_safe(pid)}.png'
-                tiles.append(capture_fn(eye, look, dest))
+                if live_capture:
+                    tiles.append(capture_fn(
+                        eye, look, dest, why=f'Evidence sheet {name}: portal {pid}',
+                    ))
+                else:
+                    tiles.append(capture_fn(eye, look, dest))
         if capture_fn is not None:
             eye, look = topdown_camera(bbox)
             dest = shots_dir / 'top-down.png'
-            tiles.append(capture_fn(eye, look, dest))
+            if live_capture:
+                tiles.append(capture_fn(
+                    eye, look, dest, why=f'Evidence sheet {name}: top-down',
+                ))
+            else:
+                tiles.append(capture_fn(eye, look, dest))
     finally:
         if mode is not None:
-            from mc_paced import UUID, Paced
-            w = Paced()
-            w.call('player_set_gamemode', {'uuid': UUID, 'gamemode': mode})
-            w.tell(f'Evidence sheet captures done for {name}; game mode restored.')
+            from mc_player import move_player
+            move_player(
+                why=f'Evidence sheet captures done for {name}; game mode restored.',
+                gamemode=mode,
+                m=world_m,
+            )
 
     aerial_dest = shots_dir / 'aerial-crop.png'
     aerial = aerial_fn(bbox, aerial_dest)

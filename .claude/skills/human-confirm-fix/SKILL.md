@@ -25,7 +25,15 @@ Done when that line is sent. Stop and wait for the answer.
 
 ## 2. Show it (user said yes)
 
-1. Teleport the player (`player_list_online` for the uuid, `entity_teleport` with `facing`) to a vantage near the fix, looking at it. Take a `view_capture`.
+1. Move the player with the required-why CLI (not raw `entity_teleport`). Name the fix and place in `--why` so Minecraft chat shows `[AI-builder] …`:
+
+   ```bash
+   .venv/bin/python scripts/mc_player.py move \
+     --why "Showing the roof fix at the badger building" \
+     --pos x,y,z --facing x,y,z --gamemode spectator
+   ```
+
+   Take a `view_capture` from that vantage.
 2. Put in chat only the images that bear on the question: the capture, plus the aerial, Street View or lidar grid already listed in `site/cells/<tx>_<tz>-SOURCES.txt`. Fetch nothing new (`rules/reference-token-budget.md`).
 3. Ask **one** question stating what changed and where, written so "yes" accepts your recommendation, e.g. "Dense woodland near Bluebell Road now has ~40 crowns (was 6). Right?"
 
