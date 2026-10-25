@@ -59,6 +59,26 @@ USAGE_SOURCES = (
 ROUND_TYPES = ('single', 'hybrid')
 USAGE_ROLES = ('designer', 'builder')
 HANDOFF_KINDS = ('script', 'spec', 'other')
+# Catalogue ids often append effort/reasoning; Claude Code message.model does not.
+TRANSCRIPT_EFFORT_SUFFIXES = ('-low', '-medium', '-high')
+
+
+def transcript_model_prefix(catalogue_id: str) -> str:
+    """Derive the API model-id prefix used in transcripts from a catalogue id.
+
+    Catalogue rows often append an effort/reasoning suffix (``-low``, ``-medium``,
+    ``-high``) that does not appear on Claude Code ``message.model``. Strip one
+    trailing effort suffix so ``startswith`` filters match real transcripts
+    (e.g. ``claude-opus-5-5-low`` → ``claude-opus-5-5``).
+
+    @param catalogue_id: model id from catalogue.json / round record
+    @returns: prefix for ``sum_transcript_usage(..., model_prefix=...)``
+    """
+    for suffix in TRANSCRIPT_EFFORT_SUFFIXES:
+        if catalogue_id.endswith(suffix):
+            return catalogue_id[: -len(suffix)]
+    return catalogue_id
+
 
 
 def bakeoffs_root(path: Path | None = None) -> Path:
@@ -879,7 +899,9 @@ def open_round(
 
     ``model`` is always the **builder** (apply owner). Pass ``designer`` to open
     a hybrid sitting: designer writes the evidence table / build spec; builder
-    applies. Hybrid rounds are excluded from the single-model ladder.
+    applies. Hybrid rounds are excluded from the single-model ladder. Designer
+    and builder must have distinct transcript model prefixes (catalogue effort
+    suffixes stripped) so usage auto-split can tell them apart.
 
     @param root: bake-offs root
     @param tool: tool id
@@ -917,6 +939,16 @@ def open_round(
             raise ValueError(
                 f"designer model tier {designer_row.get('tier')!r} not in "
                 f"active_tiers {cfg['active_tiers']}"
+            )
+        designer_prefix = transcript_model_prefix(designer_row['id'])
+        builder_prefix = transcript_model_prefix(model_row['id'])
+        if designer_prefix == builder_prefix:
+            raise ValueError(
+                'hybrid designer/builder share the same transcript model '
+                f'prefix {designer_prefix!r} after stripping effort suffixes '
+                f'({designer_row["id"]!r} / {model_row["id"]!r}); pick models '
+                'from different families so usage auto-split can tell them apart, '
+                'or record usage with --role'
             )
 
     # Mid unlock applies to the builder (apply owner), not the designer.
@@ -1397,10 +1429,12 @@ def record_usage(
     (`source=cursor-ui`). Leave nulls rather than inventing counts.
 
     Hybrid rounds: omit ``role`` with ``from_transcript`` to auto-split into
-    ``usage.by_role.designer`` / ``usage.by_role.builder`` (model id prefixes)
-    and set top-level totals to the sum. Pass ``role=designer|builder`` to
-    record one side (optionally with ``model_prefix``). Weekly ``plan_pct_*``
-    stays on the top-level usage block (shared meter).
+    ``usage.by_role.designer`` / ``usage.by_role.builder`` using transcript
+    prefixes derived from catalogue ids (effort suffixes stripped) and set
+    top-level totals to the sum. Raises if a role matches 0 requests.
+    Pass ``role=designer|builder`` to record one side (optionally with
+    ``model_prefix``). Weekly ``plan_pct_*`` stays on the top-level usage
+    block (shared meter).
 
     @param root: bake-offs root
     @param round_id: round id
@@ -1447,11 +1481,19 @@ def record_usage(
         usage = dict(round_.get('usage') or usage_template())
         by_role = dict(usage.get('by_role') or {})
         role_notes = []
-        for role_name, prefix in (
+        for role_name, catalogue_id in (
             ('designer', designer_id),
             ('builder', builder_id),
         ):
+            prefix = transcript_model_prefix(catalogue_id)
             summed = sum_transcript_usage(from_transcript, model_prefix=prefix)
+            if summed['requests'] == 0:
+                raise ValueError(
+                    f'hybrid usage auto-split matched 0 {role_name} requests '
+                    f'for transcript prefix {prefix!r} (catalogue id '
+                    f'{catalogue_id!r}); check the transcript path or pass '
+                    f'--role {role_name} with an explicit --model-prefix'
+                )
             block = dict(by_role.get(role_name) or usage_role_template())
             _apply_counts_to_usage_block(
                 block,
@@ -1536,11 +1578,14 @@ def record_usage(
 
     if from_transcript is not None:
         if role is not None and model_prefix is None:
-            model_prefix = (
+            catalogue_id = (
                 (round_.get('designer') or {}).get('id')
                 if role == 'designer'
                 else (round_.get('model') or {}).get('id')
             )
+            if not catalogue_id:
+                raise ValueError(f'hybrid round missing {role} model id')
+            model_prefix = transcript_model_prefix(catalogue_id)
         summed = sum_transcript_usage(from_transcript, model_prefix=model_prefix)
         input_tokens = summed['input_tokens']
         output_tokens = summed['output_tokens']

@@ -191,6 +191,27 @@ def _add_hybrid_designer(root: Path) -> None:
             raise
 
 
+def _add_claude_effort_models(root: Path) -> None:
+    """Register Claude Code catalogue rows with effort suffixes (idempotent)."""
+    for model_id, tier, label in (
+        ('claude-opus-5-5-low', 'high', 'Claude Opus 5.5 (low effort)'),
+        ('claude-opus-5-5-medium', 'high', 'Claude Opus 5.5 (medium effort)'),
+        ('claude-sonnet-5-5-medium', 'mid', 'Claude Sonnet 5.5 (medium effort)'),
+    ):
+        try:
+            MB.add_model(
+                root,
+                tool='claude',
+                model_id=model_id,
+                tier=tier,
+                label=label,
+                bulk_ok=True,
+            )
+        except ValueError as exc:
+            if 'already on' not in str(exc):
+                raise
+
+
 class TestModelBakeoff(unittest.TestCase):
     def test_open_round_is_self_contained(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1293,6 +1314,41 @@ class HybridRoundTests(unittest.TestCase):
             self.assertEqual(single['round_type'], 'single')
             self.assertNotIn('designer', single)
 
+    def test_transcript_model_prefix_strips_effort_suffix(self):
+        self.assertEqual(
+            MB.transcript_model_prefix('claude-opus-5-5-low'),
+            'claude-opus-5-5',
+        )
+        self.assertEqual(
+            MB.transcript_model_prefix('claude-sonnet-5-5-medium'),
+            'claude-sonnet-5-5',
+        )
+        self.assertEqual(
+            MB.transcript_model_prefix('claude-haiku-5-5-high'),
+            'claude-haiku-5-5',
+        )
+        self.assertEqual(
+            MB.transcript_model_prefix('claude-haiku-5-5'),
+            'claude-haiku-5-5',
+        )
+
+    def test_hybrid_rejects_colliding_transcript_prefixes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            _add_claude_effort_models(root)
+            with self.assertRaises(ValueError) as ctx:
+                MB.open_round(
+                    root,
+                    tool='claude',
+                    model='claude-opus-5-5-medium',
+                    designer='claude-opus-5-5-low',
+                    task='feature_design',
+                )
+            msg = str(ctx.exception).lower()
+            self.assertIn('transcript', msg)
+            self.assertIn('prefix', msg)
+
     def test_hybrid_usage_split_and_score_handoff_copy(self):
         fixture = (
             Path(__file__).resolve().parent
@@ -1302,14 +1358,15 @@ class HybridRoundTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _seed(root)
+            _add_claude_effort_models(root)
             self._unlock_mid(root)
             handoff = root / 'r_hybrid_susu.py'
             handoff.write_text('PLAN = "r_hybrid_susu"\n', encoding='utf-8')
             round_ = MB.open_round(
                 root,
-                tool='cursor',
-                model='sonnet',
-                designer='opus-low',
+                tool='claude',
+                model='claude-sonnet-5-5-medium',
+                designer='claude-opus-5-5-low',
                 task='feature_design',
                 plan_pct=50,
             )
@@ -1335,15 +1392,59 @@ class HybridRoundTests(unittest.TestCase):
             self.assertEqual(u['source'], 'api')
             self.assertEqual(u['by_role']['designer']['total_tokens'], 89)
             self.assertEqual(u['by_role']['designer']['requests'], 2)
-            self.assertEqual(u['by_role']['designer']['model_prefix'], 'opus-low')
+            self.assertEqual(
+                u['by_role']['designer']['model_prefix'],
+                'claude-opus-5-5',
+            )
             self.assertEqual(u['by_role']['builder']['total_tokens'], 217)
             self.assertEqual(u['by_role']['builder']['requests'], 2)
+            self.assertEqual(
+                u['by_role']['builder']['model_prefix'],
+                'claude-sonnet-5-5',
+            )
             self.assertEqual(u['total_tokens'], 89 + 217)
             self.assertEqual(u['plan_pct_start'], 50)
             self.assertEqual(u['plan_pct_end'], 52)
             status = MB.format_status(root)
-            self.assertIn('designer=opus-low', status)
+            self.assertIn('designer=claude-opus-5-5-low', status)
             self.assertIn('plan=50%→52% (Δ+2)', status)
+
+    def test_hybrid_usage_auto_split_errors_on_zero_requests(self):
+        fixture = (
+            Path(__file__).resolve().parent
+            / 'testdata'
+            / 'bakeoff_transcript_hybrid.jsonl'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _seed(root)
+            _add_claude_effort_models(root)
+            # Builder catalogue id whose derived prefix is absent from the fixture.
+            MB.add_model(
+                root,
+                tool='claude',
+                model_id='claude-haiku-5-5-high',
+                tier='low',
+                label='Claude Haiku 5.5 (high effort)',
+                bulk_ok=True,
+            )
+            round_ = MB.open_round(
+                root,
+                tool='claude',
+                model='claude-haiku-5-5-high',
+                designer='claude-opus-5-5-low',
+                task='feature_design',
+                plan_pct=50,
+            )
+            with self.assertRaises(ValueError) as ctx:
+                MB.record_usage(
+                    root,
+                    round_['id'],
+                    from_transcript=fixture,
+                )
+            msg = str(ctx.exception).lower()
+            self.assertIn('0', msg)
+            self.assertIn('builder', msg)
 
     def test_live_config_has_hybrid_sitting_steps(self):
         cfg = MB.load_config(MB.DEFAULT_BAKEOFFS)
