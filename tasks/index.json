@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002).",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 84,
+  "nextTaskId": 85,
   "tasks": [
     {
       "id": 78,
@@ -11,6 +11,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From the R-013 cost discussion (2026-10-24). Data: Sonnet medium/high = pass at ~1 pt weekly plan usage (R-009 43->44%); Opus 5.5 low/medium = great (R-012 5.78M, R-013 7.57M transcript tokens, R-013 45->47% weekly). Opus output is small (R-013: 38k output vs 7.27M cache reads over 59 turns), so cost is turn count x context, not authorship. Hypothesis: Opus low writes the evidence table + build spec in few turns; Sonnet medium executes (apply, recover, capture) where turns pile up. Do: extend model-bakeoffs/PROTOCOL.md + scripts/model_bakeoff.py so a round can name a designer model and a builder model (e.g. `open --tool claude-code --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low`), with the hand-off artefact (spec/script path) recorded and usage split per model; keep one apply owner (builder). Measure with task 75 units (transcript sums + plan % delta). Run >= 2 sittings before drawing conclusions (single sittings cannot separate pass from great). Cheaper still once task 76 lets the designer emit a feature_build spec instead of a custom script. Done when: the round type exists with tests and at least two hybrid sittings are scored and compared against R-009/R-012. Code+tests merged 2026-10-25 as e0e85ee (task/78-bakeoff-hybrid-designer-builder \u2192 main; 74c028b + fix 7d410b3). Round type exists (--designer/--handoff, sitting_steps_hybrid, usage by_role). Still open: run \u22652 hybrid sittings (score + usage) and compare vs R-009/R-012; wave worker could not run live Claude Code + Minecraft + interview."
+    },
+    {
+      "id": 84,
+      "title": "Use pyproj for coordinate conversion instead of GDAL subprocesses",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "User request 2026-10-25: replace GDAL for individual coordinate conversion and remove references that prescribe it for that purpose. This is explicitly NOT a blanket GDAL ban: retain appropriate uses for bulk geospatial file processing, including lidar/raster processing. Replace scripts/world_frame.py _gdal_transform/gdaltransform subprocesses with cached in-process pyproj Transformer instances, including the existing small-batch point conversion APIs. Preserve public interfaces, coordinate ordering (explicit always_xy), inverse conversions, empty-input behaviour and supported CRS handling; keep world_frame as the shared conversion boundary and geodetic.py/osgb.py as compatibility wrappers. Add pyproj to the project dependency/setup mechanism. Audit other point-conversion subprocess call sites and migrate them through the shared boundary. Update current docstrings, CLI help, setup instructions, skills and tests that describe GDAL/gdaltransform as required for point conversion (known starting points: scripts/world_frame.py, scripts/geodetic.py, scripts/geo.py, .claude/skills/new-world-build/SKILL.md); retain historical ADR context and legitimate bulk-processing references. Verify transformation accuracy against independent fixed reference coordinates, including a documented policy for OSTN15 grid availability/fallback, rather than assuming pyproj and the current GDAL installation choose identical transformations. Unit tests must use explicit fixtures and require neither an active world nor a GDAL executable. Done when: point-conversion paths run in-process through pyproj with no GDAL subprocess dependency; tests cover forward/inverse values, axis order, small batches and empty inputs; relevant current references are updated; appropriate bulk-file GDAL workflows remain supported."
     }
   ]
 }
