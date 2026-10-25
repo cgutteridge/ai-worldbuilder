@@ -44,13 +44,31 @@
       "notes": "Approved plan 2026-10-25; depends on #84. Extend scripts/world_frame.py as the canonical coordinate interface, reusing existing XYZ/Web Mercator maths rather than adding a competing tool. Forward: accept zoom plus either latitude/longitude or Minecraft x,z; return tile code zoom/x/y plus east_px and south_px. Reverse: accept tile code and pixel offsets; return latitude/longitude or Minecraft x,z using an explicit frame or the explicitly selected active world. Agreed offset convention: floating-point pixels from the northwest corner of a 256-pixel logical tile; east increases rightward, south increases downward; offsets are not northings and do not depend on downloaded image resolution. Preserve fractional precision and existing Minecraft rounding behaviour. Extend to-wm and add from-wm with structured JSON output; provide JSON batch input from a file or stdin, reuse the single-point conversion functions and preserve input order. Latitude/longitude-only conversion must work with no selected world; Minecraft conversion requires explicit or explicitly selected world-frame configuration. Support integer zooms 0 through 30, canonical longitude [-180,180), valid Web Mercator latitudes and finite coordinates; reject malformed/out-of-range tile indices and offsets outside [0,256). Permanent tests cover known tile positions, fractional offsets, tile edges, both hemispheres, forward/reverse conversions, fictional Minecraft frames, batches, empty batches and invalid inputs; use fixed expected values and no GDAL, network or real-world checkout data. Audit existing helpers, CLIs and AI instructions for overlapping coordinate-conversion routes, including world_frame, ref_manifest, geo and provider adapters. Consolidate conversion maths into world_frame; retain necessary compatibility wrappers only as delegates. Update AI-facing documentation, skills and CLI help to teach one preferred single-point and batch interface, including offset units/directions, coordinate ordering, world selection and runnable examples. Keep tile-image fetching and evidence-sheet generation documented as distinct capabilities. Done when: both directions and batch mode work through one canonical implementation; permanent tests cover the agreed cases independently of current world; AI guidance contains no competing conversion implementations or contradictory instructions. GDAL remains allowed for appropriate bulk-file geospatial processing."
     },
     {
-      "id": 87,
-      "title": "Include active-world contract tests in the default unit suite",
+      "id": 91,
+      "title": "Isolate evidence-sheet HTML tests from coordinate transformations",
       "status": "todo",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "User-requested test refinement 2026-10-25. tests/test_active_world.py contains fixture-based contract tests but scripts/run_tests.py discovers only scripts/test_*.py. Include these contracts exactly once in the default suite, preferably by moving the module into the canonical scripts/ test location so --only can select it without a second discovery mechanism. Preserve refusal when the production active-world pointer is unset, identity/config loading and other existing contracts. Ensure tests isolate and restore environment variables, sys.modules and cached frame state so import order cannot change the rest of the suite. Tests must use temporary fictional world configuration, never a real checkout. Done when: the default runner executes the contracts, focused selection works, the suite passes with no active world selected, and no real-world dependency is introduced."
+      "notes": "User-requested test refinement 2026-10-25. Markup tests in scripts/test_google_aerial.py currently call real coordinate projection while asserting tile images, outlines and marker HTML. Supply deterministic projection responses at the module boundary for markup cases so they exercise rendering and placement with explicit expected inputs/outputs rather than GDAL or pyproj transformations. Keep useful assertions about coordinates passed to the projection boundary and rendered positions; do not reduce checks to tautological mocks. Coordinate correctness belongs to focused world_frame fixtures and tasks #84-#86. This task can proceed independently of the pyproj migration: stub the existing boundary without creating a second conversion implementation. Audit comparable evidence-sheet tests for the same coupling. Done when: markup tests perform no real CRS transformations or geospatial subprocess calls, existing rendering behaviour stays covered, and tests run using fictional inputs without an active world, network or GDAL. Record focused runtime before/after. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 1/5 (#91, #90, #87, #88, #89). First: remove real projection work from markup tests. The original audit measured about 5.9 seconds for the google_aerial module; measure actual savings rather than assuming the entire module cost disappears."
+    },
+    {
+      "id": 90,
+      "title": "Separate pure ship-branch tests from Git repository fixtures",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "User-requested test refinement 2026-10-25. scripts/test_ship_branch.py creates and commits a temporary Git repository in shared setUp even for pure helpers such as environment cleanup and changed-path classification. Move pure-function cases into TestCase classes without repository setup; retain real temporary Git repositories for merge, branch, worktree, lock and cleanup integration behaviour. Audit neighbouring setup for the same unnecessary work, without adding mocking that removes useful Git integration coverage. Preserve isolation from inherited Git hook variables. Done when: pure cases create no repository or commits, repository-backed behavioural coverage remains intact, focused tests pass and a timing/setup-count comparison demonstrates the removed setup work. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 2/5 (#91, #90, #87, #88, #89). Second: remove Git init/commit setup from pure-function tests. The original audit measured about 10 seconds for the ship_branch module overall; only unnecessary setup is in scope, not all integration-test runtime."
+    },
+    {
+      "id": 87,
+      "title": "Include active-world contract tests in the default unit suite",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "User-requested test refinement 2026-10-25. tests/test_active_world.py contains fixture-based contract tests but scripts/run_tests.py discovers only scripts/test_*.py. Include these contracts exactly once in the default suite, preferably by moving the module into the canonical scripts/ test location so --only can select it without a second discovery mechanism. Preserve refusal when the production active-world pointer is unset, identity/config loading and other existing contracts. Ensure tests isolate and restore environment variables, sys.modules and cached frame state so import order cannot change the rest of the suite. Tests must use temporary fictional world configuration, never a real checkout. Done when: the default runner executes the contracts, focused selection works, the suite passes with no active world selected, and no real-world dependency is introduced. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 3/5 (#91, #90, #87, #88, #89). Third: restore missing contract coverage after the two direct runtime improvements; this closes a coverage gap rather than speeding up the suite."
     },
     {
       "id": 88,
@@ -59,34 +77,16 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "User-requested test refinement 2026-10-25. Replace unmanaged tempfile.mkdtemp() sites in scripts/test_house_build.py and scripts/test_feature_build.py (five sites identified in the review) with TemporaryDirectory contexts or test-owned TemporaryDirectory instances registered through addCleanup. Audit the remaining unit suite for equivalent unowned temporary directories. Preserve fixture lifetimes through the assertions and guarantee cleanup on failures as well as successful tests. Avoid unrelated test rewrites. Done when: all affected fixture directories have explicit cleanup ownership, affected modules pass and repeated focused runs leave no directories created by those tests behind."
+      "notes": "User-requested test refinement 2026-10-25. Replace unmanaged tempfile.mkdtemp() sites in scripts/test_house_build.py and scripts/test_feature_build.py (five sites identified in the review) with TemporaryDirectory contexts or test-owned TemporaryDirectory instances registered through addCleanup. Audit the remaining unit suite for equivalent unowned temporary directories. Preserve fixture lifetimes through the assertions and guarantee cleanup on failures as well as successful tests. Avoid unrelated test rewrites. Done when: all affected fixture directories have explicit cleanup ownership, affected modules pass and repeated focused runs leave no directories created by those tests behind. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 4/5 (#91, #90, #87, #88, #89). Fourth: fix temporary-directory ownership and disk leaks; useful hygiene, with no demonstrated substantial runtime saving."
     },
     {
       "id": 89,
       "title": "Prune migration-era test assertions that do not protect behaviour",
       "status": "todo",
-      "priority": "medium",
+      "priority": "low",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "User-requested test refinement 2026-10-25. Review assertions against removed private methods, production source substrings and historical ticket wording. Starting examples: scripts/test_world_blockstore.py test_no_mca_reader_methods, scripts/test_model_bakeoff.py documentation wording checks, and hasattr checks in test_dryrun_reset.py/test_defra_world.py. Judge each against current accepted requirements: retain meaningful architecture/safety contracts, replace brittle implementation assertions with observable behavioural checks where useful, and delete obsolete historical assertions without replacement when no current contract remains. Do not blanket-delete documentation or negative tests. Done when: each reviewed assertion is retained with a current rationale, replaced by a meaningful behavioural check, or removed as obsolete; the change description records the decisions; affected modules and the full fixture-based suite pass."
-    },
-    {
-      "id": 90,
-      "title": "Separate pure ship-branch tests from Git repository fixtures",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "User-requested test refinement 2026-10-25. scripts/test_ship_branch.py creates and commits a temporary Git repository in shared setUp even for pure helpers such as environment cleanup and changed-path classification. Move pure-function cases into TestCase classes without repository setup; retain real temporary Git repositories for merge, branch, worktree, lock and cleanup integration behaviour. Audit neighbouring setup for the same unnecessary work, without adding mocking that removes useful Git integration coverage. Preserve isolation from inherited Git hook variables. Done when: pure cases create no repository or commits, repository-backed behavioural coverage remains intact, focused tests pass and a timing/setup-count comparison demonstrates the removed setup work."
-    },
-    {
-      "id": 91,
-      "title": "Isolate evidence-sheet HTML tests from coordinate transformations",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "User-requested test refinement 2026-10-25. Markup tests in scripts/test_google_aerial.py currently call real coordinate projection while asserting tile images, outlines and marker HTML. Supply deterministic projection responses at the module boundary for markup cases so they exercise rendering and placement with explicit expected inputs/outputs rather than GDAL or pyproj transformations. Keep useful assertions about coordinates passed to the projection boundary and rendered positions; do not reduce checks to tautological mocks. Coordinate correctness belongs to focused world_frame fixtures and tasks #84-#86. This task can proceed independently of the pyproj migration: stub the existing boundary without creating a second conversion implementation. Audit comparable evidence-sheet tests for the same coupling. Done when: markup tests perform no real CRS transformations or geospatial subprocess calls, existing rendering behaviour stays covered, and tests run using fictional inputs without an active world, network or GDAL. Record focused runtime before/after."
+      "notes": "User-requested test refinement 2026-10-25. Review assertions against removed private methods, production source substrings and historical ticket wording. Starting examples: scripts/test_world_blockstore.py test_no_mca_reader_methods, scripts/test_model_bakeoff.py documentation wording checks, and hasattr checks in test_dryrun_reset.py/test_defra_world.py. Judge each against current accepted requirements: retain meaningful architecture/safety contracts, replace brittle implementation assertions with observable behavioural checks where useful, and delete obsolete historical assertions without replacement when no current contract remains. Do not blanket-delete documentation or negative tests. Done when: each reviewed assertion is retained with a current rationale, replaced by a meaningful behavioural check, or removed as obsolete; the change description records the decisions; affected modules and the full fixture-based suite pass. Prioritised 2026-10-25 per owner: runtime improvements first. Test-refinement execution order 5/5 (#91, #90, #87, #88, #89). Fifth: prune brittle historical assertions selectively; maintainability improvement, with little demonstrated runtime benefit. Do not remove meaningful coverage merely to reduce test count."
     }
   ]
 }
