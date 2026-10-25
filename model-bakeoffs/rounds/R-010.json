@@ -105,10 +105,10 @@
     "keep"
   ],
   "photos": {
-    "square_south": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/square_south.png",
-    "street_front": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/street_front.png",
-    "aerial_top": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/aerial_top.png",
-    "real_refs_note": "/Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/real_aerial.png; portal refs /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/reference/portals/42-A.jpg and 42-B.jpg; camera coordinates /Users/cjg/Projects/ai-worldbuilder/worlds/bakeoff/verification/site/r010_susu-shots/cameras.json"
+    "square_south": "worlds/bakeoff/verification/site/r010_susu-shots/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r010_susu-shots/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r010_susu-shots/aerial_top.png",
+    "real_refs_note": "worlds/bakeoff/verification/site/r010_susu-shots/real_aerial.png; portal refs worlds/bakeoff/reference/portals/42-A.jpg and 42-B.jpg; camera coordinates worlds/bakeoff/verification/site/r010_susu-shots/cameras.json"
   },
   "usage": {
     "input_tokens": 9337754,
@@ -148,7 +148,7 @@
   },
   "telemetry": {
     "agent_session_id": "01a16ea9-6e88-73f3-8d31-644a6ad01240",
-    "source_log": "/Users/cjg/.codex/sessions/2026/10/24/rollout-2026-10-24T17-06-00-01a16ea9-6e88-73f3-8d31-644a6ad01240.jsonl",
+    "source_log": "rollout-2026-10-24T17-06-00-01a16ea9-6e88-73f3-8d31-644a6ad01240.jsonl",
     "model": "gpt-6.1-sol",
     "reasoning_effort": "low",
     "context_capacity_tokens": 475000,

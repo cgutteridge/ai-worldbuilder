@@ -173,7 +173,7 @@
   },
   "telemetry": {
     "agent_session_id": "01a16ec0-3b5d-7b80-91a0-376cee1a31ce",
-    "source_log": "/Users/cjg/.codex/sessions/2026/10/24/rollout-2026-10-24T17-30-54-01a16ec0-3b5d-7b80-91a0-376cee1a31ce.jsonl",
+    "source_log": "rollout-2026-10-24T17-30-54-01a16ec0-3b5d-7b80-91a0-376cee1a31ce.jsonl",
     "model": "gpt-6.1-sol",
     "reasoning_effort": "medium",
     "context_capacity_tokens": 475000,
