@@ -23,7 +23,6 @@ import argparse
 import colorsys
 import math
 import random
-import subprocess
 import sys
 from collections import deque
 from pathlib import Path
@@ -47,6 +46,7 @@ def columns_for_parcels(*_a, **_k):
     """Retired with the old ground tooling (ground_top_block); the parcel canopy pass no longer runs."""
     raise SystemExit('plant_cell_canopy parcel passes are retired; use trees_layer.py')
 from osgb import to_osgb  # noqa: E402
+from world_frame import osgb_batch_to_wgs84  # noqa: E402
 from site_kit import OUT, Plan, World, apply, preview  # noqa: E402
 
 DEFAULT_AREA = 'highfield'
@@ -108,22 +108,18 @@ def blobs_of(mask: set[tuple[int, int]]) -> list[list[tuple[int, int]]]:
 
 
 def mosaic_px(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tuple[float, float]]:
-    """Map MC column centres to mosaic pixel coordinates (one gdaltransform call).
+    """Map MC column centres to mosaic pixel coordinates (one batch CRS transform).
 
     @param pts: (x, z) columns
     @returns: {(x, z): (px, py)}
     """
-    inp = ''.join('%f %f\n' % to_osgb(x + 0.5, z + 0.5) for x, z in pts)
-    out = [
-        ln for ln in subprocess.run(
-            ['gdaltransform', '-s_srs', 'EPSG:27700', '-t_srs', 'EPSG:4326'],
-            input=inp.encode(), capture_output=True, check=True, timeout=300,
-        ).stdout.decode().split('\n') if ln.strip()
-    ]
+    if not pts:
+        return {}
+    en = [to_osgb(x + 0.5, z + 0.5) for x, z in pts]
+    ll = osgb_batch_to_wgs84(en)
     n = 2 ** ZOOM * TILE
     res = {}
-    for p, ln in zip(pts, out):
-        lon, lat = map(float, ln.split()[:2])
+    for p, (lat, lon) in zip(pts, ll):
         X = (lon + 180) / 360 * n - MOSAIC_TILE0[0] * TILE
         Y = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * n - MOSAIC_TILE0[1] * TILE
         res[p] = (X, Y)

@@ -1,5 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ai-worldbuilder"
 version = "0"
 requires-python = ">=3.10"
 description = "Build and refine Minecraft worlds from real-place evidence"
+dependencies = [
+    "numpy",
+    "Pillow",
+    "pyproj",
+]
+
+# Script-oriented tree: no import package to install; deps only.
+[tool.setuptools]
+packages = []

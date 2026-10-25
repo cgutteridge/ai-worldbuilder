@@ -6,9 +6,10 @@
 mosaic defaults to the portswood z18 3x3; any mosaic-z18-NxN-centre-X-Y.png
 works. extra.geojson (EPSG:27700) adds non-building outlines (parking etc.) in blue.
 """
-import sys, math, subprocess, re, json
+import sys, math, re, json
 from pathlib import Path; sys.path.insert(0, str(Path(__file__).resolve().parent))
 from osgb import to_osgb
+from world_frame import osgb_batch_to_wgs84
 from osm_footprints import OSMIndex
 from PIL import Image, ImageDraw
 MOS=sys.argv[4] if len(sys.argv)>4 else 'reference/aerial/portswood-x-broadlands/mosaic-z18-3x3-centre-130063-87836.png'
@@ -16,12 +17,11 @@ _m=re.search(r'mosaic-z(\d+)-(\d+)x\d+-centre-(\d+)-(\d+)',MOS)
 Z=int(_m[1]); _h=int(_m[2])//2; OX,OY=(int(_m[3])-_h)*256,(int(_m[4])-_h)*256
 img=Image.open(MOS).convert('RGB')
 def px(pts):
-    inp=''.join(f'{e} {n}\n' for e,n in (to_osgb(x,z) for x,z in pts))
-    out=subprocess.run(['gdaltransform','-s_srs','EPSG:27700','-t_srs','EPSG:4326'],input=inp.encode(),capture_output=True,check=True).stdout.decode().split('\n')
+    if not pts: return []
+    ll=osgb_batch_to_wgs84([to_osgb(x,z) for x,z in pts])
     res=[]
-    for l in out:
-        if not l.strip(): continue
-        lon,lat=map(float,l.split()[:2]); n=2**Z
+    for lat,lon in ll:
+        n=2**Z
         X=(lon+180)/360*n*256; Y=(1-math.log(math.tan(math.radians(lat))+1/math.cos(math.radians(lat)))/math.pi)/2*n*256
         res.append((X-OX,Y-OY))
     return res

@@ -4,7 +4,21 @@
 Reads ``config/world-frame.json`` (CRS, offsets, Y offset, bounds, anchor).
 Converts between WGS84, OSGB36 / other EPSG, Minecraft x/z(/y), coverage cells,
 and web-mercator XYZ tiles. Prefer this module over scattered OFFSET_E /
-gdaltransform copies.
+private CRS copies.
+
+Point conversion (WGS84 ↔ OSGB / arbitrary EPSG pairs) uses in-process
+``pyproj`` with cached ``Transformer`` instances and ``always_xy=True``
+(lon,lat for geographic CRS; easting,northing for projected). GDAL remains
+appropriate for bulk geospatial *file* work (lidar/raster); it is not used
+here for individual or small-batch points.
+
+**OSTN15 policy:** for EPSG:4326 ↔ EPSG:27700, PROJ prefers the Ordnance
+Survey OSTN15 grid when that grid file is on the PROJ data path (Homebrew
+``proj`` data, ``PROJ_DATA``, or ``PROJ_NETWORK=ON`` downloading from
+cdn.proj.org). Without the grid, PROJ falls back to a Helmert datum shift
+(~1–5 m across GB). Callers must not assume identity with a particular
+GDAL/gdaltransform install; use ``ostn15_grid_available()`` when centimetre
+agreement with OS published National Grid is required.
 
   .venv/bin/python scripts/world_frame.py info
   .venv/bin/python scripts/world_frame.py to-mc --osgb 441900,112100
@@ -20,10 +34,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from pyproj import Transformer, datadir
+from pyproj.transformer import TransformerGroup
 
 from script_env import ROOT  # noqa: E402
 import cellmath  # noqa: E402
@@ -159,32 +175,63 @@ def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
     }
 
 
-# ---- EPSG / gdal -------------------------------------------------------------
+# ---- EPSG / pyproj -----------------------------------------------------------
 
-def _gdal_transform(pairs: list[tuple[float, float]], src: str, dst: str) -> list[tuple[float, float]]:
-    """Run gdaltransform on (x, y) pairs in source CRS order.
+_TRANSFORMERS: dict[tuple[str, str], Transformer] = {}
+_PROJ_DATA_READY = False
 
-    @param pairs: input points
-    @param src: source SRS
-    @param dst: target SRS
-    @returns: transformed pairs
+# Common system installs of the OSTN15 NTv2 grid (Homebrew / Linux packages).
+_SYSTEM_PROJ_DATA_CANDIDATES = (
+    Path('/opt/homebrew/share/proj'),
+    Path('/usr/local/share/proj'),
+    Path('/usr/share/proj'),
+)
+_OSTN15_GRID = 'uk_os_OSTN15_NTv2_OSGBtoETRS.tif'
+
+
+def _ensure_proj_data() -> None:
+    """Append system PROJ data dirs that carry the OSTN15 grid, once per process.
+
+    pyproj's bundled share/proj often omits UK grids; Homebrew ``proj`` installs
+    them under ``/opt/homebrew/share/proj``. Appending that path (when present)
+    lets ``Transformer`` pick OSTN15 without requiring ``PROJ_NETWORK``.
     """
-    if not pairs:
-        return []
-    inp = ''.join(f'{a} {b}\n' for a, b in pairs)
-    proc = subprocess.run(
-        ['gdaltransform', '-s_srs', src, '-t_srs', dst],
-        input=inp.encode(),
-        capture_output=True,
-        check=True,
-    )
-    out = []
-    for line in proc.stdout.decode().splitlines():
-        if not line.strip():
-            continue
-        parts = line.split()
-        out.append((float(parts[0]), float(parts[1])))
-    return out
+    global _PROJ_DATA_READY
+    if _PROJ_DATA_READY:
+        return
+    for candidate in _SYSTEM_PROJ_DATA_CANDIDATES:
+        if (candidate / _OSTN15_GRID).is_file():
+            datadir.append_data_dir(str(candidate))
+            break
+    _PROJ_DATA_READY = True
+
+
+def _transformer(src: str, dst: str) -> Transformer:
+    """Return a cached always_xy Transformer for ``src`` → ``dst``.
+
+    @param src: source SRS (e.g. EPSG:4326)
+    @param dst: destination SRS
+    @returns: pyproj Transformer
+    """
+    _ensure_proj_data()
+    key = (src, dst)
+    cached = _TRANSFORMERS.get(key)
+    if cached is not None:
+        return cached
+    transformer = Transformer.from_crs(src, dst, always_xy=True)
+    _TRANSFORMERS[key] = transformer
+    return transformer
+
+
+def ostn15_grid_available() -> bool:
+    """True when PROJ can use the OSTN15 grid for WGS84 ↔ OSGB36.
+
+    @returns: whether the preferred OSTN15 operation is available (not merely
+        listed as unavailable pending a network download)
+    """
+    _ensure_proj_data()
+    group = TransformerGroup('EPSG:4326', 'EPSG:27700', always_xy=True)
+    return len(group.unavailable_operations) == 0
 
 
 def transform_epsg(
@@ -192,12 +239,20 @@ def transform_epsg(
 ) -> list[tuple[float, float]]:
     """Transform coordinate pairs between EPSG (or other) SRS strings.
 
+    Axis order is always ``(x, y)`` / ``(lon, lat)`` / ``(easting, northing)``
+    via ``always_xy=True``, matching the historic gdaltransform pair order.
+
     @param pairs: (x, y) in source CRS (lon,lat for EPSG:4326; E,N for 27700)
     @param src: source SRS
     @param dst: destination SRS
     @returns: transformed pairs in destination order
     """
-    return _gdal_transform(pairs, src, dst)
+    if not pairs:
+        return []
+    transformer = _transformer(src, dst)
+    xs, ys = zip(*pairs)
+    out_x, out_y = transformer.transform(xs, ys)
+    return list(zip(out_x, out_y))
 
 
 def wgs84_to_osgb(lat: float, lon: float) -> tuple[float, float]:
@@ -207,7 +262,7 @@ def wgs84_to_osgb(lat: float, lon: float) -> tuple[float, float]:
     @param lon: longitude
     @returns: (easting, northing)
     """
-    e, n = _gdal_transform([(lon, lat)], 'EPSG:4326', 'EPSG:27700')[0]
+    e, n = transform_epsg([(lon, lat)], 'EPSG:4326', 'EPSG:27700')[0]
     return e, n
 
 
@@ -218,7 +273,7 @@ def osgb_to_wgs84(easting: float, northing: float) -> tuple[float, float]:
     @param northing: northing
     @returns: (lat, lon)
     """
-    lon, lat = _gdal_transform([(easting, northing)], 'EPSG:27700', 'EPSG:4326')[0]
+    lon, lat = transform_epsg([(easting, northing)], 'EPSG:27700', 'EPSG:4326')[0]
     return lat, lon
 
 
@@ -228,7 +283,9 @@ def wgs84_batch_to_osgb(lat_lon: list[tuple[float, float]]) -> list[tuple[float,
     @param lat_lon: list of (lat, lon)
     @returns: list of (easting, northing)
     """
-    return _gdal_transform([(lon, lat) for lat, lon in lat_lon], 'EPSG:4326', 'EPSG:27700')
+    return transform_epsg(
+        [(lon, lat) for lat, lon in lat_lon], 'EPSG:4326', 'EPSG:27700',
+    )
 
 
 def osgb_batch_to_wgs84(en: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -237,7 +294,7 @@ def osgb_batch_to_wgs84(en: list[tuple[float, float]]) -> list[tuple[float, floa
     @param en: list of (easting, northing)
     @returns: list of (lat, lon)
     """
-    ll = _gdal_transform(en, 'EPSG:27700', 'EPSG:4326')
+    ll = transform_epsg(en, 'EPSG:27700', 'EPSG:4326')
     return [(lat, lon) for lon, lat in ll]
 
 

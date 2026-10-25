@@ -31,9 +31,10 @@ world needs its own source and frame; nothing here assumes Southampton.
   python3 shims/defra_lidar.py probe 6140,-3760             # DTM, DSM, diff (DSM−DTM) and Y at one column
   # Area maps / highs-lows: shims/lidar_query.py --cell TX,TZ --layers dtm,dsm,diff
 
-Cached under downloads/defra-lidar/ (gitignored). Needs Pillow and numpy (already in .venv) and gdaltransform
-on PATH for the catalogue polygon. Open Government Licence v3: attribute "Contains Environment Agency
-information (c) Environment Agency and/or database right".
+Cached under downloads/defra-lidar/ (gitignored). Needs Pillow, numpy, and pyproj (catalogue
+polygon via world_frame / geodetic). GDAL remains useful for bulk raster tooling elsewhere,
+not for this point conversion. Open Government Licence v3: attribute "Contains Environment
+Agency information (c) Environment Agency and/or database right".
 """
 from __future__ import annotations
 

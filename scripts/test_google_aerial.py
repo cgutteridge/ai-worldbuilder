@@ -80,7 +80,7 @@ class TestTiles(unittest.TestCase):
         # Fictional bbox (0,0)–(80,80) → tiles (0,0)…(2,2) under _fictional_mc_to_tile.
         proj = _ProjectionStub()
         with mock.patch.object(ga, 'mc_to_tile', side_effect=proj), mock.patch.object(
-            wf, '_gdal_transform', side_effect=AssertionError('tile_range must not call GDAL'),
+            wf, 'transform_epsg', side_effect=AssertionError('tile_range must not call CRS'),
         ):
             self.assertEqual(ga.tile_range((0, 0, 80, 80), 20), (0, 0, 2, 2))
         self.assertEqual(len(proj.calls), 1)
@@ -97,7 +97,7 @@ class TestTiles(unittest.TestCase):
             return [(x * (100 / 80), z * (100 / 80)) for x, z in points]
 
         with mock.patch.object(ga, 'mc_to_tile', side_effect=sprawling), mock.patch.object(
-            wf, '_gdal_transform', side_effect=AssertionError('tile_range must not call GDAL'),
+            wf, 'transform_epsg', side_effect=AssertionError('tile_range must not call CRS'),
         ):
             with self.assertRaises(ValueError):
                 ga.tile_range((0, 0, 80, 80), 20)
@@ -121,7 +121,7 @@ class TestGrid(unittest.TestCase):
 
 
 class MarkupSheetTest(unittest.TestCase):
-    """sheet_html against a stubbed ``mc_to_tile`` (no real CRS / GDAL)."""
+    """sheet_html against a stubbed ``mc_to_tile`` (no real CRS transform)."""
 
     # Worked example: bbox (0,0,80,80), zoom 20, default scale 2 → s=512, tx0=ty0=0.
     # Under _fictional_mc_to_tile, MC (x,z) → pixel ((x/40)*512, (z/40)*512).
@@ -132,15 +132,15 @@ class MarkupSheetTest(unittest.TestCase):
     def setUp(self) -> None:
         self.proj = _ProjectionStub()
         p_mc = mock.patch.object(ga, 'mc_to_tile', side_effect=self.proj)
-        p_gdal = mock.patch.object(
-            wf, '_gdal_transform',
-            side_effect=AssertionError('markup must not call GDAL'),
+        p_crs = mock.patch.object(
+            wf, 'transform_epsg',
+            side_effect=AssertionError('markup must not call CRS'),
         )
         p_batch = mock.patch.object(
             wf, 'mc_batch_to_wgs84',
             side_effect=AssertionError('markup must not call mc_batch_to_wgs84'),
         )
-        for p in (p_mc, p_gdal, p_batch):
+        for p in (p_mc, p_crs, p_batch):
             p.start()
             self.addCleanup(p.stop)
 

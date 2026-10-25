@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for geo.py helpers (no gdal / Minecraft required).
+"""Unit tests for geo.py helpers (no Minecraft / GDAL executable required).
 
   python3 -m unittest scripts/test_geo.py
 """

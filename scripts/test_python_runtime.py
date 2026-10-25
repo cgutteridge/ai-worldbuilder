@@ -1,4 +1,4 @@
-"""Unit tests for the Python interpreter / numpy fail-fast guard (R-013)."""
+"""Unit tests for the Python interpreter / numpy+pyproj fail-fast guard (R-013)."""
 from __future__ import annotations
 
 import builtins
@@ -16,10 +16,10 @@ import python_runtime  # noqa: E402
 
 
 class PythonRuntimeGuardTests(unittest.TestCase):
-    """``ensure_python_runtime`` refuses old interpreters and missing numpy."""
+    """``ensure_python_runtime`` refuses old interpreters and missing deps."""
 
     def test_rejects_python_below_3_10(self) -> None:
-        """3.9 must exit with the one-line Homebrew message."""
+        """3.9 must exit with the one-line runtime message."""
         with mock.patch.object(python_runtime.sys, "version_info", (3, 9, 6)):
             with mock.patch.object(
                 python_runtime.sys,
@@ -34,7 +34,7 @@ class PythonRuntimeGuardTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as ctx:
                         python_runtime.ensure_python_runtime()
         msg = str(ctx.exception)
-        self.assertIn("needs python3 >= 3.10 with numpy (Homebrew)", msg)
+        self.assertIn("needs python3 >= 3.10 with numpy and pyproj", msg)
         self.assertIn("/usr/bin/python3", msg)
         self.assertIn("3.9.6", msg)
 
@@ -62,11 +62,37 @@ class PythonRuntimeGuardTests(unittest.TestCase):
                         with self.assertRaises(SystemExit) as ctx:
                             python_runtime.ensure_python_runtime()
         msg = str(ctx.exception)
-        self.assertIn("needs python3 >= 3.10 with numpy (Homebrew)", msg)
+        self.assertIn("needs python3 >= 3.10 with numpy and pyproj", msg)
         self.assertIn("/usr/bin/python3", msg)
 
+    def test_rejects_missing_pyproj(self) -> None:
+        """Interpreter with numpy but without pyproj exits the same way."""
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pyproj" or name.startswith("pyproj."):
+                raise ModuleNotFoundError("No module named 'pyproj'")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch.object(python_runtime.sys, "version_info", (3, 10, 0)):
+            with mock.patch.object(
+                python_runtime.sys,
+                "executable",
+                "/usr/bin/python3",
+            ):
+                with mock.patch.object(
+                    python_runtime.sys,
+                    "version",
+                    "3.10.0 (default)",
+                ):
+                    with mock.patch("builtins.__import__", side_effect=fake_import):
+                        with self.assertRaises(SystemExit) as ctx:
+                            python_runtime.ensure_python_runtime()
+        msg = str(ctx.exception)
+        self.assertIn("needs python3 >= 3.10 with numpy and pyproj", msg)
+
     def test_accepts_current_runtime(self) -> None:
-        """Homebrew 3.10+ with numpy installed must return without exiting."""
+        """Python 3.10+ with numpy and pyproj must return without exiting."""
         self.assertGreaterEqual(sys.version_info[:2], (3, 10))
         python_runtime.ensure_python_runtime()
 
@@ -80,7 +106,7 @@ class PythonRuntimeGuardTests(unittest.TestCase):
             msg = python_runtime.runtime_requirement_message()
         self.assertEqual(
             msg,
-            "needs python3 >= 3.10 with numpy (Homebrew); "
+            "needs python3 >= 3.10 with numpy and pyproj; "
             "got /opt/homebrew/bin/python3 3.9.0",
         )
 

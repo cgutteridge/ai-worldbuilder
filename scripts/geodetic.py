@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WGS84 ↔ OSGB36 via gdaltransform (re-exports world_frame).
+"""WGS84 ↔ OSGB36 via world_frame / pyproj (compatibility re-exports).
 
 Prefer ``scripts/world_frame.py`` for new code. Kept so existing imports continue.
 """

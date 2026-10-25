@@ -15,7 +15,8 @@
   python3 scripts/geo.py place --name "Broadlands 20-22" --mc 7097,-5521
   python3 scripts/geo.py tiles --bbox 7040,-5560,7140,-5500 --zoom 18 --mosaic 3
 
-Requires gdaltransform on PATH for WGS84 paths. MC ↔ OSGB uses config/map-maker-offsets.json.
+WGS84 paths use in-process pyproj via world_frame / geodetic. MC ↔ OSGB uses
+config/world-frame.json (legacy map-maker-offsets shape still available).
 """
 from __future__ import annotations
 
