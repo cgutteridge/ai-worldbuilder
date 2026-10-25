@@ -715,8 +715,14 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                     'open', '--tool', 'cursor', '--model', 'composer',
                 ])
             self.assertEqual(rc, 0)
-            self.assertTrue((root / 'rounds' / 'R-001.json').is_file())
+            round_path = root / 'rounds' / 'R-001.json'
+            self.assertTrue(round_path.is_file())
             self.assertIn('R-001', out.getvalue())
+            # Other tool than config/build-roles.json → designer defaults to builder.
+            round_ = json.loads(round_path.read_text(encoding='utf-8'))
+            self.assertEqual(round_['round_type'], 'single')
+            self.assertEqual(round_['designer']['id'], 'composer')
+            self.assertEqual(round_['model']['id'], 'composer')
 
     def test_docs_say_prefix_every_command(self):
         skill = (TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md').read_text(
@@ -1238,19 +1244,25 @@ class HybridRoundTests(unittest.TestCase):
             self.assertIn('designer:', card)
             self.assertIn(str(handoff), card)
 
-    def test_hybrid_designer_must_differ_from_builder(self):
+    def test_same_designer_and_builder_is_single_with_both_roles(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _seed(root)
-            with self.assertRaises(ValueError) as ctx:
-                MB.open_round(
-                    root,
-                    tool='cursor',
-                    model='composer',
-                    designer='composer',
-                    task='feature_design',
-                )
-            self.assertIn('differ', str(ctx.exception))
+            round_ = MB.open_round(
+                root,
+                tool='cursor',
+                model='composer',
+                designer='composer',
+                task='feature_design',
+            )
+            self.assertEqual(round_['round_type'], 'single')
+            self.assertEqual(round_['designer']['id'], 'composer')
+            self.assertEqual(round_['model']['id'], 'composer')
+            self.assertFalse(MB.is_hybrid_round(round_))
+            self.assertNotIn('handoff', round_)
+            self.assertNotIn('by_role', round_['usage'])
+            checklist = '\n'.join(round_['sitting']['checklist'])
+            self.assertIn('Use tool=cursor model=composer only', checklist)
 
     def test_hybrid_excluded_from_ladder_and_mid_unlock(self):
         with tempfile.TemporaryDirectory() as d:

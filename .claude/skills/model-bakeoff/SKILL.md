@@ -6,7 +6,10 @@ description: >-
   the bake-off ghost.
 ---
 
-One model per sitting by default, or a hybrid designer + builder sitting (`open --model <builder> --designer <designer>`). Records under `model-bakeoffs/`. CLI: `python3 scripts/model_bakeoff.py`.
+Every sitting names designer + builder (`open --model <builder> [--designer …]`).
+Defaults from `config/build-roles.json` when `--designer` is omitted (see
+`rules/build-roles.md`). Different ids → hybrid sitting; same id → one session.
+Records under `model-bakeoffs/`. CLI: `python3 scripts/model_bakeoff.py`.
 
 ## Active world
 

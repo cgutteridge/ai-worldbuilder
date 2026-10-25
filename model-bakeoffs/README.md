@@ -1,6 +1,6 @@
 # Model bake-offs
 
-Framework for comparing **bulk-work** models on place design/review — **one model per sitting** by default (or a **hybrid** designer + builder sitting), records that stand alone so you can stop and resume anytime.
+Framework for comparing **bulk-work** models on place design/review — each sitting names **designer** and **builder** (defaults in `config/build-roles.json`; same id = one session, different = hybrid), records that stand alone so you can stop and resume anytime.
 
 Protocol detail: [PROTOCOL.md](PROTOCOL.md). Short pointer from docs: [../docs/model-bakeoffs.md](../docs/model-bakeoffs.md).
 
@@ -40,6 +40,7 @@ python3 scripts/model_bakeoff.py add-model --tool cursor --id opus --tier high -
 python3 scripts/model_bakeoff.py status
 python3 scripts/model_bakeoff.py next
 python3 scripts/model_bakeoff.py open --tool cursor --model composer-2.5
+# designer defaults from config/build-roles.json when --tool matches; else equals --model
 # hybrid: builder is --model (apply owner); designer writes the hand-off
 python3 scripts/model_bakeoff.py open --tool claude-code \
   --model claude-sonnet-5-5-medium --designer claude-opus-5-5-low

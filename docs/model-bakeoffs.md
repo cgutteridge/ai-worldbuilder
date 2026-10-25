@@ -1,6 +1,8 @@
 # Model bake-offs
 
-Framework for comparing bulk-work models on place design/review (**one model per sitting**).
+Framework for comparing bulk-work models on place design/review. Each sitting
+names a **designer** and a **builder** (defaults: `config/build-roles.json`;
+same id = one session; different ids = hybrid).
 
 **Home:** [`model-bakeoffs/`](../model-bakeoffs/) — catalogue, config, prompt packs, and self-contained `rounds/R-NNN.json` records.
 
