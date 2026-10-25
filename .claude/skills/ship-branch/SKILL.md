@@ -29,12 +29,18 @@ Work in the branch worktree. Round counter starts at 0; each fixer dispatch
 
 ### 1. Tests
 
+Prefer a focused suite from the branch diff (same mapping `ship_branch`
+uses): map `main...HEAD` changed paths to module stems, then:
+
 ```bash
-python3 scripts/run_tests.py
+python3 scripts/run_tests.py --only test_foo --only test_bar
 ```
 
-Done when the command exits 0. On failure → step 3 (fixer), then back here.
-That fixer hop counts toward the cap.
+Fall back to the full suite when the map is empty but code changed, or when
+the branch touched `run_tests` / `pre_commit_checks` / `ship_branch` / git
+hooks. Docs/tracker/skill-only diffs may skip tip tests. Done when the
+command exits 0. On failure → step 3 (fixer), then back here. That fixer hop
+counts toward the cap.
 
 ### 2. Reviewer (fresh context, read-only)
 

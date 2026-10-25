@@ -25,8 +25,12 @@ Before merging each returned worker branch, the **orchestrator** runs the
 **ship-branch** loop (`.claude/skills/ship-branch/SKILL.md`) on that branch:
 tests → review → fix blockers (cap 3) → `python3 scripts/ship_branch.py merge <branch>`.
 
-Workers stay code-only. They never review, never merge themselves, and never
-edit `tasks/index.json` or `tasks/done.json`. Tracker archive remains an
+Workers stay code-only and should use `python3 scripts/run_tests.py --only …`
+for tip checks when the path map is non-empty. Full suites are single-flight
+(fail-fast lock under the git common dir): a second overlapping full run exits
+2, and `ship_branch merge` refuses while the lock is busy — retry when free.
+Workers never review, never merge themselves, and never edit
+`tasks/index.json` or `tasks/done.json`. Tracker archive remains an
 orchestrator hop on `main` after the merge lands.
 
 Owner opt-outs on a returned branch follow ship-branch (`no review` /

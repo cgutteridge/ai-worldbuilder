@@ -6,10 +6,13 @@ Branch-gate policy: code lands on ``task/*`` branches and always ends merged.
   python3 scripts/ship_branch.py merge <branch>
   python3 scripts/ship_branch.py sweep
 
-``merge`` runs ``scripts/run_tests.py`` on the branch tip, merges with
-``--no-ff`` into main, re-runs tests on main, then deletes the local branch
-and any worktree that had it checked out. Any failure stops and reports; the
-merge is never auto-reverted.
+``merge`` maps ``main...branch`` paths to ``run_tests --only`` modules on the
+tip (skip for docs/tracker/skill-only; full suite when mapping is empty but
+code changed, or when the runner / pre-commit / ship_branch / git hooks
+changed). After tip tests pass it takes the full-suite flock; if busy it
+refuses the merge. Under the lock it merges ``--no-ff``, runs the full suite
+on main with ``--parent-holds-lock``, then releases. Main failures leave the
+merge (no auto-revert). Sweep uses the same ``merge_branch`` policy.
 
 ``sweep`` lists local branches not merged into main and leftover linked
 worktrees. Each unmerged branch is labelled tracker/docs-only or code (with
@@ -27,6 +30,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import run_tests as run_tests_mod
+
 RunTestsFn = Callable[[Path], int]
 PromptFn = Callable[[str], bool]
 
@@ -39,6 +44,19 @@ _ROOT_DOCS_NAMES = frozenset(
         'CODING_STANDARDS.md',
         'CLAUDE.md',
         '.gitignore',
+    }
+)
+
+# Tip tests always fall back to a full suite when any of these change.
+_FULL_SUITE_FORCE_PREFIXES = (
+    '.githooks/',
+)
+_FULL_SUITE_FORCE_PATHS = frozenset(
+    {
+        'scripts/run_tests.py',
+        'scripts/pre_commit_checks.py',
+        'scripts/ship_branch.py',
+        'scripts/install_git_hooks.py',
     }
 )
 
@@ -160,10 +178,17 @@ def worktree_path_for_branch(repo_root: Path, branch: str) -> Path | None:
     return None
 
 
-def run_unit_tests(repo_root: Path) -> int:
+def run_unit_tests(
+    repo_root: Path,
+    *,
+    only: Sequence[str] | None = None,
+    parent_holds_lock: bool = False,
+) -> int:
     """Run ``scripts/run_tests.py`` in ``repo_root``.
 
     @param repo_root: repository root whose tip is under test
+    @param only: optional module stems for ``--only`` (repeatable)
+    @param parent_holds_lock: pass ``--parent-holds-lock`` (merge under flock)
     @returns: process exit code (0 success)
     """
     script = repo_root / 'scripts' / 'run_tests.py'
@@ -173,8 +198,139 @@ def run_unit_tests(repo_root: Path) -> int:
             file=sys.stderr,
         )
         return 1
-    return subprocess.call([sys.executable, str(script)], cwd=repo_root)
+    cmd: list[str] = [sys.executable, str(script)]
+    if only:
+        for stem in only:
+            cmd.extend(['--only', stem])
+    if parent_holds_lock:
+        cmd.append('--parent-holds-lock')
+    return subprocess.call(cmd, cwd=repo_root)
 
+
+def _norm_rel(rel_path: str) -> str:
+    return rel_path.replace('\\', '/').lstrip('./')
+
+
+def forces_full_suite_path(rel_path: str) -> bool:
+    """Whether a changed path forces a full tip suite (runner / hooks / ship).
+
+    @param rel_path: path relative to the repository root
+    @returns: True when tip tests must not use ``--only``
+    """
+    normalised = _norm_rel(rel_path)
+    if normalised in _FULL_SUITE_FORCE_PATHS:
+        return True
+    return any(normalised.startswith(p) for p in _FULL_SUITE_FORCE_PREFIXES)
+
+
+def is_ignored_for_test_mapping(rel_path: str) -> bool:
+    """Whether a path is ignored when mapping changes to test modules.
+
+    Docs, skills, tasks, and rules never contribute modules. Provider / world
+    trees are also ignored (no invented tests).
+
+    @param rel_path: path relative to the repository root
+    @returns: True when the path must not map to a ``--only`` stem
+    """
+    normalised = _norm_rel(rel_path)
+    if not normalised or normalised == '.':
+        return True
+    for prefix in (
+        'docs/',
+        'tasks/',
+        'rules/',
+        'skills/',
+        '.claude/skills/',
+        'providers/',
+        'worlds/',
+    ):
+        if normalised == prefix.rstrip('/') or normalised.startswith(prefix):
+            return True
+    if normalised.endswith('.md'):
+        return True
+    return False
+
+
+def is_tip_test_skip_path(rel_path: str) -> bool:
+    """Whether a path is docs/tracker/skill/rules-only for tip-test skip.
+
+    @param rel_path: path relative to the repository root
+    @returns: True when tip tests may be skipped for this path alone
+    """
+    if is_docs_only_path(rel_path):
+        return True
+    normalised = _norm_rel(rel_path)
+    for prefix in ('skills/', '.claude/skills/', 'rules/'):
+        if normalised == prefix.rstrip('/') or normalised.startswith(prefix):
+            return True
+    return False
+
+
+def map_changed_paths_to_modules(
+    paths: Sequence[str],
+    repo_root: Path,
+) -> list[str]:
+    """Map ``main...branch`` paths to ``run_tests --only`` module stems.
+
+    Rules: ``scripts/test_foo.py`` → ``test_foo``; ``scripts/foo.py`` or
+    ``shims/foo.py`` → ``test_foo`` only when ``scripts/test_foo.py`` exists.
+    Docs/skills/tasks/rules/providers/worlds are ignored.
+
+    @param paths: changed paths relative to the repo root
+    @param repo_root: checkout used to probe for ``scripts/test_*.py``
+    @returns: sorted unique module stems
+    """
+    scripts = repo_root / 'scripts'
+    found: set[str] = set()
+    for raw in paths:
+        normalised = _norm_rel(raw)
+        if is_ignored_for_test_mapping(normalised):
+            continue
+        if normalised.startswith('scripts/') and normalised.endswith('.py'):
+            name = Path(normalised).name
+            stem = Path(name).stem
+            if stem.startswith('test_'):
+                found.add(stem)
+                continue
+            candidate = f'test_{stem}'
+            if (scripts / f'{candidate}.py').is_file():
+                found.add(candidate)
+            continue
+        if normalised.startswith('shims/') and normalised.endswith('.py'):
+            stem = Path(normalised).stem
+            candidate = f'test_{stem}'
+            if (scripts / f'{candidate}.py').is_file():
+                found.add(candidate)
+    return sorted(found)
+
+
+@dataclass(frozen=True)
+class TipTestPlan:
+    """How tip tests should run before a merge.
+
+    ``kind`` is ``skip`` (docs/tracker/skill-only), ``only`` (``--only``
+    modules), or ``full`` (default discover suite).
+    """
+
+    kind: str
+    modules: tuple[str, ...]
+
+
+def plan_tip_tests(paths: Sequence[str], repo_root: Path) -> TipTestPlan:
+    """Decide tip-test policy from changed paths.
+
+    @param paths: ``main...branch`` changed paths
+    @param repo_root: checkout that holds ``scripts/test_*.py``
+    @returns: tip test plan
+    """
+    if not paths or all(is_tip_test_skip_path(p) for p in paths):
+        return TipTestPlan('skip', ())
+    if any(forces_full_suite_path(p) for p in paths):
+        return TipTestPlan('full', ())
+    modules = map_changed_paths_to_modules(paths, repo_root)
+    if modules:
+        return TipTestPlan('only', tuple(modules))
+    return TipTestPlan('full', ())
 
 def _checkout(repo_root: Path, ref: str) -> None:
     _git(repo_root, 'checkout', ref)
@@ -214,6 +370,41 @@ def _delete_branch(repo_root: Path, branch: str) -> None:
     _git(repo_root, 'branch', '-d', branch)
 
 
+def _run_tip_tests(
+    tip_checkout: Path,
+    branch: str,
+    main_branch: str,
+    *,
+    run_tests: RunTestsFn | None,
+) -> int:
+    """Run tip tests according to the path→module plan (or an injected runner).
+
+    @param tip_checkout: worktree or primary checkout with ``branch`` checked out
+    @param branch: branch under test
+    @param main_branch: integration branch (for ``main...branch`` diff)
+    @param run_tests: optional injected runner (bypasses mapping; both tip+main)
+    @returns: tip test exit code
+    """
+    if run_tests is not None:
+        return run_tests(tip_checkout)
+    paths = changed_files_vs_main(tip_checkout, branch, main_branch)
+    plan = plan_tip_tests(paths, tip_checkout)
+    if plan.kind == 'skip':
+        print(
+            f'ship_branch: skipping tip tests on {branch!r} '
+            '(docs/tracker/skill-only changes)'
+        )
+        return 0
+    if plan.kind == 'only':
+        joined = ', '.join(plan.modules)
+        print(
+            f'ship_branch: tip tests on {branch!r} with --only {joined}'
+        )
+        return run_unit_tests(tip_checkout, only=plan.modules)
+    print(f'ship_branch: tip tests on {branch!r} (full suite)')
+    return run_unit_tests(tip_checkout)
+
+
 def merge_branch(
     repo_root: Path,
     branch: str,
@@ -221,20 +412,21 @@ def merge_branch(
     main_branch: str = 'main',
     run_tests: RunTestsFn | None = None,
 ) -> int:
-    """Test ``branch``, merge it into main with ``--no-ff``, re-test, clean up.
+    """Test ``branch``, merge into main under the full-suite lock, re-test.
 
-    On tip-test failure the merge never runs. On main-test failure after merge,
-    the merge is left in place (no auto-revert) and branch/worktree cleanup is
-    skipped.
+    Tip tests prefer ``run_tests --only`` from the path map; see module
+    docstring. After tip green, acquires the full-suite flock (fail-fast); if
+    busy, refuses the merge. Under the lock: ``--no-ff`` merge, full suite on
+    main with parent-holds-lock, cleanup. Main failures leave the merge.
 
     @param repo_root: primary checkout (must be able to check out ``main_branch``)
     @param branch: local branch to merge
     @param main_branch: destination branch (default ``main``)
-    @param run_tests: optional test runner (default: ``scripts/run_tests.py``)
-    @returns: 0 on success, 1 on failure
+    @param run_tests: optional test runner for tip and main (tests); default
+        uses path mapping + ``scripts/run_tests.py``
+    @returns: 0 on success, 1 on failure, 2 when the full-suite lock is busy
     """
     root = repo_root.resolve()
-    runner = run_tests or run_unit_tests
 
     if branch == main_branch:
         print(
@@ -276,7 +468,9 @@ def merge_branch(
             f'({branch!r})…'
         )
 
-    tip_code = runner(tip_checkout)
+    tip_code = _run_tip_tests(
+        tip_checkout, branch, main_branch, run_tests=run_tests
+    )
     if tip_code != 0:
         print(
             f'ship_branch: tests failed on branch tip ({branch!r}); '
@@ -290,45 +484,70 @@ def merge_branch(
                 pass
         return tip_code
 
-    print(f'ship_branch: merging {branch!r} into {main_branch!r} (--no-ff)…')
     try:
-        if current_branch(root) != main_branch:
-            _checkout(root, main_branch)
-        _merge_no_ff(root, branch)
-    except subprocess.CalledProcessError as exc:
-        err = (exc.stderr or exc.stdout or str(exc)).strip()
-        print(f'ship_branch: merge failed: {err}', file=sys.stderr)
-        return 1
+        with run_tests_mod.full_suite_lock(root):
+            print(
+                f'ship_branch: merging {branch!r} into {main_branch!r} '
+                '(--no-ff)…'
+            )
+            try:
+                if current_branch(root) != main_branch:
+                    _checkout(root, main_branch)
+                _merge_no_ff(root, branch)
+            except subprocess.CalledProcessError as exc:
+                err = (exc.stderr or exc.stdout or str(exc)).strip()
+                print(f'ship_branch: merge failed: {err}', file=sys.stderr)
+                return 1
 
-    print(f'ship_branch: running tests on {main_branch!r} after merge…')
-    main_code = runner(root)
-    if main_code != 0:
+            print(
+                f'ship_branch: running tests on {main_branch!r} after merge…'
+            )
+            if run_tests is not None:
+                main_code = run_tests(root)
+            else:
+                main_code = run_unit_tests(root, parent_holds_lock=True)
+            if main_code != 0:
+                print(
+                    f'ship_branch: tests failed on {main_branch!r} after merge; '
+                    'left as-is (no auto-revert). Branch and worktree were not '
+                    'cleaned up.',
+                    file=sys.stderr,
+                )
+                return main_code
+
+            removed = None
+            try:
+                removed = _remove_worktree_if_present(root, branch)
+                _delete_branch(root, branch)
+            except subprocess.CalledProcessError as exc:
+                err = (exc.stderr or exc.stdout or str(exc)).strip()
+                print(
+                    'ship_branch: merge and tests succeeded, but cleanup '
+                    f'failed: {err}',
+                    file=sys.stderr,
+                )
+                return 1
+
+            extra = (
+                f'; removed worktree {removed}' if removed is not None else ''
+            )
+            print(
+                f"ship_branch: merged {branch!r} into {main_branch!r} "
+                f'and deleted the local branch{extra}'
+            )
+            return 0
+    except run_tests_mod.FullSuiteLocked as exc:
         print(
-            f'ship_branch: tests failed on {main_branch!r} after merge; '
-            'left as-is (no auto-revert). Branch and worktree were not cleaned up.',
+            f'ship_branch: full-suite lock busy; merge of {branch!r} refused. '
+            f'{exc}. Retry when no other full suite is running.',
             file=sys.stderr,
         )
-        return main_code
-
-    removed = None
-    try:
-        removed = _remove_worktree_if_present(root, branch)
-        _delete_branch(root, branch)
-    except subprocess.CalledProcessError as exc:
-        err = (exc.stderr or exc.stdout or str(exc)).strip()
-        print(
-            f'ship_branch: merge and tests succeeded, but cleanup failed: {err}',
-            file=sys.stderr,
-        )
-        return 1
-
-    extra = f'; removed worktree {removed}' if removed is not None else ''
-    print(
-        f"ship_branch: merged {branch!r} into {main_branch!r} "
-        f'and deleted the local branch{extra}'
-    )
-    return 0
-
+        if switched_to_tip:
+            try:
+                _checkout(root, main_branch)
+            except subprocess.CalledProcessError:
+                pass
+        return run_tests_mod.EXIT_LOCKED
 
 def is_docs_only_path(rel_path: str) -> bool:
     """Whether a changed path is allowed on a tracker/docs-only branch.
