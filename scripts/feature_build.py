@@ -598,6 +598,23 @@ class Build:
             self.keep.add((x, y, z))
         self.set(x, y, z, st)
 
+    def _prefetch_live(self, positions) -> None:
+        """Warm ``self.live`` for a known set of positions when it supports prefetch.
+
+        Skips positions an overlay world (``PlannedWorld``) already serves from ``.cells``.
+        No-op for stubs without ``prefetch``. Call only during plan construction — after
+        ``mark_written`` live stores raise ``StaleRead``.
+
+        @param positions: iterable of ``(x, y, z)``
+        """
+        warm = getattr(self.live, 'prefetch', None)
+        if warm is None:
+            return
+        overlay = getattr(self.live, 'cells', None)
+        if overlay is not None:
+            positions = (p for p in positions if p not in overlay)
+        warm(positions)
+
     def surf(self, x, z):
         for y in range(75, 30, -1):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
@@ -621,7 +638,9 @@ class Build:
                     if max(abs(dx), abs(dz)) >= 4 and c not in self.by_no_all_cells:
                         ring.add(c)
         near = {(x + dx, z + dz) for (x, z) in f.cells for dx in range(-3, 4) for dz in range(-3, 4)}
-        ys = [self.surf(x, z) for x, z in ring - near]
+        cols = ring - near
+        self._prefetch_live((x, y, z) for x, z in cols for y in range(75, 30, -1))
+        ys = [self.surf(x, z) for x, z in cols]
         ys = [y for y in ys if y]
         if not ys:
             y = self.spec['floor_min'] if self.spec['floor_min'] is not None else 50
@@ -736,14 +755,21 @@ class Build:
             else:
                 tops.append(f.b + f.storeys * STOREY_H + 8)
         top_clear = max(tops)
+        work = []
         for x, z in cols:
             nearest = min(self.features, key=lambda f: min(max(abs(x - c[0]), abs(z - c[1])) for c in f.cells))
             if (x, z) in self.owner and getattr(nearest, 'zone_roof', None):
                 continue  # shell_zoned owns these columns
-            b = nearest.b
             if (x, z) in self.foreign or (x, z) in self.shared:
                 continue
-            own = (x, z) in self.owner
+            work.append((x, z, nearest.b, (x, z) in self.owner))
+        need = []
+        for x, z, b, own in work:
+            if not own:
+                need.append((x, b, z))
+                need.extend((x, y, z) for y in range(b + 1, top_clear + 1))
+        self._prefetch_live(need)
+        for x, z, b, own in work:
             for y in range(37, b):
                 self.set(x, y, z, 'stone')
             if own:
@@ -861,6 +887,8 @@ class Build:
     def step_out(self, st, d, b):
         dx, dz = DIRS[d]
         facing = TOWARD[d]
+        cols = [(st[0] + dx * k, st[1] + dz * k) for k in range(1, self.spec['step_max'] + 1)]
+        self._prefetch_live((x, y, z) for x, z in cols for y in range(70, 40, -1))
         for k in range(1, self.spec['step_max'] + 1):
             n = (st[0] + dx * k, st[1] + dz * k)
             if n in self.owner or n in self.foreign:
@@ -1389,6 +1417,8 @@ class Build:
         if self.idx is not None:
             self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
+        leaf_q = [q for q in self.p.cells if (q[0], q[2]) not in own1]
+        self._prefetch_live(leaf_q)
         for q in list(self.p.cells):
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]

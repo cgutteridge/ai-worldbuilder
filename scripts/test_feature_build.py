@@ -657,6 +657,96 @@ class ZoneGuardFixtureTest(unittest.TestCase):
             self.assertIn(stoop_key, b.p.cells)
 
 
+class LivePrefetchTest(unittest.TestCase):
+    """Seam: feature_build plan construction batches LiveBlocks scans via prefetch.
+
+    Without prefetch, each ``block()`` becomes one MCP ``block_scan_region``.
+    With prefetch before hot loops, the same plan must use far fewer scans.
+    """
+
+    def setUp(self):
+        self.cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
+        self.spec = {
+            'name': 'unit_feature',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 3},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'facades': {},
+            'doors': {},
+            'zones': {},
+        }
+
+    def _terrain(self) -> dict:
+        """Stone through y<=49, air above, covering the footprint ring AABB."""
+        blocks = {}
+        for x in range(-5, 40):
+            for z in range(0, 50):
+                for y in range(30, 76):
+                    blocks[(x, y, z)] = 'minecraft:stone' if y <= 49 else 'minecraft:air'
+        return blocks
+
+    def _live_world(self, blocks: dict):
+        """World over LiveBlocks + FakeScanMcp; returns (world, mcp, tmp_cleanup)."""
+        from block_store import LiveBlocks
+        from site_kit import World
+        from test_block_store import FakeScanMcp
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        region = Path(tmp.name) / 'saves' / 'w' / 'region'
+        region.mkdir(parents=True)
+        mcp = FakeScanMcp(blocks)
+        store = LiveBlocks(
+            region, allowed=[region], identity_check=lambda r: None,
+            flusher=lambda: None, settle_seconds=0, mcp=mcp,
+        )
+        return World(store=store), mcp
+
+    def test_prefetch_matches_stub_world_and_bounds_scan_calls(self):
+        """Plan matches per-block stub path; scan count stays well below one-per-block."""
+        from site_kit import Plan
+
+        expected = F.build(self.spec, footprints={'A': self.cells}, world=_StoneWorld())
+        world, mcp = self._live_world(self._terrain())
+        with mock.patch('cell_registry.view_registry') as vr:
+            vr.return_value.owned.return_value = {}
+            got = F.build(self.spec, footprints={'A': self.cells}, world=world)
+        self.assertEqual(got.cells, expected.cells)
+        scans = sum(1 for name, _ in mcp.calls if name == 'block_scan_region')
+        # Naive path measured ~7900 scans for this fixture; batched AABB is a few tiles.
+        self.assertLessEqual(scans, 64, f'too many block_scan_region calls: {scans}')
+        self.assertIsInstance(got, Plan)
+
+    def test_planned_world_prefetch_skips_overlay_cells(self):
+        """Overlay (PlannedWorld) must not ask MCP for positions served from .cells."""
+        from site_kit import Plan, PlannedWorld
+
+        class CountingWorld:
+            def __init__(self):
+                self.prefetched = []
+
+            def prefetch(self, positions):
+                self.prefetched.extend(tuple(p) for p in positions)
+
+            def block(self, x, y, z):
+                return 'minecraft:air'
+
+        plan = Plan('overlay')
+        plan.cells[(1, 50, 1)] = 'minecraft:bricks'
+        base = CountingWorld()
+        view = PlannedWorld(plan, base)
+        view.prefetch([(1, 50, 1), (2, 50, 2), (3, 51, 3)])
+        self.assertEqual(base.prefetched, [(2, 50, 2), (3, 51, 3)])
+
 
 if __name__ == '__main__':
     unittest.main()
