@@ -114,5 +114,93 @@ class ModuleSelectionTest(unittest.TestCase):
             self.assertEqual(suite.countTestCases(), 2)
 
 
+class FullSuiteLockTest(unittest.TestCase):
+    """Advisory flock for default full discover; --only stays unlocked."""
+
+    def _git_repo(self) -> tempfile.TemporaryDirectory[str]:
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        import subprocess
+
+        subprocess.run(
+            ['git', 'init', '-b', 'main'],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        return tmp
+
+    def test_lock_path_under_git_common_dir(self) -> None:
+        with self._git_repo() as tmp:
+            root = Path(tmp)
+            path = run_tests.full_suite_lock_path(root)
+            self.assertEqual(path.name, run_tests.FULL_SUITE_LOCK_NAME)
+            common = run_tests.git_common_dir(root)
+            self.assertEqual(path.parent.resolve(), common.resolve())
+
+    def test_second_full_lock_fails_fast(self) -> None:
+        with self._git_repo() as tmp:
+            root = Path(tmp)
+            with run_tests.full_suite_lock(root):
+                with self.assertRaises(run_tests.FullSuiteLocked):
+                    with run_tests.full_suite_lock(root):
+                        pass
+
+    def test_parent_holds_skips_acquire_while_outer_held(self) -> None:
+        with self._git_repo() as tmp:
+            root = Path(tmp)
+            with run_tests.full_suite_lock(root):
+                with run_tests.full_suite_lock(root, parent_holds=True):
+                    pass  # must not raise
+
+    def test_only_mode_does_not_take_lock(self) -> None:
+        env = {**os.environ, run_tests.WORLD_ENV: '/tmp/fake-world'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch.object(run_tests, 'full_suite_lock') as lock_cm:
+                with mock.patch.object(
+                    run_tests,
+                    'load_suite',
+                    return_value=unittest.TestSuite(),
+                ):
+                    with mock.patch.object(
+                        run_tests, 'report_result', return_value=0
+                    ):
+                        with mock.patch(
+                            'unittest.TextTestRunner'
+                        ) as runner_cls:
+                            runner_cls.return_value.run.return_value = mock.Mock()
+                            code = run_tests.main(['--only', 'test_run_tests'])
+        self.assertEqual(code, 0)
+        lock_cm.assert_not_called()
+
+    def test_full_run_uses_lock_and_exits_2_when_busy(self) -> None:
+        env = {**os.environ, run_tests.WORLD_ENV: '/tmp/fake-world'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch.object(
+                run_tests,
+                'full_suite_lock',
+                side_effect=run_tests.FullSuiteLocked('busy'),
+            ):
+                with mock.patch('sys.stderr', new_callable=io.StringIO) as err:
+                    code = run_tests.main([])
+        self.assertEqual(code, 2)
+        self.assertIn('busy', err.getvalue())
+
+    def test_parent_holds_flag_and_env(self) -> None:
+        args = run_tests.parse_args(['--parent-holds-lock'])
+        self.assertTrue(args.parent_holds_lock)
+        self.assertTrue(run_tests.parent_already_holds_lock(args, {'x': '1'}))
+        args2 = run_tests.parse_args([])
+        self.assertFalse(args2.parent_holds_lock)
+        self.assertTrue(
+            run_tests.parent_already_holds_lock(
+                args2, {run_tests.PARENT_HOLDS_LOCK_ENV: '1'}
+            )
+        )
+        self.assertFalse(
+            run_tests.parent_already_holds_lock(args2, {})
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

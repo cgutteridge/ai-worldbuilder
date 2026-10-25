@@ -11,27 +11,41 @@ not a path. Repeat the flag (or pass it multiple times) to select several
 modules. With no ``--only`` flags the runner discovers the full ``test_*.py``
 suite under ``scripts/`` as before. An unknown stem fails with a clear error.
 
+Full discover (no ``--only``) takes a fail-fast advisory flock on
+``<git-common-dir>/ai-worldbuilder-full-suite.lock`` (shared across worktrees).
+A second overlapping full run exits ``2`` immediately (no wait); real test
+failures and unset world still exit ``1``. ``--only`` never takes the lock.
+When a parent already holds the lock (``--parent-holds-lock`` or env
+``AI_WORLDBUILDER_FULL_SUITE_LOCK_HELD=1``), the child skips acquire so
+``ship_branch`` can re-enter under the same lock.
+
 Quiet by default: on success prints one summary line; on failure prints each
 failing test id with a capped traceback, then a one-line summary. Exits 0 when
-all tests pass, 1 otherwise. Use before handoff or in CI.
+all tests pass, 1 otherwise (or 2 when locked out of a full run). Use before
+handoff or in CI.
 Requires ``AI_WORLDBUILDER_WORLD_ROOT`` (no silent default world).
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
+import fcntl
 import importlib.util
 import io
 import os
+import subprocess
 import sys
 import unittest
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
 import pre_commit_checks as pcc
 
 WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'
+PARENT_HOLDS_LOCK_ENV = 'AI_WORLDBUILDER_FULL_SUITE_LOCK_HELD'
+FULL_SUITE_LOCK_NAME = 'ai-worldbuilder-full-suite.lock'
+EXIT_LOCKED = 2
 DEFAULT_TRACEBACK_LINES = pcc.DEFAULT_TRACEBACK_LINES
 
 
@@ -39,11 +53,15 @@ class UnknownTestModule(ValueError):
     """Raised when ``--only`` names a module stem with no matching file."""
 
 
+class FullSuiteLocked(RuntimeError):
+    """Raised when another process already holds the full-suite flock."""
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the test runner.
 
     @param argv: argument vector without the program name (default: ``sys.argv[1:]``)
-    @returns: namespace with ``only`` (list of stems, or None for full discover)
+    @returns: namespace with ``only`` and ``parent_holds_lock``
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -62,7 +80,102 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             'repeatable. Default: discover all test_*.py modules.'
         ),
     )
+    parser.add_argument(
+        '--parent-holds-lock',
+        action='store_true',
+        dest='parent_holds_lock',
+        default=False,
+        help=(
+            'Skip full-suite flock acquire; parent already holds '
+            f'{FULL_SUITE_LOCK_NAME} (also set via {PARENT_HOLDS_LOCK_ENV}=1).'
+        ),
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def parent_already_holds_lock(
+    args: argparse.Namespace,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Whether the caller says a parent already holds the full-suite lock.
+
+    @param args: parsed CLI namespace
+    @param env: environment mapping (default: ``os.environ``)
+    @returns: True when ``--parent-holds-lock`` or the env var is truthy
+    """
+    if getattr(args, 'parent_holds_lock', False):
+        return True
+    environ = os.environ if env is None else env
+    raw = environ.get(PARENT_HOLDS_LOCK_ENV, '').strip().lower()
+    return raw in {'1', 'true', 'yes', 'on'}
+
+
+def git_common_dir(repo_root: Path) -> Path:
+    """Absolute git common directory for ``repo_root`` (shared across worktrees).
+
+    @param repo_root: repository root or linked worktree root
+    @returns: absolute path to the common ``.git`` directory
+    """
+    result = subprocess.run(
+        ['git', 'rev-parse', '--git-common-dir'],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    raw = result.stdout.strip()
+    path = Path(raw)
+    if not path.is_absolute():
+        path = (repo_root / path).resolve()
+    return path
+
+
+def full_suite_lock_path(repo_root: Path) -> Path:
+    """Path of the advisory full-suite lock file under the git common dir.
+
+    @param repo_root: repository root or linked worktree root
+    @returns: ``<git-common-dir>/ai-worldbuilder-full-suite.lock``
+    """
+    return git_common_dir(repo_root) / FULL_SUITE_LOCK_NAME
+
+
+@contextlib.contextmanager
+def full_suite_lock(
+    repo_root: Path,
+    *,
+    parent_holds: bool = False,
+) -> Iterator[int | None]:
+    """Hold the fail-fast advisory flock for a default full discover run.
+
+    Does nothing when ``parent_holds`` is True. Otherwise opens
+    :func:`full_suite_lock_path` and takes ``LOCK_EX|LOCK_NB``; raises
+    :class:`FullSuiteLocked` immediately if another holder exists.
+
+    @param repo_root: repository root or linked worktree root
+    @param parent_holds: skip acquire (parent already holds the flock)
+    @yields: lock file descriptor, or None when skipped
+    @raises FullSuiteLocked: when the lock is busy (fail-fast, no wait)
+    """
+    if parent_holds:
+        yield None
+        return
+    path = full_suite_lock_path(repo_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise FullSuiteLocked(
+                f'full suite already running (lock {path}); '
+                'fail-fast, try again when free'
+            ) from exc
+        try:
+            yield fd
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def load_suite(
@@ -155,14 +268,28 @@ def report_result(
     return 0 if ok else 1
 
 
+def _run_suite(suite: unittest.TestSuite) -> int:
+    """Execute ``suite`` with quiet capture and report to real stderr.
+
+    @param suite: loaded unittest suite
+    @returns: 0 on success, 1 on failure
+    """
+    sink = io.StringIO()
+    real_stderr = sys.stderr
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        result = unittest.TextTestRunner(stream=sink, verbosity=0).run(suite)
+    return report_result(result, stream=real_stderr)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Discover and run ``test_*.py`` modules under ``scripts/``.
 
-    With ``--only``, runs only the named module stems. Without flags, discovers
-    the full suite.
+    With ``--only``, runs only the named module stems (no full-suite lock).
+    Without flags, discovers the full suite under the advisory flock.
 
     @param argv: optional CLI args (without program name)
-    @returns: process exit code (0 success, 1 if any test failed or env unset)
+    @returns: 0 success, 1 test failure / unset world / unknown module,
+        2 when locked out of a full run
     """
     if not os.environ.get(WORLD_ENV, '').strip():
         print(
@@ -179,18 +306,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         text = str(path)
         if text not in sys.path:
             sys.path.insert(0, text)
+
+    def _load_and_run() -> int:
+        try:
+            suite = load_suite(scripts, only=args.only)
+        except UnknownTestModule as exc:
+            print(f'run_tests: {exc}', file=sys.stderr)
+            return 1
+        return _run_suite(suite)
+
+    if args.only:
+        return _load_and_run()
+
+    parent_holds = parent_already_holds_lock(args)
     try:
-        suite = load_suite(scripts, only=args.only)
-    except UnknownTestModule as exc:
+        with full_suite_lock(root, parent_holds=parent_holds):
+            return _load_and_run()
+    except FullSuiteLocked as exc:
         print(f'run_tests: {exc}', file=sys.stderr)
-        return 1
-    # Swallow runner chatter and incidental test prints (stdout + stderr);
-    # report_result writes the quiet summary to the real stderr afterwards.
-    sink = io.StringIO()
-    real_stderr = sys.stderr
-    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
-        result = unittest.TextTestRunner(stream=sink, verbosity=0).run(suite)
-    return report_result(result, stream=real_stderr)
+        return EXIT_LOCKED
 
 
 if __name__ == '__main__':
