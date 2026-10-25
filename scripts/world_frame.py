@@ -26,8 +26,16 @@ agreement with OS published National Grid is required.
   .venv/bin/python scripts/world_frame.py to-osgb --mc 5652,-2492
   .venv/bin/python scripts/world_frame.py to-wgs84 --mc 5652,-2492
   .venv/bin/python scripts/world_frame.py to-cell --mc 5652,-2492
+  .venv/bin/python scripts/world_frame.py to-wm --wgs84 50.903,-1.4044 --zoom 18
   .venv/bin/python scripts/world_frame.py to-wm --mc 5652,-2492 --zoom 18
+  .venv/bin/python scripts/world_frame.py from-wm --tile 18/130049/87872 --east-px 88.9 --south-px 9.7 --as wgs84
+  .venv/bin/python scripts/world_frame.py batch-wm --file points.json
   .venv/bin/python scripts/world_frame.py y --aod 45.2
+
+XYZ tile positions use a 256-pixel *logical* tile: ``east_px`` increases
+rightward and ``south_px`` downward from the northwest corner; offsets are
+independent of any downloaded image resolution. Latitude/longitude conversion
+needs no world; Minecraft conversion needs ``--frame`` or an active world.
 """
 from __future__ import annotations
 
@@ -467,6 +475,13 @@ def cell_bounds(
 
 # ---- web-mercator / tile XYZ -------------------------------------------------
 
+WM_TILE_PX = 256
+WM_MIN_ZOOM = 0
+WM_MAX_ZOOM = 30
+# Max latitude representable in spherical Web Mercator (tile y domain).
+WM_MAX_LAT = math.degrees(math.atan(math.sinh(math.pi)))
+
+
 def tile_float(lat: float, lon: float, zoom: int) -> tuple[float, float]:
     """Fractional web-mercator tile coordinate of a WGS84 point.
 
@@ -480,6 +495,29 @@ def tile_float(lat: float, lon: float, zoom: int) -> tuple[float, float]:
         (lon + 180) / 360 * n,
         (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n,
     )
+
+
+def wgs84_to_wm_global_px(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+    """WGS84 → global pixel on the zoom's 256-px logical Web Mercator grid.
+
+    Same NW-origin convention as ``east_px`` / ``south_px`` (right = east,
+    down = south). Prefer ``wgs84_to_wm_position`` when you need a tile code.
+
+    @param lat: latitude
+    @param lon: longitude
+    @param zoom: zoom level
+    @returns: (global_x_px, global_y_px)
+    """
+    fx, fy = tile_float(lat, lon, zoom)
+    return fx * WM_TILE_PX, fy * WM_TILE_PX
+
+
+def _tile_float_to_wgs84(fx: float, fy: float, zoom: int) -> tuple[float, float]:
+    """Fractional tile (x, y) → WGS84 lat/lon (inverse of tile_float)."""
+    n = 2.0 ** zoom
+    lon_deg = fx / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * fy / n)))
+    return math.degrees(lat_rad), lon_deg
 
 
 def deg2num(lat_deg: float, lon_deg: float, zoom: int) -> tuple[int, int]:
@@ -502,10 +540,7 @@ def num2deg(xtile: int, ytile: int, zoom: int) -> tuple[float, float]:
     @param zoom: zoom level
     @returns: (lat, lon)
     """
-    n = 2.0 ** zoom
-    lon_deg = xtile / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
-    return math.degrees(lat_rad), lon_deg
+    return _tile_float_to_wgs84(float(xtile), float(ytile), zoom)
 
 
 def parse_wm(s: str) -> tuple[int, int, int]:
@@ -513,15 +548,172 @@ def parse_wm(s: str) -> tuple[int, int, int]:
 
     @param s: tile id
     @returns: (z, x, y)
+    @raises ValueError: when the string is not three integer fields
     """
-    z, x, y = s.strip().split('/')
-    return int(z), int(x), int(y)
+    parts = s.strip().split('/')
+    if len(parts) != 3:
+        raise ValueError(f'expected z/x/y tile code, got {s!r}')
+    try:
+        return int(parts[0]), int(parts[1]), int(parts[2])
+    except ValueError as exc:
+        raise ValueError(f'expected z/x/y tile code, got {s!r}') from exc
+
+
+def _require_finite(value: float, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f'{label} must be a finite number')
+    v = float(value)
+    if not math.isfinite(v):
+        raise ValueError(f'{label} must be finite')
+    return v
+
+
+def _validate_zoom(zoom: int) -> int:
+    if not isinstance(zoom, int) or isinstance(zoom, bool):
+        raise ValueError(f'zoom must be an integer 0..{WM_MAX_ZOOM}')
+    if zoom < WM_MIN_ZOOM or zoom > WM_MAX_ZOOM:
+        raise ValueError(f'zoom must be in {WM_MIN_ZOOM}..{WM_MAX_ZOOM}, got {zoom}')
+    return zoom
+
+
+def _validate_wgs84(lat: float, lon: float) -> tuple[float, float]:
+    lat = _require_finite(lat, 'latitude')
+    lon = _require_finite(lon, 'longitude')
+    if lon < -180.0 or lon >= 180.0:
+        raise ValueError(f'longitude must be in [-180, 180), got {lon}')
+    if lat < -WM_MAX_LAT or lat > WM_MAX_LAT:
+        raise ValueError(
+            f'latitude must be in [{-WM_MAX_LAT}, {WM_MAX_LAT}], got {lat}',
+        )
+    return lat, lon
+
+
+def _validate_tile_indices(zoom: int, x: int, y: int) -> None:
+    n = 1 << zoom
+    if not isinstance(x, int) or isinstance(x, bool) or x < 0 or x >= n:
+        raise ValueError(f'tile x must be in 0..{n - 1} at zoom {zoom}, got {x}')
+    if not isinstance(y, int) or isinstance(y, bool) or y < 0 or y >= n:
+        raise ValueError(f'tile y must be in 0..{n - 1} at zoom {zoom}, got {y}')
+
+
+def _validate_pixel_offset(value: float, label: str) -> float:
+    v = _require_finite(value, label)
+    if v < 0.0 or v >= WM_TILE_PX:
+        raise ValueError(f'{label} must be in [0, {WM_TILE_PX}), got {v}')
+    return v
+
+
+def _resolve_frame(frame: WorldFrame | None) -> WorldFrame:
+    """Return an explicit frame or the active world's loaded frame.
+
+    @param frame: optional WorldFrame
+    @returns: frame to use for Minecraft conversion
+    @raises ValueError: when no frame is available
+    """
+    if frame is not None:
+        return frame
+    try:
+        return load_frame()
+    except SystemExit as exc:
+        raise ValueError(
+            'Minecraft conversion needs an explicit frame or a selected world '
+            f'with world-frame.json ({exc})',
+        ) from exc
+    except (OSError, KeyError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise ValueError(
+            'Minecraft conversion needs an explicit frame or a selected world '
+            f'with world-frame.json ({exc})',
+        ) from exc
+
+
+def wgs84_to_wm_position(lat: float, lon: float, zoom: int) -> dict:
+    """WGS84 → XYZ tile code plus logical pixel offsets (no world required).
+
+    Offsets are floating-point pixels on a 256-px logical tile from the
+    northwest corner: ``east_px`` rightward, ``south_px`` downward.
+
+    @param lat: WGS84 latitude
+    @param lon: WGS84 longitude in [-180, 180)
+    @param zoom: integer zoom 0..30
+    @returns: dict with zoom, x, y, tile, east_px, south_px
+    """
+    zoom = _validate_zoom(zoom)
+    lat, lon = _validate_wgs84(lat, lon)
+    fx, fy = tile_float(lat, lon, zoom)
+    tx, ty = int(fx), int(fy)
+    return {
+        'zoom': zoom,
+        'x': tx,
+        'y': ty,
+        'tile': f'{zoom}/{tx}/{ty}',
+        'east_px': (fx - tx) * WM_TILE_PX,
+        'south_px': (fy - ty) * WM_TILE_PX,
+    }
+
+
+def wm_position_to_wgs84(
+    zoom: int, x: int, y: int, east_px: float, south_px: float,
+) -> dict:
+    """XYZ tile + pixel offsets → WGS84 (no world required).
+
+    @param zoom: integer zoom 0..30
+    @param x: tile X
+    @param y: tile Y
+    @param east_px: pixels east of NW corner in [0, 256)
+    @param south_px: pixels south of NW corner in [0, 256)
+    @returns: dict with lat, lon
+    """
+    zoom = _validate_zoom(zoom)
+    _validate_tile_indices(zoom, x, y)
+    east_px = _validate_pixel_offset(east_px, 'east_px')
+    south_px = _validate_pixel_offset(south_px, 'south_px')
+    fx = x + east_px / WM_TILE_PX
+    fy = y + south_px / WM_TILE_PX
+    lat, lon = _tile_float_to_wgs84(fx, fy, zoom)
+    return {'lat': lat, 'lon': lon}
+
+
+def mc_to_wm_position(
+    x: float, z: float, zoom: int, frame: WorldFrame | None = None,
+) -> dict:
+    """Minecraft column → XYZ tile code plus logical pixel offsets.
+
+    @param x: Minecraft X
+    @param z: Minecraft Z
+    @param zoom: integer zoom 0..30
+    @param frame: explicit frame, or None to use the selected active world
+    @returns: dict with zoom, x, y, tile, east_px, south_px
+    """
+    zoom = _validate_zoom(zoom)
+    x = _require_finite(x, 'mc x')
+    z = _require_finite(z, 'mc z')
+    lat, lon = mc_to_wgs84(x, z, _resolve_frame(frame))
+    return wgs84_to_wm_position(lat, lon, zoom)
+
+
+def wm_position_to_mc(
+    zoom: int, x: int, y: int, east_px: float, south_px: float,
+    frame: WorldFrame | None = None,
+) -> dict:
+    """XYZ tile + pixel offsets → Minecraft x,z (existing block rounding).
+
+    @param zoom: integer zoom 0..30
+    @param x: tile X
+    @param y: tile Y
+    @param east_px: pixels east of NW corner in [0, 256)
+    @param south_px: pixels south of NW corner in [0, 256)
+    @param frame: explicit frame, or None to use the selected active world
+    @returns: dict with integer x, z
+    """
+    ll = wm_position_to_wgs84(zoom, x, y, east_px, south_px)
+    mx, mz = wgs84_to_mc(ll['lat'], ll['lon'], _resolve_frame(frame))
+    return {'x': mx, 'z': mz}
 
 
 def mc_to_wm(
     x: float, z: float, zoom: int, frame: WorldFrame | None = None,
 ) -> tuple[int, int]:
-    """Minecraft column → web-mercator tile at zoom.
+    """Minecraft column → web-mercator tile indices (compatibility wrapper).
 
     @param x: Minecraft X
     @param z: Minecraft Z
@@ -529,8 +721,8 @@ def mc_to_wm(
     @param frame: optional frame
     @returns: (xtile, ytile)
     """
-    lat, lon = mc_to_wgs84(x, z, frame)
-    return deg2num(lat, lon, zoom)
+    pos = mc_to_wm_position(x, z, zoom, frame)
+    return pos['x'], pos['y']
 
 
 def wm_tile_bbox_mc(
@@ -556,6 +748,59 @@ def wm_tile_bbox_mc(
     return min(xs), min(zs), max(xs), max(zs)
 
 
+def convert_wm_batch(
+    items: list[dict], frame: WorldFrame | None = None,
+) -> list[dict]:
+    """Convert a list of to-wm / from-wm requests, preserving order.
+
+    Each item is a dict:
+
+    - ``{"op": "to-wm", "zoom": N, "wgs84": {"lat", "lon"}}``
+    - ``{"op": "to-wm", "zoom": N, "mc": {"x", "z"}}``
+    - ``{"op": "from-wm", "tile": "z/x/y", "east_px", "south_px", "as": "wgs84"|"mc"}``
+
+    @param items: batch requests
+    @param frame: optional frame for Minecraft items
+    @returns: one result dict per input item
+    """
+    if not items:
+        return []
+    out: list[dict] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f'batch item {i}: expected object')
+        op = item.get('op')
+        try:
+            if op == 'to-wm':
+                zoom = item['zoom']
+                if 'wgs84' in item and item['wgs84'] is not None:
+                    ll = item['wgs84']
+                    out.append(wgs84_to_wm_position(ll['lat'], ll['lon'], zoom))
+                elif 'mc' in item and item['mc'] is not None:
+                    mc = item['mc']
+                    out.append(mc_to_wm_position(mc['x'], mc['z'], zoom, frame))
+                else:
+                    raise ValueError('to-wm needs wgs84 or mc')
+            elif op == 'from-wm':
+                z, x, y = parse_wm(str(item['tile']))
+                east = item['east_px']
+                south = item['south_px']
+                as_ = item.get('as', 'wgs84')
+                if as_ == 'wgs84':
+                    out.append(wm_position_to_wgs84(z, x, y, east, south))
+                elif as_ == 'mc':
+                    out.append(wm_position_to_mc(z, x, y, east, south, frame))
+                else:
+                    raise ValueError(f"from-wm as must be 'wgs84' or 'mc', got {as_!r}")
+            else:
+                raise ValueError(f"op must be 'to-wm' or 'from-wm', got {op!r}")
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f'batch item {i}: {exc}') from exc
+        except ValueError as exc:
+            raise ValueError(f'batch item {i}: {exc}') from exc
+    return out
+
+
 # ---- CLI ---------------------------------------------------------------------
 
 def _parse_pair(spec: str, label: str) -> tuple[float, float]:
@@ -565,13 +810,40 @@ def _parse_pair(spec: str, label: str) -> tuple[float, float]:
     return float(parts[0]), float(parts[1])
 
 
+def _cli_frame(path: str | None) -> WorldFrame | None:
+    """Load ``--frame PATH`` when given; otherwise None (active world on demand)."""
+    if path is None:
+        return None
+    return load_frame(Path(path))
+
+
+def _print_json(obj) -> None:
+    print(json.dumps(obj, indent=2))
+
+
+def _read_batch_json(path: str) -> list:
+    """Load a JSON array from a file path or stdin (``-``)."""
+    raw = sys.stdin.read() if path == '-' else Path(path).read_text()
+    data = json.loads(raw)
+    if not isinstance(data, list):
+        raise SystemExit('batch-wm input must be a JSON array')
+    return data
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry for world-frame conversions.
 
     @param argv: optional argv override
     @returns: exit code
     """
-    ap = argparse.ArgumentParser(description='World-frame coordinate conversions')
+    ap = argparse.ArgumentParser(
+        description=(
+            'World-frame coordinate conversions. Preferred XYZ interface: '
+            'to-wm / from-wm / batch-wm (logical 256-px east_px/south_px from NW). '
+            'Tile-image fetch and evidence sheets are separate tools '
+            '(e.g. google_aerial sheet).'
+        ),
+    )
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     sub.add_parser('info', help='print loaded frame as JSON')
@@ -582,31 +854,83 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument('--wgs84', help='lat,lon')
     g.add_argument('--epsg', nargs=2, metavar=('SRS', 'XY'),
                    help='source EPSG and x,y in that CRS (e.g. EPSG:4326 lon,lat)')
+    p.add_argument('--frame', help='world-frame.json path (else active world)')
 
     p = sub.add_parser('to-osgb', help='to OSGB easting,northing')
     p.add_argument('--mc', required=True, help='x,z')
+    p.add_argument('--frame', help='world-frame.json path (else active world)')
 
     p = sub.add_parser('to-wgs84', help='to WGS84 lat,lon')
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument('--mc', help='x,z')
     g.add_argument('--osgb', help='easting,northing')
+    p.add_argument('--frame', help='world-frame.json path (else active world)')
 
     p = sub.add_parser('to-cell', help='coverage cell of an MC point')
     p.add_argument('--mc', required=True, help='x,z')
 
-    p = sub.add_parser('to-wm', help='web-mercator tile of an MC point')
-    p.add_argument('--mc', required=True, help='x,z')
-    p.add_argument('--zoom', type=int, default=18)
+    p = sub.add_parser(
+        'to-wm',
+        help='WGS84 or MC → XYZ tile + east_px/south_px (JSON)',
+    )
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument('--wgs84', help='lat,lon (no world required)')
+    g.add_argument('--mc', help='x,z (needs --frame or active world)')
+    p.add_argument('--zoom', type=int, default=18, help='integer zoom 0..30')
+    p.add_argument('--frame', help='world-frame.json for --mc')
+
+    p = sub.add_parser(
+        'from-wm',
+        help='XYZ tile + east_px/south_px → WGS84 or MC (JSON)',
+    )
+    p.add_argument('--tile', required=True, help='z/x/y')
+    p.add_argument('--east-px', type=float, required=True, dest='east_px',
+                   help='pixels east of NW corner [0,256)')
+    p.add_argument('--south-px', type=float, required=True, dest='south_px',
+                   help='pixels south of NW corner [0,256)')
+    p.add_argument('--as', dest='as_', choices=('wgs84', 'mc'), default='wgs84',
+                   help='output CRS (mc needs --frame or active world)')
+    p.add_argument('--frame', help='world-frame.json for --as mc')
+
+    p = sub.add_parser(
+        'batch-wm',
+        help='JSON array of to-wm/from-wm ops from --file or stdin (-)',
+    )
+    p.add_argument('--file', required=True,
+                   help='path to JSON array, or - for stdin')
+    p.add_argument('--frame', help='world-frame.json for Minecraft items')
 
     p = sub.add_parser('y', help='metres AOD ↔ block Y')
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument('--aod', type=float, help='metres above datum → Y')
     g.add_argument('--block-y', type=int, dest='block_y', help='block Y → metres AOD')
+    p.add_argument('--frame', help='world-frame.json path (else active world)')
 
     args = ap.parse_args(argv)
-    f = load_frame()
+
+    # Lat/lon-only WM paths must not force-load a world frame.
+    needs_default_frame = args.cmd in (
+        'info', 'to-mc', 'to-osgb', 'to-wgs84', 'to-cell', 'y',
+    ) or (
+        args.cmd == 'to-wm' and args.mc is not None
+    ) or (
+        args.cmd == 'from-wm' and args.as_ == 'mc'
+    ) or (
+        args.cmd == 'batch-wm'  # may include mc; resolve per item via optional --frame
+    )
+
+    frame_override = _cli_frame(getattr(args, 'frame', None))
+    f: WorldFrame | None = frame_override
+    if f is None and needs_default_frame and args.cmd != 'batch-wm':
+        if args.cmd == 'to-wgs84' and args.osgb and not args.mc:
+            f = None  # OSGB→WGS84 needs no frame
+        elif args.cmd in ('to-wm', 'from-wm'):
+            pass  # resolved below via helpers
+        else:
+            f = load_frame()
 
     if args.cmd == 'info':
+        f = f or load_frame()
         print(json.dumps({
             'path': str(FRAME_PATH.relative_to(ROOT)) if FRAME_PATH.exists() else None,
             'place': f.data.get('place'),
@@ -624,6 +948,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == 'to-mc':
+        f = f or load_frame()
         if args.osgb:
             e, n = _parse_pair(args.osgb, 'easting,northing')
             x, z = osgb_to_mc(e, n, f)
@@ -639,6 +964,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == 'to-osgb':
+        f = f or load_frame()
         x, z = _parse_pair(args.mc, 'x,z')
         e, n = mc_to_osgb(x, z, f)
         print(f'OSGB E{e:.1f} N{n:.1f}')
@@ -646,6 +972,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == 'to-wgs84':
         if args.mc:
+            f = f or load_frame()
             x, z = _parse_pair(args.mc, 'x,z')
             lat, lon = mc_to_wgs84(x, z, f)
         else:
@@ -655,18 +982,49 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == 'to-cell':
+        f = f or load_frame()
         x, z = (int(v) for v in _parse_pair(args.mc, 'x,z'))
         tx, tz = cell_of(x, z)
         print(f'cell {tx},{tz}')
         return 0
 
     if args.cmd == 'to-wm':
-        x, z = _parse_pair(args.mc, 'x,z')
-        tx, ty = mc_to_wm(x, z, args.zoom, f)
-        print(f'{args.zoom}/{tx}/{ty}')
+        try:
+            if args.wgs84:
+                lat, lon = _parse_pair(args.wgs84, 'lat,lon')
+                _print_json(wgs84_to_wm_position(lat, lon, args.zoom))
+            else:
+                x, z = _parse_pair(args.mc, 'x,z')
+                _print_json(mc_to_wm_position(x, z, args.zoom, frame_override))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        return 0
+
+    if args.cmd == 'from-wm':
+        try:
+            z, x, y = parse_wm(args.tile)
+            if args.as_ == 'wgs84':
+                _print_json(wm_position_to_wgs84(z, x, y, args.east_px, args.south_px))
+            else:
+                _print_json(wm_position_to_mc(
+                    z, x, y, args.east_px, args.south_px, frame_override,
+                ))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        return 0
+
+    if args.cmd == 'batch-wm':
+        try:
+            items = _read_batch_json(args.file)
+            _print_json(convert_wm_batch(items, frame_override))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f'invalid JSON: {exc}') from exc
         return 0
 
     if args.cmd == 'y':
+        f = f or load_frame()
         if args.aod is not None:
             print(f'Y {metres_aod_to_y(args.aod, f)}  (y_offset={f.y_offset})')
         else:

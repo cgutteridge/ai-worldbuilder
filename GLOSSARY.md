@@ -86,6 +86,10 @@ _Avoid_: Type, source family keyed only by vendor
 How real geography maps into Minecraft: CRS, offsets, Y offset, bounds, anchor. Stored in the world’s `config/world-frame.json`; read via `scripts/world_frame.py`.
 _Avoid_: scattering OFFSET_E / SEA_LEVEL / private CRS subprocesses across scripts
 
+**XYZ tile position**:
+A Web Mercator slippy-map tile `z/x/y` plus floating-point pixel offsets on a 256-pixel *logical* tile: `east_px` rightward and `south_px` downward from the northwest corner (not northings; independent of downloaded image size). Convert with `scripts/world_frame.py` (`to-wm` / `from-wm` / `batch-wm`).
+_Avoid_: inventing a second mercator helper, treating offsets as metres/northings, or conflating this with tile-image fetch / evidence-sheet tools
+
 **Anchor**:
 The real-world point mapped to Minecraft (0, 0) on the horizontal plane.
 _Avoid_: origin (unless meaning the MC block origin), spawn (unless meaning the player spawn)
