@@ -212,6 +212,21 @@ class BuildPlanTest(unittest.TestCase):
         self.assertNotIn('slab', plan.cells.get(fringe, ''))
         self.assertIn('smooth_stone_slab', plan.cells.get((12, roof_y, 22), ''))
 
+    def test_clear_margin_does_not_fill_stone_shelves(self):
+        """#115: margin is cleared but not filled with a stone ring at floor level."""
+        floor = 50
+        plan = F.build(self.spec(storeys=2, kind='flat'), footprints={'A': self.cells}, world=_StoneWorld())
+        door_xz = {(x, z) for (x, _y, z), st in plan.cells.items() if '_door' in st}
+        shelf = []
+        for (x, y, z), st in plan.cells.items():
+            if st != 'minecraft:stone' or y != floor or (x, z) in self.cells:
+                continue
+            # Stoops / step_out next to doors may still place stone — those are allowed.
+            if any(abs(x - dx) <= 1 and abs(z - dz) <= 1 for dx, dz in door_xz):
+                continue
+            shelf.append((x, y, z))
+        self.assertEqual(shelf, [], f'stone shelves outside footprint: {shelf[:12]}')
+
     def test_flat_roof_edge_builds_overhang_fringe(self):
         """Present edge: one-block N8 overhang fringe (old flat-roof behaviour)."""
         spec = self.spec(storeys=2, kind='flat')

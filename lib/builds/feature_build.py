@@ -836,18 +836,17 @@ class Build:
         need = []
         for x, z, b, own in work:
             if not own:
-                need.append((x, b, z))
-                need.extend((x, y, z) for y in range(b + 1, top_clear + 1))
+                need.extend((x, y, z) for y in range(b, top_clear + 1))
         self._prefetch_live(need)
         for x, z, b, own in work:
-            for y in range(37, b):
-                self.set(x, y, z, 'stone')
             if own:
+                for y in range(37, b):
+                    self.set(x, y, z, 'stone')
                 rng = range(b, top_clear + 1)
             else:
-                if (self.live.block(x, b, z) or 'minecraft:air') == 'minecraft:air':
-                    self.set(x, b, z, 'stone')
-                rng = range(b + 1, top_clear + 1)
+                # Margin: clear only — no stone shelf at floor level (#115).
+                # Door stoops are placed later by step_out / _set_door_leaf.
+                rng = range(b, top_clear + 1)
             for y in rng:
                 if own or (self.live.block(x, y, z) or 'minecraft:air').split('[')[0] not in GROUND:
                     self.set(x, y, z, 'air')
