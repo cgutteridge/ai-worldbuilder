@@ -493,19 +493,23 @@ class DoorSpecBuildTest(unittest.TestCase):
             self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
 
     def test_portal_doors_nearest_within_reach_then_frame(self):
-        """#114: whole-face framed() must not drop a nearer in-reach candidate.
+        """#114: whole-face framed() must not hide a nearer, non-strict wall.
 
-        Long east face: far cells are the only 'strict' framed set when the whole
-        face is passed; the portal sits next to the south end. Reach-first framing
-        must still place the door beside the portal.
+        East face (x=17) of an 8x41 mass. Two-cell nubs on x=18 (z=21-22, 24-25,
+        27-28 and z=31-32, 34-35, 37-38) leave single-cell gaps on the face, so
+        every exposed cell near the portal (gaps at z=29..30 and the single
+        gaps either side) has an unexposed lateral neighbour and is not strict.
+        Nubs are at most two long, so they offer no door candidates of their own.
+        The only strict cells are z>=40, beyond DOOR_REACH. Framing the whole face
+        first returns only those far cells and the door is skipped; picking
+        in-reach walls first, then framing, keeps the gap beside the portal.
         """
-        # 8×20 mass; east face at x=17, z=20..39. Protrusion on the north half so
-        # south-end wall cells fail strict framing (north neighbour not E-exposed).
-        cells = {(x, z) for x in range(10, 18) for z in range(20, 40)}
-        cells |= {(x, z) for x in range(18, 22) for z in range(30, 40)}
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 61)}
+        for lo in (21, 24, 27, 31, 34, 37):
+            cells |= {(18, lo), (18, lo + 1)}
         portal = {
             'id': '18-A', 'label': 'Near', 'building': 'T',
-            'x': 18, 'z': 22, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
+            'x': 18, 'z': 29, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
             'in_map': True, 'uri': '',
         }
         buf = io.StringIO()
@@ -515,14 +519,15 @@ class DoorSpecBuildTest(unittest.TestCase):
                 footprints={'A': cells},
                 world=_StoneWorld(),
             )
-            out = buf.getvalue()
+        out = buf.getvalue()
         self.assertNotIn('skipped', out, out)
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
         self.assertEqual(len(lowers), 1, lowers)
         door_xz = (lowers[0][0][0], lowers[0][0][2])
+        self.assertIn(door_xz, {(17, 29), (17, 30)}, door_xz)
         self.assertLessEqual(
-            (door_xz[0] - 18) ** 2 + (door_xz[1] - 22) ** 2,
+            (door_xz[0] - 18) ** 2 + (door_xz[1] - 29) ** 2,
             F.portals.DOOR_REACH ** 2,
             f'door at {door_xz} farther than DOOR_REACH from portal',
         )
