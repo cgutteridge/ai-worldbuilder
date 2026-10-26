@@ -11,13 +11,15 @@
 - ``reconcile(cells, fix=)`` compares the journal with the blocks and, with ``fix``, re-commits the
   recorded plans through a caller-supplied ``apply`` callable.
 
-Ownership (later build wins, air cancels, ghost owners yield and never clash) is a private projection
-rebuilt from the journal and the plan blobs in ``registry/blobs/<hash>.json[.zst|.gz]``. Nothing here restores
-or snapshots regions (ADR 004 decision a).
+Ownership (later build wins, air cancels, ghost owners yield and never clash; real ground drops ghost
+owners only above its per-column top) is a private projection rebuilt from the journal and the plan
+blobs in ``registry/blobs/<hash>.json[.zst|.gz]``. Build begins may store a ``prior`` blob for undo.
+Nothing here restores or snapshots regions (ADR 004 decision a).
 
 Journal lines (JSON, one per line; ``seq`` strictly increasing)::
 
-    {"op":"begin","seq":n,"kind":"build|undo","plan":..,"pass":..,"cell":[tx,tz],"cells":[..],"blob":h,...}
+    {"op":"begin","seq":n,"kind":"build|undo","plan":..,"pass":..,"cell":[tx,tz],"cells":[..],"blob":h,
+     "prior":h?,...}   # prior = optional world snapshot at planned positions (build only)
     {"op":"finish","seq":m,"ref":n,"status":"landed|mismatched|abandoned","mismatches":k}
     {"op":"note","seq":n,"cell":[tx,tz],"kind":..,"ref":..,"body":..}
     {"op":"repair","seq":n,...}     # informational: reconcile re-wrote drifted blocks
@@ -385,6 +387,7 @@ class _Entry:
     meta: dict = field(default_factory=dict)
     signs: tuple = ()
     entities: tuple = ()
+    prior: str | None = None    # optional blob of world blocks at begin (undo fallback)
 
 
 @dataclass(frozen=True)
@@ -401,6 +404,7 @@ class _Prepared:
     record: dict
     writes: Writes
     strict: bool
+    prior: Mapping[Pos, str] | None = None
 
 
 def _token(tz: int) -> str:
@@ -619,11 +623,12 @@ class CellRegistry:
             strict=bool(d.get('strict')), masked=bool(d.get('mask')), strip=bool(d.get('strip')),
             targets=tuple(d.get('targets', ())), owner=d.get('owner'), ts=d.get('ts', ''),
             meta=dict(d.get('meta') or {}),
-            signs=_signs_from_json(d.get('signs')), entities=_entities_from_json(d.get('entities')))
+            signs=_signs_from_json(d.get('signs')), entities=_entities_from_json(d.get('entities')),
+            prior=d.get('prior'))
         if e.kind == 'build' and e.pass_ == 'feature':
-            prior = self._latest(e.plan)
-            if prior is not None and prior.status == 'landed':
-                e.reopened = tuple(sorted(set(prior.cells) | set(cells)))
+            earlier = self._latest(e.plan)
+            if earlier is not None and earlier.status == 'landed':
+                e.reopened = tuple(sorted(set(earlier.cells) | set(cells)))
         self._entries[e.seq] = e
         self._begun.add(e.seq)
         for c in cells:
@@ -820,6 +825,7 @@ class CellRegistry:
             if e.kind != 'build' or e.undone or e.status == 'begun' or seq in skip or e.plan in exclude:
                 continue
             ghost = e.pass_ in GHOST_PASSES
+            tops: dict[tuple[int, int], int] = {}       # (x, z) -> max Y written by this ground plan
             for pos, state in self._blob(e.blob).items():
                 if self._cell_of(pos) != cell:
                     continue
@@ -827,9 +833,19 @@ class CellRegistry:
                     owners.pop(pos, None)
                 else:
                     owners[pos] = _Owner(seq, e.plan, state, ghost, e.pass_)
-            if e.pass_ == 'ground' and e.status == 'landed' and e.cell == cell:
+                    if e.pass_ == 'ground':
+                        x, y, z = pos
+                        xz = (x, z)
+                        if y > tops.get(xz, -10 ** 9):
+                            tops[xz] = y
+            # Real ground supersedes ghost only in columns it wrote: drop ghost above that
+            # column's real top (exact positions already lost via later-wins). Keep ghost
+            # substrate below the top and every ghost column the ground plan did not cover.
+            if e.pass_ == 'ground' and e.status == 'landed' and e.cell == cell and tops:
                 for pos in [p for p, o in owners.items() if o.pass_ == 'ghost-ground']:
-                    del owners[pos]                     # real ground supersedes ghost ground
+                    top = tops.get((pos[0], pos[2]))
+                    if top is not None and pos[1] > top:
+                        del owners[pos]
         if cacheable:
             self._owner_cache[cell] = owners
         return owners
@@ -1128,11 +1144,14 @@ class CellRegistry:
                  if not o.ghost and o.state != positions[p]}
         if clash:
             raise Clash(clash)
+        actual = self.blocks.read_many(positions) if positions else {}
         if b.protect is not None and positions:
-            actual = self.blocks.read_many(positions)
             hits = {p: actual[p] for p in positions if b.protect(p, actual[p])}
             if hits:
                 raise Refused(f'{len(hits)} protected cells would change', hits)
+        # Snapshot world blocks at planned positions so undo can restore unowned substrate
+        # (legacy begin lines omit ``prior`` and keep under-owner-else-air).
+        prior = {p: (s if (s := actual.get(p)) is not None else AIR) for p in positions} if positions else None
         record = {
             'op': 'begin', 'kind': 'build', 'plan': b.plan, 'pass': b.pass_, 'cell': list(primary),
             'cells': [list(c) for c in sorted(touched)], 'n': len(positions),
@@ -1149,7 +1168,7 @@ class CellRegistry:
         if entities:
             record['entities'] = _entities_json(entities)
         writes = Writes(b.plan, b.pass_, positions, 'build', b, signs=signs, entities=entities)
-        return _Prepared(record, writes, bool(b.strict or b.mask is not None))
+        return _Prepared(record, writes, bool(b.strict or b.mask is not None), prior)
 
     def _resolve_targets(self, target: str | tuple[Cell, str]) -> list[_Entry]:
         out = []
@@ -1176,8 +1195,16 @@ class CellRegistry:
         positions = {p for e in targets for p in self._blob(e.blob)}
         current = self._owners_in(positions)
         under = self._owners_in(positions, skip=tseqs)
-        erase = {p: (under[p].state if p in under else AIR)
-                 for p, o in current.items() if o.seq in tseqs}
+        erase: dict[Pos, str] = {}
+        for p, o in current.items():
+            if o.seq not in tseqs:
+                continue
+            if p in under:
+                erase[p] = under[p].state
+            elif (prior_key := self._entries[o.seq].prior) is not None:
+                erase[p] = self._blob(prior_key).get(p, AIR)
+            else:
+                erase[p] = AIR                          # legacy begin: no prior blob
         names = sorted({e.plan for e in targets})
         first = targets[-1]
         record = {
@@ -1191,6 +1218,8 @@ class CellRegistry:
 
     def _begin(self, prep: _Prepared) -> Ticket:
         record = dict(prep.record, blob=self._store_blob(prep.writes.cells))
+        if prep.prior is not None:
+            record['prior'] = self._store_blob(prep.prior)
         seq = self._append(record)
         return Ticket(self, seq, replace(prep.writes, seq=seq), prep.strict)
 

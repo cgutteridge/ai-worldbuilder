@@ -365,6 +365,30 @@ class TestUndo(Base):
         self.assertEqual(len(self.reg.cell((0, 0)).in_flight), 1)
         self.assertEqual(self.reg.cell((0, 0)).features[0].id, 'a')   # still counted until the undo lands
 
+    def test_undo_restores_prior_blob_when_no_under_owner(self):
+        # Unowned world dirt is journalled as prior at begin; undo puts it back (not air).
+        self.blocks.write(P(0, 0), DIRT)
+        self.blocks.flush()
+        self.build('house', 'feature', {P(0, 0): STONE, P(0, 0, 1): GLASS})
+        begin = next(l for l in self.lines() if l.get('kind') == 'build' and l.get('plan') == 'house')
+        self.assertIn('prior', begin)
+        self.reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0)), DIRT)
+        self.assertEqual(self.blocks.read(P(0, 0, 1)), AIR)           # prior was air / default
+
+    def test_undo_without_prior_blob_still_falls_back_to_air(self):
+        # Legacy begin lines with no prior key keep today's rule (under-owner else air).
+        self.build('house', 'feature', {P(0, 0): STONE})
+        lines = self.lines()
+        begin = next(l for l in lines if l.get('op') == 'begin' and l.get('plan') == 'house')
+        finish = next(l for l in lines if l.get('op') == 'finish' and l.get('ref') == begin['seq'])
+        begin.pop('prior', None)
+        path = self.root / 'registry' / 'journal.jsonl'
+        path.write_text(''.join(json.dumps(l, separators=(',', ':')) + '\n' for l in (begin, finish)))
+        fresh = self.registry()
+        fresh.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0)), AIR)
+
 
 class TestGhosts(Base):
     def planner(self, cell, layer):
@@ -382,14 +406,43 @@ class TestGhosts(Base):
             self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
 
     def test_ghost_ground_then_real_ground_supersedes(self):
-        self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
+        # Ghost fills three columns at y=60 plus substrate below column 0; real ground writes only column 0.
+        ghost = {P(0, 0, i, 60): GREY for i in range(3)}
+        ghost[P(0, 0, 0, 58)] = GREY
+        ghost[P(0, 0, 0, 59)] = GREY
+        ghost[P(0, 0, 0, 61)] = GREY                   # above the eventual real top
+        self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', ghost, cell=(0, 0)), self.apply)
         self.assertEqual(self.reg.cell((0, 0)).ground, 'ghost')
         v = self.reg.cell((0, 0))
         self.assertEqual((v.ground, v.ghost.ground), ('ghost', True))
         self.build('ground_0_0', 'ground', {P(0, 0, 0, 60): STONE}, cell=(0, 0))
         v = self.reg.cell((0, 0))
         self.assertEqual((v.ground, v.ghost.ground), ('generated', False))
-        self.assertEqual(self.reg.owned([P(0, 0, 1, 60)]), {})        # superseded ghost ground is no longer owned
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 60)]), {P(0, 0, 0, 60): ('ground_0_0', STONE)})
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 61)]), {})        # above real top in written column: dropped
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 58)]), {P(0, 0, 0, 58): ('ghost_0_0_ground', GREY)})
+        self.assertEqual(self.reg.owned([P(0, 0, 1, 60)]), {P(0, 0, 1, 60): ('ghost_0_0_ground', GREY)})
+        self.assertEqual(self.reg.owned([P(0, 0, 2, 60)]), {P(0, 0, 2, 60): ('ghost_0_0_ground', GREY)})
+
+    def test_undo_feature_restores_ghost_substrate_when_real_ground_is_elsewhere(self):
+        # Cause of #123: feature over ghost, real ground only in other columns → undo must not write air.
+        ghost = {
+            P(0, 0, 0, 58): GREY, P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY,  # under the feature
+            P(0, 0, 5, 60): GREY,                                               # elsewhere in the cell
+        }
+        self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', ghost, cell=(0, 0)), self.apply)
+        self.build('house', 'feature', {P(0, 0, 0, 60): GLASS, P(0, 0, 0, 61): GLASS})
+        self.build('ground_0_0', 'ground', {P(0, 0, 5, 60): STONE}, cell=(0, 0))
+        v = self.reg.cell((0, 0))
+        self.assertEqual((v.ground, v.ghost.ground), ('generated', False))
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 58)]), {P(0, 0, 0, 58): ('ghost_0_0_ground', GREY)})
+        self.assertEqual(self.reg.follow_ups(), ())                   # no re-queue of ghost ground
+        self.assertTrue(self.reg.reconcile([(0, 0)]).clean)
+        self.reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)      # ghost top restored, not air
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 61)), AIR)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 58)), GREY)
+        self.assertEqual(self.reg.owned([P(0, 0, 0, 60)]), {P(0, 0, 0, 60): ('ghost_0_0_ground', GREY)})
 
     def test_real_feature_does_not_queue_ghost_feature_strips(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
@@ -697,17 +750,20 @@ class TestBlobStorage(Base):
 
     def test_blob_is_compressed_and_round_trips(self):
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
-        (blob,) = self.blob_files()
-        self.assertIn(blob.suffix, ('.zst', '.gz'))
+        blobs = self.blob_files()
+        self.assertGreaterEqual(len(blobs), 1)                        # plan blob (+ optional prior)
+        self.assertTrue(all(b.suffix in ('.zst', '.gz') for b in blobs))
         fresh = self.registry()
         self.assertEqual(fresh.recorded('ground_0_0'), plan(0, 0, STONE, y=60))
 
     def test_legacy_plain_json_blob_referenced_by_old_key_still_loads(self):
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
-        (blob,) = self.blob_files()
-        new_key = blob.name.split('.')[0]
+        begin = next(l for l in self.lines() if l.get('op') == 'begin' and l.get('plan') == 'ground_0_0')
+        new_key = begin['blob']
         old_key = 'a' * 32
-        blob.unlink()
+        for p in self.blob_files():
+            if p.name.startswith(new_key):
+                p.unlink()
         v1 = {f'{x},{y},{z}': st for (x, y, z), st in plan(0, 0, STONE, y=60).items()}
         (self.root / 'registry' / 'blobs' / f'{old_key}.json').write_text(json.dumps(v1))
         journal = self.root / 'registry' / 'journal.jsonl'
