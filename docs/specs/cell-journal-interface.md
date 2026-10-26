@@ -54,6 +54,10 @@ sorted by x, z, y, and `<hash>` is the sha256 prefix of that body. Plain `<hash>
 interpreter at least as new as the one that wrote it. Corrupt or malformed blobs raise `JournalError`. Lines: `begin`
 (build/undo), `finish` (`landed` | `mismatched`), `note`, `repair` (informational).
 
+Build `begin` lines also store an optional **`prior`** blob key: `read_many` over the planned positions at
+begin time. Undo erase values are under-owner state when an earlier owner remains, else that prior snapshot,
+else air. Old begins without `prior` keep under-owner-else-air.
+
 ## Invariants
 
 1. Views are a pure fold; two registries on one file, or a cold rebuild, return equal views.
@@ -64,9 +68,13 @@ interpreter at least as new as the one that wrote it. Corrupt or malformed blobs
    a missing blob is a `JournalError`.
 5. Ownership is a private projection: later build wins, air/light cancels, the build's own name and
    `modifies` are skipped, ghost owners yield (a real build never clashes with them; a ghost Build over real
-   work is a `Clash`). Begun entries claim ownership (conservative), undone entries do not.
-6. Flags set only on `landed`: ground clears trees/decor and supersedes ghost ground; trees/decor need
-   generated ground (`Refused` at begin); beginning a feature that was built clears trees/decor in its cells.
+   work is a `Clash`). Begun entries claim ownership (conservative), undone entries do not. Landed real
+   ground drops ghost-ground owners only above the real top in columns that ground plan wrote; substrate
+   below and uncovered ghost columns stay owned (so undo of a feature can restore ghost, not air).
+6. Flags set only on `landed`: ground clears trees/decor and sets `ghost.ground` false for the cell (view);
+   ownership supersession is per-column as in (5). Trees/decor need generated ground (`Refused` at begin);
+   beginning a feature that was built clears trees/decor in its cells.
+
 7. A landed real feature strips ghost features in the cells it touches (view flips at once); ghost blocks
    still owned inside its footprint columns and Y span become a `ghost_strip_*` air Build in `follow_ups()`.
 8. Ghost features need ghost or real ground; ghost ground is refused over real ground.
@@ -79,7 +87,7 @@ interpreter at least as new as the one that wrote it. Corrupt or malformed blobs
 ```python
 rec = reg.change(Build(plan.name, 'ground', plan.cells, modifies=mods, strict=True, cell=cell,
                        payload=plan), apply)       # begin(fsync) -> apply -> flush -> read back -> finish
-reg.change(Undo('house_12'), apply)                # erases to the earlier owners, voids the entries
+reg.change(Undo('house_12'), apply)                # erases to under-owner, else prior blob, else air
 reg.change(Undo((cell, 'trees')), apply)
 reg.change(Note(cell, 'marker', 'up'))             # single marker; 'none' clears; hold: body '' clears
 reg.ensure(apply)                                  # or change(..., cascade=True): apply follow-ups
