@@ -201,6 +201,28 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertNotIn('highfield_48_m45_trees', ign)
 
 
+class TestWarmSurfaceProbe(unittest.TestCase):
+    """The surface probe must batch its reads, not issue one MCP call per block."""
+
+    def test_prefetches_every_probed_block_in_strips(self):
+        calls = []
+
+        class Stub:
+            def prefetch(self, positions):
+                calls.append(set(positions))
+
+        gl.warm_surface_probe(Stub(), 0, 0, 33, 1)
+        ylo, yhi = gl.PROBE_Y_RANGE
+        self.assertEqual(len(calls), 3)                      # 34 x columns in strips of 16
+        got = set().union(*calls)
+        self.assertEqual(len(got), 34 * 2 * (yhi - ylo + 1))
+        self.assertIn((33, 110, 1), got)
+        self.assertIn((0, 31, 0), got)
+
+    def test_world_without_prefetch_is_fine(self):
+        gl.warm_surface_probe(object(), 0, 0, 3, 3)
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -235,3 +257,4 @@ class TestRegisteredAerial(unittest.TestCase):
         out = gs.registered_rgb([(30, 50), (1, 50), (30, 1), (60, 50), (80, 50)], [src])
         self.assertEqual(set(out), {(30, 50)})                       # (1,50),(30,1) near the edge; (60,50),(80,50) black
         self.assertEqual(gs.aerial_class(out[(30, 50)]), 'lawn')
+
