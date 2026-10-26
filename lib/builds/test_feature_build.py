@@ -477,6 +477,41 @@ class DoorSpecBuildTest(unittest.TestCase):
         for (x, y, z), _ in lowers + uppers:
             self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
 
+    def test_portal_doors_nearest_within_reach_then_frame(self):
+        """#114: whole-face framed() must not drop a nearer in-reach candidate.
+
+        Long east face: far cells are the only 'strict' framed set when the whole
+        face is passed; the portal sits next to the south end. Reach-first framing
+        must still place the door beside the portal.
+        """
+        # 8×20 mass; east face at x=17, z=20..39. Protrusion on the north half so
+        # south-end wall cells fail strict framing (north neighbour not E-exposed).
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 40)}
+        cells |= {(x, z) for x in range(18, 22) for z in range(30, 40)}
+        portal = {
+            'id': '18-A', 'label': 'Near', 'building': 'T',
+            'x': 18, 'z': 22, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
+            'in_map': True, 'uri': '',
+        }
+        buf = io.StringIO()
+        with mock.patch.object(F.portals, 'load', return_value=[portal]), redirect_stdout(buf):
+            plan = F.build(
+                self.spec({'18-A': {'leaves': 1, 'block': 'iron_door'}}),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            out = buf.getvalue()
+        self.assertNotIn('skipped', out, out)
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        door_xz = (lowers[0][0][0], lowers[0][0][2])
+        self.assertLessEqual(
+            (door_xz[0] - 18) ** 2 + (door_xz[1] - 22) ** 2,
+            F.portals.DOOR_REACH ** 2,
+            f'door at {door_xz} farther than DOOR_REACH from portal',
+        )
+
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones; refuses bad from/levels/pitched roof."""

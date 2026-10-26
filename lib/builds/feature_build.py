@@ -1055,15 +1055,25 @@ class Build:
             px, pz = portal['x'], portal['z']
             leaves = row['leaves']
             block = row['block']
+            # Nearest raw wall within reach first, then framing on that local set
+            # only — whole-face framed() would drop nearer non-strict candidates (#114).
             best = None
             for face in DIRS:
-                for c in self._door_candidates(f, face):
+                dx, dz = DIRS[face]
+                near = []
+                for c in f.walls:
                     if c in placed:
                         continue
+                    if not (self.exposed(c, face) and (c[0] - dx, c[1] - dz) in f.inner):
+                        continue
+                    d2 = (c[0] - px) ** 2 + (c[1] - pz) ** 2
+                    if d2 <= reach2:
+                        near.append(c)
+                for c in self.framed(f, near, face):
                     d2 = (c[0] - px) ** 2 + (c[1] - pz) ** 2
                     if best is None or d2 < best[0]:
                         best = (d2, c, face)
-            if best is None or best[0] > reach2:
+            if best is None:
                 print(f'door {pid} "{portal["label"]}": no wall near {px},{pz}: skipped')
                 continue
             _d2, c0, face = best
@@ -1075,9 +1085,16 @@ class Build:
                     (c0[0] - lat[0], c0[1] - lat[1]),
                 ]
                 opts.sort(key=lambda c: (c[0] - px) ** 2 + (c[1] - pz) ** 2)
+                dx, dz = DIRS[face]
+                face_near = [
+                    c for c in f.walls
+                    if c not in placed
+                    and self.exposed(c, face) and (c[0] - dx, c[1] - dz) in f.inner
+                    and (c[0] - px) ** 2 + (c[1] - pz) ** 2 <= reach2
+                ]
+                face_ok = set(self.framed(f, face_near, face))
                 pair = next(
-                    (c for c in opts
-                     if c not in placed and c in self._door_candidates(f, face)),
+                    (c for c in opts if c not in placed and c in face_ok),
                     None,
                 )
                 if pair is None:
