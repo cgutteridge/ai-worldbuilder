@@ -13,37 +13,6 @@
       "notes": "Why: dry runs were hours because planners read the live world one block at a time through paced MCP calls (1.1 s each; see docs/snags/2026-10-26-southampton-48-44.md S-02/S-19; #106/#108/#110 patched three layers). Region files are already on disk (world config region_path). Scope: STRICTLY READ-ONLY reader of .mca files (never write, copy, snap, restore or delete region files), implemented as an adapter behind BlockStore (read/read_many) so planners are unchanged; used for planning and dry-run reads after a server save (server_save_all_worlds; rules/process.md already says save before reading region files). Applies and their readback stay on the existing MCP path unless shown safe. Policy: GLOSSARY.md and ADR 004 say to avoid parsing region files for block state and removed region backup/restore; the owner has authorised this read-only exception (2026-10-26), so record it in ADR 004 / GLOSSARY when shipping. Open questions to answer first: does anything in planning need live state not on disk (unsaved chunks, entities, block entities); how to detect stale reads (save then read; compare chunk timestamps); chunk formats/version (DataVersion 4903); reuse an existing NBT/anvil library vs write minimal; keep dependency count low."
     },
     {
-      "id": 114,
-      "title": "Feature-build portal doors choose the nearest candidate, then check framing",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: Build.framed returns only strict candidates found anywhere on the face, dropping nearer ones, so portals 18-A, 42-B, 40-A fall outside DOOR_REACH and are skipped (S-08). Scope: feature_build portal_doors only: pick the candidate nearest the portal, then apply framing. Do NOT change framed() semantics: house_build uses it (test_house_build asserts the current behaviour) and the front/rear door callers stay as they are. Done when the four existing specs place doors for 18-A, 42-B, 40-A in a dry run. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints."
-    },
-    {
-      "id": 115,
-      "title": "Feature margin no longer fills stone shelves around the footprint",
-      "status": "blocked",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [
-        114
-      ],
-      "notes": "Cause: Build.clear() fills the 2-block margin around every footprint with stone at floor level b (range(37,b) plus a stone at b), regardless of terrain (S-17). Scope: clear the margin but do not fill it; keep stoop/step cells at doors (step_out and kset rely on ground at b). Recommended over the alternative of letting the ground layer re-surface build-owned margin columns. Blocked by #114 only because both edit feature_build.py (drop the edge if worked in separate worktrees). Done when a dry run shows no stone outside the footprint except stoops. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints."
-    },
-    {
-      "id": 116,
-      "title": "Zoned footprints keep only cells with lidar mass",
-      "status": "blocked",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        115
-      ],
-      "notes": "Cause: the footprint is the vector outline (closed/opened); lidar sets heights only, and snap_to_levels gives every outline cell a roof level even over bare ground (S-09, S-22, part of S-18). Jubilee: 357 of 3138 cells (after the exclude boxes) have no mass of at least 3 m. Scope: labels with a zones entry only (Retail has none). Intersect the readable mask with lidar mass (nDSM threshold as a named constant, not hard-coded; check it does not carve low porches/canopies); keep the exclude key as an override. Verify offline against the four existing specs, reporting cover % before and after (no redos of applied builds). Blocked by #115 only for same-file edits. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints."
-    },
-    {
       "id": 117,
       "title": "Block store scans the surrounding 16x16x16 section on a cache miss",
       "status": "todo",

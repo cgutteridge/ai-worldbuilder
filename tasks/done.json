@@ -969,6 +969,30 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: ground_sources.load_osm globs only *-mp/-ln/-pt.geojson in verification/site/osm27700, but osm_footprints writes <clip-dir>__<clip>.geojson, so the ground and decor layers load zero roads, paths, plazas, hedges, walls (S-20, S-21). Scope: one shared reader of the cache osm_footprints builds (reproject clips not yet cached); read every geojson there so legacy names still work; bbox filter and dedupe already exist. The dry run prints \"vector map: N features\" (reporting only, no stop: an empty cell is legitimate). Fix the stale docstring. Done when a world with only __-named clips yields roads and hedges in OSMGround. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged as 509c259 (task/113-vector-map-cache-reader)."
+    },
+    {
+      "id": 114,
+      "title": "Feature-build portal doors choose the nearest candidate, then check framing",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "notes": "Cause: Build.framed returns only strict candidates found anywhere on the face, dropping nearer ones, so portals 18-A, 42-B, 40-A fall outside DOOR_REACH and are skipped (S-08). Scope: feature_build portal_doors only: pick the candidate nearest the portal, then apply framing. Do NOT change framed() semantics: house_build uses it (test_house_build asserts the current behaviour) and the front/rear door callers stay as they are. Done when the four existing specs place doors for 18-A, 42-B, 40-A in a dry run. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (task/116 stack tip)."
+    },
+    {
+      "id": 115,
+      "title": "Feature margin no longer fills stone shelves around the footprint",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "notes": "Cause: Build.clear() fills the 2-block margin around every footprint with stone at floor level b (range(37,b) plus a stone at b), regardless of terrain (S-17). Scope: clear the margin but do not fill it; keep stoop/step cells at doors (step_out and kset rely on ground at b). Recommended over the alternative of letting the ground layer re-surface build-owned margin columns. Blocked by #114 only because both edit feature_build.py (drop the edge if worked in separate worktrees). Done when a dry run shows no stone outside the footprint except stoops. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (task/116 stack tip)."
+    },
+    {
+      "id": 116,
+      "title": "Zoned footprints keep only cells with lidar mass",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "notes": "Cause: the footprint is the vector outline (closed/opened); lidar sets heights only, and snap_to_levels gives every outline cell a roof level even over bare ground (S-09, S-22, part of S-18). Jubilee: 357 of 3138 cells (after the exclude boxes) have no mass of at least 3 m. Scope: labels with a zones entry only (Retail has none). Intersect the readable mask with lidar mass (nDSM threshold as a named constant, not hard-coded; check it does not carve low porches/canopies); keep the exclude key as an override. Verify offline against the four existing specs, reporting cover % before and after (no redos of applied builds). Blocked by #115 only for same-file edits. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (task/116 stack tip)."
     }
   ]
 }
