@@ -18,6 +18,7 @@ from types import ModuleType
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = TOOL_ROOT / "scripts"
 SHIMS = TOOL_ROOT / "shims"
+LIB = TOOL_ROOT / "lib"
 
 if str(TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOL_ROOT))
@@ -27,16 +28,31 @@ import python_runtime  # noqa: E402
 python_runtime.ensure_python_runtime()
 
 
-def ensure_import_paths() -> None:
-    """Put ``shims/`` then ``scripts/`` on ``sys.path`` for provider + glue imports.
+def _lib_category_dirs() -> list[Path]:
+    """Return ``lib/<category>/`` directories that hold library modules."""
+    if not LIB.is_dir():
+        return []
+    return sorted(
+        p for p in LIB.iterdir() if p.is_dir() and not p.name.startswith(".")
+    )
 
-    Shims win for historical provider module names; scripts hold cross-provider
-    glue (``script_env``, ``cell_sources``, ``coverage``, …).
+
+def ensure_import_paths() -> None:
+    """Put ``lib/*/``, ``shims/``, and ``scripts/`` on ``sys.path``.
+
+    Order (highest priority first): ``lib/*/``, ``shims/``, ``scripts/``.
+    Libraries win over same-named CLI wrappers; shims win over deprecated
+    ``scripts/`` stubs that re-export world providers. Always re-order even
+    when the shim directory is already ``sys.path[0]`` (running a shim as a
+    script), so inserting ``scripts/`` cannot shadow ``shims/``.
     """
-    for path in (SHIMS, SCRIPTS):
+    ordered = [*_lib_category_dirs(), SHIMS, SCRIPTS]
+    for path in ordered:
         text = str(path)
-        if text not in sys.path:
-            sys.path.insert(0, text)
+        if text in sys.path:
+            sys.path.remove(text)
+    for path in reversed(ordered):
+        sys.path.insert(0, str(path))
 
 
 def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:

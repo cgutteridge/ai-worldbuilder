@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Shim — canonical module: active world ``providers/geofabrik-hampshire/osm_extract.py``."""
+"""Deprecated path — use ``python3 shims/osm_extract.py`` (world provider shim)."""
 from __future__ import annotations
 
-from world_provider import load_world_provider, run_world_provider
+import runpy
+import sys
+from pathlib import Path
 
-_PACKAGE = "providers/geofabrik-hampshire"
-_FILE = "osm_extract.py"
 
-_mod = load_world_provider(_PACKAGE, _FILE, "osm_extract")
-globals().update({k: v for k, v in vars(_mod).items() if not k.startswith("__")})
+def main() -> None:
+    """Run the canonical shim under ``shims/``."""
+    tool = Path(__file__).resolve().parent.parent
+    shims = tool / "shims"
+    sys.path.insert(0, str(shims))
+    runpy.run_path(str(shims / "osm_extract.py"), run_name="__main__")
+
 
 if __name__ == "__main__":
-    run_world_provider(_PACKAGE, _FILE)
+    main()

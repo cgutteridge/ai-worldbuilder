@@ -16,9 +16,15 @@ import sys
 import time
 from pathlib import Path
 
-from floaters import cell_glitches
-from site_kit import OUT, World, bid
-from site_walk import solid
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
+
+script_env.ensure_import_paths()
+
+from floaters import cell_glitches  # noqa: E402
+from site_kit import OUT, World, bid  # noqa: E402
+from site_walk import solid  # noqa: E402
 
 PATROL = OUT / 'patrol'
 

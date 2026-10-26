@@ -99,11 +99,11 @@ def default_allow_prefixes(root: Path) -> frozenset[str]:
         'shims',
         'config/system-providers.json',
         'config/provider_name_audit_baseline.json',
-        'scripts/provider_name_audit.py',
+        'lib/audit/provider_name_audit.py',
+        'lib/audit/test_provider_name_audit.py',
         'scripts/check_provider_names.py',
-        'scripts/test_provider_name_audit.py',
-        'scripts/legacy_reference_paths.py',
-        'scripts/cell_sources.py',
+        'lib/sources/legacy_reference_paths.py',
+        'lib/sources/cell_sources.py',
         # Historical vendor write-ups; keep names, do not burn down.
         'docs/archive',
         # ADR that records the type/provider split and forbids vendor queue language.

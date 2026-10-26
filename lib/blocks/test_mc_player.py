@@ -58,14 +58,17 @@ class TestMovePlayer(unittest.TestCase):
         ])
 
     def test_edited_callers_compile(self):
+        import importlib.util
         import py_compile
-        from pathlib import Path
-        root = Path(__file__).resolve().parent
-        for name in (
-            'site_patrol.py', 'site_views.py', 'evidence_sheet.py',
-            'site_kit.py', 'site_handoff.py', 'mc_player.py',
+
+        for mod_name in (
+            'site_patrol', 'site_views', 'evidence_sheet',
+            'site_kit', 'site_handoff', 'mc_player',
         ):
-            py_compile.compile(root / name, doraise=True)
+            spec = importlib.util.find_spec(mod_name)
+            self.assertIsNotNone(spec, mod_name)
+            self.assertIsNotNone(spec.origin, mod_name)
+            py_compile.compile(spec.origin, doraise=True)
 
     def test_cli_move_requires_why(self):
         with self.assertRaises(SystemExit) as cm:

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Run stdlib unit tests for scripts in this repository (no Minecraft required).
+"""Run stdlib unit tests for this repository (no Minecraft required).
 
   python3 scripts/run_tests.py
   python3 scripts/run_tests.py --only test_model_bakeoff
   python3 scripts/run_tests.py --only test_run_tests --only test_ship_branch
 
-``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``
-or ``bakeoff/test_foo.py``), not a path. Repeat the flag (or pass it multiple
-times) to select several modules. With no ``--only`` flags the runner discovers
-the full ``test_*.py`` suite under ``scripts/`` and ``bakeoff/``. An unknown
-stem fails with a clear error.
+``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``,
+``lib/<category>/test_foo.py``, or ``bakeoff/test_foo.py``), not a path. Repeat
+the flag (or pass it multiple times) to select several modules. With no
+``--only`` flags the runner discovers the full ``test_*.py`` suite under
+``scripts/``, each ``lib/<category>/``, and ``bakeoff/``. An unknown stem fails
+with a clear error.
 
 Full discover (no ``--only``) takes a fail-fast advisory flock on
 ``<git-common-dir>/ai-worldbuilder-full-suite.lock`` (shared across worktrees).
@@ -67,7 +68,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description=(
-            'Run stdlib unit tests under scripts/ and bakeoff/. '
+            'Run stdlib unit tests under scripts/, lib/*/, and bakeoff/. '
             'Optional --only selects module stems (test_foo).'
         )
     )
@@ -78,7 +79,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest='only',
         default=None,
         help=(
-            'unittest module stem under scripts/ or bakeoff/ '
+            'unittest module stem under scripts/, lib/*/, or bakeoff/ '
             '(e.g. test_model_bakeoff); repeatable. Default: discover all '
             'test_*.py modules.'
         ),
@@ -316,8 +317,22 @@ def _run_suite(suite: unittest.TestSuite) -> int:
     return report_result(result, stream=real_stderr)
 
 
+def lib_test_dirs(repo_root: Path) -> list[Path]:
+    """Category directories under ``lib/`` that may hold ``test_*.py`` modules.
+
+    @param repo_root: tool repository root
+    @returns: sorted existing ``lib/<category>/`` directories
+    """
+    lib_root = repo_root / 'lib'
+    if not lib_root.is_dir():
+        return []
+    return sorted(
+        p for p in lib_root.iterdir() if p.is_dir() and not p.name.startswith('.')
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Discover and run ``test_*.py`` modules under ``scripts/`` and ``bakeoff/``.
+    """Discover and run ``test_*.py`` under ``scripts/``, ``lib/*/``, ``bakeoff/``.
 
     With ``--only``, runs only the named module stems (no full-suite lock).
     Without flags, discovers the full suite under the advisory flock.
@@ -331,18 +346,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = scripts.parent
     bakeoff = root / 'bakeoff'
     shims = root / 'shims'
-    # bakeoff last in this loop → first on sys.path (ahead of scripts/ shims).
-    for path in (shims, scripts, bakeoff):
+    lib_dirs = lib_test_dirs(root)
+    # Put lib/* ahead of scripts/ so bare imports hit libraries, not CLI wrappers.
+    # Do NOT import script_env here: it binds WORLD_ROOT from the process env and
+    # would pin site_kit before unit_test_world() can select a disposable checkout.
+    for path in (scripts, shims, *reversed(lib_dirs), bakeoff):
         if path.is_dir():
             _ensure_on_path(path)
+    for path in reversed(lib_dirs):
+        _ensure_on_path(path)
 
     def _load_and_run() -> int:
         with unit_test_world():
+            extras = list(lib_dirs)
+            if bakeoff.is_dir():
+                extras.append(bakeoff)
             try:
                 suite = load_suite(
                     scripts,
                     only=args.only,
-                    extra_dirs=(bakeoff,) if bakeoff.is_dir() else (),
+                    extra_dirs=tuple(extras),
                 )
             except UnknownTestModule as exc:
                 print(f'run_tests: {exc}', file=sys.stderr)

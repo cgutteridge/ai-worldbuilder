@@ -31,10 +31,11 @@ Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WOR
 | System tracker | `tasks/` |
 | System providers | `config/system-providers.json` + `providers/<id>/` (tool root) |
 | World providers | active world `config/local-providers.json` + `providers/<id>/` |
-| Provider CLIs | `shims/` (system) and `scripts/` shims (world); code under each `providers/` tree |
+| Provider CLIs | `shims/` (system + world-provider entry points); code under each `providers/` tree |
 | Evidence types | `reference/TYPES.txt` |
 | Place SOURCES | active world `reference/SOURCES.txt` (URLs / ToS / fetch how) |
-| Shared scripts | `scripts/` (cross-provider glue) |
+| Shared libraries | `lib/<category>/` (bare imports via `script_env`; see [`lib/README.md`](lib/README.md)) |
+| CLI entry points | `scripts/` (agent/hook commands; often thin wrappers over `lib/`; see [`scripts/README.md`](scripts/README.md)) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
 | Skills | `.claude/skills/` |
 | Model bake-offs (design/review tiers) | `bakeoff/` + `bakeoff/model_bakeoff.py` + skill `model-bakeoff` ([bakeoff/OVERVIEW.md](bakeoff/OVERVIEW.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |

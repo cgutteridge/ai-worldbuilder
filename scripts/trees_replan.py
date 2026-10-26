@@ -11,12 +11,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
+from pathlib import Path
 
-import trees_layer as tl
-from cellmath import parse_cell
-from pass_mask import mask_path, mask_placements, read_mask
-from site_kit import Plan, World
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
+
+script_env.ensure_import_paths()
+
+import trees_layer as tl  # noqa: E402
+from cellmath import parse_cell  # noqa: E402
+from pass_mask import mask_path, mask_placements, read_mask  # noqa: E402
+from site_kit import Plan, World  # noqa: E402
 
 
 def replan(cell: tuple[int, int], *, world=None, inputs=None, mask_dir=None):

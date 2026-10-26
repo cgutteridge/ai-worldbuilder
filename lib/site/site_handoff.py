@@ -1,0 +1,1492 @@
+#!/usr/bin/env python3
+"""Southampton Refine handoff helpers: session brief, view, agent hooks.
+
+Progress SoT is ``cell_registry.py next`` (cell journal), not a world queue file.
+
+  python3 scripts/site_handoff.py next
+  python3 scripts/site_handoff.py next --no-brief
+  python3 scripts/site_handoff.py next --copy
+  python3 scripts/site_handoff.py next --plan      (read-only plan preview)
+  python3 scripts/site_handoff.py end … --summary "…" --view x,y,z[,lx,ly,lz]
+  python3 scripts/site_handoff.py status
+  python3 scripts/site_handoff.py hook-stop
+  python3 scripts/site_handoff.py hook-start
+
+Memory stays in site/ + registry/. These commands prepare the next chat — they do
+not claim the lock or apply builds. Prefer starting sessions with
+``cell_registry.py next``. ``end`` may still release the lock and move the player;
+do not treat a retired queue file as progress.
+
+Mess in a cell: ``cell_registry.py reconcile [--fix]``. Interrupted apply:
+``site_recover.py``.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from script_env import ROOT, SCRIPTS  # noqa: E402
+SITE = ROOT / 'site'
+QUEUE = SITE / 'QUEUE.txt'
+HANDOFF = SITE / 'HANDOFF.txt'
+PENDING = SITE / '.handoff-pending.json'
+LOCK = SITE / 'LOCK.json'
+
+from cell_sources import in_flight_cell, sources_path  # noqa: E402
+from rules_context import format_rules_brief, format_starter_rules_line, plan_for_item  # noqa: E402
+
+CONTEXT_CEILING = '~250K tokens'
+SAY_PHRASE = 'ready for handoff'
+NEXT_CHAT_CMD = 'python3 scripts/cell_registry.py next'
+NEXT_CHAT_USER_MSG = (
+    f'Follow the instructions given by running: {NEXT_CHAT_CMD}'
+)
+CHAIN_CEILING = '~100K tokens'
+CHAIN_RULE = (
+    'Chain rule: when an item is done and needs no user check (readback/patrol clean, '
+    'nothing for human eyes, no "awaiting user visual check") and context is still small '
+    f'(under {CHAIN_CEILING}), skip `end` and run `{NEXT_CHAT_CMD}` here to continue with '
+    'the next item. Otherwise hand off with `end`.'
+)
+AUTO_START_RULE = (
+    'Begin the top queue item immediately in this session: check lock, read '
+    'only PROCESS slices + rule files under RULES READING in the SESSION BRIEF, '
+    'then execute the item end-to-end. Do not ask the user whether to start — '
+    f'running `{NEXT_CHAT_CMD}` (or receiving this starter) is their go-ahead.'
+)
+SANDBOX_SAY_HINT = (
+    'A command sandbox mutes macOS `say` (exit 0, no audio).\n'
+    'Re-run this exact command with the sandbox disabled.\n'
+    'Pass --skip-say only if audio is truly unavailable.'
+)
+
+
+def _queue_items():
+    """Parse QUEUE.txt into a list of dicts: id, open, text, lines.
+
+    @returns: list of queue item dicts
+    """
+    items = []
+    cur = None
+    for line in QUEUE.read_text().splitlines():
+        m = re.match(r'\[([ xX])\]\s+(Q-\d+)\s+(.*)', line)
+        if m:
+            if cur:
+                items.append(cur)
+            cur = {
+                'open': m.group(1) == ' ',
+                'id': m.group(2),
+                'text': m.group(3).rstrip(),
+                'lines': [m.group(3).rstrip()],
+            }
+            continue
+        if cur and (line.startswith('           ') or line.startswith('\t')):
+            bit = line.strip()
+            if bit:
+                cur['lines'].append(bit)
+                cur['text'] = (cur['text'] + ' ' + bit).strip()
+    if cur:
+        items.append(cur)
+    return items
+
+
+def top_open():
+    """Return the first open non-BACKLOG queue item, else first backlog, else None.
+
+    @returns: queue item dict or None
+    """
+    backlog = None
+    for it in _queue_items():
+        if not it['open']:
+            continue
+        if 'BACKLOG' in it['text'].upper():
+            if backlog is None:
+                backlog = it
+            continue
+        return it
+    return backlog
+
+
+LAYER_STAGES = ('ground', 'trees', 'decor')
+QUEUE_DONE = SITE / 'archive' / 'QUEUE-done.txt'
+from cellmath import ORIGIN_CELL, ring_cells  # noqa: E402,F401
+
+
+TREES_OVER_ROOF = 'trees-over-roof'      # journal review-note ref prefix: trees-over-roof:x0,z0,x1,z1
+
+
+def _view(cell):
+    """The cell's journal view (``CellRegistry.view``)."""
+    from cell_registry import view_registry
+    return view_registry().cell(tuple(cell))
+
+
+def residual_features(cell, idx=None):
+    """Mapped buildings no feature build covers, packaged as queue features.
+
+    Empty-world DoD (ADR 003): vector-map footprints still missing a house/feature build.
+
+    @param cell: (tx, tz)
+    @param idx: optional shared OSMIndex
+    @returns: [{'kind': 'building'|'houses', 'label', 'street', 'refs', 'bbox'}]
+    """
+    from cell_features import missing_features
+    from osm_footprints import OSMIndex
+    tx, tz = cell
+    try:
+        return missing_features(tx, tz, idx or OSMIndex())
+    except (OSError, ValueError, KeyError, SystemExit):
+        return []
+
+
+AERIAL_REVIEW = SITE / 'AERIAL-REVIEW.txt'
+# Legacy path kept so older checkouts / tests that write GOOGLE-REVIEW.txt still resolve.
+GOOGLE_REVIEW = AERIAL_REVIEW
+_REVIEW_ROW = re.compile(r'^(\s+)(r\d+)(\s+)(-?\d+),(-?\d+)(\s+)(\d+)(\s+)(\w+)\s*$')
+REVIEW_STATUSES = ('todo', 'look', 'features', 'ground', 'trees', 'done')
+_REVIEW_CELL_RE = re.compile(
+    r'AERIAL REVIEW cell\s+(-?\d+)\s*,\s*(-?\d+)',
+)
+
+
+def _aerial_review_path() -> Path:
+    """Prefer site/AERIAL-REVIEW.txt; fall back to legacy GOOGLE-REVIEW.txt."""
+    if AERIAL_REVIEW.exists():
+        return AERIAL_REVIEW
+    legacy = SITE / 'GOOGLE-REVIEW.txt'
+    return legacy if legacy.exists() else AERIAL_REVIEW
+
+
+def google_review_rows():
+    """Rows of site/AERIAL-REVIEW.txt (I-073) in file (ring) order.
+
+    @returns: [{'cell': (tx, tz), 'ring': 'r1', 'bld': int, 'status': str}]
+    """
+    try:
+        lines = _aerial_review_path().read_text().splitlines()
+    except OSError:
+        return []
+    rows = []
+    for ln in lines:
+        m = _REVIEW_ROW.match(ln)
+        if m:
+            rows.append({'cell': (int(m[4]), int(m[5])), 'ring': m[2], 'bld': int(m[7]), 'status': m[9]})
+    return rows
+
+
+def next_google_review():
+    """Aerial-review progress retired (ticket #31); always None.
+
+    @returns: None
+    """
+    return None
+
+
+def set_google_review_status(cell, status):
+    """No-op: AERIAL-REVIEW.txt is not a progress source (ticket #31).
+
+    @param cell: (tx, tz)
+    @param status: ignored
+    @returns: False
+    """
+    del cell, status
+    return False
+
+
+def google_review_cell(item):
+    """Cell of an "AERIAL REVIEW cell X" queue item.
+
+    @param item: queue item dict
+    @returns: (tx, tz) or None
+    """
+    m = _REVIEW_CELL_RE.search(item.get('text', ''))
+    return (int(m[1]), int(m[2])) if m else None
+
+
+def google_review_item(row):
+    """Queue item (head, body) of an Aerial Review (I-073).
+
+    The body holds the literal ``{qid}``, filled in when the item is numbered.
+
+    @param row: google_review_rows() row
+    @returns: (head, body lines)
+    """
+    tx, tz = row['cell']
+    return (f'AERIAL REVIEW cell {tx},{tz} (first row of site/AERIAL-REVIEW.txt not done; I-073). RULES: property.', [
+        f'Per I-073: (1) LOOK google_aerial.py sheet --cell {tx},{tz} --outlines, then --at for single buildings; record with',
+        'cell_sources --record <aerial provider id from place-sources>. (2) FEATURES every building against aerial (roof form, ridge axis, roof greeblies, colour/',
+        'material, rear wings, outbuildings, missing/extra) from best aerial (greeblies, colour), keepable aerial (footprint, roof form)',
+        'and lidar (heights); storeys streetlevel first, then vector-map levels, then lidar. Skip buildings that already have an open',
+        'feature item on the QUEUE.',
+        'Keep or redo per building, snapshot first, stop rule I-009. (3) GROUND applied ground vs aerial (I-068).',
+        f'(4) TREES scripts/tree_review.py --cell {tx},{tz} (lidar crowns vs live) plus the aerial sheet with its marks; fix per',
+        'rules/foliage.md "Tree review" (missing real trees, invented ones over lawn/paving/roof), then trees pass dry run.',
+        '(5) DECOR against aerial and streetlevel (fences, hedges, walls, cars, street furniture, plants, roof greeblies), then decor pass.',
+        'WHOLE CELL: review ALL five parts even if the cell was signed off or hand-made before; never skip one as "done".',
+        'Update the row in site/AERIAL-REVIEW.txt (look/features/ground/trees/done), note matches and mismatches as journal',
+        f'review notes (cell_registry.py note {tx},{tz} --kind review --ref aerial --body ...). '
+        f'End the chat with: site_handoff.py end {{qid}} --skip-say --skip-view --review-status look|features|ground|trees|done',
+        '(default done; --skip-view because end would otherwise move the player: AGENTS.md never-move-the-user).',
+    ])
+
+
+def lidar_lumps(cell):
+    """Lidar lumps of a cell (lidar_heightmap: national composite where cached), [] when unavailable.
+
+    @param cell: (tx, tz)
+    @returns: lidar_heightmap.lumps() items
+    """
+    try:
+        import lidar_heightmap as lh
+        return lh.lumps(lh.reference_world().heightmap(cell))
+    except (OSError, ValueError, KeyError, SystemExit, ImportError, LookupError):
+        return []
+
+
+def _inside(inner, outer):
+    return inner[0] >= outer[0] and inner[1] >= outer[1] and inner[2] <= outer[2] and inner[3] <= outer[3]
+
+
+def lidar_facts(lumps, bbox):
+    """Storeys / roof / ridge lines of the lidar lumps whose centre lies in a bbox (for the feature item).
+
+    @param lumps: lidar_lumps() output
+    @param bbox: (x0, z0, x1, z1)
+    @returns: ['lidar lump x0,z0..x1,z1: N storeys (estimate), roof R, ridge axis A[, T trees over roof]']
+    """
+    x0, z0, x1, z1 = bbox
+    out = []
+    for lp in lumps:
+        cx, cz = lp['centre']
+        if not (x0 <= cx <= x1 and z0 <= cz <= z1):
+            continue
+        b = lp['bbox']
+        out.append(f'lidar lump {b[0]},{b[1]}..{b[2]},{b[3]}: {lp.get("storeys")} storeys (estimate), roof {lp["roof"]}, '
+                   f'ridge axis {lp.get("ridge_axis") or "-"}' + (f', {lp["trees_over"]} cols tree over roof' if lp.get('trees_over') else ''))
+    return out
+
+
+def _portal_photo(p):
+    """Local saved copy of a portal's first photo (reference/photos/portals) when there is one, else its 800 px URL."""
+    from portals import PHOTO_DIR, photos
+    local = PHOTO_DIR / f'{p["id"]}.jpg'
+    return str(local.relative_to(ROOT)) if local.exists() else photos(p)[0]
+
+
+def portal_facts(portals):
+    """Entrance lines for a feature item: university portals (scripts/portals.py) on the feature's footprint.
+
+    @param portals: portal dicts from the feature (cell_features.missing_features)
+    @returns: queue-item lines ([] when none)
+    """
+    if not portals:
+        return []
+    from portals import describe
+    return ([f'Entrances (reference/portals, university register; position is the door, name is what it is called, '
+             f'photos are look-only, 800 px):'] + [f'  {describe(p)}' + (f'  {_portal_photo(p)}' if p['images'] else '')
+                                           for p in portals[:12]]
+            + ['Put a door at each one (portals.door_specs); say in the build note any you skip and why.'])
+
+
+def _building_photo(b):
+    """Local saved copy of a university building photo (reference/photos/buildings) when there is one, else its 800 px URL."""
+    from buildings import PHOTO_DIR, photos
+    local = PHOTO_DIR / f'{b["id"]}.jpg'
+    if not local.exists():
+        return photos(b)[0]
+    try:
+        return str(local.relative_to(ROOT))
+    except ValueError:
+        return str(local)
+
+
+def building_facts(pictures):
+    """Picture lines for a feature item: university buildings (scripts/buildings.py) that are this footprint.
+
+    @param pictures: building dicts from the feature (cell_features.missing_features)
+    @returns: queue-item lines ([] when none has a photo or an outline)
+    """
+    pictures = [b for b in pictures or [] if b['image'] or b['rings']]
+    if not pictures:
+        return []
+    from buildings import describe
+    return (['University building (reference/buildings, maps.soton.ac.uk; photo is look-only evidence for walls, openings,'
+             ' storeys; the outline cross-checks the vector map, lidar still decides heights):']
+            + [f'  {describe(b)}' + (f'  {_building_photo(b)}' if b['image'] else '') for b in pictures[:6]])
+
+
+def resolved_trees_over_roof(cell):
+    """Trees-over-roof decisions journalled as review notes on the cell: [{'bbox': [...], 'reason': str}].
+
+    Recorded with ``cell_registry.py note tx,tz --kind review --ref trees-over-roof:x0,z0,x1,z1 --body <reason>``.
+
+    @param cell: (tx, tz)
+    @returns: list ([] if none)
+    """
+    out = []
+    for n in _view(cell).notes:
+        if n.kind == 'review' and n.ref.startswith(TREES_OVER_ROOF + ':'):
+            try:
+                bbox = [int(v) for v in n.ref.split(':', 1)[1].split(',')]
+            except ValueError:
+                continue
+            if len(bbox) == 4:
+                out.append({'bbox': bbox, 'reason': n.body})
+    return out
+
+
+def trees_over_roof_open(cell, lumps=None):
+    """Lidar lumps with trees over the roof that no journal review note resolves (I-071).
+
+    A lump is resolved when its bbox lies inside a recorded ``trees-over-roof:<bbox>`` review note (a tree-pass
+    decision: crown kept over the roof, or the roof rebuilt).
+
+    @param cell: (tx, tz)
+    @param lumps: optional lidar_lumps(cell) result
+    @returns: [lump] still open
+    """
+    lumps = lidar_lumps(cell) if lumps is None else lumps
+    done = [r['bbox'] for r in resolved_trees_over_roof(cell) if r.get('bbox')]
+    return [lp for lp in lumps if lp.get('trees_over') and not any(_inside(lp['bbox'], d) for d in done)]
+
+
+def cell_gaps(cell, features=True):
+    """What keeps a cell from being done (the cell journal is the source of truth — ADR 004).
+
+    Layers, features and in-flight entries come from the cell's journal view. Optional slow
+    checks still report residual vector-map buildings and lidar trees-over-roof. In-flight
+    entries (``begun``, an aborted apply) are listed so site_recover can finish them.
+
+    @param cell: (tx, tz)
+    @param features: also compute residual_features (slow)
+    @returns: gaps dict
+    """
+    v = _view(cell)
+    layers = []
+    if v.ground != 'generated':
+        layers.append('ground')
+    if v.ground == 'generated' and not v.trees:
+        layers.append('trees')
+    if v.ground == 'generated' and not v.decor:
+        layers.append('decor')
+    feature_gaps = [f'{f.id}={f.status}' for f in v.features if f.status != 'built']
+    in_flight = [f'in-flight: {f.plan}' for f in v.in_flight]
+    stale = False
+    if 'trees' not in layers and v.trees:
+        from pass_mask import trees_rule_current
+        stale = not trees_rule_current(cell)
+    return {
+        'in_flight': in_flight,
+        'layers': layers,
+        'trees_stale': stale,
+        'features': (residual_features(cell) if features else []) + feature_gaps,
+        'trees_over_roof': trees_over_roof_open(cell) if features else [],
+        'hold': v.hold,
+        'done': v.done,
+    }
+
+
+def layers_done(cell):
+    """True when the cell journal marks the cell DONE (and optional slow checks are clean).
+
+    @param cell: (tx, tz)
+    @returns: bool
+    """
+    if not _view(cell).done:
+        return False
+    g = cell_gaps(cell, features=False)
+    if g.get('in_flight') or g['trees_stale']:
+        return False
+    return not residual_features(cell) and not trees_over_roof_open(cell)
+
+
+def next_cell(max_ring=12):
+    """Next cell from the registry picker (ticket #31). ``max_ring`` is unused.
+
+    @param max_ring: ignored (kept for call-site compatibility)
+    @returns: (tx, tz, ring) or None
+    """
+    del max_ring
+    from registry_next import next_task
+    from cellmath import origin_cell, ring_distance
+
+    task = next_task()
+    if task is None:
+        return None
+    if task.get('kind') == 'issue':
+        if task.get('cell'):
+            tx, tz = (int(x) for x in task['cell'].split(','))
+        else:
+            return None
+    else:
+        tx, tz = (int(x) for x in str(task['cell']).split(','))
+    return tx, tz, ring_distance((tx, tz), origin_cell())
+
+
+def requeue_plan(max_ring=12):
+    """Read-only: every non-done cell of the cell journal with its gaps (writes nothing).
+
+    @param max_ring: stop searching beyond this ring
+    @returns: [(tx, tz, ring, gaps)] in ring order
+    """
+    from cell_registry import view_registry
+    from cellmath import origin_cell, ring_distance
+
+    del max_ring
+    out = []
+    for (tx, tz), v in sorted(view_registry().view().items()):
+        if v.done:
+            continue
+        g = cell_gaps((tx, tz))
+        if not (g.get('in_flight') or g['layers'] or g['trees_stale'] or g['features'] or g.get('trees_over_roof')):
+            continue
+        out.append((tx, tz, ring_distance((tx, tz), origin_cell()), g))
+    return out
+
+
+def _max_queue_number():
+    n = 0
+    for path in (QUEUE, QUEUE_DONE):
+        if path.exists():
+            for m in re.finditer(r'Q-(\d+)', path.read_text()):
+                n = max(n, int(m.group(1)))
+    return n
+
+
+def _queue_block(qid, head, body):
+    lines = [f'[ ] {qid}  {head}'] + [f'           {b}' for b in body]
+    return '\n' + '\n'.join(lines) + '\n'
+
+
+def plan_cell_items(tx, tz, r, gaps, lumps):
+    """Queue items (head, body lines) for one cell's gaps, in queue order.
+
+    Pure: no numbering, no file access. Order is recover, features, trees over roof,
+    layered passes, trees re-run.
+
+    @param tx: cell x
+    @param tz: cell z
+    @param r: ring number
+    @param gaps: cell_gaps() result
+    @param lumps: lidar_lumps() result (empty when the cell has no feature gaps)
+    @returns: list of (head, body) tuples
+    """
+    items = []
+    if gaps.get('in_flight'):
+        items.append((f'CELL {tx},{tz} (r={r}) RECOVER aborted run: {"; ".join(gaps["in_flight"])}.', [
+            f'A cell journal entry is left "begun" (aborted apply). Run scripts/site_recover.py status, then',
+            f'site_recover.py recover {tx},{tz} (dry run) and --apply; report to the user if it is unsure.',
+        ]))
+    for f in gaps['features']:
+        x0, z0, x1, z1 = (int(v) for v in f['bbox'])
+        items.append((f'CELL {tx},{tz} (r={r}) FEATURE {f["label"]}. RULES: property.', [
+            f'Major feature, pass 1 of the cell (HANDOFF-LAYERED-PASSES §1, §4): own build, region',
+            f'snapshot + origin fingerprint before apply. bbox {x0},{z0},{x1},{z1}; map refs {",".join(f["refs"][:8])}'
+            + (' …' if len(f['refs']) > 8 else '') + '.',
+            'Houses: one build for the whole run on the street (shared frontage, roofs, party walls).',
+            'House only: no gardens. Lawn is GROUND; trees/shrubs TREES; fences, sheds, planting DECOR.',
+            f'Lidar first: python3 scripts/lidar_heightmap.py --cell {tx},{tz}  (composite DTM/DSM via lidar provider: storeys, roof shape, ridge axis, trees over roof).',
+            (
+                'Houses: use scripts/house_build.py — write site/builds/<name>.json from this feature\'s evidence '
+                '(name, ways, roofs, groups.front, modifies; see house_build docstring). Do not copy a peer spec or a build script.'
+                if f.get('kind') == 'houses' else
+                'Non-house building: use scripts/feature_build.py — write site/builds/<name>.json from this feature\'s evidence '
+                '(name, ways, storeys, roofs.kind/material, groups.front, modifies; see feature_build docstring). '
+                'Do not extend house_build for odd shapes; do not copy a peer spec or a build script.'
+            ),
+            'Greeblies: list from the aerial sheet (plant, vents, skylights, panels, plant colour); '
+            'apply as <name>-greeblies (CRAFTSMANSHIP), or end summary must say "no greeblies seen".',
+            f'Not covered by any feature build. Auto-queued; before the {tx},{tz} layered passes.',
+            'Evidence contact sheet after apply (frontage-and-evidence §4): '
+            'python3 scripts/evidence_sheet.py <name>  '
+            '(portal-facing cameras, top-down, aerial crop); end refuses FEATURE without it.',
+        ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
+          + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz} '
+              f'(ensures lidar ghost frontier). {_LIDAR_GHOST_V2_FRONTIER} {_LIDAR_GHOST_V2_SPLIT}']
+             if not items else [])))
+    if gaps.get('trees_over_roof'):
+        items.append((f'CELL {tx},{tz} (r={r}) TREES OVER ROOF {len(gaps["trees_over_roof"])} lidar lump(s) (I-071). RULES: foliage.', [
+            'Lidar shows tree columns over these roofs; decide each (crown kept over the roof, or roof/crown rebuilt) and record',
+            f'it as a journal note: python3 scripts/cell_registry.py note {tx},{tz} --kind review '
+            f'--ref {TREES_OVER_ROOF}:x0,z0,x1,z1 --body "<reason>".',
+        ] + lidar_facts(gaps['trees_over_roof'], (-10**9, -10**9, 10**9, 10**9))))
+    if gaps['layers']:
+        items.append((f'CELL {tx},{tz} (r={r}) layered passes: ground, trees, decor. RULES: ground.', [
+            'Auto-queued: next in north-centre-then-clockwise order. The cell marker',
+            f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} '
+            f'if not already. {_LIDAR_GHOST_V2_FRONTIER} Real ground here supersedes ghost ground. '
+            f'{_LIDAR_GHOST_V2_SPLIT}',
+            'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
+            'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
+            'patrol sweep (each apply records itself in the cell journal);',
+            'Done = evidence-backed features plus layered passes and masks (empty-world DoD); not clearing vendor lumps.',
+            f'Marker stays up after this run; clear it only when decor is done, checks',
+            f'pass and all open issues for the cell are closed: cell_marker.py --clear {tx},{tz}.',
+        ]))
+    if not gaps['layers'] and gaps['trees_stale']:
+        items.append((f'CELL {tx},{tz} (r={r}) TREES re-run (overhang rule, I-061). RULES: foliage.', [
+            'Auto-queued: finished cell whose trees mask predates the overhang rule (no rule stamp).',
+            'mask_undo trees; re-plan trees with trees_layer (tree belongs to the cell of its trunk, crowns overhang',
+            'neighbours, tree-on-tree leaves merge: HANDOFF-LAYERED-PASSES §6); dry run, apply with SITE_OWNER;',
+            'Ground and decor stay as they are; check decor interplay.',
+        ]))
+    return items
+
+
+def _append_queue_items(items):
+    """Number ``items`` (head, body) after the highest Q-nnn and append them to QUEUE.txt.
+
+    @returns: id of the first appended item, or None if ``items`` is empty
+    """
+    if not items:
+        return None
+    n = _max_queue_number()
+    ids = [f'Q-{n + k + 1:03d}' for k in range(len(items))]
+    QUEUE.write_text(QUEUE.read_text().rstrip('\n') + '\n'
+                     + ''.join(_queue_block(qid, head, [b.replace('{qid}', qid) for b in body]) for qid, (head, body) in zip(ids, items)))
+    return ids[0]
+
+
+def advance_to_next_cell():
+    """Next registry work item (ticket #31). Does not write QUEUE.txt.
+
+    Aerial-review and Q-nnn queue enqueue are retired. Returns a synthetic item
+    dict shaped like the old queue parser so leftover callers keep working.
+
+    @returns: item dict with ``task`` key, or None when the registry is idle
+    """
+    from registry_next import format_next, next_task
+
+    task = next_task()
+    if task is None:
+        return None
+    label = format_next(task)
+    return {
+        'id': 'NEXT',
+        'open': True,
+        'text': label,
+        'lines': [label],
+        'task': task,
+    }
+
+
+def lock_status():
+    """Return lock dict or None; adds ``fresh`` bool when present.
+
+    @returns: lock dict or None
+    """
+    if not LOCK.exists():
+        return None
+    try:
+        lk = json.loads(LOCK.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    age = time.time() - float(lk.get('heartbeat', 0))
+    lk['fresh'] = age < 90 * 60
+    return lk
+
+
+def _cell_for_item(item):
+    """Coverage cell from queue text ``CELL tx,tz`` or COVERAGE IN FLIGHT.
+
+    @param item: queue item dict
+    @returns: (tx, tz) or None
+    """
+    blob = ' '.join(item.get('lines') or [item.get('text', '')])
+    m = re.search(r'CELL\s+(-?\d+)\s*,\s*(-?\d+)', blob, re.I)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return in_flight_cell()
+
+
+NO_GREEBLIES_SEEN = 'no greeblies seen'
+
+# Lidar ghost v2 handoff copy (docs/specs/lidar-ghost-v2-and-dryrun-reset.md).
+_LIDAR_GHOST_V2_SPLIT = (
+    'Ghost ground only (DTM fill + surface). Top colour encodes DSM−DTM per column: '
+    'light_gray_concrete ≈0, gray_concrete 1–2, black_concrete >2 — for location checks against '
+    'real features. No volumetric feature ghosts. Real ground supersedes ghost ground.'
+)
+_LIDAR_GHOST_V2_FRONTIER = (
+    'Frontier = Chebyshev ring around every cell with real refine started (default LIDAR_GHOST_RING=2). '
+    'Refresh after cell_marker raise/adopt and after every real apply (--no-ghosts / --ghost-ring to override).'
+)
+
+
+def is_feature_queue_item(item):
+    """True when the queue head is a FEATURE build item (not layered passes / review).
+
+    @param item: queue item dict or None
+    @returns: bool
+    """
+    if not item:
+        return False
+    return bool(re.search(r'\)\s+FEATURE\s+', item.get('text') or '', re.I))
+
+
+def is_feature_item(item) -> bool:
+    """Whether a queue item is a FEATURE build (needs greeblies + evidence contact sheet).
+
+    @param item: queue item dict
+    @returns: True when the head line contains FEATURE
+    """
+    return is_feature_queue_item(item)
+
+
+def greeblies_record_present(cell):
+    """True when the cell journal shows a ``<name>-greeblies`` feature build in the cell.
+
+    @param cell: (tx, tz), or None
+    @returns: bool
+    """
+    if cell is None:
+        return False
+    return any(f.id.endswith('-greeblies') for f in _view(cell).features)
+
+
+def feature_greeblies_refusal(item, summary):
+    """Error message if FEATURE ``end`` lacks greeblies evidence; else None.
+
+    A FEATURE item may end only when the cell journal has a ``<name>-greeblies``
+    feature build in the cell, or ``summary`` contains ``no greeblies seen``.
+
+    @param item: queue item dict or None
+    @param summary: ``--summary`` text
+    @returns: refusal string or None
+    """
+    if not is_feature_queue_item(item):
+        return None
+    if NO_GREEBLIES_SEEN in (summary or '').lower():
+        return None
+    if greeblies_record_present(_cell_for_item(item)):
+        return None
+    return (
+        'FEATURE end refused: no <name>-greeblies build in the cell journal '
+        f'(apply greeblies, or put "{NO_GREEBLIES_SEEN}" in --summary)'
+    )
+
+
+def _flag_values(argv, name: str) -> list[str]:
+    """Collect every value following ``name`` in argv (repeatable flags).
+
+    @param argv: CLI args
+    @param name: flag string including leading dashes
+    @returns: list of values
+    """
+    out = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == name and i + 1 < len(argv):
+            out.append(argv[i + 1])
+            i += 2
+            continue
+        i += 1
+    return out
+
+
+def feature_build_names(item, builds: list[str] | None = None) -> list[str]:
+    """Build names tied to a FEATURE queue item (for contact-sheet lookup).
+
+    Order: explicit ``builds``, names from ``site/builds/<name>.json`` mentioned in
+    the item text, then the feature builds the cell journal shows in the item's cell
+    (skipping cell markers).
+
+    @param item: queue item dict
+    @param builds: optional explicit build names (e.g. from ``--build``)
+    @returns: unique build name strings
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(n: str) -> None:
+        if n and n not in seen:
+            seen.add(n)
+            names.append(n)
+
+    for n in builds or []:
+        add(n)
+    blob = ' '.join(item.get('lines') or []) + ' ' + (item.get('text') or '')
+    for m in re.finditer(r'site/builds/([A-Za-z0-9._-]+)\.json', blob):
+        add(m.group(1))
+    for m in re.finditer(r'verification/site/([A-Za-z0-9._-]+)-(?:cells|contact|shots)', blob):
+        add(m.group(1))
+    cell = _cell_for_item(item)
+    if cell is not None:
+        for f in _view(cell).features:
+            if not f.id.startswith('cell_marker'):
+                add(f.id)
+    return names
+
+
+def feature_contact_sheets(item, builds: list[str] | None = None) -> list[tuple[str, Path]]:
+    """Contact sheets found for a FEATURE item's builds.
+
+    @param item: queue item dict
+    @param builds: optional explicit build names
+    @returns: list of (build_name, sheet_path)
+    """
+    from evidence_sheet import find_contact_sheet
+
+    found = []
+    for name in feature_build_names(item, builds=builds):
+        sheet = find_contact_sheet(name)
+        if sheet is not None:
+            found.append((name, sheet))
+    return found
+
+
+def require_feature_contact_sheet(item, builds: list[str] | None = None) -> str | None:
+    """Error text when a FEATURE item has no evidence contact sheet; else None.
+
+    @param item: queue item dict
+    @param builds: optional explicit build names from ``--build``
+    @returns: refusal message, or None when the sheet is present (or item is not FEATURE)
+    """
+    if not is_feature_item(item):
+        return None
+    sheets = feature_contact_sheets(item, builds=builds)
+    if sheets:
+        return None
+    names = feature_build_names(item, builds=builds)
+    hint = (
+        f"for build(s) {', '.join(names)}"
+        if names else
+        '(pass --build <name>, or run evidence_sheet after apply so stages/result record the path)'
+    )
+    return (
+        f'FEATURE item {item.get("id")} has no evidence contact sheet {hint}. '
+        'Run: python3 scripts/evidence_sheet.py <build>  '
+        '(frontage-and-evidence §4 / Q-202).'
+    )
+
+
+
+def next_chat_prompt_line():
+    """Return the one-line user message for the next chat (paste as first message).
+
+    @returns: plain-text prompt for the user to send
+    """
+    return NEXT_CHAT_USER_MSG
+
+
+def format_next_chat_copy_block():
+    """Printable copy box for the next session (one line between COPY markers).
+
+    @returns: multi-line string for terminal output after ``end``
+    """
+    line = next_chat_prompt_line()
+    bar = '=' * 72
+    return (
+        f'\n{bar}\n'
+        'NEXT CHAT — copy between >>> COPY and <<< COPY (fenced code in chat)\n'
+        f'{bar}\n'
+        '>>> COPY\n'
+        f'{line}\n'
+        '<<< COPY\n'
+        f'{bar}\n'
+    )
+
+
+def brief_hint(item):
+    """Guess useful context file paths from the queue text.
+
+    @param item: queue item dict
+    @returns: list of hint strings
+    """
+    hints = [
+        'rules/rules-context.md (what to read when; anti-reread)',
+        'scripts/cell_registry.py next (progress SoT)',
+        'rules/foliage.md (foliage-last cadence + allowlist)',
+        'rules/process.md (slices only — see SESSION BRIEF RULES READING)',
+        'site/COVERAGE.txt (focus + generated cells; coverage CLI in SESSION BRIEF)',
+        'site/ISSUES.txt',
+        'site/REVIEWS.txt',
+        'site/PLACES.txt',
+        'site/NOTES.txt',
+        'config/world.json',
+    ]
+    t = item['text'].upper()
+    if 'CIVIC' in t:
+        hints.insert(1, 'site/PLACES.txt (CIVIC)')
+    if 'OSGB' in t or 'COORD' in t:
+        hints.insert(1, 'scripts/osgb.py / config/map-maker-offsets.json')
+    cell = _cell_for_item(item)
+    if cell is not None:
+        rel = sources_path(*cell).relative_to(ROOT)
+        hints.insert(1, f'{rel} (cell sources — read before imagery; regenerate with cell_sources.py --write)')
+    return hints
+
+
+def _open_issues():
+    """Open/scheduled high-severity issues: (first line, optional detail).
+
+    @returns: list of [line, ...] lists
+    """
+    out, cur = [], None
+    path = SITE / 'ISSUES.txt'
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        m = re.match(r'(I-\d+)\s+([HML])\s+(\S+)\s+(open|sched\w*)\b', line)
+        if m:
+            cur = [line.rstrip()] if m.group(2) == 'H' else None
+            if cur is not None:
+                out.append(cur)
+        elif re.match(r'I-\d+', line):
+            cur = None
+        elif cur is not None and len(cur) < 2 and line.strip():
+            cur.append('      ' + line.strip())
+    return out
+
+
+def _last_reviews(n=3):
+    """First line of the last ``n`` REVIEWS.txt entries.
+
+    @param n: how many review heads to return
+    @returns: list of lines
+    """
+    path = SITE / 'REVIEWS.txt'
+    if not path.exists():
+        return []
+    heads = [l for l in path.read_text().splitlines() if re.match(r'20\d\d-', l)]
+    return heads[-n:]
+
+
+def _coverage_cheatsheet_lines():
+    """CLI lines from scripts/coverage.py COVERAGE_CHEATSHEET (single source of truth).
+
+    @returns: non-empty stripped lines for the session brief
+    """
+    path = SCRIPTS / 'coverage.py'
+    src = path.read_text()
+    m = re.search(r'^COVERAGE_CHEATSHEET = """(.*?)"""', src, re.DOTALL | re.MULTILINE)
+    if not m:
+        return ['(see rules/process.md §2c)']
+    return [ln.rstrip() for ln in m.group(1).strip().splitlines()]
+
+
+def _kit_api():
+    """``site_kit`` public functions: signature + first docstring line.
+
+    @returns: list of formatted lines
+    """
+    import ast
+    tree = ast.parse((SCRIPTS / 'site_kit.py').read_text())
+    out = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and not node.name.startswith('_'):
+            doc = (ast.get_docstring(node) or '').split('\n')[0][:80]
+            if isinstance(node, ast.FunctionDef):
+                sig = f'{node.name}({", ".join(a.arg for a in node.args.args)})'
+            else:
+                sig = f'class {node.name}'
+            out.append(f'  {sig:42} {doc}'.rstrip())
+    return out
+
+
+def brief_text(item):
+    """Focused session brief so a new chat need not cat every site file.
+
+    @param item: queue item dict
+    @returns: multi-line brief string
+    """
+    lk = lock_status()
+    parts = [
+        '', '=' * 72,
+        f'SESSION BRIEF for {item["id"]} (generated; files are the source of truth)',
+        '=' * 72,
+        'lock: ' + ('free' if not lk else
+                    f'{lk.get("owner")} ({"fresh" if lk.get("fresh") else "stale"}) - {lk.get("task")}'),
+        '', 'QUEUE ITEM (full):',
+    ] + [f'  {l}' for l in item['lines']]
+    issues = _open_issues()
+    parts += ['', 'OPEN HIGH ISSUES:']
+    parts += [l for iss in issues for l in iss] or ['  (none)']
+    cell = _cell_for_item(item)
+    if cell is not None:
+        rel = sources_path(*cell).relative_to(ROOT)
+        parts += [
+            '',
+            f'CELL SOURCES ({cell[0]},{cell[1]}):',
+            f'  Read {rel} before fetching or viewing reference imagery.',
+            f'  Missing or stale: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --write',
+            f'  Open source families: python3 scripts/cell_sources.py --cell {cell[0]},{cell[1]} --todo '
+            f'(TODO + STALE; fresh TRIED: no retry without --retry-reason)',
+            '  One-time sources pass per new cell (PROCESS §2e step 1b); build steps still obey',
+            '  one primary aerial + one street Read per rules/reference-token-budget.md.',
+            '  Foliage cadence: rules/foliage.md.',
+            '',
+            'LIDAR GHOSTS (v2 frontier — skyline placeholders, not real refine):',
+            f'  {_LIDAR_GHOST_V2_FRONTIER}',
+            f'  {_LIDAR_GHOST_V2_SPLIT}',
+            f'  Status: python3 shims/lidar_ghost.py status --cell {cell[0]},{cell[1]} --ring 2',
+        ]
+        try:
+            from cross_zone import cross_zone_report, format_report
+
+            cz = cross_zone_report('highfield', cell[0], cell[1], margin=8)
+            parts += ['', 'CROSS-ZONE (read-only):']
+            for ln in format_report(cz).splitlines():
+                parts.append(f'  {ln}')
+        except (Exception, SystemExit):
+            # cross_zone_report uses SystemExit when coverage area is not built yet.
+            parts += ['', 'CROSS-ZONE (read-only):', '  (unavailable — run coverage build for highfield)']
+    cell_rel = None
+    if cell is not None:
+        cell_rel = str(sources_path(*cell).relative_to(ROOT))
+    parts += ['', format_rules_brief(plan_for_item(item, cell_rel))]
+    parts += ['', 'LAST REVIEWS (first lines; site/REVIEWS.txt):'] + [
+        f'  {l[:150]}' for l in _last_reviews()
+    ]
+    parts += ['', 'SITE_KIT API (scripts/site_kit.py; read a function body only when needed):'] + _kit_api()
+    parts += [
+        '',
+        'COVERAGE CLI (scripts/coverage.py — do not run --help; use this + PROCESS §2c):',
+    ] + [f'  {ln}' if not ln.startswith(' ') else ln for ln in _coverage_cheatsheet_lines()]
+    parts += [
+        '', 'TOKEN RULES:',
+        '- Obey RULES READING above; grep / sed -n; do not cat whole files or re-read listed paths.',
+        '- Accuracy only: match photos / aerial / survey. No fictional districts or whimsy.',
+        '- Review views via the CONTACT SHEET; open a single full-size view only for detail.',
+        '- Batch anything needing the user into ONE ask; do not poll.',
+        f'- {CHAIN_RULE}',
+        f'- If context passes {CONTEXT_CEILING}, or a user check is needed, hand off with '
+        'site_handoff.py end --summary/--view '
+        '(run it outside any command sandbox so `say` is audible).',
+    ]
+    return '\n'.join(parts) + '\n'
+
+
+def starter_text(item, owner_placeholder='<unique-owner>'):
+    """Build the copy-paste boot prompt for one queue item.
+
+    @param item: queue item dict
+    @param owner_placeholder: text used in the claim line
+    @returns: multi-line starter string
+    """
+    qid = item['id']
+    summary = item['text']
+    if len(summary) > 220:
+        summary = summary[:217].rstrip() + '…'
+    hints = '\n'.join(f'- {h}' for h in brief_hint(item))
+    cell = _cell_for_item(item)
+    cell_rel = str(sources_path(*cell).relative_to(ROOT)) if cell else None
+    rules_line = format_starter_rules_line(plan_for_item(item, cell_rel))
+    return f"""You are refining the Southampton world in {ROOT}.
+
+Accuracy to the real place only — no regions, themes or whimsy. Use the SESSION
+BRIEF below (from `{NEXT_CHAT_CMD}`) instead of reading every site file.
+
+{AUTO_START_RULE}
+
+{rules_line}
+
+Run: python3 scripts/site_lock.py status
+If free: python3 scripts/site_lock.py claim {owner_placeholder} "{qid} …"
+Then do the task from `cell_registry.py next` end to end (survey/plan → preview → apply with
+SITE_OWNER=<you> → readback → walk → evidence check → records). Follow the
+"Done bar" under RULES READING in the brief for this item's context.
+Stop rule: geometry fix builds → revert + re-survey; no _b/_c patches (I-009).
+
+Parcel coverage: commands are in the SESSION BRIEF below (not coverage.py --help).
+
+Current task:
+  {qid}  {summary}
+
+Context lives in files, not chat (grep / sed -n what you need):
+{hints}
+
+When the item is done: release the lock, then hand off with a short session
+summary and a creative-mode view of the main change (site_handoff end helpers
+if useful). Open a new chat and run `cell_registry.py next` again.
+{CHAIN_RULE}
+Needs: Minecraft open with Southampton2023 + Fabric MCP (F3+P), sole MCP client.
+""".strip() + '\n'
+
+
+def set_pending(done_id, next_item, session_summary=None, view=None):
+    """Arm the stop-hook nudge after a finished queue item.
+
+    @param done_id: completed Q-nnn id (or None)
+    @param next_item: next open item dict (or None)
+    @param session_summary: short what-this-session-did string (or None)
+    @param view: parsed view dict from ``parse_view`` (or None)
+    """
+    payload = {
+        'done': done_id,
+        'next': next_item['id'] if next_item else None,
+        'next_summary': (next_item['text'][:160] if next_item else None),
+        'session_summary': session_summary,
+        'view': view,
+        'armed_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'armed_ts': time.time(),
+    }
+    PENDING.write_text(json.dumps(payload, indent=1) + '\n')
+
+
+def _flag_value(argv, name):
+    """Return the value after ``name`` in argv, or None.
+
+    @param argv: CLI args list
+    @param name: flag including leading dashes (e.g. ``--summary``)
+    @returns: string value or None
+    """
+    if name not in argv:
+        return None
+    i = argv.index(name)
+    if i + 1 >= len(argv) or argv[i + 1].startswith('--'):
+        raise SystemExit(f'{name} requires a value')
+    return argv[i + 1]
+
+
+def parse_view(spec):
+    """Parse ``x,y,z`` or ``x,y,z,lx,ly,lz`` into eye / optional look-at.
+
+    @param spec: comma-separated Minecraft coordinates
+    @returns: dict with ``pos`` list and optional ``look`` list
+    """
+    parts = [p.strip() for p in spec.split(',')]
+    if len(parts) not in (3, 6):
+        raise SystemExit(
+            '--view needs x,y,z or x,y,z,lookx,looky,lookz (Minecraft coords)'
+        )
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError as e:
+        raise SystemExit(f'--view: invalid number ({e})') from e
+    out = {'pos': nums[:3]}
+    if len(nums) == 6:
+        out['look'] = nums[3:]
+    return out
+
+
+def in_cursor_seatbelt_sandbox():
+    """Return True when a known agent command sandbox is active (mutes ``say``).
+
+    @returns: True if ``CURSOR_SANDBOX`` is set
+    """
+    return bool(os.environ.get('CURSOR_SANDBOX'))
+
+
+def announce_ready():
+    """Speak the handoff cue aloud when the ``say`` command exists (macOS).
+
+    MUTED: the spoken cue is commented out. Restore the block below to re-enable.
+
+    @returns: True (nothing spoken while muted)
+    """
+    # if in_cursor_seatbelt_sandbox():
+    #     print(f'ERROR: {SANDBOX_SAY_HINT}', file=sys.stderr)
+    #     return False
+    # try:
+    #     result = subprocess.run(['say', SAY_PHRASE], check=False)
+    # except FileNotFoundError:
+    #     print(f'(no `say` command — skipped spoken "{SAY_PHRASE}")', file=sys.stderr)
+    #     return False
+    # if result.returncode != 0:
+    #     print(
+    #         f'WARNING: `say` exited {result.returncode} — spoken cue may have failed.',
+    #         file=sys.stderr,
+    #     )
+    #     return False
+    # print(f'Spoke: "{SAY_PHRASE}"')
+    print(f'(spoken "{SAY_PHRASE}" muted)')
+    return True
+
+
+def move_player_creative_view(view, why=None):
+    """Set creative mode and teleport the player to the handoff viewpoint.
+
+    @param view: dict from ``parse_view`` (``pos``, optional ``look``)
+    @param why: optional explanation; default names the viewpoint coordinates
+    @returns: None
+    @raises: Exception on MCP failure (caller may catch)
+    """
+    from mc_player import move_player
+
+    p = view['pos']
+    reason = why or (
+        f'Moving you to {p[0]:g},{p[1]:g},{p[2]:g} in creative to show the change.'
+    )
+    move_player(
+        why=reason,
+        position=view['pos'],
+        facing=view.get('look'),
+        gamemode='creative',
+    )
+    pos = view['pos']
+    print(f'Player -> creative at {pos[0]:g},{pos[1]:g},{pos[2]:g}', end='')
+    if view.get('look') is not None:
+        look = view['look']
+        print(f' facing {look[0]:g},{look[1]:g},{look[2]:g}')
+    else:
+        print()
+
+
+def clear_pending():
+    """Remove the stop-hook nudge marker if present."""
+    PENDING.unlink(missing_ok=True)
+
+
+def read_pending():
+    """Return pending handoff dict, or None.
+
+    @returns: dict or None
+    """
+    if not PENDING.exists():
+        return None
+    try:
+        return json.loads(PENDING.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def copy_clipboard(text):
+    """Copy ``text`` to the system clipboard when a known tool exists.
+
+    @param text: string to copy
+    @returns: name of tool used, or None
+    """
+    for cmd in (('pbcopy',), ('wl-copy',), ('xclip', '-selection', 'clipboard')):
+        try:
+            subprocess.run(cmd, input=text.encode(), check=True)
+            return cmd[0]
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    return None
+
+
+def tick_queue_item(qid):
+    """Mark ``qid`` [x] in QUEUE.txt (atomic replace; no-op if absent or already ticked).
+
+    @param qid: Q-nnn
+    @returns: True when the file changed
+    """
+    text = QUEUE.read_text()
+    new = re.sub(rf'^\[ \](\s+{re.escape(qid)}\b)', r'[x]\1', text, count=1, flags=re.M)
+    if new == text:
+        return False
+    tmp = QUEUE.with_name(QUEUE.name + '.tmp')
+    tmp.write_text(new)
+    os.replace(tmp, QUEUE)
+    return True
+
+
+def release_lock():
+    """Drop LOCK.json (session end: the builder is done). @returns: previous owner or None"""
+    lk = lock_status()
+    LOCK.unlink(missing_ok=True)
+    return lk.get('owner') if lk else None
+
+
+def finish_item(done):
+    """The state change of ``end``, all together and first: tick the item, release the lock, clear the nudge.
+
+    Done before anything cosmetic (say, teleport, archive, starter), so a later failure cannot leave
+    the queue unticked, the lock held or a stale nudge naming the finished item (I-046).
+
+    @param done: Q-nnn that was finished (or None)
+    @returns: (ticked, released_owner)
+    """
+    ticked = tick_queue_item(done) if done else False
+    owner = release_lock()
+    clear_pending()
+    return ticked, owner
+
+
+def cmd_plan(_argv):
+    """Read-only: what ``next`` would re-queue across all started cells (writes nothing)."""
+    plan = requeue_plan()
+    items = sum(len(g['features']) + (1 if g['layers'] or g['trees_stale'] else 0) + (1 if g.get('in_flight') else 0)
+                for *_c, g in plan)
+    print(f'{len(plan)} cell(s) not done, {items} queue item(s) would be written (nothing written):')
+    for tx, tz, r, g in plan:
+        bits = list(g.get('in_flight') or []) + [f'{f["kind"]} {f["label"]} bbox={list(f["bbox"])}' for f in g['features']]
+        if g['layers']:
+            bits.append('layered passes missing: ' + ','.join(g['layers']))
+        elif g['trees_stale']:
+            bits.append('TREES re-run (old overhang rule)')
+        print(f'  {tx},{tz} r={r}: ' + ' | '.join(bits))
+    return 0
+
+
+def cmd_next(argv):
+    """Print the next registry work item (ticket #31).
+
+    ``--plan`` still lists requeue gaps. Queue boot prompts and clipboard copy
+    of handoff text are retired; use ``cell_registry.py next``.
+
+    @param argv: remaining CLI args
+    @returns: exit code
+    """
+    if '--plan' in argv or '--dry-run' in argv:
+        return cmd_plan(argv)
+    from registry_next import format_next, next_task
+    import json as _json
+
+    task = next_task()
+    if task is None:
+        print('No open work (registry idle)', file=sys.stderr)
+        return 1
+    print(format_next(task))
+    print(_json.dumps(task, indent=2, sort_keys=True))
+    clear_pending()
+    return 0
+
+
+def cmd_end(argv):
+    """Mark session end: announce, summarise, move player, archive, arm hook.
+
+    Archiving (``site_archive.run``) moves ``[x]`` queue items, closed issues
+    and older reviews into ``site/archive/``; a failure there only warns.
+
+    Requires ``--summary`` and ``--view`` so the user hears "ready for handoff",
+    sees QUEUE area/task plus what this session did, and is left in creative
+    at the main change. Summary should open with one sentence naming area + task.
+    Invoke it outside any command sandbox so ``say`` is audible; a sandbox
+    fails fast with exit 3.
+
+    An "AERIAL REVIEW cell X" item also sets that cell's row in site/AERIAL-REVIEW.txt to
+    ``--review-status`` (look|features|ground|trees|done; default done), so advance_to_next_cell moves on.
+
+    A FEATURE item is refused (exit 2, queue unticked) unless:
+    - the cell has a ``<name>-greeblies`` stage record or ``--summary`` contains ``no greeblies seen``; and
+    - an evidence contact sheet exists for the build (``evidence_sheet.py``; optional ``--build``).
+
+    @param argv: remaining CLI args (Q-nnn, --summary, --view, optional --skip-say/--skip-view/--review-status/--build)
+    @returns: exit code
+    """
+    done = None
+    for a in argv:
+        if re.fullmatch(r'Q-\d+', a):
+            done = a
+    summary = _flag_value(argv, '--summary')
+    view_spec = _flag_value(argv, '--view')
+    skip_say = '--skip-say' in argv
+    skip_view = '--skip-view' in argv
+    build_names = _flag_values(argv, '--build')
+    if not summary:
+        print(
+            'Usage: site_handoff.py end Q-nnn --summary "area + task; what you did" '
+            '--view x,y,z[,lx,ly,lz]\n'
+            '  Speaks "ready for handoff", prints QUEUE area/task + summary, '
+            'moves the player in creative to the main change area.\n'
+            '  FEATURE items need greeblies evidence and an evidence contact sheet '
+            '(python3 scripts/evidence_sheet.py <build>; optional --build <name>).\n'
+            '  Run outside any command sandbox (a sandbox mutes say).',
+            file=sys.stderr,
+        )
+        return 2
+    # if not skip_say and in_cursor_seatbelt_sandbox():
+    #     print(f'ERROR: {SANDBOX_SAY_HINT}', file=sys.stderr)
+    #     return 3
+    view = None
+    if not skip_view:
+        if not view_spec:
+            print(
+                'end requires --view x,y,z[,lx,ly,lz] (main change viewpoint), '
+                'or --skip-view if Minecraft/MCP is unavailable.',
+                file=sys.stderr,
+            )
+            return 2
+        view = parse_view(view_spec)
+
+    items = _queue_items()
+    if done is None:
+        lk = lock_status()
+        m = re.search(r'Q-\d+', (lk or {}).get('task', ''))
+        done = m.group(0) if m else None
+    if done is None:
+        for it in reversed(items):
+            if not it['open']:
+                done = it['id']
+                break
+    done_item = next((it for it in items if it['id'] == done), None) if done else None
+    area_line = None
+    if done_item:
+        area_line = done_item['text']
+        if len(area_line) > 160:
+            area_line = area_line[:157].rstrip() + '…'
+
+    if why := feature_greeblies_refusal(done_item, summary):
+        print(f'ERROR: {why}', file=sys.stderr)
+        return 2
+    if done_item and is_feature_item(done_item):
+        err = require_feature_contact_sheet(done_item, builds=build_names or None)
+        if err:
+            print(f'ERROR: {err}', file=sys.stderr)
+            return 2
+        for _name, sheet in feature_contact_sheets(done_item, builds=build_names or None):
+            try:
+                shown = sheet.relative_to(ROOT)
+            except ValueError:
+                shown = sheet
+            print(f'CONTACT SHEET: {shown}')
+
+    rc_cell = google_review_cell(done_item) if done_item else None
+    if rc_cell:
+        status = _flag_value(argv, '--review-status') or 'done'
+        try:
+            hit = set_google_review_status(rc_cell, status)
+        except ValueError as e:
+            print(f'ERROR: {e}', file=sys.stderr)
+            return 2
+        print(f'AERIAL-REVIEW.txt: cell {rc_cell[0]},{rc_cell[1]} -> {status}' if hit
+              else f'AERIAL-REVIEW.txt: no row for cell {rc_cell[0]},{rc_cell[1]}')
+
+    ticked, owner = finish_item(done)
+    print(f'{done or "no item"}: {"ticked [x]" if ticked else "already ticked / not in queue"}; '
+          f'lock {"released (was " + str(owner) + ")" if owner else "was not held"}; pending nudge cleared')
+
+    print('')
+    print('=' * 72)
+    print(f'SESSION SUMMARY ({done or "unknown"})')
+    if area_line:
+        print(f'Area / task: {done} — {area_line}')
+    print('=' * 72)
+    print(summary.strip())
+    print('=' * 72)
+    print('')
+
+    if not skip_say and not announce_ready():
+        print(
+            'ERROR: spoken handoff cue failed. Fix audio or pass --skip-say.',
+            file=sys.stderr,
+        )
+        return 3
+    if view is not None:
+        try:
+            view_why = (
+                f'Handoff {done}: moving you in creative to show the change.'
+                if done else None
+            )
+            move_player_creative_view(view, why=view_why)
+        except Exception as e:
+            print(f'WARNING: could not move player ({e}). MCP running?', file=sys.stderr)
+            print('         Re-run with Minecraft + Fabric MCP, or pass --skip-view.',
+                  file=sys.stderr)
+
+    try:
+        import site_archive
+        site_archive.run()
+    except Exception as e:
+        print(f'WARNING: site_archive failed ({e}); live files left as they were.\n'
+              '         Re-run: python3 scripts/site_archive.py run', file=sys.stderr)
+
+    try:
+        import site_cleanup
+        if why := site_cleanup.due_reason():
+            print(f'CLEANUP DUE ({why}): python3 scripts/site_cleanup.py apply, then report (rules/cleanup.md)')
+    except Exception as e:
+        print(f'WARNING: site_cleanup check failed ({e})', file=sys.stderr)
+
+    nxt = top_open()
+    if nxt and nxt['id'] == done:
+        nxt = None      # never name the finished item as the next one
+    set_pending(done, nxt, session_summary=summary.strip(), view=view)
+    print(f'Armed stop-hook nudge (done={done}, next={nxt["id"] if nxt else None})')
+    sys.stdout.write(format_next_chat_copy_block())
+    return 0
+
+
+def cmd_status(_argv):
+    """Print lock, top open queue item, and pending nudge.
+
+    @param _argv: unused
+    @returns: exit code
+    """
+    lk = lock_status()
+    item = top_open()
+    pend = read_pending()
+    print('lock:', 'unlocked' if not lk else
+          f'{lk.get("owner")} ({"fresh" if lk.get("fresh") else "stale"}) — {lk.get("task")}')
+    print('top open:', f'{item["id"]}  {item["text"][:120]}' if item else '(none)')
+    print('pending nudge:', json.dumps(pend) if pend else '(none)')
+    return 0
+
+
+def cmd_hook_stop(_argv):
+    """Agent ``stop`` hook: remind the agent to tell the user to hand off.
+
+    @param _argv: unused
+    @returns: exit code
+    """
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        payload = {}
+    status = payload.get('status') or ''
+    loop_count = int(payload.get('loop_count') or 0)
+    pend = read_pending()
+    out = {}
+    if pend and status == 'completed' and loop_count == 0:
+        nxt = pend.get('next') or (top_open() or {}).get('id') or 'the next QUEUE item'
+        done = pend.get('done') or 'the finished item'
+        sess = pend.get('session_summary') or ''
+        sess_bit = f' Session did: {sess}' if sess else ''
+        out['followup_message'] = (
+            f'Southampton Refine handoff: {done} is done.{sess_bit} '
+            f'Confirm the user heard "ready for handoff" and is looking at the change in creative. '
+            f'Then open a NEW chat. Show the NEXT CHAT copy box from `site_handoff.py end` '
+            f'output (between >>> COPY and <<< COPY) as a markdown fenced code block — '
+            f'not inline prose. Starter for {nxt}. Do not start {nxt} in this thread. Then stop.'
+        )
+        clear_pending()
+    sys.stdout.write(json.dumps(out) + '\n')
+    return 0
+
+
+def cmd_hook_start(_argv):
+    """Agent ``sessionStart`` hook: inject the top open queue item into context.
+
+    @param _argv: unused
+    @returns: exit code
+    """
+    try:
+        json.load(sys.stdin)
+    except json.JSONDecodeError:
+        pass
+    item = top_open()
+    out = {}
+    if item:
+        summary = item['text'][:180].rstrip('.')
+        out['additional_context'] = (
+            f'Southampton Refine handoff: top open QUEUE item is {item["id"]} — {summary}. '
+            f'Accuracy only (no fictional districts). Run `{NEXT_CHAT_CMD}` once; '
+            f'follow RULES READING in the SESSION BRIEF (rules/rules-context.md). '
+            f'Do not read the whole rules/process.md. '
+            f'{AUTO_START_RULE} '
+            f'Prefer a fresh chat per queue item; files in site/ are the memory.'
+        )
+    sys.stdout.write(json.dumps(out) + '\n')
+    return 0
+
+
+def main(argv=None):
+    """CLI entry: dispatch ``next`` / ``end`` / ``status`` / hook commands.
+
+    @param argv: optional argv override
+    @returns: exit code
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    cmd = argv.pop(0) if argv else 'status'
+    dispatch = {
+        'next': cmd_next,
+        'end': cmd_end,
+        'status': cmd_status,
+        'hook-stop': cmd_hook_stop,
+        'hook-start': cmd_hook_start,
+    }
+    if cmd not in dispatch:
+        print(__doc__, file=sys.stderr)
+        return 2
+    return dispatch[cmd](argv)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -41,6 +41,7 @@ for _path in (ROOT, SCRIPTS):
     if _text not in sys.path:
         sys.path.insert(0, _text)
 
+import script_env  # noqa: E402 — lib/* onto path for bare imports
 import active_world  # noqa: E402
 from atomic_json import write_json  # noqa: E402
 

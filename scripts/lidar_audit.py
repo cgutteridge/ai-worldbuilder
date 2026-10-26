@@ -21,11 +21,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 
-import numpy as np
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
 
-import cellmath
-import lidar_heightmap as L
+script_env.ensure_import_paths()
+
+import numpy as np  # noqa: E402
+
+import cellmath  # noqa: E402
+import lidar_heightmap as L  # noqa: E402
 
 
 def target(pri: dict) -> np.ndarray:
