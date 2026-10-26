@@ -1026,6 +1026,12 @@
       "title": "issues.json: snags-as-evidence issue tickets (lib + scripts/issues.py)",
       "status": "done",
       "notes": "Per-world registry/issues.json; snags only nested in issues (source you|agent, confidence, elements, pic). Fix log with per-snag check lines. States open->fix-landed->confirmed|wontfix; fix-landed only when a tagged element has a new landed build (changed blob hash) after the fix merged (cell journal). CLI: add (new issue or evidence on existing), match, fix, move, merge, review, list, verify. Regressions: closed issues are match candidates and reopen. Never blocks cells. Landed: lib/journal/issue_log.py, scripts/issues.py, 31 tests; 3 review rounds."
+    },
+    {
+      "id": 122,
+      "title": "Skills: snag (intake+review) and sherlock (read-only investigator), seed from docs/snags",
+      "status": "done",
+      "notes": "Skills snag + sherlock written; human-confirm-fix retired; Southampton seeded with 8 issues (I-001..I-008, 13 snags) in worlds/southampton-build/registry/issues.json (uncommitted in the world repo). Process snags S-01,S-05,S-14,S-15 and fixed/unsettled ones left out by owner decision."
     }
   ]
 }

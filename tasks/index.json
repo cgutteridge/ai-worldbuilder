@@ -13,15 +13,6 @@
       "notes": "Remove registry_issues + add-issue, journal 'issue'/'close' notes counting against done, next_open_issue, site_kit close_for_build auto-close, verify check_issue_notes, handoff _open_issues. Update refine/redo/cell-orchestrator/rules pointers; retire human-confirm-fix (superseded by snag skill)."
     },
     {
-      "id": 122,
-      "title": "Skills: snag (intake+review) and sherlock (read-only investigator), seed from docs/snags",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "snag: in-world intake with human-readable match prompt, review walk-through teleporting the player (mc_player.py move) per snag. sherlock: light Holmes tone, never builds/purges/changes code, proposes tasks with permission and a next-step sequence. One-time seed of S-01..S-23 into Southampton issues.json after grouping approved by the owner. Skills snag + sherlock written, human-confirm-fix retired, refine/redo/cell-orchestrator repointed. Remaining: one-time seed of S-01..S-23 into worlds/southampton-build/registry/issues.json after owner approves the grouping."
-    },
-    {
       "id": 123,
       "title": "Bug: feature undo leaves a pit where the build excavated; make purge/undo restore the pre-build ground",
       "status": "todo",
