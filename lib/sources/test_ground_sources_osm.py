@@ -54,6 +54,7 @@ class LoadOsmCacheNamesTest(unittest.TestCase):
                 paths = OF.cached_geojson_paths()
                 self.assertEqual([p.name for p in paths], ['campus__highways.geojson'])
                 ground = GS.OSMGround((0, 0))
+        self.assertEqual(ground.n_features, 2)
         self.assertTrue(any(ground.kind.get(q) == 'tarmac' for q in ground.kind),
                         f'expected tarmac road columns, got kinds={set(ground.kind.values())}')
         self.assertTrue(ground.hedge, 'expected hedge columns from barrier=hedge')
