@@ -60,8 +60,12 @@ _Avoid_: using recover as a substitute for reconcile
 The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`) and `MemoryBlocks` adapters (tests use memory). Read path: task 39 / #56 / #67. Planners that still say `World` use a duck-typed facade over this seam; there is no `.mca` reader.
 _Avoid_: region backup, snapshot, parsing region files for block state
 
+**Element**:
+One of the lasting kinds of place content a finished cell must cover: **feature**, **ground**, **trees**, or **decor**. The concept (not a journal `Build` intent). Journal wire values stay those four strings; code may keep `REAL_PASSES` as the same tuple. Excludes **lidar ghost** (placeholder) and `other` / neutral ownership.
+_Avoid_: aspect, strand, real pass (as the concept name), layer (as the superclass — features are not layers), build (the apply intent)
+
 **Feature** (registry):
-A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches.
+A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches. One **Element**; not a layered pass.
 _Avoid_: layer pass, decor prop, queue item
 
 **Registry marker**:
@@ -99,9 +103,9 @@ The constant added when mapping real elevation into Minecraft Y.
 _Avoid_: sea level (unless that is the explicit datum chosen)
 
 **Empty world**:
-A game save started without a prior city mesh from another generator. Refine means building from evidence and layered passes, not clearing leftover vendor lumps.
+A game save started without a prior city mesh from another generator. Refine means building **Elements** from evidence (features plus layered passes), not clearing leftover vendor lumps.
 _Avoid_: third-party generator refine (as the default workflow), lump sweep (as the definition of done)
 
 **Lidar ghost**:
-Placeholder **ground** in a cell from national lidar composite terrain (DTM fill + surface). The surface block colour encodes DSM − DTM height per column (`light_gray_concrete` ≈0, `gray_concrete` 1–2, `black_concrete` >2) so agents can check feature location against the footprint. No volumetric feature ghosts. Real ground replaces ghost ground later. Frontier membership comes from the registry (real refine seeds a Chebyshev ring).
+Placeholder **ground** in a cell from national lidar composite terrain (DTM fill + surface). The surface block colour encodes DSM − DTM height per column (`light_gray_concrete` ≈0, `gray_concrete` 1–2, `black_concrete` >2) so agents can check feature location against the footprint. No volumetric feature ghosts. Real ground replaces ghost ground later. Frontier membership comes from the registry (any **Element** started in a cell seeds a Chebyshev ring).
 _Avoid_: finished ground pass, real feature build, vendor lump, baseline height sketch, grey DSM−DTM columns

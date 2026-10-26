@@ -15,7 +15,7 @@ reg.view(cells=None) -> {cell: CellView}   reg.cell(c)        # frozen views, pu
 reg.owned(within, exclude=(), *, real_only=False) -> {pos: (plan, state)}   # replaces built_cells(within=)
 reg.owners(cells, exclude=(), *, real_only=False)             # every owned position in whole cells
 reg.recorded(plan) -> {pos: state} | None                     # latest live entry's plan (old *-cells.json)
-reg.touched(passes=REAL_PASSES) -> {plan: {(x, z)}}           # old touched_by_build
+reg.touched(passes=ELEMENTS) -> {plan: {(x, z)}}              # Elements; REAL_PASSES is an alias
 reg.entries(cells=None, plan=None) -> tuple[EntryView]        # read-only entry listing (recovery, indexes)
 reg.ticket(seq) -> Ticket                                     # re-open a begun entry: finish() or abandon()
 reg.reconcile(cells=None, *, fix=False, apply=None) -> Drift
@@ -30,8 +30,9 @@ Receipt(seq, status, planned, mismatches, sample, follow_ups, followed)
 CellView(cell, ground, ghost, trees, decor, features, in_flight, marker, hold, notes, done, left)
 ```
 
-Passes: `feature ground trees decor ghost-ground other` (`other` owns blocks with no progress
-meaning: cell markers, clean-ups). Legacy `ghost-features` lines may still appear in old journals
+Passes: Elements `feature ground trees decor` (GLOSSARY **Element**), plus `ghost-ground` and `other`
+(`other` owns blocks with no progress meaning: cell markers, clean-ups). Code: `ELEMENTS` /
+`REAL_PASSES` (alias). Legacy `ghost-features` lines may still appear in old journals
 (ownership yields) but new `ghost-features` Builds are refused (task #68). `Ticket.abandon(reason)` finishes a begun entry `abandoned` (rolled back by a
 recovery tool; it owns nothing). An open `issue` note keeps a cell from `done` (`left`: `issue <ref>`). `apply` is `callable(Writes) -> None`:
 write `Writes.cells` over MCP and nothing else (no readback, no registry, no flush needed).
@@ -69,9 +70,9 @@ interpreter at least as new as the one that wrote it. Corrupt or malformed blobs
 7. A landed real feature strips ghost features in the cells it touches (view flips at once); ghost blocks
    still owned inside its footprint columns and Y span become a `ghost_strip_*` air Build in `follow_ups()`.
 8. Ghost features need ghost or real ground; ghost ground is refused over real ground.
-9. Frontier = cells with real work plus Chebyshev `ring` around each. `follow_ups()` lists strips, then
+9. Frontier = cells with any Element started plus Chebyshev `ring` around each. `follow_ups()` lists strips, then
    ghost ground, then ghost features for frontier cells that lack them (needs `ghosts`; positions owned by
-   real builds are dropped from planner output). It is derived: applying a follow-up removes it.
+   Element builds are dropped from planner output). It is derived: applying a follow-up removes it.
 
 ## Ordering and usage
 

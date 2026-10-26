@@ -50,12 +50,14 @@ from block_store import BlockStore, Pos, block_id, same_state
 
 Cell = tuple[int, int]
 
-REAL_PASSES = ('feature', 'ground', 'trees', 'decor')
+# Elements: lasting place-content kinds (GLOSSARY Element). Wire strings stay stable.
+ELEMENTS = ('feature', 'ground', 'trees', 'decor')
+REAL_PASSES = ELEMENTS  # alias: journal/API still say "real passes" vs ghost
 # ghost-features remains readable for old journal lines (ownership still yields) but new
 # ghost-features Builds are refused — volumetric feature ghosts are withdrawn (task #68).
 GHOST_PASSES = ('ghost-ground', 'ghost-features')
 NEUTRAL_PASSES = ('other',)        # owns blocks, no progress meaning (cell markers, clean-ups)
-PASSES = REAL_PASSES + GHOST_PASSES + NEUTRAL_PASSES
+PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
 AIR = 'minecraft:air'
@@ -890,7 +892,7 @@ class CellRegistry:
     def touched(self, passes: Iterable[str] = REAL_PASSES) -> dict[str, set[tuple[int, int]]]:
         """XZ columns of each plan's latest live build entry (the old ``touched_by_build``).
 
-        @param passes: passes to include (default: real passes only)
+        @param passes: passes to include (default: Elements / ``REAL_PASSES``)
         @returns: ``{plan: {(x, z), ...}}``
         """
         self._sync()
@@ -1058,7 +1060,7 @@ class CellRegistry:
         return self._note_state()['marker']
 
     def seeds(self) -> list[Cell]:
-        """Cells with real work (generated ground, trees, decor or a real feature)."""
+        """Cells with any Element started (generated ground, trees, decor, or a feature)."""
         self._sync()
         out = []
         for c in self._known_cells():

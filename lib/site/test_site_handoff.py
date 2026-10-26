@@ -270,7 +270,7 @@ class PlanCellItems(unittest.TestCase):
     def test_layered_passes_describes_ghost_ground(self):
         body = '\n'.join(H.plan_cell_items(48, -44, 1, self.gaps(layers=True), [])[0][1])
         self.assertIn('supersedes ghost ground', body)
-        self.assertIn('real refine started', body)
+        self.assertIn('any Element started', body)
         self.assertIn('Ghost ground only', body)
         self.assertNotIn('neighbour lidar ghosts come with raise', body)
 

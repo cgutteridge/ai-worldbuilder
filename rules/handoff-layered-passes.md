@@ -7,6 +7,9 @@ In-flight applies are `begun` journal entries; mess-in-a-cell → `cell_registry
 ------------------------------------------------------------------------
 1. PASS ORDER (per cell, in this order, never out of order)
 ------------------------------------------------------------------------
+ The four kinds below are the cell's Elements (GLOSSARY): feature, ground, trees, decor —
+ lasting place content, not lidar ghost. "Layered passes" still means ground/trees/decor only.
+
  1. MAJOR FEATURES — buildings, and anything large that gets its own thing:
     bridges, tunnels, other big structures. Each is its own build with its own
     undo (see §4; ADR 004). Not mask-undone.
