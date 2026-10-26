@@ -1011,6 +1011,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Why: dry runs were hours because planners read the live world one block at a time through paced MCP calls (1.1 s each; see docs/snags/2026-10-26-southampton-48-44.md S-02/S-19; #106/#108/#110 patched three layers). Region files are already on disk (world config region_path). Scope: STRICTLY READ-ONLY reader of .mca files (never write, copy, snap, restore or delete region files), implemented as an adapter behind BlockStore (read/read_many) so planners are unchanged; used for planning and dry-run reads after a server save (server_save_all_worlds; rules/process.md already says save before reading region files). Applies and their readback stay on the existing MCP path unless shown safe. Policy: GLOSSARY.md and ADR 004 say to avoid parsing region files for block state and removed region backup/restore; the owner has authorised this read-only exception (2026-10-26), so record it in ADR 004 / GLOSSARY when shipping. Open questions to answer first: does anything in planning need live state not on disk (unsaved chunks, entities, block entities); how to detect stale reads (save then read; compare chunk timestamps); chunk formats/version (DataVersion 4903); reuse an existing NBT/anvil library vs write minimal; keep dependency count low. Merged as RegionBlocks + fresh_planning_world (task/111-readonly-region-blockstore)."
+    },
+    {
+      "id": 119,
+      "title": "element_undo CLI: journal Undo for features and ground",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "scripts/mask_undo.py only covers trees/decor; feature (by plan name) and ground (by cell pass) undo are reachable only via site_kit.undo(). Add a thin scripts/ wrapper over lib/ with required --world, dry run by default, --apply under site_lock, element-agnostic (plan name or --cell tx,tz --pass feature|ground|trees|decor), refusing when the journal shows nothing to undo. Proof: unit test on MemoryBlocks via journal_testkit.run_undo, no live test. Then point .claude/skills/purge step 1 at it. Merged via ship_branch (a187197)."
     }
   ]
 }
