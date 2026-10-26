@@ -128,40 +128,6 @@ class VolumeClearPrefetchTest(unittest.TestCase):
         self.assertLessEqual(_scans(mcp), 8, f'too many scans: {_scans(mcp)}')
 
 
-class EntrancesPrefetchTest(unittest.TestCase):
-    def test_top_column_bounds_scans(self):
-        import entrances
-        world, mcp, tmp = _live(_column(5, 5, ground=52))
-        self.addCleanup(tmp.cleanup)
-        self.assertEqual(entrances.top(world, 5, 5), 52)
-        self.assertLessEqual(_scans(mcp), 4, f'too many scans: {_scans(mcp)}')
-
-    def test_wall_cell_with_world_bounds_scans(self):
-        import entrances
-        bricks = 'minecraft:bricks'
-        cells = {(x, z) for x in range(0, 6) for z in range(0, 6)}
-        blocks = {}
-        for x, z in cells:
-            for y in range(46, 76):
-                edge = x in (0, 5) or z in (0, 5)
-                # bricks (not stone): stone is GROUNDISH and fails the wall probe
-                blocks[(x, y, z)] = bricks if edge and 49 <= y <= 55 else AIR
-            blocks[(x, 48, z)] = 'minecraft:grass_block'
-        # Outside ground columns for top().
-        for x in range(-2, 8):
-            for z in range(-2, 8):
-                if (x, z) in cells:
-                    continue
-                for y in range(46, 76):
-                    blocks[(x, y, z)] = 'minecraft:grass_block' if y == 48 else AIR
-        world, mcp, tmp = _live(blocks)
-        self.addCleanup(tmp.cleanup)
-        got = entrances.wall_cell(cells, 8, 3, 'single', world=world, facing=(1, 0))
-        self.assertIsNotNone(got)
-        # Building + outside Y band would be thousands of naive scans.
-        self.assertLessEqual(_scans(mcp), 64, f'too many scans: {_scans(mcp)}')
-
-
 class MaskUndoPrefetchTest(unittest.TestCase):
     def test_conflict_check_bounds_scans(self):
         import mask_undo

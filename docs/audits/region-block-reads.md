@@ -40,9 +40,8 @@ T40 (deleted by task 40, region backup/restore). Line numbers are for `main` 5ae
 | scripts/tree_review.py:131-136 | live vs pristine/reference trees | live + pristine | pristine **T38**; live MCP |
 | scripts/airtight.py:15,60; door_audit.py:15,20; example_probe.py:12,37; floater_scan.py:28,122; geo.py:525-527; site_audit.py:14,44 (+ `light` l.53); site_patrol.py:20,43,65; site_walk.py:12,84; surface_probe.py:7 | one-off probes and audits | live | MCP (CLI diagnostics; lowest urgency) |
 | scripts/cell_marker.py:43,266,312; clear_floating_leaves.py:21,89; decor_layer.py:29,206,227; feature_build.py:50,245 (default `world=None` -> `World()`); foliage.py:12; ground_layer.py:43,577; house_build.py:32,92; mask_undo.py:27,90,98; plant_cell_canopy.py:51,382,439; strip_cell_above_ground.py:26,65; trees_layer.py:38,410,439; trees_replan.py:19,36 | build planners: read live terrain/neighbours before planning | live | MCP/seam (these are the hot callers: planning reads many columns) |
-| scripts/entrances.py:10 (`PlannedWorld`) | overlay of a plan over a world | wrapper | stays (takes any `.block`) |
 | the lidar provider's synthetic world class (`DefraWorld`) | **not** a region reader: synthetic `block()` from lidar tiles | n/a | stays; already a second implementation of the `block()` contract |
-| tests: test_entrances.py:10, test_trees_replan.py:15, test_cell_marker.py:67, test_defra_world.py:173, test_feature_build.py:79 | local stub `World`/`StubWorld` classes with `block()` | memory | stays; evidence the duck-typed seam already exists |
+| tests: test_trees_replan.py:15, test_cell_marker.py:67, test_defra_world.py:173, test_feature_build.py:79 | local stub `World`/`StubWorld` classes with `block()` | memory | stays; evidence the duck-typed seam already exists |
 | tests: test_site_kit_region.py:37, test_site_kit_ground.py:6, test_site_kit.* | `World()` against tmp dirs/mocks | tmp | stays, rewritten to the seam |
 
 ### 1c. Non-reader `.mca` / region-dir operations (for completeness, none to be analysed)

@@ -861,6 +861,15 @@
       "title": "Duration hints for slow commands in entry docs",
       "status": "done",
       "notes": "Done 2026-10-26 (1cf63bb): rules/slow-commands.md + AGENTS.md pointer. Baseline/apply/vector-map figures approximate (from R-015), not re-timed."
+    },
+    {
+      "id": 102,
+      "title": "Wire or retire entrances.py (orphaned library)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26 (merged 3c75a0a): retired orphaned lib/builds/entrances.py + test_entrances; cleaned live-read sweep and docs that claimed it was a live build step. Decision: retire, not wire. Ship-branch APPROVE (nits only on door wording in building-review)."
     }
   ]
 }
