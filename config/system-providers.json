@@ -13,12 +13,12 @@
       },
       "keep": false,
       "look_only": true,
-      "licence": "Google ToS (look-only)",
+      "licence": "Google ToS (working PNG under instance/; do not commit or hash into reference/)",
       "tags": null,
       "kind": null,
       "repeat_ok": true,
       "checklist": true,
-      "how": "ALWAYS, every cell: shims/google_aerial.py sheet --cell TX,TZ (look-only, often clearer than keepable aerial); then --record google-satellite --result found --note \"what it shows\""
+      "how": "ALWAYS, every cell: shims/google_aerial.py sheet --cell TX,TZ (downloads tiles → instance/google-aerial/*.png; Read the PNG; often clearer than keepable aerial); then --record google-satellite --result found --note \"what it shows\""
     },
     {
       "id": "kartaview",
@@ -68,13 +68,13 @@
       },
       "keep": false,
       "look_only": true,
-      "licence": "Google ToS (look-only; kept frames gitignored via streetview_sample)",
+      "licence": "Google ToS (sample PNG under instance/; kept frames gitignored via streetview_sample; do not commit)",
       "tags": [
         "google-streetview"
       ],
       "kind": "street",
       "checklist": true,
-      "how": "shims/streetview_sample.py sample --cell TX,TZ (look-only; small grid)"
+      "how": "shims/streetview_sample.py sample --cell TX,TZ (downloads thumbs → instance/streetview/*-sheet.png; Read it; keep useful ids; small grid)"
     },
     {
       "id": "rightmove",

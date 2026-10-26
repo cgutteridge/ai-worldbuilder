@@ -167,7 +167,8 @@ BUILT plan in place to “fix” the world.
      fill CHARACTER + TOKEN NOTES in the file; judge imagery once (mosaic/contact
      sheet, not dozens of full-size photos). One good source is enough: use it and
      build; do not hunt for a perfect one. Street View via the fixed pano-URL +
-     thumbnail-URL method (look-only, never download) is logged in reference/SOURCES.txt.
+     thumbnail-URL method is logged in reference/SOURCES.txt (Street View: download PNG contact
+     sheet via streetview_sample; kept frames go to gitignored photos).
      SOURCE CHECKLIST in that file lists checklisted provider ids for the cell (from place-sources).
      Log each attempt, hit or miss:
        python3 scripts/cell_sources.py --cell tx,tz --record SOURCE --result found|partial|none|blocked --note "..."
