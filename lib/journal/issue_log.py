@@ -128,8 +128,9 @@ def _same_element(a: dict[str, Any], b: dict[str, Any]) -> bool:
 def landed_builds(root: Path | str) -> list[dict[str, Any]]:
     """Landed, not-undone build entries of the cell journal, in order.
 
-    Reads ``registry/journal.jsonl`` directly (read-only): a ``begin`` of kind ``build`` whose
-    ``finish`` said ``landed``.
+    Reads ``registry/journal.jsonl`` directly (read-only) and replays it as ``CellRegistry`` does: a
+    ``begin`` of kind ``build`` whose ``finish`` said ``landed``, minus builds voided by a landed undo
+    (``targets``), an ``abandoned`` finish, or a ``revive`` that cancels the undo.
 
     @param root: world root
     @returns: ``[{'seq', 'ts', 'pass', 'plan', 'cell', 'blob'}]``
@@ -138,20 +139,30 @@ def landed_builds(root: Path | str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     begins: dict[int, dict[str, Any]] = {}
-    landed: set[int] = set()
+    status: dict[int, str] = {}
+    undone: set[int] = set()
     for line in path.read_text(encoding='utf-8').splitlines():
         if not line.strip():
             continue
         e = json.loads(line)
-        if e.get('op') == 'begin' and e.get('kind') == 'build':
+        op = e.get('op')
+        if op == 'begin':
             begins[e['seq']] = e
-        elif e.get('op') == 'begin' and e.get('kind') == 'undo':
-            landed.discard(e.get('ref'))
-        elif e.get('op') == 'finish' and e.get('status') == 'landed':
-            landed.add(e['ref'])
+        elif op == 'finish':
+            ref = e['ref']
+            status[ref] = e['status']
+            if e['status'] == 'abandoned':
+                undone.add(ref)                           # rolled back: counts for nothing
+            elif e['status'] == 'landed' and begins.get(ref, {}).get('kind') == 'undo':
+                undone.update(begins[ref].get('targets', ()))
+        elif op == 'revive':
+            undone.difference_update(e.get('targets', ()))
+            if e.get('undo') is not None:
+                undone.add(e['undo'])
     return [{'seq': s, 'ts': b.get('ts', ''), 'pass': b.get('pass'), 'plan': b.get('plan'),
              'cell': list(b['cell']) if b.get('cell') else None, 'blob': b.get('blob')}
-            for s, b in sorted(begins.items()) if s in landed]
+            for s, b in sorted(begins.items())
+            if b.get('kind') == 'build' and status.get(s) == 'landed' and s not in undone]
 
 
 def element_builds(builds: Iterable[dict[str, Any]], el: dict[str, Any]) -> list[dict[str, Any]]:
@@ -190,6 +201,14 @@ def redesign_status(root: Path | str, el: dict[str, Any], merged_at: str) -> str
 
 # --- lookups ------------------------------------------------------------------------------------
 
+def _norm(prefix: str, ident: Any) -> str:
+    """``7``, ``I-7`` and ``I-007`` all name issue 7 (likewise ``S-``)."""
+    m = re.fullmatch(rf'(?:{prefix}-)?0*(\d+)', str(ident).strip(), re.I)
+    if not m:
+        raise IssueError(f'bad id {ident!r}: expected {prefix}-007')
+    return f'{prefix}-{int(m.group(1)):03d}'
+
+
 def find_issue(store: dict[str, Any], issue_id: str) -> dict[str, Any]:
     """The issue with this id.
 
@@ -198,7 +217,7 @@ def find_issue(store: dict[str, Any], issue_id: str) -> dict[str, Any]:
     @returns: issue dict
     @raises IssueError: when unknown
     """
-    want = issue_id if str(issue_id).startswith('I-') else f'I-{int(issue_id):03d}'
+    want = _norm('I', issue_id)
     for it in store['issues']:
         if it['id'] == want:
             return it
@@ -213,6 +232,7 @@ def find_snag(store: dict[str, Any], snag_id: str) -> tuple[dict[str, Any], dict
     @returns: (issue, snag)
     @raises IssueError: when unknown
     """
+    snag_id = _norm('S', snag_id)
     for it in store['issues']:
         for s in it['snags']:
             if s['id'] == snag_id:
@@ -223,6 +243,13 @@ def find_snag(store: dict[str, Any], snag_id: str) -> tuple[dict[str, Any], dict
 def _touch(issue: dict[str, Any], event: str, detail: str = '') -> None:
     issue['updated'] = now_iso()
     issue['history'].append({'ts': issue['updated'], 'event': event, 'detail': detail})
+
+
+def _reopen(issue: dict[str, Any]) -> None:
+    """Back to ``open``; the fixes so far are judged, so a new fix is needed to reach ``fix-landed``."""
+    issue['status'] = 'open'
+    for f in issue['fixes']:
+        f['judged'] = True
 
 
 def _new_snag(store: dict[str, Any], *, source: str, words: str, elements: list[dict[str, Any]],
@@ -281,13 +308,14 @@ def add_snag(root: Path | str, *, issue_id: str | None, new_title: str | None, *
     if bool(issue_id) == bool(new_title):
         raise IssueError('pass exactly one of an existing issue or a new issue title')
     store = load(root)
+    issue = find_issue(store, issue_id) if issue_id else None
     snag = _new_snag(store, root=root, **snag_kw)
-    if issue_id:
-        issue = find_issue(store, issue_id)
+    if issue:
         if issue['status'] in ('confirmed', 'wontfix'):
             snag['regression'] = True
             _touch(issue, 'reopened', f"regression: {snag['id']} filed on a {issue['status']} issue")
-            issue['status'] = 'open'
+        if issue['status'] != 'open':
+            _reopen(issue)                    # the new snag is not covered by any fix yet
         _touch(issue, 'snag-added', snag['id'])
     else:
         issue = {'id': f"I-{store['next_issue']:03d}", 'title': new_title.strip(), 'cause': '',
@@ -347,18 +375,21 @@ def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, ch
         raise IssueError('merged_at must look like 2026-10-26T14:20:00Z')
     store = load(root)
     issue = find_issue(store, issue_id)
+    checks = {_norm('S', k): v for k, v in checks.items()}
     have = {s['id']: s for s in issue['snags']}
     for sid in checks:
         if sid not in have:
             raise IssueError(f'{sid} is not a snag of {issue["id"]}')
     fix = {'id': f"F-{len(issue['fixes']) + 1}", 'ticket': ticket, 'branch': branch,
            'summary': summary.strip(), 'merged_at': merged_at,
-           'checks': {k: v.strip() for k, v in checks.items()}, 'logged': now_iso()}
+           'checks': {_norm('S', k): v.strip() for k, v in checks.items()}, 'logged': now_iso(),
+           'judged': False}
     issue['fixes'].append(fix)
     for sid in checks:
         have[sid]['resolution'] = None
-    if issue['status'] == 'fix-landed':
-        issue['status'] = 'open'
+    if issue['status'] != 'open':
+        _reopen(issue)
+        fix['judged'] = False
     _touch(issue, 'fix-logged', f"{fix['id']} {ticket} {summary.strip()}")
     save(root, store)
     return fix
@@ -390,6 +421,8 @@ def rebuild_report(root: Path | str, issue: dict[str, Any]) -> dict[str, Any] | 
     if not issue['fixes']:
         return None
     fix = issue['fixes'][-1]
+    if fix.get('judged'):
+        return {'fix': fix, 'elements': [], 'ready': False}
     rows = [(element_label(el), redesign_status(root, el, fix['merged_at'])) for el in fix_elements(issue, fix)]
     return {'fix': fix, 'elements': rows, 'ready': bool(rows) and all(st == 'redesigned' for _, st in rows)}
 
@@ -453,12 +486,15 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
     """
     store = load(root)
     issue = find_issue(store, issue_id)
+    if issue['status'] != 'fix-landed':
+        raise IssueError(f'{issue["id"]} is {issue["status"]}; a verdict needs a landed fix '
+                         '(status fix-landed: a fix logged and its elements redesigned)')
     ids = [s['id'] for s in issue['snags']]
     if all_fixed:
         if fixed or not_fixed:
             raise IssueError('--all-fixed cannot be combined with other verdicts')
         fixed, not_fixed = ids, []
-    fixed, not_fixed = list(fixed or []), list(not_fixed or [])
+    fixed, not_fixed = [_norm('S', i) for i in fixed or []], [_norm('S', i) for i in not_fixed or []]
     unknown = [i for i in fixed + not_fixed if i not in ids]
     if unknown or set(fixed) & set(not_fixed):
         raise IssueError(f'unknown or doubly-judged snags: {unknown or sorted(set(fixed) & set(not_fixed))}')
@@ -473,9 +509,10 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
         by[i]['resolution'] = 'unresolved'
     if all(s['resolution'] == 'fixed' for s in issue['snags']):
         issue['status'] = 'confirmed'
+        issue['fixes'][-1]['judged'] = True
         _touch(issue, 'confirmed', 'all snags fixed')
     else:
-        issue['status'] = 'open'
+        _reopen(issue)
         _touch(issue, 'verdict', f'unresolved: {", ".join(not_fixed)}')
     save(root, store)
     return issue
@@ -529,10 +566,13 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
     snag['resolution'] = None
     dest['snags'].append(snag)
     if dest['status'] in ('confirmed', 'wontfix'):
-        dest['status'] = 'open'
         snag['regression'] = True
+    if dest['status'] != 'open':
+        _reopen(dest)
+    snag_id = snag['id']
     for it in src['fixes']:
         it['checks'].pop(snag_id, None)
+    src['fixes'] = [f for f in src['fixes'] if f['checks']]
     _touch(src, 'snag-moved-out', f'{snag_id} -> {dest["id"]}')
     _touch(dest, 'snag-moved-in', f'{snag_id} <- {src["id"]}')
     save(root, store)
@@ -554,8 +594,8 @@ def merge_issues(root: Path | str, keep: str, absorb: str) -> dict[str, Any]:
     a['snags'] += b['snags']
     a['fixes'] += [{**f, 'id': f"F-{len(a['fixes']) + i + 1}", 'from': b['id']} for i, f in enumerate(b['fixes'])]
     a['history'] += [{**h, 'detail': f"[{b['id']}] {h['detail']}"} for h in b['history']]
-    if a['status'] != b['status']:
-        a['status'] = 'open'
+    if not (a['status'] == b['status'] and a['status'] in ('confirmed', 'wontfix')):
+        _reopen(a)                      # a merge reopens the question: log a fix covering every snag
     store['issues'].remove(b)
     _touch(a, 'merged', f"absorbed {b['id']} ({b['title']})")
     save(root, store)

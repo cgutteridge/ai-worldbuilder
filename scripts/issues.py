@@ -12,7 +12,7 @@ A snag is evidence inside an issue; there are no loose snags. Issues never block
                                              --check S-001="what should look different" ... [--ticket #110] [--branch B]
   python3 scripts/issues.py --world W sync                       # open -> fix-landed where the journal shows a redesign
   python3 scripts/issues.py --world W review I-004               # the packet: every snag, its check, where to teleport
-  python3 scripts/issues.py --world W verdict I-004 (--all-fixed | --fixed S-1 S-2 [--not-fixed S-3])
+  python3 scripts/issues.py --world W verdict I-004 (--all-fixed | --fixed S-001 S-002 [--not-fixed S-003])
   python3 scripts/issues.py --world W move   S-007 (--to I-002 | --new TITLE)
   python3 scripts/issues.py --world W merge  I-002 I-004         # fold the second into the first
   python3 scripts/issues.py --world W wontfix I-004 --reason T   # the owner's call
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
             problems = L.verify(root)
             print('\n'.join(problems) if problems else 'issues: OK')
             return 1 if problems else 0
-    except L.IssueError as exc:
+    except (L.IssueError, ValueError) as exc:
         print(f'issues error: {exc}', file=sys.stderr)
         return 2
     return 0
