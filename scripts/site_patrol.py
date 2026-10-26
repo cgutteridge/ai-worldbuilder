@@ -23,10 +23,16 @@ import script_env  # noqa: E402
 script_env.ensure_import_paths()
 
 from floaters import cell_glitches  # noqa: E402
-from site_kit import OUT, World, bid  # noqa: E402
+from site_kit import World, bid  # noqa: E402
 from site_walk import solid  # noqa: E402
 
-PATROL = OUT / 'patrol'
+
+def _patrol_dir():
+    """verification/site/patrol under the active world (after ``--world``)."""
+    import site_kit
+
+    site_kit._ensure_world_config()
+    return site_kit.OUT / 'patrol'
 
 
 def latest_cells():
@@ -79,7 +85,7 @@ def views(n=8, seed=None, downscale=4):
     if not spots:
         raise SystemExit('No walkable kit-built air cells yet — apply a build first')
     stamp = time.strftime('%Y-%m-%d-%H%M')
-    out = PATROL / stamp
+    out = _patrol_dir() / stamp
     out.mkdir(parents=True, exist_ok=True)
     m, v = Paced(), Paced(8766)
     info = m.text('player_get_info', {'uuid': UUID})
@@ -123,11 +129,12 @@ def views(n=8, seed=None, downscale=4):
 
 
 if __name__ == '__main__':
+    script_env.prepend_world_activation()
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'sweep'
     if cmd == 'sweep':
         found, links = sweep()
         stamp = time.strftime('%Y-%m-%d-%H%M')
-        out = PATROL / stamp
+        out = _patrol_dir() / stamp
         out.mkdir(parents=True, exist_ok=True)
         (out / 'report.json').write_text(json.dumps({'found': found, 'links': links}, indent=1))
         print(json.dumps({k: len(v) for k, v in found.items()}, indent=1))

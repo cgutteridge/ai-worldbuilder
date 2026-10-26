@@ -35,7 +35,7 @@ import re
 import sys
 from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
 import coverage as cov  # noqa: E402
 import site_kit  # noqa: E402
@@ -47,7 +47,6 @@ GROUND_SAMPLE_STEP = 16
 LEGACY_BUMP_MAX = 5
 WOOL = ('black_wool', 'yellow_wool')
 AIRS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
-OUT = site_kit.OUT
 CURRENT_FILE = ROOT / 'site' / 'CURRENT-CELL.json'
 REGISTRY_RE = re.compile(r'^cell_marker_(\d+)_(m?)(\d+)$')
 STAGE = 'other'          # journal pass: owns its blocks, no progress meaning
@@ -619,7 +618,9 @@ def main() -> int:
                    help='frontier lidar-ghost depth on raise/adopt (default: LIDAR_GHOST_RING or 2)')
     p.add_argument('--no-ghosts', action='store_true',
                    help='skip lidar ghost frontier ensure on raise/adopt')
+    add_world_arg(p)
     args = p.parse_args()
+    activate_world_from_args(args)
     if args.status:
         return cmd_status()
     if args.adopt_cell:

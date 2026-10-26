@@ -1,11 +1,11 @@
 # ai-worldbuilder: agent entry point
 
 Reusable AI tool for building Minecraft worlds from real-place evidence.
-Exactly one **active world** at a time (`active_world.py` / `AI_WORLDBUILDER_WORLD_ROOT`).
+Exactly one **active world** at a time (`active_world.py`; CLIs take required `--world <name>`).
 
 ## Start
 
-1. Set the active world (required; there is no silent default): `export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/southampton-build` (or another checkout under `worlds/`). Confirm: `python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
+1. Pass `--world <dirname>` on place-touching commands (required; no silent default; e.g. `--world southampton-build`). Confirm: `python3 -c "from active_world import set_world, gameworld_id; print(set_world('southampton-build'), gameworld_id())"`.
 2. Sweep unmerged branches and leftover worktrees: `python3 scripts/ship_branch.py sweep` (ADR 005).
 3. System tracker first when work is **tool** engineering: read `tasks/index.json`. Parallel system tasks: project skill `parallel-task-wave` (not the world cell-orchestrator).
 4. If work is **world** (cell registry, issues, place builds), use the active checkout under `worlds/` — do not put world work in `tasks/`. If unclear tool vs world, **ask**.

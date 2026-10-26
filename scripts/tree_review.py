@@ -37,7 +37,7 @@ sys.path.insert(0, str(_TOOL / 'scripts'))
 import script_env  # noqa: E402
 
 script_env.ensure_import_paths()
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
 import numpy as np  # noqa: E402
 
@@ -181,7 +181,9 @@ def main(argv=None) -> int:
     ap.add_argument('--all', action='store_true', help='list matching crowns too')
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--marks', help='write colours for google_aerial.py sheet --marks to this file')
+    add_world_arg(ap)
     a = ap.parse_args(argv)
+    activate_world_from_args(a)
     if bool(a.cell) == bool(a.zone):
         ap.error('give exactly one of --cell or --zone')
     if a.cell:

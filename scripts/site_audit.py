@@ -4,16 +4,22 @@
 Drift: cells whose current block differs from what the latest build placed (cell journal).
 Dark: walkable cells inside builds with lightLevel 0 (``block_get_state``).
 
-  python3 scripts/site_audit.py [prefix]
+  python3 scripts/site_audit.py --world southampton-build [prefix]
 Writes verification/site/audits/<date>-<prefix>.json. Needs minecraft_world MCP; flush/save first.
 """
+from __future__ import annotations
+
 import json
 import sys
 import time
+from pathlib import Path
 
-from cell_registry import latest_cells
-from site_kit import OUT, World, bid, same
-from site_walk import solid
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL))
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
+
+script_env.ensure_import_paths()
 
 
 def norm(st):
@@ -28,41 +34,65 @@ def norm(st):
         st = st.replace('minecraft:' + age, 'minecraft:')
     if '[' in st:
         name, props = st[:-1].split('[')
-        keep = [kv for kv in props.split(',')
-                if kv.split('=')[0] not in ('open', 'powered', 'waterlogged', 'age', 'moisture', 'up')]
+        keep = [
+            kv for kv in props.split(',')
+            if kv.split('=')[0] not in (
+                'open', 'powered', 'waterlogged', 'age', 'moisture', 'up',
+            )
+        ]
         st = name + ('[' + ','.join(keep) + ']' if keep else '')
     return st
 
 
-prefix = sys.argv[1] if len(sys.argv) > 1 else ''
-latest = latest_cells(prefix=prefix)          # cell journal: latest recorded plan per build, later wins
-w = World()
-# Batch block reads (plan cells + walkable neighbours); light stays per walkable cell (MCP get_state).
-warm = set(latest)
-warm.update((x, y + 1, z) for x, y, z in latest)
-warm.update((x, y - 1, z) for x, y, z in latest)
-w.prefetch(warm)
-drift, dark, walk = {}, [], 0
-for q, (name, st) in latest.items():
-    a = w.block(*q)
-    if not same(norm(st), norm(a)):
-        drift.setdefault(name, []).append([q, st, a])
-    x, y, z = q
-    if bid(st) == 'minecraft:air' and not solid(a) and not solid(w.block(x, y + 1, z)) and solid(w.block(x, y - 1, z)):
-        walk += 1
-        lvl = w.light(x, y, z)
-        # None = light unavailable (non-live store / parse miss); do not count as dark.
-        if lvl is not None and lvl == 0:
-            dark.append(q)
-rep = {
-    'time': time.strftime('%Y-%m-%d %H:%M'), 'prefix': prefix, 'cells': len(latest),
-    'drift': {k: {'count': len(v), 'sample': v[:20]} for k, v in drift.items()},
-    'walkable': walk, 'dark': len(dark), 'dark_sample': dark[:40],
-}
-d = OUT / 'audits'
-d.mkdir(exist_ok=True)
-(d / f"{time.strftime('%Y-%m-%d-%H%M')}-{prefix or 'all'}.json").write_text(json.dumps(rep, indent=1))
-print(json.dumps({
-    k: (v if k != 'drift' else {n: x['count'] for n, x in v.items()})
-    for k, v in rep.items() if k != 'dark_sample'
-}, indent=1))
+def main() -> None:
+    """Run the drift / dark audit for the active world."""
+    script_env.prepend_world_activation()
+    from cell_registry import latest_cells
+    from site_kit import OUT, World, bid, same
+    from site_walk import solid
+
+    prefix = sys.argv[1] if len(sys.argv) > 1 else ''
+    latest = latest_cells(prefix=prefix)
+    w = World()
+    warm = set(latest)
+    warm.update((x, y + 1, z) for x, y, z in latest)
+    warm.update((x, y - 1, z) for x, y, z in latest)
+    w.prefetch(warm)
+    drift, dark, walk = {}, [], 0
+    for q, (name, st) in latest.items():
+        a = w.block(*q)
+        if not same(norm(st), norm(a)):
+            drift.setdefault(name, []).append([q, st, a])
+        x, y, z = q
+        if (
+            bid(st) == 'minecraft:air'
+            and not solid(a)
+            and not solid(w.block(x, y + 1, z))
+            and solid(w.block(x, y - 1, z))
+        ):
+            walk += 1
+            lvl = w.light(x, y, z)
+            if lvl is not None and lvl == 0:
+                dark.append(q)
+    rep = {
+        'time': time.strftime('%Y-%m-%d %H:%M'),
+        'prefix': prefix,
+        'cells': len(latest),
+        'drift': {k: {'count': len(v), 'sample': v[:20]} for k, v in drift.items()},
+        'walkable': walk,
+        'dark': len(dark),
+        'dark_sample': dark[:40],
+    }
+    d = OUT / 'audits'
+    d.mkdir(exist_ok=True)
+    (d / f"{time.strftime('%Y-%m-%d-%H%M')}-{prefix or 'all'}.json").write_text(
+        json.dumps(rep, indent=1)
+    )
+    print(json.dumps({
+        k: (v if k != 'drift' else {n: x['count'] for n, x in v.items()})
+        for k, v in rep.items() if k != 'dark_sample'
+    }, indent=1))
+
+
+if __name__ == '__main__':
+    main()

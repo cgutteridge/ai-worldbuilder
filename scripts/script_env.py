@@ -1,8 +1,11 @@
 """Shared script preamble for the worldbuilder tool.
 
-``ROOT`` is the **active world** checkout (place memory, world frame, local
-providers). ``TOOL_ROOT`` is this worldbuilder repo (scripts, skills, system
-providers). Provider packages live under two roots:
+``ROOT`` is a deferred path for the **active world** checkout (place memory,
+world frame, local providers). Module-level joins such as ``ROOT / "site"`` are
+safe before ``--world`` is parsed; filesystem use resolves via
+:func:`active_world.world_root` after :func:`bind_world`.
+``TOOL_ROOT`` is this worldbuilder repo (scripts, skills, system providers).
+Provider packages live under two roots:
 
 - ``SYSTEM_PROVIDERS`` — ``TOOL_ROOT / "providers"`` (nationwide+ catalogue)
 - ``WORLD_PROVIDERS`` — ``ROOT / "providers"`` (active-world catalogue)
@@ -10,13 +13,16 @@ providers). Provider packages live under two roots:
 Shared libraries live under ``TOOL_ROOT / "lib" / <category> /`` (bare imports).
 CLI entry points live under ``scripts/``. Catalogue ``package`` fields are
 relative paths (e.g. ``providers/<id>``); resolve them with
-:func:`resolve_provider_package`. Prefer ``from script_env import ROOT, TOOL_ROOT``.
+:func:`resolve_provider_package`. Prefer ``from script_env import ROOT, TOOL_ROOT``
+and activate a world before reading the filesystem under ``ROOT``.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import Any, Iterator, Sequence
 
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 if str(TOOL_ROOT) not in sys.path:
@@ -26,9 +32,78 @@ import python_runtime  # noqa: E402
 
 python_runtime.ensure_python_runtime()
 
-from active_world import WORLD_ROOT  # noqa: E402
 
-ROOT = WORLD_ROOT
+class DeferredWorldPath:
+    """Path under the active world that resolves on filesystem use.
+
+    Joining with ``/`` before a world is selected only records path parts.
+    Reading or writing calls :func:`active_world.world_root`.
+    """
+
+    __slots__ = ('_parts',)
+
+    def __init__(self, parts: tuple[Any, ...] = ()) -> None:
+        """
+        @param parts: path segments under the world root (empty = the root itself)
+        """
+        self._parts = tuple(parts)
+
+    def _resolve(self) -> Path:
+        """Resolve to a concrete :class:`~pathlib.Path`.
+
+        @returns: absolute path under the active world
+        @raises RuntimeError: when no world is selected
+        """
+        from active_world import world_root
+
+        path = world_root()
+        for part in self._parts:
+            path = path / part
+        return path
+
+    def __truediv__(self, other: Any) -> DeferredWorldPath:
+        """Record another path segment without resolving the world yet."""
+        return DeferredWorldPath(self._parts + (other,))
+
+    def __rtruediv__(self, other: Any) -> Path:
+        """Allow ``Path(...) / deferred`` once the world is selected."""
+        return Path(other) / self._resolve()
+
+    def __fspath__(self) -> str:
+        return os.fspath(self._resolve())
+
+    def __str__(self) -> str:
+        return str(self._resolve())
+
+    def __repr__(self) -> str:
+        if not self._parts:
+            return 'DeferredWorldPath()'
+        return f'DeferredWorldPath({self._parts!r})'
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        try:
+            return self._resolve() == Path(other)  # type: ignore[arg-type]
+        except (RuntimeError, TypeError, ValueError):
+            return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._resolve())
+
+    def __bool__(self) -> bool:
+        from active_world import WORLD_ROOT
+
+        return WORLD_ROOT is not None
+
+    def __iter__(self) -> Iterator[Path]:
+        return iter(self._resolve())
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+
+ROOT = DeferredWorldPath()
 SCRIPTS = TOOL_ROOT / "scripts"
 SHIMS = TOOL_ROOT / "shims"
 LIB = TOOL_ROOT / "lib"
@@ -69,6 +144,124 @@ def ensure_import_paths() -> None:
 ensure_import_paths()
 
 
+def world_bound() -> bool:
+    """Return whether an active world has been selected.
+
+    @returns: True after :func:`active_world.set_world` / :func:`set_world_root`
+    """
+    from active_world import WORLD_ROOT
+
+    return WORLD_ROOT is not None
+
+
+def bind_world() -> Path:
+    """Confirm the selected world and refresh dependent library caches.
+
+    Call after :func:`active_world.set_world` or :func:`active_world.set_world_root`.
+    ``ROOT`` is a deferred proxy and does not need reassignment.
+
+    @returns: the bound world root
+    @raises RuntimeError: when no world is selected
+    """
+    from active_world import world_root
+
+    return world_root()
+
+
+def clear_world_caches() -> None:
+    """Drop cached world config in libraries that may already be imported.
+
+    When a world is selected, reloads site_kit / mc_paced so ``OUT`` and friends
+    match the newly selected world.
+    """
+    bound = world_bound()
+    site_kit = sys.modules.get("site_kit")
+    if site_kit is not None:
+        if hasattr(site_kit, "clear_world_config"):
+            site_kit.clear_world_config()
+        if bound and hasattr(site_kit, "reload_world_config"):
+            try:
+                site_kit.reload_world_config()
+            except (KeyError, FileNotFoundError, RuntimeError, OSError):
+                pass
+    world_frame = sys.modules.get("world_frame")
+    if world_frame is not None and hasattr(world_frame, "clear_frame_cache"):
+        world_frame.clear_frame_cache()
+    mc_paced = sys.modules.get("mc_paced")
+    if mc_paced is not None:
+        if hasattr(mc_paced, "clear_world_config"):
+            mc_paced.clear_world_config()
+        if bound and hasattr(mc_paced, "reload_world_config"):
+            try:
+                mc_paced.reload_world_config()
+            except (KeyError, FileNotFoundError, RuntimeError, OSError):
+                pass
+    footprints = sys.modules.get("osm_footprints")
+    if footprints is not None and hasattr(footprints, "_VECTOR_MAP_CLIPS"):
+        footprints._VECTOR_MAP_CLIPS = None
+
+
+def add_world_arg(parser: argparse.ArgumentParser) -> None:
+    """Add required ``--world`` (directory name under ``worlds/``).
+
+    @param parser: argument parser to extend
+    """
+    parser.add_argument(
+        "--world",
+        required=True,
+        metavar="NAME",
+        help="world directory under worlds/ (e.g. southampton-build, bakeoff)",
+    )
+
+
+def activate_world_from_args(args: argparse.Namespace) -> Path:
+    """Select ``args.world``, bind ``ROOT``, and clear dependent caches.
+
+    @param args: namespace with a ``world`` attribute (from :func:`add_world_arg`)
+    @returns: absolute path to the world checkout
+    """
+    from active_world import set_world
+
+    root = set_world(args.world)
+    bind_world()
+    clear_world_caches()
+    return root
+
+
+def take_world_arg(
+    argv: Sequence[str] | None = None,
+) -> tuple[str, list[str]]:
+    """Parse required ``--world`` from argv; return name and remaining args.
+
+    @param argv: argument vector without the program name (default: ``sys.argv[1:]``)
+    @returns: ``(world_name, remaining_argv)``
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--world", required=True, metavar="NAME")
+    args, rest = parser.parse_known_args(list(argv) if argv is not None else None)
+    return str(args.world), rest
+
+
+def prepend_world_activation(argv: Sequence[str] | None = None) -> Path:
+    """Parse ``--world`` from ``sys.argv``, activate, and strip it from argv.
+
+    For thin CLI wrappers and shims that then hand the remaining argv to a
+    library ``main`` / ``runpy`` entry.
+
+    @param argv: optional override of ``sys.argv[1:]`` (tests)
+    @returns: absolute path to the world checkout
+    """
+    from active_world import set_world
+
+    name, rest = take_world_arg(argv)
+    root = set_world(name)
+    bind_world()
+    clear_world_caches()
+    if argv is None:
+        sys.argv = [sys.argv[0], *rest]
+    return root
+
+
 def resolve_provider_package(package: str, home: str | None = None) -> Path:
     """Resolve a catalogue ``package`` path against system and/or world roots.
 
@@ -84,6 +277,7 @@ def resolve_provider_package(package: str, home: str | None = None) -> Path:
     @returns: absolute path to the package directory
     @raises ValueError: if ``package`` or ``home`` is invalid
     @raises FileNotFoundError: if no matching directory exists
+    @raises RuntimeError: when ``home`` needs the active world and none is bound
     """
     if not package or not isinstance(package, str):
         raise ValueError(f"invalid package path: {package!r}")
@@ -97,7 +291,11 @@ def resolve_provider_package(package: str, home: str | None = None) -> Path:
     if home in (None, "system"):
         candidates.append(TOOL_ROOT / package)
     if home in (None, "world"):
-        candidates.append(ROOT / package)
+        if not world_bound():
+            raise RuntimeError(
+                "no world selected; pass --world <name> (a directory under worlds/)"
+            )
+        candidates.append(Path(ROOT) / package)
 
     for path in candidates:
         if path.is_dir():

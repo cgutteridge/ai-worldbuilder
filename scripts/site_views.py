@@ -212,6 +212,7 @@ def main():
 
     @returns: None
     """
+    script_env.prepend_world_activation()
     args = sys.argv[1:]
     downscale = pop_downscale(args)
     prefix = args.pop(0) if args and args[0] not in VIEWS else ''

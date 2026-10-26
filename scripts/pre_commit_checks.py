@@ -34,11 +34,6 @@ python_runtime.ensure_python_runtime()
 
 TRACKER_PATHS = frozenset({'tasks/index.json', 'tasks/done.json'})
 WAVE_LOCK_NAME = '.wave-lock'
-WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'
-UNSET_WORLD_MESSAGE = (
-    'pre-commit: AI_WORLDBUILDER_WORLD_ROOT is unset; '
-    'export it to an active world checkout (see AGENTS.md Start) and retry'
-)
 DEFAULT_TRACEBACK_LINES = 40
 
 
@@ -110,14 +105,6 @@ def format_failure_report(
         for test_id, tb in failures
     ]
     return '\n\n'.join(blocks)
-
-
-def world_root_is_set() -> bool:
-    """Return True when ``AI_WORLDBUILDER_WORLD_ROOT`` is set to a non-empty value.
-
-    @returns: whether the active-world env var is usable
-    """
-    return bool(os.environ.get(WORLD_ENV, '').strip())
 
 
 def is_worker_branch(branch: str) -> bool:
@@ -320,10 +307,8 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     Tracker ownership always runs. Provider-name audit and the unit suite are
     skipped when ``skip_tests`` is True, or when staged paths are tracker-only
     (:func:`is_tracker_only_paths`) so archive commits on ``main`` need no
-    ``--skip-tests`` and no world. Otherwise, when
-    ``AI_WORLDBUILDER_WORLD_ROOT`` is unset, world-dependent checks are skipped
-    and :data:`UNSET_WORLD_MESSAGE` is printed as the final line (exit 1).
-    Does not pin or default a world.
+    ``--skip-tests``. Otherwise the disposable-world unit suite always runs
+    (no env gate).
 
     @param repo_root: repository root
     @param skip_tests: when True, skip provider audit and unit suite (ownership only)
@@ -342,11 +327,6 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
         return 1
     if skip_tests or is_tracker_only_paths(paths):
         return 0
-    # Provider audit imports script_env → active_world; unit tests need the
-    # world too. Refuse early with a single last-line cause (no pin/default).
-    if not world_root_is_set():
-        print(UNSET_WORLD_MESSAGE, file=sys.stderr)
-        return 1
     code = run_provider_name_audit(repo_root)
     if code != 0:
         return code

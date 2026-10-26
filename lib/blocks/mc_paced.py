@@ -5,11 +5,45 @@ from pathlib import Path
 
 from mcp import Client
 
-from script_env import ROOT  # noqa: E402
-_CFG = json.loads((ROOT / 'config/world.json').read_text())
+import script_env  # noqa: E402
+
+_CFG = None
+UUID = None
 
 D = 'minecraft:overworld'
-UUID = _CFG.get('player_uuid', 'f89f7477-c4ee-4997-a8ee-be75b4d8b75a')
+_DEFAULT_UUID = 'f89f7477-c4ee-4997-a8ee-be75b4d8b75a'
+
+
+def clear_world_config() -> None:
+    """Drop cached player UUID from ``world.json``."""
+    global _CFG, UUID
+    _CFG = None
+    UUID = None
+
+
+def reload_world_config() -> None:
+    """Load player UUID from the active world's ``config/world.json``.
+
+    @raises RuntimeError: when no world is selected
+    """
+    global _CFG, UUID
+    if not script_env.world_bound():
+        raise RuntimeError(
+            'no world selected; pass --world <name> (a directory under worlds/)'
+        )
+    root = Path(script_env.ROOT)
+    _CFG = json.loads((root / 'config/world.json').read_text())
+    UUID = _CFG.get('player_uuid', _DEFAULT_UUID)
+
+
+def _ensure_world_config() -> None:
+    """Reload world config when it has not been loaded yet."""
+    if _CFG is None:
+        reload_world_config()
+
+
+if script_env.world_bound():
+    reload_world_config()
 
 
 class Paced:
@@ -43,7 +77,11 @@ class Paced:
         @param message: text shown in the player's chat, prefixed [AI-builder]
         """
         try:
-            self.call('player_send_message', {'uuid': UUID, 'message': f'[AI-builder] {message}'})
+            _ensure_world_config()
+            self.call('player_send_message', {
+                'uuid': UUID,
+                'message': f'[AI-builder] {message}',
+            })
         except Exception as e:  # noqa: BLE001
             print(f'  (could not message player: {e})')
 

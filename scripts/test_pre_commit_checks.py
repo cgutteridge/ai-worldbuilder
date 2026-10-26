@@ -220,46 +220,22 @@ class FailureExcerptTest(unittest.TestCase):
         self.assertIn('end-b', report)
 
 
-class UnsetWorldEarlyExitTest(unittest.TestCase):
-    """World-dependent checks skipped when AI_WORLDBUILDER_WORLD_ROOT is unset."""
+class PreCommitSuiteAlwaysRunsTest(unittest.TestCase):
+    """Disposable-world unit suite runs without an env world gate."""
 
-    def test_unset_world_skips_checks_and_prints_cause_last(self) -> None:
-        env = {k: v for k, v in os.environ.items() if k != pcc.WORLD_ENV}
-        printed: list[str] = []
-
-        def capture_print(*args: object, **_kwargs: object) -> None:
-            printed.append(' '.join(str(a) for a in args))
-
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
-                with mock.patch.object(pcc, 'staged_paths', return_value=[]):
+    def test_empty_staging_runs_unit_tests(self) -> None:
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(pcc, 'staged_paths', return_value=[]):
+                with mock.patch.object(
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
                     with mock.patch.object(
-                        pcc, 'run_provider_name_audit', return_value=0
-                    ) as audit:
-                        with mock.patch.object(pcc, 'run_unit_tests') as tests:
-                            with mock.patch('builtins.print', side_effect=capture_print):
-                                code = pcc.run_pre_commit(Path('/tmp/repo'))
-
-        self.assertEqual(code, 1)
-        audit.assert_not_called()
-        tests.assert_not_called()
-        self.assertTrue(printed, 'expected at least the unset-world line')
-        self.assertEqual(printed[-1], pcc.UNSET_WORLD_MESSAGE)
-
-    def test_set_world_runs_unit_tests(self) -> None:
-        env = {**os.environ, pcc.WORLD_ENV: '/tmp/fake-world'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
-                with mock.patch.object(pcc, 'staged_paths', return_value=[]):
-                    with mock.patch.object(
-                        pcc, 'run_provider_name_audit', return_value=0
-                    ):
-                        with mock.patch.object(
-                            pcc, 'run_unit_tests', return_value=0
-                        ) as tests:
-                            with mock.patch('builtins.print'):
-                                code = pcc.run_pre_commit(Path('/tmp/repo'))
+                        pcc, 'run_unit_tests', return_value=0
+                    ) as tests:
+                        with mock.patch('builtins.print'):
+                            code = pcc.run_pre_commit(Path('/tmp/repo'))
         self.assertEqual(code, 0)
+        audit.assert_called_once()
         tests.assert_called_once()
 
 
@@ -278,72 +254,66 @@ class TrackerOnlySkipTestsTest(unittest.TestCase):
         )
         self.assertFalse(pcc.is_tracker_only_paths(['README.md']))
 
-    def test_tracker_only_staged_skips_suite_without_world(self) -> None:
-        """Main archive: tracker-only succeeds with WORLD_ROOT unset (no suite)."""
-        env = {k: v for k, v in os.environ.items() if k != pcc.WORLD_ENV}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+    def test_tracker_only_staged_skips_suite(self) -> None:
+        """Main archive: tracker-only succeeds without running the suite."""
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(
+                pcc,
+                'staged_paths',
+                return_value=['tasks/index.json', 'tasks/done.json'],
+            ):
                 with mock.patch.object(
-                    pcc,
-                    'staged_paths',
-                    return_value=['tasks/index.json', 'tasks/done.json'],
-                ):
-                    with mock.patch.object(
-                        pcc, 'run_provider_name_audit', return_value=0
-                    ) as audit:
-                        with mock.patch.object(pcc, 'run_unit_tests') as tests:
-                            code = pcc.run_pre_commit(Path('/tmp/repo'))
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
+                    with mock.patch.object(pcc, 'run_unit_tests') as tests:
+                        code = pcc.run_pre_commit(Path('/tmp/repo'))
         self.assertEqual(code, 0)
         audit.assert_not_called()
         tests.assert_not_called()
 
     def test_tracker_plus_code_still_runs_suite(self) -> None:
         """Mixed staging keeps provider audit + unit suite."""
-        env = {**os.environ, pcc.WORLD_ENV: '/tmp/fake-world'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(
+                pcc,
+                'staged_paths',
+                return_value=['tasks/index.json', 'scripts/foo.py'],
+            ):
                 with mock.patch.object(
-                    pcc,
-                    'staged_paths',
-                    return_value=['tasks/index.json', 'scripts/foo.py'],
-                ):
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
                     with mock.patch.object(
-                        pcc, 'run_provider_name_audit', return_value=0
-                    ) as audit:
-                        with mock.patch.object(
-                            pcc, 'run_unit_tests', return_value=0
-                        ) as tests:
-                            with mock.patch('builtins.print'):
-                                code = pcc.run_pre_commit(Path('/tmp/repo'))
+                        pcc, 'run_unit_tests', return_value=0
+                    ) as tests:
+                        with mock.patch('builtins.print'):
+                            code = pcc.run_pre_commit(Path('/tmp/repo'))
         self.assertEqual(code, 0)
         audit.assert_called_once()
         tests.assert_called_once()
 
     def test_worker_branch_tracker_edit_still_blocked(self) -> None:
         """Ownership check wins before any tracker-only skip."""
-        env = {k: v for k, v in os.environ.items() if k != pcc.WORLD_ENV}
         printed: list[str] = []
 
         def capture_print(*args: object, **_kwargs: object) -> None:
             printed.append(' '.join(str(a) for a in args))
 
-        with mock.patch.dict(os.environ, env, clear=True):
+        with mock.patch.object(
+            pcc,
+            'checkout_branch_names',
+            return_value=['task/82-tracker-only-skip-tests'],
+        ):
             with mock.patch.object(
                 pcc,
-                'checkout_branch_names',
-                return_value=['task/82-tracker-only-skip-tests'],
+                'staged_paths',
+                return_value=['tasks/index.json'],
             ):
                 with mock.patch.object(
-                    pcc,
-                    'staged_paths',
-                    return_value=['tasks/index.json'],
-                ):
-                    with mock.patch.object(
-                        pcc, 'run_provider_name_audit', return_value=0
-                    ) as audit:
-                        with mock.patch.object(pcc, 'run_unit_tests') as tests:
-                            with mock.patch('builtins.print', side_effect=capture_print):
-                                code = pcc.run_pre_commit(Path('/tmp/repo'))
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
+                    with mock.patch.object(pcc, 'run_unit_tests') as tests:
+                        with mock.patch('builtins.print', side_effect=capture_print):
+                            code = pcc.run_pre_commit(Path('/tmp/repo'))
         self.assertEqual(code, 1)
         audit.assert_not_called()
         tests.assert_not_called()

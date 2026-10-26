@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
 from cell_features import is_feature_build  # noqa: E402
 from coverage import cell_of, touched_by_build  # noqa: E402
@@ -141,7 +141,9 @@ def main(argv=None) -> int:
     ap.add_argument('--at', required=True, help='x,z block column')
     ap.add_argument('--y', type=int, help='player block y (disambiguates overlapping features)')
     ap.add_argument('--json', action='store_true', help='machine-readable output')
+    add_world_arg(ap)
     a = ap.parse_args(argv)
+    activate_world_from_args(a)
     try:
         xs, zs = a.at.split(',')
         x, z = int(xs), int(zs)

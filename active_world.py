@@ -2,15 +2,16 @@
 
 Import this module from worldbuilder scripts and skills::
 
-    from active_world import WORLD_ROOT, load_world_config, load_world_frame
+    from active_world import set_world, world_root, load_world_config, load_world_frame
 
-Set env ``AI_WORLDBUILDER_WORLD_ROOT`` to the active world checkout. Exactly one
-world is active at a time. There is no silent default: unset refuses.
+Select a world with ``set_world(name)`` (CLI ``--world``) or ``set_world_root(path)``
+(tests / disposable checkouts). Exactly one world is active at a time. There is
+no silent default and no environment-variable fallback: call ``world_root()``
+before place memory is read, or it raises.
 """
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -18,37 +19,92 @@ import python_runtime
 
 python_runtime.ensure_python_runtime()
 
-WORLD_ENV = "AI_WORLDBUILDER_WORLD_ROOT"
-
-
-def _resolve_world_root() -> Path:
-    """Resolve the active world checkout from ``AI_WORLDBUILDER_WORLD_ROOT``.
-
-    @returns: absolute path to the world checkout
-    @raises RuntimeError: when the env var is unset or empty
-    """
-    raw = os.environ.get(WORLD_ENV)
-    if not raw or not str(raw).strip():
-        raise RuntimeError(
-            f"{WORLD_ENV} is unset. Set it to the active world checkout "
-            f"(e.g. export {WORLD_ENV}=$PWD/worlds/southampton-build)."
-        )
-    return Path(raw).expanduser().resolve()
-
-
-WORLD_ROOT: Path = _resolve_world_root()
-
 TOOL_ROOT: Path = Path(__file__).resolve().parent
+
+WORLD_ROOT: Path | None = None
+
+
+def list_world_names() -> list[str]:
+    """Return directory names under ``worlds/`` (sorted).
+
+    @returns: world directory basenames; empty when ``worlds/`` is missing
+    """
+    worlds = TOOL_ROOT / "worlds"
+    if not worlds.is_dir():
+        return []
+    return sorted(
+        p.name
+        for p in worlds.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+
+
+def set_world(name: str) -> Path:
+    """Select the active world by directory name under ``worlds/``.
+
+    @param name: world dirname (e.g. ``southampton-build``, ``bakeoff``); no ``..``
+    @returns: absolute path to the world checkout
+    @raises RuntimeError: when the name is invalid or the directory is missing
+    """
+    if not name or not str(name).strip():
+        raise RuntimeError(
+            "no world selected; pass --world <name> (a directory under worlds/)"
+        )
+    raw = str(name).strip()
+    if raw in (".", "..") or "/" in raw or "\\" in raw or ".." in Path(raw).parts:
+        raise RuntimeError(
+            f"invalid --world {name!r}; pass a directory name under worlds/"
+        )
+    path = (TOOL_ROOT / "worlds" / raw).resolve()
+    worlds_root = (TOOL_ROOT / "worlds").resolve()
+    if path.parent != worlds_root or not path.is_dir():
+        available = list_world_names()
+        hint = ", ".join(available) if available else "(none found)"
+        raise RuntimeError(
+            f"unknown --world {raw!r}; expected a directory under worlds/ "
+            f"(available: {hint})"
+        )
+    return set_world_root(path)
+
+
+def set_world_root(path: Path) -> Path:
+    """Select the active world by absolute checkout path (tests / disposable).
+
+    Not a CLI flag — use :func:`set_world` for ``--world <name>``.
+
+    @param path: existing world checkout directory
+    @returns: absolute resolved path
+    @raises RuntimeError: when the path is missing or not a directory
+    """
+    global WORLD_ROOT
+    root = Path(path).expanduser().resolve()
+    if not root.is_dir():
+        raise RuntimeError(f"world root is not a directory: {root}")
+    WORLD_ROOT = root
+    return root
+
+
+def world_root() -> Path:
+    """Return the active world checkout.
+
+    @returns: absolute path to the selected world
+    @raises RuntimeError: when no world has been selected yet
+    """
+    if WORLD_ROOT is None:
+        raise RuntimeError(
+            "no world selected; pass --world <name> (a directory under worlds/)"
+        )
+    return WORLD_ROOT
 
 
 def world_config_path() -> Path:
     """Path to the active world's identity config (gameworld id + runtime paths)."""
-    return WORLD_ROOT / "config" / "world.json"
+    return world_root() / "config" / "world.json"
 
 
 def world_frame_path() -> Path:
     """Path to the active world's frame (offsets, CRS, Y offset, bounds)."""
-    return WORLD_ROOT / "config" / "world-frame.json"
+    return world_root() / "config" / "world-frame.json"
 
 
 def load_world_config(*, reload: bool = False) -> dict[str, Any]:
@@ -61,9 +117,10 @@ def load_world_config(*, reload: bool = False) -> dict[str, Any]:
     """
     del reload
     path = world_config_path()
+    root = world_root()
     if not path.is_file():
         raise FileNotFoundError(
-            f"Active world config missing: {path} (WORLD_ROOT={WORLD_ROOT})"
+            f"Active world config missing: {path} (WORLD_ROOT={root})"
         )
     data = json.loads(path.read_text(encoding="utf-8"))
     gameworld_id = data.get("gameworld_id") or data.get("world_name")
@@ -85,9 +142,10 @@ def load_world_frame(*, reload: bool = False) -> dict[str, Any]:
     """
     del reload
     path = world_frame_path()
+    root = world_root()
     if not path.is_file():
         raise FileNotFoundError(
-            f"Active world frame missing: {path} (WORLD_ROOT={WORLD_ROOT})"
+            f"Active world frame missing: {path} (WORLD_ROOT={root})"
         )
     data = json.loads(path.read_text(encoding="utf-8"))
     if "offsets" not in data:

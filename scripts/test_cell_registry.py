@@ -17,9 +17,16 @@ from journal_testkit import FakePaced, JournalWorld, LiveApplyCase
 
 
 def run(*argv) -> tuple[int, str]:
+    """Invoke the registry CLI with a dummy ``--world`` (activation mocked).
+
+    The suite already selects a disposable world via ``unit_test_world``;
+    ``--root`` overrides the registry path. Activation is mocked so
+    ``set_world`` does not require a real ``worlds/<name>`` checkout.
+    """
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-        code = R.main(list(argv))
+        with mock.patch.object(R, 'activate_world_from_args'):
+            code = R.main(['--world', 'unit-test', *argv])
     return code, out.getvalue()
 
 

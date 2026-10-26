@@ -27,6 +27,7 @@ from script_env import (  # noqa: E402
     ROOT,
     TOOL_ROOT,
     resolve_provider_package,
+    world_bound,
 )
 
 from coverage import (  # noqa: E402
@@ -83,17 +84,18 @@ def load_place_sources(path: Path | None = None) -> dict:
     """
     if path is not None:
         return json.loads(path.read_text())
-    if SYSTEM_PROVIDERS.is_file() or LOCAL_PROVIDERS.is_file():
-        system = (
-            json.loads(SYSTEM_PROVIDERS.read_text())
-            if SYSTEM_PROVIDERS.is_file()
-            else {'providers': [], 'aliases': {}}
-        )
-        local = (
-            json.loads(LOCAL_PROVIDERS.read_text())
-            if LOCAL_PROVIDERS.is_file()
-            else {'providers': [], 'aliases': {}}
-        )
+    system = (
+        json.loads(SYSTEM_PROVIDERS.read_text())
+        if SYSTEM_PROVIDERS.is_file()
+        else {'providers': [], 'aliases': {}}
+    )
+    local: dict = {'providers': [], 'aliases': {}}
+    if world_bound():
+        if LOCAL_PROVIDERS.is_file():
+            local = json.loads(LOCAL_PROVIDERS.read_text())
+        elif PLACE_SOURCES.is_file() and not SYSTEM_PROVIDERS.is_file():
+            return json.loads(PLACE_SOURCES.read_text())
+    if SYSTEM_PROVIDERS.is_file() or (world_bound() and LOCAL_PROVIDERS.is_file()):
         aliases = {}
         aliases.update(system.get('aliases') or {})
         aliases.update(local.get('aliases') or {})
@@ -105,7 +107,7 @@ def load_place_sources(path: Path | None = None) -> dict:
             ),
             'aliases': aliases,
         }
-    if PLACE_SOURCES.is_file():
+    if world_bound() and PLACE_SOURCES.is_file():
         return json.loads(PLACE_SOURCES.read_text())
     raise FileNotFoundError(
         f'No provider catalogue at {SYSTEM_PROVIDERS}, {LOCAL_PROVIDERS}, '

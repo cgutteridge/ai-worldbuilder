@@ -69,7 +69,7 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn('bakeoff', msg)
         self.assertIn('SouthamptonAI', msg)
-        self.assertIn('AI_WORLDBUILDER_WORLD_ROOT', msg)
+        self.assertIn('--world', msg)
         self.assertNotIn('AI_WORLDBUILDER_REGION', msg)
 
     def test_allows_when_names_match_casefold(self):

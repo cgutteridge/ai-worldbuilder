@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
 """Regenerate site/BUILDS-INDEX.txt from the cell journal (latest entry of every build).
 
-  python3 scripts/site_index.py
+  python3 scripts/site_index.py --world southampton-build
 """
-from cell_registry import latest_entries, view_registry
-from site_kit import ROOT
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL))
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
+
+script_env.ensure_import_paths()
 
 
-def main():
-    """Write BUILDS-INDEX.txt and print it.
+def main() -> None:
+    """Write BUILDS-INDEX.txt and print it."""
+    script_env.prepend_world_activation()
+    from cell_registry import latest_entries, view_registry
+    from site_kit import ROOT
 
-    @returns: None
-    """
     rows = []
     for e in latest_entries(view_registry()):
         b = e.meta.get('structure') or {}
-        box = f"box {tuple(b['from'])}..{tuple(b['to'])}  backup {b['name']}" if b else 'no structure backup'
+        box = (
+            f"box {tuple(b['from'])}..{tuple(b['to'])}  backup {b['name']}"
+            if b
+            else 'no structure backup'
+        )
         mm = e.mismatches if e.status != 'begun' else '?'
         rows.append(
-            f"{e.ts:19}  {e.plan:24} cells {str(e.n):>6}  mismatches {mm:>3}  {e.status:10}  {box}"
+            f"{e.ts:19}  {e.plan:24} cells {str(e.n):>6}  mismatches {mm:>3}  "
+            f"{e.status:10}  {box}"
         )
     body = '\n'.join(rows) if rows else '(no builds yet)'
     text = (

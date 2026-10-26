@@ -17,13 +17,50 @@ Guard and readback reports land in verification/site/<name>-*.json.
 import json, math, time
 from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
+import script_env  # noqa: E402
 
-_CFG = json.loads((ROOT / 'config/world.json').read_text())
-REGION = Path(_CFG['region_path'])
-STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
-OUT = ROOT / 'verification/site'
+_CFG = None
+REGION = None
+STRUCTURE_NS = None
+OUT = None
 D = 'minecraft:overworld'
+
+
+def clear_world_config() -> None:
+    """Drop cached ``world.json`` fields so the next access reloads."""
+    global _CFG, REGION, STRUCTURE_NS, OUT
+    _CFG = None
+    REGION = None
+    STRUCTURE_NS = None
+    OUT = None
+
+
+def reload_world_config() -> None:
+    """Load ``REGION`` / ``STRUCTURE_NS`` / ``OUT`` from the active world.
+
+    @raises RuntimeError: when no world is selected
+    """
+    global _CFG, REGION, STRUCTURE_NS, OUT
+    if not script_env.world_bound():
+        raise RuntimeError(
+            'no world selected; pass --world <name> (a directory under worlds/)'
+        )
+    root = Path(script_env.ROOT)
+    _CFG = json.loads((root / 'config/world.json').read_text())
+    region_raw = _CFG.get('region_path')
+    REGION = Path(region_raw) if region_raw else (root / 'save' / 'region')
+    STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
+    OUT = root / 'verification/site'
+
+
+def _ensure_world_config() -> None:
+    """Reload world config when it has not been loaded yet."""
+    if _CFG is None:
+        reload_world_config()
+
+
+if script_env.world_bound():
+    reload_world_config()
 ATTACH = ('door', 'sign', 'torch', 'lantern', 'pane', 'bars', 'bed', 'button', 'lever',
           'trapdoor', 'end_rod', 'chain', 'carpet', 'rail', 'ladder', 'vine', 'banner',
           'flower_pot', 'potted', 'candle', 'rod', 'campfire', 'scaffolding', 'sapling')
@@ -322,7 +359,7 @@ def resolve_region(region=None) -> Path:
     """Region folder for World readback: explicit arg, else active world config.
 
     The save always comes from the active world's ``config/world.json``
-    (``AI_WORLDBUILDER_WORLD_ROOT``). Pass ``region`` only for tests or
+    (selected via ``--world``). Pass ``region`` only for tests or
     one-off probes against another folder.
 
     @param region: optional region directory (wins over config)
@@ -330,6 +367,7 @@ def resolve_region(region=None) -> Path:
     """
     if region is not None:
         return Path(region)
+    _ensure_world_config()
     return Path(REGION)
 
 
@@ -398,8 +436,8 @@ def ensure_region_matches_open_world(region=None) -> None:
         return
     raise SystemExit(
         f'refuse apply: World region targets {expected!r} but MCP is serving '
-        f'{reported!r}. Point AI_WORLDBUILDER_WORLD_ROOT at the world whose '
-        f'config/world.json matches the open save (or open the matching world).'
+        f'{reported!r}. Pass --world for the world whose config/world.json '
+        f'matches the open save (or open the matching world).'
     )
 
 
@@ -835,6 +873,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     from mc_paced import Paced
     import cell_registry
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
+    _ensure_world_config()
     pass_ = stage_pass(stage)
     OUT.mkdir(parents=True, exist_ok=True)
     lo, hi = plan.bounds()
@@ -1002,6 +1041,7 @@ def undo(target, *, strict=True, meta=None):
     @returns: Receipt
     @raises SystemExit: refused, nothing to undo, or readback mismatch
     """
+    _ensure_world_config()
     from mc_paced import Paced
     import cell_registry
     from cell_journal import CellJournalError, InFlight, Mismatch, Refused, Undo
