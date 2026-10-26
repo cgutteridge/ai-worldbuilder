@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 106,
-  "tasks": []
+  "nextTaskId": 107,
+  "tasks": [
+    {
+      "id": 106,
+      "title": "ground_layer: prefetch cell before surface probing (one paced MCP call per block is hours)",
+      "status": "in_progress",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "free_columns calls surface_y per column, each world.block() is a separate paced (1.1s) MCP scan, ~16.9k columns x up to 80 y. Dry run for cell 48,-44 stalled 12+ min. Prefetch the probe box (y 30..110) in x-strips via world.prefetch before probing."
+    }
+  ]
 }
