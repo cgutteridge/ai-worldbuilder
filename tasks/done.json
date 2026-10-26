@@ -879,6 +879,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Done 2026-10-26 (merged 0991e5e): optional roofs[].edge (absent=none; {block,where:outer|all}); shell_zoned/roof_flat; load_spec validation; rules updated; bakeoff SUSU left without edge. Ship-branch APPROVE (nits: where=all coverage, R-015 historical parapet removal). World follow-up: audit unevidenced edging on built buildings."
+    },
+    {
+      "id": 103,
+      "title": "Replace AI_WORLDBUILDER_WORLD_ROOT with required --world CLI",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26 (merged 136b8d9): required --world for place CLIs; env AI_WORLDBUILDER_WORLD_ROOT retired (contract note only); lazy site_kit/world_frame/mc_paced; bakeoff/shims wired. Ship-branch APPROVE (nits: DeferredWorldPath complexity, clear_world_caches swallow, coverage path, test stub world dir)."
     }
   ]
 }
