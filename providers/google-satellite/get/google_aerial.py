@@ -165,6 +165,10 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
                 tile = tile.resize((s, s), Image.Resampling.BILINEAR)
             im.paste(tile, ((x - tx0) * s, (y - ty0) * s))
 
+    # Semi-transparent grid/marks need an overlay + alpha_composite; Draw on RGBA
+    # alone overwrites and drops the aerial under the mark.
+    overlay = Image.new('RGBA', im.size, (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
     draw = ImageDraw.Draw(im)
     font = _font(11)
     x0, z0, x1, z1 = bbox
@@ -175,7 +179,7 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
     for i, ln in enumerate(lines):
         (ax, ay), (bx, by) = px[2 * i], px[2 * i + 1]
         col = (51, 255, 102, 140) if ln['axis'] == 'x' else (51, 204, 255, 140)
-        draw.line([(ax, ay), (bx, by)], fill=col, width=1)
+        odraw.line([(ax, ay), (bx, by)], fill=col, width=1)
         draw.text((ax + 2, ay + 1), f"{ln['axis']}{ln['value']}", fill=col[:3], font=font)
 
     if marks:
@@ -184,7 +188,7 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
         for i, (_x, _z, col) in enumerate(marks):
             q = cp[4 * i:4 * i + 4]
             r, g, b = _parse_rgb(col)
-            draw.polygon(q, fill=(r, g, b, 115))
+            odraw.polygon(q, fill=(r, g, b, 115))
 
     if outlines:
         flat = [p for o in outlines for p in o['ring']]
@@ -200,7 +204,7 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
 
     c = px[-4:]
     draw.polygon([c[0], c[1], c[2], c[3]], outline=(255, 51, 51, 255), width=2)
-    return im.convert('RGB')
+    return Image.alpha_composite(im, overlay).convert('RGB')
 
 
 def write_sheet(name: str, bbox: tuple[int, int, int, int], zoom: int, scale: float,

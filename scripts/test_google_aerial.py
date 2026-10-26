@@ -201,6 +201,20 @@ class MarkupSheetTest(unittest.TestCase):
             ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
         self.assertGreater(len(self.proj.all_points()), len(bare.all_points()))
 
+    def test_marks_are_translucent_over_tiles(self):
+        # Cell (40,40) maps to pixel ~512 under scale 2; stub tile there is (1,1,80).
+        # Magenta mark #ff00ff at alpha 115 must blend, not overwrite.
+        im = ga.sheet_image(
+            self.BBOX, self.ZOOM, scale=self.SCALE,
+            marks=[(40, 40, '#ff00ff')],
+        )
+        # Interior of the marked cell (away from polygon edges / grid).
+        px = im.getpixel((520, 520))
+        self.assertNotEqual(px, (255, 0, 255))
+        self.assertNotEqual(px, (1, 1, 80))
+        self.assertGreater(px[0], 80)
+        self.assertGreater(px[2], 80)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -68,18 +68,20 @@ def window_image(cx: int, cz: int, hx: int, hz: int, ppb: int,
     )
 
     out = crop.convert('RGBA')
+    overlay = Image.new('RGBA', out.size, (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
     draw = ImageDraw.Draw(out)
     font = _font(11)
     for v in range((x0 // 5 + 1) * 5, x1 + 1, 5):
         X = (v - x0) * ppb
-        draw.line([(X, 0), (X, h)], fill=(51, 255, 102, 150), width=1)
+        odraw.line([(X, 0), (X, h)], fill=(51, 255, 102, 150), width=1)
         draw.text((X + 2, 1), str(v), fill=(51, 255, 102), font=font)
     for v in range((z0 // 5 + 1) * 5, z1 + 1, 5):
         Y = (v - z0) * ppb
-        draw.line([(0, Y), (w, Y)], fill=(51, 204, 255, 150), width=1)
+        odraw.line([(0, Y), (w, Y)], fill=(51, 204, 255, 150), width=1)
         draw.text((2, Y - 12), str(v), fill=(51, 204, 255), font=font)
     draw_extra(draw, x0, z0, ppb)
-    return out.convert('RGB')
+    return Image.alpha_composite(out, overlay).convert('RGB')
 
 
 def outlines_draw(box: tuple[int, int, int, int]) -> Callable[[ImageDraw.ImageDraw, int, int, int], None]:
