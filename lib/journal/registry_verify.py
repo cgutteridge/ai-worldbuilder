@@ -181,6 +181,24 @@ def check_issue_notes(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
     return out
 
 
+def check_decision_records(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
+    """Warn for landed builds with no decision record (recording starts with the first record).
+
+    @param reg: registry view
+    @param root: world root
+    @returns: issues (warn only while the record format settles)
+    """
+    import decision_record as dr
+    decisions = dr.load_decisions(root)
+    evidence = dr.load_evidence(root)
+    out = [_issue(f'decision-record:{plan}', SEVERITY_WARN, f'landed build {plan} has no decision record')
+           for plan in dr.missing_records(reg.entries(), decisions)]
+    for el, rec in decisions.items():
+        for ref in {r for p in rec['phases'] for r in p['available']} - set(evidence):
+            out.append(_issue(f'decision-record:{el}:{ref}', SEVERITY_ERROR, f'{el} cites evidence {ref} with no record'))
+    return out
+
+
 def run_verify(
     *,
     root: Path | None = None,
@@ -201,6 +219,7 @@ def run_verify(
     issues += check_coverage_warnings(reg)
     issues += check_in_flight(reg)
     issues += check_issue_notes(reg, world)
+    issues += check_decision_records(reg, world)
     issues += check_leftover_progress_files(world)
     if check_world:
         issues += check_world_presence(reg, world)

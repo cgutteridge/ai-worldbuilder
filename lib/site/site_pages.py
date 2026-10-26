@@ -5,6 +5,10 @@ Writes site/pages/index.html and site/pages/cell-<tx>_<tz>.html. It never render
 images are linked in place from verification/site when a build or a person already made them. A cell page shows
 the registry layer table (plus any in-flight apply-journal keys), matching images, related issues and run-log blocks.
 
+Decision record (lib/site/decision_record.py): registry/decisions/<element>.json and registry/evidence/<id>.json become
+element-<id>.html (every phase: references available, consulted, decision) and evidence-<id>.html (who uses it). A cell page
+links its elements; one evidence record can be linked from several cells. decision_record.py calls regenerate() on every write.
+
   .venv/bin/python scripts/site_pages.py            # registry cells (+ not-started ring cells on the index)
   .venv/bin/python scripts/site_pages.py --no-gaps  # skip the slow authoritative cell_gaps check (about 20 s)
 
@@ -24,12 +28,14 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import site_status as ss  # noqa: E402
+import decision_record as dr  # noqa: E402
 from cellmath import CELL  # noqa: E402
 
 PAGES = ROOT / 'site/pages'
 MEDIA = ROOT / 'verification/site'
 ISSUES = ROOT / 'site/ISSUES.txt'
 MEDIA_MAP = PAGES / 'media-map.json'
+GAPS_CACHE = PAGES / '.gaps-cache.json'
 IMG = ('.png', '.jpg', '.jpeg', '.webp')
 RING_LIMIT = 3                         # cells beyond this ring are not listed as "not started"
 CAPTIONS = [
@@ -165,7 +171,7 @@ def page(title: str, body: str, depth_note: str = '') -> str:
             f'Nothing on this page was rendered for it.</p></main></body></html>')
 
 
-def cell_page(cell, sts, gaps, status, media, here, runlog) -> str:
+def cell_page(cell, sts, gaps, status, media, here, runlog, elements=()) -> str:
     out = PAGES
     rows = []
     for layer, keys in ss.LAYER_KEYS.items():
@@ -199,12 +205,59 @@ def cell_page(cell, sts, gaps, status, media, here, runlog) -> str:
             f'<p class="muted">Ring {ss.ring(cell)} · {bbox(cell)} · remaining per cell_gaps: {e(gap_text(gaps))}</p>'
             f'<p>{links}</p>'
             f'<h2>Layers</h2><table><tr><th>Layer</th><th>Status</th><th>When</th><th>Blocks</th><th>Mismatches</th></tr>{"".join(rows)}</table>'
+            f'<h2>Elements and decisions</h2>{elements_html(elements)}'
             f'<h2>Run log</h2>{log}'
             f'<h2>Images already made for this cell</h2>{gallery or "<p class=muted>No existing images match this cell.</p>"}'
             f'<h2>Related issues</h2>{iss}'
             f'<h2>Every stage record</h2><table><tr><th>When</th><th>Stage</th><th>Status</th><th>Blocks</th><th>Mismatches</th></tr>'
             f'{"".join(stage_rows)}</table>{notes}')
     return page(f'Cell {cell[0]},{cell[1]}', body)
+
+
+def elements_html(elements) -> str:
+    if not elements:
+        return '<p class="muted">No decision record for this cell yet (recording starts with the first record).</p>'
+    rows = ''.join(f'<tr><td><a href="element-{e(r["element"])}.html">{e(r["element"])}</a></td><td>{e(r["kind"])}</td>'
+                   f'<td>{len(r["phases"])}</td><td>{e(", ".join(dict.fromkeys(p["phase"] for p in r["phases"])))}</td></tr>'
+                   for r in sorted(elements, key=lambda r: (r['kind'], r['element'])))
+    return f'<table><tr><th>Element</th><th>Kind</th><th>Records</th><th>Phases</th></tr>{rows}</table>'
+
+
+def cell_links(cells) -> str:
+    return ', '.join(f'<a href="cell-{c[0]}_{c[1]}.html">{c[0]},{c[1]}</a>' for c in sorted(cells)) or 'none'
+
+
+def ref_link(ref: str, evidence: dict) -> str:
+    return f'<a href="evidence-{e(ref)}.html">{e(ref)}</a>' if ref in evidence else f'{e(ref)} <span class="badge b-bad">no record</span>'
+
+
+def element_page(rec: dict, evidence: dict) -> str:
+    blocks = ''
+    for ph in rec['phases']:
+        used = {c['ref']: c['used_for'] for c in ph['consulted']}
+        refs = ''.join(f'<li>{"<strong>consulted</strong>" if r in used else "<span class=muted>available, not used</span>"} '
+                       f'{ref_link(r, evidence)} <span class="muted">{e(evidence.get(r, {}).get("type", ""))}'
+                       f'{" · " + e(used[r]) if used.get(r) else ""}</span></li>' for r in ph['available'])
+        blocks += (f'<h2>{e(ph["phase"])}</h2><p class="muted">{e(ph["ts"])}{" · " + e(ph["owner"]) if ph["owner"] else ""}</p>'
+                   f'<p>{e(ph["decision"])}</p><ul>{refs}</ul>')
+    body = (f'<p class="crumbs"><a href="index.html">All cells</a></p><h1>{e(rec["element"])} <span class="badge">{e(rec["kind"])}</span></h1>'
+            f'<p class="muted">Cells: {cell_links(element_cells(rec))}</p>{blocks}')
+    return page(f'Element {rec["element"]}', body)
+
+
+def element_cells(rec: dict):
+    return dr.element_cells(rec)
+
+
+def evidence_page(ref: str, rec: dict, users: dict) -> str:
+    u = users.get(ref, {'elements': [], 'cells': []})
+    els = ', '.join(f'<a href="element-{e(x)}.html">{e(x)}</a>' for x in u['elements']) or 'none'
+    link = f'<a href="{e(rec["url"])}">{e(rec["url"])}</a>' if rec.get('url') else ''
+    body = (f'<p class="crumbs"><a href="index.html">All cells</a></p><h1>{e(rec["title"])}</h1>'
+            f'<p class="muted">{e(rec["type"])} · provider {e(rec["provider"])} · id <code>{e(ref)}</code></p>'
+            f'<p>{link}{" " if link and rec.get("path") else ""}{"<code>" + e(rec["path"]) + "</code>" if rec.get("path") else ""}</p>'
+            f'<p>{e(rec.get("note", ""))}</p><h2>Used by</h2><p>Elements: {els}</p><p>Cells: {cell_links(u["cells"])}</p>')
+    return page(f'Evidence {ref}', body)
 
 
 def ring_cells(limit: int = RING_LIMIT):
@@ -244,33 +297,57 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
     return page('Cells overview', body)
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--no-gaps', action='store_true')
-    a = ap.parse_args(argv)
+def regenerate(no_gaps: bool = False, cached_gaps: bool = False) -> int:
+    """Write every page. ``cached_gaps`` reuses the gaps of the last full run (fast; used after a record write).
+
+    @param no_gaps: skip the slow cell_gaps check and show "not checked"
+    @param cached_gaps: take gaps from site/pages/.gaps-cache.json instead of recomputing
+    """
     stages = ss.load_stages()
     here, extra = ss.marker_cell(), load_media_map()
     lock = ss.lock_line()
     lock_task = (ss.read_json(ss.LOCK) or {}).get('task', '')
     PAGES.mkdir(parents=True, exist_ok=True)
-    infos = {}
+    cache = (ss.read_json(GAPS_CACHE) or {}) if cached_gaps else {}
+    decisions, evidence = dr.load_decisions(), dr.load_evidence()
+    infos, fresh = {}, {}
     for cell, sts in sorted(stages.items()):
-        gaps = None
-        if not a.no_gaps:
+        gaps = cache.get(f'{cell[0]},{cell[1]}')
+        if not no_gaps and not cached_gaps:
             import site_handoff
             gaps = site_handoff.cell_gaps(cell)
+            fresh[f'{cell[0]},{cell[1]}'] = gaps
         media = find_media(cell, sts, extra=extra)
         status = classify(cell, sts, gaps, here, lock_task)
         previews = [f for g, f in media if f.name.endswith('_ground-preview.png')] or [f for _g, f in media if f.name.endswith('-preview.png')]
         infos[cell] = {'sts': sts, 'gaps': gaps, 'status': status, 'thumb': previews[-1] if previews else None, 'media': media}
         runlog = [b for b in ss.run_log_blocks() if re.search(rf'— cell {cell[0]},{cell[1]}\b', b.splitlines()[0])]
-        (PAGES / f'cell-{cell[0]}_{cell[1]}.html').write_text(cell_page(cell, sts, gaps, status, media, here, runlog))
+        (PAGES / f'cell-{cell[0]}_{cell[1]}.html').write_text(
+            cell_page(cell, sts, gaps, status, media, here, runlog, dr.cell_elements(cell, decisions)))
+    if fresh:
+        from atomic_json import write_json
+        write_json(GAPS_CACHE, json.loads(json.dumps(fresh, default=list)))
+    users = dr.evidence_users(decisions)
+    for el, rec in decisions.items():
+        (PAGES / f'element-{el}.html').write_text(element_page(rec, evidence))
+    for ref in users:
+        if ref in evidence:
+            (PAGES / f'evidence-{ref}.html').write_text(evidence_page(ref, evidence[ref], users))
     not_started = [c for c in ring_cells() if c not in stages and ss.ring(c) <= RING_LIMIT]
     (PAGES / 'index.html').write_text(index_page(infos, not_started, here, lock))
     counts = {s: sum(1 for i in infos.values() if i['status'] == s) for s in STATUS_ORDER[:4]}
     n_img = sum(len(i['media']) for i in infos.values())
-    print(f'wrote {PAGES / "index.html"} and {len(infos)} cell pages; {n_img} existing images linked, none created; {counts}; not started {len(not_started)}')
+    print(f'wrote {PAGES / "index.html"}, {len(infos)} cell pages, {len(decisions)} element pages, {len(users)} evidence pages; '
+          f'{n_img} existing images linked, none created; {counts}; not started {len(not_started)}')
     return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--no-gaps', action='store_true')
+    ap.add_argument('--cached-gaps', action='store_true', help='reuse gaps from the last full run')
+    a = ap.parse_args(argv)
+    return regenerate(no_gaps=a.no_gaps, cached_gaps=a.cached_gaps)
 
 
 if __name__ == '__main__':
