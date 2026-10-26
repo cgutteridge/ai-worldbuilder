@@ -637,6 +637,22 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn('pad=', line)
         self.assertIn('cover=', line)
 
+    def test_assign_roof_zones_drops_outline_cells_without_lidar_mass(self):
+        """#116: zoned readable mask keeps only cells with nDSM ≥ ZONE_LIDAR_MASS_M."""
+        outline = np.ones((4, 6), dtype=bool)
+        # DSM metres AOD; ground_y chosen so left half is bare (< mass_m) and right has mass.
+        dsm = np.full((4, 6), 50.0)
+        ground_y = np.full((4, 6), 48)  # nDSM ~2 m after y_to_metres_aod — below default 3 m
+        ground_y[:, 3:] = 40            # nDSM ~10 m — keep
+        zz, xx = np.mgrid[0:4, 0:6]
+        with mock.patch('world_frame.y_to_metres_aod', side_effect=lambda y: float(y)):
+            readable, zone, _levels, _axis = F.assign_roof_zones(
+                dsm, outline, [50], xx, zz, bucket=3, axis_deg=0.0, ground_y=ground_y,
+            )
+        self.assertFalse(readable[:, :3].any(), 'bare-ground half must be dropped')
+        self.assertTrue(readable[:, 3:].all(), 'mass half must remain')
+        self.assertEqual(int(readable.sum()), 4 * 3)
+
 
 class ZoneBuildTest(unittest.TestCase):
     """Seam: build() with injected zone grids places parapets and downhill walls."""

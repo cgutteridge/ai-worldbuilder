@@ -93,6 +93,11 @@ ZONE_FROM = frozenset({'lidar'})
 
 # ---- lidar roof zones (pure helpers; fixture grids in tests) --------------------
 
+# nDSM (DSM − DTM) at or above this (metres) counts as building mass for zoned
+# footprints. Bare ground inside the vector outline is dropped (#116).
+ZONE_LIDAR_MASS_M = 3.0
+
+
 def _win(a: np.ndarray, k: int, fn) -> np.ndarray:
     """Apply ``fn`` over a k×k sliding window with edge padding.
 
@@ -260,11 +265,16 @@ def assign_roof_zones(
     zs: np.ndarray,
     bucket: int = 4,
     axis_deg: float | str = 'auto',
+    ground_y: np.ndarray | None = None,
+    mass_m: float = ZONE_LIDAR_MASS_M,
 ) -> tuple[np.ndarray, np.ndarray, list, float]:
-    """Full zone pipeline: square → 5×5 median → snap → mode-filter → bucket.
+    """Full zone pipeline: square → lidar-mass intersect → 5×5 median → snap → mode → bucket.
 
     Arrays share the same 2-D indexing (row/col). ``xs``/``zs`` hold world block
-    coordinates for each cell (needed for rotated bucketing).
+    coordinates for each cell (needed for rotated bucketing). When ``ground_y`` is
+    set, readable cells also need nDSM (DSM − DTM) ≥ ``mass_m`` so bare ground
+    inside the vector outline is dropped (#116). ``exclude`` boxes stay a separate
+    override applied before this pipeline.
 
     @param dsm: DSM metres AOD
     @param outline: boolean vector-way footprint
@@ -273,9 +283,16 @@ def assign_roof_zones(
     @param zs: world z grid
     @param bucket: rotated-grid bucket size
     @param axis_deg: degrees or ``\"auto\"`` (PCA of readable cells)
+    @param ground_y: optional block-Y DTM grid (same shape as ``dsm``)
+    @param mass_m: nDSM threshold in metres (default ``ZONE_LIDAR_MASS_M``)
     @returns: ``(readable, zone, levels_used, axis_deg_used)``
     """
+    from world_frame import y_to_metres_aod
     readable = square_footprint(outline)
+    if ground_y is not None:
+        gy = np.asarray(ground_y)
+        ground_m = np.vectorize(y_to_metres_aod, otypes=[float])(gy.astype(int))
+        readable = readable & ((dsm.astype(float) - ground_m) >= mass_m)
     med = _win(dsm.astype(float), 5, np.median)
     if levels == 'auto':
         levels_used: list = auto_plateau_levels(med, readable)
@@ -780,6 +797,7 @@ class Build:
                 dsm, outline, cfg['levels'], xs, zs,
                 bucket=int(cfg.get('bucket', 4)),
                 axis_deg=cfg.get('axis_deg', 'auto'),
+                ground_y=ground,
             )
             self._zone_pad_lines.append(footprint_pad_line(outline, readable))
             new_cells = mask_to_cells(readable, x0, z0)
