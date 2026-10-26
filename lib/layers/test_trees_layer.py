@@ -83,6 +83,14 @@ class TestPlanCellKeepsRules(unittest.TestCase):
                 mock.patch.dict(sys.modules, {'osm_footprints': osm}):
             return tl.plan_cell(CELL, plan, FakeWorld())[1]
 
+    def test_plan_warms_the_cell_and_overhang_margin_before_probing(self):
+        warmed = []
+        with mock.patch.object(tl, 'warm_surface_probe', lambda w, *box: warmed.append(box)):
+            self.run_plan((10, 30), (60, 80))
+        x0, z0 = CELL[0] * 128, CELL[1] * 128
+        m = tl.CROWN_MARGIN
+        self.assertEqual(warmed, [(x0 - m, z0 - m, x0 + 127 + m, z0 + 127 + m)])
+
     def test_footprint_and_hard_surface_columns_are_not_rooted(self):
         x0 = CELL[0] * 128
         rep = self.run_plan((10, 30), (60, 80))
