@@ -273,6 +273,15 @@ class MoveFromLandedTest(_Root):
             L.verdict(self.root, src['id'], all_fixed=True)
 
 
+class WontfixMoveTest(_Root):
+    def test_splitting_a_snag_off_a_wontfix_issue_keeps_it_wontfix(self):
+        issue, _ = self.snag()
+        self.snag(issue['id'], words='grey road')
+        L.set_wontfix(self.root, issue['id'], 'not worth it')
+        L.move_snag(self.root, 'S-001', to_issue=None, new_title='Plaza')
+        self.assertEqual(L.load(self.root)['issues'][0]['status'], 'wontfix')
+
+
 class MatchTest(_Root):
     def test_same_element_and_wording_ranks_first_and_closed_issues_are_included(self):
         a, _ = self.snag(title='Ground ignores plazas', words='brick plaza shown as grass')

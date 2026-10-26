@@ -169,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
             rep = L.rebuild_report(root, L.find_issue(L.load(root), args.issue))
             for label, st in rep['elements']:
                 print(f'  {label}: {st}')
+            if rep['uncovered']:
+                print('  also needs a fix covering: ' + ', '.join(rep['uncovered']))
             print('  (the issue becomes fix-landed once every element above is redesigned)')
         elif args.cmd == 'sync':
             moved = L.sync(root)

@@ -575,7 +575,7 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
     for it in src['fixes']:
         it['checks'].pop(snag_id, None)
     src['fixes'] = [f for f in src['fixes'] if f['checks']]
-    if src['status'] != 'open' and (not src['fixes'] or not any(
+    if src['status'] == 'fix-landed' and (not src['fixes'] or not any(
             x['id'] in src['fixes'][-1]['checks'] for x in src['snags'])):
         _reopen(src)                    # no fix covers what is left: it needs a new one
     _touch(src, 'snag-moved-out', f'{snag_id} -> {dest["id"]}')
