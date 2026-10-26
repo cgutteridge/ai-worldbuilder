@@ -154,7 +154,9 @@ def main(argv=None) -> int:
                     help='with --grid: only list columns with |live-lidar| >= N (default 0 = all)')
     ap.add_argument('--tol', type=int, default=1)
     ap.add_argument('--json', action='store_true')
+    script_env.add_world_arg(ap)
     a = ap.parse_args(argv)
+    script_env.activate_world_from_args(a)
     if not a.cell and not a.grid:
         ap.error('--cell or --grid is required')
     from site_kit import World

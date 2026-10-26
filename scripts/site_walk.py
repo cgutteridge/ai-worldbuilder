@@ -8,12 +8,13 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Run the library module as ``__main__``."""
+    """Activate ``--world`` then run the library module as ``__main__``."""
     tool = Path(__file__).resolve().parent.parent
     if str(tool) not in sys.path:
         sys.path.insert(0, str(tool))
-    import script_env  # noqa: F401 — bootstrap lib/* onto path
+    import script_env
 
+    script_env.prepend_world_activation()
     runpy.run_path(
         str(tool / "lib" / "site" / "site_walk.py"),
         run_name="__main__",

@@ -45,7 +45,6 @@ from typing import TextIO
 import pre_commit_checks as pcc
 from unit_test_world import unit_test_world
 
-WORLD_ENV = 'AI_WORLDBUILDER_WORLD_ROOT'
 PARENT_HOLDS_LOCK_ENV = 'AI_WORLDBUILDER_FULL_SUITE_LOCK_HELD'
 FULL_SUITE_LOCK_NAME = 'ai-worldbuilder-full-suite.lock'
 EXIT_LOCKED = 2
@@ -348,8 +347,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     shims = root / 'shims'
     lib_dirs = lib_test_dirs(root)
     # Put lib/* ahead of scripts/ so bare imports hit libraries, not CLI wrappers.
-    # Do NOT import script_env here: it binds WORLD_ROOT from the process env and
-    # would pin site_kit before unit_test_world() can select a disposable checkout.
+    # Do NOT import script_env / site_kit here: unit_test_world() selects the
+    # disposable checkout first, then the suite imports world-aware modules.
     for path in (scripts, shims, *reversed(lib_dirs), bakeoff):
         if path.is_dir():
             _ensure_on_path(path)

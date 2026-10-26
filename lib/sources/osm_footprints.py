@@ -39,12 +39,32 @@ import numpy as np
 from script_env import ROOT  # noqa: E402
 from vector_map_clips import vector_map_clip_root  # noqa: E402
 
-# Resolved at import: prefers reference/vector_map, else the legacy clip folder.
-try:
-    VECTOR_MAP_CLIPS = vector_map_clip_root()
-except FileNotFoundError:
-    VECTOR_MAP_CLIPS = ROOT / 'reference' / 'vector_map'
+# Deferred until a world is selected (``ROOT`` is a deferred path). Prefer
+# ``vector_map_clip_root()`` (legacy folder fallback) on first attribute access.
 CACHE = ROOT / 'verification/site/osm27700'
+_VECTOR_MAP_CLIPS = None
+
+
+def _resolve_vector_map_clips():
+    """Resolve clip root once a world is selected.
+
+    @returns: path to ``reference/vector_map`` (or legacy equivalent)
+    """
+    global _VECTOR_MAP_CLIPS
+    if _VECTOR_MAP_CLIPS is not None:
+        return _VECTOR_MAP_CLIPS
+    try:
+        _VECTOR_MAP_CLIPS = vector_map_clip_root()
+    except (FileNotFoundError, RuntimeError):
+        _VECTOR_MAP_CLIPS = ROOT / 'reference' / 'vector_map'
+    return _VECTOR_MAP_CLIPS
+
+
+def __getattr__(name: str):
+    """Lazy ``VECTOR_MAP_CLIPS`` after ``--world`` / ``set_world_root``."""
+    if name == 'VECTOR_MAP_CLIPS':
+        return _resolve_vector_map_clips()
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 # Blocks that may legitimately stand outside a building footprint and rise above
 # the ground: garden walls/fences/hedges, trees, street furniture.
@@ -97,7 +117,7 @@ class OSMIndex:
     """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 
     def __init__(self, root: Path | None = None):
-        root = root or VECTOR_MAP_CLIPS
+        root = root or _resolve_vector_map_clips()
         from world_frame import osgb_to_mc
         mc = lambda c: osgb_to_mc(c[0], c[1])
         self.buildings = []   # (rings[[(x,z)...]], props)

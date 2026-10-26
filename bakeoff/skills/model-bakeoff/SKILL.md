@@ -9,17 +9,17 @@ description: >-
 Every sitting names designer + builder (`open --model <builder> [--designer …]`).
 Defaults from `config/build-roles.json` when `--designer` is omitted (see
 `rules/build-roles.md`). Different ids → hybrid sitting; same id → one session.
-Records under `bakeoff/`. CLI: `python3 bakeoff/model_bakeoff.py`.
+Records under `bakeoff/`. CLI: `python3 bakeoff/model_bakeoff.py --world bakeoff`.
 
 ## Active world
 
 Bake-offs use `worlds/bakeoff/` (Minecraft save `bakeoff`). Agent shells do not keep
 exports between calls, so **prefix every** bake-off command with
-`AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff` (not a one-off `export`). Example:
+`--world bakeoff` on every bake-off command. Example:
 
 ```bash
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py status
-AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py open --tool cursor --model composer
+python3 bakeoff/model_bakeoff.py --world bakeoff status
+python3 bakeoff/model_bakeoff.py --world bakeoff open --tool cursor --model composer
 ```
 
 `open` and `repair` refuse if the active world is not `bakeoff`.
@@ -34,7 +34,7 @@ symlink or cross-world read.
 ## Before acting
 
 1. Read `bakeoff/PROTOCOL.md` and the pack brief + `bakeoff/packs/v1/FAIRNESS.md`.
-2. Prefix as above, then `python3 bakeoff/model_bakeoff.py status` (or `show R-NNN`).
+2. Prefix as above, then `python3 bakeoff/model_bakeoff.py --world bakeoff status` (or `show R-NNN`).
 
 ## Sitting sequence
 

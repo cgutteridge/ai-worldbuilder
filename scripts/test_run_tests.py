@@ -138,9 +138,9 @@ class WorldIsolationTest(unittest.TestCase):
             for world in (None, str(selected)):
                 with self.subTest(world=world):
                     env = dict(os.environ)
-                    env.pop(run_tests.WORLD_ENV, None)
-                    if world is not None:
-                        env[run_tests.WORLD_ENV] = world
+                    # Runner always uses unit_test_world(); any prior world
+                    # selection in the parent env must not touch ``selected``.
+                    env.pop('AI_WORLDBUILDER_REGISTRY_ROOT', None)
                     env['AI_WORLDBUILDER_REGISTRY_ROOT'] = str(selected)
                     result = subprocess.run(
                         [sys.executable, str(runner), '--only', 'test_cellmath'],
@@ -191,8 +191,7 @@ class FullSuiteLockTest(unittest.TestCase):
                     pass  # must not raise
 
     def test_only_mode_does_not_take_lock(self) -> None:
-        env = {**os.environ, run_tests.WORLD_ENV: '/tmp/fake-world'}
-        with mock.patch.dict(os.environ, env, clear=True):
+        with mock.patch.dict(os.environ, dict(os.environ), clear=True):
             with mock.patch.object(run_tests, 'full_suite_lock') as lock_cm:
                 with mock.patch.object(
                     run_tests,
@@ -211,8 +210,7 @@ class FullSuiteLockTest(unittest.TestCase):
         lock_cm.assert_not_called()
 
     def test_full_run_uses_lock_and_exits_2_when_busy(self) -> None:
-        env = {**os.environ, run_tests.WORLD_ENV: '/tmp/fake-world'}
-        with mock.patch.dict(os.environ, env, clear=True):
+        with mock.patch.dict(os.environ, dict(os.environ), clear=True):
             with mock.patch.object(
                 run_tests,
                 'full_suite_lock',

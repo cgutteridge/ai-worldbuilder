@@ -47,7 +47,7 @@ from atomic_json import write_json  # noqa: E402
 
 DEFAULT_BAKEOFFS = ROOT / 'bakeoff'
 # Prefix every bake-off CLI call (agent shells do not keep a one-off export).
-BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
+BAKEOFF_WORLD_FLAG = '--world bakeoff'
 
 TIERS = ('low', 'mid', 'high')
 GRADE_RANK = {'fail': 0, 'pass': 1, 'great': 2}
@@ -359,13 +359,13 @@ def require_bakeoff_active_world(root: Path) -> None:
     if not expected:
         raise RuntimeError(
             'bakeoff/config.json missing "world" '
-            f'(expected bakeoff); prefix every command with {BAKEOFF_WORLD_PREFIX}'
+            f'(expected bakeoff); pass {BAKEOFF_WORLD_FLAG}'
         )
     actual = active_world.gameworld_id()
     if actual != expected:
         raise RuntimeError(
             f'bake-off open/repair/baseline/capture requires world {expected!r} '
-            f'(active is {actual!r}); prefix every command with {BAKEOFF_WORLD_PREFIX}'
+            f'(active is {actual!r}); pass {BAKEOFF_WORLD_FLAG}'
         )
 
 
@@ -2613,6 +2613,8 @@ def main(argv: list[str] | None = None) -> int:
     @returns: exit code
     """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--world', required=True, metavar='NAME',
+                    help='world directory under worlds/ (bake-off expects bakeoff)')
     ap.add_argument('--root', type=Path, default=None, help='override bakeoff/ path')
     sub = ap.add_subparsers(dest='cmd', required=True)
 
@@ -2798,6 +2800,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = ap.parse_args(argv)
+    from script_env import activate_world_from_args
+    activate_world_from_args(args)
     root = bakeoffs_root(args.root)
 
     try:

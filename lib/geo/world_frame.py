@@ -49,11 +49,56 @@ from pathlib import Path
 from pyproj import Transformer, datadir
 from pyproj.transformer import TransformerGroup
 
-from script_env import ROOT  # noqa: E402
+import script_env  # noqa: E402
 import cellmath  # noqa: E402
 
-FRAME_PATH = ROOT / 'config' / 'world-frame.json'
-LEGACY_OFFSETS = ROOT / 'config' / 'map-maker-offsets.json'
+_FRAME: 'WorldFrame | None' = None
+
+
+def _require_root() -> Path:
+    """Return the bound world root or raise.
+
+    @returns: active world checkout
+    @raises RuntimeError: when no world is selected
+    """
+    if not script_env.world_bound():
+        raise RuntimeError(
+            'no world selected; pass --world <name> (a directory under worlds/)'
+        )
+    return Path(script_env.ROOT)
+
+
+def frame_path() -> Path:
+    """Path to ``config/world-frame.json`` in the active world.
+
+    @returns: absolute path
+    """
+    return _require_root() / 'config' / 'world-frame.json'
+
+
+def legacy_offsets_path() -> Path:
+    """Path to legacy ``config/map-maker-offsets.json`` in the active world.
+
+    @returns: absolute path
+    """
+    return _require_root() / 'config' / 'map-maker-offsets.json'
+
+
+def clear_frame_cache() -> None:
+    """Drop the cached :class:`WorldFrame` (call after switching world)."""
+    global _FRAME
+    _FRAME = None
+
+
+def __getattr__(name: str):
+    """Lazy ``FRAME_PATH`` / ``LEGACY_OFFSETS`` / ``ROOT`` for callers and CLIs."""
+    if name == 'FRAME_PATH':
+        return frame_path()
+    if name == 'LEGACY_OFFSETS':
+        return legacy_offsets_path()
+    if name == 'ROOT':
+        return _require_root()
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
 @dataclass(frozen=True)
@@ -101,9 +146,6 @@ class WorldFrame:
         return dict(self.data.get('anchor') or {})
 
 
-_FRAME: WorldFrame | None = None
-
-
 def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     """Load and cache the world-frame config.
 
@@ -114,9 +156,10 @@ def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     global _FRAME
     if _FRAME is not None and not reload and path is None:
         return _FRAME
-    p = path or FRAME_PATH
-    if not p.exists() and LEGACY_OFFSETS.exists():
-        frame = WorldFrame(_legacy_to_frame(json.loads(LEGACY_OFFSETS.read_text())))
+    p = path or frame_path()
+    legacy = legacy_offsets_path()
+    if not p.exists() and legacy.exists():
+        frame = WorldFrame(_legacy_to_frame(json.loads(legacy.read_text())))
     else:
         data = json.loads(p.read_text())
         for key in ('offsets', 'bounds_mc'):
@@ -949,8 +992,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == 'info':
         f = f or load_frame()
+        fp = frame_path()
+        root = _require_root()
         print(json.dumps({
-            'path': str(FRAME_PATH.relative_to(ROOT)) if FRAME_PATH.exists() else None,
+            'path': str(fp.relative_to(root)) if fp.exists() else None,
             'place': f.data.get('place'),
             'crs': f.crs,
             'anchor': f.anchor,

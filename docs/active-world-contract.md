@@ -6,7 +6,7 @@
 
 | Path | Role |
 | --- | --- |
-| `active_world.py` | Importable pointer. Sets `WORLD_ROOT` from env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default). |
+| `active_world.py` | Importable pointer. `set_world(name)` / `set_world_root(path)` select the checkout; `world_root()` raises until selected. Env `AI_WORLDBUILDER_WORLD_ROOT` is **retired** (no fallback). |
 | `TOOL_ROOT` | This checkout (`lib/`, `scripts/`, skills, system providers, system tracker). |
 | `config/system-providers.json` | Nationwide+ reference feeds. |
 | `providers/<id>/` | System provider fetch/review/manage code (`package` field on catalogue rows). |
@@ -35,9 +35,11 @@ Offsets live only in the world frame. The system config does not duplicate them;
 
 ## Switch active world
 
-1. Set `AI_WORLDBUILDER_WORLD_ROOT` to the other world checkout under `worlds/` (e.g. `export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff`).
-2. Confirm: `python -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT, gameworld_id())"`.
+1. Pass `--world <dirname>` for the other checkout under `worlds/` (e.g. `--world bakeoff`).
+2. Confirm: `python3 -c "from active_world import set_world, gameworld_id; print(set_world('bakeoff'), gameworld_id())"`.
 
 The bake-off **framework** (CLI, rounds, skill) lives under tool-repo `bakeoff/`;
 the bake-off **world checkout** stays at `worlds/bakeoff/` and is selected via
-`AI_WORLDBUILDER_WORLD_ROOT` like any other world.
+`--world bakeoff` like any other world.
+
+Retired: the environment variable `AI_WORLDBUILDER_WORLD_ROOT` is no longer read.

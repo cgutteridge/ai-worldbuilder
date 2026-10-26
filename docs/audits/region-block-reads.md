@@ -7,7 +7,7 @@ and docs only. No live MCP call was made and no Minecraft save was touched.
 ## 1. Inventory
 
 Targets: **live** = the active world's save (`config/world.json` `region_path` under
-`AI_WORLDBUILDER_WORLD_ROOT`); **pristine** = `pristine_region_path`
+`--world`); **pristine** = `pristine_region_path`
 (untouched vendor import); **snapshot** = `backups/regions/<stamp>-<name>/`; **bakeoff** = the
 bake-off save (`ghost_region_path`, or a separate world checkout with its own `world.json`).
 Fates: stays / MCP (replace via the seam) / T38 (deleted by task 38, pristine baseline) /
@@ -185,7 +185,7 @@ Shared contract suite parametrised over `MemoryBlocks` and `LiveBlocks(fixture_r
 
 Server: `minecraft_world` MOTD `cgutteridge - Bakeoff`, mod 1.1.0, paced at **60 requests/minute**
 (`mc_paced.Paced` default interval 1.1 s). Region identity checked with
-`AI_WORLDBUILDER_WORLD_ROOT` pointing at the bakeoff world checkout (its `config/world.json`
+`--world bakeoff` selecting the bakeoff world checkout (its `config/world.json`
 `region_path`).
 
 ### Tools (schemas from `python3 scripts/mcp.py tools/list`)
@@ -228,7 +228,7 @@ sparse/palette output still make full-cell planner reads expensive over MCP.
 
 ### Live parity: `.mca` vs `LiveBlocks` (task #56, 2026-10-23, bakeoff)
 
-Server/MOTD as above; `AI_WORLDBUILDER_WORLD_ROOT` → bakeoff checkout. Compared
+Server/MOTD as above; `--world bakeoff` → bakeoff checkout. Compared
 `site_kit.World(region).block` vs `LiveBlocks.from_world_config().read` (MCP
 `block_scan_region` with `dimension` + `box`, same path as `LiveBlocks._scan_box`).
 

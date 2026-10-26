@@ -4,7 +4,7 @@ Reusable AI tool for building and refining Minecraft worlds from real-place evid
 
 Licence: [MIT](LICENSE).
 
-One checkout can address many world repos under gitignored `worlds/`; exactly one world is **active**, selected by env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default).
+One checkout can address many world repos under gitignored `worlds/`; exactly one world is **active**, selected by required CLI `--world <dirname>` (no silent default).
 
 System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
 
@@ -22,7 +22,7 @@ Point conversion (WGS84 ↔ OSGB and other EPSG pairs) uses in-process **pyproj*
 ## Active world
 
 ```bash
-export AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/southampton-build
+python3 scripts/cell_registry.py --world southampton-build status
 python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT); print(gameworld_id())"
 python3 scripts/world_frame.py info
 ```

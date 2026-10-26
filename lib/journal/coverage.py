@@ -60,14 +60,13 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 from osm_footprints import OSMIndex, _addr, _seg_dist, grow_plots, osm_tags  # noqa: E402
-from site_kit import OUT  # noqa: E402
 
 from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
 MARGIN = 48           # grid margin round the area's cells; > REACH so edge properties stay whole
 SLIVER = 5            # residual components this small join a neighbour (ParcelBuilder.residual)
 AREAS_FILE = ROOT / 'config/coverage-areas.json'
-STORE = OUT / 'coverage'
+STORE = ROOT / 'verification/site/coverage'
 SIGNOFFS = ROOT / 'site/COVERAGE-SIGNOFFS.jsonl'
 HOLDS = ROOT / 'site/CELL-HOLDS.jsonl'
 COVERAGE_TXT = ROOT / 'site/COVERAGE.txt'

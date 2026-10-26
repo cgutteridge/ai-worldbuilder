@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from script_env import ROOT, make_parser  # noqa: E402
+from script_env import ROOT, make_parser, add_world_arg, activate_world_from_args  # noqa: E402
 
 from block_store import BlockStoreError  # noqa: E402
 from cell_journal import CellJournalError, CellRegistry, CellView, Note  # noqa: E402
@@ -345,8 +345,9 @@ def main(argv: list[str] | None = None) -> int:
     @returns: exit code
     """
     ap = make_parser(__doc__)
+    add_world_arg(ap)
     ap.add_argument('--root', type=Path, default=None,
-                    help='world root (default: active world)')
+                    help='registry root override (default: active world)')
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     p = sub.add_parser('status', help='print registry summary or one cell')
@@ -400,6 +401,7 @@ def main(argv: list[str] | None = None) -> int:
                    help='re-commit recorded plans over MCP (needs the lock and the region gate); block cells only')
 
     args = ap.parse_args(argv)
+    activate_world_from_args(args)
     if args.cmd == 'reconcile':
         try:
             return run_reconcile(args.root, args.cells, args.fix)

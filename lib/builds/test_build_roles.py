@@ -107,13 +107,45 @@ class TestResolveRoles(unittest.TestCase):
         self.assertIn('Same model', BR.format_roles_block(same))
 
 
+def _stub_world(name: str) -> Path:
+    """Create a minimal ``worlds/<name>`` checkout for CLI subprocess tests.
+
+    @param name: directory name under ``worlds/``
+    @returns: path to the stub world
+    """
+    world = TOOL_ROOT / 'worlds' / name
+    config = world / 'config'
+    config.mkdir(parents=True, exist_ok=True)
+    (config / 'world.json').write_text(
+        json.dumps({'gameworld_id': name, 'region_path': str(world / 'region')}),
+        encoding='utf-8',
+    )
+    (config / 'world-frame.json').write_text(
+        json.dumps({
+            'offsets': {'easting': 0, 'northing': 0},
+            'bounds_mc': {'west': 0, 'east': 1, 'north': 0, 'south': -1},
+        }),
+        encoding='utf-8',
+    )
+    return world
+
+
 class TestBuildRolesCli(unittest.TestCase):
     def test_show_and_resolve_json(self):
+        import shutil
+
         script = TOOL_ROOT / 'scripts' / 'build_roles.py'
+        world_name = '_build_roles_cli'
+        world = _stub_world(world_name)
+        self.addCleanup(lambda: shutil.rmtree(world, ignore_errors=True))
         with tempfile.TemporaryDirectory() as d:
             path = _write_cfg(Path(d) / 'roles.json')
             show = subprocess.run(
-                [sys.executable, str(script), '--config', str(path), 'show'],
+                [
+                    sys.executable, str(script),
+                    '--world', world_name,
+                    '--config', str(path), 'show',
+                ],
                 cwd=str(TOOL_ROOT),
                 capture_output=True,
                 text=True,
@@ -126,6 +158,7 @@ class TestBuildRolesCli(unittest.TestCase):
                 [
                     sys.executable,
                     str(script),
+                    '--world', world_name,
                     '--config',
                     str(path),
                     'resolve',

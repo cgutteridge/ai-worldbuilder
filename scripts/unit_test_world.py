@@ -11,6 +11,10 @@ from pathlib import Path
 from types import ModuleType
 from unittest import mock
 
+_TOOL_ROOT = Path(__file__).resolve().parent.parent
+if str(_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_TOOL_ROOT))
+
 
 @contextmanager
 def unit_test_world() -> Iterator[Path]:
@@ -18,6 +22,7 @@ def unit_test_world() -> Iterator[Path]:
 
     Coordinates are fixed test inputs, shared by the geometry regression cases.
     The save, registry and evidence directories all live under the temporary root.
+    Uses :func:`active_world.set_world_root` (not an environment variable).
 
     @returns: temporary test-world directory, removed on exit
     """
@@ -57,7 +62,6 @@ def unit_test_world() -> Iterator[Path]:
             providers[name] = module
         providers['portals'].DOOR_REACH = 5
         with mock.patch.dict(sys.modules, providers), mock.patch.dict(os.environ, {
-            'AI_WORLDBUILDER_WORLD_ROOT': str(root),
             'AI_WORLDBUILDER_REGISTRY_ROOT': str(root),
         }):
             # Hook variables override cwd for git init/rev-parse in temporary
@@ -67,4 +71,15 @@ def unit_test_world() -> Iterator[Path]:
                 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
             ):
                 os.environ.pop(key, None)
-            yield root
+            import active_world
+            import script_env
+
+            previous_root = active_world.WORLD_ROOT
+            active_world.set_world_root(root)
+            script_env.bind_world()
+            script_env.clear_world_caches()
+            try:
+                yield root
+            finally:
+                active_world.WORLD_ROOT = previous_root
+                script_env.clear_world_caches()

@@ -25,7 +25,7 @@ import sys
 import time
 from pathlib import Path
 
-from script_env import ROOT, TOOL_ROOT  # noqa: E402
+from script_env import ROOT, TOOL_ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
 SITE = ROOT / 'site'
 REGISTRY = ROOT / 'registry'
@@ -325,7 +325,9 @@ def main(argv: list[str] | None = None) -> int:
                     help='required for live reset: confirm the Minecraft save is closed')
     ap.add_argument('--force', action='store_true',
                     help='legacy alias for --confirm-logged-out (still refuses if session.lock/MCP up)')
+    add_world_arg(ap)
     args = ap.parse_args(argv)
+    activate_world_from_args(args)
     report = run_reset(
         dry_run=args.dry_run,
         archive_site=args.archive_site,

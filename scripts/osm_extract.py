@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Run the canonical shim under ``shims/``."""
+    """Run the canonical shim under ``shims/`` (shim parses ``--world``)."""
     tool = Path(__file__).resolve().parent.parent
     shims = tool / "shims"
     sys.path.insert(0, str(shims))

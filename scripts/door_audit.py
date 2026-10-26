@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Audit every door the builds placed against the live world: a door needs a jamb each side and a lintel.
 
-  .venv/bin/python scripts/door_audit.py            # counts per build, first example each
-  .venv/bin/python scripts/door_audit.py --list     # every unframed door x,y,z
+  .venv/bin/python scripts/door_audit.py --world southampton-build
+  .venv/bin/python scripts/door_audit.py --world southampton-build --list
 
 The apply guard (site_kit.door_frame_issues) stops new ones; this finds the old ones. Fix per build by re-planning
 the doors or adding the missing jambs as a small plan (modifies=<build>), not by hand.
@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import script_env  # noqa: E402
+
 from cell_registry import latest_cells  # noqa: E402
 from site_kit import World  # noqa: E402
 
@@ -40,6 +42,11 @@ def audit():
 
 
 def main():
+    """Run the door-frame audit against the active world.
+
+    @returns: process exit code
+    """
+    script_env.prepend_world_activation()
     n, bad = audit()
     print(f'{n} doors in the world, {sum(len(v) for v in bad.values())} not framed')
     for b, v in sorted(bad.items(), key=lambda kv: -len(kv[1])):

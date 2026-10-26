@@ -14,7 +14,7 @@ from unittest import mock
 import model_bakeoff as MB
 
 TOOL_ROOT = Path(__file__).resolve().parent.parent
-BAKEOFF_WORLD_PREFIX = 'AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff'
+BAKEOFF_WORLD_FLAG = '--world bakeoff'
 
 
 SEED_CAPTURE = {
@@ -43,7 +43,7 @@ SEED_SITTING_STEPS = [
     'Confirm the world is open (MCP up) — ghost may look sparse/empty around the cell',
     (
         'Reset the 3×3 ghost baseline: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py baseline {{id}}` '
+        f'`python3 bakeoff/model_bakeoff.py --world bakeoff baseline {{id}}` '
         '(undoes prior feature builds, lidar_ghost apply --force, reconcile)'
     ),
     'Claim site lock; build with that tool/model only',
@@ -53,7 +53,7 @@ SEED_SITTING_STEPS = [
     'Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)',
     (
         'Apply, then capture fixed cameras: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py capture {{id}}`; '
+        f'`python3 bakeoff/model_bakeoff.py --world bakeoff capture {{id}}`; '
         'release lock'
     ),
     'Interview + score; then usage paste (need-you if counts unknown)',
@@ -63,13 +63,13 @@ SEED_SITTING_STEPS_HYBRID = [
     'One apply owner: builder ({model}); designer ({designer}) writes hand-off only',
     (
         'Reset baseline: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py baseline {{id}}`'
+        f'`python3 bakeoff/model_bakeoff.py --world bakeoff baseline {{id}}`'
     ),
     'Designer ({designer}): write evidence + hand-off; do not apply',
     'Builder ({model}): apply from hand-off only',
     (
         'Capture: '
-        f'`{BAKEOFF_WORLD_PREFIX} python3 bakeoff/model_bakeoff.py capture {{id}}`'
+        f'`python3 bakeoff/model_bakeoff.py --world bakeoff capture {{id}}`'
     ),
     'Interview + score; usage transcript splits designer/builder',
 ]
@@ -235,8 +235,8 @@ class TestModelBakeoff(unittest.TestCase):
             self.assertIn('usage', round_)
             self.assertIsNone(round_['usage']['total_tokens'])
             checklist = '\n'.join(round_['sitting']['checklist'])
-            self.assertIn('model_bakeoff.py baseline R-001', checklist)
-            self.assertIn('model_bakeoff.py capture R-001', checklist)
+            self.assertIn('model_bakeoff.py --world bakeoff baseline R-001', checklist)
+            self.assertIn('model_bakeoff.py --world bakeoff capture R-001', checklist)
             # baseline replaced restore-ghost; config.json is not in stale_terms scan
             self.assertNotIn('restore-ghost', checklist)
             self.assertIn('FAIRNESS.md', checklist)
@@ -280,8 +280,8 @@ class TestModelBakeoff(unittest.TestCase):
         self.assertIsInstance(steps, list)
         self.assertGreaterEqual(len(steps), 1)
         joined = '\n'.join(steps)
-        self.assertIn('model_bakeoff.py baseline', joined)
-        self.assertIn('model_bakeoff.py capture', joined)
+        self.assertIn('model_bakeoff.py --world bakeoff baseline', joined)
+        self.assertIn('model_bakeoff.py --world bakeoff capture', joined)
         self.assertIn('{id}', joined)
         self.assertEqual(joined.count('lidar_ghost apply'), 1)  # only inside the baseline command note
         self.assertNotIn('cell_registry.py reconcile', joined)
@@ -667,14 +667,16 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             root = Path(d)
             _seed(root)
             err = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
                     mock.patch('sys.stderr', err):
                 rc = MB.main([
+                    '--world', 'bakeoff',
                     '--root', str(root),
                     'open', '--tool', 'cursor', '--model', 'composer',
                 ])
             self.assertEqual(rc, 2)
-            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertIn(BAKEOFF_WORLD_FLAG, err.getvalue())
             self.assertFalse((root / 'rounds' / 'R-001.json').is_file())
 
     def test_cli_repair_refuses_wrong_world(self):
@@ -693,14 +695,16 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 why='ridge too low',
             )
             err = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
                     mock.patch('sys.stderr', err):
                 rc = MB.main([
+                    '--world', 'bakeoff',
                     '--root', str(root),
                     'repair', parent['id'], '--brief', 'raise ridge one block',
                 ])
             self.assertEqual(rc, 2)
-            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertIn(BAKEOFF_WORLD_FLAG, err.getvalue())
             self.assertFalse((root / 'rounds' / 'R-002.json').is_file())
 
     def test_cli_open_succeeds_when_world_matches(self):
@@ -708,9 +712,11 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             root = Path(d)
             _seed(root)
             out = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch('sys.stdout', out):
                 rc = MB.main([
+                    '--world', 'bakeoff',
                     '--root', str(root),
                     'open', '--tool', 'cursor', '--model', 'composer',
                 ])
@@ -724,22 +730,17 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             self.assertEqual(round_['designer']['id'], 'composer')
             self.assertEqual(round_['model']['id'], 'composer')
 
-    def test_docs_say_prefix_every_command(self):
-        skill = (TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md').read_text(
-            encoding='utf-8',
-        )
+    def test_docs_say_world_flag_every_command(self):
+        skill = (
+            TOOL_ROOT / 'bakeoff' / 'skills' / 'model-bakeoff' / 'SKILL.md'
+        ).read_text(encoding='utf-8')
         protocol = (TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md').read_text(encoding='utf-8')
         for text, name in ((skill, 'SKILL.md'), (protocol, 'PROTOCOL.md')):
-            self.assertIn(BAKEOFF_WORLD_PREFIX, text, msg=name)
-            self.assertRegex(
-                text,
-                r'(?i)prefix every',
-                msg=f'{name} must say to prefix every bake-off command',
-            )
+            self.assertIn(BAKEOFF_WORLD_FLAG, text, msg=name)
             self.assertNotRegex(
                 text,
-                r'(?i)export\s+AI_WORLDBUILDER_WORLD_ROOT',
-                msg=f'{name} must not teach a one-off export',
+                r'(?i)AI_WORLDBUILDER_WORLD_ROOT',
+                msg=f'{name} must not mention the retired env var',
             )
 
     def test_docs_link_sitting_steps_instead_of_copying(self):
@@ -761,26 +762,43 @@ class TestBakeoffWorldGuard(unittest.TestCase):
 
     def test_cli_subprocess_status_imports(self):
         """Running the script as ``python3 bakeoff/model_bakeoff.py`` must find active_world."""
+        import shutil
+
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _seed(root)
-            world = root / 'world'
+            worlds = TOOL_ROOT / 'worlds'
+            worlds.mkdir(exist_ok=True)
+            world = worlds / '_cli_status_world'
+            if world.exists():
+                shutil.rmtree(world)
             (world / 'config').mkdir(parents=True)
             (world / 'config' / 'world.json').write_text(
                 json.dumps({'gameworld_id': 'bakeoff', 'region_path': str(world)}),
                 encoding='utf-8',
             )
-            env = os.environ.copy()
-            env['AI_WORLDBUILDER_WORLD_ROOT'] = str(world)
-            script = TOOL_ROOT / 'bakeoff' / 'model_bakeoff.py'
-            result = subprocess.run(
-                [sys.executable, str(script), '--root', str(root), 'status'],
-                cwd=str(TOOL_ROOT),
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
+            (world / 'config' / 'world-frame.json').write_text(
+                json.dumps({'offsets': {'easting': 0, 'northing': 0}, 'bounds_mc': {
+                    'west': 0, 'east': 1, 'north': 0, 'south': -1,
+                }}),
+                encoding='utf-8',
             )
+            script = TOOL_ROOT / 'bakeoff' / 'model_bakeoff.py'
+            try:
+                result = subprocess.run(
+                    [
+                        sys.executable, str(script),
+                        '--world', '_cli_status_world',
+                        '--root', str(root), 'status',
+                    ],
+                    cwd=str(TOOL_ROOT),
+                    env=os.environ.copy(),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            finally:
+                shutil.rmtree(world, ignore_errors=True)
             self.assertEqual(
                 result.returncode,
                 0,
@@ -825,10 +843,11 @@ class TestBaseline(unittest.TestCase):
             root = Path(d)
             _seed(root)
             MB.open_round(root, tool='cursor', model='composer', task='feature_design')
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'):
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'):
                 with self.assertRaises(RuntimeError) as ctx:
                     MB.run_baseline(root, 'R-001', plan_only=True)
-            self.assertIn(BAKEOFF_WORLD_PREFIX, str(ctx.exception))
+            self.assertIn(BAKEOFF_WORLD_FLAG, str(ctx.exception))
 
     def test_baseline_refuses_without_site_owner(self):
         with tempfile.TemporaryDirectory() as d:
@@ -836,7 +855,8 @@ class TestBaseline(unittest.TestCase):
             _seed(root)
             MB.open_round(root, tool='cursor', model='composer', task='feature_design')
             env = {k: v for k, v in os.environ.items() if k != 'SITE_OWNER'}
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch.dict(os.environ, env, clear=True):
                 with self.assertRaises(RuntimeError) as ctx:
                     MB.run_baseline(
@@ -866,7 +886,8 @@ class TestBaseline(unittest.TestCase):
             def boom_claim(*_a, **_k):
                 raise AssertionError('must not claim over a fresh foreign lock')
 
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch.dict(os.environ, {'SITE_OWNER': 'me'}), \
                     mock.patch('model_bakeoff._lock_read', return_value=other_lock), \
                     mock.patch('model_bakeoff._lock_fresh', return_value=True), \
@@ -899,7 +920,8 @@ class TestBaseline(unittest.TestCase):
                 undos.append(plan)
                 return mock.Mock(seq=99)
 
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'):
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'):
                 report = MB.run_baseline(
                     root,
                     'R-001',
@@ -943,7 +965,8 @@ class TestBaseline(unittest.TestCase):
                     ],
                 }
 
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch.dict(os.environ, {'SITE_OWNER': 'agent'}), \
                     mock.patch('model_bakeoff._lock_read', return_value=None), \
                     mock.patch('model_bakeoff._lock_fresh', return_value=False), \
@@ -977,11 +1000,12 @@ class TestBaseline(unittest.TestCase):
             _seed(root)
             MB.open_round(root, tool='cursor', model='composer', task='feature_design')
             err = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
                     mock.patch('sys.stderr', err):
-                rc = MB.main(['--root', str(root), 'baseline', 'R-001', '--plan'])
+                rc = MB.main(['--world', 'bakeoff', '--root', str(root), 'baseline', 'R-001', '--plan'])
             self.assertEqual(rc, 2)
-            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertIn(BAKEOFF_WORLD_FLAG, err.getvalue())
 
 
     def test_baseline_archives_prior_round_builds(self):
@@ -999,7 +1023,8 @@ class TestBaseline(unittest.TestCase):
             (builds / 'notes.txt').write_text('keep me\n', encoding='utf-8')
             (builds / 'R-009_legacy.py').write_text('# not r0NN_\n', encoding='utf-8')
 
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch.dict(os.environ, {'SITE_OWNER': 'agent'}), \
                     mock.patch('model_bakeoff._lock_read', return_value=None), \
                     mock.patch('model_bakeoff._lock_fresh', return_value=False), \
@@ -1049,11 +1074,13 @@ class TestBaseline(unittest.TestCase):
             (builds / 'r012_susu.py').write_text('# leftover\n', encoding='utf-8')
             err = io.StringIO()
             out = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'), \
                     mock.patch('active_world.WORLD_ROOT', world), \
                     mock.patch('sys.stderr', err), \
                     mock.patch('sys.stdout', out):
                 rc = MB.main([
+                    '--world', 'bakeoff',
                     '--root', str(root),
                     'open', '--tool', 'cursor', '--model', 'composer',
                 ])
@@ -1103,10 +1130,11 @@ class TestCapture(unittest.TestCase):
             root = Path(d)
             _seed(root)
             MB.open_round(root, tool='cursor', model='composer', task='feature_design')
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'):
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'):
                 with self.assertRaises(RuntimeError) as ctx:
                     MB.run_capture(root, 'R-001', capture_fn=lambda *_a, **_k: Path('.'))
-            self.assertIn(BAKEOFF_WORLD_PREFIX, str(ctx.exception))
+            self.assertIn(BAKEOFF_WORLD_FLAG, str(ctx.exception))
 
     def test_run_capture_stubbed_fills_photos_and_crops(self):
         from PIL import Image
@@ -1145,7 +1173,8 @@ class TestCapture(unittest.TestCase):
                 }
                 return table[(float(x), float(z))]
 
-            with mock.patch('active_world.gameworld_id', return_value='bakeoff'):
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='bakeoff'):
                 report = MB.run_capture(
                     root,
                     'R-001',
@@ -1191,11 +1220,12 @@ class TestCapture(unittest.TestCase):
             _seed(root)
             MB.open_round(root, tool='cursor', model='composer', task='feature_design')
             err = io.StringIO()
-            with mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
+            with mock.patch('script_env.activate_world_from_args'), \
+                    mock.patch('active_world.gameworld_id', return_value='southampton-build'), \
                     mock.patch('sys.stderr', err):
-                rc = MB.main(['--root', str(root), 'capture', 'R-001'])
+                rc = MB.main(['--world', 'bakeoff', '--root', str(root), 'capture', 'R-001'])
             self.assertEqual(rc, 2)
-            self.assertIn(BAKEOFF_WORLD_PREFIX, err.getvalue())
+            self.assertIn(BAKEOFF_WORLD_FLAG, err.getvalue())
 
 
 
@@ -1446,8 +1476,8 @@ class HybridRoundTests(unittest.TestCase):
         self.assertIn('{designer}', joined)
         self.assertIn('{model}', joined)
         self.assertIn('hand-off', joined)
-        self.assertIn('model_bakeoff.py baseline', joined)
-        self.assertIn('model_bakeoff.py capture', joined)
+        self.assertIn('model_bakeoff.py --world bakeoff baseline', joined)
+        self.assertIn('model_bakeoff.py --world bakeoff capture', joined)
 
     def test_protocol_documents_hybrid_open_flags(self):
         proto = (MB.DEFAULT_BAKEOFFS / 'PROTOCOL.md').read_text(encoding='utf-8')

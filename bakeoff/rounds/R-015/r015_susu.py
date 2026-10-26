@@ -9,9 +9,9 @@ Why a script, not a feature_build JSON spec: feature_build.py imports portals.py
 which needs the world provider providers/uos-portals; the bakeoff world has no
 such package, so feature_build cannot even import here.
 
-Usage (repo root):
-  AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 worlds/bakeoff/site/builds/r015_susu.py          # dry run + preview
-  AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 worlds/bakeoff/site/builds/r015_susu.py --apply  # live
+Usage (repo root; world already selected via ``--world bakeoff`` on the caller):
+  python3 worlds/bakeoff/site/builds/r015_susu.py          # dry run + preview
+  python3 worlds/bakeoff/site/builds/r015_susu.py --apply  # live
 
 Massing rules (designer decisions):
   M1 footprint = OSM way 33830305 (SUSU) and 33830236 (Retail), squared only to
