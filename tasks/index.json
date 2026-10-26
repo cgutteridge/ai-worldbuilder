@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 105,
-  "tasks": []
+  "nextTaskId": 106,
+  "tasks": [
+    {
+      "id": 105,
+      "title": "Logout gate: test real session.lock hold, not file existence",
+      "status": "in_progress",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "lib/blocks/logout_gate.py refuses whenever session.lock exists, but Minecraft leaves the file behind after leaving a world, so dryrun_reset refuses when logged out. Try a non-blocking POSIX lock (fcntl.lockf) and refuse only if held; add tests."
+    }
+  ]
 }
