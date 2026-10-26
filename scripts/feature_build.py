@@ -63,7 +63,7 @@ from script_env import ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
-from site_kit import Plan, World, apply, preview  # noqa: E402
+from site_kit import Plan, World, apply, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
@@ -1431,6 +1431,9 @@ class Build:
         owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
         for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
+        # same refusals as the live apply, so the designer sees them before hand-off (#99)
+        guard_door_frames(self.p, self.live.block)
+        guard_roof_jogs(self.p)
         for line in self._zone_pad_lines:
             print(line)
         for f in self.features:

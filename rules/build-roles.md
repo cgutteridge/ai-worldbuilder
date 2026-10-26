@@ -36,3 +36,21 @@ Hand-off artefacts:
 Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
 hybrid scoring and ghost baseline stay bake-off-only
 ([bakeoff/PROTOCOL.md](../bakeoff/PROTOCOL.md)).
+
+## Guard refusals and what a builder may change
+
+The offline plan step (`feature_build.build`, `house_build.build`) runs the same
+door-frame and roof-ridge guards as the live apply (`site_kit.guard_door_frames`,
+`guard_roof_jogs`), with the same refusal text (feature and house builds; layer passes such as trees/decor/ground only meet the guards at the live apply). The designer must get a clean
+offline plan before hand-off; a refusal there is the designer's to fix.
+
+If a guard still refuses in the builder's live dry run or apply:
+
+- The builder may change **only the refused element** (the door and its
+  jambs/lintel, or the ridge that jogs). Nothing else in the designer's plan
+  moves; anything wider goes back to the designer.
+- Record it in the hand-off artefact (the `site/builds/<name>.json` spec or the
+  house/terrace/layer hand-off) and in the task notes: which guard, which
+  element, what was changed, and why the offline plan did not catch it.
+- A real exception (free-standing door, genuine offset roof) is an explicit
+  `allow_unframed_doors` / `roof_jog_ok` reason, never a silent edit.

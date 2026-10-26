@@ -12,6 +12,7 @@ from unittest import mock
 import numpy as np
 
 import feature_build as F
+import site_kit
 from site_kit import door_frame_issues
 
 
@@ -746,6 +747,52 @@ class LivePrefetchTest(unittest.TestCase):
         view = PlannedWorld(plan, base)
         view.prefetch([(1, 50, 1), (2, 50, 2), (3, 51, 3)])
         self.assertEqual(base.prefetched, [(2, 50, 2), (3, 51, 3)])
+
+
+class OfflineGuardsTest(unittest.TestCase):
+    """Seam: the offline plan step refuses unframed doors and jogging ridges with the live guard's message (#99)."""
+
+    def setUp(self):
+        self.cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        p = mock.patch.object(site_kit, 'OUT', Path(t.name))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def spec(self, door_frame):
+        return {
+            'name': 'unit_guard', 'ways': {'99': 'A'}, 'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [], 'floor_min': 50, 'step_max': 4, 'door_frame': door_frame,
+            'keep_edits': False, 'wall': 'bricks', 'floor': 'smooth_stone', 'ledge_stair': False,
+        }
+
+    def test_framed_doors_plan_passes_offline(self):
+        F.build(self.spec(True), footprints={'A': self.cells}, world=_StoneWorld())
+
+    def test_bad_door_frame_fails_offline_with_live_guard_message(self):
+        # a feature whose planned door has a missing jamb piece (frame check is the live guard's own)
+        bad = [(12, 50, 24, 'jamb east')]
+        with mock.patch.object(site_kit, 'door_frame_issues', return_value=bad), \
+                self.assertRaises(SystemExit) as offline:
+            F.build(self.spec(True), footprints={'A': self.cells}, world=_StoneWorld())
+        plan = site_kit.Plan('unit_guard')
+        for dy, half in ((0, 'lower'), (1, 'upper')):
+            plan.set(5, 50 + dy, 5, f'minecraft:oak_door[facing=south,half={half}]')
+        with self.assertRaises(SystemExit) as live:
+            site_kit.guard_door_frames(plan, lambda x, y, z: None)
+        # count and pieces differ with the plan; the guard's own wording is identical
+        tail = str(live.exception).split('; see ', 1)[1]
+        self.assertIn('door frame piece(s) missing, e.g.', str(offline.exception))
+        self.assertTrue(str(offline.exception).endswith(tail))
+
+    def test_roof_jog_fails_offline(self):
+        with mock.patch('roof_lint.ridge_jogs', return_value=[{'axis': 'x', 'row': 1}]):
+            with self.assertRaises(SystemExit) as ctx:
+                F.build(self.spec(True), footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertIn('roof ridge(s) jog sideways', str(ctx.exception))
 
 
 if __name__ == '__main__':
