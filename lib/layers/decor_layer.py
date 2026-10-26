@@ -201,11 +201,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
 
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan and run the kit's guards. Never writes the world."""
-    from site_kit import apply, preview
+    from site_kit import apply, fresh_planning_world, preview
 
     name = plan_name(*cell)
     plan = Plan(name)
-    placed, stats = plan_cell(cell, plan, World())
+    placed, stats = plan_cell(cell, plan, fresh_planning_world())
     kinds = Counter(placed.values())
     print(f'{name}: {dict(stats)}')
     print(f'  by block: {dict(kinds)}')

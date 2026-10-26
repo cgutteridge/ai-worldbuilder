@@ -14,7 +14,7 @@ Three overlapping records used to describe one cell's state and routinely disagr
 4. **`site_kit.apply`** keeps its signature, guards and `SystemExit` messages and becomes a wrapper over `change(Build)`.
 5. **Ghost state is derived.** A real Build supersedes ghost ground, strips overlapping ghost features, and ensures the ring-2 frontier, all as follow-up journal entries. Ghost owners yield to real owners; they never clash.
 6. **Ownership** is a private, rebuildable projection of the journal. It replaces `*-cells.json`, the pickle cache and the owner index. Nothing outside the registry reads or writes it.
-7. **One real seam: `BlockStore`**, with `LiveBlocks` and `MemoryBlocks` adapters. Tests use `MemoryBlocks`; do not add other seams.
+7. **One real seam: `BlockStore`**, with `LiveBlocks`, `MemoryBlocks`, and read-only `RegionBlocks` (#111) adapters. Tests use `MemoryBlocks`; do not add further seams outside this protocol.
 8. **Loud errors.** No swallow-and-print `try` blocks. A failed `begin` means no blocks were written. A failed finish leaves the entry in flight for `site_recover` / `reconcile`.
 
 ### Decisions to preserve
@@ -24,9 +24,15 @@ Three overlapping records used to describe one cell's state and routinely disagr
 - **(c) Phase-scoped:** worlds are volatile for this phase. Erase and recreate; no migration, no backward compatibility. This is not a permanent policy; revisit when a world must be kept.
 - **(d) Block read path:** see below.
 
-### Block read path (decided by task 39)
+### Block read path (decided by task 39; region-disk exception #111)
 
-Audit: [docs/audits/region-block-reads.md](../audits/region-block-reads.md). **One guarded reader behind `BlockStore`** (`read`, `read_many`, `flush`), with `MemoryBlocks` for tests and a single `LiveBlocks`. `LiveBlocks` reads via MCP `block_scan_region` (tiles volume ≤ 65 536, raises `limit` to the tile size, parses verbose text); it still accepts only the active or bake-off save, requires `flush()` (`server_save_all_worlds`) after any write before it will read, and checks the region matches the world MCP has open. Per-position `block_get_state` is rejected for bulk block-state reads; task #67 deliberately allows it for one-off light probes (`LiveBlocks.light` / `site_audit` dark cells). Reads do not go through `logout_gate`. Callers stay on `BlockStore`. Migrating planners/audits (task #67) means they go through that seam: either `LiveBlocks`/`MemoryBlocks` directly, or `site_kit.World` as a duck-typed facade (`block` / `prefetch` / `ground`) over LiveBlocks — the `.mca` parser is deleted. Writes always go over MCP.
+Audit: [docs/audits/region-block-reads.md](../audits/region-block-reads.md). **One guarded reader behind `BlockStore`** (`read`, `read_many`, `flush`), with `MemoryBlocks` for tests, `LiveBlocks` for live MCP, and `RegionBlocks` for **read-only** planning / dry-run after a server save (#111; owner-authorised 2026-10-26).
+
+`LiveBlocks` reads via MCP `block_scan_region` (tiles volume ≤ 65 536, raises `limit` to the tile size, parses verbose text); it still accepts only the active or bake-off save, requires `flush()` (`server_save_all_worlds`) after any write before it will read, and checks the region matches the world MCP has open. Per-position `block_get_state` is rejected for bulk block-state reads; task #67 deliberately allows it for one-off light probes (`LiveBlocks.light` / `site_audit` dark cells). Live applies and their readback stay on MCP.
+
+`RegionBlocks` parses on-disk `.mca` only (never write / copy / restore). Entry points use `site_kit.fresh_planning_world()` (`server_save_all_worlds` then disk read); `flush()` on the store drops caches so the next read sees the new files. It answers block-state only (not entities / block entities). Stale disk vs unsaved client edits is prevented by that save-then-read step (and `rules/process.md`), not by comparing chunk timestamps. Format: modern palette sections (DataVersion ~4903); stdlib zlib + a tiny read-only NBT helper — no new dependencies. Complements #117 (section scan on LiveBlocks miss) without merging the two paths.
+
+Reads do not go through `logout_gate`. Callers stay on `BlockStore` or `site_kit.World` / `planning_world()`. **(a) still forbids region backup/restore** — this exception is read-only evidence for planners, not a recover path. Writes always go over MCP.
 
 ## Consequences
 

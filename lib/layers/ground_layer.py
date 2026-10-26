@@ -593,19 +593,13 @@ def kinds_image(cell: tuple[int, int], kind: dict, out: Path, scale: int = 4) ->
 
 
 def _fresh_world(strict: bool = False) -> World:
-    """Flush the server's chunks to disk, then read them: World reads the saved region files.
+    """Flush the server's chunks to disk, then read them via :func:`fresh_planning_world` (#111).
 
     ``strict`` (live apply): a failed flush raises, because planning from stale region files writes
     a wrong plan.
     """
-    try:
-        from mc_paced import Paced
-        Paced().call('server_save_all_worlds', {})
-    except Exception as exc:                              # noqa: BLE001
-        if strict:
-            raise SystemExit(f'could not flush the world before reading it: {exc}')
-        print(f'  (could not flush the world before reading: {exc})')
-    return World()
+    from site_kit import fresh_planning_world
+    return fresh_planning_world(strict=strict)
 
 
 def run(cell: tuple[int, int], skip_preview: bool = False) -> int:

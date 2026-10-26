@@ -71,7 +71,7 @@ from script_env import ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
-from site_kit import Plan, World, apply, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
@@ -626,7 +626,8 @@ class Build:
         """
         @param spec: validated feature spec
         @param footprints: optional ``{label: set[(x,z)]}`` (else OSMIndex from ways)
-        @param world: optional ``World``-like with ``block(x,y,z)`` (else live ``World()``)
+        @param world: optional ``World``-like with ``block(x,y,z)`` (else
+            :func:`site_kit.fresh_planning_world` — save then on-disk region files; #111)
         @param osm_root: optional vector-map clip root for ``OSMIndex`` (unit-test /
             fixture trees only). Production always uses this world's
             ``reference/vector_map`` via ``vector_map_clips.vector_map_clip_root``;
@@ -642,7 +643,7 @@ class Build:
         self.floor_mat = spec['floor']
         self.keep = set()
         self.p = Plan(self.name)
-        self.live = world if world is not None else World()
+        self.live = world if world is not None else fresh_planning_world()
         self.zone_data = zone_data or {}
         by_no = {k: set(v) for k, v in (footprints or {}).items()}
         if footprints is None:

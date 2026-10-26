@@ -408,12 +408,12 @@ def review_image(cell: tuple[int, int], report: dict, out: Path) -> None:
 
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan, run the kit's guards, write the review image. Never writes the world."""
-    from site_kit import apply, preview
+    from site_kit import apply, fresh_planning_world, preview
 
     tx, tz = cell
     name = plan_name(tx, tz)
     plan = Plan(name)
-    world = World()
+    world = fresh_planning_world()
     placed, rep = plan_cell(cell, plan, world)
     print(f'{name}: crowns found {rep["detected"]} + dense fill {rep["candidates"] - rep["detected"]}  planted {len(rep["trees"])} '
           f'({sum(1 for t in rep["trees"] if t[3] == "tree")} trees, '

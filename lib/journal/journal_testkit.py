@@ -209,7 +209,12 @@ class LiveApplyCase(unittest.TestCase):
         patches = [
             mock.patch.object(site_kit, 'OUT', t / 'out'),
             mock.patch.object(site_lock, 'LOCK', t / 'LOCK.json'),
-            mock.patch.object(site_kit, 'World', lambda region=None: View(self.blocks)),
+            mock.patch.object(site_kit, 'World',
+                              lambda region=None, store=None: View(self.blocks)),
+            mock.patch.object(site_kit, 'planning_world',
+                              lambda region=None: View(self.blocks)),
+            mock.patch.object(site_kit, 'fresh_planning_world',
+                              lambda region=None, strict=False: View(self.blocks)),
             mock.patch.object(site_kit, 'live_blocks', lambda: self.blocks),
             mock.patch.object(site_kit, '_bring_player', lambda *a, **k: None),
             mock.patch.object(site_kit, 'ensure_region_matches_open_world', lambda region=None: None),

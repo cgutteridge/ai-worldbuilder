@@ -47,7 +47,7 @@ def columns_for_parcels(*_a, **_k):
     raise SystemExit('plant_cell_canopy parcel passes are retired; use trees_layer.py')
 from osgb import to_osgb  # noqa: E402
 from world_frame import osgb_batch_to_wgs84  # noqa: E402
-from site_kit import OUT, Plan, World, apply, preview  # noqa: E402
+from site_kit import OUT, Plan, World, apply, fresh_planning_world, preview  # noqa: E402
 
 DEFAULT_AREA = 'highfield'
 MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
@@ -376,7 +376,7 @@ def build_plan(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
         px_to_cols.setdefault((int(px), int(py)), []).append((x, z))
     blobs = [b for b in blobs_of(mask) if len(b) >= MIN_BLOB_PX]
     rnd = random.Random(RNG_SEED)
-    w = World()
+    w = fresh_planning_world()
     taken = owned_cells(cell)
     plan = Plan(CANOPY_PLAN_PREFIX)
     trees, bushes = [], []
@@ -433,7 +433,7 @@ def plan_hand(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
     pids = parcels_in_cell(area, cell, kinds)
     lawn = columns_for_parcels(area, pids)
     corridors = set(corridor_columns_in_cell(area, cell, margin=0))
-    w = World()
+    w = fresh_planning_world()
     taken = owned_cells(cell)
     plan = Plan(CANOPY_PLAN_PREFIX)
     trees, bushes, skipped = [], [], []
