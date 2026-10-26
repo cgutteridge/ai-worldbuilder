@@ -41,7 +41,7 @@ hybrid scoring and ghost baseline stay bake-off-only
 
 The offline plan step (`feature_build.build`, `house_build.build`) runs the same
 door-frame and roof-ridge guards as the live apply (`site_kit.guard_door_frames`,
-`guard_roof_jogs`), with the same refusal text. The designer must get a clean
+`guard_roof_jogs`), with the same refusal text (feature and house builds; layer passes such as trees/decor/ground only meet the guards at the live apply). The designer must get a clean
 offline plan before hand-off; a refusal there is the designer's to fix.
 
 If a guard still refuses in the builder's live dry run or apply:
