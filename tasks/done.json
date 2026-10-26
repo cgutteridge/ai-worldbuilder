@@ -942,6 +942,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: trees_layer and decor_layer prefetch via ground_layer.warm_surface_probe; test added for trees. Shipped without a separate reviewer."
+    },
+    {
+      "id": 112,
+      "title": "Glossary term Element for feature/ground/trees/decor (not ghost); align code and docs",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Concept (not a journal Build): Element = the lasting kinds of place content a finished cell must cover \u2014 feature, ground, trees, decor. Excludes ghost (placeholder) and other/neutral. Goal: clearer talk in chat, rules, and APIs. Scope: add Element to GLOSSARY.md (with Avoid list); update docs/rules that say 'real work' / REAL_PASSES / 'real refine' where Element is clearer; rename or alias code identifiers only where it helps (e.g. REAL_PASSES \u2192 keep or document as the four Elements; prefer prose Element over inventing ElementPass). Do not rename journal pass_ string values (feature|ground|trees|decor) \u2014 those stay wire-stable. Owner chose 'element' over aspect/strand (2026-10-26). Landed on task/112-element-glossary: GLOSSARY Element; ELEMENTS alias for REAL_PASSES; frontier/DoD prose in journal, handoff, specs, ADR 003, handoff-layered-passes."
     }
   ]
 }
