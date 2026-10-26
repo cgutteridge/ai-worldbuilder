@@ -96,6 +96,20 @@ class RegistryCliTest(unittest.TestCase):
         with self.assertRaises(BlockStoreError):
             R.view_registry(self.root).blocks.read((0, 0, 0))
 
+    def test_propose_feature_candidates_calls_missing_features(self):
+        """#118: propose-features uses missing_features and does not swallow errors."""
+        mapped = [{
+            'kind': 'houses', 'label': 'University Road (6 houses)', 'street': 'University Road',
+            'refs': ['w1'], 'bbox': (6278, -5476, 6300, -5443), 'portals': [], 'pictures': [],
+        }]
+        with mock.patch('cell_features.missing_features', return_value=mapped) as miss:
+            got = R.propose_feature_candidates('48,-44')
+        miss.assert_called_once_with(48, -44)
+        self.assertEqual(got, mapped)
+        with mock.patch('cell_features.missing_features', side_effect=RuntimeError('boom')):
+            with self.assertRaises(RuntimeError):
+                R.propose_feature_candidates('48,-44')
+
 
 CELL = (48, -44)
 X0, Z0 = 6150, -5600
