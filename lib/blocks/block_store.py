@@ -1,14 +1,20 @@
-"""Block reads behind one seam: ``BlockStore`` (ADR 004 decision 6, audit task 39 / #56).
+"""Block reads behind one seam: ``BlockStore`` (ADR 004 decision 6, audit task 39 / #56 / #111).
 
-``read`` / ``read_many`` / ``flush`` are everything the cell journal needs. Two adapters:
+``read`` / ``read_many`` / ``flush`` are everything the cell journal needs. Adapters:
 
 - :class:`MemoryBlocks` is a dict, for tests and planned overlays.
 - :class:`LiveBlocks` reads the open world over MCP ``block_scan_region`` (tiled to volume
   ≤ 65 536, ``limit`` raised to the tile size; sparse AABBs fall back to per-chunk scans).
   Region identity and stale-read guards stay; writes always go over MCP, never through this
-  module. ``site_kit.World`` is a duck-typed facade over this seam (default LiveBlocks);
-  the ``.mca`` parser is gone. Live MCP lists air for far/missing chunks (see audit §7);
-  ``None`` only appears when a scan omits a position (FakeScanMcp / filters).
+  module. Live applies and their readback use this path.
+- :class:`region_blocks.RegionBlocks` is a **read-only** ``.mca`` parser for planning and
+  dry-run reads after a server save (#111; owner exception to the old "no region parse"
+  line). It never writes region files.
+
+``site_kit.World`` is a duck-typed facade over this seam (default LiveBlocks; planning /
+dry-run helpers inject RegionBlocks). Live MCP lists air for far/missing chunks (see
+audit §7); ``None`` only appears when a scan omits a position (FakeScanMcp / filters)
+or when RegionBlocks finds no chunk slot.
 
 States are canonical block strings: ``minecraft:`` prefix, properties sorted
 (``minecraft:oak_stairs[facing=north,half=bottom]``). ``None`` means "chunk not loaded / unknown".

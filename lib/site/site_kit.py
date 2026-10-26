@@ -469,14 +469,47 @@ def forget_reads(world, positions) -> None:
         cool(positions)
 
 
+def planning_world(region=None) -> 'World':
+    """``World`` over :class:`region_blocks.RegionBlocks` for dry-run / planner reads.
+
+    Prefer :func:`fresh_planning_world` so a server save runs first. Live applies keep
+    :func:`World` / :class:`~block_store.LiveBlocks` (#111). Missing chunks return ``None``
+    (unlike live MCP, which lists air).
+
+    @param region: optional region directory (default: active world)
+    @returns: World facade over a read-only region-file store
+    """
+    from region_blocks import RegionBlocks
+    store = RegionBlocks(resolve_region(region)) if region is not None else RegionBlocks.from_world_config()
+    return World(region=store.region, store=store)
+
+
+def fresh_planning_world(region=None, *, strict: bool = False) -> 'World':
+    """``server_save_all_worlds`` then :func:`planning_world` so disk matches the open world.
+
+    @param region: optional region directory (default: active world)
+    @param strict: when True, a failed save raises ``SystemExit``; otherwise print and continue
+    @returns: World over on-disk region files
+    """
+    try:
+        from mc_paced import Paced
+        Paced().call('server_save_all_worlds', {})
+    except Exception as exc:  # noqa: BLE001 — MCP may be down during offline dry runs
+        if strict:
+            raise SystemExit(f'could not flush the world before reading it: {exc}') from exc
+        print(f'  (could not flush the world before reading: {exc})')
+    return planning_world(region)
+
+
 class World:
     """Duck-typed block access over a :class:`block_store.BlockStore`.
 
     Default store is :class:`block_store.LiveBlocks` (MCP ``block_scan_region``) for the
-    active world. Inject ``store=`` in tests. The old ``.mca`` region parser is gone;
-    unloaded / omitted chunks follow the BlockStore contract (``None`` under FakeScanMcp
-    with ``loaded_chunks``; live MCP lists ``minecraft:air`` — see
-    ``docs/audits/region-block-reads.md`` §7).
+    active world (live apply / readback). Inject ``store=`` in tests, or use
+    :func:`planning_world` for dry-run / planner reads over on-disk ``.mca`` after a save
+    (#111). Unloaded / omitted chunks follow the BlockStore contract (``None`` under
+    FakeScanMcp with ``loaded_chunks`` or a missing region chunk; live MCP lists
+    ``minecraft:air`` — see ``docs/audits/region-block-reads.md`` §7).
     """
 
     def __init__(self, region=None, *, store=None):
@@ -877,11 +910,12 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     pass_ = stage_pass(stage)
     OUT.mkdir(parents=True, exist_ok=True)
     lo, hi = plan.bounds()
-    w = World()
-    # Live path: region gate before any LiveBlocks construct (prefetch / first read).
-    # Dry path: skip MCP warm-up so offline / patched readers still work; production dry
-    # that calls ``World.block`` will still open LiveBlocks on first miss.
-    if not dry:
+    # Live path: MCP LiveBlocks after the region/open-world gate. Dry path: read-only
+    # region files after a server save (#111) — no MCP warm-up.
+    if dry:
+        w = fresh_planning_world()
+    else:
+        w = World()
         ensure_region_matches_open_world()
         warm = set(plan.cells)
         warm.update((x, y - 1, z) for x, y, z in plan.cells)

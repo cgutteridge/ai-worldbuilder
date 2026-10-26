@@ -57,8 +57,8 @@ _Avoid_: region restore, repair-by-snapshot
 _Avoid_: using recover as a substitute for reconcile
 
 **BlockStore**:
-The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`) and `MemoryBlocks` adapters (tests use memory). Read path: task 39 / #56 / #67. Planners that still say `World` use a duck-typed facade over this seam; there is no `.mca` reader.
-_Avoid_: region backup, snapshot, parsing region files for block state
+The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`), `MemoryBlocks` (tests), and `RegionBlocks` (read-only `.mca` for planning / dry-run after a server save; #111). Live applies and readback stay on MCP. Planners that still say `World` use a duck-typed facade (`planning_world()` for disk, default `World()` for live).
+_Avoid_: region backup, snapshot, writing or restoring region files; parsing `.mca` for live apply readback
 
 **Element**:
 One of the lasting kinds of place content a finished cell must cover: **feature**, **ground**, **trees**, or **decor**. The concept (not a journal `Build` intent). Journal wire values stay those four strings; code may keep `REAL_PASSES` as the same tuple. Excludes **lidar ghost** (placeholder) and `other` / neutral ownership.

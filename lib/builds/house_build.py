@@ -29,7 +29,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
-from site_kit import Plan, World, apply, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel')
 WALL, FLOOR = 'bricks', 'spruce_planks'
@@ -89,7 +89,7 @@ class Build:
         self.groups = spec['groups']
         self.keep = set()
         self.p = Plan(self.name)
-        self.live = World()
+        self.live = fresh_planning_world()
         idx = osm_footprints.OSMIndex()
         by_no = {}
         for (x, z), i in idx.cells().items():
