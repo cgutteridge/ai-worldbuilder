@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
   "nextTaskId": 110,
-  "tasks": [
-    {
-      "id": 109,
-      "title": "surface_y treats the cell-marker wool ring as ground when it sits at or below y=80",
-      "status": "in_progress",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "surface_y skips wool only for y>80, but the marker ring sits ~30 above ground (y=70 in Southampton). ground_layer planned paving on the ring (44 footprint-guard hits, yellow/black wool at y=70). Skip marker wool (black/yellow) at any height, as cell_marker.is_marker_wool does."
-    }
-  ]
+  "tasks": []
 }

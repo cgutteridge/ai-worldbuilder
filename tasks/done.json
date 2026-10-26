@@ -924,6 +924,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: PROBE_Y_RANGE now ends at SCAN_TOP so the clear step is prefetched. Shipped without a separate reviewer (two-line change)."
+    },
+    {
+      "id": 109,
+      "title": "surface_y treats the cell-marker wool ring as ground when it sits at or below y=80",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: surface_y skips black/yellow marker wool at any height; tests added (test_surface_probe). Shipped without a separate reviewer (small)."
     }
   ]
 }
