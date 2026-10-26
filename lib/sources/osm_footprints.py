@@ -113,6 +113,25 @@ def _projected(src: Path) -> Path:
     return dst
 
 
+def cached_geojson_paths(clips_root: Path | None = None) -> list[Path]:
+    """Ensure every vector-map clip is projected into ``CACHE``; return all ``*.geojson`` there.
+
+    Shared reader for ground/decor (and anything else that rasterises the OSGB
+    cache). Reprojects missing or stale clips via ``_projected``. Returns every
+    geojson in the cache so ``dir__name.geojson`` names from this module and
+    legacy ``*-mp`` / ``*-ln`` / ``*-pt`` names both work.
+
+    @param clips_root: optional clip tree (default: active world's vector_map root)
+    @returns: sorted paths under ``CACHE``
+    """
+    root = clips_root if clips_root is not None else _resolve_vector_map_clips()
+    if root.is_dir():
+        for src in sorted(root.glob('*/*.geojson')):
+            _projected(src)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    return sorted(CACHE.glob('*.geojson'))
+
+
 class OSMIndex:
     """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 

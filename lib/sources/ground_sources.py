@@ -3,8 +3,10 @@
 
 Two sources, both read-only, neither tied to any one place:
 
-  VECTOR_MAP  every ``*-mp / *-ln / *-pt`` extract in verification/site/osm27700 (EPSG:27700),
-         projected to Minecraft columns. Roads, paths and areas become surface kinds.
+  VECTOR_MAP  every ``*.geojson`` in the OSGB cache ``osm_footprints`` builds
+         (``verification/site/osm27700``, including ``dir__name.geojson`` and legacy
+         ``*-mp`` / ``*-ln`` / ``*-pt`` names), projected to Minecraft columns.
+         Roads, paths and areas become surface kinds.
   AERIAL the z19 mosaic, sampled per column. Colour says lawn / brick paving / light
          paving / shade-or-canopy. It only fills columns the map does not describe.
 
@@ -18,7 +20,6 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
-from pathlib import Path
 
 import numpy as np
 
@@ -27,7 +28,6 @@ import cellmath  # noqa: E402
 from world_frame import osgb_batch_to_wgs84  # noqa: E402
 
 from script_env import ROOT  # noqa: E402
-OSM_DIR = ROOT / 'verification' / 'site' / 'osm27700'
 MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
 NO_DATA_LUM = 0.01                   # window mean below this is a blank mosaic pixel (pure black), not ground
 MOSAIC_TILE0 = (260101, 175662)      # z19 tile x,y of the mosaic's top-left corner
@@ -135,15 +135,17 @@ def cell_box(cell: tuple[int, int], margin: int = 0) -> tuple[int, int, int, int
 def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict, str, list]]:
     """Vector-map features touching the cell: [(tags, 'poly'|'line'|'point', geometry in MC)].
 
-    poly geometry is [[outer, hole, ...], ...]; line is [(x, z), ...]; point is (x, z).
-    Duplicates across extracts (same map id and tags) are dropped.
+    Reads the OSGB cache via ``osm_footprints.cached_geojson_paths`` (reprojects
+    clips not yet cached). poly geometry is [[outer, hole, ...], ...]; line is
+    [(x, z), ...]; point is (x, z). Duplicates across extracts (same map id and
+    tags) are dropped.
     """
+    from osm_footprints import cached_geojson_paths
     from world_frame import osgb_to_mc
     mc = lambda c: osgb_to_mc(c[0], c[1])
     x0, z0, x1, z1 = cell_box(cell, margin)
     seen, out = set(), []
-    for path in sorted(OSM_DIR.glob('*-mp.geojson')) + sorted(OSM_DIR.glob('*-ln.geojson')) + \
-            sorted(OSM_DIR.glob('*-pt.geojson')):
+    for path in cached_geojson_paths():
         for f in json.loads(path.read_text())['features']:
             g = f.get('geometry')
             if not g:
@@ -229,7 +231,9 @@ class OSMGround:
         self.fence: set = set()
         self.soft: set = set()        # mapped parking polygon: the aerial may show it is really lawn
         self.trees: list = []
-        self._load(load_osm(cell))
+        feats = load_osm(cell)
+        self.n_features = len(feats)  # reporting for dry runs (#113); 0 is legitimate
+        self._load(feats)
 
     def _put(self, cells, kind: str, pri: int, feat: int | None = None) -> None:
         x0, z0, x1, z1 = cell_box(self.cell, MARGIN)
