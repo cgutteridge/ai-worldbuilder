@@ -888,6 +888,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Done 2026-10-26 (merged 136b8d9): required --world for place CLIs; env AI_WORLDBUILDER_WORLD_ROOT retired (contract note only); lazy site_kit/world_frame/mc_paced; bakeoff/shims wired. Ship-branch APPROVE (nits: DeferredWorldPath complexity, clear_world_caches swallow, coverage path, test stub world dir)."
+    },
+    {
+      "id": 105,
+      "title": "Logout gate: test real session.lock hold, not file existence",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: logout gate now tries a non-blocking POSIX lock on session.lock and refuses only if held; stale file no longer blocks. Review nits: test imports at module level, holder.wait() after kill."
     }
   ]
 }
