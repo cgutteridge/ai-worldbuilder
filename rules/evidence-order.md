@@ -36,7 +36,9 @@ Provider ids for this place live in `reference/SOURCES.txt`, place-sources catal
   Heights and surfaces come from the lidar provider only; a baseline or import save is never read as evidence (ADR 003).
 - A portal gives the door's position and name, not its look (door type, canopy, steps): read that from its photo or streetlevel.
   A building with no portal can still have doors.
-- Some aerial and streetlevel providers are look-only: view, write down what they show,
-  never save, hash or commit them (`reference/SOURCES.txt`, place-sources `look_only`).
+- Some aerial and streetlevel providers are look-only for *durable* evidence: download a
+  working copy if the tool does (e.g. aerial PNG under `instance/`), read it,
+  write down what it shows — do not hash or commit into `reference/` (`reference/SOURCES.txt`,
+  place-sources `look_only`). Prefer the URL download path over a browser pane.
 - Never researched: private interiors; back gardens come from aerial,
   not from photos over fences (`rules/frontage-and-evidence.md`).

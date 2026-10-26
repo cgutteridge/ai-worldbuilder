@@ -1,9 +1,9 @@
 """Unit tests for google_aerial tile maths and sheet.
 
 Markup and tile_range cases stub ``mc_to_tile`` at the module boundary with a
-fictional affine (not a CRS conversion) so they exercise HTML/placement without
+fictional affine (not a CRS conversion) so they exercise placement without
 GDAL, pyproj, network, or a real world frame. Coordinate correctness belongs to
-``world_frame`` fixtures (tasks #84-#86).
+``world_frame`` fixtures (tasks #84-#86). ``fetch_tile`` is stubbed to solid colours.
 """
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ import sys
 import unittest
 from unittest import mock
 from pathlib import Path
+
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
@@ -34,6 +36,18 @@ def _fictional_mc_to_tile(
     """
     del zoom
     return [(x / _BLOCKS_PER_TILE, z / _BLOCKS_PER_TILE) for x, z in points]
+
+
+def _solid_tile(x: int, y: int, zoom: int) -> Image.Image:
+    """Deterministic RGB tile for offline sheet tests.
+
+    @param x: tile x
+    @param y: tile y
+    @param zoom: zoom level (unused)
+    @returns: 256×256 solid-colour image keyed by tile indices
+    """
+    del zoom
+    return Image.new('RGB', (ga.TILE, ga.TILE), (x % 256, y % 256, 80))
 
 
 class _ProjectionStub:
@@ -121,67 +135,71 @@ class TestGrid(unittest.TestCase):
 
 
 class MarkupSheetTest(unittest.TestCase):
-    """sheet_html against a stubbed ``mc_to_tile`` (no real CRS transform)."""
+    """sheet_image against stubbed ``mc_to_tile`` / ``fetch_tile`` (no network, no CRS)."""
 
-    # Worked example: bbox (0,0,80,80), zoom 20, default scale 2 → s=512, tx0=ty0=0.
+    # Worked example: bbox (0,0,80,80), zoom 20, scale 2 → s=512, tx0=ty0=0.
     # Under _fictional_mc_to_tile, MC (x,z) → pixel ((x/40)*512, (z/40)*512).
 
     BBOX = (0, 0, 80, 80)
     ZOOM = 20
+    SCALE = 2.0
 
     def setUp(self) -> None:
         self.proj = _ProjectionStub()
-        p_mc = mock.patch.object(ga, 'mc_to_tile', side_effect=self.proj)
-        p_crs = mock.patch.object(
-            wf, 'transform_epsg',
-            side_effect=AssertionError('markup must not call CRS'),
+        patches = (
+            mock.patch.object(ga, 'mc_to_tile', side_effect=self.proj),
+            mock.patch.object(ga, 'fetch_tile', side_effect=_solid_tile),
+            mock.patch.object(
+                wf, 'transform_epsg',
+                side_effect=AssertionError('markup must not call CRS'),
+            ),
+            mock.patch.object(
+                wf, 'mc_batch_to_wgs84',
+                side_effect=AssertionError('markup must not call mc_batch_to_wgs84'),
+            ),
         )
-        p_batch = mock.patch.object(
-            wf, 'mc_batch_to_wgs84',
-            side_effect=AssertionError('markup must not call mc_batch_to_wgs84'),
-        )
-        for p in (p_mc, p_crs, p_batch):
+        for p in patches:
             p.start()
             self.addCleanup(p.stop)
 
-    def test_sheet_has_every_tile_and_the_outline(self):
-        page = ga.sheet_html(self.BBOX, self.ZOOM, 't')
-        self.assertEqual(page.count('<img '), 9)
-        self.assertIn('x40', page)
-        self.assertIn('<polygon', page)
+    def test_sheet_size_covers_every_tile(self):
+        im = ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+        # 3×3 tiles at scale 2 → 1536×1536
+        self.assertEqual(im.size, (1536, 1536))
+        # Interior of tile (0,0) / (2,2) keep stub colour (avoid bbox outline at corners).
+        self.assertEqual(im.getpixel((40, 40)), (0, 0, 80))
+        self.assertEqual(im.getpixel((1100, 1100)), (2, 2, 80))
         for corner in ((0.0, 0.0), (80.0, 0.0), (0.0, 80.0), (80.0, 80.0)):
             self.assertIn(corner, self.proj.all_points())
-        # Hand-worked: MC (80,80) → tile (2,2) → pixel (1024, 1024) on the bbox polygon.
-        self.assertIn('1024.0,1024.0', page)
         self.assertTrue(all(z == self.ZOOM for _pts, z in self.proj.calls))
 
-    def test_outlines_are_drawn_with_their_labels(self):
+    def test_outlines_project_ring_corners(self):
         ring = [(40, 40), (80, 40), (80, 80), (40, 80), (40, 40)]
-        page = ga.sheet_html(
-            self.BBOX, self.ZOOM, 't', outlines=[{'ring': ring, 'label': '441'}],
+        im = ga.sheet_image(
+            self.BBOX, self.ZOOM, scale=self.SCALE,
+            outlines=[{'ring': ring, 'label': '441'}],
         )
-        self.assertEqual(page.count('class="osm"'), 1)
-        self.assertIn('>441</text>', page)
+        self.assertEqual(im.size, (1536, 1536))
         for x, z in ring:
             self.assertIn((float(x), float(z)), self.proj.all_points())
-        # Hand-worked ring pixels: 40→512, 80→1024.
-        self.assertIn(
-            '512.0,512.0 1024.0,512.0 1024.0,1024.0 512.0,1024.0 512.0,512.0',
-            page,
-        )
-        self.assertNotIn('class="osm"', ga.sheet_html(self.BBOX, self.ZOOM, 't'))
+        # Without outlines, fewer projection batches (no ring points).
+        bare = _ProjectionStub()
+        with mock.patch.object(ga, 'mc_to_tile', side_effect=bare):
+            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+        self.assertGreater(len(self.proj.all_points()), len(bare.all_points()))
 
-    def test_marks_are_drawn_per_cell(self):
-        page = ga.sheet_html(
-            self.BBOX, self.ZOOM, 't',
+    def test_marks_project_cell_corners(self):
+        im = ga.sheet_image(
+            self.BBOX, self.ZOOM, scale=self.SCALE,
             marks=[(40, 40, '#f0f'), (41, 40, '#0ff')],
         )
-        self.assertEqual(page.count('class="mark"'), 2)
+        self.assertEqual(im.size, (1536, 1536))
         for p in ((40.0, 40.0), (41.0, 40.0), (41.0, 41.0), (40.0, 41.0)):
             self.assertIn(p, self.proj.all_points())
-        # Hand-worked cell (40,40): corners → 512 / 524.8 (41/40 * 512).
-        self.assertIn('512.0,512.0 524.8,512.0 524.8,524.8 512.0,524.8', page)
-        self.assertNotIn('class="mark"', ga.sheet_html(self.BBOX, self.ZOOM, 't'))
+        bare = _ProjectionStub()
+        with mock.patch.object(ga, 'mc_to_tile', side_effect=bare):
+            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+        self.assertGreater(len(self.proj.all_points()), len(bare.all_points()))
 
 
 if __name__ == '__main__':

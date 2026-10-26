@@ -12,8 +12,9 @@ Read before finding, fetching or viewing any photo or aerial. Logging format:
 - After downloading: `ref_manifest.py add …` (sets useful + tile fields).
 - Do not re-Read images marked `useful=no`. Prefer mosaics and contact sheets.
 - Which source answers which question: `rules/evidence-order.md`.
-- Look-only aerial (satellite sheet via `shims/google_aerial.py`, place-sources) is looked at for every
-  cell: view the sheet once, write down what it shows, never save it. It may be the step's one primary aerial.
+- Satellite aerial (`shims/google_aerial.py sheet`, place-sources) is looked at for every
+  cell: download the PNG under `instance/google-aerial/`, `Read` it once, write down what it shows.
+  Do not commit or hash it into `reference/`. It may be the step's one primary aerial.
 - Per build step: at most one primary aerial and one primary street photo,
   unless settling a named disputed detail.
 - Private interiors are never researched (see `rules/frontage-and-evidence.md`).

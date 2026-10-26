@@ -54,8 +54,8 @@ One building per review. Skip any building that already has an open feature issu
    Every player move goes through `scripts/mc_player.py` (scripts import `move_player`; agents use the CLI) with a non-empty
    `--why` / `why=` naming the feature, pass, or place — Minecraft chat shows `[AI-builder] …` before the hop. Do not call
    raw MCP `entity_teleport` / `player_set_gamemode` for the player.
- - **Browser pane.** It refuses some new `file://` paths. Write the sheet over a filename it has already opened (instance/google-aerial/)
-   and navigate again. `google_aerial.py --marks cells.json` paints live cells (tile, membrane, colour patches) on the aerial sheet.
+ - **Aerial sheet.** `google_aerial.py sheet` (and `google_window.py`) download tiles to a PNG under `instance/google-aerial/`;
+   `Read` that file. `--marks cells.json` paints live cells (tile, membrane, colour patches) on the sheet.
 
 
 ## Reflection on the 48,-44 review (2026-10-16): what went wrong and the approach we keep
@@ -103,6 +103,6 @@ evidence table alone, in one pass, got it accepted at the first look. What made 
    nearest the portal, steel jambs at both ends, the sign band as the lintel, open passage.
 6. **Numbers then pictures**: live tops vs lidar, no air in exposed wall columns, then the user's own view. Iso render (`block_render_region`)
    is useful; its `front`/`side` views are flattened projections and mislead.
-7. **Practical**: view an aerial sheet whole with `document.body.style.zoom = 0.55` in the browser pane (one screenshot, no scrolling).
+7. **Practical**: `Read` the aerial PNG from `google_aerial.py sheet` (one image, no browser).
    Before teleporting the user, check the target is standing room (air at y+1, y+2) with `World`: the first spot I picked was inside another
    building.

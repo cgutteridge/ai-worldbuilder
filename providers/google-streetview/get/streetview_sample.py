@@ -4,11 +4,12 @@
 Single-step method (reference/SOURCES.txt): the unofficial thumbnail URL takes
 ``ll=<lat>,<lon>`` and returns the nearest pano's frame, so no pano id lookup.
 
-``sample`` writes a local HTML contact sheet whose <img> tags load straight from Google
-in the browser (nothing is downloaded); you look and tick the useful frames. ``keep``
-then saves ONLY those frames to reference/photos/streetview/<tx>_<tz>/<id>.jpg (local,
-gitignored, per user decision 2026-10-14), logs each in reference/manifest.jsonl, and
-records URL + params + note in a small committed JSON file.
+``sample`` downloads thumbnails, writes a PNG contact sheet under
+``instance/streetview/`` (gitignored), and prints frame ids so you can ``Read`` the
+sheet and ``keep`` the useful ones. ``keep`` saves ONLY those frames to
+``reference/photos/streetview/<tx>_<tz>/<id>.jpg`` (local, gitignored, per user
+decision 2026-10-14), logs each in ``reference/manifest.jsonl``, and records URL +
+params + note in a small committed JSON file. Do not open a browser for this.
 
   python3 shims/streetview_sample.py sample --cell 48,-44            # 3×3 points × 4 yaws
   python3 shims/streetview_sample.py sample --cell 48,-44 --grid 4 --yaws 0,90,180,270
@@ -16,19 +17,22 @@ records URL + params + note in a small committed JSON file.
   python3 shims/streetview_sample.py show --cell 48,-44              # sheet of kept frames only
   python3 shims/streetview_sample.py list --cell 48,-44
 
-Sheet: instance/streetview/<tx>_<tz>-sheet.html (gitignored). Kept: site/cells/<tx>_<tz>-STREETVIEW.json.
+Sheet: instance/streetview/<tx>_<tz>-sheet.png. Kept: site/cells/<tx>_<tz>-STREETVIEW.json.
 Do not loop this over many cells/panos at once (ToS); keep grids small.
 """
 from __future__ import annotations
 
 import argparse
-import html
+import io
 import json
+import math
 import re
 import sys
 import urllib.request
 from datetime import date
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 from script_env import ROOT  # noqa: E402
 
@@ -40,7 +44,10 @@ from ref_manifest import REF, append_manifest, find_dup, load_manifest, sha256_f
 BASE = 'https://streetviewpixels-pa.clients6.google.com/v1/thumbnail?cb_client=maps_sv.tactile'
 SHEETS = ROOT / 'instance' / 'streetview'
 CELLS = ROOT / 'site' / 'cells'
-CITE = 'll-method, look-only'
+CITE = 'll-method, working-copy'
+HDR = {'Referer': 'https://www.google.com/', 'User-Agent': 'Mozilla/5.0'}
+THUMB_W, THUMB_H = 450, 300
+SHEET_COLS = 4
 
 
 def parse_cell(spec: str) -> tuple[int, int]:
@@ -63,6 +70,38 @@ def kept_path(tx: int, tz: int) -> Path:
     return CELLS / f'{tx}_{tz}-STREETVIEW.json'
 
 
+def sample_dir(tx: int, tz: int) -> Path:
+    """Directory for downloaded sample thumbs for a cell.
+
+    @param tx: cell X index
+    @param tz: cell Z index
+    @returns: path under instance/streetview/
+    """
+    return SHEETS / f'{tx}_{tz}'
+
+
+def _font(size: int = 14):
+    """Label font for contact-sheet captions.
+
+    @param size: point size
+    @returns: PIL font
+    """
+    try:
+        return ImageFont.truetype('DejaVuSans.ttf', size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def fetch_bytes(url: str) -> bytes:
+    """Download URL bytes with Google-ish headers.
+
+    @param url: image URL
+    @returns: raw response body
+    """
+    req = urllib.request.Request(url, headers=HDR)
+    return urllib.request.urlopen(req, timeout=30).read()
+
+
 def save_frame(tx: int, tz: int, f: dict, note: str) -> str:
     """Download one kept frame under reference/photos and log it in the manifest.
 
@@ -74,8 +113,7 @@ def save_frame(tx: int, tz: int, f: dict, note: str) -> str:
     """
     dest = REF / 'photos' / 'streetview' / f'{tx}_{tz}' / f"{f['id']}.jpg"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(f['url'], headers={'Referer': 'https://www.google.com/', 'User-Agent': 'Mozilla/5.0'})
-    dest.write_bytes(urllib.request.urlopen(req, timeout=30).read())
+    dest.write_bytes(fetch_bytes(f['url']))
     rel = str(dest.relative_to(REF))
     sha = sha256_file(dest)
     if not find_dup(load_manifest(), f['url'], sha):
@@ -99,9 +137,18 @@ def frame_url(lat: float, lon: float, yaw: int, w: int = 900, h: int = 600, pitc
     @param w: image width
     @param h: image height
     @param pitch: pitch in degrees
-    @returns: URL (open in a browser; do not download)
+    @returns: URL (download via ``fetch_bytes`` / ``save_frame``; do not open in a browser)
     """
     return f'{BASE}&w={w}&h={h}&pitch={pitch}&yaw={yaw}&ll={lat:.6f},{lon:.6f}'
+
+
+def thumb_url(url: str) -> str:
+    """Contact-sheet sized variant of a full frame URL.
+
+    @param url: full-size thumbnail URL
+    @returns: URL with sheet dimensions
+    """
+    return url.replace(f'w=900&h=600', f'w={THUMB_W}&h={THUMB_H}')
 
 
 def sample_points(tx: int, tz: int, grid: int) -> list[dict]:
@@ -147,41 +194,87 @@ def build_frames(tx: int, tz: int, grid: int, yaws: list[int]) -> list[dict]:
             for p in sample_points(tx, tz, grid) for y in yaws]
 
 
-def write_sheet(tx: int, tz: int, frames: list[dict], title: str) -> Path:
-    """Write a local HTML contact sheet with tick boxes and a ready-made keep command.
+def download_thumb(frame: dict, dest: Path) -> Image.Image:
+    """Download a sheet-sized thumb for a frame and cache it.
+
+    @param frame: frame record with url
+    @param dest: jpeg path to write
+    @returns: RGB image
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    raw = fetch_bytes(thumb_url(frame['url']))
+    dest.write_bytes(raw)
+    return Image.open(io.BytesIO(raw)).convert('RGB')
+
+
+def load_frame_image(frame: dict, cache_dir: Path | None = None) -> Image.Image:
+    """Load a frame image from a kept path, sample cache, or download.
+
+    @param frame: frame record (may include ``path`` relative to reference/)
+    @param cache_dir: optional sample-thumb directory
+    @returns: RGB image at sheet thumb size
+    """
+    if frame.get('path'):
+        p = REF / frame['path']
+        if p.exists():
+            im = Image.open(p).convert('RGB')
+            return im.resize((THUMB_W, THUMB_H), Image.Resampling.BILINEAR)
+    if cache_dir is not None:
+        cached = cache_dir / f"{frame['id']}.jpg"
+        if cached.exists():
+            return Image.open(cached).convert('RGB')
+    return download_thumb(frame, (cache_dir or SHEETS) / f"{frame['id']}.jpg")
+
+
+def contact_sheet(frames: list[dict], images: list[Image.Image], cols: int = SHEET_COLS) -> Image.Image:
+    """Tile labelled thumbs into one RGB contact sheet.
+
+    @param frames: frame records (ids / coords for captions)
+    @param images: one RGB image per frame (already sized)
+    @param cols: columns in the grid
+    @returns: RGB contact sheet
+    """
+    if not frames:
+        raise ValueError('no frames for contact sheet')
+    cols = max(1, min(cols, len(frames)))
+    rows = math.ceil(len(frames) / cols)
+    caption_h = 28
+    cell_h = THUMB_H + caption_h
+    sheet = Image.new('RGB', (cols * THUMB_W, rows * cell_h), (17, 17, 17))
+    draw = ImageDraw.Draw(sheet)
+    font = _font(13)
+    for k, (f, im) in enumerate(zip(frames, images)):
+        if im.size != (THUMB_W, THUMB_H):
+            im = im.resize((THUMB_W, THUMB_H), Image.Resampling.BILINEAR)
+        x, y = (k % cols) * THUMB_W, (k // cols) * cell_h
+        sheet.paste(im, (x, y))
+        label = f"{f['id']}  x{f['x']} z{f['z']}  yaw {f['yaw']}"
+        draw.rectangle([x, y + THUMB_H, x + THUMB_W, y + cell_h], fill=(34, 34, 34))
+        draw.text((x + 6, y + THUMB_H + 6), label, fill=(221, 221, 221), font=font)
+    return sheet
+
+
+def write_sheet(tx: int, tz: int, frames: list[dict], stem: str,
+                cache: bool = True) -> Path:
+    """Download (or reuse) thumbs, write a PNG contact sheet.
 
     @param tx: cell X index
     @param tz: cell Z index
     @param frames: frame records to show
-    @param title: heading text
-    @returns: path of the written sheet
+    @param stem: file stem (without ``.png``)
+    @param cache: when True, store thumbs under ``instance/streetview/<tx>_<tz>/``
+    @returns: path of the written PNG
     """
     SHEETS.mkdir(parents=True, exist_ok=True)
-    cards = ''.join(
-        f'<label class="c"><input type="checkbox" value="{html.escape(f["id"])}">'
-        f'<img loading="lazy" src="{html.escape(f["url"].replace("w=900&h=600", "w=450&h=300"))}">'
-        f'<span>{html.escape(f["id"])} · x{f["x"]} z{f["z"]} · yaw {f["yaw"]}</span></label>'
-        for f in frames)
-    page = f"""<!doctype html><meta charset=utf-8><title>{html.escape(title)}</title>
-<style>body{{font:13px system-ui;margin:12px;background:#111;color:#ddd}}
-.g{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}}
-.c{{display:block;background:#222;padding:4px;cursor:pointer}}.c img{{width:100%;display:block}}
-.c:has(input:checked){{outline:3px solid #4c8}}pre{{background:#000;padding:8px;user-select:all}}</style>
-<h3>{html.escape(title)}</h3><p>Tick the useful frames, then run the command below.</p>
-<pre id=cmd></pre><div class=g>{cards}</div>
-<script>
-const cmd=document.getElementById('cmd'),bs=[...document.querySelectorAll('input')];
-function up(){{cmd.textContent='python3 shims/streetview_sample.py keep --cell {tx},{tz} --ids '+
-bs.filter(b=>b.checked).map(b=>b.value).join(',')+' --note "..."'}}
-bs.forEach(b=>b.onchange=up);up();
-</script>"""
-    out = SHEETS / f'{tx}_{tz}-sheet.html'
-    out.write_text(page)
+    cache_dir = sample_dir(tx, tz) if cache else None
+    images = [load_frame_image(f, cache_dir) for f in frames]
+    out = SHEETS / f'{stem}.png'
+    contact_sheet(frames, images).save(out, format='PNG')
     return out
 
 
 def cmd_sample(a: argparse.Namespace) -> int:
-    """Build the contact sheet for a cell.
+    """Download thumbs and write the contact sheet for a cell.
 
     @param a: parsed args
     @returns: exit code
@@ -189,9 +282,12 @@ def cmd_sample(a: argparse.Namespace) -> int:
     tx, tz = parse_cell(a.cell)
     yaws = [int(y) for y in a.yaws.split(',')]
     frames = build_frames(tx, tz, a.grid, yaws)
-    path = write_sheet(tx, tz, frames, f'Street View samples, cell {tx},{tz}')
+    path = write_sheet(tx, tz, frames, f'{tx}_{tz}-sheet', cache=True)
+    ids = ','.join(f['id'] for f in frames)
     print(f'{len(frames)} frames ({a.grid}x{a.grid} points x {len(yaws)} yaws)')
-    print(f'Open in the browser pane: file://{path}')
+    print(f'Read: {path}')
+    print(f'keep: python3 shims/streetview_sample.py keep --cell {tx},{tz} --ids <ids> --note "..."')
+    print(f'ids: {ids}')
     return 0
 
 
@@ -228,7 +324,8 @@ def cmd_show(a: argparse.Namespace) -> int:
     if not frames:
         print('no kept frames')
         return 1
-    print(f'file://{write_sheet(tx, tz, frames, f"Kept Street View frames, cell {tx},{tz}")}')
+    path = write_sheet(tx, tz, frames, f'{tx}_{tz}-kept', cache=False)
+    print(f'Read: {path}')
     return 0
 
 

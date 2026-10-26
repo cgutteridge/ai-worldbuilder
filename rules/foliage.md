@@ -42,7 +42,7 @@ CAUTION (2026-10-16, checked on 48,-45 x6208..6272 z-5696..-5632 with the lidar/
 tree columns hold only about a third of the real crowns and sit ~3-4 blocks SOUTH of the crown seen in aerial; the live trees match aerial
 crowns poorly too. So lidar is a rough height hint and a cross-check, never the position source and never a complete inventory. Best aerial is the
 position source: read crowns by eye from a cropped, gridded aerial window (64 blocks, 12 px per block) and record them as explicit crowns.
-Lidar (DSM kind 2/3 columns) is measured heights for the crowns it has; the look-only aerial sheet shows what is there now. Use both:
+Lidar (DSM kind 2/3 columns) is measured heights for the crowns it has; the aerial PNG sheet shows what is there now. Use both:
   python3 scripts/tree_review.py --cell tx,tz --marks <scratch>/m.json     # or --zone x0,z0,x1,z1
   python3 shims/google_aerial.py sheet --cell tx,tz --marks <scratch>/m.json   # or --at X,Z --radius 60 --zoom 20
 Verdicts (crowns are matched by their tops, never by blob, because the live canopy merges crowns):
@@ -65,15 +65,15 @@ non-tree"). Cells whose neighbours' crowns overhang the edge: review them togeth
 ------------------------------------------------------------------------
 Redo from aerial (user, 2026-10-16: the trees pass reads the z19 mosaic; aerial is the position source)
 ------------------------------------------------------------------------
-Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crops (look-only satellite sheet: never
-downloaded or processed by code) and stored in reference/trees-google-crowns.json:
+Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crop PNGs
+(`google_window.py`; tiles downloaded, not browser HTML) and stored in reference/trees-google-crowns.json:
   {"tx,tz": {"evidence", "zones": [[x0,z0,x1,z1]], "crowns": [{"x","z","r","note"}]}}
 Inside a zone the detector's crowns are dropped and these replace them; outside, the detector is unchanged (use that for a woodland
 you cannot split into crowns). Aerial-read crowns may stand on paving, path colours, tarmac wool and slabs (trees_layer.GOOGLE_SURFACES;
 the ground block under a real tree is often wrong) and inside footprint-map courtyards; water, trunk blocked and the normal air-only
 rules still apply. Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
-  1 python3 shims/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); open in the browser pane,
-                                                                              close old tabs first (tab cap). Read centre (px->block from the grid) and r (diameter/2).
+  1 python3 shims/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); Read the PNG.
+                                                                              Read centre (px->block from the grid) and r (diameter/2).
   2 write the crowns into reference/trees-google-crowns.json (zones = the part you read).
   3 python3 scripts/trees_replan.py --cell tx,tz --out plan.json ; python3 shims/google_window.py plan --at X,Z --half 32x16 --plan plan.json
     yellow circles must sit on the real crowns; add the ones you missed, move the ones that are off; red dashed = skipped (water, blocked...).

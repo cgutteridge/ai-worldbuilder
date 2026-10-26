@@ -250,7 +250,7 @@ GOOGLE_CROWNS = ROOT / 'reference/trees-google-crowns.json'
 
 
 def google_crowns(cell: tuple[int, int], path: Path | None = None):
-    """Crowns read by eye from the aerial satellite sheet (look-only), from reference/trees-google-crowns.json.
+    """Crowns read by eye from the aerial PNG sheet, from reference/trees-google-crowns.json.
 
     {"tx,tz": {"evidence": "...", "zones": [[x0, z0, x1, z1]], "crowns": [{"x", "z", "r", "note"}]}}. Inside a zone the
     detector's crowns (mosaic detection, dense fill, extra crowns) are DROPPED and these replace them: the aerial sheet

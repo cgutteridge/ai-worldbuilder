@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
-"""Google satellite tiles for one cell or one spot: a look-only sheet with the MC grid drawn on it.
+"""Google satellite tiles for one cell or one spot: a downloaded PNG sheet with the MC grid drawn on it.
 
 Always look at this for every cell (place-sources provider ``google-satellite``; alias ``google``): it is often
-clearer than keepable aerial. Same status as the Street View thumbnails (reference/SOURCES.txt): an unofficial
-plain-image endpoint, viewed in the browser pane, never downloaded, hashed, committed or looped over many cells.
-
-``sheet`` writes a local HTML page whose <img> tags load straight from Google in the browser (nothing is saved
-here). The page shows the tiles seamlessly, the bbox outline, and a MC block grid every 10 blocks (x green, z
-cyan, labelled) so a position on the picture reads straight off as a block coordinate.
+clearer than keepable aerial. Uses the unofficial plain-image tile URL: download the few tiles needed, stitch
+them, overlay the MC grid, write a PNG under ``instance/google-aerial/`` (gitignored), and ``Read`` that file.
+Do not open a browser for this. Do not hash or commit the PNGs into ``reference/``. Keep grids small (ToS).
 
   python3 shims/google_aerial.py sheet --cell 49,-42            # whole cell, z19
   python3 shims/google_aerial.py sheet --at 6379,-5277          # around a building, z20, radius 30 blocks
   python3 shims/google_aerial.py sheet --at 6379,-5277 --radius 60 --zoom 19
-  python3 shims/google_aerial.py sheet --cell 49,-42 --outlines # + OSM building outlines (red, way-id tail) to compare at a glance
-  python3 shims/google_aerial.py sheet --at 6180,-5606 --marks cells.json   # colour the listed MC cells: [[x, z, "#rrggbb"], ...]
+  python3 shims/google_aerial.py sheet --cell 49,-42 --outlines # + OSM building outlines (red, way-id tail)
+  python3 shims/google_aerial.py sheet --at 6180,-5606 --marks cells.json   # colour listed MC cells
   python3 shims/google_aerial.py url --at 6379,-5277 --zoom 19  # the single tile URL
 
-Sheet: instance/google-aerial/<name>.html (gitignored). Open it as file://... in the browser pane.
-After looking, record it once:  cell_sources.py --cell TX,TZ --record google-satellite --result found --note "what it shows"
+Sheet: instance/google-aerial/<name>.png (gitignored). After looking, record once:
+  cell_sources.py --cell TX,TZ --record google-satellite --result found --note "what it shows"
 """
 from __future__ import annotations
 
 import argparse
-import html
+import io
+import json
 import sys
+import urllib.request
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 from script_env import ROOT  # noqa: E402
 
@@ -36,6 +37,7 @@ SHEETS = ROOT / 'instance' / 'google-aerial'
 TILE = 256
 MAX_TILES = 6                       # per side: one cell at z19 is 3-4; keeps the request count small (ToS)
 GRID = 10                           # MC blocks between grid lines
+HDR = {'Referer': 'https://www.google.com/', 'User-Agent': 'Mozilla/5.0'}
 
 
 def mc_to_tile(points: list[tuple[float, float]], zoom: int) -> list[tuple[float, float]]:
@@ -49,7 +51,7 @@ def mc_to_tile(points: list[tuple[float, float]], zoom: int) -> list[tuple[float
 
 
 def tile_url(x: int, y: int, zoom: int) -> str:
-    """Satellite tile URL (open in a browser; do not download).
+    """Satellite tile URL (download via ``fetch_tile``; do not open in a browser).
 
     @param x: tile x
     @param y: tile y
@@ -57,6 +59,19 @@ def tile_url(x: int, y: int, zoom: int) -> str:
     @returns: URL
     """
     return f'{BASE}&x={x}&y={y}&z={zoom}'
+
+
+def fetch_tile(x: int, y: int, zoom: int) -> Image.Image:
+    """Download one satellite tile as an RGB image.
+
+    @param x: tile x
+    @param y: tile y
+    @param zoom: zoom level
+    @returns: 256×256 RGB image
+    """
+    req = urllib.request.Request(tile_url(x, y, zoom), headers=HDR)
+    raw = urllib.request.urlopen(req, timeout=30).read()
+    return Image.open(io.BytesIO(raw)).convert('RGB')
 
 
 def tile_range(bbox: tuple[int, int, int, int], zoom: int) -> tuple[int, int, int, int]:
@@ -104,41 +119,73 @@ def osm_outlines(bbox: tuple[int, int, int, int]) -> list[dict]:
     return out
 
 
-def sheet_html(bbox: tuple[int, int, int, int], zoom: int, title: str, scale: float = 2.0,
-               outlines: list[dict] | None = None, marks: list | None = None) -> str:
-    """The sheet page: seamless tiles, the bbox outline and the labelled MC grid.
+def _parse_rgb(col: str) -> tuple[int, int, int]:
+    """Parse ``#rrggbb`` / ``#rgb`` (with or without ``#``) to an RGB triple.
 
-    @param bbox: MC x0, z0, x1, z1 to outline (tiles cover it and a margin)
+    @param col: colour string
+    @returns: (r, g, b)
+    """
+    c = col.lstrip('#')
+    if len(c) == 3:
+        c = ''.join(ch * 2 for ch in c)
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _font(size: int = 11):
+    """Load a small bitmap font for grid labels.
+
+    @param size: requested point size (best-effort)
+    @returns: a PIL font
+    """
+    try:
+        return ImageFont.truetype('DejaVuSans.ttf', size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
+                outlines: list[dict] | None = None, marks: list | None = None) -> Image.Image:
+    """Stitch downloaded tiles and draw the bbox outline plus labelled MC grid.
+
+    @param bbox: MC x0, z0, x1, z1 to outline (tiles cover it)
     @param zoom: zoom level
-    @param title: heading text
-    @param scale: on-screen size of one 256 px tile, as a multiple
+    @param scale: resize factor for each 256 px tile (1 = native)
     @param outlines: optional building outlines (osm_outlines()), drawn red with a yellow label at the centroid
-    @param marks: optional [(x, z, colour)] MC cells drawn as translucent squares (compare live blocks with the picture)
-    @returns: HTML text
+    @param marks: optional [(x, z, colour)] MC cells drawn as translucent squares
+    @returns: RGB image
     """
     tx0, ty0, tx1, ty1 = tile_range(bbox, zoom)
-    s = TILE * scale
-    imgs = ''.join(
-        f'<img src="{tile_url(x, y, zoom)}" style="left:{(x - tx0) * s}px;top:{(y - ty0) * s}px;width:{s}px;height:{s}px">'
-        for y in range(ty0, ty1 + 1) for x in range(tx0, tx1 + 1))
+    s = max(1, int(round(TILE * scale)))
+    w, h = (tx1 - tx0 + 1) * s, (ty1 - ty0 + 1) * s
+    im = Image.new('RGBA', (w, h))
+    for y in range(ty0, ty1 + 1):
+        for x in range(tx0, tx1 + 1):
+            tile = fetch_tile(x, y, zoom)
+            if s != TILE:
+                tile = tile.resize((s, s), Image.Resampling.BILINEAR)
+            im.paste(tile, ((x - tx0) * s, (y - ty0) * s))
+
+    draw = ImageDraw.Draw(im)
+    font = _font(11)
     x0, z0, x1, z1 = bbox
     lines = grid_lines(bbox)
     ends = [p for ln in lines for p in (ln['a'], ln['b'])] + [(x0, z0), (x1, z0), (x1, z1), (x0, z1)]
     px = [((fx - tx0) * s, (fy - ty0) * s) for fx, fy in mc_to_tile(ends, zoom)]
-    svg = ''
+
     for i, ln in enumerate(lines):
         (ax, ay), (bx, by) = px[2 * i], px[2 * i + 1]
-        col = '#3f6' if ln['axis'] == 'x' else '#3cf'
-        svg += (f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{col}" stroke-opacity=".55" stroke-width="1"/>'
-                f'<text x="{ax + 2:.1f}" y="{ay + 11:.1f}" fill="{col}" font-size="11">{ln["axis"]}{ln["value"]}</text>')
-    c = px[-4:]
+        col = (51, 255, 102, 140) if ln['axis'] == 'x' else (51, 204, 255, 140)
+        draw.line([(ax, ay), (bx, by)], fill=col, width=1)
+        draw.text((ax + 2, ay + 1), f"{ln['axis']}{ln['value']}", fill=col[:3], font=font)
+
     if marks:
         corners = [(x + a, z + b) for x, z, _c in marks for a, b in ((0, 0), (1, 0), (1, 1), (0, 1))]
         cp = [((fx - tx0) * s, (fy - ty0) * s) for fx, fy in mc_to_tile(corners, zoom)]
         for i, (_x, _z, col) in enumerate(marks):
             q = cp[4 * i:4 * i + 4]
-            svg += ('<polygon points="' + ' '.join(f'{a:.1f},{b:.1f}' for a, b in q)
-                    + f'" fill="{html.escape(col)}" fill-opacity=".45" stroke="none" class="mark"/>')
+            r, g, b = _parse_rgb(col)
+            draw.polygon(q, fill=(r, g, b, 115))
+
     if outlines:
         flat = [p for o in outlines for p in o['ring']]
         proj = [((fx - tx0) * s, (fy - ty0) * s) for fx, fy in mc_to_tile(flat, zoom)]
@@ -146,36 +193,31 @@ def sheet_html(bbox: tuple[int, int, int, int], zoom: int, title: str, scale: fl
         for o in outlines:
             pts = proj[i:i + len(o['ring'])]
             i += len(o['ring'])
-            svg += ('<polygon points="' + ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
-                    + '" fill="none" stroke="#f33" stroke-width="1.5" class="osm"/>')
-            cx, cy = sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts)
-            svg += f'<text x="{cx:.1f}" y="{cy:.1f}" fill="#ff0" font-size="11" text-anchor="middle">{html.escape(o["label"])}</text>'
-    svg += '<polygon points="' + ' '.join(f'{x:.1f},{y:.1f}' for x, y in (c[0], c[1], c[2], c[3])) + '" fill="none" stroke="#f33" stroke-width="2"/>'
-    w, h = (tx1 - tx0 + 1) * s, (ty1 - ty0 + 1) * s
-    return (f'<!doctype html><meta charset=utf-8><title>{html.escape(title)}</title>'
-            f'<style>body{{font:13px system-ui;margin:10px;background:#111;color:#ddd}}'
-            f'#m{{position:relative;width:{w}px;height:{h}px}}#m img{{position:absolute;display:block}}'
-            f'#m svg{{position:absolute;left:0;top:0}}</style>'
-            f'<h3>{html.escape(title)}</h3><p>Google satellite z{zoom}, look-only (not saved). Red = bbox {x0},{z0}..{x1},{z1}; '
-            f'grid every {GRID} blocks.</p><div id=m>{imgs}<svg width="{w}" height="{h}">{svg}</svg></div>')
+            draw.polygon(pts, outline=(255, 51, 51, 255))
+            cx = sum(x for x, _ in pts) / len(pts)
+            cy = sum(y for _, y in pts) / len(pts)
+            draw.text((cx, cy), o['label'], fill=(255, 255, 0), font=font, anchor='mm')
+
+    c = px[-4:]
+    draw.polygon([c[0], c[1], c[2], c[3]], outline=(255, 51, 51, 255), width=2)
+    return im.convert('RGB')
 
 
-def write_sheet(name: str, bbox: tuple[int, int, int, int], zoom: int, title: str, scale: float,
+def write_sheet(name: str, bbox: tuple[int, int, int, int], zoom: int, scale: float,
                 outlines: list[dict] | None = None, marks: list | None = None) -> Path:
-    """Write the sheet under instance/google-aerial/.
+    """Download tiles, compose the sheet, write PNG under instance/google-aerial/.
 
     @param name: file stem
     @param bbox: MC bbox
     @param zoom: zoom level
-    @param title: heading text
-    @param scale: tile display scale
+    @param scale: tile resize factor
     @param outlines: optional building outlines (osm_outlines())
     @param marks: optional [(x, z, colour)] cells to colour
-    @returns: path
+    @returns: path to the PNG
     """
     SHEETS.mkdir(parents=True, exist_ok=True)
-    out = SHEETS / f'{name}.html'
-    out.write_text(sheet_html(bbox, zoom, title, scale, outlines, marks))
+    out = SHEETS / f'{name}.png'
+    sheet_image(bbox, zoom, scale, outlines, marks).save(out, format='PNG')
     return out
 
 
@@ -205,7 +247,7 @@ def main() -> int:
     g.add_argument('--at', help='MC x,z')
     ap.add_argument('--radius', type=int, default=30, help='blocks either side of --at (default 30)')
     ap.add_argument('--zoom', type=int, help='default 19 for a cell, 20 for --at')
-    ap.add_argument('--scale', type=float, default=2.0, help='on-screen size of a tile as a multiple of 256 px')
+    ap.add_argument('--scale', type=float, default=1.0, help='tile resize factor (1 = native 256 px)')
     ap.add_argument('--outlines', action='store_true', help='draw the OSM building outlines (red, way-id tail) on the sheet')
     ap.add_argument('--marks', help='JSON file [[x, z, "#rrggbb"], ...]: MC cells to colour on the sheet')
     a = ap.parse_args()
@@ -217,16 +259,15 @@ def main() -> int:
         return 0
     try:
         outlines = osm_outlines(bbox) if a.outlines else None
-        import json
         marks = [tuple(m) for m in json.loads(Path(a.marks).read_text())] if a.marks else None
         path = write_sheet(name + ('_osm' if a.outlines else '') + ('_marks' if marks else ''), bbox, zoom,
-                           f'Google aerial {name} z{zoom}', a.scale, outlines, marks)
+                           a.scale, outlines, marks)
     except ValueError as e:
         print(e, file=sys.stderr)
         return 2
     tx0, ty0, tx1, ty1 = tile_range(bbox, zoom)
     print(f'{(tx1 - tx0 + 1) * (ty1 - ty0 + 1)} tiles at z{zoom}, bbox {bbox}')
-    print(f'Open in the browser pane: file://{path}')
+    print(f'Read: {path}')
     return 0
 
 
