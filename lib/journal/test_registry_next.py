@@ -1,32 +1,15 @@
 #!/usr/bin/env python3
-"""Tests for registry next + ISSUES (ticket #31 seams)."""
+"""Tests for registry next (ticket #31 / #121 seams)."""
 from __future__ import annotations
 
 import unittest
 
 import cellmath
-import registry_issues as I
 import registry_next as N
 from cell_journal import Build, Note
 
 
-class IssuesParseTest(unittest.TestCase):
-    def test_parse_cell_layer_and_feature(self):
-        text = '\n'.join([
-            '# comment',
-            'I-014  cell 48,-44 trees  crown wrong',
-            'I-015  feature q001_road  missing door',
-            'I-016  cell 47,-45  redo whole cell',
-        ])
-        issues = I.parse_issues(text)
-        self.assertEqual(len(issues), 3)
-        self.assertEqual(issues[0].layer, 'trees')
-        self.assertEqual(issues[0].cell, (48, -44))
-        self.assertEqual(issues[1].feature_id, 'q001_road')
-        self.assertIsNone(issues[2].layer)
-
-
-class _Journal(unittest.TestCase):
+class NextTaskTest(unittest.TestCase):
     def setUp(self):
         from journal_testkit import JournalWorld
         self.jw = JournalWorld()
@@ -34,57 +17,28 @@ class _Journal(unittest.TestCase):
         self.addCleanup(self.jw.__exit__)
         self.root = self.jw.root
         (self.root / 'site' / 'archive').mkdir(parents=True)
-
-    def view(self, cell=(48, -44)):
-        return self.jw.reg.cell(cell)
+        cellmath.reload_grid({'cell': {'size': 128, 'origin': [48, -44]}})
+        self.addCleanup(cellmath.reload_grid)
 
     def in_progress(self, fid, cell=(48, -44)):
         """A feature whose apply read back with mismatches (in-progress, not in flight)."""
         x0, z0 = cell[0] * 128, cell[1] * 128
-        self.jw.reg.change(Build(fid, 'feature', {(x0 + 9, 70, z0 + 9): 'minecraft:bricks'}), lambda w: None)
+        self.jw.reg.change(
+            Build(fid, 'feature', {(x0 + 9, 70, z0 + 9): 'minecraft:bricks'}),
+            lambda w: None,
+        )
 
-
-class IssuesAddCloseTest(_Journal):
-    def test_add_issue_notes_the_cell_and_keeps_it_from_done(self):
-        self.jw.seed((48, -44), ground=True, trees=True, decor=True)
-        self.assertTrue(self.view().done)
-        issue = I.add_issue(reason='sparse crowns', cell=(48, -44), layer='trees', root=self.root)
-        self.assertEqual(issue.id, 1)
-        self.assertEqual(len(I.load_issues(self.root)), 1)
-        self.assertFalse(self.view().done)
-        self.assertIn('issue I-001', self.view().left)
-
-    def test_auto_close_on_layer_archives_and_journals_close(self):
-        self.jw.seed((48, -44), ground=True, trees=True, decor=True)
-        I.add_issue(reason='x', cell=(48, -44), layer='trees', root=self.root)
-        closed = I.auto_close_for_target(cell=(48, -44), layer='trees', root=self.root)
-        self.assertEqual(len(closed), 1)
-        self.assertEqual(I.load_issues(self.root), [])
-        arch = I.archive_path(self.root).read_text()
-        self.assertIn('I-001', arch)
-        self.assertIn('closed', arch)
-        self.assertTrue(self.view().done)
-
-    def test_feature_issue_is_noted_on_every_cell_of_the_feature(self):
-        self.jw.build('q001_x', 'feature', {(48 * 128, 60, -44 * 128): 'minecraft:bricks',
-                                            (49 * 128, 60, -44 * 128): 'minecraft:bricks'})
-        I.add_issue(reason='roof', feature_id='q001_x', root=self.root)
-        self.assertIn('issue I-001', self.view((48, -44)).left)
-        self.assertIn('issue I-001', self.view((49, -44)).left)
-
-
-class NextTaskTest(_Journal):
-    def setUp(self):
-        super().setUp()
-        cellmath.reload_grid({'cell': {'size': 128, 'origin': [48, -44]}})
-        self.addCleanup(cellmath.reload_grid)
-
-    def test_open_issue_beats_registry_work(self):
+    def test_issues_txt_does_not_steer_next(self):
+        """#121: open I-nnn lines in site/ISSUES.txt must not beat registry work."""
         self.jw.seed((48, -44), ground=True)
-        I.add_issue(reason='fix', cell=(48, -45), layer='ground', root=self.root, reopen=False)
+        (self.root / 'site' / 'ISSUES.txt').write_text(
+            'I-001  cell 48,-45 ground  leftover text file\n', encoding='utf-8',
+        )
         task = N.next_task(self.jw.reg, root=self.root)
-        self.assertEqual(task['kind'], 'issue')
-        self.assertEqual(task['issue_id'], 1)
+        self.assertIsNotNone(task)
+        self.assertNotEqual(task.get('kind'), 'issue')
+        self.assertEqual(task['cell'], '48,-44')
+        self.assertEqual(task['layer'], 'trees')
 
     def test_marker_cell_preferred_when_not_done(self):
         self.jw.seed((49, -44), marker=True)
@@ -115,6 +69,7 @@ class NextTaskTest(_Journal):
 
     def test_idle_when_empty(self):
         self.assertIsNone(N.next_task(self.jw.reg, root=self.root))
+
 
 if __name__ == '__main__':
     unittest.main()

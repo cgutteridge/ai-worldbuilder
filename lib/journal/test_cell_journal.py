@@ -606,12 +606,13 @@ class TestCutOverAdditions(Base):
         self.assertEqual(set(self.reg.owned(plan(0, 0, 'minecraft:black_wool', y=90)).values()),
                          {('cell_marker_0_0', 'minecraft:black_wool')})
 
-    def test_open_issue_note_keeps_a_cell_from_done(self):
+    def test_open_issue_note_does_not_block_done(self):
+        """#121: journal issue/close notes are historical; they do not block DONE."""
         self.real_cell()
         self.reg.change(Note((0, 0), 'issue', 'roof wrong', ref='I-001'))
         v = self.reg.cell((0, 0))
-        self.assertFalse(v.done)
-        self.assertIn('issue I-001', v.left)
+        self.assertTrue(v.done)
+        self.assertNotIn('issue I-001', v.left)
         self.reg.change(Note((0, 0), 'close', ref='I-001'))
         self.assertTrue(self.reg.cell((0, 0)).done)
 

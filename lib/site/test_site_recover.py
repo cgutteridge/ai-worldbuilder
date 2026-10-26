@@ -179,18 +179,6 @@ class TestApplyRecordsInTheJournal(Base):
         self.run_apply(make_plan(), dry=True)
         self.assertFalse((self.t / 'registry' / 'journal.jsonl').exists())
 
-    def test_landed_layer_closes_its_issue(self):
-        import registry_issues as RI
-        self.ground()
-        issue = RI.add_issue(reason='crowns wrong', cell=CELL, layer='trees', root=self.t)
-        self.assertIn('issue I-001', self.view().left)
-        plan = site_kit.Plan('t')
-        plan.set(X0 + 3, 61, Z0, 'minecraft:oak_log')
-        self.run_apply(plan, stage='trees', cell=CELL)
-        self.assertEqual(RI.load_issues(self.t), [])
-        self.assertNotIn(f'issue {RI.issue_ref(issue)}', self.view().left)
-
-
 class TestMasks(Base):
     def setUp(self):
         super().setUp()

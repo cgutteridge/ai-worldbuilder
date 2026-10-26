@@ -418,13 +418,10 @@ def next_cell(max_ring=12):
     task = next_task()
     if task is None:
         return None
-    if task.get('kind') == 'issue':
-        if task.get('cell'):
-            tx, tz = (int(x) for x in task['cell'].split(','))
-        else:
-            return None
-    else:
-        tx, tz = (int(x) for x in str(task['cell']).split(','))
+    cell = task.get('cell')
+    if not cell:
+        return None
+    tx, tz = (int(x) for x in str(cell).split(','))
     return tx, tz, ring_distance((tx, tz), origin_cell())
 
 
@@ -525,8 +522,8 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             'patrol sweep (each apply records itself in the cell journal);',
             'Done = evidence-backed features plus layered passes and masks (empty-world DoD); not clearing vendor lumps.',
-            f'Marker stays up after this run; clear it only when decor is done, checks',
-            f'pass and all open issues for the cell are closed: cell_marker.py --clear {tx},{tz}.',
+            f'Marker stays up after this run; clear it only when decor is done and checks',
+            f'pass: cell_marker.py --clear {tx},{tz}.',
         ]))
     if not gaps['layers'] and gaps['trees_stale']:
         items.append((f'CELL {tx},{tz} (r={r}) TREES re-run (overhang rule, I-061). RULES: foliage.', [
@@ -805,7 +802,7 @@ def brief_hint(item):
         'rules/foliage.md (foliage-last cadence + allowlist)',
         'rules/process.md (slices only — see SESSION BRIEF RULES READING)',
         'site/COVERAGE.txt (focus + generated cells; coverage CLI in SESSION BRIEF)',
-        'site/ISSUES.txt',
+        'scripts/issues.py (snags; never block a cell)',
         'site/REVIEWS.txt',
         'site/PLACES.txt',
         'site/NOTES.txt',
@@ -821,28 +818,6 @@ def brief_hint(item):
         rel = sources_path(*cell).relative_to(ROOT)
         hints.insert(1, f'{rel} (cell sources — read before imagery; regenerate with cell_sources.py --write)')
     return hints
-
-
-def _open_issues():
-    """Open/scheduled high-severity issues: (first line, optional detail).
-
-    @returns: list of [line, ...] lists
-    """
-    out, cur = [], None
-    path = SITE / 'ISSUES.txt'
-    if not path.exists():
-        return out
-    for line in path.read_text().splitlines():
-        m = re.match(r'(I-\d+)\s+([HML])\s+(\S+)\s+(open|sched\w*)\b', line)
-        if m:
-            cur = [line.rstrip()] if m.group(2) == 'H' else None
-            if cur is not None:
-                out.append(cur)
-        elif re.match(r'I-\d+', line):
-            cur = None
-        elif cur is not None and len(cur) < 2 and line.strip():
-            cur.append('      ' + line.strip())
-    return out
 
 
 def _last_reviews(n=3):
@@ -905,9 +880,6 @@ def brief_text(item):
                     f'{lk.get("owner")} ({"fresh" if lk.get("fresh") else "stale"}) - {lk.get("task")}'),
         '', 'QUEUE ITEM (full):',
     ] + [f'  {l}' for l in item['lines']]
-    issues = _open_issues()
-    parts += ['', 'OPEN HIGH ISSUES:']
-    parts += [l for iss in issues for l in iss] or ['  (none)']
     cell = _cell_for_item(item)
     if cell is not None:
         rel = sources_path(*cell).relative_to(ROOT)

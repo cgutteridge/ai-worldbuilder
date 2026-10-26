@@ -3,17 +3,21 @@
 
 The only record is ``<world>/registry/journal.jsonl``, written by
 ``cell_journal.CellRegistry.change`` (``site_kit.apply`` for builds, ``Note`` for marker / hold /
-coverage / issue facts). Everything here reads :meth:`CellRegistry.view` and friends; there are
+coverage / review facts). Everything here reads :meth:`CellRegistry.view` and friends; there are
 no setters. Open the active world's registry with :func:`open_registry`.
+
+Snags and issues live in ``registry/issues.json`` via ``scripts/issues.py`` (the ``snag`` skill);
+they never block a cell and never steer ``next`` (ticket #121). The old ``add-issue`` /
+``issues`` CLI and ``site/ISSUES.txt`` I-nnn lines are retired.
 
 Per-cell view (folded, never stored)::
 
     ground: none | ghost | generated
     trees, decor: bool
     features: (id, in-progress | built) for every feature plan touching the cell
-    marker: bool (single marker)   hold: reason | None   notes: coverage warnings, reviews, issues
+    marker: bool (single marker)   hold: reason | None   notes: coverage warnings, reviews
     done / left: ground generated + trees + decor + every feature built + no marker + no open
-                 coverage warning or issue + nothing in flight
+                 coverage warning + nothing in flight
 
   python3 scripts/cell_registry.py status [--cell tx,tz]
   python3 scripts/cell_registry.py query --feature <id>
@@ -24,9 +28,6 @@ Per-cell view (folded, never stored)::
   python3 scripts/cell_registry.py dismiss-coverage tx,tz --warning-id ID --reason R
   python3 scripts/cell_registry.py note tx,tz --kind review --ref REF --body TEXT
   python3 scripts/cell_registry.py next
-  python3 scripts/cell_registry.py add-issue --cell tx,tz [--layer trees] --reason R
-  python3 scripts/cell_registry.py add-issue --feature ID --reason R
-  python3 scripts/cell_registry.py issues
   python3 scripts/cell_registry.py verify
   python3 scripts/cell_registry.py reconcile [CELL ...] [--fix]
 
@@ -382,19 +383,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser('note', help='journal a review note (e.g. trees over roof resolved)')
     p.add_argument('cell')
-    p.add_argument('--kind', choices=('review', 'close'), default='review')
+    p.add_argument('--kind', choices=('review',), default='review')
     p.add_argument('--ref', required=True, help='note id, e.g. trees-over-roof:x0,z0,x1,z1')
     p.add_argument('--body', default='', help='text (the reason)')
 
-    sub.add_parser('next', help='print the next work item (issues first, then registry)')
-    sub.add_parser('issues', help='list open ISSUES.txt lines')
-
-    p = sub.add_parser('add-issue', help='append a snagging issue and note it on the target cells')
-    g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument('--cell', help='tx,tz')
-    g.add_argument('--feature', help='feature id')
-    p.add_argument('--layer', choices=('ground', 'trees', 'decor'), default=None)
-    p.add_argument('--reason', required=True)
+    sub.add_parser('next', help='print the next undone registry work item')
 
     p = sub.add_parser('verify', help='registry integrity report (exit 1 on errors)')
     p.add_argument('--json', action='store_true', help='print JSON report')
@@ -465,22 +458,6 @@ def main(argv: list[str] | None = None) -> int:
             print(format_next(task))
             if task is not None:
                 print(json.dumps(task, indent=2, sort_keys=True))
-            return 0
-
-        if args.cmd == 'issues':
-            from registry_issues import load_issues
-            for issue in load_issues(root):
-                print(issue.raw)
-            return 0
-
-        if args.cmd == 'add-issue':
-            from registry_issues import add_issue
-            if args.feature:
-                issue = add_issue(reason=args.reason, feature_id=args.feature, root=root, registry=reg)
-            else:
-                issue = add_issue(reason=args.reason, cell=parse_cell_id(args.cell), layer=args.layer,
-                                  root=root, registry=reg)
-            print(f'added {issue.raw}')
             return 0
 
         if args.cmd == 'verify':

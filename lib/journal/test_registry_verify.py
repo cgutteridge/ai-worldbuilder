@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 
 import cell_registry as CR
-import registry_issues as RI
 import registry_verify as V
 from cell_journal import Build
 from journal_testkit import JournalWorld
@@ -60,13 +59,11 @@ class VerifyJournalTest(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertIn('site_recover.py status', issues[0]['message'])
 
-    def test_issue_note_without_issues_line_is_reported(self):
-        self.jw.seed((48, -44), ground=True)
-        RI.add_issue(reason='x', cell=(48, -44), root=self.root)
-        self.assertEqual(V.check_issue_notes(self.reg(), self.root), [])
-        RI.issues_path(self.root).write_text('')                          # closed by hand
-        issues = V.check_issue_notes(self.reg(), self.root)
-        self.assertIn('--kind close --ref I-001', issues[0]['message'])
+    def test_verify_does_not_check_issue_notes(self):
+        """#121: ISSUES.txt / journal issue-note drift is no longer a verify check."""
+        self.assertFalse(hasattr(V, 'check_issue_notes'))
+        report = V.run_verify(root=self.root, check_world=False)
+        self.assertFalse(any(str(i.get('id', '')).startswith('issue-note:') for i in report['issues']))
 
     def test_verify_exit_nonzero_on_errors_and_clean_on_empty(self):
         self.assertEqual(V.exit_code(V.run_verify(root=self.root)), 0)

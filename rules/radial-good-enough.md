@@ -19,9 +19,9 @@ Read before choosing, planning or signing off build work.
 - Coverage + registry rollup: `rules/process.md` §2c. The record is
   `coverage.py write` + `cell_registry.py`, never chat, and never hand-edit the
   generated COVERAGE block.
-- Prefer registry DONE / open issues over retired parcel sign-offs. Where an area
-  already has builds (Broadlands), keep them unless an issue reopens them.
-- Revisits: open a registry issue (or redo) for the layer/feature;
+- Prefer registry DONE over retired parcel sign-offs. Where an area
+  already has builds (Broadlands), keep them unless a snag reopens work.
+- Revisits: file a snag (or redo) for the layer/feature;
   dry-run before re-apply (I-043). Code/tooling fixes beat new cells.
-- Distinctive local features → `cell_registry.py add-issue` (PROCESS §2e).
+- Distinctive local features → `snag` skill / `scripts/issues.py` (PROCESS §2e).
 - Focus moves with `cell_marker.py --clear` / `--raise`; leave no ring holes behind.

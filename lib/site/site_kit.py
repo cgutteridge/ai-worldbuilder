@@ -1049,8 +1049,6 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         pass_mask.write_mask(mask)          # publish only after a clean readback
     receipt = ticket.finish(actual)
     if receipt.status == 'landed':
-        import registry_issues
-        registry_issues.close_for_build(registry, pass_, cell, plan.name)
         try:
             followed = registry.ensure(writer)
         except CellJournalError as exc:
