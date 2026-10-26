@@ -76,6 +76,22 @@ _Avoid_: focus file as a separate progress SoT
 A `begun` journal entry with no `landed`/`mismatched` finish. `site_recover` lands or rolls it back; `reconcile` can also surface it. No per-cell stage files.
 _Avoid_: stage files as progress
 
+## Issues and snags
+
+**Issue**:
+One hypothesised cause with one fix, kept in the active world's `registry/issues.json`. Holds one or more **snags**, a plain title, a cause statement, the stages where the cause lives (free text), and a **fix log**. Status: `open`, `fix-landed`, `confirmed`, `wontfix`. Never blocks a cell and never steers `next`. Managed with `scripts/issues.py`; the `snag` and `sherlock` skills drive it.
+_Avoid_: ticket (for these; tickets are **System tracker** tasks), ISSUES.txt line, I-nnn registry issue (retired, #121)
+
+**Snag**:
+One observation of something wrong, living only inside an **issue** (never loose): the reporter's verbatim words, a picture, a position, the **Elements** it sits on, its source (`user` or `agent`) and confidence. A snag you report needs a picture; an agent snag may go without. Judged `fixed` or `unresolved` in review.
+_Avoid_: bug report, defect, note
+
+**Fix log / check line**:
+Fix work logged on an issue (ticket, branch, summary, merge time) with one **check line** per covered snag: what should look different there. A fix without check lines is refused.
+
+**fix-landed vs confirmed**:
+`fix-landed` is derived, never typed: every **Element** of the snags a fix covers has a new landed build in the cell journal after the fix merged, with changed content (a rebuild alone, or a rerun with identical content, does not count). `confirmed` needs the owner's verdict that ALL snags are fixed.
+
 ## Evidence
 
 **Type**:
