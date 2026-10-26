@@ -12,6 +12,8 @@ PLANTS = (
     'cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'red_tulip', 'white_tulip',
 )
 JUNK_ABOVE = ('_log', 'leaves', '_carpet', 'sapling')
+# Cell-marker hazard tape (cell_marker.WOOL): ~30 above ground, so any height, not just high ones.
+MARKER_WOOL = ('black_wool', 'yellow_wool')
 
 
 def short_id(block: str) -> str:
@@ -31,7 +33,7 @@ def is_tree_or_plant_block(block: str) -> bool:
 
 
 def surface_y(w: World, x: int, z: int, top: int = 110) -> tuple[int, str] | None:
-    """Top ground block of a column, skipping air, plants, logs, leaves and marker wool.
+    """Top ground block of a column, skipping air, plants, logs, leaves and marker wool (any height).
 
     @returns: (y, short block id), or None for an empty column. Water counts as a surface.
     """
@@ -46,7 +48,7 @@ def surface_y(w: World, x: int, z: int, top: int = 110) -> tuple[int, str] | Non
         if any(p in b for p in PLANTS) or 'leaves' in b or '_log' in b:
             y -= 1
             continue
-        if 'wool' in b and y > 80:
+        if short_id(b) in MARKER_WOOL:
             y -= 1
             continue
         return y, short_id(b)
