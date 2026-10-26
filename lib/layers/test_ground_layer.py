@@ -216,7 +216,8 @@ class TestWarmSurfaceProbe(unittest.TestCase):
         self.assertEqual(len(calls), 3)                      # 34 x columns in strips of 16
         got = set().union(*calls)
         self.assertEqual(len(got), 34 * 2 * (yhi - ylo + 1))
-        self.assertIn((33, 110, 1), got)
+        self.assertIn((33, gl.SCAN_TOP, 1), got)
+        self.assertEqual(yhi, gl.SCAN_TOP)
         self.assertIn((0, 31, 0), got)
 
     def test_world_without_prefetch_is_fine(self):
