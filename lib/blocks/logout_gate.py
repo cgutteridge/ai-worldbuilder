@@ -1,11 +1,12 @@
 """Refuse region-file rewrites until the player has left the Minecraft save (ticket #32).
 
 Commands that swap ``.mca`` files must pass ``--confirm-logged-out``. Even with that
-flag, a live ``session.lock`` or a reachable MCP bridge still refuses — the world
+flag, a held ``session.lock`` or a reachable MCP bridge still refuses — the world
 must be fully idle.
 """
 from __future__ import annotations
 
+import fcntl
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,28 @@ def play_need_you() -> None:
         )
     except OSError:
         pass
+
+
+def session_lock_held(lock: Path) -> bool:
+    """Whether a running Minecraft holds ``lock`` (a POSIX lock, as Java takes).
+
+    Minecraft leaves the file behind after the world closes, so existence proves nothing.
+
+    @param lock: path to ``session.lock``
+    @returns: True when another process holds it; False when absent or free
+    """
+    try:
+        with open(lock, 'r+b') as fh:
+            try:
+                fcntl.lockf(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.lockf(fh, fcntl.LOCK_UN)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return False
 
 
 def mcp_world_reachable(timeout: float = 1.5) -> bool:
@@ -96,9 +119,9 @@ def require_logged_out(
     save = resolve_save_path(save_path)
     if save is not None:
         lock = save / 'session.lock'
-        if lock.is_file():
+        if session_lock_held(lock):
             raise LogoutGateError(
-                f'region rewrite refused: {lock} is present (Minecraft still holds the save). '
+                f'region rewrite refused: {lock} is held (Minecraft still holds the save). '
                 'Quit to title / exit completely, then retry with --confirm-logged-out.'
             )
     if mcp_world_reachable():
