@@ -257,6 +257,22 @@ class RestructureTest(_Root):
         self.assertEqual(L.verify(self.root), [])
 
 
+class MoveFromLandedTest(_Root):
+    def test_moving_the_only_covered_snag_reopens_the_source(self):
+        issue, _ = self.snag()
+        self.snag(issue['id'], words='grey road')
+        L.log_fix(self.root, issue['id'], summary='s', merged_at='2026-10-26T10:00:00Z', checks={'S-001': 'c'})
+        self.journal(*build(1, '2026-10-26T09:00:00Z', 'ground', 'g1', [48, -44], 'aaa'),
+                     *build(3, '2026-10-26T11:00:00Z', 'ground', 'g2', [48, -44], 'bbb'))
+        # S-002 is uncovered by the fix, so it cannot reach fix-landed yet
+        self.assertEqual(L.sync(self.root), [])
+        L.move_snag(self.root, 'S-001', to_issue=None, new_title='Plaza')
+        src = L.load(self.root)['issues'][0]
+        self.assertEqual((src['status'], src['fixes']), ('open', []))
+        with self.assertRaises(L.IssueError):
+            L.verdict(self.root, src['id'], all_fixed=True)
+
+
 class MatchTest(_Root):
     def test_same_element_and_wording_ranks_first_and_closed_issues_are_included(self):
         a, _ = self.snag(title='Ground ignores plazas', words='brick plaza shown as grass')

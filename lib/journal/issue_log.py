@@ -422,9 +422,11 @@ def rebuild_report(root: Path | str, issue: dict[str, Any]) -> dict[str, Any] | 
         return None
     fix = issue['fixes'][-1]
     if fix.get('judged'):
-        return {'fix': fix, 'elements': [], 'ready': False}
+        return {'fix': fix, 'elements': [], 'uncovered': [], 'ready': False}
     rows = [(element_label(el), redesign_status(root, el, fix['merged_at'])) for el in fix_elements(issue, fix)]
-    return {'fix': fix, 'elements': rows, 'ready': bool(rows) and all(st == 'redesigned' for _, st in rows)}
+    uncovered = [x['id'] for x in issue['snags'] if x['id'] not in fix['checks'] and x['resolution'] != 'fixed']
+    return {'fix': fix, 'elements': rows, 'uncovered': uncovered,
+            'ready': bool(rows) and not uncovered and all(st == 'redesigned' for _, st in rows)}
 
 
 def sync(root: Path | str) -> list[str]:
@@ -486,7 +488,7 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
     """
     store = load(root)
     issue = find_issue(store, issue_id)
-    if issue['status'] != 'fix-landed':
+    if issue['status'] != 'fix-landed' or not issue['fixes']:
         raise IssueError(f'{issue["id"]} is {issue["status"]}; a verdict needs a landed fix '
                          '(status fix-landed: a fix logged and its elements redesigned)')
     ids = [s['id'] for s in issue['snags']]
@@ -499,7 +501,7 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
     if unknown or set(fixed) & set(not_fixed):
         raise IssueError(f'unknown or doubly-judged snags: {unknown or sorted(set(fixed) & set(not_fixed))}')
     if not not_fixed:
-        missing = [i for i in ids if i not in fixed]
+        missing = [s['id'] for s in issue['snags'] if s['id'] not in fixed and s['resolution'] != 'fixed']
         if missing:
             raise IssueError(f'every snag needs a verdict; not judged: {missing} (use --all-fixed or --not-fixed)')
     by = {s['id']: s for s in issue['snags']}
@@ -573,6 +575,9 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
     for it in src['fixes']:
         it['checks'].pop(snag_id, None)
     src['fixes'] = [f for f in src['fixes'] if f['checks']]
+    if src['status'] != 'open' and (not src['fixes'] or not any(
+            x['id'] in src['fixes'][-1]['checks'] for x in src['snags'])):
+        _reopen(src)                    # no fix covers what is left: it needs a new one
     _touch(src, 'snag-moved-out', f'{snag_id} -> {dest["id"]}')
     _touch(dest, 'snag-moved-in', f'{snag_id} <- {src["id"]}')
     save(root, store)
