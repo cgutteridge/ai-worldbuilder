@@ -304,8 +304,34 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
                            mcp=mcp, loaded_chunks={(0, 0)})
         store.read((0, 64, 0))
         args = mcp.calls[0][1]
-        # single-block tile: limit == volume (never the tool default of 1024)
-        self.assertEqual(args['limit'], 1)
+        # Section miss scan: limit == 16³ (never the tool default of 1024).
+        self.assertEqual(args['limit'], 16 * 16 * 16)
+
+    def test_read_miss_scans_containing_section(self):
+        """#117: a cache-miss read() scans the 16×16×16 section, not one block.
+
+        Neighbours in the same section must hit the cache with no further MCP scan.
+        """
+        # Three blocks in one section (x,y,z all in 0..15); y=64 → section y=64..79.
+        e = 16
+        a, b, c = (3, 64, 5), (7, 70, 9), (15, 79, 15)
+        blocks = {a: STONE, b: 'minecraft:dirt', c: 'minecraft:glass'}
+        loaded = {(0, 0)}
+        mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+        store = make_store('live', blocks, self.tmp / 'section', mcp=mcp, loaded_chunks=loaded)
+        self.assertEqual(store.read(a), STONE)
+        scans = [args for name, args in mcp.calls if name == 'block_scan_region']
+        self.assertEqual(len(scans), 1, scans)
+        box = scans[0]['box']
+        x0, y0, z0 = (int(box['from'][k]) for k in 'xyz')
+        x1, y1, z1 = (int(box['to'][k]) for k in 'xyz')
+        self.assertEqual((x0, y0, z0), (0, 64, 0))
+        self.assertEqual((x1, y1, z1), (e - 1, 64 + e - 1, e - 1))
+        self.assertEqual(scans[0]['limit'], e ** 3)
+        n_after = len(mcp.calls)
+        self.assertEqual(store.read(b), 'minecraft:dirt')
+        self.assertEqual(store.read(c), 'minecraft:glass')
+        self.assertEqual(len(mcp.calls), n_after, 'same-section neighbours must not re-scan')
 
     def test_far_apart_read_many_falls_back_to_per_chunk(self):
         """Sparse positions whose parent AABB needs >64 tiles scan per chunk, not the AABB."""
@@ -330,13 +356,19 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
             self.assertLessEqual(vol, 16)  # single-block (or tiny) per chunk group
 
     def test_many_tiny_scans_warn_once_on_stderr(self):
-        """Unbatched single-block reads trip one stderr warning after the threshold; never raise."""
+        """Sparse per-chunk tiny scans trip one stderr warning after the threshold; never raise.
+
+        ``read()`` itself is no longer tiny (#117 section scan); ``read_many`` of
+        far-apart singles still falls back to volume-1 per chunk.
+        """
         import io
         from block_store import TINY_SCAN_MAX_VOLUME
 
         n = 5
-        blocks = {(i, 64, 0): STONE for i in range(n)}
-        loaded = {(i >> 4, 0) for i in range(n)}
+        # Far-apart x so the parent AABB needs >64 tiles → per-chunk tiny scans.
+        positions = [(i * 100_000, 64, 0) for i in range(n)]
+        blocks = {p: STONE for p in positions}
+        loaded = {(p[0] >> 4, p[2] >> 4) for p in positions}
         mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
         store = make_store(
             'live', blocks, self.tmp / 'tiny_warn', mcp=mcp, loaded_chunks=loaded,
@@ -344,20 +376,21 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
         )
         err = io.StringIO()
         with mock.patch('sys.stderr', err):
-            for i in range(n):
-                self.assertEqual(store.read((i, 64, 0)), STONE)
+            got = store.read_many(positions)
+        for p in positions:
+            self.assertEqual(got[p], STONE)
         self.assertEqual(store.tiny_scan_count, n)
         text = err.getvalue()
         self.assertIn('tiny block_scan_region', text)
         self.assertIn(f'volume ≤ {TINY_SCAN_MAX_VOLUME}', text)
         self.assertIn('Not raising', text)
         # Further tiny scans must not re-warn or raise.
-        more = {(n, 64, 0): STONE}
-        mcp.blocks.update(more)
-        mcp.loaded_chunks = loaded | {(n >> 4, 0)}
+        extra = (n * 100_000, 64, 0)
+        mcp.blocks[extra] = STONE
+        mcp.loaded_chunks = loaded | {(extra[0] >> 4, extra[2] >> 4)}
         err2 = io.StringIO()
         with mock.patch('sys.stderr', err2):
-            self.assertEqual(store.read((n, 64, 0)), STONE)
+            self.assertEqual(store.read_many([extra])[extra], STONE)
         self.assertEqual(err2.getvalue(), '')
         self.assertEqual(store.tiny_scan_count, n + 1)
 

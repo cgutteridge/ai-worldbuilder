@@ -27,10 +27,12 @@ Pos = tuple[int, int, int]
 SCAN_VOLUME_CAP = 65536
 # When a read_many AABB would need more tiles than this, LiveBlocks scans per chunk instead.
 MAX_ENSURE_TILES = 64
-# A scan is "tiny" when its inclusive AABB volume is at most this. Unbatched ``read()``
-# loops produce volume-1 tiles; intentional cell tiles are up to SCAN_VOLUME_CAP.
-# Matches the sparse-fallback tests' notion of a tiny per-chunk scan (≤16).
+# A scan is "tiny" when its inclusive AABB volume is at most this. Intentional
+# section scans from ``read()`` are 16³=4096; sparse per-chunk fallbacks can still
+# be small. Matches the sparse-fallback tests' notion of a tiny scan (≤16).
 TINY_SCAN_MAX_VOLUME = 16
+# Inclusive size of one Minecraft section edge (``read()`` miss prefetch).
+SECTION_EDGE = 16
 # After this many tiny scans on one LiveBlocks instance, emit one stderr warning
 # (never raise — a hard failure mid-apply is worse than slow). At the default
 # 1.1 s MCP pace, 50 tiny scans already burn ~55 s of wall time.
@@ -514,12 +516,30 @@ class LiveBlocks:
                                        max(nxs), max(nys), max(nzs)):
                 self._scan_box(slo, shi)
 
+    def _section_box(self, pos: Pos) -> tuple[Pos, Pos]:
+        """Inclusive AABB of the 16×16×16 section containing ``pos``.
+
+        @param pos: world block
+        @returns: ``(lo, hi)`` corners of the section
+        """
+        x, y, z = pos
+        e = SECTION_EDGE
+        x0, y0, z0 = x - (x % e), y - (y % e), z - (z % e)
+        return (x0, y0, z0), (x0 + e - 1, y0 + e - 1, z0 + e - 1)
+
     def read(self, pos: Pos) -> str | None:
         """@returns: block state, None when the chunk is absent / omitted from the scan
-        @raises StaleRead: after ``mark_written()`` until ``flush()``"""
+
+        On a cache miss, scans the containing 16×16×16 section (not one block) so
+        unbatched callers do not pace MCP per cell (#117).
+
+        @raises StaleRead: after ``mark_written()`` until ``flush()``
+        """
         self._guard()
         p = tuple(pos)
-        self._ensure([p])
+        if p not in self._cache:
+            lo, hi = self._section_box(p)
+            self._scan_box(lo, hi)
         return self._cache[p]
 
     def read_many(self, positions: Iterable[Pos]) -> dict[Pos, str | None]:
