@@ -951,6 +951,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Concept (not a journal Build): Element = the lasting kinds of place content a finished cell must cover \u2014 feature, ground, trees, decor. Excludes ghost (placeholder) and other/neutral. Goal: clearer talk in chat, rules, and APIs. Scope: add Element to GLOSSARY.md (with Avoid list); update docs/rules that say 'real work' / REAL_PASSES / 'real refine' where Element is clearer; rename or alias code identifiers only where it helps (e.g. REAL_PASSES \u2192 keep or document as the four Elements; prefer prose Element over inventing ElementPass). Do not rename journal pass_ string values (feature|ground|trees|decor) \u2014 those stay wire-stable. Owner chose 'element' over aspect/strand (2026-10-26). Landed on task/112-element-glossary: GLOSSARY Element; ELEMENTS alias for REAL_PASSES; frontier/DoD prose in journal, handoff, specs, ADR 003, handoff-layered-passes."
+    },
+    {
+      "id": 118,
+      "title": "propose-features calls missing_features and surfaces errors",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: cell_registry.propose_feature_candidates calls cell_features.propose_for_cell, which does not exist, inside a bare except returning [] (S-06). lib/journal/cell_features.py already has missing_features(tx, tz), which also returns a houses kind (surfaces the University Road houses as candidates, S-07; registering them stays manual). Scope: call missing_features, drop the swallowing except. Note: registry_next.next_task orders ground first by design and only reads registered features; that disagrees with rules/handoff-layered-passes.md and is a separate owner decision, not part of this ticket. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (9e236e2)."
     }
   ]
 }
