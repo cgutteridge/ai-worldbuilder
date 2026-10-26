@@ -428,7 +428,7 @@ def _session(dry: bool, heights_fn: HeightsFn | None, ring: int):
         import cell_registry
         return cell_registry.open_registry(ghosts=planner, ring=ring), None
     if not os.environ.get('SITE_OWNER'):
-        raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim …)')
+        raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim …), or run the whole command via scripts/site_lock.py run <owner> "<task>" -- <cmd>')
     import site_kit
     return site_kit.live_session(ghosts=planner, ring=ring)
 
