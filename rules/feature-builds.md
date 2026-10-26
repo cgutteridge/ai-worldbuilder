@@ -15,7 +15,11 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
 - `storeys` — `{label: int >= 1}` clear storeys (each 3 blocks high); with
   `zones`, this is the facade storey grid count (openings still use
   `STOREY_H=3` from the median-ground datum)
-- `roofs` — `{label: {kind: flat|pitched, material: <slab mat>}}`
+- `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
+  edge?: {block, where: outer|all}}}`. Absent `edge` = no roof edging
+  (default). When set, `block` is the parapet/coping mat; `where: outer`
+  skips zone steps, `where: all` edges every step. Flat-roof overhang
+  fringe only when `edge` is set (pitched overhang unchanged).
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
   `site_kit.apply` refuses cells owned by builds not listed here)
@@ -49,10 +53,11 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
   bucket on the building's rotated grid so zone edges are straight runs.
-  Walls rise from **local** lidar ground so downhill faces gain storeys;
-  parapet on every roof edge including zone steps. Facades, doors, and
-  roofs reuse the same label keys. Requires `roofs[label].kind == "flat"`.
-  Dry run prints `footprint osm=N readable=M pad=P cover=C%`.
+  Walls rise from **local** lidar ground so downhill faces gain storeys.
+  Roof edging is optional via `roofs[label].edge` (default none — no
+  parapet, no flat overhang fringe). Facades, doors, and roofs reuse the
+  same label keys. Requires `roofs[label].kind == "flat"`. Dry run prints
+  `footprint osm=N readable=M pad=P cover=C%`.
 
 Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial). Do not copy a peer spec or a per-run build script. Do

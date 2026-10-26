@@ -16,6 +16,7 @@ below the first row `hint` or `estimate`.
 | Storeys | `streetlevel` (walk photos, listing exteriors, campus building photo, other-side photos) | `vector_map` `building:levels` | `lidar` estimate (label it) |
 | Roof form, ridge axis | `aerial` (look at the roof) | `lidar` interior columns, wide buildings only | same-terrace hint |
 | Roof colour, material | `aerial` | `streetlevel` | hint (default tile) |
+| Roof edge (parapet / coping / flat fringe) | `aerial` (is there an edge? which block? outer only or zone steps too?) | `streetlevel` when the cap shows | none: leave `roofs[].edge` absent |
 | Walls, openings, doors, bays | `streetlevel` (incl. campus building photo) | `aerial` (wall colour, wings) | same-terrace hint |
 | Where a university building's entrances are, and their names | `poi_register` portals (`scripts/portals.py`), exact position | portal photo / `streetlevel` | `vector_map` `entrance` nodes, same-building hint |
 | Ground surface: lawn, paving, drive, car park, path | `aerial` | other `aerial`, `vector_map` surface/landuse | same-terrace / nearby hint |

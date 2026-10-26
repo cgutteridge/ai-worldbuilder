@@ -20,7 +20,8 @@ Massing rules (designer decisions):
      then 5x5 mode filter (x2). SUSU levels Y {52,56,57,59,61}; Retail {60}.
      Level-61 islands < 16 cells drop to 59 (noise, not plant rooms).
   M3 walls rise from local lidar ground (7x7 median DTM) so downhill (NW)
-     faces gain height; parapet one block above every roof edge incl. steps.
+     faces gain height. No roof parapet: aerial shows flush flat decks without
+     a raised coping (default none; see feature_build roofs[].edge).
   M4 storey datum: floors at Y = 0 mod 4 (4-block storeys).
 Facade rules:
   F1 upper walls bricks; window = 2-high band at storey offsets 1-2, columns
@@ -31,7 +32,7 @@ Facade rules:
      (x+z)%4==0, black_concrete fascia at ground+4.
   F4 Retail upper storey: white_concrete with a gray glass band.
 Roof materials: SUSU level 57 (south wing) gray_concrete (dark in aerial),
-  other SUSU/Retail roofs light_gray_concrete; parapet smooth_stone.
+  other SUSU/Retail roofs light_gray_concrete; no parapet block.
 Greeblies: see GREEBLIES below (rooflights, AC units, plaza umbrellas+tables,
   entrance canopy, bins).
 """
@@ -182,7 +183,6 @@ def build():
         R, G = roof[c], ground[c]
         clear_top = max(R + 4, int(np.nanmax([med(top, x, z, 0), R])) + 1)
         nb = {d: outside_h((x + d[0], z + d[1])) for d in N4}
-        parapet = any(h < R for h in nb.values())
         for y in range(G - 2, clear_top + 1):
             exposed = [FACE_OF[d] for d, h in nb.items() if h < y <= R]
             if y < G:
@@ -191,8 +191,6 @@ def build():
                 st = 'smooth_stone' if not exposed else 'stone_bricks'
             elif y == R:
                 st = 'gray_concrete' if (lab == 'susu' and R == 57) else 'light_gray_concrete'
-            elif y == R + 1 and parapet:
-                st = 'smooth_stone'
             elif y > R:
                 st = 'air'
             elif exposed:

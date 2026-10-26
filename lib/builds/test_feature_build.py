@@ -81,6 +81,37 @@ class LoadSpecTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write({**good, 'doors': bad_doors}))
 
+    def test_roof_edge_absent_by_default_and_accepted_when_valid(self):
+        spec = F.load_spec(self.write(self.good()))
+        self.assertNotIn('edge', spec['roofs']['A'])
+        ok = {
+            **self.good(),
+            'roofs': {
+                'A': {
+                    'kind': 'flat',
+                    'material': 'smooth_stone',
+                    'edge': {'block': 'smooth_stone', 'where': 'outer'},
+                },
+            },
+        }
+        loaded = F.load_spec(self.write(ok))
+        self.assertEqual(loaded['roofs']['A']['edge'], {'block': 'smooth_stone', 'where': 'outer'})
+
+    def test_roof_edge_bad_values_refused(self):
+        good = self.good()
+        for bad_edge in (
+            'smooth_stone',
+            {'block': 'smooth_stone'},
+            {'where': 'outer'},
+            {'block': '', 'where': 'outer'},
+            {'block': 'smooth_stone', 'where': 'steps'},
+            {'block': 1, 'where': 'all'},
+        ):
+            with self.subTest(bad_edge=bad_edge):
+                roof = {'kind': 'flat', 'material': 'smooth_stone', 'edge': bad_edge}
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write({**good, 'roofs': {'A': roof}}))
+
 
 class _StoneWorld:
     """World stub: solid stone through y<=49, air above."""
@@ -124,6 +155,23 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual(plan.cells.get((12, floor, 22)), 'minecraft:smooth_stone')
         self.assertEqual(plan.cells.get((12, floor + 3, 22)), 'minecraft:smooth_stone')
         self.assertEqual(plan.cells.get((12, floor + 6, 22)), 'minecraft:smooth_stone')
+
+    def test_flat_roof_default_none_skips_overhang_fringe(self):
+        """Absent edge: membrane on owned columns only, no N8 slab fringe."""
+        plan = F.build(self.spec(storeys=2, kind='flat'), footprints={'A': self.cells}, world=_StoneWorld())
+        roof_y = 50 + 2 * 3
+        fringe = (9, roof_y, 22)  # one west of the mass
+        self.assertNotIn('slab', plan.cells.get(fringe, ''))
+        self.assertIn('smooth_stone_slab', plan.cells.get((12, roof_y, 22), ''))
+
+    def test_flat_roof_edge_builds_overhang_fringe(self):
+        """Present edge: one-block N8 overhang fringe (old flat-roof behaviour)."""
+        spec = self.spec(storeys=2, kind='flat')
+        spec['roofs']['A']['edge'] = {'block': 'smooth_stone', 'where': 'outer'}
+        plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        roof_y = 50 + 2 * 3
+        fringe = (9, roof_y, 22)
+        self.assertIn('smooth_stone_slab', plan.cells.get(fringe, ''))
 
     def test_pitched_roof_rises_above_eave(self):
         plan = F.build(
@@ -509,12 +557,15 @@ class ZoneBuildTest(unittest.TestCase):
             'A': {'dsm': dsm, 'ground_y': ground, 'x0': self.x0, 'z0': self.z0},
         }
 
-    def spec(self):
+    def spec(self, edge=None):
+        roof = {'kind': 'flat', 'material': 'smooth_stone'}
+        if edge is not None:
+            roof['edge'] = edge
         return {
             'name': 'unit_zones',
             'ways': {'99': 'A'},
             'storeys': {'A': 3},
-            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'roofs': {'A': roof},
             'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
             'modifies': [],
             'floor_min': 40,
@@ -529,32 +580,60 @@ class ZoneBuildTest(unittest.TestCase):
             },
         }
 
-    def test_zoned_build_parapet_and_variable_roof(self):
+    def _build(self, edge=None):
         buf = io.StringIO()
         with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
                 redirect_stdout(buf):
             plan = F.build(
-                self.spec(), footprints={'A': self.cells}, world=_StoneWorld(),
+                self.spec(edge=edge), footprints={'A': self.cells}, world=_StoneWorld(),
                 zone_data=self.zone_data,
             )
-        out = buf.getvalue()
+        return plan, buf.getvalue()
+
+    def test_zoned_build_default_none_no_parapet(self):
+        plan, out = self._build()
         self.assertIn('footprint osm=', out)
-        # Low and high roof decks present
         low_roof = [(x, z) for (x, y, z), st in plan.cells.items()
                     if y == 45 and st == 'minecraft:smooth_stone' and (x, z) in self.cells]
         high_roof = [(x, z) for (x, y, z), st in plan.cells.items()
                      if y == 50 and st == 'minecraft:smooth_stone' and (x, z) in self.cells]
         self.assertTrue(low_roof, 'expected 45 m plateau roof cells')
         self.assertTrue(high_roof, 'expected 50 m plateau roof cells')
-        # Parapet above at least one roof edge
-        parapets = [pos for pos, st in plan.cells.items() if st == 'minecraft:smooth_stone' and pos[1] in (46, 51)]
-        self.assertTrue(parapets, 'expected parapet on roof edges')
-        # Downhill / exterior wall above neighbour ground: west face should show bricks above ground
+        parapets = [pos for pos, st in plan.cells.items()
+                    if st == 'minecraft:smooth_stone' and pos[1] in (46, 51)]
+        self.assertFalse(parapets, 'absent edge must place no parapet')
         west_wall = [
             y for (x, y, z), st in plan.cells.items()
             if x == 10 and z == 21 and 'bricks' in st and y > 40
         ]
         self.assertTrue(west_wall, 'expected exposed wall on west face')
+
+    def test_zoned_edge_all_matches_old_parapet_on_steps(self):
+        """where=all: parapet on outer edges and zone steps (legacy behaviour)."""
+        plan, _ = self._build(edge={'block': 'smooth_stone', 'where': 'all'})
+        parapets = [pos for pos, st in plan.cells.items()
+                    if st == 'minecraft:smooth_stone' and pos[1] in (46, 51)]
+        self.assertTrue(parapets, 'expected parapet on roof edges')
+        # High side of the interior zone drop (bucket shifts the step to x=14)
+        self.assertEqual(
+            plan.cells.get((14, 51, 21)), 'minecraft:smooth_stone',
+            'where=all must edge interior zone steps',
+        )
+
+    def test_zoned_edge_outer_skips_zone_steps(self):
+        """where=outer: parapet on mass outline only, not between plateaus."""
+        plan, _ = self._build(edge={'block': 'polished_andesite', 'where': 'outer'})
+        outer = [pos for pos, st in plan.cells.items()
+                 if st == 'minecraft:polished_andesite' and pos[1] in (46, 51)]
+        self.assertTrue(outer, 'expected outer parapet')
+        # High side of interior zone drop: all N4 neighbours still in the roof mass
+        self.assertNotEqual(
+            plan.cells.get((14, 51, 21)), 'minecraft:polished_andesite',
+            'where=outer must skip interior zone steps',
+        )
+        # Outer west face of the low plateau still edged
+        west_outer = [pos for pos in outer if pos[0] == 10 and pos[1] == 46]
+        self.assertTrue(west_outer, 'expected outer west parapet on low plateau')
 
 
 
