@@ -906,6 +906,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: free_columns prefetches the surface-probe box in x-strips before probing. Review nits fixed."
+    },
+    {
+      "id": 107,
+      "title": "feature_build: spec `exclude` boxes to clip OSM footprint (vector outline larger than the real building)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: spec key exclude {label:[[x0,z0,x1,z1]]} clips the footprint; clipped cells not treated as foreign. Review blockers fixed (foreign leak, docs). Follow-up not done: door \"no wall near portal\" skips (42-B, 40-A, 18-A) - portal points just outside outlines."
     }
   ]
 }
