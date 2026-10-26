@@ -7,10 +7,12 @@
 | Path | Role |
 | --- | --- |
 | `active_world.py` | Importable pointer. Sets `WORLD_ROOT` from env `AI_WORLDBUILDER_WORLD_ROOT` (required; no silent default). |
-| `TOOL_ROOT` | This checkout (scripts, skills, system providers, system tracker). |
+| `TOOL_ROOT` | This checkout (`lib/`, `scripts/`, skills, system providers, system tracker). |
 | `config/system-providers.json` | Nationwide+ reference feeds. |
 | `providers/<id>/` | System provider fetch/review/manage code (`package` field on catalogue rows). |
-| `shims/` | Thin CLIs into system `providers/<id>/`. |
+| `lib/<category>/` | Shared libraries (bare imports via `script_env`). |
+| `scripts/` | CLI entry points (often thin wrappers over `lib/`). |
+| `shims/` | Thin CLIs into system and world `providers/<id>/`. |
 
 Scripts resolve place memory through `WORLD_ROOT`, never through “where the tool repo happens to sit”.
 Catalogue `package` paths resolve via `script_env.resolve_provider_package` /

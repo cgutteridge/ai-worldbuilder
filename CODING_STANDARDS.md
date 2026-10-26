@@ -13,9 +13,10 @@ pre-commit hook. Mechanical rules belong in `.githooks/` /
 
 ## Placement
 
-- Tool engineering lands in this repo’s `tasks/` and `scripts/` /
-  `providers/`. World ISSUES and place memory stay in the active world
-  checkout under `worlds/`.
+- Tool engineering lands in this repo’s `tasks/`, `lib/`, `scripts/`, and
+  `providers/`. Libraries go under `lib/<category>/`; runnable CLIs under
+  `scripts/`. World ISSUES and place memory stay in the active world checkout
+  under `worlds/`.
 - When a change could be either tool or world work, the patch should make the
   choice obvious (or the ticket should have recorded an ask). Silent dumping of
   world work into the system tracker is a review fail.

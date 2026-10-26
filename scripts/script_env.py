@@ -7,9 +7,10 @@ providers). Provider packages live under two roots:
 - ``SYSTEM_PROVIDERS`` — ``TOOL_ROOT / "providers"`` (nationwide+ catalogue)
 - ``WORLD_PROVIDERS`` — ``ROOT / "providers"`` (active-world catalogue)
 
-Catalogue ``package`` fields are relative paths (e.g. ``providers/<id>``);
-resolve them with :func:`resolve_provider_package`. Prefer
-``from script_env import ROOT, TOOL_ROOT``.
+Shared libraries live under ``TOOL_ROOT / "lib" / <category> /`` (bare imports).
+CLI entry points live under ``scripts/``. Catalogue ``package`` fields are
+relative paths (e.g. ``providers/<id>``); resolve them with
+:func:`resolve_provider_package`. Prefer ``from script_env import ROOT, TOOL_ROOT``.
 """
 from __future__ import annotations
 
@@ -30,14 +31,42 @@ from active_world import WORLD_ROOT  # noqa: E402
 ROOT = WORLD_ROOT
 SCRIPTS = TOOL_ROOT / "scripts"
 SHIMS = TOOL_ROOT / "shims"
+LIB = TOOL_ROOT / "lib"
 SYSTEM_PROVIDERS = TOOL_ROOT / "providers"
 WORLD_PROVIDERS = ROOT / "providers"
 
-# Provider CLIs: shims/ (system) then scripts/ (glue + world-local shims).
-for _path in (SHIMS, SCRIPTS):
-    _text = str(_path)
-    if _text not in sys.path:
+
+def lib_category_dirs(lib_root: Path | None = None) -> list[Path]:
+    """Return ``lib/<category>/`` directories that hold library modules.
+
+    @param lib_root: library root (default: ``TOOL_ROOT / "lib"``)
+    @returns: sorted category directories (only existing dirs, not files)
+    """
+    root = LIB if lib_root is None else Path(lib_root)
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
+def ensure_import_paths() -> None:
+    """Put ``lib/*``, ``shims/``, and ``scripts/`` on ``sys.path``.
+
+    Library category dirs are forced to the front every call so bare imports
+    hit ``lib/`` modules even when a caller previously prepended ``scripts/``
+    (where same-named CLI wrappers live).
+    """
+    for _path in (SCRIPTS, SHIMS):
+        _text = str(_path)
+        if _text not in sys.path:
+            sys.path.insert(0, _text)
+    for _path in reversed(lib_category_dirs()):
+        _text = str(_path)
+        if _text in sys.path:
+            sys.path.remove(_text)
         sys.path.insert(0, _text)
+
+
+ensure_import_paths()
 
 
 def resolve_provider_package(package: str, home: str | None = None) -> Path:
