@@ -6,7 +6,14 @@ import runpy
 import sys
 from pathlib import Path
 
-_TOOL = Path(__file__).resolve().parent.parent
-_SHIMS = _TOOL / "shims"
-sys.path.insert(0, str(_SHIMS))
-runpy.run_path(str(_SHIMS / "buildings.py"), run_name="__main__")
+
+def main() -> None:
+    """Run the canonical shim under ``shims/``."""
+    tool = Path(__file__).resolve().parent.parent
+    shims = tool / "shims"
+    sys.path.insert(0, str(shims))
+    runpy.run_path(str(shims / "buildings.py"), run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()

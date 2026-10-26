@@ -40,18 +40,19 @@ def _lib_category_dirs() -> list[Path]:
 def ensure_import_paths() -> None:
     """Put ``lib/*/``, ``shims/``, and ``scripts/`` on ``sys.path``.
 
-    Library categories must win over same-named CLI wrappers under ``scripts/``.
-    Shims keep historical provider module names; ``scripts/`` holds ``script_env``.
+    Order (highest priority first): ``lib/*/``, ``shims/``, ``scripts/``.
+    Libraries win over same-named CLI wrappers; shims win over deprecated
+    ``scripts/`` stubs that re-export world providers. Always re-order even
+    when the shim directory is already ``sys.path[0]`` (running a shim as a
+    script), so inserting ``scripts/`` cannot shadow ``shims/``.
     """
-    for path in (SCRIPTS, SHIMS):
-        text = str(path)
-        if text not in sys.path:
-            sys.path.insert(0, text)
-    for path in reversed(_lib_category_dirs()):
+    ordered = [*_lib_category_dirs(), SHIMS, SCRIPTS]
+    for path in ordered:
         text = str(path)
         if text in sys.path:
             sys.path.remove(text)
-        sys.path.insert(0, text)
+    for path in reversed(ordered):
+        sys.path.insert(0, str(path))
 
 
 def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:
