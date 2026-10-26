@@ -48,6 +48,18 @@ from script_env import ROOT, make_parser, add_world_arg, activate_world_from_arg
 from block_store import BlockStoreError  # noqa: E402
 from cell_journal import CellJournalError, CellRegistry, CellView, Note  # noqa: E402
 
+
+def _json_default(obj: Any) -> Any:
+    """JSON fallback for ``missing_features`` tuples (bbox) and similar.
+
+    @param obj: non-JSON-native value
+    @returns: list when ``obj`` is a tuple
+    @raises TypeError: for unsupported types
+    """
+    if isinstance(obj, tuple):
+        return list(obj)
+    raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')
+
 REGISTRY_ROOT_ENV = 'AI_WORLDBUILDER_REGISTRY_ROOT'
 
 
@@ -238,21 +250,15 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
 def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     """Propose vector-map building feature candidates for a cell (helper for register).
 
-    Thin wrapper around ``cell_features`` when available; returns [] if vector-map
-    data or the helper cannot run.
+    Calls ``cell_features.missing_features`` for the cell. Errors propagate
+    (no silent empty list).
 
     @param cid: ``tx,tz``
-    @returns: list of candidate dicts with id/name hints
+    @returns: list of candidate dicts from ``missing_features`` (kind/label/refs/…)
     """
-    try:
-        import cell_features as cf  # noqa: WPS433
-        tx, tz = parse_cell_id(cid)
-        # cell_features.main prints; use its packaging helpers when present
-        if hasattr(cf, 'propose_for_cell'):
-            return list(cf.propose_for_cell(tx, tz))
-    except Exception:
-        return []
-    return []
+    import cell_features as cf  # noqa: WPS433
+    tx, tz = parse_cell_id(cid)
+    return list(cf.missing_features(tx, tz))
 
 
 def note(reg: CellRegistry, cell: tuple[int, int], kind: str, body: str = '', ref: str = '') -> None:
@@ -430,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == 'propose-features':
             for item in propose_feature_candidates(args.cell):
-                print(json.dumps(item, sort_keys=True))
+                print(json.dumps(item, sort_keys=True, default=_json_default))
             return 0
 
         if args.cmd == 'hold':
