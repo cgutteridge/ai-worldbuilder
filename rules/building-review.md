@@ -22,6 +22,9 @@ One building per review. Skip any building that already has an open feature issu
    later build can have left pits, holes or lidar-rim bands (SU retail: a 5-wide pit round the north edge, 2026-10-16).
    The aerial sheet shows roof greeblies (user, 2026-10-16): plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets. List
    them per roof in this step; lidar often misses small roof plant — aerial is the source for those.
+   From the same aerial (and street level when the cap shows), answer the roof-edge questions already on the designer
+   list: edge on the roof? what block? outer only or steps too? Default is none — set `roofs[label].edge` only when
+   the photo shows a parapet, coping or flat overhang fringe (`rules/feature-builds.md`, `rules/evidence-order.md`).
 4. **Keep or rebuild.** Keep when nothing in the list matters at street scale (`rules/radial-good-enough.md`). Rebuild by
    reusing the cell's builder (`scripts/oakdene_court.py` is the pattern), clearing only the build's own recorded blocks, so
    trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and doors reach.

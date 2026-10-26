@@ -11,7 +11,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   modifies       earlier builds this one may overwrite (default [])
   ways           {"<map way id>": "<label>"} footprints to build
   storeys        {"<label>": <int >= 1>} clear storeys (each STOREY_H blocks high)
-  roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>"}}
+  roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>",
+                   "edge"?: {"block": "<mat>", "where": "outer"|"all"}}}
+                 Absent edge = no roof edging. Present: block is the parapet /
+                 coping mat; where "outer" skips zone steps, "all" edges every
+                 step. Flat-roof overhang fringe only when edge is set.
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
   wall / floor   wall and interior floor materials (defaults bricks / smooth_stone)
   floor_min      minimum floor y or null
@@ -35,7 +39,8 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  Splits the mass into flat roof zones (5×5 median DSM, snap to
                  plateau levels, mode-filter, bucket on the building's rotated
                  grid). Walls rise from local lidar ground so downhill faces gain
-                 storeys; parapet on every roof edge including zone steps.
+                 storeys. Optional ``roofs[label].edge`` places a parapet on
+                 outer edges or on every zone step (default: none).
                  Prints ``footprint osm=N readable=M pad=P cover=C%``. Requires
                  ``roofs[label].kind == "flat"``. Facades/doors/roofs reuse the
                  same label keys.
@@ -79,8 +84,8 @@ N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})
+EDGE_WHERE = frozenset({'outer', 'all'})
 ZONE_FROM = frozenset({'lidar'})
-PARAPET = 'smooth_stone'
 
 
 # ---- lidar roof zones (pure helpers; fixture grids in tests) --------------------
@@ -400,6 +405,7 @@ def load_spec(path) -> dict:
             raise SystemExit(f'{path}: roofs label {lab} has no way')
         if not isinstance(roof, dict) or roof.get('kind') not in ROOF_KINDS or not roof.get('material'):
             raise SystemExit(f'{path}: roofs[{lab}] needs {{kind: flat|pitched, material: ...}}')
+        _validate_roof_edge(path, lab, roof)
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
@@ -411,6 +417,31 @@ def load_spec(path) -> dict:
     _validate_facades(path, spec, labels)
     _validate_zones(path, spec, labels)
     return spec
+
+
+def _validate_roof_edge(path, lab: str, roof: dict) -> None:
+    """Validate optional ``roofs[label].edge`` (absent = no edging).
+
+    When present must be ``{block: <mat>, where: outer|all}``. ``outer`` skips
+    zone steps; ``all`` edges every step including zone drops.
+
+    @param path: spec path (for error text)
+    @param lab: roof label
+    @param roof: roofs[lab] dict
+    @raises SystemExit: on invalid edge entries
+    """
+    edge = roof.get('edge')
+    if edge is None:
+        return
+    if not isinstance(edge, dict):
+        raise SystemExit(f'{path}: roofs[{lab}].edge must be an object')
+    block = edge.get('block')
+    where = edge.get('where')
+    if not isinstance(block, str) or not block.strip():
+        raise SystemExit(f'{path}: roofs[{lab}].edge.block must be a non-empty material name')
+    if where not in EDGE_WHERE:
+        raise SystemExit(
+            f'{path}: roofs[{lab}].edge.where must be one of {sorted(EDGE_WHERE)}')
 
 
 def _validate_zones(path, spec: dict, labels: set) -> None:
@@ -819,8 +850,8 @@ class Build:
         """Per-column shell from local lidar ground up to snapped roof zones.
 
         Walls only where a neighbour top is lower (exterior or zone step).
-        Parapet on every roof edge including zone steps. Interior floor slabs
-        follow the facade storey rhythm from ``f.b`` (median ground).
+        Optional ``f.roof['edge']`` places a parapet (default: none). Interior
+        floor slabs follow the facade storey rhythm from ``f.b`` (median ground).
 
         @param k: feature index (ownership / wall rivalry)
         @param f: feature with ``zone_roof`` / ``zone_ground`` filled
@@ -829,10 +860,19 @@ class Build:
         roof = f.zone_roof
         gy = f.zone_ground
         rm = f.roof['material']
+        edge = f.roof.get('edge')
         datum = f.b
 
         def top_of(q: tuple[int, int]) -> int:
             return roof[q] if q in roof else gy.get(q, -999)
+
+        def wants_edge(x: int, z: int, ry: int) -> bool:
+            if not edge:
+                return False
+            if edge['where'] == 'all':
+                return any(top_of((x + dx, z + dz)) < ry for dx, dz in N4)
+            # outer: only columns that touch outside the roof mass (skip zone steps)
+            return any((x + dx, z + dz) not in roof for dx, dz in N4)
 
         f.walls = set()
         for c, ry in roof.items():
@@ -858,8 +898,8 @@ class Build:
                 else:
                     self.set(x, y, z, 'air')
             self.set(x, ry, z, rm)
-            if any(top_of((x + dx, z + dz)) < ry for dx, dz in N4):
-                self.set(x, ry + 1, z, PARAPET)
+            if wants_edge(x, z, ry):
+                self.set(x, ry + 1, z, edge['block'])
             else:
                 self.set(x, ry + 1, z, 'air')
 
@@ -1297,14 +1337,24 @@ class Build:
         return lines
 
     def roof_flat(self, features: list[Feature], own: set):
+        """Flat roof membrane; optional overhang fringe when ``edge`` is set.
+
+        Membrane uses ``roofs[].material`` slabs on owned columns. The one-block
+        N8 overhang fringe is built only when ``roofs[].edge`` is present
+        (default none). Pitched overhang is unchanged in ``roof_pitched``.
+
+        @param features: group masses sharing this roof
+        @param own: owned (x, z) columns for the roof deck
+        """
         rm = features[0].roof['material']
         eave = features[0].b + features[0].storeys * STOREY_H
         rs = set(own)
-        for (x, z) in own:
-            for dx, dz in N8:
-                n = (x + dx, z + dz)
-                if n not in self.owner and n not in self.foreign and n not in self.shared:
-                    rs.add(n)
+        if features[0].roof.get('edge'):
+            for (x, z) in own:
+                for dx, dz in N8:
+                    n = (x + dx, z + dz)
+                    if n not in self.owner and n not in self.foreign and n not in self.shared:
+                        rs.add(n)
         for x, z in rs:
             self.set(x, eave, z, f'{rm}_slab[type=bottom]')
 
