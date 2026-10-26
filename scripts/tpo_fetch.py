@@ -6,5 +6,7 @@ import runpy
 import sys
 from pathlib import Path
 
-_TARGET = Path(__file__).resolve().parent.parent / "shims" / "tpo_fetch.py"
-runpy.run_path(str(_TARGET), run_name="__main__")
+_TOOL = Path(__file__).resolve().parent.parent
+_SHIMS = _TOOL / "shims"
+sys.path.insert(0, str(_SHIMS))
+runpy.run_path(str(_SHIMS / "tpo_fetch.py"), run_name="__main__")

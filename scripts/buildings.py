@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import runpy
+import sys
 from pathlib import Path
 
-runpy.run_path(
-    str(Path(__file__).resolve().parent.parent / "shims" / "buildings.py"),
-    run_name="__main__",
-)
+_TOOL = Path(__file__).resolve().parent.parent
+_SHIMS = _TOOL / "shims"
+sys.path.insert(0, str(_SHIMS))
+runpy.run_path(str(_SHIMS / "buildings.py"), run_name="__main__")
