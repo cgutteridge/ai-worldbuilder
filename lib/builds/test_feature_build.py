@@ -212,6 +212,21 @@ class BuildPlanTest(unittest.TestCase):
         self.assertNotIn('slab', plan.cells.get(fringe, ''))
         self.assertIn('smooth_stone_slab', plan.cells.get((12, roof_y, 22), ''))
 
+    def test_clear_margin_does_not_fill_stone_shelves(self):
+        """#115: margin is cleared but not filled with a stone ring at floor level."""
+        floor = 50
+        plan = F.build(self.spec(storeys=2, kind='flat'), footprints={'A': self.cells}, world=_StoneWorld())
+        door_xz = {(x, z) for (x, _y, z), st in plan.cells.items() if '_door' in st}
+        shelf = []
+        for (x, y, z), st in plan.cells.items():
+            if st != 'minecraft:stone' or y != floor or (x, z) in self.cells:
+                continue
+            # Stoops / step_out next to doors may still place stone — those are allowed.
+            if any(abs(x - dx) <= 1 and abs(z - dz) <= 1 for dx, dz in door_xz):
+                continue
+            shelf.append((x, y, z))
+        self.assertEqual(shelf, [], f'stone shelves outside footprint: {shelf[:12]}')
+
     def test_flat_roof_edge_builds_overhang_fringe(self):
         """Present edge: one-block N8 overhang fringe (old flat-roof behaviour)."""
         spec = self.spec(storeys=2, kind='flat')
@@ -477,6 +492,46 @@ class DoorSpecBuildTest(unittest.TestCase):
         for (x, y, z), _ in lowers + uppers:
             self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
 
+    def test_portal_doors_nearest_within_reach_then_frame(self):
+        """#114: whole-face framed() must not hide a nearer, non-strict wall.
+
+        East face (x=17) of an 8x41 mass. Two-cell nubs on x=18 (z=21-22, 24-25,
+        27-28 and z=31-32, 34-35, 37-38) leave single-cell gaps on the face, so
+        every exposed cell near the portal (gaps at z=29..30 and the single
+        gaps either side) has an unexposed lateral neighbour and is not strict.
+        Nubs are at most two long, so they offer no door candidates of their own.
+        The only strict cells are z>=40, beyond DOOR_REACH. Framing the whole face
+        first returns only those far cells and the door is skipped; picking
+        in-reach walls first, then framing, keeps the gap beside the portal.
+        """
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 61)}
+        for lo in (21, 24, 27, 31, 34, 37):
+            cells |= {(18, lo), (18, lo + 1)}
+        portal = {
+            'id': '18-A', 'label': 'Near', 'building': 'T',
+            'x': 18, 'z': 29, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
+            'in_map': True, 'uri': '',
+        }
+        buf = io.StringIO()
+        with mock.patch.object(F.portals, 'load', return_value=[portal]), redirect_stdout(buf):
+            plan = F.build(
+                self.spec({'18-A': {'leaves': 1, 'block': 'iron_door'}}),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+        out = buf.getvalue()
+        self.assertNotIn('skipped', out, out)
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        door_xz = (lowers[0][0][0], lowers[0][0][2])
+        self.assertIn(door_xz, {(17, 29), (17, 30)}, door_xz)
+        self.assertLessEqual(
+            (door_xz[0] - 18) ** 2 + (door_xz[1] - 29) ** 2,
+            F.portals.DOOR_REACH ** 2,
+            f'door at {door_xz} farther than DOOR_REACH from portal',
+        )
+
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones; refuses bad from/levels/pitched roof."""
@@ -586,6 +641,22 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn('readable=', line)
         self.assertIn('pad=', line)
         self.assertIn('cover=', line)
+
+    def test_assign_roof_zones_drops_outline_cells_without_lidar_mass(self):
+        """#116: zoned readable mask keeps only cells with nDSM ≥ ZONE_LIDAR_MASS_M."""
+        outline = np.ones((4, 6), dtype=bool)
+        # DSM metres AOD; ground_y chosen so left half is bare (< mass_m) and right has mass.
+        dsm = np.full((4, 6), 50.0)
+        ground_y = np.full((4, 6), 48)  # nDSM ~2 m after y_to_metres_aod — below default 3 m
+        ground_y[:, 3:] = 40            # nDSM ~10 m — keep
+        zz, xx = np.mgrid[0:4, 0:6]
+        with mock.patch('world_frame.y_to_metres_aod', side_effect=lambda y: float(y)):
+            readable, zone, _levels, _axis = F.assign_roof_zones(
+                dsm, outline, [50], xx, zz, bucket=3, axis_deg=0.0, ground_y=ground_y,
+            )
+        self.assertFalse(readable[:, :3].any(), 'bare-ground half must be dropped')
+        self.assertTrue(readable[:, 3:].all(), 'mass half must remain')
+        self.assertEqual(int(readable.sum()), 4 * 3)
 
 
 class ZoneBuildTest(unittest.TestCase):
