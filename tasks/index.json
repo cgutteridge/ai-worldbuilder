@@ -4,15 +4,6 @@
   "nextTaskId": 105,
   "tasks": [
     {
-      "id": 102,
-      "title": "Wire or retire entrances.py (orphaned library)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "lib/builds/entrances.py claims feature-build / house-build use but nothing in production imports it (tests only). Either wire doors through house_build/feature_build or retire the module and its tests."
-    },
-    {
       "id": 103,
       "title": "Replace AI_WORLDBUILDER_WORLD_ROOT with required --world CLI",
       "status": "todo",
