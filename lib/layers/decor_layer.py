@@ -24,7 +24,7 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 
 from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air, neighbour_owned,  # noqa: E402
-                          load_masked_positions)
+                          load_masked_positions, warm_surface_probe)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World, full  # noqa: E402
 
@@ -155,6 +155,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
             by_kind.setdefault((blk, gh), set()).add(q)
     groups += [(cells, blk, gh) for (blk, gh), cells in sorted(by_kind.items())]
     stats['garden columns'] = sum(len(c) for c in by_kind.values())
+    warm_surface_probe(world, cell[0] * 128 - 2, cell[1] * 128 - 2,
+                       cell[0] * 128 + 129, cell[1] * 128 + 129)           # batch reads (#110)
     way = set(vmap.road) | set(vmap.feat) | set(vmap.water)      # mapped road, path or water columns
     for cells, mat, h in groups:
         for q in sorted(cells):

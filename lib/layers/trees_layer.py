@@ -30,7 +30,8 @@ import numpy as np
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import plan_name as ground_plan_name, bare, ignored_builds, is_air, load_masked_positions, neighbour_owned  # noqa: E402
+from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, is_air,  # noqa: E402
+                          load_masked_positions, neighbour_owned, warm_surface_probe)
 from surface_probe import short_id, surface_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from plant_cell_canopy import MOSAIC_TILE0, RNG_SEED, bush_voxels, mosaic_px, tree_voxels  # noqa: E402
@@ -332,6 +333,9 @@ def planning_inputs(cell):
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp)
 
 
+CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
+
+
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInputs | None = None):
     """Plan trees against one coherent world/evidence view. Returns (placements, report)."""
     tx, tz = cell
@@ -342,6 +346,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': []}
+    warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
+                       x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
     for i, j, r in crowns:
         x, z = x0 + i, z0 + j
         surf = surface_y(world, x, z)
