@@ -777,6 +777,45 @@ def door_frame_issues(plan, block):
 
 
 
+def guard_door_frames(plan, block):
+    """Refuse a plan with unframed doors: every door needs a jamb either side and a lintel (a door in air
+    can be walked round). Shared by the live apply and the offline plan step so the refusal is identical.
+
+    @param plan: Plan to check
+    @param block: callable (x, y, z) -> block id/state or None for cells the plan does not set
+    @raises SystemExit: when pieces are missing and ``plan.allow_unframed_doors`` is not set
+    """
+    bad = door_frame_issues(plan, block)
+    if bad and not getattr(plan, 'allow_unframed_doors', False):
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / f'{plan.name}-door-frames.json').write_text(json.dumps([list(b) for b in bad], indent=1))
+        raise SystemExit(f'{len(bad)} door frame piece(s) missing, e.g. {bad[:3]}; see {plan.name}-door-frames.json. '
+                         'Doors go in a wall with a jamb each side and a lintel above. '
+                         'A door that is really free-standing: set plan.allow_unframed_doors = "<reason>".')
+
+
+def guard_roof_jogs(plan):
+    """Refuse a plan whose roof ridge shifts sideways between rows (I-034: it zig-zags every stair on the seam).
+    Shared by the live apply and the offline plan step so the refusal is identical.
+
+    @param plan: Plan to check
+    @raises SystemExit: when ridges jog and ``plan.roof_jog_ok`` is not set
+    """
+    import roof_lint
+    jogs = roof_lint.ridge_jogs(plan.cells)
+    if jogs:
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / f'{plan.name}-roof-jogs.json').write_text(json.dumps(jogs, indent=1))
+        why = getattr(plan, 'roof_jog_ok', None)
+        if not why:
+            raise SystemExit(
+                f'{len(jogs)} roof ridge(s) jog sideways between rows; see {plan.name}-roof-jogs.json. '
+                'Keep each roof on one straight ridge line (square the footprint, do not step it '
+                'with the vector-map rotation). Real offset roofs (evidence in hand): set '
+                'plan.roof_jog_ok = "<reason + evidence id>".')
+        print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
+
+
 def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, meta=None, strict=False, mask=None):
     """protect: optional callable(pos, existing_state) -> bool; True = refuse to overwrite.
     Cells owned by earlier builds are always protected unless that build is in `modifies`.
@@ -845,26 +884,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 'Missing clip: osm_extract.py --layers buildings,highways. Genuinely unmapped structure '
                 '(evidence in hand): set plan.outside_footprint_ok = "<reason + evidence id>".')
         print(f'footprint guard overridden ({len(fp["outside"]) + len(fp["blind"])} cells): {why}')
-    # guard: every door needs a jamb either side and a lintel (a door in air can be walked round)
-    bad = door_frame_issues(plan, w.block)
-    if bad and not getattr(plan, 'allow_unframed_doors', False):
-        (OUT / f'{plan.name}-door-frames.json').write_text(json.dumps([list(b) for b in bad], indent=1))
-        raise SystemExit(f'{len(bad)} door frame piece(s) missing, e.g. {bad[:3]}; see {plan.name}-door-frames.json. '
-                         'Doors go in a wall with a jamb each side and a lintel above. '
-                         'A door that is really free-standing: set plan.allow_unframed_doors = "<reason>".')
-    # guard (I-034): a ridge that shifts sideways between rows zig-zags every stair on the seam
-    import roof_lint
-    jogs = roof_lint.ridge_jogs(plan.cells)
-    if jogs:
-        (OUT / f'{plan.name}-roof-jogs.json').write_text(json.dumps(jogs, indent=1))
-        why = getattr(plan, 'roof_jog_ok', None)
-        if not why:
-            raise SystemExit(
-                f'{len(jogs)} roof ridge(s) jog sideways between rows; see {plan.name}-roof-jogs.json. '
-                'Keep each roof on one straight ridge line (square the footprint, do not step it '
-                'with the vector-map rotation). Real offset roofs (evidence in hand): set '
-                'plan.roof_jog_ok = "<reason + evidence id>".')
-        print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
+    guard_door_frames(plan, w.block)
+    guard_roof_jogs(plan)
     # in-flight (begun) first: point at site_recover, not the ownership Clash wording (#54)
     import cellmath
     view = cell_registry.view_registry()

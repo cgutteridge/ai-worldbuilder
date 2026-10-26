@@ -29,7 +29,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
-from site_kit import Plan, World, apply, preview  # noqa: E402
+from site_kit import Plan, World, apply, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel')
 WALL, FLOOR = 'bricks', 'spruce_planks'
@@ -442,6 +442,9 @@ class Build:
         owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
         for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
+        # same refusals as the live apply, so the designer sees them before hand-off (#99)
+        guard_door_frames(self.p, self.live.block)
+        guard_roof_jogs(self.p)
         for h in self.houses:
             print(h.no, 'b', h.b, 'cells', len(h.cells), 'door', getattr(h, 'door', None), 'rear', getattr(h, 'rear', None))
         return self.p
