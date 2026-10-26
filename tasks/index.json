@@ -13,15 +13,6 @@
       "notes": "Why: dry runs were hours because planners read the live world one block at a time through paced MCP calls (1.1 s each; see docs/snags/2026-10-26-southampton-48-44.md S-02/S-19; #106/#108/#110 patched three layers). Region files are already on disk (world config region_path). Scope: STRICTLY READ-ONLY reader of .mca files (never write, copy, snap, restore or delete region files), implemented as an adapter behind BlockStore (read/read_many) so planners are unchanged; used for planning and dry-run reads after a server save (server_save_all_worlds; rules/process.md already says save before reading region files). Applies and their readback stay on the existing MCP path unless shown safe. Policy: GLOSSARY.md and ADR 004 say to avoid parsing region files for block state and removed region backup/restore; the owner has authorised this read-only exception (2026-10-26), so record it in ADR 004 / GLOSSARY when shipping. Open questions to answer first: does anything in planning need live state not on disk (unsaved chunks, entities, block entities); how to detect stale reads (save then read; compare chunk timestamps); chunk formats/version (DataVersion 4903); reuse an existing NBT/anvil library vs write minimal; keep dependency count low."
     },
     {
-      "id": 113,
-      "title": "Ground and decor read the vector-map cache the pipeline builds",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: ground_sources.load_osm globs only *-mp/-ln/-pt.geojson in verification/site/osm27700, but osm_footprints writes <clip-dir>__<clip>.geojson, so the ground and decor layers load zero roads, paths, plazas, hedges, walls (S-20, S-21). Scope: one shared reader of the cache osm_footprints builds (reproject clips not yet cached); read every geojson there so legacy names still work; bbox filter and dedupe already exist. The dry run prints \"vector map: N features\" (reporting only, no stop: an empty cell is legitimate). Fix the stale docstring. Done when a world with only __-named clips yields roads and hedges in OSMGround. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints."
-    },
-    {
       "id": 114,
       "title": "Feature-build portal doors choose the nearest candidate, then check framing",
       "status": "todo",

@@ -960,6 +960,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Cause: cell_registry.propose_feature_candidates calls cell_features.propose_for_cell, which does not exist, inside a bare except returning [] (S-06). lib/journal/cell_features.py already has missing_features(tx, tz), which also returns a houses kind (surfaces the University Road houses as candidates, S-07; registering them stays manual). Scope: call missing_features, drop the swallowing except. Note: registry_next.next_task orders ground first by design and only reads registered features; that disagrees with rules/handoff-layered-passes.md and is a separate owner decision, not part of this ticket. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (9e236e2)."
+    },
+    {
+      "id": 113,
+      "title": "Ground and decor read the vector-map cache the pipeline builds",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: ground_sources.load_osm globs only *-mp/-ln/-pt.geojson in verification/site/osm27700, but osm_footprints writes <clip-dir>__<clip>.geojson, so the ground and decor layers load zero roads, paths, plazas, hedges, walls (S-20, S-21). Scope: one shared reader of the cache osm_footprints builds (reproject clips not yet cached); read every geojson there so legacy names still work; bbox filter and dedupe already exist. The dry run prints \"vector map: N features\" (reporting only, no stop: an empty cell is legitimate). Fix the stale docstring. Done when a world with only __-named clips yields roads and hedges in OSMGround. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged as 509c259 (task/113-vector-map-cache-reader)."
     }
   ]
 }
