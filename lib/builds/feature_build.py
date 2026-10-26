@@ -638,10 +638,13 @@ class Build:
             self.idx = idx
         else:
             self.idx = None
+        self.excluded: set = set()
         for lab, boxes in (spec.get('exclude') or {}).items():
             if lab in by_no:
-                by_no[lab] = {c for c in by_no[lab]
-                              if not any(b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3] for b in boxes)}
+                kept = {c for c in by_no[lab]
+                        if not any(b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3] for b in boxes)}
+                self.excluded |= by_no[lab] - kept
+                by_no[lab] = kept
         missing = [lab for lab in spec['ways'].values() if lab not in by_no or not by_no[lab]]
         if missing:
             raise SystemExit(f'{self.name}: no footprint cells for {missing}')
@@ -1468,15 +1471,21 @@ class Build:
             elif (q[0], q[2]) in zoned_cols:
                 del self.p.cells[q]
 
+    def _foreign_cells(self) -> set:
+        """Map cells of other buildings (not this build's, not clipped off by ``exclude``).
+
+        @returns: cells to treat as someone else's footprint; empty without a map index
+        """
+        if self.idx is None:
+            return set()
+        return {c for c in self.idx.cells() if c not in self.owner and c not in self.excluded}
+
     def build(self) -> Plan:
         """Produce the offline plan for this feature build.
 
         @returns: ``site_kit.Plan``
         """
-        if self.idx is not None:
-            self.foreign = {c for c in self.idx.cells() if c not in self.owner}
-        else:
-            self.foreign = set()
+        self.foreign = self._foreign_cells()
         self.by_no_all_cells = set(self.owner) | self.foreign
         for f in self.features:
             if not self._feature_has_zones(f):

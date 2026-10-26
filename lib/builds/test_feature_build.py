@@ -145,6 +145,22 @@ class ExcludeSpecTest(unittest.TestCase):
             F.Build(spec, footprints={'A': {(10, 20)}}, world=_StoneWorld())
 
 
+    def test_clipped_cells_are_not_foreign_but_other_buildings_are(self):
+        class Idx:
+            buildings = [(0, {'osm_way_id': '99'}), (1, {'osm_way_id': '7'})]
+
+            def cells(self):
+                cells = {(x, z): 0 for x in range(10, 15) for z in range(20, 25)}
+                cells[(30, 30)] = 1
+                return cells
+
+        spec = BuildPlanTest.spec(self)
+        spec['exclude'] = {'A': [[10, 20, 14, 21]]}
+        with mock.patch.object(F.osm_footprints, 'OSMIndex', return_value=Idx()):
+            b = F.Build(spec, world=_StoneWorld())
+        self.assertEqual(b._foreign_cells(), {(30, 30)})
+
+
 class _StoneWorld:
     """World stub: solid stone through y<=49, air above."""
 
