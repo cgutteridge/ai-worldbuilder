@@ -77,6 +77,17 @@ class RegistryCliTest(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 R.main(['--root', self.root, 'register-feature', 'x', '--name', 'X', '--cells', '1,1'])
 
+    def test_add_issue_and_issues_commands_retired(self):
+        """#121: I-nnn ISSUES.txt CLI is gone; snags use scripts/issues.py."""
+        for argv in (
+            ['--root', self.root, 'add-issue', '--cell', '48,-44', '--reason', 'x'],
+            ['--root', self.root, 'issues'],
+        ):
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with mock.patch.object(R, 'activate_world_from_args'):
+                        R.main(['--world', 'unit-test', *argv])
+
     def test_empty_and_feature_map(self):
         reg = R.view_registry(self.root)
         self.assertTrue(R.is_empty(reg.cell((0, 0))))

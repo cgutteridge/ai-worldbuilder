@@ -1032,6 +1032,15 @@
       "title": "Skills: snag (intake+review) and sherlock (read-only investigator), seed from docs/snags",
       "status": "done",
       "notes": "Skills snag + sherlock written; human-confirm-fix retired; Southampton seeded with 8 issues (I-001..I-008, 13 snags) in worlds/southampton-build/registry/issues.json (uncommitted in the world repo). Process snags S-01,S-05,S-14,S-15 and fixed/unsettled ones left out by owner decision."
+    },
+    {
+      "id": 121,
+      "title": "Retire I-nnn ISSUES.txt: stop issues blocking cells / steering next",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Remove registry_issues + add-issue, journal 'issue'/'close' notes counting against done, next_open_issue, site_kit close_for_build auto-close, verify check_issue_notes, handoff _open_issues. Update refine/redo/cell-orchestrator/rules pointers; retire human-confirm-fix (superseded by snag skill). Landed on main via ship_branch (task/121-retire-issues-txt)."
     }
   ]
 }

@@ -69,4 +69,4 @@ Done when each defect is covered by a landed fix, a task, an issue, or "accepted
 
 ## 5. Check with the human
 
-Use `human-confirm-fix` for the fix. Then ask once about the task list.
+When a place fix is `fix-landed`, walk it with the `snag` skill review path. Then ask once about the task list.

@@ -159,28 +159,6 @@ def check_in_flight(reg: CellRegistry) -> list[dict[str, Any]]:
             for e in reg.entries() if e.status == 'begun']
 
 
-def check_issue_notes(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
-    """Open issue notes in the journal whose ISSUES.txt line is gone (closed by hand).
-
-    @param reg: registry
-    @param root: world root
-    @returns: issues
-    """
-    from registry_issues import issue_ref, load_issues
-    open_refs = {issue_ref(i) for i in load_issues(root)}
-    out = []
-    for c, v in reg.view().items():
-        for n in v.notes:
-            if n.kind == 'issue' and n.ref not in open_refs:
-                cid = cell_id(*c)
-                out.append(_issue(
-                    f'issue-note:{cid}:{n.ref}', SEVERITY_WARN,
-                    f'cell {cid} still has open issue note {n.ref} but ISSUES.txt does not list it; close it with '
-                    f'cell_registry.py note {cid} --kind close --ref {n.ref}',
-                ))
-    return out
-
-
 def check_decision_records(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
     """Warn for landed builds with no decision record (recording starts with the first record).
 
@@ -218,7 +196,6 @@ def run_verify(
     issues += check_feature_specs(reg, world)
     issues += check_coverage_warnings(reg)
     issues += check_in_flight(reg)
-    issues += check_issue_notes(reg, world)
     issues += check_decision_records(reg, world)
     issues += check_leftover_progress_files(world)
     if check_world:

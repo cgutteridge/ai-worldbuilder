@@ -1037,12 +1037,12 @@ class CellRegistry:
         if marker:
             left.append('marker up')
         left += [f'coverage warning {k}' for k in warns]
-        issues = [n.ref for n in notes if n.kind == 'issue']
-        left += [f'issue {r}' for r in issues]
+        # Historical journal issue/close notes are kept in ``notes`` but do not
+        # block DONE (#121); snags live in registry/issues.json via scripts/issues.py.
         if hold:
             left.append(f'hold: {hold}')
         left += [f'in-flight: {f.plan}' for f in flight]
-        done = (ground == 'generated' and trees and decor and not marker and not warns and not issues
+        done = (ground == 'generated' and trees and decor and not marker and not warns
                 and all(f.status == 'built' for f in feats) and not flight)
         view = CellView(cell, ground, GhostView(ghost_ground), trees, decor, tuple(feats),
                         tuple(flight), marker, hold, notes, done, tuple(left))

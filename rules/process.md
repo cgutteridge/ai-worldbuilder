@@ -7,7 +7,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 1. WHERE THINGS LIVE
 ------------------------------------------------------------------------
  registry/journal.jsonl  cell journal (SoT); progress/ghost/ownership are views
- scripts/cell_registry.py  next / status / issues / hold / verify / reconcile
+ scripts/cell_registry.py  next / status / hold / verify / reconcile
  site/NOTES.txt         overview, accuracy rules (active world; read first)
  site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
@@ -16,7 +16,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  site/COVERAGE.txt      radial focus + generated rollup (coverage.py write;
                         registry-native + optional parcel tables)
  config/coverage-areas.json    areas tracked by scripts/coverage.py
- site/ISSUES.txt        optional human mirror; prefer cell_registry issues
+ registry/issues.json   snags / issues (scripts/issues.py; never block a cell)
  site/REVIEWS.txt       review log
  site/BUILDS-INDEX.txt  generated list of kit builds (scripts/site_index.py)
  site/archive/          closed notes / older reviews
@@ -67,9 +67,9 @@ BUILT plan in place to “fix” the world.
                      stack _b/_c patches (I-009).
  Every session start GLITCH PATROL when refining built cells:
                      scripts/site_patrol.py sweep (+ views N when useful).
-                     Log in REVIEWS.txt / ISSUES.txt.
+                     Log in REVIEWS.txt; file snags via scripts/issues.py.
  Every 3 phases      scripts/site_audit.py: drift from archived cells,
-                     dark walkable cells. Log REVIEWS; open ISSUES.
+                     dark walkable cells. Log REVIEWS; file snags.
  After a place done  FULL REVIEW of that place against photos / aerial.
                      Fix or schedule high issues before starting the next.
 
@@ -181,18 +181,18 @@ BUILT plan in place to “fix” the world.
     and the aerial across the edge for continuity.
       cell_registry.py status --cell tx,tz
       coverage.py status --cell tx,tz --list ; coverage.py gaps --area <a>
-    Light character pass: note distinctive local features as registry issues.
- 3. Plan — `cell_registry.py next` picks the next layer, feature, or open issue.
+    Light character pass: note distinctive local features as snags (`scripts/issues.py`).
+ 3. Plan — `cell_registry.py next` picks the next layer or feature (snags never steer next).
  4. Features — each its own build, normal cadence (§2); registry marks built on clean apply.
  5. Layered passes — live flow per cell: claim lock; mask_undo.py (decor then trees) if
     masks exist; ground_layer.py --apply; trees_layer.py --apply; decor_layer.py --apply;
     patrol sweep; clean applies land journal entries (CellRegistry); release lock.
     Dry-run first and check verification/site/<plan>-kinds.png against the aerial.
     Python: .venv/bin/python. Vegetation rules: rules/foliage.md.
- 6. Cell complete — registry DONE (layers + features + no open issues/warnings). Only then
+ 6. Cell complete — registry DONE (layers + features + no open coverage warnings). Only then
     cell_marker.py --clear tx,tz and move on: next cell on the ring, or ring r+1 when the
     ring is done. Cell order: north centre of the ring (north is smaller tz), then clockwise.
-    Holds: `cell_registry.py hold`.
+    Holds: `cell_registry.py hold`. Snags do not block DONE.
 
  Focus: the registry marker is the single source of truth for the active cell.
  ONLY cell_marker.py raises/clears it; never hand-edit registry JSON for focus.
@@ -270,7 +270,7 @@ BUILT plan in place to “fix” the world.
  Records     issue notes and reference/manifest match the world.
  Backups     kit structure backup present.
 
-Outcome: each finding → ISSUES.txt (severity, place, location, action).
+Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill).
 “Replace what does not match evidence” is a valid action.
 
 ------------------------------------------------------------------------
@@ -278,7 +278,7 @@ Outcome: each finding → ISSUES.txt (severity, place, location, action).
 ------------------------------------------------------------------------
  - Anything built by this kit (verification/site/*-cells.json) may be
    repaired or replaced after a review. Record as a modification build
-   with its own backup; log the reason in ISSUES.txt.
+   with its own backup; log the reason on the issue fix log.
  - Leftover vendor or generator terrain/buildings may be refined when
    evidence shows they are wrong. Back up first. Prefer local edits over
    regenerating wide areas.

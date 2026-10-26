@@ -28,7 +28,7 @@ only what the brief / task needs.
  FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
  PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
  TERRACE       Broadlands-type row; scripts/terrace.py generator.
- ISSUE         Registry issue fix (cell_registry add-issue / close).
+ ISSUE         Snag / issue work (`snag` skill; scripts/issues.py). Never blocks a cell.
 
 ------------------------------------------------------------------------
 2. rules/process.md SLICES (grep / sed -n; not the full file)

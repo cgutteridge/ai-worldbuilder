@@ -4,15 +4,6 @@
   "nextTaskId": 125,
   "tasks": [
     {
-      "id": 121,
-      "title": "Retire I-nnn ISSUES.txt: stop issues blocking cells / steering next",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Remove registry_issues + add-issue, journal 'issue'/'close' notes counting against done, next_open_issue, site_kit close_for_build auto-close, verify check_issue_notes, handoff _open_issues. Update refine/redo/cell-orchestrator/rules pointers; retire human-confirm-fix (superseded by snag skill)."
-    },
-    {
       "id": 123,
       "title": "Bug: element undo digs into intact ground (pit after purging a feature); undo must restore the actual pre-build world",
       "status": "blocked",

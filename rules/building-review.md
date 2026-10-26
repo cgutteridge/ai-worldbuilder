@@ -28,8 +28,9 @@ One building per review. Skip any building that already has an open feature issu
 4. **Keep or rebuild.** Keep when nothing in the list matters at street scale (`rules/radial-good-enough.md`). Rebuild by
    reusing the cell's builder (`scripts/oakdene_court.py` is the pattern), clearing only the build's own recorded blocks, so
    trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and doors reach.
-5. **Check with the user.** Run the `human-confirm-fix` skill. Steering replies loop back to step 4 and become rules
-   (`rules/craftsmanship.md` §2). Only the user's "yes" closes the issue.
+5. **Check with the user.** When a fix is `fix-landed`, walk it with the `snag` skill review path
+   (`scripts/issues.py review` / `verdict`). Steering replies loop back to step 4 and become rules
+   (`rules/craftsmanship.md` §2). Only the owner's verdict confirms the issue.
    A feature build changes the building's own cells only: no landings, steps, paving or plants outside the footprint (ground,
    trees and decor are other passes); if a door needs steps, queue it for the ground pass (user, 2026-10-16).
    Fiddling a block or two to make a build sit well is fine (user, 2026-10-16); what is not fine is stacking follow-up fixes.

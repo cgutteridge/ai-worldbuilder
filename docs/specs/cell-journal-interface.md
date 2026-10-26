@@ -24,7 +24,7 @@ reg.frontier(ring=None)  reg.seeds()  reg.marker_cell()  reg.reset()
 
 Build(plan, pass_, cells, modifies=(), protect=None, strict=False, mask=None, cell=None, payload=None, meta=None)
 Undo(target, strict=True, meta=None)   # target = plan name, or (cell, pass_); meta is journalled
-Note(cell, kind, body='', ref='')  # kinds: marker hold coverage coverage-dismiss review issue close
+Note(cell, kind, body='', ref='')  # kinds: marker hold coverage coverage-dismiss review (legacy: issue close)
 Writes(plan, pass_, cells, kind, intent, seq)   # what `apply` must write; intent.payload = caller's Plan
 Receipt(seq, status, planned, mismatches, sample, follow_ups, followed)
 CellView(cell, ground, ghost, trees, decor, features, in_flight, marker, hold, notes, done, left)
@@ -34,7 +34,9 @@ Passes: Elements `feature ground trees decor` (GLOSSARY **Element**), plus `ghos
 (`other` owns blocks with no progress meaning: cell markers, clean-ups). Code: `ELEMENTS` /
 `REAL_PASSES` (alias). Legacy `ghost-features` lines may still appear in old journals
 (ownership yields) but new `ghost-features` Builds are refused (task #68). `Ticket.abandon(reason)` finishes a begun entry `abandoned` (rolled back by a
-recovery tool; it owns nothing). An open `issue` note keeps a cell from `done` (`left`: `issue <ref>`). `apply` is `callable(Writes) -> None`:
+recovery tool; it owns nothing). Legacy journal `issue` / `close` notes are kept in the fold but do
+not block `done` (ticket #121); snags live in `registry/issues.json` via `scripts/issues.py`.
+`apply` is `callable(Writes) -> None`:
 write `Writes.cells` over MCP and nothing else (no readback, no registry, no flush needed).
 `ghosts` is `callable(cell, 'ground') -> {pos: state} | {} | None` (None: cannot plan).
 `BlockStore`: `read(pos)`, `read_many(positions)`, `flush()`. `MemoryBlocks` (tests), `LiveBlocks` (MCP `block_scan_region`).

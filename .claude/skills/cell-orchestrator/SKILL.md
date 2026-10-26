@@ -7,15 +7,15 @@ You are a thin orchestrator. You do not build anything yourself. Your context mu
 
 ## Source of truth
 
-Progress is the **cell journal** (`registry/journal.jsonl` via `cell_registry.py`) plus `site/ISSUES.txt`.
+Progress is the **cell journal** (`registry/journal.jsonl` via `cell_registry.py`). Snags live in `registry/issues.json` (`scripts/issues.py`) and never block a cell or steer `next`.
 
 ```bash
 .venv/bin/python scripts/cell_registry.py next
 ```
 
-That command is read-only and deterministic: open issues first, then the next undone item (marker cell if not DONE, else nearest undone non-held cell). Order inside a cell: ground → features → trees → decor. `next` does **not** raise the marker; the build task does.
+That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Order inside a cell: ground → features → trees → decor. `next` does **not** raise the marker; the build task does.
 
-Do **not** use retired queue / aerial-review / focus files, coverage sign-offs, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `cell_registry.py reconcile [--fix]`.
+Do **not** use retired queue / aerial-review / focus files, coverage sign-offs, `site/ISSUES.txt` I-nnn lines, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `cell_registry.py reconcile [--fix]`.
 
 ## Stop point
 
@@ -35,14 +35,14 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 
 ## Preflight (every task)
 
-1. Run `cell_registry.py next` (and optionally `issues`). Read `site/LOCK.json`. Do not read retired queue / aerial-review / focus files.
+1. Run `cell_registry.py next`. Read `site/LOCK.json`. Do not read retired queue / aerial-review / focus / ISSUES.txt files.
 2. If LOCK.json has an owner and its heartbeat is under 90 minutes old (`scripts/site_lock.py` STALE_MIN), STOP and tell the user who holds it. Never clear, steal or edit the lock by hand.
 3. If the lock is stale, or `.venv/bin/python scripts/site_recover.py status` shows an in-flight/rolled-back entry, run `site_recover.py recover <cell> --apply` for that cell first (dry run without `--apply`; never on a fresh lock), then continue. For block drift without an in-flight entry, use `cell_registry.py reconcile`.
 4. Check for a running session already on this task.
 
 ## Per task
 
-0. Take the JSON from `cell_registry.py next`. Kinds: `issue`, `layer` (ground|trees|decor), or `feature`.
+0. Take the JSON from `cell_registry.py next`. Kinds: `layer` (ground|trees|decor), or `feature`.
 1. Raise the marker for the target cell if needed (`cell_marker.py --raise tx,tz` under SITE_OWNER) — `next` does not.
 2. **Build roles** (features, trees, decor — not ghosts): resolve designer + builder before spawning anyone:
 
@@ -53,7 +53,7 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 
    Paste `scripts/build_roles.py resolve …` output (or `format_roles_block` text from `rules/build-roles.md`) into every agent prompt so both models are named. Same designer and builder → **one** blocking agent that still does evidence table then apply. Different models → **two** blocking agents in order: (1) designer only — evidence table + hand-off artefact, no apply; (2) builder only — claim lock, apply from the hand-off, readback, release. Hand-off: non-house feature → `site/builds/<name>.json` (`feature_build`); trees/decor → evidence table then layer script. Ground ghost apply stays mechanical (`lidar_ghost`) — no designer/builder.
 3. Build: blocking general-purpose Agent(s) per the roles above, foreground, one at a time. Prompt names the task JSON, points at `rules/` (+ `rules/build-roles.md` for feature/trees/decor), and says: claim the lock with a unique owner (builder only), SITE_OWNER, readback 0 mismatches, patrol, clean apply lands the journal entry, release the lock, report in under 200 words.
-4. When the agent(s) return: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
+4. When the agent(s) return: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty, and registry status moved. Do not read the agent's transcript.
 5. Report to the user in a few lines. Then stop at the stop point.
 
 Snags go to issues via the `snag` skill (`scripts/issues.py add`); they never block a cell. A rebuild does not close an issue: the owner confirms it in review. End a run with `issues.py digest`.
@@ -62,7 +62,7 @@ Snags go to issues via the `snag` skill (`scripts/issues.py add`); they never bl
 
 - the lock is held, or a patrol fails, or the brief flags real risks
 - the next task is ambiguous
-- anything needs the user's eyes (`human-confirm-fix`)
+- anything needs the user's eyes (`snag` skill review when an issue is `fix-landed`)
 
 ## Context hygiene
 
