@@ -1,8 +1,17 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 112,
+  "nextTaskId": 113,
   "tasks": [
+    {
+      "id": 112,
+      "title": "Glossary term Element for feature/ground/trees/decor (not ghost); align code and docs",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Concept (not a journal Build): Element = the lasting kinds of place content a finished cell must cover — feature, ground, trees, decor. Excludes ghost (placeholder) and other/neutral. Goal: clearer talk in chat, rules, and APIs. Scope: add Element to GLOSSARY.md (with Avoid list); update docs/rules that say 'real work' / REAL_PASSES / 'real refine' where Element is clearer; rename or alias code identifiers only where it helps (e.g. REAL_PASSES → keep or document as the four Elements; prefer prose Element over inventing ElementPass). Do not rename journal pass_ string values (feature|ground|trees|decor) — those stay wire-stable. Owner chose 'element' over aspect/strand (2026-10-26)."
+    },
     {
       "id": 111,
       "title": "Read-only region-file reader as a BlockStore adapter, so planning/dry runs do not need paced MCP reads",
