@@ -993,6 +993,15 @@
       "priority": "medium",
       "complexity": "m",
       "notes": "Cause: the footprint is the vector outline (closed/opened); lidar sets heights only, and snap_to_levels gives every outline cell a roof level even over bare ground (S-09, S-22, part of S-18). Jubilee: 357 of 3138 cells (after the exclude boxes) have no mass of at least 3 m. Scope: labels with a zones entry only (Retail has none). Intersect the readable mask with lidar mass (nDSM threshold as a named constant, not hard-coded; check it does not carve low porches/canopies); keep the exclude key as an override. Verify offline against the four existing specs, reporting cover % before and after (no redos of applied builds). Blocked by #115 only for same-file edits. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (task/116 stack tip)."
+    },
+    {
+      "id": 117,
+      "title": "Block store scans the surrounding 16x16x16 section on a cache miss",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: LiveBlocks.read calls _ensure([p]): one block per scan at 1.1 s, so any layer that forgets to prefetch stalls for hours (S-02, S-19). Scope: on a miss scan the containing section (a chunk column is about 98k blocks, over the 65,536 per-scan cap). Makes the #106/#108/#110 prefetch patches redundant but leave them. Complements #111 (read-only region reader speeds dry runs; this protects live applies and any path bypassing the reader); do not merge them. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (5d8f65d)."
     }
   ]
 }
