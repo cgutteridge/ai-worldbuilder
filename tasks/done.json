@@ -915,6 +915,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: spec key exclude {label:[[x0,z0,x1,z1]]} clips the footprint; clipped cells not treated as foreign. Review blockers fixed (foreign leak, docs). Follow-up not done: door \"no wall near portal\" skips (42-B, 40-A, 18-A) - portal points just outside outlines."
+    },
+    {
+      "id": 108,
+      "title": "ground_layer: prefetch up to SCAN_TOP (clear step reads y111-120 per column, hours)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: PROBE_Y_RANGE now ends at SCAN_TOP so the clear step is prefetched. Shipped without a separate reviewer (two-line change)."
     }
   ]
 }
