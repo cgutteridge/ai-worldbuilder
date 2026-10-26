@@ -14,7 +14,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 ## Solution
 
 1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the origin cell to seed the ghost frontier.
-2. **Lidar ghost v2 (amended #68)** — Maintain a **frontier** of cells that should show placeholders: any cell with **real refine started** in the **registry** (ground, trees, decor, or feature) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** (DTM fill + colour-coded top from DSM − DTM) until **real ground** exists there. After **every successful apply** that counts as real work, **refresh** the frontier and ensure missing ghost ground.
+2. **Lidar ghost v2 (amended #68)** — Maintain a **frontier** of cells that should show placeholders: any cell with an **Element** started in the **registry** (feature, ground, trees, or decor) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** (DTM fill + colour-coded top from DSM − DTM) until **real ground** exists there. After **every successful Element apply**, **refresh** the frontier and ensure missing ghost ground.
 3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
 
 ## User Stories
@@ -55,15 +55,15 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 ### Lidar ghost v2 — frontier
 
-- **Seed set:** all cells where **real work started** is true — any non-ghost stage in applying/applied/verified/applied-with-mismatches state, including ground layer, trees layer, decor layer, and feature builds (same notion as today’s real-work predicate, extended if new stage keys appear).
+- **Seed set:** all cells where any **Element** has started — feature, ground, trees, or decor (journal `ELEMENTS` / `REAL_PASSES`; same predicate as `CellRegistry.seeds()`, extended if new Element kinds appear).
 - **Target set:** union over seeds of cells within Chebyshev distance **N** of each seed (default **N=2**, env-configurable, same variable name as today for ring depth).
-- **Exclude from ghost apply:** cells where real work policy says placeholders are inappropriate (whole-cell skip when real work started remains for **ensure** short-circuit; per-layer rules below refine that).
+- **Exclude from ghost apply:** cells where Element policy says placeholders are inappropriate (whole-cell skip when any Element started remains for **ensure** short-circuit; per-layer rules below refine that).
 
 ### Split ground vs feature lifecycle
 
 - **Ghost ground:** ensure/plan/apply while the cell lacks an applied **real ground layer** stage (ghost-ground alone does not count). Real ground apply overwrites ghost ground blocks via existing ignored-build owners.
 - **Ghost features:** ensure/plan/apply while the cell has ghost ground (or real ground) and no **real feature** overlap has been recorded for that cell. Overlap is defined by feature build footprint / registry coverage in world block space, including blocks applied from a feature whose STAGES home cell is different.
-- **Do not** use the stricter rule “any real pass clears feature ghosts” for v1 of this spec (ground-only may leave feature ghosts until feature overlap strip runs).
+- **Do not** use the stricter rule “any Element clears feature ghosts” for v1 of this spec (ground-only may leave feature ghosts until feature overlap strip runs).
 
 ### Strip and STAGES integrity
 

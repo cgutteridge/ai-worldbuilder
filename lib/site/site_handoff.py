@@ -613,8 +613,9 @@ _LIDAR_GHOST_V2_SPLIT = (
     'real features. No volumetric feature ghosts. Real ground supersedes ghost ground.'
 )
 _LIDAR_GHOST_V2_FRONTIER = (
-    'Frontier = Chebyshev ring around every cell with real refine started (default LIDAR_GHOST_RING=2). '
-    'Refresh after cell_marker raise/adopt and after every real apply (--no-ghosts / --ghost-ring to override).'
+    'Frontier = Chebyshev ring around every cell with any Element started '
+    '(feature, ground, trees, or decor; default LIDAR_GHOST_RING=2). '
+    'Refresh after cell_marker raise/adopt and after every Element apply (--no-ghosts / --ghost-ring to override).'
 )
 
 

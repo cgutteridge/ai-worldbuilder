@@ -8,7 +8,7 @@ The tool formerly treated refine as clearing unrefined vendor-import lumps and o
 
 ## Decision
 
-1. **Empty-world DoD:** A cell is done when evidence-backed features and layered passes (ground, trees, decor) plus masks meet the craft rules — not when “no unrefined vendor import” remains. The lump-scan tool is deleted (task #38).
+1. **Empty-world DoD:** A cell is done when its **Elements** are evidence-backed (feature builds plus layered passes ground, trees, decor) and masks meet the craft rules — not when “no unrefined vendor import” remains. The lump-scan tool is deleted (task #38).
 2. **Evidence heights:** National **composite** DTM/DSM (lidar provider package) are the normal lidar path. A pristine import save is not a catalogue provider and is never read as evidence: tools needing ground or surface heights use the lidar provider only.
 3. **Lidar ghosts:** (Amended task #68.) Frontier neighbours get idempotent **ghost ground** from composite DTM; surface colour encodes DSM − DTM height bands. No volumetric feature ghosts and no trees/decor ghosts. Real `ground_layer` overwrites ghost ground later. No per-cell generated Python.
 

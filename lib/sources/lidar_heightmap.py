@@ -388,7 +388,7 @@ def format_report(cell, items: list, source: str | None = None) -> str:
 
 
 def touched_cells() -> list:
-    """Cells with real work in the cell journal (``CellRegistry.seeds``)."""
+    """Cells with any Element started in the cell journal (``CellRegistry.seeds``)."""
     from cell_registry import view_registry
     return view_registry().seeds()
 
@@ -406,7 +406,7 @@ def write_tables() -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--cell', help='tx,tz')
-    ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with real work in the cell journal')
+    ap.add_argument('--tables', action='store_true', help='write site/cells/<tx>_<tz>-LIDAR.txt for every cell with any Element started in the cell journal')
     ap.add_argument('--json', action='store_true', help='print JSON instead of a table')
     ap.add_argument('--no-osm', action='store_true', help='skip footprint-map match (faster)')
     a = ap.parse_args(argv)
