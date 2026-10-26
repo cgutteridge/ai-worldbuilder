@@ -837,6 +837,30 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Goal: one distinct top-level folder in the main repo (e.g. bakeoff/) holding everything bake-off, so it cannot be mixed up with real world/tool work. Today it is scattered: model-bakeoffs/ (PROTOCOL, README, catalogue, config, packs, rounds, checks), scripts/model_bakeoff.py + test_model_bakeoff.py + feature_selection_check.py, skill .claude/skills/model-bakeoff, docs/model-bakeoffs.md, and the world checkout worlds/bakeoff (gitignored, own git repo). References to update: AGENTS.md, docs/active-world-contract.md, docs/audits/region-block-reads.md, rules/build-roles.md, scripts/run_tests.py, scripts/stale_terms_audit.py, tasks/done.json notes, the round JSONs (R-006..R-013), checks/feature-selection scenarios, and the 'refuse unless active world is bakeoff' guards in model_bakeoff.py. Open decisions: (1) does the bakeoff world checkout also move into the new folder or stay under worlds/ (active_world.py / AI_WORLDBUILDER_WORLD_ROOT expectations); (2) shared code (feature_build, site_kit, world_frame) stays in scripts/ and is imported, not copied. #95 symptom (bakeoff missing OSM clips / cross-world osm_root) fixed by on-disk copy 2026-10-25 \u2014 this ticket no longer absorbs that; OSM-as-normal-reference architecture is #97. Do not move mid-sitting: finish or park R-014 first. Ship via task/* branch. Archived 2026-10-25 after merge 1cc5978 (task/96-bakeoff-folder \u2192 main; tip cc8fc8b + merge 0d2ba92). Decisions: worlds/bakeoff stays under worlds/; shared scripts imported not copied. Landed: top-level bakeoff/ owns former model-bakeoffs + CLI + tests + skill + OVERVIEW; thin scripts/ shims; .claude skill symlink; R-014 never opened (parked). Ship-branch APPROVE (nits only: shim retention, docs stub, OVERVIEW/README overlap)."
+    },
+    {
+      "id": 98,
+      "title": "One source for Google aerial guidance across worlds",
+      "status": "done",
+      "notes": "Done 2026-10-26: world SOURCES.txt now one pointer line (bakeoff 7f31e96, southampton-build 04df5e9); google_aerial docstring reconciles ToS with the saved z18 mosaic (8118d07). Owner may want to check the 'keep grids small' wording."
+    },
+    {
+      "id": 99,
+      "title": "Run door-frame and roof-ridge guards in the offline plan step",
+      "status": "done",
+      "notes": "Done 2026-10-26 (merged 6504196): guards run offline via site_kit.guard_door_frames/guard_roof_jogs; rule added in rules/build-roles.md. Open nits: house_build guard calls untested; tests mock detectors; layer passes meet guards only at live apply."
+    },
+    {
+      "id": 100,
+      "title": "Wrapper that claims, runs and always releases the site lock",
+      "status": "done",
+      "notes": "Done 2026-10-26 (merged 74b874f): site_lock.py run. Open nits: SIGTERM untested; no heartbeat for >90 min children; stale takeover can mask exit status; nested same-owner run releases outer lock."
+    },
+    {
+      "id": 101,
+      "title": "Duration hints for slow commands in entry docs",
+      "status": "done",
+      "notes": "Done 2026-10-26 (1cf63bb): rules/slow-commands.md + AGENTS.md pointer. Baseline/apply/vector-map figures approximate (from R-015), not re-timed."
     }
   ]
 }

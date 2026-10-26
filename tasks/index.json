@@ -2,42 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
   "nextTaskId": 102,
-  "tasks": [
-    {
-      "id": 98,
-      "title": "One source for Google aerial guidance across worlds",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro item 1. Each world's reference/SOURCES.txt carries its own Google satellite paragraph that says tiles load in the browser, nothing is downloaded, never save. The tool now downloads a PNG sheet (providers/google-satellite/get/google_aerial.py, instance/google-aerial/) and says do not open a browser. Replace the paragraph in every world checkout (bakeoff, southampton-build, and the new-world templates under templates/) with a one-line pointer to the tool-level docs so there is one source of truth. World checkouts are separate git repos: commit in each. Also reconcile the ToS line (keep grids small) with the saved z18 mosaic made for bake-off R-015. Done when no SOURCES.txt or template still says browser-only / never download for Google satellite. Docs-only: straight to main."
-    },
-    {
-      "id": 99,
-      "title": "Run door-frame and roof-ridge guards in the offline plan step",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Retro item 2. In R-015 the designer's offline plan passed, then the door-frame guard refused in the builder's live dry run (8 missing jamb blocks) and the builder patched the designer's script. Move the door-frame and roof-ridge checks into the offline plan so the designer sees refusals before hand-off. In rules/build-roles.md state what a builder may change on a guard refusal (only the refused element) and where it is recorded (hand-off artefact + notes). Done when a plan with a bad door frame fails offline with the same message as the live guard, with a test, and the rule is written. Code: task/* branch via ship-branch."
-    },
-    {
-      "id": 100,
-      "title": "Wrapper that claims, runs and always releases the site lock",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Retro item 3. Claim, SITE_OWNER on each command, release is three manual steps; baseline and capture refuse without SITE_OWNER and a failed command leaves release to the agent. Add a site_lock.py run <owner> \"<task>\" -- <cmd> that claims, exports SITE_OWNER for the command, runs it and releases even on failure or interrupt. Done when baseline, apply and capture run through it in one command each, a failing command still releases, and tests cover the release-on-failure path. Code: task/* branch via ship-branch."
-    },
-    {
-      "id": 101,
-      "title": "Duration hints for slow commands in entry docs",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Retro item 6. baseline took over 10 minutes (foreground timeout, went to background), --apply about 2 minutes, OSM load 1-2 minutes. Name the slow commands and their typical times where agents look first (AGENTS.md pointer or the relevant skill/rule) so they run in the background from the start. Measure from the journal or time a run rather than guessing. Done when the slow commands each have a stated typical duration in one place that AGENTS.md points at. Docs-only: straight to main."
-    }
-  ]
+  "tasks": []
 }
