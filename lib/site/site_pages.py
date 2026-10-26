@@ -194,7 +194,7 @@ def cell_page(cell, sts, gaps, status, media, here, runlog) -> str:
     log = ''.join(f'<pre>{e(b)}</pre>' for b in runlog) or '<p class="muted">No run-log entry yet.</p>'
     links = ' · '.join(f'<a href="{rel(p, out)}">{n}</a>' for n, p in [
         ('SOURCES', ROOT / f'site/cells/{cell[0]}_{cell[1]}-SOURCES.txt')] if p.exists())
-    body = (f'<p class="crumbs"><a href="index.html">All cells</a> · <a href="{rel(ROOT / "HUMANS.html", out)}">HUMANS</a></p>'
+    body = (f'<p class="crumbs"><a href="index.html">All cells</a></p>'
             f'<h1>Cell {cell[0]},{cell[1]} {badge(status, cell == here)}</h1>'
             f'<p class="muted">Ring {ss.ring(cell)} · {bbox(cell)} · remaining per cell_gaps: {e(gap_text(gaps))}</p>'
             f'<p>{links}</p>'
@@ -235,7 +235,7 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
                       f'{"<span class=badge>marker</span>" if c == here else ""}</div>')
         secs += f'<h2>{e(status)} ({len(cells)})</h2><div class="cards">{cards}</div>'
     counts = ' · '.join(f'{s}: {sum(1 for i in infos.values() if i["status"] == s)}' for s in STATUS_ORDER[:4])
-    body = (f'<p class="crumbs"><a href="{rel(ROOT / "HUMANS.html", out)}">HUMANS</a></p><h1>Cells: completed and in progress</h1>'
+    body = (f'<h1>Cells: completed and in progress</h1>'
             f'<p class="muted">{counts}{f" · not started: {len(not_started)}" if not_started else ""}<br>Marker (where work is): '
             f'{f"{here[0]},{here[1]}" if here else "none"} · Lock: {e(lock)}</p>'
             f'<p class="muted"><strong>Completed</strong> means <code>site_handoff.cell_gaps</code> is empty. <strong>In progress</strong> means the marker is on it, '
