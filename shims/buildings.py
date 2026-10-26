@@ -2,7 +2,11 @@
 """Shim — canonical module: active world ``providers/uos-buildings/buildings.py``."""
 from __future__ import annotations
 
-from world_provider import load_world_provider, run_world_provider
+import _provider_shim as _ps
+
+_ps.ensure_import_paths()
+
+from world_provider import load_world_provider, run_world_provider  # noqa: E402
 
 _PACKAGE = "providers/uos-buildings"
 _FILE = "buildings.py"

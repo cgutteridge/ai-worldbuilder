@@ -347,16 +347,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     bakeoff = root / 'bakeoff'
     shims = root / 'shims'
     lib_dirs = lib_test_dirs(root)
-    # bakeoff last in this loop → first on sys.path (ahead of scripts/ shims).
-    for path in (*lib_dirs, shims, scripts, bakeoff):
+    # Put lib/* ahead of scripts/ so bare imports hit libraries, not CLI wrappers.
+    # Do NOT import script_env here: it binds WORLD_ROOT from the process env and
+    # would pin site_kit before unit_test_world() can select a disposable checkout.
+    for path in (scripts, shims, *reversed(lib_dirs), bakeoff):
         if path.is_dir():
             _ensure_on_path(path)
-    try:
-        import script_env as _script_env
-
-        _script_env.ensure_import_paths()
-    except Exception:
-        pass
+    for path in reversed(lib_dirs):
+        _ensure_on_path(path)
 
     def _load_and_run() -> int:
         with unit_test_world():

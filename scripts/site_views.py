@@ -15,8 +15,14 @@ import sys
 import time
 from pathlib import Path
 
-from contact_sheet import make_sheet
-from mc_paced import UUID, Paced
+_TOOL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_TOOL / 'scripts'))
+import script_env  # noqa: E402
+
+script_env.ensure_import_paths()
+
+from contact_sheet import make_sheet  # noqa: E402
+from mc_paced import UUID, Paced  # noqa: E402
 
 RES = {'--hires': 1, '--midres': 2}
 LOWRES = 4

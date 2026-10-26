@@ -18,6 +18,7 @@ from types import ModuleType
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = TOOL_ROOT / "scripts"
 SHIMS = TOOL_ROOT / "shims"
+LIB = TOOL_ROOT / "lib"
 
 if str(TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOL_ROOT))
@@ -27,16 +28,30 @@ import python_runtime  # noqa: E402
 python_runtime.ensure_python_runtime()
 
 
-def ensure_import_paths() -> None:
-    """Put ``shims/`` then ``scripts/`` on ``sys.path`` for provider + glue imports.
+def _lib_category_dirs() -> list[Path]:
+    """Return ``lib/<category>/`` directories that hold library modules."""
+    if not LIB.is_dir():
+        return []
+    return sorted(
+        p for p in LIB.iterdir() if p.is_dir() and not p.name.startswith(".")
+    )
 
-    Shims win for historical provider module names; scripts hold cross-provider
-    glue (``script_env``, ``cell_sources``, ``coverage``, …).
+
+def ensure_import_paths() -> None:
+    """Put ``lib/*/``, ``shims/``, and ``scripts/`` on ``sys.path``.
+
+    Library categories must win over same-named CLI wrappers under ``scripts/``.
+    Shims keep historical provider module names; ``scripts/`` holds ``script_env``.
     """
-    for path in (SHIMS, SCRIPTS):
+    for path in (SCRIPTS, SHIMS):
         text = str(path)
         if text not in sys.path:
             sys.path.insert(0, text)
+    for path in reversed(_lib_category_dirs()):
+        text = str(path)
+        if text in sys.path:
+            sys.path.remove(text)
+        sys.path.insert(0, text)
 
 
 def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:
