@@ -4,15 +4,6 @@
   "nextTaskId": 105,
   "tasks": [
     {
-      "id": 102,
-      "title": "Wire or retire entrances.py (orphaned library)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "lib/builds/entrances.py claims feature-build / house-build use but nothing in production imports it (tests only). Either wire doors through house_build/feature_build or retire the module and its tests."
-    },
-    {
       "id": 103,
       "title": "Replace AI_WORLDBUILDER_WORLD_ROOT with required --world CLI",
       "status": "todo",
@@ -20,15 +11,6 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Design: docs/plans/world-cli-arg.md (locked 2026-10-26; landed with the lib split). Remove env AI_WORLDBUILDER_WORLD_ROOT entirely (no default, no fallback). Place-touching CLIs take required --world <dirname> resolving to worlds/<name>; Minecraft save_path/region_path stay in that world's config/world.json. World-free (no --world): run_tests, ship_branch, pre_commit_checks, install_git_hooks. Seam: active_world.set_world / set_world_root / world_root(); script_env.bind_world + add_world_arg; lazy site_kit/world_frame/mc_paced config. Also wire bakeoff CLI, world shims, and system provider CLIs that import script_env. unit_test_world uses set_world_root(temp). Done when: repo grep AI_WORLDBUILDER_WORLD_ROOT empty outside tasks/done.json and a retired note in the contract; suite green. Branch task/world-cli-arg."
-    },
-    {
-      "id": 104,
-      "title": "Roof edging is a design answer from the aerial, default none",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Problem: feature_build.shell_zoned hard-codes a smooth_stone PARAPET on every zoned roof edge, including zone steps (SUSU rings); roof_flat adds a slab fringe on every flat roof. Spec: one optional roofs[label].edge, absent = no edging; when present {block, where: outer|all} ('outer' skips zone steps). Block is a designer choice. shell_zoned and roof_flat read it; the flat-roof overhang fringe is built only when edge asks for it; pitched overhang unchanged. Validate in load_spec. Process, no new step: add 'edge on the roof? what block? outer or steps too?' to questions the designer already answers from aerial/street level; touch only rules/building-review.md step 3, rules/build-roles.md designer questions, rules/evidence-order.md roof row; fix rules/feature-builds.md:53 and the craftsmanship checklist to say default none. Check bakeoff_r003_susu.json and r015_susu.py against the aerial; set edge only if shown. Tests in lib/builds/test_feature_build.py: default none, bad values refused, outer skips steps, all matches old output. Separate world job: audit built buildings with unevidenced edging."
     }
   ]
 }

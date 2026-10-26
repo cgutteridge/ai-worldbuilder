@@ -33,6 +33,20 @@ Hand-off artefacts:
 - Houses / terraces → house/terrace build path as today
 - Trees / decor → evidence table, then `trees_layer` / `decor_layer` apply
 
+## Designer questions (from aerial / street level)
+
+The designer already reads aerial and street-level evidence before writing the
+hand-off. Fold these into that pass — they are not a separate step:
+
+- Storeys, wall material, openings and door type (as today)
+- Roof form, colour and material
+- Edge on the roof? what block? outer only or steps too?
+  Default **none**: leave `roofs[label].edge` out unless the aerial (or a
+  street-level cap) shows a parapet, coping or flat overhang fringe. When set,
+  `{block, where: outer|all}` — `outer` skips zone steps; `all` edges every
+  step ([feature-builds.md](feature-builds.md),
+  [evidence-order.md](evidence-order.md)).
+
 Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
 hybrid scoring and ghost baseline stay bake-off-only
 ([bakeoff/PROTOCOL.md](../bakeoff/PROTOCOL.md)).

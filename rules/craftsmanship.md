@@ -181,7 +181,8 @@ rule-file copy.
  Add to the usual PROCESS done list:
   [ ] Shell airtight from street and aerial angles (no lattice/carpet roof)
   [ ] No leftover generator blocks in the feature's volume (HANDOFF-LAYERED-PASSES §1)
-  [ ] Roof pitch matches §3 (terrace stairs / shallow slabs); overhang ≥1
+  [ ] Roof pitch matches §3 (terrace stairs / shallow slabs); pitched overhang ≥1;
+      flat / zoned roof edging default none (set `roofs[].edge` only from aerial)
   [ ] Every window has sill, head, and solid L/R flanks
   [ ] Footprint squared for Minecraft, still on the plot (check OK)
   [ ] Contact views still used for evidence — craftsmanship is extra,
