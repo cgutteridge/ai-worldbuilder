@@ -11,7 +11,7 @@ ahead of `scripts/` (where CLI wrappers with the same names live).
 | `journal/` | Cell journal, registry helpers, coverage |
 | `sources/` | Place sources, lidar, vector map, OSM footprints |
 | `layers/` | Ground / trees / decor passes, foliage, masks |
-| `builds/` | House and feature builders, terrace, entrances |
+| `builds/` | House and feature builders, terrace |
 | `site/` | site_kit, lock, handoff, recover, status, cleanup |
 | `evidence/` | Evidence / contact sheets, registered aerials |
 | `audit/` | Floaters, roof lint, name / stale-term audits |

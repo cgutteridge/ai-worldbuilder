@@ -69,7 +69,7 @@ The approach:
 1. **Evidence table first, in the script docstring**: for each fact (footprint, heights, materials per face, doors, roof features) name the
    source: vector map footprint, lidar grid cell by cell, aerial z20, campus aerial, every portal photo at 800 px (`scripts/portals.py`), block reference for the
    block choice (`scripts/block_reference.py`). All relevant references, before the first block. A photo shows ONE face: say which.
-2. **One building = one script** (lidar bands -> per-zone materials -> `entrances` -> clear the old build -> keep trees).
+2. **One building = one script** (lidar bands -> per-zone materials -> doors from the portal register -> clear the old build -> keep trees).
    A second fix to the same building means rebuild it whole, never another follow-up. Per-face rules need positions as well, because a
    stepped outline has steps facing every way.
 3. **Re-runnable**: plan from footprint-map polygons, lidar and recorded states, never from blocks the script itself placed; to re-run, put back
@@ -99,7 +99,7 @@ evidence table alone, in one pass, got it accepted at the first look. What made 
    as (along, across) rectangles and lines off the aerial sheet. A 24-degree rectangle then needs no per-direction exposure rules.
 4. **One building = its own `shells()`** when it is not a plain lidar-band part (open canopy, set-back walls): only write the cells you mean,
    keep the Part over the whole footprint so clearing, deck and greeblies still work.
-5. **Entrances on a stepped front**: no straight stretch is long enough for `entrances.py`. Take two flat (single-exposure) treads cells
+5. **Entrances on a stepped front**: no straight stretch is long enough for a normal door cut. Take two flat (single-exposure) treads cells
    nearest the portal, steel jambs at both ends, the sign band as the lintel, open passage.
 6. **Numbers then pictures**: live tops vs lidar, no air in exposed wall columns, then the user's own view. Iso render (`block_render_region`)
    is useful; its `front`/`side` views are flattened projections and mislead.
