@@ -34,6 +34,12 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   Pick `block` with `block_reference.py` from the portal photo. `leaves: 2`
   places mirrored hinges and stays framed (`door_frame_issues`). Dry run
   prints each beside the portal name. Absent → legacy front/rear spruce.
+- optional `exclude` — per-label boxes cut out of that label's map footprint,
+  `{"JSC": [[x0, z0, x1, z1], ...]}` (inclusive block coords). Use when the
+  vector outline is larger than the real building (lidar shows open ground, or
+  separate houses, inside it). Clips only the named label; clipped cells are
+  not treated as another building's footprint. Dry run still prints the
+  footprint counts, so check `cover` after clipping.
 - optional `zones` — per-label lidar roof plateaus **within one footprint**
   (one vector way, several flat roof heights). Use when a single `storeys`
   count cannot express terraced roofs (e.g. SUSU w33830305 with plateaus at
