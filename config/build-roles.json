@@ -1,5 +1,5 @@
 {
-  "_comment": "Default designer and builder models for place refine (features, trees, decor) and bake-off open defaults. Override per task or with CLI flags. Ghosts are not AI work and ignore this file. Same designer and builder id means one session that still names both roles.",
+  "_comment": "Default designer and builder models for place refine (features, trees, decor). Tool-level, not per world. Decided 2026-10-26 at the close of the model bake-off: Opus 5.5 (low) designs, Sonnet 5.5 (medium) builds. Override per task or with CLI flags. Ghosts are not AI work and ignore this file. Same designer and builder id means one session that still names both roles.",
   "tool": "claude-code",
   "designer": "claude-opus-5-5-low",
   "builder": "claude-sonnet-5-5-medium"

@@ -1,5 +1,7 @@
 # Model bake-offs
 
+> **Closed 2026-10-26.** The current `config/build-roles.json` (Opus 5.5 low designs, Sonnet 5.5 medium builds) is the final choice. No further sittings are planned; this folder is kept as the record.
+
 Framework for comparing bulk-work models on place design/review. Each sitting
 names a **designer** and a **builder** (defaults: `config/build-roles.json`;
 same id = one session; different ids = hybrid).
