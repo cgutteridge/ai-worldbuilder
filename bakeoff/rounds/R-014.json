@@ -1,0 +1,192 @@
+{
+  "id": "R-014",
+  "status": "skipped",
+  "created": "2026-10-25T23:27:43Z",
+  "scored_at": null,
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "round_type": "hybrid",
+  "tier": "mid",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-sonnet-5-5-medium",
+    "label": "Claude Sonnet 5.5 (medium effort)",
+    "tier": "mid",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": null,
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": null,
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": null,
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": null,
+    "street_front": null,
+    "aerial_top": null,
+    "real_refs_note": null
+  },
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "requests": null,
+    "cost_usd": null,
+    "plan_pct_start": null,
+    "plan_pct_end": null,
+    "wallclock_min": null,
+    "interruptions": null,
+    "source": null,
+    "recorded_at": null,
+    "notes": null,
+    "first_timestamp": null,
+    "last_timestamp": null,
+    "by_role": {
+      "designer": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "requests": null,
+        "cost_usd": null,
+        "source": null,
+        "recorded_at": null,
+        "notes": null,
+        "first_timestamp": null,
+        "last_timestamp": null,
+        "model_prefix": null
+      },
+      "builder": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "requests": null,
+        "cost_usd": null,
+        "source": null,
+        "recorded_at": null,
+        "notes": null,
+        "first_timestamp": null,
+        "last_timestamp": null,
+        "model_prefix": null
+      }
+    }
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting: the builder (claude-sonnet-5-5-medium); parent recovery must interrupt the builder subagent first",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Reset the 3\u00d73 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py baseline R-014` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
+      "Designer (claude-opus-5-5-low) only: read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md; write the evidence table + build spec/script (do not apply)",
+      "Record the hand-off path: `open`/`score --handoff <path>` (spec or script the builder will run)",
+      "Builder (claude-sonnet-5-5-medium) only: claim site lock; apply from the hand-off artefact \u2014 do not redesign massing",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Builder applies, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py capture R-014`; release lock",
+      "Interview + score; then usage from transcript (auto-splits designer vs builder) + plan % (need-you if counts unknown)"
+    ]
+  },
+  "notes": "",
+  "designer": {
+    "id": "claude-opus-5-5-low",
+    "label": "Claude Opus 5.5 (low effort)",
+    "tier": "high",
+    "bulk_ok": true
+  },
+  "handoff": {
+    "path": "worlds/bakeoff/site/builds/r014_susu.json",
+    "kind": "spec",
+    "recorded_at": "2026-10-25T23:27:43Z"
+  },
+  "build_scripts": [
+    "worlds/bakeoff/site/builds/r014_susu.json"
+  ]
+}

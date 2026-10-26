@@ -1,0 +1,213 @@
+{
+  "id": "R-015",
+  "status": "scored",
+  "created": "2026-10-25T23:46:39Z",
+  "scored_at": "2026-10-26T00:46:56Z",
+  "task": "feature_design",
+  "pack": "v1",
+  "pack_brief": "packs/v1/BRIEF.md",
+  "round_type": "hybrid",
+  "tier": "mid",
+  "tool": {
+    "id": "claude-code",
+    "name": "Claude Code"
+  },
+  "model": {
+    "id": "claude-sonnet-5-5-medium",
+    "label": "Claude Sonnet 5.5 (medium effort)",
+    "tier": "mid",
+    "bulk_ok": true
+  },
+  "cell": [
+    48,
+    -44
+  ],
+  "cell_note": "SUSU (B42) / south Library Square",
+  "ghost_cells": [
+    [
+      47,
+      -45
+    ],
+    [
+      48,
+      -45
+    ],
+    [
+      49,
+      -45
+    ],
+    [
+      47,
+      -44
+    ],
+    [
+      48,
+      -44
+    ],
+    [
+      49,
+      -44
+    ],
+    [
+      47,
+      -43
+    ],
+    [
+      48,
+      -43
+    ],
+    [
+      49,
+      -43
+    ]
+  ],
+  "attempt": 1,
+  "kind": "cold",
+  "parent_round": null,
+  "repair_brief": null,
+  "mech_gate": "pass",
+  "interview": {
+    "axes": {
+      "massing": {
+        "grade": null,
+        "note": null
+      },
+      "openings": {
+        "grade": null,
+        "note": null
+      },
+      "roof_greeblies": {
+        "grade": null,
+        "note": null
+      },
+      "materials": {
+        "grade": null,
+        "note": null
+      },
+      "keep": {
+        "grade": null,
+        "note": null
+      }
+    },
+    "why": null,
+    "repair_brief_for_next": null,
+    "questions": [
+      "massing: shape/roof vs real refs",
+      "openings: doors/windows at play distance",
+      "roof_greeblies: street-scale roof bits or none visible",
+      "materials: Minecraft-readable facade",
+      "keep: keep / keep-with-follow-up / tear down",
+      "why (if not great): what is wrong vs refs; repair brief?"
+    ]
+  },
+  "overall": "pass",
+  "critical_axes": [
+    "massing",
+    "keep"
+  ],
+  "photos": {
+    "square_south": "worlds/bakeoff/verification/site/r015-shots/square_south.png",
+    "street_front": "worlds/bakeoff/verification/site/r015-shots/street_front.png",
+    "aerial_top": "worlds/bakeoff/verification/site/r015-shots/aerial_top.png",
+    "real_refs_note": "reference/portals/42-A..D.jpg; real aerial crop worlds/bakeoff/verification/site/r015-shots/real_aerial.png"
+  },
+  "usage": {
+    "input_tokens": 102,
+    "output_tokens": 32469,
+    "total_tokens": 4546423,
+    "cache_read_tokens": 4304833,
+    "cache_write_tokens": 209019,
+    "requests": 51,
+    "cost_usd": null,
+    "plan_pct_start": null,
+    "plan_pct_end": null,
+    "wallclock_min": null,
+    "interruptions": null,
+    "source": "api",
+    "recorded_at": "2026-10-26T00:47:10Z",
+    "notes": null,
+    "first_timestamp": null,
+    "last_timestamp": null,
+    "by_role": {
+      "designer": {
+        "input_tokens": 74,
+        "output_tokens": 27959,
+        "total_tokens": 3639306,
+        "cache_read_tokens": 3474276,
+        "cache_write_tokens": 136997,
+        "requests": 37,
+        "cost_usd": null,
+        "source": "api",
+        "recorded_at": "2026-10-26T00:47:10Z",
+        "notes": "Summed per-request API usage from transcript (37 unique designer claude-opus-5-5 responses, 2026-10-26T00:06:27.594Z\u20132026-10-26T00:14:13.929Z). total = input+output+cache read+cache write.",
+        "first_timestamp": "2026-10-26T00:06:27.594Z",
+        "last_timestamp": "2026-10-26T00:14:13.929Z",
+        "model_prefix": "claude-opus-5-5"
+      },
+      "builder": {
+        "input_tokens": 28,
+        "output_tokens": 4510,
+        "total_tokens": 907117,
+        "cache_read_tokens": 830557,
+        "cache_write_tokens": 72022,
+        "requests": 14,
+        "cost_usd": null,
+        "source": "api",
+        "recorded_at": "2026-10-26T00:47:10Z",
+        "notes": "Summed per-request API usage from transcript (14 unique builder claude-sonnet-5-5 responses, 2026-10-26T00:14:31.882Z\u20132026-10-26T00:20:53.835Z). total = input+output+cache read+cache write.",
+        "first_timestamp": "2026-10-26T00:14:31.882Z",
+        "last_timestamp": "2026-10-26T00:20:53.835Z",
+        "model_prefix": "claude-sonnet-5-5"
+      }
+    }
+  },
+  "sitting": {
+    "checklist": [
+      "One apply owner for this sitting: the builder (claude-sonnet-5-5-medium); parent recovery must interrupt the builder subagent first",
+      "Confirm the world is open (MCP up) \u2014 ghost may look sparse/empty around the cell",
+      "Reset the 3\u00d73 ghost baseline: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py baseline R-015` (undoes prior feature builds, lidar_ghost apply --force, reconcile)",
+      "Designer (claude-opus-5-5-low) only: read packs/v1/BRIEF.md + packs/v1/FAIRNESS.md; write the evidence table + build spec/script (do not apply)",
+      "Record the hand-off path: `open`/`score --handoff <path>` (spec or script the builder will run)",
+      "Builder (claude-sonnet-5-5-medium) only: claim site lock; apply from the hand-off artefact \u2014 do not redesign massing",
+      "Log footprint pad: pad_cells / osm_cells (square only to kill 1-block stairs, not a fixed +2 halo)",
+      "Builder applies, then capture fixed cameras: `AI_WORLDBUILDER_WORLD_ROOT=$PWD/worlds/bakeoff python3 bakeoff/model_bakeoff.py capture R-015`; release lock",
+      "Interview + score; then usage from transcript (auto-splits designer vs builder) + plan % (need-you if counts unknown)"
+    ]
+  },
+  "notes": "Scored pass by owner on closing the bake-off without per-axis interview. Builder added 8 black_concrete door-jamb blocks to satisfy the door-frame guard; capture used a Google z18 mosaic (owner-approved) not the earlier OGL tiles.",
+  "designer": {
+    "id": "claude-opus-5-5-low",
+    "label": "Claude Opus 5.5 (low effort)",
+    "tier": "high",
+    "bulk_ok": true
+  },
+  "handoff": {
+    "path": "worlds/bakeoff/site/builds/r015_susu.py",
+    "kind": "script",
+    "recorded_at": "2026-10-26T00:46:56Z"
+  },
+  "baseline": {
+    "undone": [
+      "r014_susu"
+    ],
+    "journal_seqs": [
+      326
+    ],
+    "archived": [
+      "r014_susu.json",
+      "r014_susu_evidence.md"
+    ],
+    "clean": true,
+    "at": "2026-10-26T00:03:54Z",
+    "archive_dir": "worlds/bakeoff/archive/rounds/R-015"
+  },
+  "build_scripts": [
+    "worlds/bakeoff/site/builds/r015_susu.py"
+  ],
+  "artefacts": {
+    "build_scripts": [
+      "bakeoff/rounds/R-015/r015_susu.py"
+    ],
+    "cameras": "bakeoff/rounds/R-015/cameras.json"
+  }
+}
