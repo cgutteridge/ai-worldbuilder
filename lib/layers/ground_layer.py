@@ -521,7 +521,11 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     kind, how = classify(cell, live, vmap, rgb, fp)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     ys = level_spikes(live, kind, fp)
-    stats = Counter({'columns': len(live), 'levelled': ys.pop('_levelled')})
+    stats = Counter({
+        'columns': len(live),
+        'levelled': ys.pop('_levelled'),
+        'vector_map_features': getattr(vmap, 'n_features', 0),
+    })
     stats.update({f'how: {k}': v for k, v in how.items()})
     conflicts = []
     for q in sorted(live):
@@ -615,6 +619,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
     changes = [p for p, b in plan.cells.items() if bare(world.block(*p)) != b]
     print(f'{name}: columns {stats["columns"]}  (levelled {stats["levelled"]})')
+    print(f'  vector map: {stats["vector_map_features"]} features')
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
     print('  evidence: ' + ', '.join(f'{k[5:]} {v}' for k, v in sorted(stats.items()) if k.startswith('how:')))
     print(f'  kinds: {dict(Counter(kind.values()).most_common())}')
