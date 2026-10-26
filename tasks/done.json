@@ -1002,6 +1002,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: LiveBlocks.read calls _ensure([p]): one block per scan at 1.1 s, so any layer that forgets to prefetch stalls for hours (S-02, S-19). Scope: on a miss scan the containing section (a chunk column is about 98k blocks, over the 65,536 per-scan cap). Makes the #106/#108/#110 prefetch patches redundant but leave them. Complements #111 (read-only region reader speeds dry runs; this protects live applies and any path bypassing the reader); do not merge them. Evidence and method: docs/snags/2026-10-26-southampton-48-44.md, \"Investigation findings\". One regression test only; no new gates or lints. Merged via ship_branch (5d8f65d)."
+    },
+    {
+      "id": 111,
+      "title": "Read-only region-file reader as a BlockStore adapter, so planning/dry runs do not need paced MCP reads",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Why: dry runs were hours because planners read the live world one block at a time through paced MCP calls (1.1 s each; see docs/snags/2026-10-26-southampton-48-44.md S-02/S-19; #106/#108/#110 patched three layers). Region files are already on disk (world config region_path). Scope: STRICTLY READ-ONLY reader of .mca files (never write, copy, snap, restore or delete region files), implemented as an adapter behind BlockStore (read/read_many) so planners are unchanged; used for planning and dry-run reads after a server save (server_save_all_worlds; rules/process.md already says save before reading region files). Applies and their readback stay on the existing MCP path unless shown safe. Policy: GLOSSARY.md and ADR 004 say to avoid parsing region files for block state and removed region backup/restore; the owner has authorised this read-only exception (2026-10-26), so record it in ADR 004 / GLOSSARY when shipping. Open questions to answer first: does anything in planning need live state not on disk (unsaved chunks, entities, block entities); how to detect stale reads (save then read; compare chunk timestamps); chunk formats/version (DataVersion 4903); reuse an existing NBT/anvil library vs write minimal; keep dependency count low. Merged as RegionBlocks + fresh_planning_world (task/111-readonly-region-blockstore)."
     }
   ]
 }
