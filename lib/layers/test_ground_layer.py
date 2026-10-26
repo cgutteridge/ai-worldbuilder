@@ -257,4 +257,3 @@ class TestRegisteredAerial(unittest.TestCase):
         out = gs.registered_rgb([(30, 50), (1, 50), (30, 1), (60, 50), (80, 50)], [src])
         self.assertEqual(set(out), {(30, 50)})                       # (1,50),(30,1) near the edge; (60,50),(80,50) black
         self.assertEqual(gs.aerial_class(out[(30, 50)]), 'lawn')
-

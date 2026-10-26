@@ -142,7 +142,7 @@ def load_masked_positions() -> dict:
 
 # --- 1. which columns are ours -----------------------------------------------------------
 PROBE_Y_RANGE = (31, 110)        # y levels ``surface_y`` walks (top 110, stops above 30)
-PROBE_STRIP = 16                 # x columns warmed per prefetch, bounds memory
+PROBE_STRIP = 16                 # x columns warmed per prefetch (keeps each request's position list small)
 
 
 def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None:
