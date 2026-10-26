@@ -1,6 +1,8 @@
 """Deterministic ``next`` work picker for the cell registry (ticket #31).
 
-Read-only and idempotent: open ISSUES first, then the next undone registry item.
+Read-only and idempotent: the next undone registry item (ISSUES.txt / I-nnn no
+longer steers this; snags live in ``registry/issues.json`` via ``scripts/issues.py``
+and never block a cell — ticket #121).
 
 Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
 configured origin (Chebyshev distance, then clockwise ring order from north), over the
@@ -17,7 +19,6 @@ from typing import Any
 import cellmath
 from cell_journal import CellRegistry, CellView
 from cell_registry import cell_id, view_registry
-from registry_issues import issue_as_task, next_open_issue
 
 
 def _undone_work_in_cell(v: CellView) -> list[dict[str, Any]]:
@@ -80,21 +81,19 @@ def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] |
 
 
 def next_task(registry: CellRegistry | None = None, *, root: Path | None = None) -> dict[str, Any] | None:
-    """Return the next work item, or None when the journal/issues are idle.
+    """Return the next work item, or None when the journal is idle.
 
     @param registry: optional CellRegistry
     @param root: world root when opening one
     @returns: task dict or None
     """
     reg = registry or view_registry(root)
-    issue = next_open_issue(root or reg.root)
-    if issue is not None:
-        return issue_as_task(issue)
     v = _pick_cell(reg.view(), reg.marker_cell())
     if v is None:
         return None
     work = _undone_work_in_cell(v)
     return work[0] if work else None
+
 
 def format_next(task: dict[str, Any] | None) -> str:
     """Human-readable one-liner for a next task.
@@ -104,8 +103,6 @@ def format_next(task: dict[str, Any] | None) -> str:
     """
     if task is None:
         return 'next: (nothing — registry idle)'
-    if task.get('kind') == 'issue':
-        return f"next: issue I-{task['issue_id']:03d}  {task.get('raw', '')}"
     if task.get('kind') == 'feature':
         return (
             f"next: feature {task['feature']} in cell {task['cell']} "

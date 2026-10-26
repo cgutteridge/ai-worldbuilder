@@ -1,5 +1,7 @@
-ISSUES — human-readable mirror of open defects for this place
+ISSUES — retired text mirror (ticket #121)
 
-Canonical issues live in the cell registry (cell_registry.py issues /
-add-issue). This file may hold free-form notes; prefer the registry so
-next / auto-close stay accurate.
+Do not use this file for open defects. Snags and issues live in
+registry/issues.json via scripts/issues.py (the snag skill). They never
+block a cell and never steer cell_registry.py next.
+
+Keep this path only if you want free-form human scratch; prefer the registry.

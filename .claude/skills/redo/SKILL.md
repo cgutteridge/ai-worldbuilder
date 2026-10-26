@@ -6,7 +6,7 @@ description: >-
   ground, start over, or rebuild from the evidence table while standing somewhere.
 ---
 
-Player-standing redesign. No confirmation pause. No `human-confirm-fix` (they are already there). Claim the lock, apply, release.
+Player-standing redesign. No confirmation pause. No snag review loop (they are already there). Claim the lock, apply, release.
 
 Cell journal (ADR 004): clean applies land journal entries; undos/clears clear matching ownership. Do not edit retired progress files by hand. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `snag` skill (`scripts/issues.py`); a redo of a tagged element is what lets an issue reach fix-landed. Mess in a cell → `reconcile [--fix]`.
 

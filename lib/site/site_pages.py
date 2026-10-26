@@ -167,7 +167,7 @@ def badge(status: str, here: bool = False) -> str:
 def page(title: str, body: str, depth_note: str = '') -> str:
     return (f'<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{e(title)}</title><style>{CSS}</style></head><body><main>{depth_note}{body}'
-            f'<p class="muted">Generated {datetime.now():%Y-%m-%d %H:%M} by scripts/site_pages.py from the cell registry, ISSUES.txt and existing images. '
+            f'<p class="muted">Generated {datetime.now():%Y-%m-%d %H:%M} by scripts/site_pages.py from the cell registry and existing images. '
             f'Nothing on this page was rendered for it.</p></main></body></html>')
 
 

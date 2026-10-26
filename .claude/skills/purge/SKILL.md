@@ -40,7 +40,7 @@ The old build must not be readable as a reference. For each purged feature or la
 
 1. Retire its build script or `site/builds/<name>.json` out of the working tree: tar to `backups/retired-<what>-<date>.tar.gz`, `git rm` (the `cleanup.md` build-scripts route). Keep the re-run mechanism only: if a generator is shared, leave it, delete the per-element inputs.
 2. Archive leftovers named for the element: its `verification/site/*-cells.json` / `-backup.json` / `-preview` files, mask archives (`masks/undone/`), per-element notes in `site/`. Anything an agent could `Read` as "what was there" moves into the same tar or goes.
-3. Close open issues against the erased scope (`cell_registry.py issues`), with "purged <date>" as the reason.
+3. Note purged scope on matching snags (`scripts/issues.py`); do not use retired `cell_registry.py issues`.
 
 Done when `grep -ril <element name or id>` over `scripts/`, `site/`, `verification/site/` finds nothing but the tar, and `git status` shows the retirements.
 

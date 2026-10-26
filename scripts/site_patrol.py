@@ -5,7 +5,7 @@
   SITE_OWNER=<you> python3 scripts/site_patrol.py views [N] [seed] [--hires | --midres]
 
 Outputs: verification/site/patrol/<stamp>/
-Look at contact.png and log oddities in site/ISSUES.txt.
+Look at contact.png and file oddities with the snag skill (scripts/issues.py).
 """
 import base64
 import json
