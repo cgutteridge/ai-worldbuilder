@@ -933,6 +933,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: surface_y skips black/yellow marker wool at any height; tests added (test_surface_probe). Shipped without a separate reviewer (small)."
+    },
+    {
+      "id": 110,
+      "title": "trees_layer and decor_layer: prefetch the cell before per-block surface reads (same stall as #106/#108)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: trees_layer and decor_layer prefetch via ground_layer.warm_surface_probe; test added for trees. Shipped without a separate reviewer."
     }
   ]
 }
