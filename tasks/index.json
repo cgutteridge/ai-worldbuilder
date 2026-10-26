@@ -1,6 +1,25 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 102,
-  "tasks": []
+  "nextTaskId": 104,
+  "tasks": [
+    {
+      "id": 102,
+      "title": "Wire or retire entrances.py (orphaned library)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "lib/builds/entrances.py claims feature-build / house-build use but nothing in production imports it (tests only). Either wire doors through house_build/feature_build or retire the module and its tests."
+    },
+    {
+      "id": 103,
+      "title": "Replace AI_WORLDBUILDER_WORLD_ROOT with required --world CLI",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Design: docs/plans/world-cli-arg.md (locked 2026-10-26; landed with the lib split). Remove env AI_WORLDBUILDER_WORLD_ROOT entirely (no default, no fallback). Place-touching CLIs take required --world <dirname> resolving to worlds/<name>; Minecraft save_path/region_path stay in that world's config/world.json. World-free (no --world): run_tests, ship_branch, pre_commit_checks, install_git_hooks. Seam: active_world.set_world / set_world_root / world_root(); script_env.bind_world + add_world_arg; lazy site_kit/world_frame/mc_paced config. Also wire bakeoff CLI, world shims, and system provider CLIs that import script_env. unit_test_world uses set_world_root(temp). Done when: repo grep AI_WORLDBUILDER_WORLD_ROOT empty outside tasks/done.json and a retired note in the contract; suite green. Branch task/world-cli-arg."
+    }
+  ]
 }
