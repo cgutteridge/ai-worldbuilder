@@ -56,7 +56,7 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 4. When the agent(s) return: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty (or the issue closed), and registry status moved. Do not read the agent's transcript.
 5. Report to the user in a few lines. Then stop at the stop point.
 
-Snags go to ISSUES via `cell_registry.py add-issue` (reopens the target). Clean rebuilds auto-close matching issues.
+Snags go to issues via the `snag` skill (`scripts/issues.py add`); they never block a cell. A rebuild does not close an issue: the owner confirms it in review. End a run with `issues.py digest`.
 
 ## Stop and ask when
 

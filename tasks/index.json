@@ -4,35 +4,22 @@
   "nextTaskId": 123,
   "tasks": [
     {
-      "id": 120,
-      "title": "issues.json: snags-as-evidence issue tickets (lib + scripts/issues.py)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Per-world registry/issues.json; snags only nested in issues (source you|agent, confidence, elements, pic). Fix log with per-snag check lines. States open->fix-landed->confirmed|wontfix; fix-landed only when a tagged element has a new landed build (changed blob hash) after the fix merged (cell journal). CLI: add (new issue or evidence on existing), match, fix, move, merge, review, list, verify. Regressions: closed issues are match candidates and reopen. Never blocks cells."
-    },
-    {
       "id": 121,
       "title": "Retire I-nnn ISSUES.txt: stop issues blocking cells / steering next",
       "status": "todo",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        120
-      ],
+      "blockedBy": [],
       "notes": "Remove registry_issues + add-issue, journal 'issue'/'close' notes counting against done, next_open_issue, site_kit close_for_build auto-close, verify check_issue_notes, handoff _open_issues. Update refine/redo/cell-orchestrator/rules pointers; retire human-confirm-fix (superseded by snag skill)."
     },
     {
       "id": 122,
       "title": "Skills: snag (intake+review) and sherlock (read-only investigator), seed from docs/snags",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        120
-      ],
-      "notes": "snag: in-world intake with human-readable match prompt, review walk-through teleporting the player (mc_player.py move) per snag. sherlock: light Holmes tone, never builds/purges/changes code, proposes tasks with permission and a next-step sequence. One-time seed of S-01..S-23 into Southampton issues.json after grouping approved by the owner."
+      "blockedBy": [],
+      "notes": "snag: in-world intake with human-readable match prompt, review walk-through teleporting the player (mc_player.py move) per snag. sherlock: light Holmes tone, never builds/purges/changes code, proposes tasks with permission and a next-step sequence. One-time seed of S-01..S-23 into Southampton issues.json after grouping approved by the owner. Skills snag + sherlock written, human-confirm-fix retired, refine/redo/cell-orchestrator repointed. Remaining: one-time seed of S-01..S-23 into worlds/southampton-build/registry/issues.json after owner approves the grouping."
     }
   ]
 }

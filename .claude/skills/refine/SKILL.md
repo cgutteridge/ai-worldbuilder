@@ -11,7 +11,7 @@ Human-invoked repair. The old build **is** the reference here (the opposite of `
 
 Two outputs, always both: **the fix** and **the lesson** (a general cause, and zero to three tool tasks). The lesson serves every build type, so it is stated as a class of failure, never as this place's geometry.
 
-Cell journal rules (ADR 004) apply: fix with a new named build that declares `modifies=()`; never edit a BUILT plan to patch the world. Snags that stay open: `cell_registry.py add-issue`.
+Cell journal rules (ADR 004) apply: fix with a new named build that declares `modifies=()`; never edit a BUILT plan to patch the world. Snags that stay open: `snag` skill (`scripts/issues.py add`).
 
 ## 0. Scope
 
@@ -63,7 +63,7 @@ Turn the causes into tool tasks, and only those that pass all of these:
 - **Cheap:** its proof is a unit test on `MemoryBlocks` or an existing audit. No new live-world test, no new fetches.
 - **New:** `tasks/index.json` and `tasks/done.json` searched for the same cause first; if found, add a note to that task instead.
 
-Present at most three, each as: title, cause class, which build types it helps, rough size, how it would be proven. Say "no general lesson" when that is the truth. Add the approved ones with `task-index-manager` (tracker-only edit, straight to `main`); place-specific leftovers go to `cell_registry.py add-issue`.
+Present at most three, each as: title, cause class, which build types it helps, rough size, how it would be proven. Say "no general lesson" when that is the truth. Add the approved ones with `task-index-manager` (tracker-only edit, straight to `main`); place-specific leftovers go to the `snag` skill (`scripts/issues.py`).
 
 Done when each defect is covered by a landed fix, a task, an issue, or "accepted", and the user has the task list to approve.
 

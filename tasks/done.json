@@ -1020,6 +1020,12 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "scripts/mask_undo.py only covers trees/decor; feature (by plan name) and ground (by cell pass) undo are reachable only via site_kit.undo(). Add a thin scripts/ wrapper over lib/ with required --world, dry run by default, --apply under site_lock, element-agnostic (plan name or --cell tx,tz --pass feature|ground|trees|decor), refusing when the journal shows nothing to undo. Proof: unit test on MemoryBlocks via journal_testkit.run_undo, no live test. Then point .claude/skills/purge step 1 at it. Merged via ship_branch (a187197)."
+    },
+    {
+      "id": 120,
+      "title": "issues.json: snags-as-evidence issue tickets (lib + scripts/issues.py)",
+      "status": "done",
+      "notes": "Per-world registry/issues.json; snags only nested in issues (source you|agent, confidence, elements, pic). Fix log with per-snag check lines. States open->fix-landed->confirmed|wontfix; fix-landed only when a tagged element has a new landed build (changed blob hash) after the fix merged (cell journal). CLI: add (new issue or evidence on existing), match, fix, move, merge, review, list, verify. Regressions: closed issues are match candidates and reopen. Never blocks cells. Landed: lib/journal/issue_log.py, scripts/issues.py, 31 tests; 3 review rounds."
     }
   ]
 }

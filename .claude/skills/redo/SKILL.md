@@ -8,7 +8,7 @@ description: >-
 
 Player-standing redesign. No confirmation pause. No `human-confirm-fix` (they are already there). Claim the lock, apply, release.
 
-Cell journal (ADR 004): clean applies land journal entries; undos/clears clear matching ownership. Do not edit retired progress files by hand. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `cell_registry.py add-issue`. Mess in a cell → `reconcile [--fix]`.
+Cell journal (ADR 004): clean applies land journal entries; undos/clears clear matching ownership. Do not edit retired progress files by hand. After a redo, `cell_registry.py next` / `status` reflect what is left. Snags: `snag` skill (`scripts/issues.py`); a redo of a tagged element is what lets an issue reach fix-landed. Mess in a cell → `reconcile [--fix]`.
 
 ## Branch
 
