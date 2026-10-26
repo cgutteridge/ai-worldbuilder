@@ -1902,7 +1902,7 @@ def ensure_baseline_lock(round_id: str, *, owner: str | None = None) -> str:
     if not owner:
         raise RuntimeError(
             'SITE_OWNER is not set; claim first '
-            '(SITE_OWNER=<you> / scripts/site_lock.py claim …) then retry baseline'
+            '(SITE_OWNER=<you> / scripts/site_lock.py claim …, or wrap the command in scripts/site_lock.py run <you> "<task>" -- <cmd>) then retry baseline'
         )
     lk = _lock_read()
     if _lock_fresh(lk) and lk is not None and lk.get('owner') != owner:

@@ -8,10 +8,16 @@ with no heartbeat for STALE_MIN minutes may be taken over.
   python3 scripts/site_lock.py status
   python3 scripts/site_lock.py claim <owner> "<queue item / task>"
   python3 scripts/site_lock.py release <owner>
-Then run builds as:  SITE_OWNER=<owner> python3 scripts/<build>.py --apply
+  python3 scripts/site_lock.py run <owner> "<task>" -- <cmd> [args...]
+``run`` claims, exports SITE_OWNER for <cmd>, runs it and always releases (command
+failure, Ctrl-C and SIGTERM included); it exits with the command's status. Example:
+  python3 scripts/site_lock.py run me "baseline" -- python3 scripts/lidar_ghost.py apply
+By hand instead:  SITE_OWNER=<owner> python3 scripts/<build>.py --apply
 """
 import json
 import os
+import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -84,8 +90,37 @@ def release(owner):
     LOCK.unlink(missing_ok=True)
 
 
+def run(owner, task, cmd):
+    """Claim the lock, run ``cmd`` with SITE_OWNER=owner, and always release.
+
+    Release happens on success, failure, Ctrl-C and SIGTERM. A refused claim runs nothing and
+    releases nothing (the lock is not ours).
+
+    @param owner: lock owner id
+    @param task: what the lock is for
+    @param cmd: argv list for the command
+    @returns: the command's exit status (128+signal if killed by a signal)
+    """
+    if not cmd:
+        raise SystemExit('run: no command given (site_lock.py run <owner> "<task>" -- <cmd>)')
+    claim(owner, task)
+
+    def _term(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    old = signal.signal(signal.SIGTERM, _term)
+    try:
+        rc = subprocess.run(cmd, env={**os.environ, 'SITE_OWNER': owner}).returncode
+        return 128 - rc if rc < 0 else rc
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        signal.signal(signal.SIGTERM, old)
+        release(owner)
+
+
 def main():
-    """CLI: status | claim | release."""
+    """CLI: status | claim | release | run."""
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
     lk = read()
     if cmd == 'status':
@@ -96,6 +131,11 @@ def main():
     elif cmd == 'release':
         release(sys.argv[2])
         print('released')
+    elif cmd == 'run':
+        if len(sys.argv) < 6 or sys.argv[4] != '--':
+            print(__doc__, file=sys.stderr)
+            return 2
+        return run(sys.argv[2], sys.argv[3], sys.argv[5:])
     else:
         print(__doc__, file=sys.stderr)
         return 2
