@@ -32,6 +32,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  Dry run prints glazed share per storey per face.
+  exclude        optional per-label boxes cut out of the map footprint (outline larger
+                 than the real building, or neighbours sharing the outline):
+                   {"<label>": [[x0, z0, x1, z1], ...]}   inclusive block coords
   zones          optional per-label lidar roof plateaus within one footprint:
                    {"<label>": {"from": "lidar",
                      "levels": [<m AOD>, ...] | "auto",
@@ -394,6 +397,7 @@ def load_spec(path) -> dict:
     spec.setdefault('doors', {})
     spec.setdefault('facades', {})
     spec.setdefault('zones', {})
+    spec.setdefault('exclude', {})
     labels = set(spec['ways'].values())
     for lab, n in spec['storeys'].items():
         if lab not in labels:
@@ -416,6 +420,7 @@ def load_spec(path) -> dict:
     _validate_doors(path, spec)
     _validate_facades(path, spec, labels)
     _validate_zones(path, spec, labels)
+    _validate_exclude(path, spec, labels)
     return spec
 
 
@@ -480,6 +485,30 @@ def _validate_zones(path, spec: dict, labels: set) -> None:
         roof = spec['roofs'].get(lab) or {}
         if roof.get('kind') != 'flat':
             raise SystemExit(f'{path}: zones[{lab}] requires roofs[{lab}].kind == \"flat\"')
+
+
+def _validate_exclude(path, spec: dict, labels: set) -> None:
+    """Validate optional per-label footprint exclusion boxes.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: labels declared in ``ways``
+    @raises SystemExit: on invalid boxes
+    """
+    exclude = spec.get('exclude') or {}
+    if not isinstance(exclude, dict):
+        raise SystemExit(f'{path}: exclude must be an object')
+    for lab, boxes in exclude.items():
+        if lab not in labels:
+            raise SystemExit(f'{path}: exclude label {lab} has no way')
+        if not isinstance(boxes, list):
+            raise SystemExit(f'{path}: exclude[{lab}] must be a list of [x0, z0, x1, z1]')
+        for box in boxes:
+            ok = (isinstance(box, list) and len(box) == 4
+                  and all(isinstance(v, int) and not isinstance(v, bool) for v in box)
+                  and box[0] <= box[2] and box[1] <= box[3])
+            if not ok:
+                raise SystemExit(f'{path}: exclude[{lab}] box {box} must be [x0, z0, x1, z1] ints, min <= max')
 
 
 def _validate_doors(path, spec: dict) -> None:
@@ -609,6 +638,10 @@ class Build:
             self.idx = idx
         else:
             self.idx = None
+        for lab, boxes in (spec.get('exclude') or {}).items():
+            if lab in by_no:
+                by_no[lab] = {c for c in by_no[lab]
+                              if not any(b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3] for b in boxes)}
         missing = [lab for lab in spec['ways'].values() if lab not in by_no or not by_no[lab]]
         if missing:
             raise SystemExit(f'{self.name}: no footprint cells for {missing}')

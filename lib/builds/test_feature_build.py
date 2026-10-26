@@ -49,6 +49,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['facades'], {})
         self.assertEqual(spec['doors'], {})
         self.assertEqual(spec['zones'], {})
+        self.assertEqual(spec['exclude'], {})
 
     def test_missing_key_bad_front_unknown_label_bad_storeys_refused(self):
         good = self.good()
@@ -111,6 +112,37 @@ class LoadSpecTest(unittest.TestCase):
                 roof = {'kind': 'flat', 'material': 'smooth_stone', 'edge': bad_edge}
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write({**good, 'roofs': {'A': roof}}))
+
+
+class ExcludeSpecTest(unittest.TestCase):
+    """exclude boxes: validated on load, cut from the footprint on build."""
+
+    write = LoadSpecTest.write
+    good = LoadSpecTest.good
+
+    def test_exclude_accepted_and_bad_boxes_refused(self):
+        good = self.good()
+        good['exclude'] = {'A': [[0, 0, 5, 5]]}
+        self.assertEqual(F.load_spec(self.write(good))['exclude'], {'A': [[0, 0, 5, 5]]})
+        for bad in ({'Z': [[0, 0, 1, 1]]}, {'A': [[5, 0, 1, 1]]}, {'A': [[0, 0, 1]]},
+                    {'A': [[0, 0, 1, 'x']]}, {'A': 'no'}, ['A']):
+            spec = self.good()
+            spec['exclude'] = bad
+            with self.assertRaises(SystemExit, msg=str(bad)):
+                F.load_spec(self.write(spec))
+
+    def test_build_drops_excluded_cells_from_footprint(self):
+        cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
+        spec = BuildPlanTest.spec(self)
+        spec['exclude'] = {'A': [[10, 20, 14, 21]]}
+        b = F.Build(spec, footprints={'A': cells}, world=_StoneWorld())
+        self.assertEqual(b.by_no_all['A'], {c for c in cells if c[1] >= 22})
+
+    def test_build_refuses_when_everything_excluded(self):
+        spec = BuildPlanTest.spec(self)
+        spec['exclude'] = {'A': [[0, 0, 99, 99]]}
+        with self.assertRaises(SystemExit):
+            F.Build(spec, footprints={'A': {(10, 20)}}, world=_StoneWorld())
 
 
 class _StoneWorld:
