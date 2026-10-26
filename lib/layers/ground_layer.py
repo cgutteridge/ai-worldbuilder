@@ -141,6 +141,25 @@ def load_masked_positions() -> dict:
 
 
 # --- 1. which columns are ours -----------------------------------------------------------
+PROBE_Y_RANGE = (31, 110)        # y levels ``surface_y`` walks (top 110, stops above 30)
+PROBE_STRIP = 16                 # x columns warmed per prefetch (keeps each request's position list small)
+
+
+def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None:
+    """Prefetch every block ``surface_y`` can read, in batched scans.
+
+    Without this each ``world.block`` is its own paced MCP call (~1.1 s): hours per cell.
+    """
+    warm = getattr(world, 'prefetch', None)
+    if warm is None:
+        return
+    ylo, yhi = PROBE_Y_RANGE
+    for xs in range(x0, x1 + 1, PROBE_STRIP):
+        xe = min(xs + PROBE_STRIP - 1, x1)
+        warm((x, y, z) for x in range(xs, xe + 1) for z in range(z0, z1 + 1)
+             for y in range(ylo, yhi + 1))
+
+
 def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set):
     """Columns this layer may surface, with their live surface (y, block).
 
@@ -150,6 +169,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
     live, skipped = {}, Counter()
     water = set(vmap.water)
     probed = {}
+    warm_surface_probe(world, x0 - 1, z0 - 1, x1 + 1, z1 + 1)
     for x in range(x0 - 1, x1 + 2):
         for z in range(z0 - 1, z1 + 2):
             probed[(x, z)] = surface_y(world, x, z)
