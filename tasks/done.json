@@ -897,6 +897,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Done 2026-10-26: logout gate now tries a non-blocking POSIX lock on session.lock and refuses only if held; stale file no longer blocks. Review nits: test imports at module level, holder.wait() after kill."
+    },
+    {
+      "id": 106,
+      "title": "ground_layer: prefetch cell before surface probing (one paced MCP call per block is hours)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Done 2026-10-26: free_columns prefetches the surface-probe box in x-strips before probing. Review nits fixed."
     }
   ]
 }
