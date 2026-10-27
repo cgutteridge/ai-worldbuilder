@@ -916,6 +916,18 @@ class CellRegistry:
         e = self._latest(plan)
         return None if e is None else dict(self._blob(e.blob))
 
+    def cells_at(self, seq: int) -> dict[Pos, str] | None:
+        """Plan cells stored on journal entry ``seq`` (build or undo blob).
+
+        @param seq: begin-line seq of the entry
+        @returns: ``{pos: state}`` copy, or None when there is no blob-bearing entry at ``seq``
+        """
+        self._sync()
+        e = self._entries.get(int(seq))
+        if e is None or not e.blob:
+            return None
+        return dict(self._blob(e.blob))
+
     def touched(self, passes: Iterable[str] = REAL_PASSES) -> dict[str, set[tuple[int, int]]]:
         """XZ columns of each plan's latest live build entry (the old ``touched_by_build``).
 
@@ -1234,7 +1246,15 @@ class CellRegistry:
         cells = {c for e in targets for c in e.cells}
         self._check_flight(cells)
         tseqs = frozenset(e.seq for e in targets)
-        positions = {p for e in targets for p in self._blob(e.blob)}
+        # Per position: earliest targeted build that wrote it — its prior is the world
+        # before any of the targeted rebuilds (#138). Using the current (latest) owner's
+        # prior would restore the first build instead of the pre-first world.
+        earliest: dict[Pos, _Entry] = {}
+        positions: set[Pos] = set()
+        for e in sorted(targets, key=lambda ent: ent.seq):
+            for p in self._blob(e.blob):
+                positions.add(p)
+                earliest.setdefault(p, e)
         current = self._owners_in(positions)
         under = self._owners_in(positions, skip=tseqs)
         erase: dict[Pos, str] = {}
@@ -1243,10 +1263,12 @@ class CellRegistry:
                 continue
             if p in under:
                 erase[p] = under[p].state
-            elif (prior_key := self._entries[o.seq].prior) is not None:
-                erase[p] = self._blob(prior_key).get(p, AIR)
             else:
-                erase[p] = AIR                          # legacy begin: no prior blob
+                src = earliest.get(p, self._entries[o.seq])
+                if src.prior is not None:
+                    erase[p] = self._blob(src.prior).get(p, AIR)
+                else:
+                    erase[p] = AIR                      # legacy begin: no prior blob
         names = sorted({e.plan for e in targets})
         first = targets[-1]
         record = {

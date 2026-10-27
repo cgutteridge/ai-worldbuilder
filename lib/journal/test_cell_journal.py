@@ -402,6 +402,42 @@ class TestUndo(Base):
         fresh.change(Undo('house'), self.apply)
         self.assertEqual(self.blocks.read(P(0, 0)), AIR)
 
+    def test_cells_at_returns_entry_blob(self):
+        self.build('house', 'feature', {P(0, 0): STONE})
+        seq = self.reg.entries(plan='house')[0].seq
+        self.assertEqual(self.reg.cells_at(seq), {P(0, 0): STONE})
+        self.assertIsNone(self.reg.cells_at(9999))
+
+    def test_cell_pass_undo_of_rebuilt_layer_restores_world_before_first_build(self):
+        # #138: no owner underneath — undo must use the earliest targeted prior, not
+        # the latest (which holds the first build). N rebuilds then cell-pass undo
+        # must leave the world equal to the start.
+        start = {P(0, 0): DIRT, P(0, 0, 1): AIR}
+        self.blocks.write(P(0, 0), DIRT)
+        self.blocks.flush()
+        states = (STONE, GREY, GLASS)
+        for i, state in enumerate(states):
+            kw = {'cell': (0, 0)}
+            if i:
+                kw['modifies'] = ('g',)
+            self.build('g', 'ground', {P(0, 0): state}, **kw)
+        self.reg.change(Undo(((0, 0), 'ground')), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0)), start[P(0, 0)])
+        self.assertEqual(self.blocks.read(P(0, 0, 1)), start[P(0, 0, 1)])
+
+    def test_cell_pass_undo_wider_rebuild_uses_each_position_earliest_prior(self):
+        # Column only the second build touched must restore that build's prior, not
+        # fall through to the first build's prior (which never covered it).
+        far = P(0, 0, 2)
+        self.blocks.write(P(0, 0), DIRT)
+        self.blocks.write(far, GREY)
+        self.blocks.flush()
+        self.build('g', 'ground', {P(0, 0): STONE}, cell=(0, 0))
+        self.build('g', 'ground', {P(0, 0): GLASS, far: GLASS}, cell=(0, 0), modifies=('g',))
+        self.reg.change(Undo(((0, 0), 'ground')), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0)), DIRT)
+        self.assertEqual(self.blocks.read(far), GREY)
+
 
 class TestGhosts(Base):
     def planner(self, cell, layer):
