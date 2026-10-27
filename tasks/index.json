@@ -4,15 +4,6 @@
   "nextTaskId": 154,
   "tasks": [
     {
-      "id": 142,
-      "title": "Status pages and morning report show unbuilt footprint per cell",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: morning and site_pages called 48,-45 and 49,-45 complete when about half of 49,-45 was still empty footprint. Deliver: each cell row and the morning report show built vs unbuilt footprint area and the names of unbuilt buildings; a cell with unbuilt footprint cannot show as Completed."
-    },
-    {
       "id": 143,
       "title": "Feature doors land in a one-block vestibule that patrol flags door_to_wall",
       "status": "todo",

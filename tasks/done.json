@@ -1231,6 +1231,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only. Done 2026-10-27: purge skill above-ghost scope (count, whole-cell undo, retire, prove). Merged task/136-purge-above-ghost."
+    },
+    {
+      "id": 142,
+      "title": "Status pages and morning report show unbuilt footprint per cell",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: morning and site_pages called 48,-45 and 49,-45 complete when about half of 49,-45 was still empty footprint. Deliver: each cell row and the morning report show built vs unbuilt footprint area and the names of unbuilt buildings; a cell with unbuilt footprint cannot show as Completed. Done 2026-10-27: status/morning/pages show built vs unbuilt footprint; Completed blocked on unbuilt. Merged task/142-status-unbuilt-footprint."
     }
   ]
 }
