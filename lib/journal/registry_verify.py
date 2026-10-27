@@ -3,7 +3,8 @@
 Exit non-zero when any error-severity finding is present. World block presence
 checks are optional (``check_world=True``) and skipped in unit tests. Files of the
 retired record (STAGES, ``registry/cells.json`` / ``features.json``, ``*-cells.json``)
-are reported as leftovers: nothing reads them.
+are reported as leftovers: nothing reads them. Landed ground whose skipped building
+footprints are not covered by a planned or landed feature is an error (#141).
 
   python3 scripts/cell_registry.py verify
   python3 scripts/cell_registry.py verify --json
@@ -177,6 +178,42 @@ def check_decision_records(reg: CellRegistry, root: Path) -> list[dict[str, Any]
     return out
 
 
+def check_uncovered_footprints(reg: CellRegistry) -> list[dict[str, Any]]:
+    """Error per landed ground whose skipped building footprints lack a plan or feature (#141).
+
+    Ground never paints building-footprint columns. After ground lands, every vector-map
+    building those columns belong to must have a ``plan_feature`` (or dismiss) or a
+    landed feature — same coverage as ``registry_next.unplanned_footprint_candidates``.
+
+    @param reg: registry view
+    @returns: one error issue per cell with uncovered buildings (names in the message)
+    """
+    import registry_next as RN  # noqa: WPS433
+
+    out: list[dict[str, Any]] = []
+    for cell, v in sorted(reg.view().items()):
+        if v.ground != 'generated':
+            continue
+        cid = cell_id(*cell)
+        candidates = RN.unplanned_footprint_candidates(reg, cid)
+        if not candidates:
+            continue
+        buildings = [str(c.get('label') or c.get('id') or '?') for c in candidates]
+        ids = [str(c['id']) for c in candidates if c.get('id')]
+        named = ', '.join(
+            f"{c.get('label') or c.get('id') or '?'} ({c['id']})" if c.get('id')
+            else str(c.get('label') or '?')
+            for c in candidates
+        )
+        out.append(_issue(
+            f'uncovered-footprint:{cid}', SEVERITY_ERROR,
+            f'cell {cid} ground skipped building footprints with no planned or landed feature: {named}',
+            buildings=buildings,
+            features=ids,
+        ))
+    return out
+
+
 def run_verify(
     *,
     root: Path | None = None,
@@ -194,6 +231,7 @@ def run_verify(
     issues += check_marker_invariant(reg)
     issues += check_done_invariants(reg)
     issues += check_feature_specs(reg, world)
+    issues += check_uncovered_footprints(reg)
     issues += check_coverage_warnings(reg)
     issues += check_in_flight(reg)
     issues += check_decision_records(reg, world)
