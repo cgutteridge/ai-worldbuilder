@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 150,
+  "nextTaskId": 151,
   "tasks": [
     {
       "id": 131,
@@ -147,6 +147,14 @@
       "complexity": "m",
       "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces.",
       "id": 149
+    },
+    {
+      "id": 150,
+      "title": "Decor read from the aerial and photos: hedges round buildings, plaza seating",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "notes": "Cause: #127 places street furniture only where the vector map has points or barriers, so hedges round Retail and plaza seating that show in the aerial are missed (I-008, S-026). Deliver: a decor plan read from the aerial and photos (hedges and borders, seating, bike racks, bins), with each item's source and confidence, and decor built from that plan; items it cannot resolve are listed, not silently skipped. Same pattern as the facade plan (#145): reuse its provenance fields. Keep the bike-rack fences the owner accepted. Check: 48,-44 has hedges round Retail and seating in the plaza where the aerial shows them."
     }
   ]
 }
