@@ -4,23 +4,12 @@
   "nextTaskId": 154,
   "tasks": [
     {
-      "id": 134,
-      "title": "Undo a whole cell in order",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: purging a cell was done by hand and ran undo passes in the wrong order (ground before features); a refusal then halted the chain. Deliver one element_undo command that undoes everything above ghost in a cell in the fixed order (decor, trees, features, ground), stops at the first refusal and reports what is left. Dry run by default, --apply to write, under the site lock."
-    },
-    {
       "id": 136,
       "title": "Purge scope: everything above ghost",
-      "status": "blocked",
+      "status": "todo",
       "priority": "low",
       "complexity": "s",
-      "blockedBy": [
-        134
-      ],
+      "blockedBy": [],
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
     },
     {
