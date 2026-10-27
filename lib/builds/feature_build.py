@@ -1819,6 +1819,41 @@ class Build:
             self.keep.add((inn[0], y, inn[1]))
             self.set(inn[0], y, inn[1], 'air')
 
+    def _pair_door_leaf(
+        self, f: Feature, face: str, c0: tuple[int, int], placed: set, at,
+    ) -> tuple[int, int] | None:
+        """Lateral coplanar wall neighbour for a second leaf (#165).
+
+        Only same-plane offsets (east/west on an N/S face, north/south on an E/W
+        face). Diagonal cells across a step are never considered — they put the
+        leaves in different planes and fail the frame guard. Step-corner walls
+        that lack an ``inner`` cell behind still count: they are wall + exposed
+        to ``face``. Jamb / step solids at ``b+1``/``b+2`` are built when the
+        leaf is placed (``_ensure_door_jambs``).
+
+        @param f: feature mass
+        @param face: entrance face
+        @param c0: primary leaf wall cell
+        @param placed: wall cells already used by a door
+        @param at: optional register ``[x, z]`` (tie-break toward it)
+        @returns: pair ``(x, z)`` or ``None``
+        """
+        lat = (1, 0) if face in 'NS' else (0, 1)
+        ax = int(at[0]) if isinstance(at, (list, tuple)) and len(at) == 2 else c0[0]
+        az = int(at[1]) if isinstance(at, (list, tuple)) and len(at) == 2 else c0[1]
+        opts = [
+            (c0[0] + lat[0], c0[1] + lat[1]),
+            (c0[0] - lat[0], c0[1] - lat[1]),
+        ]
+        opts.sort(key=lambda c: (c[0] - ax) ** 2 + (c[1] - az) ** 2)
+        for c in opts:
+            if c in placed or c not in f.walls:
+                continue
+            if not self.exposed(c, face):
+                continue
+            return c
+        return None
+
     def plan_doors(self, f: Feature) -> None:
         """Place doors from ``facade_plan[label].entrances``; skip unresolved.
 
@@ -1862,15 +1897,7 @@ class Build:
             lat = (1, 0) if face in 'NS' else (0, 1)
             cells = [c0]
             if leaves == 2:
-                ax = int(at[0]) if isinstance(at, (list, tuple)) and len(at) == 2 else c0[0]
-                az = int(at[1]) if isinstance(at, (list, tuple)) and len(at) == 2 else c0[1]
-                opts = [
-                    (c0[0] + lat[0], c0[1] + lat[1]),
-                    (c0[0] - lat[0], c0[1] - lat[1]),
-                ]
-                opts.sort(key=lambda c: (c[0] - ax) ** 2 + (c[1] - az) ** 2)
-                face_ok = set(self._entrance_wall_candidates(f, face, placed))
-                pair = next((c for c in opts if c not in placed and c in face_ok), None)
+                pair = self._pair_door_leaf(f, face, c0, placed, at)
                 if pair is None:
                     print(f'door {eid}: no pair cell; using 1-leaf')
                     leaves = 1
