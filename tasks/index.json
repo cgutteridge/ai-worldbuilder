@@ -74,15 +74,6 @@
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
     },
     {
-      "id": 137,
-      "title": "Fix stale command examples in the steering docs",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Cause: AGENTS.md shows site_lock.py run without --world, which the script requires, and nothing points at where tests live (lib/<category>/test_*.py, scripts/test_*.py, run via scripts/run_tests.py --only <stem>). Fix the lock example and add one pointer for test locations. Docs-only; can commit straight to main."
-    },
-    {
       "id": 138,
       "title": "Cell-pass undo restores the world before the first build",
       "status": "todo",
@@ -90,15 +81,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints)."
-    },
-    {
-      "id": 139,
-      "title": "Cell-orchestrator skill plans features before building a cell",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Cause: the 2026-10-27 overnight run took `cell_registry.py next` as complete, so cells 48,-45 and 49,-45 went ground, trees, decor with no feature step although their maps hold many buildings (ground skipped ~5,400 building-footprint columns in 49,-45) and were logged complete. Deliver: in .claude/skills/cell-orchestrator/SKILL.md add a per-cell preflight (`cell_registry.py propose-features --cell <c> --record` before ground) and a completion gate: not complete until every footprint the ground report skipped is covered by a planned and landed feature; if features exist on the map but none are planned, stop and say so. Also add to the overnight stop list: the same patrol flag repeating across features. Docs-only; can commit straight to main."
     },
     {
       "id": 140,

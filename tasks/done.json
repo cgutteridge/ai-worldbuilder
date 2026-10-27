@@ -1104,6 +1104,24 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: in cell 48,-44 the trees come from 58 crowns read by eye from Google z20 crops (world reference/trees-google-crowns.json, 2026-10-16, old Southampton Refine project; trees_layer.google_crowns drops the detector inside its zone, which covers the whole cell). Nothing checks them against lidar. Near snag S-017 the crowns stand on 0-2 m of nDSM while the canopy peaks (8-10 m) lie 4-5 blocks east: (6266,-5572)->(6270,-5575), (6267,-5556)->(6271,-5561), (6265,-5581)->(6270,-5575); two crowns sit about 2 blocks from University Road's centre line. Covers issue I-011 (trees in 48,-44 stand a few blocks off the real trees), snag S-017. Scope: before planting, move each hand-read crown to the highest lidar canopy point (nDSM >= 3 m) within a few blocks (search radius as a named constant); keep a crown in place and print it 'unconfirmed' when no peak is in reach or the peak is on a building footprint. Dry run prints each crown's shift and the share moved. No road rule (owner: fix positions from evidence, not a no-trees-on-roads rule). Done when an offline dry run for 48,-44 moves the three crowns near the snag onto the peaks east of the road and prints shifts for all 58. Check line S-017: the trees along University Road stand on the verge where the real trees are, not on the carriageway. Not verified: that the 8-10 m peaks are trees, not buildings; how the other 55 crowns compare. One regression test only; no new gates or lints. | Merged task/129-snap-tree-crowns @ c78a215 via ship_branch."
+    },
+    {
+      "id": 137,
+      "title": "Fix stale command examples in the steering docs",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: AGENTS.md shows site_lock.py run without --world, which the script requires, and nothing points at where tests live (lib/<category>/test_*.py, scripts/test_*.py, run via scripts/run_tests.py --only <stem>). Fix the lock example and add one pointer for test locations. Docs-only; can commit straight to main. Done 2026-10-27: AGENTS.md site_lock example includes --world; added test location pointer."
+    },
+    {
+      "id": 139,
+      "title": "Cell-orchestrator skill plans features before building a cell",
+      "status": "done",
+      "priority": "high",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: the 2026-10-27 overnight run took `cell_registry.py next` as complete, so cells 48,-45 and 49,-45 went ground, trees, decor with no feature step although their maps hold many buildings (ground skipped ~5,400 building-footprint columns in 49,-45) and were logged complete. Deliver: in .claude/skills/cell-orchestrator/SKILL.md add a per-cell preflight (`cell_registry.py propose-features --cell <c> --record` before ground) and a completion gate: not complete until every footprint the ground report skipped is covered by a planned and landed feature; if features exist on the map but none are planned, stop and say so. Also add to the overnight stop list: the same patrol flag repeating across features. Docs-only; can commit straight to main. Done 2026-10-27: cell-orchestrator skill adds propose-features preflight, footprint completion gate, overnight stop on repeating patrol flag."
     }
   ]
 }

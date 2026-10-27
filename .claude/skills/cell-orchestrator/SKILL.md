@@ -23,7 +23,7 @@ Default: stop after ONE task from `next` has finished. The user may widen it ("w
 
 ## Overnight / unattended mode
 
-Used when the user says "overnight" or "nobody is watching". Then: do not ask questions. If a cell fails or looks risky, record it as a PROBLEM in the run log, retry at most once, leave the world at its last good state (`site_recover.py` for an interrupted apply; `reconcile` if blocks drifted), and carry on with the next task. Stop the whole run if the lock is held fresh by someone else, two cells in a row fail, the same tool/API error repeats, or the next task is ambiguous. Never touch hand-made cells, commit, or edit shared scripts unattended. Respect the stated end time or cell count.
+Used when the user says "overnight" or "nobody is watching". Then: do not ask questions. If a cell fails or looks risky, record it as a PROBLEM in the run log, retry at most once, leave the world at its last good state (`site_recover.py` for an interrupted apply; `reconcile` if blocks drifted), and carry on with the next task. Stop the whole run if the lock is held fresh by someone else, two cells in a row fail, the same tool/API error repeats, the same patrol flag repeats across features, or the next task is ambiguous. Never touch hand-made cells, commit, or edit shared scripts unattended. Respect the stated end time or cell count.
 
 ## Keep the human informed (every cell, every mode)
 
@@ -39,6 +39,20 @@ Give at least one concrete `--look` coordinate per cell. When the run ends, run 
 2. If LOCK.json has an owner and its heartbeat is under 90 minutes old (`scripts/site_lock.py` STALE_MIN), STOP and tell the user who holds it. Never clear, steal or edit the lock by hand.
 3. If the lock is stale, or `.venv/bin/python scripts/site_recover.py status` shows an in-flight/rolled-back entry, run `site_recover.py recover <cell> --apply` for that cell first (dry run without `--apply`; never on a fresh lock), then continue. For block drift without an in-flight entry, use `cell_registry.py reconcile`.
 4. Check for a running session already on this task.
+
+## Per-cell feature preflight (before ground)
+
+When `next` first offers a cell (or before you build its ground layer), record feature plans from the map:
+
+```bash
+.venv/bin/python scripts/cell_registry.py propose-features --cell <tx,tz> --record
+```
+
+If the map has building footprints but this records none, STOP and say so — do not treat the cell as ready for ground → trees → decor.
+
+## Cell completion gate
+
+A cell is **not** complete until every building footprint the ground report skipped is covered by a planned and landed feature. After ground lands, do not log the cell as done or move on to trees/decor while uncovered footprints remain. If features exist on the map but none are planned, stop and say so.
 
 ## Per task
 
