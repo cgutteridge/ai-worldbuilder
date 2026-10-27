@@ -6,6 +6,11 @@ state through the real writer, ``CellRegistry.change``, instead of hand-writing 
     with JournalWorld() as jw:            # sets AI_WORLDBUILDER_REGISTRY_ROOT to a tmp dir
         jw.seed((48, -44), ground=True, trees=True, decor=True, features=('q001_x',))
         cell_registry.view_registry().cell((48, -44)).done
+
+Layer rebuild fixtures for undo tests (#133)::
+
+    info = case.setup_layer_rebuilds(cell=(48, -44), origin=(6150, 60, -5600))
+    # ghost base on stage/pass ``other`` (not ``ghost-ground``) + same/wider/narrower
 """
 from __future__ import annotations
 
@@ -90,6 +95,139 @@ class JournalWorld:
         if marker:
             self.reg.change(Note(tuple(cell), 'marker', 'up'))
 
+
+# --- layer rebuild fixtures for undo tests (#133) -----------------------------------------------
+REBUILD_SHAPES = ('same', 'wider', 'narrower')
+_DEFAULT_REBUILD_BLOCKS = (
+    'minecraft:grass_block',
+    'minecraft:stone',
+    'minecraft:dirt',
+    'minecraft:cobblestone',
+    'minecraft:bricks',
+)
+
+
+def layer_rebuild_cells(origin: tuple[int, int, int], shape: str, block: str, *,
+                        far_dx: int = 20) -> dict:
+    """Cells for one rebuild shape anchored at ``origin``.
+
+    @param origin: (x, y, z) core column
+    @param shape: ``same`` / ``wider`` / ``narrower`` (narrower writes the core only)
+    @param block: block state for every cell in the footprint
+    @param far_dx: +x offset for the extra column of ``wider``
+    @returns: ``{(x, y, z): block, ...}``
+    @raises ValueError: unknown shape
+    """
+    x, y, z = origin
+    core = {(x, y, z): block}
+    if shape in ('same', 'narrower'):
+        return core
+    if shape == 'wider':
+        return {**core, (x + far_dx, y, z): block}
+    raise ValueError(f'unknown rebuild shape {shape!r}; want same, wider, or narrower')
+
+
+def setup_layer_rebuilds(
+    land,
+    *,
+    cell: tuple[int, int],
+    origin: tuple[int, int, int],
+    shapes: tuple[str, ...] = REBUILD_SHAPES,
+    plan_name: str = 'g',
+    layer_pass: str = 'ground',
+    base_name: str = 'ghost',
+    base_pass: str = 'other',
+    with_base: bool = True,
+    blocks=None,
+    start_block: str = 'minecraft:light_gray_concrete',
+    rebuild_blocks: tuple[str, ...] | None = None,
+    far_dx: int = 20,
+    interleaved: dict | None = None,
+) -> dict:
+    """Land an optional ghost base plus N rebuilds of one layer plan.
+
+    Bakes in the traps that bent earlier undo fixtures: the base uses pass/stage
+    ``other`` (``ghost-ground`` is not an apply stage), and every rebuild lists the
+    base in ``modifies``; later rebuilds of the same plan also list the plan.
+    ``interleaved`` lands another plan between rebuilds and is named in later
+    ``modifies`` (the interleaved-build case the before_<plan> check must handle).
+
+    @param land: ``land(name, pass_, cells, *, cell=None, modifies=())`` apply hook
+    @param cell: cell for layer (and base) applies
+    @param origin: core (x, y, z) column
+    @param shapes: rebuild shapes in order (length = N); default same, wider, narrower
+    @param plan_name: layer plan name reused across rebuilds
+    @param layer_pass: journal pass for rebuilds (``ground`` / ``trees`` / ``decor``)
+    @param base_name: base plan name when ``with_base``
+    @param base_pass: base pass — keep ``other`` for live apply (not ``ghost-ground``)
+    @param with_base: when False, seed ``blocks`` with ``start_block`` and skip a base owner
+    @param blocks: MemoryBlocks (required when ``with_base`` is False)
+    @param start_block: world/base fill for every column the fixture touches
+    @param rebuild_blocks: block state per rebuild (cycled if shorter than ``shapes``)
+    @param far_dx: +x offset for ``wider``
+    @param interleaved: optional ``{name, pos, block, after}`` — after rebuild index
+        ``after``, land plan ``name`` at ``pos``; later layer rebuilds list it in modifies
+    @returns: ``{start, base_name, plan_name, shapes, positions}``
+    @raises ValueError: empty shapes, or ``with_base`` False without ``blocks``
+    """
+    if not shapes:
+        raise ValueError('shapes must be non-empty')
+    materials = rebuild_blocks or _DEFAULT_REBUILD_BLOCKS
+    footprints = [
+        layer_rebuild_cells(origin, shape, materials[i % len(materials)], far_dx=far_dx)
+        for i, shape in enumerate(shapes)
+    ]
+    positions: set = set()
+    for fp in footprints:
+        positions.update(fp)
+    inter = None
+    if interleaved is not None:
+        inter = {
+            'name': interleaved['name'],
+            'pos': tuple(interleaved['pos']),
+            'block': interleaved['block'],
+            'after': int(interleaved.get('after', 0)),
+        }
+        positions.add(inter['pos'])
+    start = {p: start_block for p in positions}
+    landed_base = None
+    if with_base:
+        land(base_name, base_pass, dict(start), cell=cell, modifies=())
+        landed_base = base_name
+    else:
+        if blocks is None:
+            raise ValueError('with_base=False requires blocks to seed the start world')
+        for p, s in start.items():
+            blocks.write(p, s)
+        blocks.flush()
+    for i, fp in enumerate(footprints):
+        modifies = []
+        if landed_base is not None:
+            modifies.append(landed_base)
+        if i:
+            modifies.append(plan_name)
+        if inter is not None and i > inter['after']:
+            modifies.append(inter['name'])
+        # de-dupe, keep order
+        seen = set()
+        mod_tuple = tuple(m for m in modifies if m not in seen and not seen.add(m))
+        land(plan_name, layer_pass, fp, cell=cell, modifies=mod_tuple)
+        if inter is not None and i == inter['after']:
+            inter_mod = []
+            if landed_base is not None:
+                inter_mod.append(landed_base)
+            if inter['pos'] in fp:
+                inter_mod.append(plan_name)
+            seen_i = set()
+            inter_mods = tuple(m for m in inter_mod if m not in seen_i and not seen_i.add(m))
+            land(inter['name'], 'feature', {inter['pos']: inter['block']}, modifies=inter_mods)
+    return {
+        'start': start,
+        'base_name': landed_base,
+        'plan_name': plan_name,
+        'shapes': tuple(shapes),
+        'positions': frozenset(positions),
+    }
 
 # --- live apply harness: site_kit.apply / undo against a fake MCP over MemoryBlocks --------------
 class View:
@@ -248,3 +386,37 @@ class LiveApplyCase(unittest.TestCase):
         import site_lock
         with mock.patch.object(site_lock, 'check', lambda owner=None: None):
             return site_kit.undo(target, **kw)
+
+    def setup_layer_rebuilds(self, *, cell, origin, **kw):
+        """Apply :func:`setup_layer_rebuilds` through :meth:`run_apply`.
+
+        Maps journal passes to live stages (``other`` / ``ground-layer`` / …).
+        ``ghost-ground`` is not an apply stage — the helper keeps the base on ``other``.
+
+        @param cell: cell tuple
+        @param origin: core (x, y, z)
+        @param kw: forwarded to :func:`setup_layer_rebuilds` (except ``land``)
+        @returns: fixture info dict from :func:`setup_layer_rebuilds`
+        """
+        import site_kit
+
+        def land(name, pass_, cells, *, cell=None, modifies=()):
+            plan = site_kit.Plan(name)
+            for p, s in cells.items():
+                plan.set(*p, s)
+            args = {}
+            if pass_ == 'other':
+                args.update(stage='other', cell=cell)
+            elif pass_ == 'ground':
+                args.update(stage='ground-layer', cell=cell)
+            elif pass_ in ('trees', 'decor'):
+                args.update(stage=pass_, cell=cell)
+            if modifies:
+                args['modifies'] = list(modifies)
+            return self.run_apply(plan, **args)
+
+        kw.setdefault('blocks', self.blocks)
+        return setup_layer_rebuilds(land, cell=cell, origin=origin, **kw)
+
+
+
