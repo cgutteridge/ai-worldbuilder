@@ -34,7 +34,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                    {"<label>": {"N"|"S"|"E"|"W": [
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
-                 Dry run prints glazed share per storey per face.
+                 One row list per exposed face (every storey the evidence
+                 shows). Dry run prints glazed share for every exposed face
+                 and storey; faces with no facade rows are marked
+                 ``no evidence read`` (report only, not a gate).
   exclude        optional per-label boxes cut out of the map footprint (outline larger
                  than the real building, or neighbours sharing the outline):
                    {"<label>": [[x0, z0, x1, z1], ...]}   inclusive block coords
@@ -1593,19 +1596,25 @@ class Build:
                 self.set(c[0], y, c[1], pane(axis))
 
     def glazed_share_report(self) -> list[str]:
-        """Glazed share of each storey per face (for dry-run photo compare).
+        """Glazed share of each storey on every exposed face (dry-run photo compare).
 
-        @returns: human-readable lines ``<label> face <F> storey <n>: glazed a/b (p%)``
+        Lists every face with wall cells exposed that way, including faces
+        with no facade table rows. Those are marked ``no evidence read``
+        (report only — not a gate).
+
+        @returns: human-readable lines
+            ``<label> face <F> storey <n>: glazed a/b (p%)``
+            or the same with `` — no evidence read`` when that face has no
+            facade rows in the spec
         """
         lines = []
         for f in self.features:
             facades = (self.spec.get('facades') or {}).get(f.no) or {}
-            if not facades:
-                continue
-            for face in sorted(facades):
+            for face in sorted('NSEW'):
                 run = self.face_run(f, face)
                 if not run:
                     continue
+                has_rows = bool(facades.get(face))
                 for s in range(f.storeys):
                     base = f.b + s * STOREY_H
                     total = glazed = 0
@@ -1621,8 +1630,10 @@ class Build:
                     if total == 0:
                         continue
                     pct = 100 * glazed // total
+                    suffix = ' — no evidence read' if not has_rows else ''
                     lines.append(
-                        f'{f.no} face {face} storey {s + 1}: glazed {glazed}/{total} ({pct}%)')
+                        f'{f.no} face {face} storey {s + 1}: '
+                        f'glazed {glazed}/{total} ({pct}%){suffix}')
         return lines
 
     def roof_flat(self, features: list[Feature], own: set):

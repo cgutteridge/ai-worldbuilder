@@ -30,9 +30,13 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   `site_kit.apply` refuses cells owned by builds not listed here)
 - optional: `wall`, `floor`, `floor_min`, `step_max`, `ledge_stair`,
   `door_frame`, `keep_edits`, `notes`
-- optional `facades` — per-label per-face window table from the photo
-  (glazing height, pier width, wall material, bay rhythm `WW_BB_WW`).
-  Dry run prints glazed share per storey per face for photo compare.
+- optional `facades` — per-label per-face window table from street photos
+  and the aerial (glazing height, pier width, wall material, bay rhythm
+  `WW_BB_WW`). Give a row list for **every exposed face**, and a row for
+  every storey the evidence shows on that face. Where no photo or aerial
+  shows a face, copy the nearest read face and say so in `notes`. Dry run
+  prints glazed share for every exposed face and storey; faces with no
+  facade rows are marked `no evidence read` (report only — not a gate).
   Example: `"facades": {"SU": {"N": [{"storey": 1, "glazed_h": 3, "pier": 1}]}}`
 - optional `doors` — per-portal map from the university register
   (`scripts/portals.py`): `{"42-A": {"leaves": 1|2, "block": "iron_door"}}`.
