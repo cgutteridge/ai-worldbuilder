@@ -72,12 +72,47 @@ def on_carriageway(world: World, x: int, z: int) -> bool:
     return False
 
 
+def may_join_at(
+    pos: tuple[int, int, int],
+    mat: str,
+    *,
+    cell: tuple[int, int],
+    near1: set,
+    allow_near1_mats: set[str],
+    owned: set,
+    masked: set,
+    world: World,
+) -> bool:
+    """True when ``join_pieces`` may place ``mat`` at ``pos``.
+
+    Footprint-ring columns (``near1``) are banned by default. Only materials that
+    already have ``allow_against_build`` placements (building-border hedges) may
+    join into that ring. Live block must be air/flower, and the spot must not be
+    owned or masked.
+
+    @param pos: candidate (x, y, z)
+    @param mat: joinable block id being considered
+    @param cell: (tx, tz) cell bounds
+    @param near1: footprint and structure columns dilated by 1
+    @param allow_near1_mats: materials already placed with allow_against_build
+    @param owned: neighbour-owned block positions
+    @param masked: positions owned by another pass mask
+    @param world: live or planning world
+    @returns: whether the join candidate is allowed
+    """
+    xz = (pos[0], pos[2])
+    if xz in near1 and mat not in allow_near1_mats:
+        return False
+    return (cell_contains(cell, pos[0], pos[2])
+            and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
+
+
 def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
                 present: dict[tuple[int, int, int], str] | None = None) -> dict[tuple[int, int, int], str]:
     """Extra blocks that link separate walls/fences of the same type, one block per join.
 
     Pieces touch only face to face (diagonal is disjoint). A candidate is an empty spot
-    (`can_place(pos)`) with face neighbours in two or more different pieces of one type;
+    (`can_place(pos, mat)`) with face neighbours in two or more different pieces of one type;
     live same-type blocks next to the plan count as pieces too (`live(pos)` -> block id), as
     do `present` blocks (planned spots where that type is already standing).
     Supported candidates (solid block below, or planned) go first, then the lowest x, y, z;
@@ -108,7 +143,7 @@ def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
                     parent[find(p)] = find(q)
         while True:
             cands = {(p[0] + d[0], p[1] + d[1], p[2] + d[2]) for p in nodes for d in NEIGHBOURS} - nodes
-            cands = [c for c in cands if can_place(c) and c not in found and c not in added]
+            cands = [c for c in cands if can_place(c, mat) and c not in found and c not in added]
 
             def supported(c):
                 below = (c[0], c[1] - 1, c[2])
@@ -374,10 +409,16 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['unresolved'] = len(unresolved)
     stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced)
 
-    def can_place(pos):
-        # Joins may touch the near1 ring only where a building-border hedge already stands.
-        return (cell_contains(cell, pos[0], pos[2])
-                and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
+    # Joins may enter near1 only for materials already placed with allow_against_build.
+    allow_near1_mats = {
+        r['block'] for r in barrier_report if r.get('allow_against_build') and r.get('block')
+    }
+
+    def can_place(pos, mat=''):
+        return may_join_at(
+            pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
+            owned=owned, masked=masked, world=world,
+        )
 
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)
     found.update(joins)

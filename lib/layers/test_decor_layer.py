@@ -29,7 +29,7 @@ class TestJoinPieces(unittest.TestCase):
     def setUp(self):
         self.live = world(['GGGBB', 'GB___'], ['GFB__', 'B____'])
         self.get = lambda p: self.live.get(p, 'minecraft:air')
-        self.can = lambda p: p[1] in (0, 1) and 0 <= p[0] <= 4 and 0 <= p[2] <= 1 and \
+        self.can = lambda p, _mat='': p[1] in (0, 1) and 0 <= p[0] <= 4 and 0 <= p[2] <= 1 and \
             dl.is_air(self.get(p))
 
     def pieces(self):
@@ -59,7 +59,52 @@ class TestJoinPieces(unittest.TestCase):
         live[(1, 1, 0)] = 'minecraft:stone'
         found = {(0, 1, 0): B, (2, 1, 0): B}
         self.assertEqual(dl.join_pieces(found, lambda p: live.get(p, 'minecraft:air'),
-                                        lambda p: dl.is_air(live.get(p, 'minecraft:air'))), {})
+                                        lambda p, _m='': dl.is_air(live.get(p, 'minecraft:air'))), {})
+
+
+class TestMayJoinAtNear1(unittest.TestCase):
+    """plan_cell join gate: near1 banned unless the material has allow_against_build."""
+
+    def setUp(self):
+        self.world = mock.Mock()
+        self.world.block = lambda x, y, z: 'minecraft:air'
+
+    def test_bans_near1_by_default(self):
+        self.assertFalse(dl.may_join_at(
+            (10, 65, 20), 'brick_wall',
+            cell=(0, 0), near1={(10, 20)}, allow_near1_mats=set(),
+            owned=set(), masked=set(), world=self.world,
+        ))
+
+    def test_allows_near1_for_allow_against_build_mat(self):
+        mat = 'oak_leaves[persistent=true]'
+        self.assertTrue(dl.may_join_at(
+            (10, 65, 20), mat,
+            cell=(0, 0), near1={(10, 20)}, allow_near1_mats={mat},
+            owned=set(), masked=set(), world=self.world,
+        ))
+
+    def test_outside_near1_still_ok_for_ordinary_mat(self):
+        self.assertTrue(dl.may_join_at(
+            (11, 65, 20), 'brick_wall',
+            cell=(0, 0), near1={(10, 20)}, allow_near1_mats=set(),
+            owned=set(), masked=set(), world=self.world,
+        ))
+
+    def test_join_pieces_respects_near1_ban(self):
+        """Two wall stubs separated by a near1 gap must not be bridged."""
+        live = {(0, 0, 0): 'minecraft:grass_block', (1, 0, 0): 'minecraft:grass_block',
+                (2, 0, 0): 'minecraft:grass_block',
+                (0, 1, 0): 'minecraft:air', (1, 1, 0): 'minecraft:air', (2, 1, 0): 'minecraft:air'}
+        found = {(0, 1, 0): B, (2, 1, 0): B}
+        near1 = {(1, 0)}
+        world = mock.Mock()
+        world.block = lambda x, y, z: live.get((x, y, z), 'minecraft:air')
+        can = lambda pos, mat='': dl.may_join_at(
+            pos, mat, cell=(0, 0), near1=near1, allow_near1_mats=set(),
+            owned=set(), masked=set(), world=world,
+        )
+        self.assertEqual(dl.join_pieces(found, lambda p: live.get(p, 'minecraft:air'), can), {})
 
 
 class TestPlaceFurniture(unittest.TestCase):
