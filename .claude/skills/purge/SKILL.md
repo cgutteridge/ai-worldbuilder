@@ -63,7 +63,8 @@ The element is now unbuilt, so `cell_registry.py next` will offer it in the norm
 
 - **Feature:** the `redo` skill from its evidence-table step: footprint, heights, openings, roof and greeblies read fresh from the sources, filled in before planning. Do not recover geometry or material choices from the tar, git history or chat.
 - **Ground / trees / decor:** run the layer script for the cell (`ground_layer.py`, `trees_layer.py`, `decor_layer.py`; dry run, then `--apply`) from current evidence.
-- **Cell / above-ghost / project:** follow `next`; cell journal ring order and the done-bar apply (`rules/radial-good-enough.md`). Ghost stays; redesign starts from generated ground upward.
+- **Cell / above-ghost:** follow `next`; cell journal ring order and the done-bar apply (`rules/radial-good-enough.md`). Ghost stays; redesign starts from generated ground upward.
+- **Project:** after `dryrun_reset`, re-raise the ghost frontier first, then follow `next` from empty registry (ghost was wiped with the rest).
 
 Name designer and builder first (`build_roles.py show`, `rules/build-roles.md`).
 
