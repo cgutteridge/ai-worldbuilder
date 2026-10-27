@@ -4,6 +4,15 @@
   "nextTaskId": 162,
   "tasks": [
     {
+      "id": 160,
+      "title": "level_pits fills wall-side voids next to footprints (S-019 / #155 live fail)",
+      "status": "doing",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Follow-up to #155. LIVE FAIL 2026-10-27: ground --apply on 48,-44 under site_lock planned 35 other pits then readback mismatches; seq 211 rolled back via site_recover. Tops at x 6145\u20136147, z -5520 stay y=36 vs neighbour (6144,-5520) y=44. Cause: (6146,-5520)/(6147,-5520) skipped by adj-to-footprint guard in level_pits; (6145,-5520) in a candidate component with bbox narrow=6 > PIT_MAX_WIDTH 5. Deliver: retune level_pits so free columns beside a footprint can fill to the outside rim (never raise footprint columns; never use footprint tops as the rim target). Raise PIT_MAX_WIDTH if the live 3-wide band's bbox needs it. Unit test: wall-side pit adjacent to fp fills to rim y; footprint columns unchanged; wide depression still skipped. Acceptance: ground rerun on 48,-44 under site_lock --world southampton-build; those three columns match y=44; no bad fill into footprints. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py. Helps: S-019 / I-015 void-beside-walls. Done 2026-10-27: removed adj-to-footprint candidate skip; PIT_MAX_WIDTH 5\u21926; wall-side pit unit test. Merged task/160-wall-side-pit-fill (b89aea4 / merge eba0213). Live ground rerun on 48,-44 still required for S-019 acceptance. LIVE RETUNE 2026-10-27: after adj-fp removal, wall-side band merges into candidate component bbox narrow=7 > PIT_MAX_WIDTH 6 (x 6144\u20136150); pits_filled 45 elsewhere but 6145\u20136147 stayed y=36; apply seq 213 rolled back (2 mismatches). Raising PIT_MAX_WIDTH and re-verifying."
+    },
+    {
       "id": 143,
       "title": "Feature doors clear the inward vestibule cell so door_to_wall is 0",
       "status": "todo",
