@@ -217,9 +217,26 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
 
         self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
 
+    def test_cell_pass_undo_of_rebuilt_ground_with_no_base_restores_start(self):
+        # #138: no owner underneath — journal priors alone must restore the start
+        # world (the 2026-10-27 bent fixture hid this behind a ghost base).
+        self.blocks.write((X0, 60, Z0), GREY)
+        self.blocks.flush()
+        for i, state in enumerate(('minecraft:grass_block', 'minecraft:stone', 'minecraft:dirt')):
+            g = site_kit.Plan('g')
+            g.set(X0, 60, Z0, state)
+            kw = {'stage': 'ground-layer', 'cell': CELL}
+            if i:
+                kw['modifies'] = ['g']
+            self.run_apply(g, **kw)
+
+        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
+
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
+
     def test_rebuild_wider_than_first_build_still_undoes(self):
-        # The rebuild covers a column outside the first build's structure box; that
-        # column has no earlier snapshot and must not be read as air.
+        # The rebuild covers a column the first build never wrote; that column must
+        # use the second build's before_<plan>, not be forced to air or an earlier box.
         far = (X0 + 20, 60, Z0)
         self.blocks.write(far, GREY)
         self.blocks.flush()
@@ -230,8 +247,9 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         first = site_kit.Plan('g')
         first.set(X0, 60, Z0, 'minecraft:grass_block')
         self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
-        # FakePaced snapshots the whole world; poison the column the first box does
-        # not cover, so only the box filter keeps it out of the comparison.
+        # FakePaced snapshots the whole world into every structure; poison the first
+        # snapshot at ``far`` so a box-based check would disagree — writer membership
+        # must keep ``far`` on the second before_<plan> only (#138).
         FakePaced.structures[f'{site_kit.STRUCTURE_NS}:before_g'][far] = 'minecraft:gold_block'
         second = site_kit.Plan('g')
         second.set(X0, 60, Z0, 'minecraft:stone')
@@ -242,6 +260,62 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
 
         self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
         self.assertEqual(self.blocks.read(far), GREY)
+        undo = [e for e in self.reg().entries() if e.kind == 'undo']
+        self.assertEqual([e.status for e in undo], ['landed'])
+
+    def test_interleaved_feature_inside_earlier_ground_box_still_undoes(self):
+        # Feature sits inside the first ground's structure box but was never written
+        # by that build — only the rebuild covers it. Box-based check would use
+        # before_g1 (predates the feature) and refuse; writer membership uses
+        # before_g2 (#138).
+        left, mid, right = (X0, 60, Z0), (X0 + 1, 60, Z0), (X0 + 2, 60, Z0)
+        base = site_kit.Plan('ghost')
+        for p in (left, mid, right):
+            base.set(*p, GREY)
+        self.run_apply(base, stage='other', cell=CELL)
+        first = site_kit.Plan('g')
+        first.set(*left, 'minecraft:grass_block')
+        first.set(*right, 'minecraft:grass_block')  # box spans mid without writing it
+        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        house = site_kit.Plan('house')
+        house.set(*mid, 'minecraft:bricks')
+        self.run_apply(house, modifies=['ghost'])
+        second = site_kit.Plan('g')
+        second.set(*left, 'minecraft:stone')
+        second.set(*mid, 'minecraft:stone')
+        second.set(*right, 'minecraft:stone')
+        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost', 'house'])
+
+        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
+
+        self.assertEqual(self.blocks.read(left), GREY)
+        self.assertEqual(self.blocks.read(right), GREY)
+        # mid restores the interleaved feature (under-owner / g2 prior), not ghost
+        self.assertEqual(self.blocks.read(mid), 'minecraft:bricks')
+        undo = [e for e in self.reg().entries() if e.kind == 'undo']
+        self.assertEqual([e.status for e in undo], ['landed'])
+
+    def test_shared_column_with_interleaved_under_owner_still_undoes(self):
+        # Shared column written by g1 → house → g2. Journal erase restores house
+        # (under-owner); earliest live writer's before_g1 predates house and would
+        # false-refuse if the footprint check bound that column (#138).
+        mid = (X0, 60, Z0)
+        base = site_kit.Plan('ghost')
+        base.set(*mid, GREY)
+        self.run_apply(base, stage='other', cell=CELL)
+        first = site_kit.Plan('g')
+        first.set(*mid, 'minecraft:grass_block')
+        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        house = site_kit.Plan('house')
+        house.set(*mid, 'minecraft:bricks')
+        self.run_apply(house, modifies=['ghost', 'g'])
+        second = site_kit.Plan('g')
+        second.set(*mid, 'minecraft:stone')
+        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost', 'house'])
+
+        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
+
+        self.assertEqual(self.blocks.read(mid), 'minecraft:bricks')
         undo = [e for e in self.reg().entries() if e.kind == 'undo']
         self.assertEqual([e.status for e in undo], ['landed'])
 

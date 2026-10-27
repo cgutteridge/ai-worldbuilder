@@ -1175,20 +1175,15 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
             )
 
 
-def _in_box(p, meta):
-    """Whether a world position lies inside a structure save's from/to box (inclusive)."""
-    return all(lo <= c <= hi for c, lo, hi in zip(p, meta['from'], meta['to']))
-
-
 def _before_footprints(registry, names):
     """Capture each live plan's structure meta and cells before an undo voids them.
 
-    Undo erases back to the world before the first live build, so each position is
-    checked against the earliest live build's ``before_<plan>`` whose box contains it
-    (a rebuild's later snapshot holds the earlier build). Positions no live snapshot
-    covers have no before evidence and are skipped. Known limit: where another plan
-    was built between two builds of this one, the earliest snapshot predates it and
-    the check refuses (fails closed).
+    Aligns with journal undo (#138): each position is checked against the
+    ``before_<plan>`` of the earliest live build that *wrote* it (not merely whose
+    structure box contains it). Positions with a non-targeted owner underneath are
+    skipped — journal erase restores that under-owner state, not ``before_<plan>``,
+    so binding them to the earliest writer's snapshot false-refuses (shared column
+    written by g1 → other plan → g2). Positions no live writer covers are skipped.
 
     @param registry: open CellRegistry
     @param names: plan names about to be undone
@@ -1196,17 +1191,20 @@ def _before_footprints(registry, names):
     """
     out = []
     for n in names:
-        cells = registry.recorded(n) or {}
+        latest = registry.recorded(n) or {}
         live = [e for e in registry.entries(plan=n)
                 if e.kind == 'build' and not e.undone and e.status != 'begun'
                 and e.meta.get('structure')]
-        left = list(cells)
+        # Same under-owner set journal undo restores; do not check those against before_<plan>.
+        under = registry.owned(latest, exclude=names) if latest else {}
+        claimed = set()
         for e in live:
-            meta = dict(e.meta['structure'])
-            mine = [p for p in left if _in_box(p, meta)]
+            written = registry.cells_at(e.seq) or {}
+            mine = [p for p in latest
+                    if p in written and p not in claimed and p not in under]
             if mine:
-                out.append((n, meta, mine))
-                left = [p for p in left if not _in_box(p, meta)]
+                out.append((n, dict(e.meta['structure']), mine))
+                claimed.update(mine)
     return out
 
 
@@ -1217,8 +1215,10 @@ def undo(target, *, strict=True, meta=None):
     The registry computes the erase from the recorded plans; the entry is journalled ``begun``
     before any write and finished after the readback. A structure template of the erased box is
     saved first (recorded in the entry's meta). Before writes, the erase plan is compared to each
-    plan's apply-time ``before_<plan>`` structure; a difference abandons the begun entry
-    (#123 — journal readback alone can pass while the world would become a pit).
+    plan's apply-time ``before_<plan>`` structure (per position: the earliest live build that
+    wrote it, skipping under-owner columns that journal restores to the owner below — #138);
+    a difference abandons the begun entry (#123 — journal readback alone can pass while the
+    world would become a pit).
 
     @param target: plan name or ``(cell, pass_)``
     @param strict: a readback mismatch raises and leaves the entry 'begun'

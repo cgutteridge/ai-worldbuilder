@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 150,
+  "nextTaskId": 153,
   "tasks": [
     {
       "id": 131,
@@ -10,7 +10,7 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Cause: Build.windows punches glass_pane into any listed face with no framing check (doors have door_frame_issues; windows have no equivalent), so on stepped or diagonal walls a pane meets open air. Covers issue I-013 (glass panes on diagonal walls have no frame), snag S-007. Scope: place a pane only where the finished build has solid wall on both sides along the wall line and above and below; otherwise keep the wall block. The dry run prints the count of panes skipped this way, per face. Done when dry runs for susu_w33830305 and Jubilee report no pane beside air. Check line S-007: every glass pane on SUSU's and Jubilee's diagonal walls has solid blocks all round it. Touches feature_build.py like #125, #126 and #130; sequence them. One regression test only; no new gates or lints."
+      "notes": "Cause: Build.windows punches glass_pane into any listed face with no framing check (doors have door_frame_issues; windows have no equivalent), so on stepped or diagonal walls a pane meets open air. Covers issue I-013 (glass panes on diagonal walls have no frame), snag S-007. Scope: place a pane only where the finished build has solid wall on both sides along the wall line and above and below; otherwise keep the wall block. The dry run prints the count of panes skipped this way, per face. Done when dry runs for susu_w33830305 and Jubilee report no pane beside air. Check line S-007: every glass pane on SUSU's and Jubilee's diagonal walls has solid blocks all round it. Touches feature_build.py like #125, #126 and #130; sequence them. One regression test only; no new gates or lints. UPDATE 2026-10-27: the sequencing clause above is stale (#125, #126 and #130 landed); sequence against #146, #149 and #132 instead. Widen scope to snag S-022 on the same issue: a pane whose neighbours are solid on three axes reacts to every frame and looks odd, so decide per case between a clean framed pane and a deliberate corner window (a pane at a true outside corner, where the effect is wanted), and never place a window below the outside ground level. Check line S-022: no pane wrapped by solid on all sides unless it is a deliberate corner window; no window whose sill is below the ground outside it (Jubilee near 18-A shows the pits)."
     },
     {
       "id": 132,
@@ -18,18 +18,18 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [],
-      "notes": "Cause: the building spec has no vocabulary for roof or facade detail and feature_build places none. rules/building-review.md already asks the designer to list roof greeblies per roof from the aerial (plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets) and names a --greeblies feature follow-up step, but no script or lib has --greeblies (probably lost in the move from the Refine donor; not confirmed). Covers issue I-006 (no roof or facade detail), snags S-009 and S-016. Owner decision (2026-10-27): detail lives in the building spec, not a separate pass, so undo/redo of a building takes its detail with it. Scope: a per-label details table in the spec, each entry a kind, position and size: roof (plant room, vent, louvred vent, skylight, solar panel, lift overrun), facade (drainpipe, sign, canopy, ledge, fascia band); a small block recipe per kind in feature_build, placed after the shell; positions from the aerial (roofs) and street photos (facades), heights of large roof plant from lidar; the designer brief points at building-review and fills details; replace the dead --greeblies reference in the rules with the table; dry run prints each detail and its source. Done when a dry run of SUSU, West or Retail places listed roof and facade details, including Retail's entrance canopy (in its spec notes, never built). Check line S-009, S-016: each building in 48,-44 shows the roof plant and facade detail visible on the aerial and photos. Size l: may split into roof detail and facade detail. Blocked by #125 and #126: details sit on the roofs, and all touch feature_build.py. One regression test per part; no new gates or lints."
+      "blockedBy": [
+        145
+      ],
+      "notes": "Cause: the building spec has no vocabulary for roof or facade detail and feature_build places none. rules/building-review.md already asks the designer to list roof greeblies per roof from the aerial (plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets) and names a --greeblies feature follow-up step, but no script or lib has --greeblies (probably lost in the move from the Refine donor; not confirmed). Covers issue I-006 (no roof or facade detail), snags S-009 and S-016. Owner decision (2026-10-27): detail lives in the building spec, not a separate pass, so undo/redo of a building takes its detail with it. Scope: a per-label details table in the spec, each entry a kind, position and size: roof (plant room, vent, louvred vent, skylight, solar panel, lift overrun), facade (drainpipe, sign, canopy, ledge, fascia band); a small block recipe per kind in feature_build, placed after the shell; positions from the aerial (roofs) and street photos (facades), heights of large roof plant from lidar; the designer brief points at building-review and fills details; replace the dead --greeblies reference in the rules with the table; dry run prints each detail and its source. Done when a dry run of SUSU, West or Retail places listed roof and facade details, including Retail's entrance canopy (in its spec notes, never built). Check line S-009, S-016: each building in 48,-44 shows the roof plant and facade detail visible on the aerial and photos. Size l: may split into roof detail and facade detail. Blocked by #125 and #126: details sit on the roofs, and all touch feature_build.py. One regression test per part; no new gates or lints. UPDATE 2026-10-27: build on the per-face facade plan from #145 rather than a second spec table (hence blocked by it). Split: #145 owns entrances and the covered area or canopy over them; this task owns greeblies (roof and facade detail) and does not re-define canopy. Roof detail on stair-and-slab roofs follows #149."
     },
     {
       "id": 133,
       "title": "Rebuild fixtures for undo tests",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        138
-      ],
+      "blockedBy": [],
       "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints). Add a property test: apply N rebuilds of a layer with NO base owner underneath, then undo them all; the world must equal the start. (A bent fixture in the 2026-10-27 undo-check fix hid exactly this.)"
     },
     {
@@ -65,22 +65,13 @@
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
     },
     {
-      "id": 138,
-      "title": "Cell-pass undo restores the world before the first build",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints)."
-    },
-    {
       "id": 140,
       "title": "next refuses to move past ground on a cell with unplanned building footprints",
       "status": "todo",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features."
+      "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features. Also the fix for the planning-order issue (I-007, snag S-010): the check is that next on a fresh cell offers the proposed buildings before ground. #128 alone does not meet it."
     },
     {
       "id": 141,
@@ -110,17 +101,10 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them."
-    },
-    {
-      "id": 144,
-      "title": "Decor garden-boundary reads tree canopy as a hedge",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor."
+      "blockedBy": [
+        146
+      ],
+      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that."
     },
     {
       "id": 145,
@@ -128,7 +112,10 @@
       "status": "todo",
       "priority": "high",
       "complexity": "l",
-      "notes": "Cause: doors are placed at the wall cell nearest a portal point (portals.framed, DOOR_REACH, #114) and the spec's optional `doors` map is rarely filled, so leaf count, face, canopy and floor height are guessed per door (S-021 sunk 42-B door, S-023 57-A on the wrong face, 40-A single not double). Deliver: a per-face facade plan in the building spec (storeys, glazing, entrances with leaf count, canopy or covered area, steps, floor height against outside ground; room for roof edge and detail). Portals are inputs to it, not a stage: the designer brief shows every portal on the footprint with its photo and position when it has one, and each must be placed or declared unresolved with a reason. Each entrance records its source (given coordinate or register entry, photo read, inference) and confidence. Portals are best effort: a world with no portal register still gets entrances from street-level photos. Relates to #130 (windows on every face), #131 (window frames) and #132 (roof and facade detail): decide whether they become fields of this plan or follow it. Check: 57-A is a single door on the side face under a covered area; 40-A shows double doors; 42-B sits at ground level; a portal left unresolved is listed in the plan and the cell view."
+      "notes": "Cause: doors are placed at the wall cell nearest a portal point (portals.framed, DOOR_REACH, #114) and the spec's optional `doors` map is rarely filled, so leaf count, face, canopy and floor height are guessed per door (S-021 sunk 42-B door, S-023 57-A on the wrong face, 40-A single not double). Deliver: a per-face facade plan in the building spec (storeys, glazing, entrances with leaf count, canopy or covered area, steps, floor height against outside ground; room for roof edge and detail). Portals are inputs to it, not a stage: the designer brief shows every portal on the footprint with its photo and position when it has one, and each must be placed or declared unresolved with a reason. Each entrance records its source (given coordinate or register entry, photo read, inference) and confidence. Portals are best effort: a world with no portal register still gets entrances from street-level photos. Relates to #130 (windows on every face), #131 (window frames) and #132 (roof and facade detail): decide whether they become fields of this plan or follow it. Check: 57-A is a single door on the side face under a covered area; 40-A shows double doors; 42-B sits at ground level; a portal left unresolved is listed in the plan and the cell view.",
+      "blockedBy": [
+        151
+      ]
     },
     {
       "id": 146,
@@ -139,15 +126,7 @@
       "blockedBy": [
         145
       ],
-      "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild."
-    },
-    {
-      "title": "Road centre-line markings one block wide",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun.",
-      "id": 147
+      "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild. Acceptance also includes the old #143 check: after re-applying the specs, 0 patrol door_to_wall flags and doors at the right leaf count; the door row follows the outside ground (I-017)."
     },
     {
       "title": "Water bodies as features (ponds)",
@@ -155,15 +134,48 @@
       "priority": "medium",
       "complexity": "l",
       "notes": "Cause: ground leaves mapped water as terrain (ground_layer.py:170-177) and no feature plan covers a water body, so the pond is whatever the baseline left (I-014, S-018). Not verified: whether the dark basin in 48,-45 is leftover ghost baseline or an unpainted hole. Deliver: a water-body feature in the plan vocabulary with outline from the vector map or aerial, water level, bank and edge; it sits in the cell plan as a feature to build, like a building, and records its evidence and provenance the way the facade plan (#145) does. Check: the pond in 48,-45 is a planned, built feature with water at a sensible level and a defined bank, not a dark hole.",
-      "id": 148
+      "id": 148,
+      "blockedBy": [
+        151
+      ]
     },
     {
       "title": "Pitched roofs use stairs and slabs correctly",
       "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces.",
-      "id": 149
+      "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces. Start with a spike: confirm which code path built West's roof (roof_pitched or the zoned pitched path from #125) before changing either; the flat-roof issue (I-009) is confirmed, so do not regress the ridge shape.",
+      "id": 149,
+      "blockedBy": []
+    },
+    {
+      "id": 150,
+      "title": "Decor read from the aerial and photos: hedges round buildings, plaza seating",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "notes": "Cause: #127 places street furniture only where the vector map has points or barriers, so hedges round Retail and plaza seating that show in the aerial are missed (I-008, S-026). Deliver: a decor plan read from the aerial and photos (hedges and borders, seating, bike racks, bins), with each item's source and confidence, and decor built from that plan; items it cannot resolve are listed, not silently skipped. Same pattern as the facade plan (#145): reuse its provenance fields. Keep the bike-rack fences the owner accepted. Check: 48,-44 has hedges round Retail and seating in the plaza where the aerial shows them.",
+      "blockedBy": [
+        151
+      ]
+    },
+    {
+      "id": 151,
+      "title": "Shared provenance record for evidence-read plan items",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Why: #145 (facade entrances), #148 (water bodies) and #150 (decor) each say 'record source and confidence and list what is unresolved'; three private versions would drift. Deliver: one helper and schema, built on the existing decision_record evidence store (registry/evidence ids), not a new store: source (given coordinate, register entry, photo read, aerial, lidar, vector map, inference), confidence, evidence ids, and an unresolved reason; helpers to attach it to a plan item and to list a cell's unresolved items for the cell view. Check: unit tests, and #145, #148 and #150 import it and define no provenance fields of their own."
+    },
+    {
+      "id": 152,
+      "title": "Issues: hold an issue for a named ticket, and take back a wrongly logged fix",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: #128 was logged as the fix for the planning-order issue (I-007), but its check is not met until #140 lands; the issue shows fix-landed and the digest counts it as ready for review, and issues.py has no way to withdraw a fix. Deliver: `issues.py unfix I-nnn F-n --reason T` (keeps the log, marks the fix withdrawn) and `issues.py hold I-nnn --until '#140'` (digest and sync skip the issue until that ticket is done). Digest wording says how many are held. Check: I-007 stops showing as ready for review until #140 is archived."
     }
   ]
 }

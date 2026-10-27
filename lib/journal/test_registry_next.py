@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for registry next (ticket #31 / #121 seams)."""
+"""Tests for registry next (ticket #31 / #121 / #140 seams)."""
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 import cellmath
 import registry_next as N
@@ -69,6 +70,42 @@ class NextTaskTest(unittest.TestCase):
 
     def test_idle_when_empty(self):
         self.assertIsNone(N.next_task(self.jw.reg, root=self.root))
+
+    def test_unplanned_footprint_blocks_trees_after_ground(self):
+        """#140: ground done + one footprint and no plan_feature → needs-feature-plan, not trees."""
+        self.jw.seed((48, -44), ground=True)
+        footprint = [{
+            'kind': 'building', 'label': 'fixture hall', 'street': None,
+            'refs': ['w140fixture'], 'bbox': (6160, -5600, 6180, -5580),
+            'portals': [], 'pictures': [],
+        }]
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=footprint):
+            task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual(task['kind'], 'needs-feature-plan')
+        self.assertEqual(task['cell'], '48,-44')
+        self.assertEqual(task['count'], 1)
+        self.assertEqual(task['features'], ['w140fixture'])
+        self.assertNotEqual(task.get('layer'), 'trees')
+        self.assertIn('needs-feature-plan', N.format_next(task))
+
+    def test_planned_or_dismissed_footprint_allows_trees(self):
+        """#140: a plan_feature or dismiss covering the candidate must not block trees."""
+        self.jw.seed((48, -44), ground=True)
+        footprint = [{
+            'kind': 'building', 'label': 'fixture hall', 'street': None,
+            'refs': ['w140fixture'], 'bbox': (6160, -5600, 6180, -5580),
+            'portals': [], 'pictures': [],
+        }]
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'fixture hall', ref='w140fixture'))
+        # Still proposed by the map, but already on the plan → next offers the feature, not trees.
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=footprint):
+            task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['feature']), ('feature', 'w140fixture'))
+
+        self.jw.reg.change(Note((48, -44), 'plan_feature-dismiss', 'car park', ref='w140fixture'))
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=footprint):
+            task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual(task['layer'], 'trees')
 
 
 if __name__ == '__main__':
