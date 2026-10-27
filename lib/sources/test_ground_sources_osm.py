@@ -96,5 +96,105 @@ class LoadOsmStreetFurniturePointsTest(unittest.TestCase):
         self.assertEqual(ground.trees, [(27, 42)])
 
 
+def _ground_from_features(features: list) -> GS.OSMGround:
+    """Build OSMGround((0, 0)) from a synthetic OSGB-cache Feature list."""
+    with tempfile.TemporaryDirectory() as td:
+        cache = Path(td)
+        _write_cache(cache, 'campus__water.geojson', features)
+        empty_clips = cache / 'no-clips'
+        empty_clips.mkdir()
+        with mock.patch.object(OF, 'CACHE', cache), \
+                mock.patch.object(OF, '_resolve_vector_map_clips', return_value=empty_clips), \
+                mock.patch('world_frame.osgb_to_mc', side_effect=lambda e, n: (e, n)):
+            return GS.OSMGround((0, 0))
+
+
+class UndergroundWaterwayTest(unittest.TestCase):
+    """#162: culverts / covered / below-grade waterways are not open-water columns."""
+
+    def test_culvert_beside_stream_gives_only_stream_columns(self):
+        stream_pts = [[10.0, 20.0], [40.0, 20.0]]
+        culvert_pts = [[10.0, 50.0], [40.0, 50.0]]
+        ground = _ground_from_features([
+            {
+                'type': 'Feature',
+                'properties': {'osm_id': '1', 'waterway': 'stream'},
+                'geometry': {'type': 'LineString', 'coordinates': stream_pts},
+            },
+            {
+                'type': 'Feature',
+                'properties': {
+                    'osm_id': '2',
+                    'waterway': 'stream',
+                    'tunnel': 'culvert',
+                    'layer': '-1',
+                },
+                'geometry': {'type': 'LineString', 'coordinates': culvert_pts},
+            },
+        ])
+        stream_cols = set(GS.line_cells([(10.0, 20.0), (40.0, 20.0)], 0.8))
+        culvert_cols = set(GS.line_cells([(10.0, 50.0), (40.0, 50.0)], 0.8))
+        self.assertTrue(ground.water, 'open stream should rasterise to water columns')
+        self.assertTrue(ground.water <= stream_cols,
+                        f'water {ground.water - stream_cols} not on the open stream')
+        self.assertFalse(ground.water & culvert_cols,
+                         'culvert (tunnel=culvert, layer=-1) must not become open water')
+
+    def test_covered_and_negative_layer_streams_give_no_water(self):
+        ground = _ground_from_features([
+            {
+                'type': 'Feature',
+                'properties': {
+                    'osm_id': '3',
+                    'waterway': 'stream',
+                    'covered': 'yes',
+                },
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[10.0, 20.0], [40.0, 20.0]],
+                },
+            },
+            {
+                'type': 'Feature',
+                'properties': {
+                    'osm_id': '4',
+                    'waterway': 'stream',
+                    'layer': '-1',
+                },
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[10.0, 50.0], [40.0, 50.0]],
+                },
+            },
+        ])
+        self.assertFalse(ground.water,
+                         'covered=yes and layer=-1 streams must not rasterise as open water')
+
+    def test_building_passage_highway_still_lands_in_bridge(self):
+        """Highway bridge/tunnel/layer columns stay in .bridge (unchanged by #162)."""
+        # Non-zero layer is the existing path that puts a highway in .bridge; include
+        # tunnel=building_passage so the waterway exception cannot swallow it.
+        ground = _ground_from_features([
+            {
+                'type': 'Feature',
+                'properties': {
+                    'osm_id': '5',
+                    'highway': 'residential',
+                    'surface': 'asphalt',
+                    'tunnel': 'building_passage',
+                    'layer': '1',
+                },
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[10.0, 20.0], [40.0, 20.0]],
+                },
+            },
+        ])
+        self.assertTrue(ground.bridge, 'expected building_passage+layer highway in .bridge')
+        self.assertFalse(ground.water)
+        self.assertFalse(any(ground.kind.get(q) == 'tarmac' for q in ground.bridge),
+                         'bridge columns are not ours to surface')
+
+
 if __name__ == '__main__':
     unittest.main()
