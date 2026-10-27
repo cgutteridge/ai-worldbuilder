@@ -9,7 +9,8 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
                           (ground_sources.py). Shade and canopy hide the ground, so those
                           columns take the lawn/paving around them.
   HOW HIGH?               composite lidar surface Y (rules/evidence-order.md).
-                          Only single-column ±1 spikes on hard surfaces are levelled.
+                          Only single-column ±1 spikes on hard surfaces are levelled;
+                          narrow pits (≥3 below their rim, ≤5 wide) are raised to the rim (#155).
   WHAT BLOCK?             One palette, from CRAFTSMANSHIP §3a: tarmac gray_concrete (centre dashes
                           white_concrete, public-road edge smooth_stone), light paving
                           light_gray_concrete, brick paving polished_granite, grass grass_block.
@@ -453,6 +454,11 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
 
 
 # --- 3. how high -------------------------------------------------------------------------
+PIT_DROP = 3            # min blocks below the surrounding rim before a pit is raised (#155)
+PIT_MAX_WIDTH = 5       # max narrow-side span of a fillable pit (3-wide band fits; ponds do not)
+PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
+
+
 def level_spikes(live: dict, kind: dict, fp: set) -> dict:
     """Surface Y per column. Only an isolated ±1 on a hard surface is levelled to its neighbours."""
     ys = {q: v[0] for q, v in live.items()}
@@ -469,6 +475,71 @@ def level_spikes(live: dict, kind: dict, fp: set) -> dict:
                 out[q] = med
                 n += 1
     out['_levelled'] = n
+    return out
+
+
+def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
+    """Raise narrow pits among free columns to the surrounding rim (#155).
+
+    A pit is a connected set of columns whose live surface sits at least ``PIT_DROP``
+    below nearby rim columns, and whose narrower bounding-box side is at most
+    ``PIT_MAX_WIDTH``. Water, bank, bridge and structure tops are already absent from
+    ``live``; columns next to a building footprint are left alone. Wide cuttings and
+    ponds stay at their live height.
+
+    @param live: ``{(x, z): (y, block)}`` free columns
+    @param kind: surface kind per column (kerb / mark columns are never raised)
+    @param fp: building footprint columns
+    @param ys: optional heights from :func:`level_spikes` (preserves ``_levelled``)
+    @returns: height map with pit columns raised; ``_pits_filled`` counts raised columns
+    """
+    heights = {q: v[0] for q, v in live.items()}
+    out = dict(ys) if ys is not None else dict(heights)
+    for q, y in heights.items():
+        out.setdefault(q, y)
+
+    candidates: set = set()
+    for q, y in heights.items():
+        if kind.get(q) in ('kerb', 'mark'):
+            continue
+        if any((q[0] + a, q[1] + b) in fp for a in (-1, 0, 1) for b in (-1, 0, 1)):
+            continue
+        rim = []
+        for a in range(-PIT_RIM_REACH, PIT_RIM_REACH + 1):
+            for b in range(-PIT_RIM_REACH, PIT_RIM_REACH + 1):
+                if a == 0 and b == 0:
+                    continue
+                n = (q[0] + a, q[1] + b)
+                if n not in heights or n in fp:
+                    continue
+                if heights[n] >= y + PIT_DROP:
+                    rim.append(heights[n])
+        if len(rim) >= 4:
+            candidates.add(q)
+
+    filled = 0
+    for comp in _components(candidates):
+        xs = [c[0] for c in comp]
+        zs = [c[1] for c in comp]
+        narrow = min(max(xs) - min(xs) + 1, max(zs) - min(zs) + 1)
+        if narrow > PIT_MAX_WIDTH:
+            continue
+        rim_ys = []
+        for q in comp:
+            for a in range(-PIT_RIM_REACH, PIT_RIM_REACH + 1):
+                for b in range(-PIT_RIM_REACH, PIT_RIM_REACH + 1):
+                    n = (q[0] + a, q[1] + b)
+                    if n in comp or n not in heights or n in fp:
+                        continue
+                    rim_ys.append(heights[n])
+        if not rim_ys:
+            continue
+        target = sorted(rim_ys)[len(rim_ys) // 2]
+        for q in comp:
+            if heights[q] <= target - PIT_DROP:
+                out[q] = target
+                filled += 1
+    out['_pits_filled'] = filled
     return out
 
 
@@ -521,9 +592,11 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     kind, how = classify(cell, live, vmap, rgb, fp)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     ys = level_spikes(live, kind, fp)
+    ys = level_pits(live, kind, fp, ys)
     stats = Counter({
         'columns': len(live),
-        'levelled': ys.pop('_levelled'),
+        'levelled': ys.pop('_levelled', 0),
+        'pits_filled': ys.pop('_pits_filled', 0),
         'vector_map_features': getattr(vmap, 'n_features', 0),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})

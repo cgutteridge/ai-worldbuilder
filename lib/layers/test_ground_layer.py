@@ -167,6 +167,47 @@ class TestGroundDecisions(unittest.TestCase):
         kind[(2, 2)] = 'grass'
         self.assertEqual(gl.level_spikes(live, kind, set())[(2, 2)], 51)
 
+    def test_narrow_pit_is_raised_wide_depression_is_not(self):
+        """#155: a 3-wide deep pit fills to the rim; a wide sunken area stays low."""
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+
+        # 20×12 patch of level ground at y=44; a 3-wide 8-deep pit; a 10-wide depression.
+        live = {(x, z): (44, 'grass_block') for x in range(20) for z in range(12)}
+        pit = {(x, z) for x in (5, 6, 7) for z in range(2, 10)}
+        wide = {(x, z) for x in range(10, 20) for z in range(2, 10)}
+        for q in pit:
+            live[q] = (36, 'grass_block')
+        for q in wide:
+            live[q] = (36, 'grass_block')
+        kind = {q: 'grass' for q in live}
+        ys = gl.level_spikes(live, kind, set())
+        ys = gl.level_pits(live, kind, set(), ys)
+        for q in pit:
+            self.assertEqual(ys[q], 44, q)
+        for q in wide:
+            self.assertEqual(ys[q], 36, q)
+
+        # MemoryBlocks: raise fill under the new top for the narrow pit only.
+        blocks = {}
+        for (x, z), (y, b) in live.items():
+            blocks[(x, y, z)] = b
+            for yy in range(y - 2, y):
+                blocks[(x, yy, z)] = 'dirt'
+        world = World(store=MemoryBlocks(blocks, default='air'))
+        plan = Plan('test_pit')
+        for (x, z), (old, _) in live.items():
+            gy = ys[(x, z)]
+            plan.set(x, gy, z, 'grass_block')
+            for y in range(old + 1, gy):
+                plan.set(x, y, z, gl.RAISE_FILL)
+        for x, z in ((6, 5),):
+            self.assertEqual(plan.cells[(x, 44, z)], 'minecraft:grass_block')
+            self.assertEqual(plan.cells[(x, 37, z)], 'minecraft:dirt')
+        for x, z in ((15, 5),):
+            self.assertEqual(plan.cells[(x, 36, z)], 'minecraft:grass_block')
+            self.assertNotIn((x, 37, z), plan.cells)
+
     def test_path_is_carried_straight_across_shade(self):
         # a 3-wide brick path along x with a 9-long shaded gap; lawn above and below
         kind = {(x, z): 'brick' for x in list(range(0, 8)) + list(range(17, 25)) for z in (10, 11, 12)}
