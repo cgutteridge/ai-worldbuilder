@@ -736,7 +736,7 @@ class ZoneMathTest(unittest.TestCase):
         dsm = np.full((6, 6), 41.0)
         dsm[:, 3:] = 50.0
         zz, xx = np.mgrid[0:6, 0:6]
-        readable, zone, levels, axis = F.assign_roof_zones(
+        readable, zone, levels, axis, _dropped = F.assign_roof_zones(
             dsm, outline, [41, 50], xx, zz, bucket=3, axis_deg=0.0,
         )
         self.assertEqual(levels, [41, 50])
@@ -759,12 +759,54 @@ class ZoneMathTest(unittest.TestCase):
         ground_y[:, 3:] = 40            # nDSM ~10 m — keep
         zz, xx = np.mgrid[0:4, 0:6]
         with mock.patch('world_frame.y_to_metres_aod', side_effect=lambda y: float(y)):
-            readable, zone, _levels, _axis = F.assign_roof_zones(
+            readable, zone, _levels, _axis, _dropped = F.assign_roof_zones(
                 dsm, outline, [50], xx, zz, bucket=3, axis_deg=0.0, ground_y=ground_y,
             )
         self.assertFalse(readable[:, :3].any(), 'bare-ground half must be dropped')
         self.assertTrue(readable[:, 3:].all(), 'mass half must remain')
         self.assertEqual(int(readable.sum()), 4 * 3)
+
+    def test_drop_small_disconnected_footprint_pieces(self):
+        """#153: drop 1- and 2-cell islands; keep a spur that touches the main mass."""
+        # Grid [z, x]; world coords xs=col, zs=row.
+        # Main 4×4 at rows 2..5, cols 2..5; touching 2-cell spur at cols 6..7 row 2;
+        # island 1-cell at (0,0); island 2-cell at col 0 rows 6..7 (gap from main).
+        mask = np.zeros((8, 8), dtype=bool)
+        mask[2:6, 2:6] = True
+        mask[2, 6] = True
+        mask[2, 7] = True
+        mask[0, 0] = True
+        mask[6, 0] = True
+        mask[7, 0] = True
+        zz, xx = np.mgrid[0:8, 0:8]
+        kept, dropped = F.drop_small_footprint_pieces(mask, xx, zz)
+        self.assertTrue(kept[2:6, 2:6].all(), 'main mass kept')
+        self.assertTrue(kept[2, 6] and kept[2, 7], 'touching spur kept')
+        self.assertFalse(kept[0, 0], '1-cell island dropped')
+        self.assertFalse(kept[6, 0] or kept[7, 0], '2-cell island dropped')
+        self.assertEqual(int(kept.sum()), 4 * 4 + 2)
+        counts = sorted(d['n'] for d in dropped)
+        self.assertEqual(counts, [1, 2])
+        for d in dropped:
+            self.assertIn('at', d)
+            self.assertRegex(
+                F.dropped_footprint_line('A', d),
+                rf'dropped disconnected footprint A n={d["n"]} at ',
+            )
+        # Through the zone pipeline: mass intersect leaves the same islands.
+        outline = np.ones((8, 8), dtype=bool)
+        dsm = np.full((8, 8), 50.0)
+        ground_y = np.full((8, 8), 48)  # bare (< 3 m) everywhere…
+        ground_y[mask] = 40             # …except the intended mass cells
+        with mock.patch('world_frame.y_to_metres_aod', side_effect=lambda y: float(y)):
+            readable, _zone, _levels, _axis, pipe_dropped = F.assign_roof_zones(
+                dsm, outline, [50], xx, zz, bucket=3, axis_deg=0.0, ground_y=ground_y,
+            )
+        self.assertTrue(readable[2:6, 2:6].all())
+        self.assertTrue(readable[2, 6] and readable[2, 7])
+        self.assertFalse(readable[0, 0])
+        self.assertFalse(readable[6, 0] or readable[7, 0])
+        self.assertEqual(sorted(d['n'] for d in pipe_dropped), [1, 2])
 
 
 class ZoneBuildTest(unittest.TestCase):
