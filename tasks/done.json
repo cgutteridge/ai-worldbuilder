@@ -1166,6 +1166,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features. Also the fix for the planning-order issue (I-007, snag S-010): the check is that next on a fresh cell offers the proposed buildings before ground. #128 alone does not meet it. Done 2026-10-27: next returns needs-feature-plan when ground skipped footprints lack plan_feature. Merged task/140-next-unplanned-footprints."
+    },
+    {
+      "id": 131,
+      "title": "Window panes need a solid frame",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: Build.windows punches glass_pane into any listed face with no framing check (doors have door_frame_issues; windows have no equivalent), so on stepped or diagonal walls a pane meets open air. Covers issue I-013 (glass panes on diagonal walls have no frame), snag S-007. Scope: place a pane only where the finished build has solid wall on both sides along the wall line and above and below; otherwise keep the wall block. The dry run prints the count of panes skipped this way, per face. Done when dry runs for susu_w33830305 and Jubilee report no pane beside air. Check line S-007: every glass pane on SUSU's and Jubilee's diagonal walls has solid blocks all round it. Touches feature_build.py like #125, #126 and #130; sequence them. One regression test only; no new gates or lints. UPDATE 2026-10-27: the sequencing clause above is stale (#125, #126 and #130 landed); sequence against #146, #149 and #132 instead. Widen scope to snag S-022 on the same issue: a pane whose neighbours are solid on three axes reacts to every frame and looks odd, so decide per case between a clean framed pane and a deliberate corner window (a pane at a true outside corner, where the effect is wanted), and never place a window below the outside ground level. Check line S-022: no pane wrapped by solid on all sides unless it is a deliberate corner window; no window whose sill is below the ground outside it (Jubilee near 18-A shows the pits). Done 2026-10-27: panes need solid frame; roof before windows so eave lintels; dry-run skip counts. Merged task/131-window-pane-frames."
     }
   ]
 }
