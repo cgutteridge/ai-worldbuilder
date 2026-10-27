@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 156,
+  "nextTaskId": 157,
   "tasks": [
     {
       "id": 143,
@@ -10,7 +10,16 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference. Unblocked after #146: acceptance-only \u2014 fill facade_plan on live specs, re-apply, confirm 0 door_to_wall and leaf counts; close if #146 already satisfies. Discard premature task/143-door-vestibule branch."
+      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference. Unblocked after #146: acceptance-only \u2014 fill facade_plan on live specs, re-apply, confirm 0 door_to_wall and leaf counts; close if #146 already satisfies. Discard premature task/143-door-vestibule branch. Re-check 2026-10-27 after redesign with facade_plan entrances: door patrol flags 11 of 12 doors door_to_wall (susu 6 seen, rest not itemised); door frame guard also rejects every cell within ~14 blocks of the Jubilee portal on its rotated stepped wall, so that door is placed off the portal."
+    },
+    {
+      "id": 156,
+      "title": "Cell extract fetches water and waterway, and ground ignores culverts and tunnels",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: the standard cell extract pulls buildings, highways and landuse only, so natural=water and waterway never reach the vector map; ground_sources.OSMGround sees 0 water columns and the water-body feature (#148) has no outline. Found 2026-10-27 on a mapped formal pool that was in no cached extract (a local-PBF query for the campus found it at once). Deliver: (1) add the water and waterway presets to the standard per-cell extract step, so a new cell or world gets them without a manual run; (2) in ground_sources._line skip every underground waterway, not only tunnel=yes or level<0: also tunnel=culvert (any tunnel value), layer<0 and covered=yes; do the same for polygons if tagged; (3) hand mapped water polygons to the water-body feature as its outline source. Proof: unit test on OSMGround with a culvert line (tunnel=culvert, layer=-1) and a stream line giving only the stream columns, and a natural=water polygon giving water columns; no live-world test. Helps: any cell with ponds, streams or fountains, all worlds."
     }
   ]
 }
