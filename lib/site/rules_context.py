@@ -195,6 +195,7 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
             ReadingItem('rules/frontage-and-evidence.md', 'before house/plot plan'),
             ReadingItem('rules/craftsmanship.md', 'full'),
             ReadingItem('rules/feature-builds.md', 'non-house building features'),
+            ReadingItem('rules/water-body-builds.md', 'pond / water-body features'),
             *_IMAGERY,
         )
         if cell_sources_rel:

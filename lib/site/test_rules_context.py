@@ -57,6 +57,7 @@ class RulesContextTests(unittest.TestCase):
         paths = {r.path for r in plan.readings}
         self.assertIn('rules/frontage-and-evidence.md', paths)
         self.assertIn('rules/feature-builds.md', paths)
+        self.assertIn('rules/water-body-builds.md', paths)
 
 
 if __name__ == '__main__':
