@@ -39,9 +39,20 @@ SURFACE_KIND = {
     'concrete:plates': 'paving', 'sett': 'brick', 'bricks': 'brick', 'cobblestone': 'brick',
     'gravel': 'gravel', 'fine_gravel': 'gravel', 'compacted': 'gravel', 'unpaved': 'gravel',
     'dirt': 'dirt', 'ground': 'dirt', 'earth': 'dirt', 'grass': 'grass', 'pebblestone': 'gravel',
+    'tartan': 'tarmac', 'artificial_turf': 'grass',
 }
 # Priority: a higher number wins where two features cover one column.
-PRI = {'wood': 20, 'grass': 30, 'pedestrian': 40, 'parking': 50, 'path': 60, 'service': 70, 'road': 90}
+# ``pitch`` is leisure pitch/playground/track and landuse=construction (#158): hard enough
+# that classify() treats them as mapped surface (pri >= 40), above soft grass/wood.
+PRI = {
+    'wood': 20, 'grass': 30, 'pedestrian': 40, 'pitch': 45,
+    'parking': 50, 'path': 60, 'service': 70, 'road': 90,
+}
+# sport=* values that imply a hard court when surface=* is absent (#158).
+_HARD_SPORTS = frozenset({
+    'tennis', 'basketball', 'multi', 'netball', 'handball', 'futsal',
+    'skateboard', 'roller_skating', 'athletics', 'running',
+})
 ROAD_CLASSES = ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential')
 LANE_WIDTH = 3.0                      # metres ≈ blocks, one traffic lane
 DEFAULT_LANES = 2
@@ -252,6 +263,66 @@ def water_way_ref(t: dict) -> str | None:
     return 'w' + str(wid).lstrip('w')
 
 
+def _painted_area_tags(t: dict) -> bool:
+    """True when polygon tags are a leisure/landuse/natural area OSMGround paints (#158)."""
+    return (
+        t.get('leisure') in ('pitch', 'playground', 'track')
+        or t.get('landuse') in ('construction', 'allotments')
+        or t.get('natural') in ('wetland', 'grassland', 'shrubbery')
+    )
+
+
+def area_floor_kind(t: dict) -> str | None:
+    """Ground kind for a leisure / construction / allotment / soft-natural polygon (#158).
+
+    Prefers ``surface=*`` via ``SURFACE_KIND``. When surface is absent, leisure=pitch
+    uses ``sport=*`` (hard courts → tarmac, else grass); playground defaults to paving;
+    track defaults to tarmac (tartan); construction and allotments to dirt; wetland /
+    grassland / shrubbery to grass. Returns ``None`` when the tags are not an area
+    this reader paints (including landuse=residential/retail/commercial/industrial).
+
+    @param t: OSM tags for one polygon feature.
+    @returns: Ground kind string, or ``None`` if unread.
+    """
+    if not _painted_area_tags(t):
+        return None
+    if surf := SURFACE_KIND.get(t.get('surface') or ''):
+        return surf
+    leisure = t.get('leisure')
+    if leisure == 'pitch':
+        sports = {s.strip() for s in (t.get('sport') or '').split(';') if s.strip()}
+        if sports & _HARD_SPORTS:
+            return 'tarmac'
+        return 'grass'
+    if leisure == 'playground':
+        return 'paving'
+    if leisure == 'track':
+        return 'tarmac'
+    if t.get('landuse') in ('construction', 'allotments'):
+        return 'dirt'
+    return 'grass'  # wetland / grassland / shrubbery
+
+
+def area_floor_pri(t: dict) -> int | None:
+    """Priority for an area painted by ``area_floor_kind`` (#158).
+
+    Pitch / playground / track / construction use ``PRI['pitch']`` so classify() keeps
+    them as mapped surface. Allotments, wetland and grassland use ``PRI['grass']``;
+    shrubbery uses ``PRI['wood']`` (same band as scrub).
+
+    @param t: OSM tags for one polygon feature.
+    @returns: Priority int, or ``None`` when the area is unread.
+    """
+    if not _painted_area_tags(t):
+        return None
+    leisure = t.get('leisure')
+    if leisure in ('pitch', 'playground', 'track') or t.get('landuse') == 'construction':
+        return PRI['pitch']
+    if t.get('natural') == 'shrubbery':
+        return PRI['wood']
+    return PRI['grass']
+
+
 def road_width(t: dict) -> float:
     """Carriageway width in blocks from tags: width=*, else lanes (+ painted cycle lanes)."""
     if t.get('width'):
@@ -351,6 +422,10 @@ class OSMGround:
             self._put(poly_cells(polys), 'grass', PRI['grass'])
         elif t.get('natural') in ('wood', 'scrub') or t.get('landuse') == 'forest':
             self._put(poly_cells(polys), 'grass', PRI['wood'])
+        elif (floor := area_floor_kind(t)) is not None:
+            # leisure pitch/playground/track; landuse construction/allotments;
+            # natural wetland/grassland/shrubbery — surface=* / sport=* choose the floor (#158).
+            self._put(poly_cells(polys), floor, area_floor_pri(t))
         if t.get('barrier') == 'hedge':
             for rings in polys:
                 self.hedge |= set(line_cells(rings[0], 0.6))
