@@ -37,7 +37,9 @@ def plan_name(tx: int, tz: int) -> str:
 JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
 NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 # Ground kinds the barrier pass must not sit on or straddle (live surface, not only map way columns).
-_CARRIAGE_KINDS = frozenset({'tarmac', 'paving', 'mark', 'kerb'})
+# Brick paths count like roads (#144): hedges must not stand on polished_granite garden paths.
+_CARRIAGE_KINDS = frozenset({'tarmac', 'paving', 'brick', 'mark', 'kerb'})
+_NEAR_CARRIAGE = frozenset({'tarmac', 'paving', 'brick'})
 
 
 def column_ground_kind(world: World, x: int, z: int) -> str | None:
@@ -51,7 +53,7 @@ def column_ground_kind(world: World, x: int, z: int) -> str | None:
 
 
 def on_carriageway(world: World, x: int, z: int) -> bool:
-    """True when a hedge/fence column would sit on the road or within two blocks of carriageway."""
+    """True when a hedge/fence column would sit on road/brick path or within two blocks of one."""
     kind = column_ground_kind(world, x, z)
     if kind in _CARRIAGE_KINDS:
         return True
@@ -60,7 +62,7 @@ def on_carriageway(world: World, x: int, z: int) -> bool:
             if dx == 0 and dz == 0:
                 continue
             nk = column_ground_kind(world, x + dx, z + dz)
-            if nk in ('tarmac', 'paving'):
+            if nk in _NEAR_CARRIAGE:
                 return True
     return False
 

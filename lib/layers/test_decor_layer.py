@@ -127,6 +127,35 @@ class TestPlaceFurniture(unittest.TestCase):
             self.assertEqual(found[(10, self.surface_y + dy, 20)], block)
 
 
+class TestOnCarriageway(unittest.TestCase):
+    """Barriers must not sit on roads or brick paths (#144)."""
+
+    def test_brick_path_column_is_carriageway(self):
+        """Live brick paving (garden path) is refused like tarmac/paving."""
+        with mock.patch.object(dl, 'column_ground_kind', side_effect=lambda w, x, z: 'brick'):
+            self.assertTrue(dl.on_carriageway(mock.Mock(), 10, 20))
+
+    def test_grass_away_from_road_is_not_carriageway(self):
+        kinds = {(10, 20): 'grass', (11, 20): 'grass', (9, 20): 'grass',
+                 (10, 21): 'grass', (10, 19): 'grass'}
+
+        def kind(_w, x, z):
+            return kinds.get((x, z))
+
+        with mock.patch.object(dl, 'column_ground_kind', side_effect=kind):
+            self.assertFalse(dl.on_carriageway(mock.Mock(), 10, 20))
+
+    def test_near_brick_path_is_carriageway(self):
+        """Within two blocks of brick paving counts, same as paving/tarmac."""
+        kinds = {(10, 20): 'grass', (12, 20): 'brick'}
+
+        def kind(_w, x, z):
+            return kinds.get((x, z))
+
+        with mock.patch.object(dl, 'column_ground_kind', side_effect=kind):
+            self.assertTrue(dl.on_carriageway(mock.Mock(), 10, 20))
+
+
 class TestEmptyDecorApply(unittest.TestCase):
     """Part (5): --apply with nothing to place still records the decor pass."""
 
