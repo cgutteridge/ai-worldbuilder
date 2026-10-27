@@ -8,9 +8,10 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
                           wood), then the z19 aerial for anything the map does not describe
                           (ground_sources.py). Shade and canopy hide the ground, so those
                           columns take the lawn/paving around them.
-  HOW HIGH?               composite lidar surface Y (rules/evidence-order.md).
-                          Only single-column ±1 spikes on hard surfaces are levelled;
-                          narrow pits (≥3 below their rim, ≤5 wide) are raised to the rim (#155).
+  HOW HIGH?               composite lidar ``base`` Y (rules/evidence-order.md, #167).
+                          The live surface is never the height source — only a fill-from
+                          and a fallback when lidar base is missing. Neighbour spike/pit
+                          levelling applies only to that lidar-missing remainder (#155).
   WHAT BLOCK?             One palette, from CRAFTSMANSHIP §3a: tarmac gray_concrete (centre dashes
                           white_concrete, public-road edge smooth_stone), light paving
                           light_gray_concrete, brick paving polished_granite, grass grass_block.
@@ -459,6 +460,58 @@ PIT_MAX_RADIUS = 2      # max Chebyshev dist from a pit cell to outside the comp
 PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
 
 
+def lidar_base_map(columns, maps=None) -> dict:
+    """Lidar ground ``base`` Y for each column via ``lidar_heightmap.Maps`` (#167).
+
+    Lookups load neighbouring cells when a column sits on a cell edge. Columns
+    whose base is 0 (empty / missing) are omitted so callers can fall back to
+    the live surface for height only when lidar is absent.
+
+    @param columns: iterable of ``(x, z)``
+    @param maps: optional ``Maps`` (tests / injected evidence); default is the
+        shared lidar reference
+    @returns: ``{(x, z): base_y}`` for columns with a positive lidar base
+    """
+    from lidar_heightmap import Maps
+    m = maps if maps is not None else Maps()
+    out = {}
+    for x, z in columns:
+        try:
+            base = int(m.get(x, z, 'base'))
+        except (LookupError, KeyError, IndexError, TypeError, ValueError):
+            continue
+        if base > 0:
+            out[(x, z)] = base
+    return out
+
+
+def ground_heights(live: dict, lidar_ys: dict) -> dict:
+    """Target surface Y per free column: lidar base is HOW HIGH (#167).
+
+    The live game surface may sit below a correct lidar ground (wrong ghost
+    baseline, unfinished fill). Those columns rise to lidar. A real depression
+    that lidar also reports stays low. Neighbour-rim pit / spike levelling is
+    not applied on top of lidar — a wide wrong-baseline void still rises.
+
+    When lidar base is missing (absent or 0), the live surface Y is kept.
+
+    @param live: ``{(x, z): (y, block)}`` free columns
+    @param lidar_ys: ``{(x, z): base_y}`` from :func:`lidar_base_map`
+    @returns: height map; ``_from_lidar`` counts columns that used lidar base
+    """
+    out = {}
+    from_lidar = 0
+    for q, (y, _b) in live.items():
+        base = lidar_ys.get(q) or 0
+        if base > 0:
+            out[q] = int(base)
+            from_lidar += 1
+        else:
+            out[q] = y
+    out['_from_lidar'] = from_lidar
+    return out
+
+
 def _pit_chebyshev_radius(comp: set) -> int:
     """Largest Chebyshev distance from any cell in ``comp`` to a cell outside it.
 
@@ -516,13 +569,15 @@ def level_spikes(live: dict, kind: dict, fp: set) -> dict:
 def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
     """Raise narrow pits among free columns to the surrounding rim (#155 / #160).
 
-    A pit is a connected set of columns whose live surface sits at least ``PIT_DROP``
-    below nearby rim columns, and whose Chebyshev radius (distance from any pit
-    cell to outside the component) is at most ``PIT_MAX_RADIUS``. Water, bank,
-    bridge and structure tops are already absent from ``live``. Footprint columns
-    are never raised and never used as rim (wall-side voids beside a building
-    still fill to the outside grade — #160 / S-019). Wide cuttings and ponds
-    stay at their live height.
+    Fallback only when lidar ``base`` is missing for a column (#167): with lidar
+    present, :func:`ground_heights` already sets HOW HIGH. A pit is a connected
+    set of columns whose live surface sits at least ``PIT_DROP`` below nearby rim
+    columns, and whose Chebyshev radius (distance from any pit cell to outside
+    the component) is at most ``PIT_MAX_RADIUS``. Water, bank, bridge and
+    structure tops are already absent from ``live``. Footprint columns are never
+    raised and never used as rim (wall-side voids beside a building still fill to
+    the outside grade — #160 / S-019). Wide cuttings and ponds stay at their
+    live height.
 
     @param live: ``{(x, z): (y, block)}`` free columns
     @param kind: surface kind per column (kerb / mark columns are never raised)
@@ -623,12 +678,26 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     live, skipped = free_columns(cell, world, vmap, fp, owned_cols)
     kind, how = classify(cell, live, vmap, rgb, fp)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
-    ys = level_spikes(live, kind, fp)
-    ys = level_pits(live, kind, fp, ys)
+    # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
+    # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
+    lidar_ys = lidar_base_map(live, ev.get('lidar_maps'))
+    ys = ground_heights(live, lidar_ys)
+    from_lidar = ys.pop('_from_lidar', 0)
+    missing = {q: live[q] for q in live if q not in lidar_ys}
+    levelled = pits_filled = 0
+    if missing:
+        spike_ys = level_spikes(missing, kind, fp)
+        levelled = spike_ys.pop('_levelled', 0)
+        pit_ys = level_pits(missing, kind, fp, spike_ys)
+        pits_filled = pit_ys.pop('_pits_filled', 0)
+        for q, y in pit_ys.items():
+            if q not in lidar_ys:
+                ys[q] = y
     stats = Counter({
         'columns': len(live),
-        'levelled': ys.pop('_levelled', 0),
-        'pits_filled': ys.pop('_pits_filled', 0),
+        'from_lidar': from_lidar,
+        'levelled': levelled,
+        'pits_filled': pits_filled,
         'vector_map_features': getattr(vmap, 'n_features', 0),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
