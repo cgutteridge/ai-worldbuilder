@@ -35,9 +35,13 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  One row list per exposed face (every storey the evidence
-                 shows). Dry run prints glazed share for every exposed face
-                 and storey; faces with no facade rows are marked
-                 ``no evidence read`` (report only, not a gate).
+                 shows). A pane is placed only when the finished build has
+                 non-air on both sides along the wall line and above and
+                 below; otherwise the wall block stays. Dry run prints how
+                 many panes were skipped that way per face, plus glazed
+                 share for every exposed face and storey; faces with no
+                 facade rows are marked ``no evidence read`` (report only,
+                 not a gate).
   exclude        optional per-label boxes cut out of the map footprint (outline larger
                  than the real building, or neighbours sharing the outline):
                    {"<label>": [[x0, z0, x1, z1], ...]}   inclusive block coords
@@ -84,7 +88,7 @@ import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
 from site_kit import (  # noqa: E402
-    Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs,
+    Plan, apply, bid, fresh_planning_world, guard_door_frames, guard_roof_jogs,
     nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
@@ -876,9 +880,60 @@ class Build:
                 self.owner[c] = k
         self.by_no_all = by_no
         self._zone_pad_lines: list[str] = []
+        self._pane_skips: dict[tuple[str, str], int] = {}
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
+
+    def _is_solid(self, x: int, y: int, z: int) -> bool:
+        """True when the finished plan (or live world) has a non-air block here.
+
+        @param x: block x
+        @param y: block y
+        @param z: block z
+        @returns: whether the cell is a framing solid (not air)
+        """
+        st = self.p.cells.get((x, y, z))
+        if st is None:
+            st = self.live.block(x, y, z)
+        return bool(st) and bid(st)[10:] not in ('air', 'cave_air', 'void_air')
+
+    def _pane_framed(self, x: int, y: int, z: int, face: str) -> bool:
+        """True when a pane at ``(x,y,z)`` has solid both sides along the wall and above/below.
+
+        Wall-line sides follow the face: E/W for N/S faces, N/S for E/W faces.
+        Neighbour glass (or other non-air) counts as solid so paired panes stay framed.
+
+        @param x: pane x
+        @param y: pane y
+        @param z: pane z
+        @param face: ``N``/``S``/``E``/``W`` the pane sits on
+        @returns: whether the opening is framed
+        """
+        lat = ((1, 0), (-1, 0)) if face in 'NS' else ((0, 1), (0, -1))
+        if not all(self._is_solid(x + dx, y, z + dz) for dx, dz in lat):
+            return False
+        return self._is_solid(x, y - 1, z) and self._is_solid(x, y + 1, z)
+
+    def _note_pane_skip(self, label: str, face: str) -> None:
+        """Count one unframed pane skipped on ``face`` of ``label``.
+
+        @param label: feature label
+        @param face: ``N``/``S``/``E``/``W``
+        """
+        key = (label, face)
+        self._pane_skips[key] = self._pane_skips.get(key, 0) + 1
+
+    def pane_frame_skip_report(self) -> list[str]:
+        """Dry-run lines for panes left as wall because they lacked a solid frame.
+
+        @returns: human-readable lines ``<label> face <F>: <n> panes skipped (no frame)``
+        """
+        return [
+            f'{no} face {face}: {n} panes skipped (no frame)'
+            for (no, face), n in sorted(self._pane_skips.items())
+            if n
+        ]
 
     def kset(self, x, y, z, st):
         """Set a stoop/step cell; with keep_edits it survives the earlier-build clash filter."""
@@ -1530,7 +1585,11 @@ class Build:
         return roof.get(cell)
 
     def windows(self, f: Feature):
-        """Punch openings from the facade table, or placeholder pier rhythm if absent."""
+        """Punch openings from the facade table, or placeholder pier rhythm if absent.
+
+        Panes need a solid frame (both wall-line sides plus above and below); otherwise
+        the wall block is kept and the skip is counted for the dry-run report.
+        """
         facades = (self.spec.get('facades') or {}).get(f.no)
         if not facades:
             self._windows_placeholder(f)
@@ -1560,7 +1619,12 @@ class Build:
                             if ry is not None and y >= ry:
                                 continue
                             if role == 'W' and dy >= STOREY_H - glazed_h:
-                                self.set(c[0], y, c[1], pane(axis))
+                                if self._pane_framed(c[0], y, c[1], face):
+                                    self.set(c[0], y, c[1], pane(axis))
+                                else:
+                                    self._note_pane_skip(f.no, face)
+                                    if wall_mat != self.wall:
+                                        self.set(c[0], y, c[1], wall_mat)
                             elif wall_mat != self.wall:
                                 self.set(c[0], y, c[1], wall_mat)
 
@@ -1593,7 +1657,10 @@ class Build:
                 y = b + s * STOREY_H + 2
                 if ry is not None and y >= ry:
                     continue
-                self.set(c[0], y, c[1], pane(axis))
+                if self._pane_framed(c[0], y, c[1], d):
+                    self.set(c[0], y, c[1], pane(axis))
+                else:
+                    self._note_pane_skip(f.no, d)
 
     def glazed_share_report(self) -> list[str]:
         """Glazed share of each storey on every exposed face (dry-run photo compare).
@@ -1769,10 +1836,14 @@ class Build:
                 self.shell_zoned(k, f)
             else:
                 self.shell(k, f)
+        self._pane_skips = {}
         for k, f in enumerate(self.features):
             self.doors(k, f)
-            self.windows(f)
+        # Roof before windows so the eave slab can lintel the top glazed row
+        # (_pane_framed needs solid above; wall shell stops at b+height-1).
         self.roof()
+        for f in self.features:
+            self.windows(f)
         if self.idx is not None:
             self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
@@ -1800,6 +1871,8 @@ class Build:
             if getattr(f, 'zone_roof', None):
                 bits.append(f'zones={sorted(set(f.zone_level.values()))}')
             print(*bits)
+        for line in self.pane_frame_skip_report():
+            print(line)
         for line in self.glazed_share_report():
             print(line)
         for line in roof_zone_colour_lines(self.features, aerial_rgb=self.aerial_rgb):

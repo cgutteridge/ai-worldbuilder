@@ -442,6 +442,77 @@ class FacadeWindowsTest(unittest.TestCase):
                 else:
                     self.assertIn('no evidence read', line, line)
 
+    def test_unframed_panes_on_stepped_face_kept_as_wall(self):
+        """#131 / S-007: pane only with solid both sides along the wall and above/below."""
+        # Stair-step south edge: at each step the new south cell has air on one
+        # lateral neighbour along the wall line, so that pane must stay wall.
+        cells = set()
+        for x in range(10, 18):
+            z_max = 24 + (x - 10) // 2
+            for z in range(20, z_max + 1):
+                cells.add((x, z))
+        facades = {
+            'A': {'S': [{'storey': 1, 'glazed_h': 2, 'pier': 0, 'rhythm': 'W'}]},
+        }
+        spec = self.spec(facades)
+        spec['storeys'] = {'A': 1}
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        out = buf.getvalue()
+        self.assertRegex(out, r'A face S: \d+ panes skipped \(no frame\)')
+        skip_line = next(ln for ln in out.splitlines() if 'panes skipped' in ln and 'face S' in ln)
+        skipped_n = int(skip_line.split('panes skipped')[0].rsplit(':', 1)[-1].strip())
+        self.assertGreater(skipped_n, 0, skip_line)
+
+        air = {'air', 'cave_air', 'void_air'}
+
+        def solid(x, y, z):
+            st = plan.cells.get((x, y, z))
+            if st is None:
+                st = _StoneWorld().block(x, y, z)
+            return bool(st) and st.split('[')[0].split(':')[-1] not in air
+
+        glass = [(x, y, z) for (x, y, z), st in plan.cells.items() if 'glass_pane' in st]
+        self.assertTrue(glass, 'expected some framed panes on straight stretches')
+        for x, y, z in glass:
+            for nx, ny, nz in ((x - 1, y, z), (x + 1, y, z), (x, y - 1, z), (x, y + 1, z)):
+                self.assertTrue(
+                    solid(nx, ny, nz),
+                    f'pane at {(x, y, z)} missing solid frame at {(nx, ny, nz)}',
+                )
+        # Step cell (12, 25): south-exposed with air at (11, *, 25) — must stay wall.
+        floor = 50
+        for dy in (1, 2):
+            st = plan.cells.get((12, floor + dy, 25), '')
+            self.assertNotIn('glass_pane', st, f'unframed step cell glazed: {st}')
+
+    def test_one_storey_glazed_h1_gets_glass_under_eave(self):
+        """#131: top-of-wall pane needs the eave as lintel; glazed_h=1 must still glaze."""
+        # Rectangle so lateral neighbours are solid; only the above-check can fail.
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        facades = {
+            'A': {'S': [{'storey': 1, 'glazed_h': 1, 'pier': 0, 'rhythm': 'W'}]},
+        }
+        spec = self.spec(facades)
+        spec['storeys'] = {'A': 1}
+        plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        floor = 50
+        eave_y = floor + F.STOREY_H  # shell top is eave_y - 1; flat roof slab here
+        top_y = eave_y - 1
+        glass = [
+            (x, y, z) for (x, y, z), st in plan.cells.items()
+            if z == 24 and y == top_y and 'glass_pane' in st
+        ]
+        self.assertTrue(
+            glass,
+            'expected glazed_h=1 glass on the top wall row under the eave lintel',
+        )
+        for x, y, z in glass:
+            eave = plan.cells.get((x, eave_y, z), '')
+            self.assertTrue(eave and 'air' not in eave.split('[')[0],
+                            f'pane at {(x, y, z)} needs eave solid above, got {eave!r}')
+
 
 class DoorSpecBuildTest(unittest.TestCase):
     """Seams: build→Plan with per-portal doors, hinge pairing, framing, dry-run print."""
@@ -551,7 +622,8 @@ class DoorSpecBuildTest(unittest.TestCase):
                 world=_StoneWorld(),
             )
         out = buf.getvalue()
-        self.assertNotIn('skipped', out, out)
+        # Door placement itself must not be skipped (pane-frame skip lines may say "skipped").
+        self.assertNotIn(': skipped', out, out)
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
         self.assertEqual(len(lowers), 1, lowers)
