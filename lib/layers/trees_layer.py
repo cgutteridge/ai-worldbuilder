@@ -253,6 +253,11 @@ GOOGLE_CROWNS = ROOT / 'reference/trees-google-crowns.json'
 # and mark unconfirmed. No road rule — positions come from lidar evidence, not a "keep off carriageway" filter.
 CROWN_SNAP_RADIUS = 6
 CROWN_SNAP_MIN_NDSM_M = 3.0
+# Mapped vector-map trees (#157): default crown radius; young trees (no lidar peak) stay
+# as small crowns — same keep/unconfirmed choice as #129 snap, not a hard reject.
+MAPPED_TREE_R = 3.0
+MAPPED_YOUNG_TREE_R = 2.0
+TREE_ROW_SPACING = 4          # blocks between crowns sampled along natural=tree_row
 
 
 def google_crowns(cell: tuple[int, int], path: Path | None = None):
@@ -347,6 +352,113 @@ def cell_ndsm(cell: tuple[int, int]) -> np.ndarray | None:
         return None
 
 
+def tree_row_sample_points(
+    pts: list[tuple[float, float]],
+    spacing: int = TREE_ROW_SPACING,
+) -> list[tuple[int, int]]:
+    """Sample integer MC columns along a tree_row polyline at ``spacing`` block intervals.
+
+    Always includes the first vertex; then walks arc length and emits a column each
+    time ``spacing`` is crossed. The final vertex is included when it is at least
+    half a spacing past the last sample (avoids a near-duplicate at the tip).
+
+    @param pts: polyline vertices in MC ``(x, z)``
+    @param spacing: distance in blocks between samples
+    @returns: ordered ``(x, z)`` floor columns
+    """
+    if not pts:
+        return []
+    out: list[tuple[int, int]] = [(int(math.floor(pts[0][0])), int(math.floor(pts[0][1])))]
+    if len(pts) == 1:
+        return out
+    acc = 0.0
+    next_at = float(spacing)
+    for a, b in zip(pts, pts[1:]):
+        seg = math.dist(a, b)
+        if seg < 1e-9:
+            continue
+        while next_at <= acc + seg:
+            t = (next_at - acc) / seg
+            x = a[0] + t * (b[0] - a[0])
+            z = a[1] + t * (b[1] - a[1])
+            q = (int(math.floor(x)), int(math.floor(z)))
+            if q != out[-1]:
+                out.append(q)
+            next_at += spacing
+        acc += seg
+    tip = (int(math.floor(pts[-1][0])), int(math.floor(pts[-1][1])))
+    if tip != out[-1] and math.dist(out[-1], tip) >= spacing * 0.5:
+        out.append(tip)
+    return out
+
+
+def resolve_mapped_tree_crowns(
+    cell: tuple[int, int],
+    tree_points: list[tuple[int, int]] | None = None,
+    tree_rows: list[list[tuple[float, float]]] | None = None,
+    ndsm: np.ndarray | None = None,
+    footprints: set[tuple[int, int]] | None = None,
+) -> tuple[list[tuple[int, int, float]], list[dict], list[dict]]:
+    """Turn mapped tree points and tree_row lines into cell-local crown candidates (#157).
+
+    Each in-cell point is snapped to the highest nearby lidar canopy peak (same
+    window and nDSM floor as #129 / ``snap_google_crowns``). Young trees with no
+    peak (or a peak on a building) are **kept** as small crowns with snap status
+    ``unconfirmed`` and reason ``no lidar canopy peak`` / ``peak on building`` —
+    matching #129, not rejected. Points outside the 128² cell are rejected with
+    reason ``outside cell``.
+
+    @param cell: ``(tx, tz)``
+    @param tree_points: world ``(x, z)`` from ``OSMGround.trees``
+    @param tree_rows: polylines from ``OSMGround.tree_rows``
+    @param ndsm: cell-local nDSM metres, or None to skip snap (all kept unconfirmed)
+    @param footprints: building columns in cell-local ``(dx, dz)``
+    @returns: ``(crowns, rejections, snap_reports)``; crowns are cell-local
+              ``(dx, dz, r)``; each rejection has ``x``, ``z``, ``reason``
+    """
+    x0, z0 = cell[0] * CELL, cell[1] * CELL
+    footprints = footprints or set()
+    raw: list[tuple[int, int]] = list(tree_points or [])
+    for row in tree_rows or []:
+        raw.extend(tree_row_sample_points(row))
+    candidates: list[tuple[int, int, float]] = []
+    rejections: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    for x, z in raw:
+        dx, dz = x - x0, z - z0
+        if not (0 <= dx < CELL and 0 <= dz < CELL):
+            rejections.append({'x': x, 'z': z, 'reason': 'outside cell'})
+            continue
+        key = (dx, dz)
+        if key in seen:
+            rejections.append({'x': x, 'z': z, 'reason': 'duplicate column'})
+            continue
+        seen.add(key)
+        candidates.append((dx, dz, MAPPED_TREE_R))
+    if not candidates:
+        return [], rejections, []
+    if ndsm is None:
+        # No lidar: keep mapped positions as young/unconfirmed crowns (#129 leave-in-place).
+        crowns = [(i, j, MAPPED_YOUNG_TREE_R) for i, j, _r in candidates]
+        snaps = [{'from': (i, j), 'to': (i, j), 'shift': (0, 0),
+                  'status': 'unconfirmed', 'ndsm': 0.0,
+                  'reason': 'no lidar canopy peak'} for i, j, _r in candidates]
+        return crowns, rejections, snaps
+    snapped, snaps = snap_google_crowns(candidates, ndsm, footprints)
+    crowns: list[tuple[int, int, float]] = []
+    enriched: list[dict] = []
+    for (i, j, _r), snap in zip(snapped, snaps):
+        if snap['status'] == 'unconfirmed':
+            reason = ('peak on building' if snap['ndsm'] >= CROWN_SNAP_MIN_NDSM_M
+                      else 'no lidar canopy peak')
+            snap = {**snap, 'reason': reason}
+            crowns.append((i, j, MAPPED_YOUNG_TREE_R))
+        else:
+            crowns.append((i, j, MAPPED_TREE_R))
+        enriched.append(snap)
+    return crowns, rejections, enriched
+
+
 def voxels_for(x: int, z: int, gy: int, r: float) -> dict:
     """Voxels for one crown: bush for small ones, plane/round tree otherwise."""
     rnd = random.Random(RNG_SEED + x * 31 + z)
@@ -375,14 +487,22 @@ class TreeInputs:
     masked: dict
     footprints: set
     crown_snaps: list | None = None  # google-crown lidar snap report, when snapped
+    mapped: set | None = None         # world (x, z) of mapped vector-map crowns (#157)
+    mapped_rejections: list | None = None  # logged rejects for mapped points/rows
+    mapped_snaps: list | None = None  # per-mapped-crown lidar snap report
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
         return replace(self, masked=dict(remaining_masks))
 
 
-def planning_inputs(cell):
-    """Load evidence once, keeping filesystem access out of placement rules."""
+def planning_inputs(cell, osm_ground=None):
+    """Load evidence once, keeping filesystem access out of placement rules.
+
+    @param cell: ``(tx, tz)``
+    @param osm_ground: optional ``OSMGround`` (or stand-in with ``.trees`` / ``.tree_rows``)
+                       for tests; default loads the live vector map
+    """
     tx, tz = cell
     x0, z0 = tx * CELL, tz * CELL
     grid = canopy_grid(cell)
@@ -396,23 +516,41 @@ def planning_inputs(cell):
     crown_snaps = None
     from osm_footprints import OSMIndex
     fp = {q for q in OSMIndex().cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
+    ndsm = cell_ndsm(cell)
+    fp_local = {(x - x0, z - z0) for x, z in fp
+                if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
     g = google_crowns(cell)
     if g:
         zones, gc = g
-        ndsm = cell_ndsm(cell)
         if ndsm is not None:
-            fp_local = {(x - x0, z - z0) for x, z in fp
-                        if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
             gc, crown_snaps = snap_google_crowns(gc, ndsm, fp_local)
         crowns = gc + [c for c in crowns
                        if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
+    # Mapped natural=tree points + tree_row crown sequences (#157).
+    if osm_ground is None:
+        from ground_sources import OSMGround
+        osm_ground = OSMGround(cell)
+    mapped_crowns, mapped_rejections, mapped_snaps = resolve_mapped_tree_crowns(
+        cell,
+        tree_points=list(osm_ground.trees),
+        tree_rows=list(osm_ground.tree_rows),
+        ndsm=ndsm,
+        footprints=fp_local,
+    )
+    mapped = {(x0 + i, z0 + j) for i, j, _r in mapped_crowns}
+    # Mapped crowns win overlaps (surveyed position); skip detector crowns too close.
+    crowns = mapped_crowns + [
+        c for c in crowns
+        if not any((c[0] - mi) ** 2 + (c[1] - mj) ** 2 <= (mr * 0.75) ** 2
+                   for mi, mj, mr in mapped_crowns)
+    ]
     owned = neighbour_owned(cell, ignored_builds(cell))
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
-                      crown_snaps)
+                      crown_snaps, mapped, mapped_rejections, mapped_snaps)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -425,19 +563,24 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     cell_xz = _InCell(*cell_bounds(tx, tz))
     inputs = planning_inputs(cell) if inputs is None else inputs
     crowns, extra, aerial_sheet = inputs.crowns, inputs.extra, inputs.aerial_sheet
+    mapped = inputs.mapped or set()
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
-              'crown_snaps': inputs.crown_snaps}
+              'crown_snaps': inputs.crown_snaps,
+              'mapped_rejections': inputs.mapped_rejections or [],
+              'mapped_snaps': inputs.mapped_snaps or []}
     warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
                        x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
+    # Surveyed / aerial-sheet crowns: courtyard and plaza trees are real (soil pit under paving).
+    evidenced = aerial_sheet | mapped
     for i, j, r in crowns:
         x, z = x0 + i, z0 + j
         surf = surface_y(world, x, z)
-        if (x, z) not in extra and (x, z) not in aerial_sheet and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
+        if (x, z) not in extra and (x, z) not in evidenced and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
             report['skipped'].append((x, z, r, 'feature zone'))      # no tree-phase tree is rooted in a feature
             continue
-        allowed = (LAWN_SURFACES | PAVED_SURFACES | AERIAL_SHEET_SURFACES if (x, z) in aerial_sheet
+        allowed = (LAWN_SURFACES | PAVED_SURFACES | AERIAL_SHEET_SURFACES if (x, z) in evidenced
                    else LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES)
         if not surf or surf[1] not in allowed:
             report['skipped'].append((x, z, r, f'surface {surf[1] if surf else None}'))
@@ -515,6 +658,21 @@ def run(cell: tuple[int, int]) -> int:
             dx, dz = s['shift']
             print(f'    ({fx},{fz})->({tx_},{tz_}) shift ({dx},{dz}) '
                   f'nDSM {s["ndsm"]:.1f} m  {s["status"]}')
+    mapped_snaps = rep.get('mapped_snaps') or []
+    if mapped_snaps:
+        x0, z0 = tx * CELL, tz * CELL
+        n_moved = sum(1 for s in mapped_snaps if s['status'] == 'moved')
+        print(f'  mapped-tree lidar snap: {n_moved}/{len(mapped_snaps)} moved; '
+              f'young/unconfirmed kept as small crowns (#129)')
+        for s in mapped_snaps:
+            fx, fz = x0 + s['from'][0], z0 + s['from'][1]
+            tx_, tz_ = x0 + s['to'][0], z0 + s['to'][1]
+            reason = s.get('reason', s['status'])
+            print(f'    ({fx},{fz})->({tx_},{tz_}) shift {s["shift"]} '
+                  f'nDSM {s["ndsm"]:.1f} m  {s["status"]}'
+                  + (f'  ({reason})' if s.get('reason') else ''))
+    for rej in (rep.get('mapped_rejections') or [])[:25]:
+        print(f'  mapped rejected ({rej["x"]},{rej["z"]}): {rej["reason"]}')
     for x, z, r, why in rep['skipped'][:25]:
         print(f'  skipped ({x},{z}) r{r:.1f}: {why}')
     img = ROOT / f'verification/site/{name}-crowns.png'

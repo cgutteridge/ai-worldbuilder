@@ -64,6 +64,19 @@ _LANDSCAPE_PRESETS: dict[str, list[tuple[str, str, list[str]]]] = {
             ['landscape'],
         ),
     ],
+    # Surveyed trees for trees_layer (#157): point crowns + tree_row polylines.
+    'trees': [
+        (
+            'points',
+            "natural = 'tree'",
+            ['landscape'],
+        ),
+        (
+            'lines',
+            "natural = 'tree_row'",
+            ['landscape'],
+        ),
+    ],
 }
 
 # Ordered job list for one cell (or place) extract. Base map + landscape.
@@ -79,6 +92,7 @@ CELL_EXTRACT_LAYERS: tuple[str, ...] = (
     'pedestrian',
     'natural',
     'leisure',
+    'trees',
 )
 
 
