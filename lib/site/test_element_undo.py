@@ -177,31 +177,6 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         self.assertEqual(self.run_live(plan='house', live=True), 0)
 
         self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
-
-    def test_rebuild_wider_than_first_build_still_undoes(self):
-        # The rebuild covers a column outside the first build's structure box; that
-        # column has no earlier snapshot and must not be read as air.
-        far = (X0 + 20, 60, Z0)
-        self.blocks.write(far, GREY)
-        self.blocks.flush()
-        base = site_kit.Plan('ghost')
-        base.set(X0, 60, Z0, GREY)
-        base.set(*far, GREY)
-        self.run_apply(base, stage='other', cell=CELL)
-        first = site_kit.Plan('g')
-        first.set(X0, 60, Z0, 'minecraft:grass_block')
-        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
-        second = site_kit.Plan('g')
-        second.set(X0, 60, Z0, 'minecraft:stone')
-        second.set(*far, 'minecraft:stone')
-        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost'])
-
-        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
-
-        self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
-        self.assertEqual(self.blocks.read(far), GREY)
-        undo = [e for e in self.reg().entries() if e.kind == 'undo']
-        self.assertEqual([e.status for e in undo], ['landed'])
         self.assertEqual(self.blocks.read((X0, 58, Z0)), GREY)
         for p in footprint:
             want = snap.get(p) or AIR
@@ -255,6 +230,9 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         first = site_kit.Plan('g')
         first.set(X0, 60, Z0, 'minecraft:grass_block')
         self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        # FakePaced snapshots the whole world; poison the column the first box does
+        # not cover, so only the box filter keeps it out of the comparison.
+        FakePaced.structures[f'{site_kit.STRUCTURE_NS}:before_g'][far] = 'minecraft:gold_block'
         second = site_kit.Plan('g')
         second.set(X0, 60, Z0, 'minecraft:stone')
         second.set(*far, 'minecraft:stone')

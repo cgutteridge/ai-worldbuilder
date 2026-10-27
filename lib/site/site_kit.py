@@ -1186,7 +1186,9 @@ def _before_footprints(registry, names):
     Undo erases back to the world before the first live build, so each position is
     checked against the earliest live build's ``before_<plan>`` whose box contains it
     (a rebuild's later snapshot holds the earlier build). Positions no live snapshot
-    covers have no before evidence and are skipped.
+    covers have no before evidence and are skipped. Known limit: where another plan
+    was built between two builds of this one, the earliest snapshot predates it and
+    the check refuses (fails closed).
 
     @param registry: open CellRegistry
     @param names: plan names about to be undone
