@@ -314,9 +314,10 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
 def candidate_plan_id(item: dict[str, Any]) -> str:
     """Stable feature plan id for a ``propose-features`` candidate (#128).
 
-    Buildings use the first vector-map ref (e.g. ``w93729745``). Houses use
-    ``houses_<street_slug>`` when a street is known, else ``houses_`` plus sorted refs.
-    Build specs should reuse this id as ``name`` so the plan matches the Build.
+    Buildings and water bodies (#148) use the first vector-map ref (e.g. ``w93729745``
+    or ``water_<x>_<z>``). Houses use ``houses_<street_slug>`` when a street is known,
+    else ``houses_`` plus sorted refs. Build specs should reuse this id as ``name`` so
+    the plan matches the Build.
 
     @param item: one dict from :func:`propose_feature_candidates`
     @returns: feature plan id for a ``plan_feature`` note ``ref``
@@ -336,7 +337,7 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
 
 
 def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
-    """Propose vector-map building feature candidates for a cell.
+    """Propose vector-map building and water-body feature candidates for a cell.
 
     Calls ``cell_features.missing_features`` for the cell. Errors propagate
     (no silent empty list).

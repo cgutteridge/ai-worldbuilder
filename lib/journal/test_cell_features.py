@@ -67,6 +67,21 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(prog['unbuilt'][0]['label'], 'Empty Hall')
         self.assertEqual(prog['unbuilt'][0]['area'], prog['unbuilt_area'])
 
+    def test_missing_water_bodies_from_columns(self):
+        """#148: connected water columns become water_body candidates until covered."""
+        # Cell 48,-45: place a 3×3 pond and a covered 2×2 (below MIN_WATER_COLUMNS after filter).
+        from coverage import cell_bbox
+        x0, z0, x1, z1 = cell_bbox(48, -45, 48, -45)
+        pond = {(x0 + 10 + dx, z0 + 10 + dz) for dx in range(3) for dz in range(3)}
+        covered_pond = {(x0 + 40 + dx, z0 + 40 + dz) for dx in range(3) for dz in range(3)}
+        water = pond | covered_pond
+        with mock.patch('cell_features.feature_columns', return_value=set(covered_pond)):
+            bodies = cf.missing_water_bodies(48, -45, water_columns=water, covered=set(covered_pond))
+        self.assertEqual(len(bodies), 1)
+        self.assertEqual(bodies[0]['kind'], 'water_body')
+        self.assertEqual(bodies[0]['area'], 9)
+        self.assertEqual(bodies[0]['cells'], [[48, -45]])
+
 
 if __name__ == '__main__':
     unittest.main()
