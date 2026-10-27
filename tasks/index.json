@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 147,
+  "nextTaskId": 150,
   "tasks": [
     {
       "id": 130,
@@ -167,6 +167,30 @@
         145
       ],
       "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild."
+    },
+    {
+      "title": "Road centre-line markings one block wide",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun.",
+      "id": 147
+    },
+    {
+      "title": "Water bodies as features (ponds)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "notes": "Cause: ground leaves mapped water as terrain (ground_layer.py:170-177) and no feature plan covers a water body, so the pond is whatever the baseline left (I-014, S-018). Not verified: whether the dark basin in 48,-45 is leftover ghost baseline or an unpainted hole. Deliver: a water-body feature in the plan vocabulary with outline from the vector map or aerial, water level, bank and edge; it sits in the cell plan as a feature to build, like a building, and records its evidence and provenance the way the facade plan (#145) does. Check: the pond in 48,-45 is a planned, built feature with water at a sensible level and a defined bank, not a dark hole.",
+      "id": 148
+    },
+    {
+      "title": "Pitched roofs use stairs and slabs correctly",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces.",
+      "id": 149
     }
   ]
 }
