@@ -30,26 +30,44 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   `site_kit.apply` refuses cells owned by builds not listed here)
 - optional: `wall`, `floor`, `floor_min`, `step_max`, `ledge_stair`,
   `door_frame`, `keep_edits`, `notes`
-- optional `facades` — per-label per-face window table from street photos
-  and the aerial (glazing height, pier width, wall material, bay rhythm
-  `WW_BB_WW`). Give a row list for **every exposed face**, and a row for
-  every storey the evidence shows on that face. Where no photo or aerial
-  shows a face, copy the nearest read face and say so in `notes`. Dry run
-  prints glazed share for every exposed face and storey; faces with no
-  facade rows are marked `no evidence read` (report only — not a gate).
+- optional `facade_plan` — per-label plan the designer fills from portals and
+  street photos (`lib/builds/facade_plan.py`). Shape:
+  `{"SU": {"faces": {"S": {"glazing": [{"storey": 1, "glazed_h": 2, "pier": 1}]}},
+  "entrances": [{"id": "57-A", "portal_id": "57-A", "face": "S", "leaves": 1,
+  "block": "iron_door", "canopy": {"kind": "covered_area"}, "steps": 0,
+  "floor_offset": 0, "cell": [48, -44],
+  "provenance": {"source": "register_entry", "confidence": "high",
+  "evidence_ids": [], "unresolved_reason": ""}}]}}`.
+  Every portal on the footprint must be placed or listed unresolved
+  (`provenance.unresolved_reason` non-empty). Provenance is shared
+  (`lib/site/provenance.py`). No register → still add photo-read entrances.
+  Build reads this plan in #146; until then legacy `doors` still place.
+  Face slots `roof_edge` / `detail` are reserved; real roof edge and
+  greeblies stay on `roofs.edge` / `details`. Window frames are build-time
+  (#131), not plan fields.
+- optional `facades` — legacy per-label per-face window table from street
+  photos and the aerial (glazing height, pier width, wall material, bay
+  rhythm `WW_BB_WW`). Prefer `facade_plan[label].faces[face].glazing`.
+  Give a row list for **every exposed face**, and a row for every storey
+  the evidence shows on that face. Where no photo or aerial shows a face,
+  copy the nearest read face and say so in `notes`. Dry run prints glazed
+  share for every exposed face and storey; faces with no facade rows are
+  marked `no evidence read` (report only — not a gate).
   Example: `"facades": {"SU": {"N": [{"storey": 1, "glazed_h": 3, "pier": 1}]}}`
 - optional `details` — per-label roof and facade greeblies from the aerial
   sheet and street photos (`rules/building-review.md`). Each row is
   `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:
   roof kinds `plant_room`, `vent`, `louvred_vent`, `skylight`,
   `solar_panel`, `lift_overrun`; facade kinds `drainpipe`, `sign`,
-  `canopy`, `ledge`, `fascia_band` (`face` required). Placed after the
+  `canopy`, `ledge`, `fascia_band` (`face` required). Entrance canopy /
+  covered area belongs on `facade_plan` entrances. Placed after the
   shell; dry run prints each detail and its source. List what reads at
   street scale, or leave `details` empty / omit it when none are visible.
   Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
   "size": [3, 2, 2], "source": "aerial NW plant box"}]}`
-- optional `doors` — per-portal map from the university register
+- optional `doors` — legacy per-portal map from the university register
   (`scripts/portals.py`): `{"42-A": {"leaves": 1|2, "block": "iron_door"}}`.
+  Prefer `facade_plan` entrances (#145); this map is removed in #146.
   Pick `block` with `block_reference.py` from the portal photo. `leaves: 2`
   places mirrored hinges and stays framed (`door_frame_issues`). Dry run
   prints each beside the portal name. Absent → legacy front/rear spruce.
