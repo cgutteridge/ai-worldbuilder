@@ -30,7 +30,7 @@ One building per review. Skip any building that already has an open feature issu
    the photo shows a parapet, coping or flat overhang fringe (`rules/feature-builds.md`, `rules/evidence-order.md`).
 4. **Keep or rebuild.** Keep when nothing in the list matters at street scale (`rules/radial-good-enough.md`). Rebuild by
    reusing the cell's builder (`scripts/oakdene_court.py` is the pattern), clearing only the build's own recorded blocks, so
-   trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and doors reach.
+   trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and entrances match ``facade_plan``.
 5. **Check with the user.** When a fix is `fix-landed`, walk it with the `snag` skill review path
    (`scripts/issues.py review` / `verdict`). Steering replies loop back to step 4 and become rules
    (`rules/craftsmanship.md` §2). Only the owner's verdict confirms the issue.
@@ -78,7 +78,7 @@ The approach:
 1. **Evidence table first, in the script docstring**: for each fact (footprint, heights, materials per face, doors, roof features) name the
    source: vector map footprint, lidar grid cell by cell, aerial z20, campus aerial, every portal photo at 800 px (`scripts/portals.py`), block reference for the
    block choice (`scripts/block_reference.py`). All relevant references, before the first block. A photo shows ONE face: say which.
-2. **One building = one script** (lidar bands -> per-zone materials -> doors from the portal register -> clear the old build -> keep trees).
+2. **One building = one script** (lidar bands -> per-zone materials -> entrances on ``facade_plan`` from portals/photos -> clear the old build -> keep trees).
    A second fix to the same building means rebuild it whole, never another follow-up. Per-face rules need positions as well, because a
    stepped outline has steps facing every way.
 3. **Re-runnable**: plan from footprint-map polygons, lidar and recorded states, never from blocks the script itself placed; to re-run, put back

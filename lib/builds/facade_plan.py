@@ -44,8 +44,8 @@ Relation to neighbouring work:
 - **#132 roof/facade detail:** stays in sibling ``details`` / ``roofs.edge``.
   Entrance canopy / covered area is owned here; face slots ``roof_edge`` and
   ``detail`` are reserved room only.
-- **#146:** build will place doors from this plan and drop the old ``doors``
-  map / nearest-wall portal path. This module does not remove that path.
+- **#146:** ``feature_build`` places doors from placed entrances only; the old
+  ``doors`` map / nearest-wall portal path is removed.
 """
 from __future__ import annotations
 

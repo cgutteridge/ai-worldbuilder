@@ -398,21 +398,22 @@ def _safe(s: str) -> str:
 
 
 def _portals_for_build(name: str, bbox: tuple[int, int, int, int]) -> list[dict]:
-    """Portals on the build footprint: from spec doors keys, else register near bbox.
+    """Portals on the build footprint: facade_plan entrance ids, else register near bbox.
 
     @param name: build name
     @param bbox: footprint bbox
     @returns: portal dicts with id, x, z
     """
+    import facade_plan as FP
     import portals as P
 
     spec_path = BUILDS / f'{name}.json'
     wanted: set[str] | None = None
     if spec_path.is_file():
         spec = json.loads(spec_path.read_text())
-        doors = spec.get('doors') or {}
-        if doors:
-            wanted = set(doors)
+        plan = spec.get('facade_plan') or {}
+        if plan:
+            wanted = FP.accounted_portal_ids(plan) or None
         ways = spec.get('ways') or {}
         if ways:
             try:
