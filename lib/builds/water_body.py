@@ -235,14 +235,24 @@ def water_body_components(
     cell: tuple[int, int],
     min_columns: int = MIN_WATER_COLUMNS,
     refs_for=None,
+    column_refs: Mapping[tuple[int, int], str] | None = None,
+    provenance_source: str | None = None,
+    provenance_confidence: str = 'high',
+    unresolved_reason: str = 'water level and bank not yet read',
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Package connected water columns as water-body feature candidates.
 
-    @param water: water columns (vector map and/or aerial)
+    @param water: water columns (vector map polygon water and/or aerial)
     @param cell: ``(tx, tz)``
     @param min_columns: drop slivers smaller than this
-    @param refs_for: optional ``(component) -> [ref, ...]``; default synthetic
-        ``water_<xmin>_<zmin>``
+    @param refs_for: optional ``(component) -> [ref, ...]``; default uses
+        ``column_refs`` when given, else synthetic ``water_<xmin>_<zmin>``
+    @param column_refs: optional ``(x, z) -> osm way ref`` map (#163)
+    @param provenance_source: when set, attach shared provenance (e.g. ``vector_map``)
+    @param provenance_confidence: confidence when attaching provenance
+    @param unresolved_reason: reason while level/bank are still unread
+    @param root: world root for evidence-id checks when attaching provenance
     @returns: list of candidate dicts (``kind`` ``water_body``)
     """
     out: list[dict[str, Any]] = []
@@ -254,10 +264,17 @@ def water_body_components(
         bbox = (min(xs), min(zs), max(xs), max(zs))
         if refs_for is not None:
             refs = list(refs_for(comp))
+        elif column_refs is not None:
+            refs = sorted({
+                column_refs[c] for c in comp
+                if c in column_refs and column_refs[c]
+            })
+            if not refs:
+                refs = [f'water_{bbox[0]}_{bbox[1]}']
         else:
             refs = [f'water_{bbox[0]}_{bbox[1]}']
         outline = sorted(comp)
-        out.append({
+        body: dict[str, Any] = {
             'kind': 'water_body',
             'label': f'pond ({len(comp)} columns)',
             'street': None,
@@ -271,7 +288,16 @@ def water_body_components(
             'water_level': None,
             'bank': None,
             'edge': None,
-        })
+        }
+        if provenance_source is not None:
+            prov.attach_provenance(
+                body,
+                source=provenance_source,
+                confidence=provenance_confidence,
+                unresolved_reason=unresolved_reason,
+                root=root,
+            )
+        out.append(body)
     return out
 
 

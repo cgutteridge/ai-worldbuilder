@@ -164,6 +164,21 @@ class ComponentsTest(unittest.TestCase):
         self.assertEqual(len(bodies), 1)
         self.assertEqual(bodies[0]['area'], 4)
 
+    def test_column_refs_and_vector_map_provenance(self):
+        """#163: column_refs become candidate refs; provenance source vector_map."""
+        cols = {(10, 10), (11, 10), (10, 11), (11, 11)}
+        refs = {c: 'w141657072' for c in cols}
+        bodies = W.water_body_components(
+            cols,
+            cell=(48, -45),
+            min_columns=4,
+            column_refs=refs,
+            provenance_source='vector_map',
+        )
+        self.assertEqual(len(bodies), 1)
+        self.assertEqual(bodies[0]['refs'], ['w141657072'])
+        self.assertEqual(bodies[0]['provenance']['source'], 'vector_map')
+
 
 class BuildTest(unittest.TestCase):
     """Seam: build places water at level, bank ring, and shoreline edge."""

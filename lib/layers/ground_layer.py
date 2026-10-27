@@ -168,7 +168,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
     """
     x0, z0, x1, z1 = cell_box(cell)
     live, skipped = {}, Counter()
-    water = set(vmap.water)
+    water = set(vmap.water) | set(vmap.water_line)
     probed = {}
     warm_surface_probe(world, x0 - 1, z0 - 1, x1 + 1, z1 + 1)
     for x in range(x0 - 1, x1 + 2):
