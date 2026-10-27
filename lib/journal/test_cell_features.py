@@ -119,6 +119,66 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(bodies[0]['area'], 9)
         self.assertEqual(bodies[0]['cells'], [[48, -45]])
 
+    def test_water_body_carries_way_id_not_stream(self):
+        """#163: polygon water → one candidate with way id + vector_map; stream → no pond."""
+        import json
+        import tempfile
+        from pathlib import Path
+
+        import ground_sources as GS
+        import osm_footprints as OF
+
+        # Cell (0,0) is MC x/z 0..127. Pond way 141657072 + a long stream elsewhere.
+        pond_ring = [
+            [20.0, 20.0], [28.0, 20.0], [28.0, 28.0], [20.0, 28.0], [20.0, 20.0],
+        ]
+        stream_pts = [[80.0, 10.0], [80.0, 100.0]]
+        features = [
+            {
+                'type': 'Feature',
+                'properties': {
+                    'osm_way_id': '141657072',
+                    'natural': 'water',
+                },
+                'geometry': {'type': 'Polygon', 'coordinates': [pond_ring]},
+            },
+            {
+                'type': 'Feature',
+                'properties': {'osm_id': '999', 'waterway': 'stream'},
+                'geometry': {'type': 'LineString', 'coordinates': stream_pts},
+            },
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td)
+            (cache / 'campus__water.geojson').write_text(
+                json.dumps({'type': 'FeatureCollection', 'features': features}))
+            empty_clips = cache / 'no-clips'
+            empty_clips.mkdir()
+            with mock.patch.object(OF, 'CACHE', cache), \
+                    mock.patch.object(OF, '_resolve_vector_map_clips', return_value=empty_clips), \
+                    mock.patch('world_frame.osgb_to_mc', side_effect=lambda e, n: (e, n)):
+                ground = GS.OSMGround((0, 0))
+
+        self.assertTrue(ground.water, 'pond polygon must rasterise')
+        self.assertTrue(ground.water_line, 'stream must rasterise as line water')
+        self.assertFalse(ground.water & ground.water_line,
+                         'polygon and line water must stay separate')
+        self.assertGreaterEqual(len(ground.water_line), cf.MIN_WATER_COLUMNS,
+                                'stream alone would have been a pond before #163')
+
+        with mock.patch('cell_features.feature_columns', return_value=set()), \
+                mock.patch('ground_sources.OSMGround', return_value=ground):
+            bodies = cf.missing_water_bodies(0, 0, covered=set())
+
+        self.assertEqual(len(bodies), 1, bodies)
+        body = bodies[0]
+        self.assertEqual(body['kind'], 'water_body')
+        self.assertEqual(body['refs'], ['w141657072'])
+        self.assertEqual(body['provenance']['source'], 'vector_map')
+        outline = {(int(c[0]), int(c[1])) for c in body['outline']}
+        self.assertTrue(outline <= set(ground.water))
+        self.assertFalse(outline & set(ground.water_line))
+
 
 if __name__ == '__main__':
     unittest.main()

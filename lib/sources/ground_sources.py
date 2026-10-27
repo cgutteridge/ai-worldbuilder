@@ -237,6 +237,21 @@ def waterway_is_underground(t: dict) -> bool:
     return False
 
 
+def water_way_ref(t: dict) -> str | None:
+    """OSM way ref for a water polygon (``w<id>``), or ``None`` when untagged (#163).
+
+    Prefers ``osm_way_id`` (ogr multipolygon members), else ``osm_id`` (standalone
+    water ways). Always uses the ``w`` prefix so pond plan ids match building refs.
+
+    @param t: OSM tags / properties for one polygon feature.
+    @returns: e.g. ``'w141657072'``, or ``None`` when no id is present.
+    """
+    wid = t.get('osm_way_id') or t.get('osm_id')
+    if wid is None or str(wid).strip() == '':
+        return None
+    return 'w' + str(wid).lstrip('w')
+
+
 def road_width(t: dict) -> float:
     """Carriageway width in blocks from tags: width=*, else lanes (+ painted cycle lanes)."""
     if t.get('width'):
@@ -273,7 +288,9 @@ class OSMGround:
         self._fid = 0
         self.road: set = set()        # public carriageway columns (kerb candidates)
         self.marks: set = set()       # centre-line dash columns
-        self.water: set = set()
+        self.water: set = set()       # polygon natural=water only (pond candidates; #163)
+        self.water_line: set = set()  # waterway line columns (streams); not pond candidates
+        self.water_refs: dict = {}    # (x, z) -> 'w<way id>' for polygon water (#163)
         self.bridge: set = set()      # columns under a mapped bridge/tunnel: not ours to surface
         self.hedge: set = set()
         self.wall: set = set()
@@ -314,7 +331,12 @@ class OSMGround:
 
     def _poly(self, t: dict, polys) -> None:
         if t.get('natural') == 'water':
-            self.water |= poly_cells(polys)
+            cells = poly_cells(polys)
+            self.water |= cells
+            ref = water_way_ref(t)
+            if ref:
+                for q in cells:
+                    self.water_refs[q] = ref
         elif t.get('highway') == 'pedestrian' or t.get('area:highway'):
             self._put(poly_cells(polys), SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
         elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey'):
@@ -337,7 +359,7 @@ class OSMGround:
         if t.get('waterway') in ('stream', 'river', 'canal', 'ditch'):
             if waterway_is_underground(t):
                 return
-            self.water |= set(line_cells(pts, 0.8))
+            self.water_line |= set(line_cells(pts, 0.8))
             return
         if hw and (t.get('bridge') in ('yes', 'viaduct') or t.get('tunnel') == 'yes' or
                    t.get('layer', '0') not in ('0', '')):

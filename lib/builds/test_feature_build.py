@@ -752,6 +752,101 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertTrue(hasattr(b.p, 'keep') and lintel in b.p.keep,
                         'plan.keep must carry door keeps for apply clash')
 
+    def test_stepped_wall_door_stays_on_register_with_built_jambs(self):
+        """#164: stepped face keeps the door on the register cell; jambs built; guard clean."""
+        # Long south face; after shell, strip coplanar jamb columns beside the
+        # register (as on a 1–2 cell step) so walls-membership framing is gone
+        # and solids at door height are air — the pre-fix pick then jumps away.
+        cells = {(x, z) for x in range(10, 40) for z in range(18, 25)}
+        reg = (25, 24)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            b = F.Build(
+                self.spec([_entrance_row(
+                    id='18-A', portal_id='18-A', face='S', leaves=1,
+                    block='iron_door', at=list(reg),
+                )]),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            # Shell + floors only; place the door ourselves after simulating the step.
+            b.spec['facade_plan'] = {'A': {'faces': {}, 'entrances': []}}
+            b.build()
+            f = b.features[0]
+            self.assertIn(reg, f.walls)
+            for lx in (1, -1):
+                n = (reg[0] + lx, reg[1])
+                f.walls.discard(n)
+                for y in range(f.b, f.b + f.storeys * F.STOREY_H):
+                    b.set(n[0], y, n[1], 'air')
+            f.inner = f.cells - f.walls
+            b.spec['facade_plan'] = {'A': {'faces': {}, 'entrances': [
+                _entrance_row(
+                    id='18-A', portal_id='18-A', face='S', leaves=1,
+                    block='iron_door', at=list(reg),
+                ),
+            ]}}
+            b.plan_doors(f)
+        out = buf.getvalue()
+        lowers = [(pos, st) for pos, st in b.p.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        (x, y, z), _ = lowers[0]
+        self.assertEqual((x, z), reg, f'door moved from register; out={out!r}')
+        self.assertNotIn('moved', out.lower(), out)
+        b_floor = y - 1
+        for lx in (1, -1):
+            for yy in (b_floor + 1, b_floor + 2):
+                key = (x + lx, yy, z)
+                self.assertTrue(
+                    b._is_solid(x + lx, yy, z),
+                    f'missing built jamb at {key}',
+                )
+                self.assertIn(key, b.keep, f'built jamb {key} must be kept')
+        self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
+
+    def test_set_door_leaf_builds_missing_jamb_solids(self):
+        """#164: _set_door_leaf fills air jambs at b+1/b+2 and keeps them."""
+        cells = {(x, z) for x in range(10, 17) for z in range(20, 25)}
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            b = F.Build(
+                self.spec([]),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            b.build()
+        f = b.features[0]
+        wall = next(c for c in sorted(f.walls) if b.exposed(c, 'S') and c[1] == 24)
+        for lx in (1, -1):
+            for yy in (f.b + 1, f.b + 2):
+                b.set(wall[0] + lx, yy, wall[1], 'air')
+        b._set_door_leaf(wall, 'S', 'iron_door', 'left', f.b)
+        for lx in (1, -1):
+            for yy in (f.b + 1, f.b + 2):
+                key = (wall[0] + lx, yy, wall[1])
+                self.assertTrue(b._is_solid(*key), key)
+                self.assertIn(key, b.keep, key)
+        self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
+
+    def test_moved_door_prints_distance_from_register(self):
+        """#164: when the door cannot sit on the register coordinate, print distance."""
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        # Register is south of the mass — nearest wall is one block north.
+        plan, out = self.build_plan([
+            _entrance_row(
+                id='18-A', portal_id='18-A', face='S', leaves=1,
+                block='iron_door', at=[13, 26],
+            ),
+        ], cells=cells)
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        (x, _y, z), _ = lowers[0]
+        dist = abs(x - 13) + abs(z - 26)
+        self.assertGreater(dist, 0)
+        self.assertRegex(out, rf'door 18-A:.*moved {dist} .*from register')
+
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""

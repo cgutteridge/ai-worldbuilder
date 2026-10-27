@@ -1655,8 +1655,48 @@ class Build:
         del k
         self.plan_doors(f)
 
+    def _door_jambs_solid(self, cell, face: str, b: int) -> bool:
+        """True when both wall-line sides are solid at door height (guard rule).
+
+        Uses block solidity like ``door_frame_issues`` / ``guard_door_frames``,
+        not footprint ``f.walls`` membership (#164).
+
+        @param cell: door wall ``(x, z)``
+        @param face: ``N``/``S``/``E``/``W``
+        @param b: floor y under the door
+        @returns: whether both jamb columns are solid at ``b+1`` and ``b+2``
+        """
+        lat = ((1, 0), (-1, 0)) if face in 'NS' else ((0, 1), (0, -1))
+        return all(
+            self._is_solid(cell[0] + lx, b + 1, cell[1] + lz)
+            and self._is_solid(cell[0] + lx, b + 2, cell[1] + lz)
+            for lx, lz in lat
+        )
+
+    def _ensure_door_jambs(self, cell, face: str, b: int) -> None:
+        """Build missing jamb solids at ``b+1``/``b+2`` and keep them (#164).
+
+        On stepped / rotated faces a coplanar wall neighbour may be absent; the
+        door stays on the register cell and the jambs are written into the plan.
+
+        @param cell: door wall ``(x, z)``
+        @param face: ``N``/``S``/``E``/``W``
+        @param b: floor y under the door
+        """
+        lat = ((1, 0), (-1, 0)) if face in 'NS' else ((0, 1), (0, -1))
+        for lx, lz in lat:
+            jx, jz = cell[0] + lx, cell[1] + lz
+            for y in (b + 1, b + 2):
+                if not self._is_solid(jx, y, jz):
+                    self.keep.add((jx, y, jz))
+                    self.set(jx, y, jz, self.wall)
+
     def _entrance_wall_candidates(self, f: Feature, face: str, placed: set) -> list:
-        """Wall cells on ``face`` with interior behind; prefer jamb neighbours.
+        """Wall cells on ``face`` with interior behind.
+
+        Jamb framing is ensured at place time via ``_ensure_door_jambs`` (#164);
+        do not drop nearer cells when a framed cell exists elsewhere on the face
+        (that jumped doors ~14 blocks on stepped rotated walls).
 
         @param f: feature mass
         @param face: ``N``/``S``/``E``/``W``
@@ -1664,28 +1704,20 @@ class Build:
         @returns: candidate ``(x, z)`` cells
         """
         dx, dz = DIRS[face]
-        cand = [
+        return [
             c for c in f.walls
             if c not in placed
             and self.exposed(c, face)
             and (c[0] - dx, c[1] - dz) in f.inner
         ]
-        if not self.spec['door_frame'] or not cand:
-            return cand
-        # Prefer cells with wall neighbours as jambs, but do not drop nearer
-        # non-strict candidates when a strict cell exists elsewhere on the face
-        # (old whole-face filter hid doors beside portals — #114 / #146).
-        lat = ((0, 1), (0, -1)) if face in 'EW' else ((1, 0), (-1, 0))
-        with_jambs = [
-            c for c in cand
-            if all((c[0] + lx, c[1] + lz) in f.walls for lx, lz in lat)
-        ]
-        return with_jambs or cand
 
     def _pick_entrance_wall(
         self, f: Feature, face: str, at, placed: set,
     ) -> tuple[int, int] | None:
         """Nearest wall cell on ``face`` to ``at`` (or mid-face when ``at`` absent).
+
+        When choosing among equals by distance, prefer cells that already have
+        solid jambs (same solidity rule as the door-frame guard).
 
         @param f: feature mass
         @param face: entrance face
@@ -1696,14 +1728,26 @@ class Build:
         cand = self._entrance_wall_candidates(f, face, placed)
         if not cand:
             return None
+
+        def jamb_rank(c: tuple[int, int]) -> int:
+            if not self.spec['door_frame']:
+                return 0
+            return 0 if self._door_jambs_solid(c, face, self._column_floor(f, c)) else 1
+
         if at is not None and isinstance(at, (list, tuple)) and len(at) == 2:
             ax, az = int(at[0]), int(at[1])
-            return min(cand, key=lambda c: (c[0] - ax) ** 2 + (c[1] - az) ** 2)
+            return min(
+                cand,
+                key=lambda c: (
+                    (c[0] - ax) ** 2 + (c[1] - az) ** 2,
+                    jamb_rank(c),
+                ),
+            )
         if face in 'NS':
             mid = sum(c[0] for c in cand) / len(cand)
-            return min(cand, key=lambda c: abs(c[0] - mid))
+            return min(cand, key=lambda c: (abs(c[0] - mid), jamb_rank(c)))
         mid = sum(c[1] for c in cand) / len(cand)
-        return min(cand, key=lambda c: abs(c[1] - mid))
+        return min(cand, key=lambda c: (abs(c[1] - mid), jamb_rank(c)))
 
     def _outside_door_floor(
         self, f: Feature, cell, face: str, floor_offset: int,
@@ -1746,6 +1790,8 @@ class Build:
         door opening: air through the leaf height, floor underfoot left alone. Opening
         air/stoop cells are always added to ``keep`` so the earlier-build clash filter
         cannot drop them when ground already owns the column (live jubilee/west fail).
+        Missing jamb solids at ``b+1``/``b+2`` are built and kept (#164) so stepped
+        rotated walls stay on the register cell instead of jumping to a framed cell.
 
         @param cell: wall ``(x, z)``
         @param face: facing letter
@@ -1761,6 +1807,7 @@ class Build:
         # Lintel on the wall column (shell may have left air at door height on stepped faces).
         self.keep.add((cell[0], b + 3, cell[1]))
         self.set(cell[0], b + 3, cell[1], self.wall)
+        self._ensure_door_jambs(cell, face, b)
         st = (cell[0] + dx, cell[1] + dz)
         self.keep.add((st[0], b, st[1]))
         self.set(st[0], b, st[1], 'smooth_stone')
@@ -1804,6 +1851,14 @@ class Build:
             if c0 is None:
                 print(f'door {eid}: no wall on face {face}: skipped')
                 continue
+            if at is not None and isinstance(at, (list, tuple)) and len(at) == 2:
+                ax, az = int(at[0]), int(at[1])
+                moved = abs(c0[0] - ax) + abs(c0[1] - az)
+                if moved:
+                    print(
+                        f'door {eid}: moved {moved} blocks from register '
+                        f'{ax},{az} to {c0[0]},{c0[1]}'
+                    )
             lat = (1, 0) if face in 'NS' else (0, 1)
             cells = [c0]
             if leaves == 2:
