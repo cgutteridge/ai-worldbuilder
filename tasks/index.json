@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 133,
+  "nextTaskId": 138,
   "tasks": [
     {
       "id": 130,
@@ -29,6 +29,56 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Cause: the building spec has no vocabulary for roof or facade detail and feature_build places none. rules/building-review.md already asks the designer to list roof greeblies per roof from the aerial (plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets) and names a --greeblies feature follow-up step, but no script or lib has --greeblies (probably lost in the move from the Refine donor; not confirmed). Covers issue I-006 (no roof or facade detail), snags S-009 and S-016. Owner decision (2026-10-27): detail lives in the building spec, not a separate pass, so undo/redo of a building takes its detail with it. Scope: a per-label details table in the spec, each entry a kind, position and size: roof (plant room, vent, louvred vent, skylight, solar panel, lift overrun), facade (drainpipe, sign, canopy, ledge, fascia band); a small block recipe per kind in feature_build, placed after the shell; positions from the aerial (roofs) and street photos (facades), heights of large roof plant from lidar; the designer brief points at building-review and fills details; replace the dead --greeblies reference in the rules with the table; dry run prints each detail and its source. Done when a dry run of SUSU, West or Retail places listed roof and facade details, including Retail's entrance canopy (in its spec notes, never built). Check line S-009, S-016: each building in 48,-44 shows the roof plant and facade detail visible on the aerial and photos. Size l: may split into roof detail and facade detail. Blocked by #125 and #126: details sit on the roofs, and all touch feature_build.py. One regression test per part; no new gates or lints."
+    },
+    {
+      "id": 133,
+      "title": "Rebuild fixtures for undo tests",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints)."
+    },
+    {
+      "id": 134,
+      "title": "Undo a whole cell in order",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        133
+      ],
+      "notes": "Cause: purging a cell was done by hand and ran undo passes in the wrong order (ground before features); a refusal then halted the chain. Deliver one element_undo command that undoes everything above ghost in a cell in the fixed order (decor, trees, features, ground), stops at the first refusal and reports what is left. Dry run by default, --apply to write, under the site lock."
+    },
+    {
+      "id": 135,
+      "title": "List cells with non-ghost builds",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: finding what sits above the ghost baseline meant parsing registry/journal.jsonl by hand (cell_registry status takes one cell). Deliver a cell_registry view that names every cell with anything above ghost (ground generated, trees, decor, features) and counts of each, so a purge can be counted in one call."
+    },
+    {
+      "id": 136,
+      "title": "Purge scope: everything above ghost",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [
+        134,
+        135
+      ],
+      "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
+    },
+    {
+      "id": 137,
+      "title": "Fix stale command examples in the steering docs",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: AGENTS.md shows site_lock.py run without --world, which the script requires, and nothing points at where tests live (lib/<category>/test_*.py, scripts/test_*.py, run via scripts/run_tests.py --only <stem>). Fix the lock example and add one pointer for test locations. Docs-only; can commit straight to main."
     }
   ]
 }
