@@ -210,6 +210,33 @@ SUPPLEMENT_ROADS = [
 ]
 
 
+def _tag_negative(raw: str | None) -> bool:
+    """True when an OSM layer/level tag encodes a value below ground (starts with ``-``)."""
+    return bool(raw) and str(raw).startswith('-')
+
+
+def waterway_is_underground(t: dict) -> bool:
+    """True when a waterway line must not become open-water surface columns (#162).
+
+    Skips: ``tunnel`` with any value except ``building_passage``, ``covered=yes``,
+    ``layer<0``, ``level<0``, and any ``indoor=*``. ``building_passage`` is not a
+    waterway case and is left alone. Drain lines are not accepted waterways.
+
+    @param t: OSM tags for one line feature.
+    @returns: Whether the line is underground / covered / indoor.
+    """
+    tunnel = t.get('tunnel')
+    if tunnel and tunnel != 'building_passage':
+        return True
+    if t.get('covered') == 'yes':
+        return True
+    if t.get('indoor') not in (None, ''):
+        return True
+    if _tag_negative(t.get('layer')) or _tag_negative(t.get('level')):
+        return True
+    return False
+
+
 def road_width(t: dict) -> float:
     """Carriageway width in blocks from tags: width=*, else lanes (+ painted cycle lanes)."""
     if t.get('width'):
@@ -308,7 +335,7 @@ class OSMGround:
     def _line(self, t: dict, pts) -> None:
         hw, b = t.get('highway'), t.get('barrier')
         if t.get('waterway') in ('stream', 'river', 'canal', 'ditch'):
-            if t.get('tunnel') == 'yes' or t.get('level', '0').startswith('-'):
+            if waterway_is_underground(t):
                 return
             self.water |= set(line_cells(pts, 0.8))
             return
