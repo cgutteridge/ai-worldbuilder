@@ -58,7 +58,7 @@ Done when they are hovering and looking down at the target.
    | --- | --- |
    | Footprint | vector map (+ university outline if campus) |
    | Heights / roof levels | lidar (`lidar_parts` / grid), not aerial colour reads |
-   | Walls, openings, doors | portal + building photos (`portals.py`, `buildings.py`) |
+   | Walls, openings, doors | portal + building photos → `facade_plan` entrances (`portals.py`, `buildings.py`) |
    | Roof colour + **greeblies** | aerial sheet (`google_aerial.py` / `google_window.py`) |
 
    **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the aerial sheet, list every plant box, vent, louvre, skylight, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible` in the spec `notes`. A shell-only plan is not a finished redo. For `feature_build`, put them in the spec `details` table (`rules/feature-builds.md`); they rebuild with the building. Heights of plinths/plant from lidar; colours and XY from the aerial sheet. Facade greeblies (drainpipe, sign, canopy, ledge, fascia) come from street photos into the same table.

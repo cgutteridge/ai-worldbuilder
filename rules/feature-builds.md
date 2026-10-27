@@ -41,10 +41,11 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   Every portal on the footprint must be placed or listed unresolved
   (`provenance.unresolved_reason` non-empty). Provenance is shared
   (`lib/site/provenance.py`). No register → still add photo-read entrances.
-  Build reads this plan in #146; until then legacy `doors` still place.
-  Face slots `roof_edge` / `detail` are reserved; real roof edge and
-  greeblies stay on `roofs.edge` / `details`. Window frames are build-time
-  (#131), not plan fields.
+  Build places doors from placed entrances only (unresolved are listed, not
+  built); door floor y is outside ground + `floor_offset` (I-017). The old
+  per-portal `doors` map is refused. Face slots `roof_edge` / `detail` are
+  reserved; real roof edge and greeblies stay on `roofs.edge` / `details`.
+  Window frames are build-time (#131), not plan fields.
 - optional `facades` — legacy per-label per-face window table from street
   photos and the aerial (glazing height, pier width, wall material, bay
   rhythm `WW_BB_WW`). Prefer `facade_plan[label].faces[face].glazing`.
@@ -65,12 +66,6 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   street scale, or leave `details` empty / omit it when none are visible.
   Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
   "size": [3, 2, 2], "source": "aerial NW plant box"}]}`
-- optional `doors` — legacy per-portal map from the university register
-  (`scripts/portals.py`): `{"42-A": {"leaves": 1|2, "block": "iron_door"}}`.
-  Prefer `facade_plan` entrances (#145); this map is removed in #146.
-  Pick `block` with `block_reference.py` from the portal photo. `leaves: 2`
-  places mirrored hinges and stays framed (`door_frame_issues`). Dry run
-  prints each beside the portal name. Absent → legacy front/rear spruce.
 - optional `exclude` — per-label boxes cut out of that label's map footprint,
   `{"JSC": [[x0, z0, x1, z1], ...]}` (inclusive block coords). Use when the
   vector outline is larger than the real building (lidar shows open ground, or

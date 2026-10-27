@@ -4,8 +4,8 @@
   .venv/bin/python scripts/door_audit.py --world southampton-build
   .venv/bin/python scripts/door_audit.py --world southampton-build --list
 
-The apply guard (site_kit.door_frame_issues) stops new ones; this finds the old ones. Fix per build by re-planning
-the doors or adding the missing jambs as a small plan (modifies=<build>), not by hand.
+The apply guard (site_kit.door_frame_issues) stops new ones; this finds the old ones. Fix per build by correcting
+``facade_plan`` entrances and re-applying, or adding the missing jambs as a small plan (modifies=<build>), not by hand.
 """
 import collections
 import sys

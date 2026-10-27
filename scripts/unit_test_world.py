@@ -60,7 +60,6 @@ def unit_test_world() -> Iterator[Path]:
                     f'{name}.{operation}: provide an explicit provider response in the test'
                 )))
             providers[name] = module
-        providers['portals'].DOOR_REACH = 5
         with mock.patch.dict(sys.modules, providers), mock.patch.dict(os.environ, {
             'AI_WORLDBUILDER_REGISTRY_ROOT': str(root),
         }):

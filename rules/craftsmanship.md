@@ -65,7 +65,8 @@ rule-file copy.
   - A blank flank at each run end is wasted: the corner cell already is the pier.
 
  Doors: solid surround, facing the numbered street, walkable stoop.
- University buildings: put a door at every portal (see ENTRANCES below), not wherever looks best.
+ University buildings: place every portal in ``facade_plan`` entrances (or declare it
+ unresolved); build reads that plan only (see ENTRANCES below).
 
  Depth (good-enough, not decoration chase):
   - Bays/porches are structural bumps from the ground, not stick-on frames.
@@ -212,16 +213,18 @@ DOORS ARE FRAMED (user, 2026-10-16)
  the old ones (142 of 700 doors on 2026-10-16): see the matching issue / next-task item.
 
 
-ENTRANCES (university register, user, 2026-10-16)
+ENTRANCES (university register → facade_plan, user, 2026-10-16 / #145–#146)
  reference/portals/portals.json lists every university entrance with its real position (the door, not the photo), name
  and, for 80, a photo. scripts/portals.py cell tx,tz | building N | near x,z. The feature queue item and
- cell_features.py print the portals on each feature's footprint.
-  - portals.door_specs(cells) or portals.for_footprint(rings) give the positions.
+ cell_features.py print the portals on each feature's footprint as designer inputs.
+  - portals.for_footprint(rings) lists register entries on the mass; the designer writes each into
+    ``facade_plan`` entrances (placed or unresolved with provenance). Build places doors from that plan only.
   - The portal fixes where the door is and what it is called (a "Main" entrance gets the canopy/stoop, a "Rear" or
     "Lower ground" one is plainer, one "Concourse entrance" can be a wide opening). Its photo decides door type: look
-    at it once (look-only, no saving) when the door is a visible feature of the face.
+    at it once (look-only, no saving) when the door is a visible feature of the face. Door floor y follows outside
+    ground + ``floor_offset`` (never below outside ground).
   - A portal placed on a face the build does not have (footprint map off, wing not built) means the footprint is wrong:
-    check the wall there before moving the door.
+    check the wall there before moving the entrance in the plan.
 
 GREEBLIES ARE THE DECOR STEP OF A FEATURE (user, 2026-10-16)
  Roof and site detail (plant, vents, hatches, fans, panels, seams, planting beside the building) is applied after the

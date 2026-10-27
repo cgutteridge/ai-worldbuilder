@@ -270,15 +270,16 @@ class FacadePlanLoadSpecTest(unittest.TestCase):
             'groups': [{'nos': ['A'], 'front': 'N'}],
         }
 
-    def test_facade_plan_default_empty_and_legacy_doors_still_load(self):
+    def test_facade_plan_default_empty_and_legacy_doors_refused(self):
         spec = F.load_spec(self.write(self.good()))
         self.assertEqual(spec['facade_plan'], {})
-        self.assertEqual(spec['doors'], {})
-        with_doors = F.load_spec(self.write({
-            **self.good(),
-            'doors': {'42-A': {'leaves': 1, 'block': 'iron_door'}},
-        }))
-        self.assertEqual(with_doors['doors']['42-A']['leaves'], 1)
+        self.assertNotIn('doors', spec)
+        with self.assertRaises(SystemExit) as ctx:
+            F.load_spec(self.write({
+                **self.good(),
+                'doors': {'42-A': {'leaves': 1, 'block': 'iron_door'}},
+            }))
+        self.assertIn('facade_plan', str(ctx.exception))
 
     def test_load_spec_accepts_facade_plan_entrances(self):
         plan = {

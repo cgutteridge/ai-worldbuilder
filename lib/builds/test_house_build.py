@@ -38,14 +38,14 @@ class DoorFrameTest(unittest.TestCase):
         # front N: a step at x=2 means (2,0) has air to its west; (4,0) sits in a straight run
         walls = [(2, 0), (3, 0), (4, 0), (5, 0), (6, 0)]
         b, h = self.build(walls)
-        self.assertEqual(sorted(b.framed(h, walls, 'N')), [(3, 0), (4, 0), (5, 0)])
+        self.assertEqual(sorted(b.with_jamb_walls(h, walls, 'N')), [(3, 0), (4, 0), (5, 0)])
 
     def test_notch_then_unchanged_fallback(self):
         walls = [(0, 0), (1, 0)]
         b, h = self.build(walls)
-        self.assertEqual(b.framed(h, walls, 'N'), walls)    # no cell has both neighbours: keep the old pick
+        self.assertEqual(b.with_jamb_walls(h, walls, 'N'), walls)    # no cell has both neighbours: keep the old pick
         b, h = self.build(walls, door_frame=False)
-        self.assertEqual(b.framed(h, walls, 'N'), walls)
+        self.assertEqual(b.with_jamb_walls(h, walls, 'N'), walls)
 
 
 if __name__ == '__main__':
