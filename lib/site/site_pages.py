@@ -137,11 +137,17 @@ def issues_for(cell) -> list[tuple[str, str]]:
 
 
 def classify(cell, sts, gaps: dict | None, here, lock_task: str) -> str:
+    """Bucket a cell for the status pages.
+
+    ``gaps['footprint']`` is always a summary dict from ``cell_gaps`` (even all zeros),
+    so it must not count as remaining work — only ``unbuilt_footprint`` / other gap keys do.
+    """
     in_flight = (gaps or {}).get('in_flight') or any(v.get('status') == 'applying' for v in sts.values())
     if cell == here or in_flight or f'{cell[0]},{cell[1]}' in (lock_task or ''):
         return 'In progress'
     if gaps is not None:
-        if not any(v for k, v in gaps.items() if v):
+        # Ignore footprint: always a non-empty dict; unbuilt_footprint is the gate (#142).
+        if not any(v for k, v in gaps.items() if v and k != 'footprint'):
             return 'Completed'
         return 'Built, items remaining' if ss.layers_applied(sts) else 'Layers incomplete'
     return 'Built, items remaining' if ss.layers_applied(sts) else 'Layers incomplete'
@@ -223,12 +229,10 @@ def cell_page(cell, sts, gaps, status, media, here, runlog, elements=()) -> str:
     log = ''.join(f'<pre>{e(b)}</pre>' for b in runlog) or '<p class="muted">No run-log entry yet.</p>'
     links = ' · '.join(f'<a href="{rel(p, out)}">{n}</a>' for n, p in [
         ('SOURCES', ROOT / f'site/cells/{cell[0]}_{cell[1]}-SOURCES.txt')] if p.exists())
-    fp = (gaps or {}).get('footprint') if gaps else None
-    fp_line = footprint_text(fp) if fp else ''
     body = (f'<p class="crumbs"><a href="index.html">All cells</a></p>'
             f'<h1>Cell {cell[0]},{cell[1]} {badge(status, cell == here)}</h1>'
-            f'<p class="muted">Ring {ss.ring(cell)} · {bbox(cell)} · remaining per cell_gaps: {e(gap_text(gaps))}'
-            f'{(" · footprint " + e(fp_line)) if fp_line else ""}</p>'
+            # gap_text already includes the footprint line when present — do not append again.
+            f'<p class="muted">Ring {ss.ring(cell)} · {bbox(cell)} · remaining per cell_gaps: {e(gap_text(gaps))}</p>'
             f'<p>{links}</p>'
             f'<h2>Layers</h2><table><tr><th>Layer</th><th>Status</th><th>When</th><th>Blocks</th><th>Mismatches</th></tr>{"".join(rows)}</table>'
             f'<h2>Elements and decisions</h2>{elements_html(elements)}'
@@ -309,7 +313,9 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
             i = infos[c]
             thumb = f'<img loading="lazy" src="{rel(i["thumb"], out)}" alt="">' if i['thumb'] else ''
             fp = (i['gaps'] or {}).get('footprint') if i.get('gaps') else None
-            fp_bit = f'<div class="muted">footprint {e(footprint_text(fp))}</div>' if fp else ''
+            # Completed cards need a separate footprint line; others get it via gap_text.
+            fp_bit = (f'<div class="muted">footprint {e(footprint_text(fp))}</div>'
+                      if fp and i['status'] == 'Completed' else '')
             cards += (f'<div class="card"><a href="cell-{c[0]}_{c[1]}.html">{thumb}</a><h3><a href="cell-{c[0]}_{c[1]}.html">{c[0]},{c[1]}</a> '
                       f'<span class="muted">r{ss.ring(c)}</span></h3><div class="muted">{e(ss.layer_marks(i["sts"]))}</div>'
                       f'{fp_bit}'
