@@ -1175,12 +1175,18 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
             )
 
 
+def _in_box(p, meta):
+    """Whether a world position lies inside a structure save's from/to box (inclusive)."""
+    return all(lo <= c <= hi for c, lo, hi in zip(p, meta['from'], meta['to']))
+
+
 def _before_footprints(registry, names):
     """Capture each live plan's structure meta and cells before an undo voids them.
 
-    Uses the earliest live build's ``before_<plan>``: undo erases back to the world
-    before the first live build, so a rebuild's later snapshot (which holds the
-    earlier build) is the wrong comparison.
+    Undo erases back to the world before the first live build, so each position is
+    checked against the earliest live build's ``before_<plan>`` whose box contains it
+    (a rebuild's later snapshot holds the earlier build). Positions no live snapshot
+    covers have no before evidence and are skipped.
 
     @param registry: open CellRegistry
     @param names: plan names about to be undone
@@ -1192,8 +1198,13 @@ def _before_footprints(registry, names):
         live = [e for e in registry.entries(plan=n)
                 if e.kind == 'build' and not e.undone and e.status != 'begun'
                 and e.meta.get('structure')]
-        if cells and live:
-            out.append((n, dict(live[0].meta['structure']), list(cells)))
+        left = list(cells)
+        for e in live:
+            meta = dict(e.meta['structure'])
+            mine = [p for p in left if _in_box(p, meta)]
+            if mine:
+                out.append((n, meta, mine))
+                left = [p for p in left if not _in_box(p, meta)]
     return out
 
 
