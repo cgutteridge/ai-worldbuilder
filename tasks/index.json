@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 153,
+  "nextTaskId": 154,
   "tasks": [
     {
       "id": 132,
@@ -135,6 +135,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: #128 was logged as the fix for the planning-order issue (I-007), but its check is not met until #140 lands; the issue shows fix-landed and the digest counts it as ready for review, and issues.py has no way to withdraw a fix. Deliver: `issues.py unfix I-nnn F-n --reason T` (keeps the log, marks the fix withdrawn) and `issues.py hold I-nnn --until '#140'` (digest and sync skip the issue until that ticket is done). Digest wording says how many are held. Check: I-007 stops showing as ready for review until #140 is archived."
+    },
+    {
+      "id": 153,
+      "title": "Drop small disconnected footprint pieces from zoned features",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: a zoned feature's footprint keeps every outline cell that passes the lidar-mass test (feature_build.py, zone pipeline near line 288: square, lidar-mass intersect, median, snap) and nothing removes small pieces not joined to the main building, so a one- or two-cell piece gets walls and a stone cap. Jubilee's second build has four: a 2-cell spur at (6247,-5461)+(6248,-5461) and single columns at (6260,-5479), (6242,-5473) and (6268,-5519) (I-016, S-020). Not verified: that the lidar-mass test is why they pass. Deliver: after the mass test keep only connected pieces of the footprint big enough to be a building part (a minimum cell count in a named constant) and drop the rest; list what was dropped per feature in the dry run (cell count and position) so a real small structure such as a porch can be kept by the spec. Tests: a main mass plus a 1-cell and a 2-cell piece (both dropped), and a small piece that touches the main mass (kept). Check: after Jubilee is rebuilt none of the four pieces stands in the world and the main building is unchanged. Relates to the footprint trimming in #116; independent of the facade plan (#145)."
     }
   ]
 }
