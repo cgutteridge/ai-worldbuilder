@@ -16,10 +16,15 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   `zones`, this is the facade storey grid count (openings still use
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
-  edge?: {block, where: outer|all}}}`. Absent `edge` = no roof edging
-  (default). When set, `block` is the parapet/coping mat; `where: outer`
-  skips zone steps, `where: all` edges every step. Flat-roof overhang
-  fringe only when `edge` is set (pitched overhang unchanged).
+  edge?: {block, where: outer|all},
+  zone_materials?: {<level_m_AOD>: <mat>}}}`. Absent `edge` = no roof
+  edging (default). When set, `block` is the parapet/coping mat;
+  `where: outer` skips zone steps, `where: all` edges every step.
+  Flat-roof overhang fringe only when `edge` is set (pitched overhang
+  unchanged). Optional `zone_materials` overrides `material` per lidar
+  plateau (same level keys as `zones`). Dry run prints each zone's mean
+  aerial colour and a suggested block from the site_kit colour table
+  (suggestion only — not a gate).
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
   `site_kit.apply` refuses cells owned by builds not listed here)

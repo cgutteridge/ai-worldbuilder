@@ -12,10 +12,13 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   ways           {"<map way id>": "<label>"} footprints to build
   storeys        {"<label>": <int >= 1>} clear storeys (each STOREY_H blocks high)
   roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>",
-                   "edge"?: {"block": "<mat>", "where": "outer"|"all"}}}
+                   "edge"?: {"block": "<mat>", "where": "outer"|"all"},
+                   "zone_materials"?: {"<level_m_AOD>": "<mat>", ...}}}
                  Absent edge = no roof edging. Present: block is the parapet /
                  coping mat; where "outer" skips zone steps, "all" edges every
                  step. Flat-roof overhang fringe only when edge is set.
+                 Optional zone_materials overrides ``material`` per lidar
+                 plateau level (metres AOD, same keys as ``zones[].levels``).
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
   wall / floor   wall and interior floor materials (defaults bricks / smooth_stone)
   floor_min      minimum floor y or null
@@ -48,8 +51,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  slopes run from the zone eave up to the ridge; flat plateaus
                  stay flat. Optional ``roofs[label].edge`` places a parapet on
                  outer edges or on every zone step (default: none).
-                 Prints ``footprint osm=N readable=M pad=P cover=C%``.
-                 Facades/doors/roofs reuse the same label keys.
+                 Optional ``roofs[label].zone_materials`` sets a different mat
+                 per plateau. Dry run samples the aerial mosaic over each zone
+                 and prints mean colour + nearest ``site_kit`` preview colour
+                 (suggestion only). Prints ``footprint osm=N readable=M pad=P
+                 cover=C%``. Facades/doors/roofs reuse the same label keys.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
 Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
@@ -74,7 +80,10 @@ from script_env import ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 import portals  # noqa: E402
-from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+from site_kit import (  # noqa: E402
+    Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs,
+    nearest_preview_colour, preview,
+)
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
@@ -466,6 +475,7 @@ def load_spec(path) -> dict:
         if not isinstance(roof, dict) or roof.get('kind') not in ROOF_KINDS or not roof.get('material'):
             raise SystemExit(f'{path}: roofs[{lab}] needs {{kind: flat|pitched, material: ...}}')
         _validate_roof_edge(path, lab, roof)
+        _validate_zone_materials(path, lab, roof)
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
@@ -503,6 +513,147 @@ def _validate_roof_edge(path, lab: str, roof: dict) -> None:
     if where not in EDGE_WHERE:
         raise SystemExit(
             f'{path}: roofs[{lab}].edge.where must be one of {sorted(EDGE_WHERE)}')
+
+
+def _validate_zone_materials(path, lab: str, roof: dict) -> None:
+    """Validate optional ``roofs[label].zone_materials`` (per-plateau mat override).
+
+    Keys are plateau levels (metres AOD, int or numeric string); values are
+    non-empty material names. Absent = every zone uses ``roofs[label].material``.
+
+    @param path: spec path (for error text)
+    @param lab: roof label
+    @param roof: roofs[lab] dict
+    @raises SystemExit: on invalid zone_materials entries
+    """
+    zm = roof.get('zone_materials')
+    if zm is None:
+        return
+    if not isinstance(zm, dict):
+        raise SystemExit(f'{path}: roofs[{lab}].zone_materials must be an object')
+    for key, mat in zm.items():
+        try:
+            float(key)
+        except (TypeError, ValueError):
+            raise SystemExit(
+                f'{path}: roofs[{lab}].zone_materials key {key!r} must be a plateau level'
+            ) from None
+        if not isinstance(mat, str) or not mat.strip():
+            raise SystemExit(
+                f'{path}: roofs[{lab}].zone_materials[{key!r}] must be a non-empty material name'
+            )
+
+
+def roof_material_for_zone(roof: dict, level: int | float | None) -> str:
+    """Resolve slab/full material for one roof column.
+
+    Prefers ``zone_materials[level]`` (int or str key) when present; otherwise
+    the label-wide ``material``.
+
+    @param roof: roofs[label] dict
+    @param level: plateau metres AOD (from ``zone_level``), or None
+    @returns: material name without ``minecraft:``
+    """
+    default = roof['material']
+    zm = roof.get('zone_materials') or {}
+    if level is None or not zm:
+        return default
+    if level in zm:
+        return zm[level]
+    key = str(int(level)) if float(level) == int(level) else str(level)
+    if key in zm:
+        return zm[key]
+    # JSON may keep "45.0"; accept that too
+    if str(level) in zm:
+        return zm[str(level)]
+    return default
+
+
+def mean_rgb_255(samples: list[tuple[float, float, float]]) -> tuple[int, int, int] | None:
+    """Mean of 0..1 RGB samples as an 0..255 int triple.
+
+    @param samples: list of (r, g, b) in 0..1
+    @returns: (R, G, B) or None when empty
+    """
+    if not samples:
+        return None
+    n = len(samples)
+    r = sum(s[0] for s in samples) / n
+    g = sum(s[1] for s in samples) / n
+    b = sum(s[2] for s in samples) / n
+    return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+
+def sample_columns_rgb(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tuple[float, float, float]]:
+    """Aerial 0..1 RGB per column from the place mosaic / registered sources.
+
+    Soft-fails to ``{}`` when the mosaic or CRS helpers are unavailable (dry-run
+    suggestion only — never a gate).
+
+    @param pts: MC columns to sample
+    @returns: ``{(x, z): (r, g, b)}`` for columns that yielded a colour
+    """
+    if not pts:
+        return {}
+    try:
+        from ground_sources import mosaic_px, registered_rgb, MOSAIC, NO_DATA_LUM
+        from PIL import Image
+    except ImportError:
+        return {}
+    try:
+        im = np.asarray(Image.open(MOSAIC).convert('RGB')).astype(float) / 255
+    except OSError:
+        return {}
+    out: dict[tuple[int, int], tuple[float, float, float]] = {}
+    try:
+        for p, (X, Y) in mosaic_px(list(pts)).items():
+            X, Y = int(X), int(Y)
+            if 2 <= X < im.shape[1] - 2 and 2 <= Y < im.shape[0] - 2:
+                win = tuple(im[Y - 2:Y + 3, X - 2:X + 3].reshape(-1, 3).mean(0))
+                if sum(win) / 3 < NO_DATA_LUM:
+                    continue
+                out[p] = (float(win[0]), float(win[1]), float(win[2]))
+        out.update({p: (float(c[0]), float(c[1]), float(c[2]))
+                    for p, c in registered_rgb(list(pts)).items()})
+    except Exception:
+        return out
+    return out
+
+
+def roof_zone_colour_lines(
+    features: list,
+    aerial_rgb: dict[tuple[int, int], tuple[float, float, float]] | None = None,
+) -> list[str]:
+    """Dry-run lines: mean aerial colour + nearest site_kit preview block per zone.
+
+    Suggestion only — missing aerial / empty zone skips that zone silently.
+
+    @param features: Feature objects; zoned ones need ``zone_level``
+    @param aerial_rgb: optional injected ``{(x, z): (r, g, b) 0..1}`` (tests)
+    @returns: printable report lines
+    """
+    lines: list[str] = []
+    for f in features:
+        zl = getattr(f, 'zone_level', None)
+        if not zl:
+            continue
+        by_level: dict[int, list[tuple[int, int]]] = {}
+        for c, level in zl.items():
+            if c not in f.cells:
+                continue
+            by_level.setdefault(int(level), []).append(c)
+        need = [c for cols in by_level.values() for c in cols]
+        rgb_map = aerial_rgb if aerial_rgb is not None else sample_columns_rgb(need)
+        for level in sorted(by_level):
+            samples = [rgb_map[c] for c in by_level[level] if c in rgb_map]
+            mean = mean_rgb_255(samples)
+            if mean is None:
+                continue
+            name, _ = nearest_preview_colour(mean)
+            lines.append(
+                f'{f.no} zone {level}: roof colour mean rgb={mean} suggest {name}'
+            )
+    return lines
 
 
 def _validate_zones(path, spec: dict, labels: set) -> None:
@@ -664,6 +815,7 @@ class Build:
         world=None,
         osm_root=None,
         zone_data: dict | None = None,
+        aerial_rgb: dict | None = None,
     ):
         """
         @param spec: validated feature spec
@@ -677,6 +829,8 @@ class Build:
         @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
             (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
             When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
+        @param aerial_rgb: optional ``{(x, z): (r, g, b) 0..1}`` for roof-colour
+            dry-run lines (tests). When omitted, samples the place aerial mosaic.
         """
         self.spec = spec
         self.name = spec['name']
@@ -687,6 +841,7 @@ class Build:
         self.p = Plan(self.name)
         self.live = world if world is not None else fresh_planning_world()
         self.zone_data = zone_data or {}
+        self.aerial_rgb = aerial_rgb
         by_no = {k: set(v) for k, v in (footprints or {}).items()}
         if footprints is None:
             idx = osm_footprints.OSMIndex(root=osm_root) if osm_root is not None else osm_footprints.OSMIndex()
@@ -972,7 +1127,7 @@ class Build:
         roof = f.zone_roof
         slabs = getattr(f, 'zone_roof_slab', None)
         gy = f.zone_ground
-        rm = f.roof['material']
+        zl = getattr(f, 'zone_level', None) or {}
         edge = f.roof.get('edge')
         datum = f.b
 
@@ -1000,6 +1155,7 @@ class Build:
         for (x, z), ry in roof.items():
             g = gy[(x, z)]
             expose = edge_wall_expose(roof, gy, (x, z))
+            rm = roof_material_for_zone(f.roof, zl.get((x, z)))
             for y in range(g - 4, g):
                 self.set(x, y, z, 'stone')
             self.set(x, g, z, self.floor_mat)
@@ -1635,6 +1791,8 @@ class Build:
             print(*bits)
         for line in self.glazed_share_report():
             print(line)
+        for line in roof_zone_colour_lines(self.features, aerial_rgb=self.aerial_rgb):
+            print(line)
         for line in self.footprint_overlap_report():
             print(line)
         return self.p
@@ -1666,6 +1824,7 @@ def build(
     world=None,
     osm_root=None,
     zone_data: dict | None = None,
+    aerial_rgb: dict | None = None,
 ) -> Plan:
     """Build a feature plan from a validated spec.
 
@@ -1674,10 +1833,12 @@ def build(
     @param world: optional World-like
     @param osm_root: optional clip root (tests / fixtures only; not cross-world)
     @param zone_data: optional lidar grids for zoned labels (tests)
+    @param aerial_rgb: optional column RGB map for roof-colour dry-run lines (tests)
     @returns: Plan
     """
     return Build(
-        spec, footprints=footprints, world=world, osm_root=osm_root, zone_data=zone_data,
+        spec, footprints=footprints, world=world, osm_root=osm_root,
+        zone_data=zone_data, aerial_rgb=aerial_rgb,
     ).build()
 
 
@@ -1688,6 +1849,7 @@ def run(
     world=None,
     osm_root=None,
     zone_data: dict | None = None,
+    aerial_rgb: dict | None = None,
 ) -> Plan:
     """Load spec, build plan, preview, and site_kit.apply (dry unless do_apply).
 
@@ -1697,11 +1859,13 @@ def run(
     @param world: optional World-like
     @param osm_root: optional clip root (tests / fixtures only; not cross-world)
     @param zone_data: optional lidar grids for zoned labels (tests)
+    @param aerial_rgb: optional column RGB map for roof-colour dry-run lines (tests)
     @returns: Plan
     """
     spec = load_spec(spec_path)
     plan = build(
-        spec, footprints=footprints, world=world, osm_root=osm_root, zone_data=zone_data,
+        spec, footprints=footprints, world=world, osm_root=osm_root,
+        zone_data=zone_data, aerial_rgb=aerial_rgb,
     )
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)

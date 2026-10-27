@@ -254,24 +254,43 @@ class Plan:
 
 
 # --- offline preview ------------------------------------------------------
+# Named colours for top-down preview and for roof-colour suggestions (#126).
+PREVIEW_COLOURS: list[tuple[str, tuple[int, int, int]]] = [
+    ('black_concrete', (25, 25, 30)), ('gray_concrete', (60, 64, 68)),
+    ('light_gray_concrete', (125, 125, 115)), ('white_concrete', (210, 214, 215)),
+    ('deepslate', (70, 70, 75)), ('blackstone', (45, 40, 48)), ('tinted', (45, 35, 55)),
+    ('magenta', (200, 60, 190)), ('pink', (235, 140, 170)), ('cyan', (30, 150, 160)),
+    ('light_blue', (90, 170, 220)), ('lime', (120, 200, 30)), ('purple', (120, 40, 170)),
+    ('yellow', (240, 200, 40)), ('orange', (230, 110, 20)), ('red', (160, 40, 35)),
+    ('sea_lantern', (200, 230, 225)), ('froglight', (240, 220, 200)), ('glowstone', (250, 210, 120)),
+    ('iron_chain', (60, 60, 70)), ('end_rod', (240, 240, 240)), ('iron', (200, 200, 200)),
+    ('copper', (90, 160, 140)), ('stone_brick', (120, 120, 120)), ('glass', (170, 200, 210)),
+    ('andesite', (135, 135, 135)), ('smooth_stone', (160, 160, 160)), ('stone', (125, 125, 125)),
+    ('spruce', (100, 75, 45)), ('oak', (160, 130, 80)), ('dark_oak', (65, 45, 25)),
+    ('bed', (180, 40, 40)), ('barrel', (120, 90, 50)), ('lantern', (250, 200, 100)),
+]
+
+
+def nearest_preview_colour(rgb: tuple[int, int, int]) -> tuple[str, tuple[int, int, int]]:
+    """Nearest named entry in ``PREVIEW_COLOURS`` to an 0..255 RGB triple.
+
+    Used by feature_build dry-run to suggest a roof block from aerial mean colour
+    (suggestion only — not a gate).
+
+    @param rgb: target colour (R, G, B) each 0..255
+    @returns: ``(name, table_rgb)`` of the closest table entry
+    """
+    return min(
+        PREVIEW_COLOURS,
+        key=lambda t: sum((a - b) ** 2 for a, b in zip(t[1], rgb)),
+    )
+
+
 def colour(s):
     b = bid(s)[10:]
     if b in ('air', 'cave_air', 'light', 'void_air'):
         return None
-    table = [ ('black_concrete', (25, 25, 30)), ('gray_concrete', (60, 64, 68)),
-        ('light_gray_concrete', (125, 125, 115)), ('white_concrete', (210, 214, 215)),
-        ('deepslate', (70, 70, 75)), ('blackstone', (45, 40, 48)), ('tinted', (45, 35, 55)),
-        ('magenta', (200, 60, 190)), ('pink', (235, 140, 170)), ('cyan', (30, 150, 160)),
-        ('light_blue', (90, 170, 220)), ('lime', (120, 200, 30)), ('purple', (120, 40, 170)),
-        ('yellow', (240, 200, 40)), ('orange', (230, 110, 20)), ('red', (160, 40, 35)),
-        ('sea_lantern', (200, 230, 225)), ('froglight', (240, 220, 200)), ('glowstone', (250, 210, 120)),
-        ('iron_chain', (60, 60, 70)), ('end_rod', (240, 240, 240)), ('iron', (200, 200, 200)),
-        ('copper', (90, 160, 140)), ('stone_brick', (120, 120, 120)), ('glass', (170, 200, 210)),
-        ('andesite', (135, 135, 135)), ('smooth_stone', (160, 160, 160)), ('stone', (125, 125, 125)),
-        ('spruce', (100, 75, 45)), ('oak', (160, 130, 80)), ('dark_oak', (65, 45, 25)),
-        ('bed', (180, 40, 40)), ('barrel', (120, 90, 50)), ('lantern', (250, 200, 100)),
-    ]
-    for k, c in table:
+    for k, c in PREVIEW_COLOURS:
         if k in b:
             return c
     return (150, 120, 150)

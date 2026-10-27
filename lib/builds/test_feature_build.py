@@ -1102,5 +1102,87 @@ class OfflineGuardsTest(unittest.TestCase):
         self.assertIn('roof ridge(s) jog sideways', str(ctx.exception))
 
 
+class ZoneMaterialsColourTest(unittest.TestCase):
+    """#126: per-zone roof material override + dry-run colour suggestion."""
+
+    def setUp(self):
+        # Same two-plateau fixture as ZoneBuildTest (x=10..15, z=20..23).
+        self.cells = {(x, z) for x in range(10, 16) for z in range(20, 24)}
+        self.x0, self.z0 = 9, 19
+        depth, width = 6, 8
+        dsm = np.full((depth, width), 45.0)
+        dsm[:, 4:] = 50.0  # x >= 13 → higher plateau
+        ground = np.full((depth, width), 40)
+        self.zone_data = {
+            'A': {'dsm': dsm, 'ground_y': ground, 'x0': self.x0, 'z0': self.z0},
+        }
+
+    def spec(self):
+        return {
+            'name': 'unit_zone_materials',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 3},
+            'roofs': {
+                'A': {
+                    'kind': 'flat',
+                    'material': 'smooth_stone',
+                    'zone_materials': {
+                        '45': 'gray_concrete',
+                        '50': 'deepslate_tiles',
+                    },
+                },
+            },
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 40,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'zones': {
+                'A': {'from': 'lidar', 'levels': [45, 50], 'bucket': 2, 'axis_deg': 0},
+            },
+        }
+
+    def test_per_zone_materials_and_dry_run_colour_suggest(self):
+        """Two zones of one building can use different mats; dry-run prints colour + suggest."""
+        # Inject 0..1 RGB: low plateau pale grey, high plateau dark blue-grey.
+        aerial = {}
+        for x, z in self.cells:
+            aerial[(x, z)] = (0.62, 0.62, 0.60) if x < 13 else (0.28, 0.28, 0.32)
+        buf = io.StringIO()
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(buf):
+            plan = F.build(
+                self.spec(),
+                footprints={'A': self.cells},
+                world=_StoneWorld(),
+                zone_data=self.zone_data,
+                aerial_rgb=aerial,
+            )
+        out = buf.getvalue()
+        low = [
+            (x, z) for (x, y, z), st in plan.cells.items()
+            if y == 45 and st == 'minecraft:gray_concrete' and (x, z) in self.cells
+        ]
+        high = [
+            (x, z) for (x, y, z), st in plan.cells.items()
+            if y == 50 and st == 'minecraft:deepslate_tiles' and (x, z) in self.cells
+        ]
+        self.assertTrue(low, 'zone 45 must use gray_concrete override')
+        self.assertTrue(high, 'zone 50 must use deepslate_tiles override')
+        # Default material must not cover both plateaus when overrides are set.
+        default_roofs = [
+            st for (x, y, z), st in plan.cells.items()
+            if (x, z) in self.cells and y in (45, 50) and st == 'minecraft:smooth_stone'
+        ]
+        self.assertFalse(default_roofs, 'zone_materials must override the label default')
+        self.assertRegex(out, r'A zone 45:.*suggest \w+')
+        self.assertRegex(out, r'A zone 50:.*suggest \w+')
+        self.assertIn('rgb=', out)
+
+
 if __name__ == '__main__':
     unittest.main()
