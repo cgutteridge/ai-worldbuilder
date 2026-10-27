@@ -1178,11 +1178,12 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
 def _before_footprints(registry, names):
     """Capture each live plan's structure meta and cells before an undo voids them.
 
-    Same rule as journal undo (#138): each position is checked against the
+    Aligns with journal undo (#138): each position is checked against the
     ``before_<plan>`` of the earliest live build that *wrote* it (not merely whose
-    structure box contains it). That matches the earliest prior blob and avoids the
-    interleaved-build false refusal where a later-only column sat inside an earlier
-    box. Positions no live writer covers have no before evidence and are skipped.
+    structure box contains it). Positions with a non-targeted owner underneath are
+    skipped — journal erase restores that under-owner state, not ``before_<plan>``,
+    so binding them to the earliest writer's snapshot false-refuses (shared column
+    written by g1 → other plan → g2). Positions no live writer covers are skipped.
 
     @param registry: open CellRegistry
     @param names: plan names about to be undone
@@ -1194,10 +1195,13 @@ def _before_footprints(registry, names):
         live = [e for e in registry.entries(plan=n)
                 if e.kind == 'build' and not e.undone and e.status != 'begun'
                 and e.meta.get('structure')]
+        # Same under-owner set journal undo restores; do not check those against before_<plan>.
+        under = registry.owned(latest, exclude=names) if latest else {}
         claimed = set()
         for e in live:
             written = registry.cells_at(e.seq) or {}
-            mine = [p for p in latest if p in written and p not in claimed]
+            mine = [p for p in latest
+                    if p in written and p not in claimed and p not in under]
             if mine:
                 out.append((n, dict(e.meta['structure']), mine))
                 claimed.update(mine)
@@ -1212,8 +1216,9 @@ def undo(target, *, strict=True, meta=None):
     before any write and finished after the readback. A structure template of the erased box is
     saved first (recorded in the entry's meta). Before writes, the erase plan is compared to each
     plan's apply-time ``before_<plan>`` structure (per position: the earliest live build that
-    wrote it, same rule as journal priors — #138); a difference abandons the begun entry
-    (#123 — journal readback alone can pass while the world would become a pit).
+    wrote it, skipping under-owner columns that journal restores to the owner below — #138);
+    a difference abandons the begun entry (#123 — journal readback alone can pass while the
+    world would become a pit).
 
     @param target: plan name or ``(cell, pass_)``
     @param strict: a readback mismatch raises and leaves the entry 'begun'

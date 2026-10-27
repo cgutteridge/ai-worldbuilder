@@ -295,6 +295,30 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         undo = [e for e in self.reg().entries() if e.kind == 'undo']
         self.assertEqual([e.status for e in undo], ['landed'])
 
+    def test_shared_column_with_interleaved_under_owner_still_undoes(self):
+        # Shared column written by g1 → house → g2. Journal erase restores house
+        # (under-owner); earliest live writer's before_g1 predates house and would
+        # false-refuse if the footprint check bound that column (#138).
+        mid = (X0, 60, Z0)
+        base = site_kit.Plan('ghost')
+        base.set(*mid, GREY)
+        self.run_apply(base, stage='other', cell=CELL)
+        first = site_kit.Plan('g')
+        first.set(*mid, 'minecraft:grass_block')
+        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        house = site_kit.Plan('house')
+        house.set(*mid, 'minecraft:bricks')
+        self.run_apply(house, modifies=['ghost', 'g'])
+        second = site_kit.Plan('g')
+        second.set(*mid, 'minecraft:stone')
+        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost', 'house'])
+
+        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
+
+        self.assertEqual(self.blocks.read(mid), 'minecraft:bricks')
+        undo = [e for e in self.reg().entries() if e.kind == 'undo']
+        self.assertEqual([e.status for e in undo], ['landed'])
+
 
 if __name__ == '__main__':
     unittest.main()
