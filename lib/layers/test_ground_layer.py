@@ -167,6 +167,79 @@ class TestGroundDecisions(unittest.TestCase):
         kind[(2, 2)] = 'grass'
         self.assertEqual(gl.level_spikes(live, kind, set())[(2, 2)], 51)
 
+    def test_ground_heights_raise_live_below_lidar(self):
+        """#167: lidar base is HOW HIGH; a live dip below lidar rises to lidar.
+
+        Wide wrong-baseline voids that neighbour-rim pits would leave low still
+        rise. Footprint columns are not in ``live`` so stay untouched. Kind /
+        paving hints are decided elsewhere and are not rewritten here.
+        """
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+
+        # Live sits at 36–39 across a wide patch; lidar ground is 48 everywhere.
+        live = {(x, z): (36 + (x % 4), 'grass_block') for x in range(0, 12) for z in range(0, 8)}
+        lidar = {q: 48 for q in live}
+        kind = {q: 'grass' for q in live}
+        # Neighbour-rim pit fill would leave this wide depression at live height.
+        self.assertGreater(gl._pit_chebyshev_radius(set(live)), gl.PIT_MAX_RADIUS)
+        ys = gl.ground_heights(live, lidar)
+        for q in live:
+            self.assertEqual(ys[q], 48, q)
+        self.assertEqual(ys.get('_from_lidar'), len(live))
+
+        # MemoryBlocks: raise fill under the new lidar top; live-only paving
+        # kind dict is unchanged; footprint columns (never in ``live``) stay absent.
+        fp = {(-1, 0), (-2, 0)}  # excluded by free_columns; must not appear in ys
+        blocks = {}
+        for (x, z), (y, b) in live.items():
+            blocks[(x, y, z)] = f'minecraft:{b}'
+            for yy in range(y - 2, y):
+                blocks[(x, yy, z)] = 'minecraft:dirt'
+        world = World(store=MemoryBlocks(blocks, default='air'))
+        plan = Plan('test_lidar_height')
+        for (x, z), (old, _) in live.items():
+            gy = ys[(x, z)]
+            plan.set(x, gy, z, gl.MATERIAL[kind[(x, z)]])
+            for y in range(old + 1, gy):
+                if (world.block(x, y, z) or 'air').endswith('air'):
+                    plan.set(x, y, z, gl.RAISE_FILL)
+        self.assertEqual(plan.cells[(5, 48, 3)], 'minecraft:grass_block')
+        self.assertEqual(plan.cells[(5, 40, 3)], 'minecraft:dirt')
+        self.assertEqual(kind[(5, 3)], 'grass')
+        for q in fp:
+            self.assertNotIn(q, ys)
+
+    def test_ground_heights_keep_lidar_depression(self):
+        """#167: a real low in lidar stays low; live matching it is not raised to neighbours."""
+        live = {(x, z): (40, 'grass_block') for x in range(6) for z in range(6)}
+        lidar = {q: 40 for q in live}
+        # Surrounding would-be rim at 48 is not in lidar_ys for these columns.
+        ys = gl.ground_heights(live, lidar)
+        for q in live:
+            self.assertEqual(ys[q], 40, q)
+
+    def test_ground_heights_fall_back_to_live_when_lidar_missing(self):
+        """#167: missing lidar base (0 / absent) keeps the live surface Y."""
+        live = {(0, 0): (42, 'grass_block'), (1, 0): (43, 'grass_block')}
+        ys = gl.ground_heights(live, {(0, 0): 0})
+        self.assertEqual(ys[(0, 0)], 42)
+        self.assertEqual(ys[(1, 0)], 43)
+        self.assertEqual(ys.get('_from_lidar'), 0)
+
+    def test_lidar_base_map_reads_maps_across_columns(self):
+        """#167: lidar base comes from Maps.get(..., 'base') (cell edges ok)."""
+        fields = []
+
+        class StubMaps:
+            def get(self, x, z, field='h'):
+                fields.append(field)
+                return 50 if x == 10 else 0
+
+        got = gl.lidar_base_map([(10, 20), (11, 20)], StubMaps())
+        self.assertEqual(got, {(10, 20): 50})
+        self.assertEqual(fields, ['base', 'base'])
+
     def test_narrow_pit_is_raised_wide_depression_is_not(self):
         """#155: a 3-wide deep pit fills to the rim; a wide sunken area stays low."""
         from block_store import MemoryBlocks
