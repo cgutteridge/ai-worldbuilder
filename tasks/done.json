@@ -1420,6 +1420,24 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Split from #164 review. Cause: on stepped walls the second leaf needs a lateral neighbour cell that is wall at b and b+1; pairing across a step (diagonal-adjacent cell) is refused by the frame guard and would put the two leaves in different planes, so do not do that. Seen 2026-10-27: west 40-A/40-B, susu 42-C, retail 57-A plan double and land single. Deliver: after #164 builds the jamb, plan_doors pairs leaves laterally only and builds the step block at the shared step. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: stepped-wall fixture: a double entrance gives two leaves in one plane with door_frame_issues empty; a fixture with no lateral room still falls back to one leaf with the 'no pair cell' line. No live-world test. Helps: every building not aligned to the grid, all worlds. Unblocked 2026-10-27: #164 done. WAVE3: claimed for #165. Done 2026-10-27: lateral coplanar double-leaf pairing; merged task/165-double-doors (a9df704 / merge 3ada7fc)."
+    },
+    {
+      "id": 158,
+      "title": "Ground reads pitch, playground, construction and allotment areas and their surface tag",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: OSMGround._poly reads garden and park (as grass) and wood and scrub, and ignores leisure=pitch, playground, track, landuse=construction, allotments and natural=wetland, grassland, shrubbery; surface=* on polygons is not read either. Deliver: map these tags to a ground kind and priority, choosing the floor from surface and sport where tagged (e.g. tartan, asphalt, grass); keep landuse=residential, retail, commercial, industrial unread (they must not paint under houses). Proof: unit tests in the OSMGround fixture style, one row per tag asserting kind and priority. No live-world test. Helps: any cell with sports pitches, playgrounds or building sites, all worlds. Unblocked 2026-10-27: #156 done. WAVE3 2026-10-27: orchestrate-rest continues. WAVE3 claim 2026-10-27. Done 2026-10-27: pitch/playground/track/construction/allotments/wetland/grassland/shrubbery + surface; merged task/158-ground-tags (d449152 / merge 1a7af88)."
+    },
+    {
+      "id": 166,
+      "title": "Remove dead PIT_MAX_WIDTH from ground_layer",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-27 in review. PIT_MAX_WIDTH (lib/layers/ground_layer.py) is unused since d812f7c replaced the bbox width gate with PIT_MAX_RADIUS (Chebyshev radius <= 2); it is kept only for one assertion in lib/layers/test_ground_layer.py and reads as a claim that pits are at most N wide. Only do this if the current ground work has not already removed it. Deliver: delete PIT_MAX_WIDTH; make the wide-depression test assert on _pit_chebyshev_radius > PIT_MAX_RADIUS instead. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py. Proof: python3 scripts/run_tests.py --only test_ground_layer passes; grep PIT_MAX_WIDTH finds nothing. Related idea, not filed: gate pit fill on evidence (footprint adjacency, lidar/OSM says no real cutting or pond) instead of the size proxy, which cannot tell a wide artefact from a wide real depression. WAVE3 claim 2026-10-27. Done 2026-10-27: removed PIT_MAX_WIDTH; merged task/166-pit-max-width (dd2e7d2 / merge e325ba2)."
     }
   ]
 }
