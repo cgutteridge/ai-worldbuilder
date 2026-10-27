@@ -298,21 +298,25 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
                               candidates: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Write ``plan_feature`` notes for propose-features candidates (#128).
 
+    Skips ids already on the cell plan and ids in ``plan_dismissed`` so a re-run
+    of ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature``
+    note would clear the dismissal in the note fold).
+
     @param reg: registry
     @param cid: ``tx,tz``
     @param candidates: optional precomputed list; default loads via :func:`propose_feature_candidates`
-    @returns: list of ``{id, label, kind}`` recorded (skipped when already on the plan)
+    @returns: list of ``{id, label, kind}`` recorded (skipped when already planned or dismissed)
     """
     cell = parse_cell_id(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
-    planned = {f.id for f in reg.cell(cell).features}
+    skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
     for item in items:
         fid = candidate_plan_id(item)
-        if fid in planned:
+        if fid in skip:
             continue
         note(reg, cell, 'plan_feature', str(item.get('label') or ''), fid)
-        planned.add(fid)
+        skip.add(fid)
         recorded.append({'id': fid, 'label': item.get('label'), 'kind': item.get('kind')})
     return recorded
 

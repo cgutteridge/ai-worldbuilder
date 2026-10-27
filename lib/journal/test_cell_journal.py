@@ -860,6 +860,17 @@ class TestCellPlan(Base):
         self.assertNotIn('houses_university_road', [f.id for f in v.features])
         self.assertIn(('jubilee', 'planned'), [(f.id, f.status) for f in v.features])
 
+        # Dismissing is deliberate: propose-features --record must not undo it when
+        # missing_features still proposes the same candidate (e.g. a car park).
+        import cell_registry as CR
+        car_park = {
+            'kind': 'houses', 'label': 'University Road (6 houses)', 'street': 'University Road',
+            'refs': ['w1'],
+        }
+        self.assertEqual(CR.record_feature_candidates(self.reg, '0,0', [car_park]), [])
+        v = self.reg.cell((0, 0))
+        self.assertNotIn('houses_university_road', [f.id for f in v.features])
+
         self.build('jubilee', 'feature', plan(0, 0, STONE))
         v = self.reg.cell((0, 0))
         self.assertIn(('jubilee', 'built'), [(f.id, f.status) for f in v.features])

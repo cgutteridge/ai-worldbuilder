@@ -1367,6 +1367,18 @@ class CellRegistry:
         seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
         return Receipt(seq, 'landed')
 
+    def plan_dismissed_ids(self, cell: Cell) -> set[str]:
+        """Feature ids deliberately dismissed from the cell plan (#128).
+
+        A later ``plan_feature`` note clears a dismissal; ``propose-features --record``
+        must skip these ids so a re-run does not undo the dismiss.
+
+        @param cell: (tx, tz)
+        @returns: dismissed feature plan ids for the cell
+        """
+        self._sync()
+        return set(self._note_state()['plan_dismissed'].get(tuple(cell), ()))
+
     def _plan_feature_ids(self, cell: Cell) -> set[str]:
         """Feature ids still on the cell plan (notes + ever-built, minus dismissals).
 
