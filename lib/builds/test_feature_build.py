@@ -847,6 +847,93 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertGreater(dist, 0)
         self.assertRegex(out, rf'door 18-A:.*moved {dist} .*from register')
 
+    def test_stepped_wall_double_door_two_leaves_same_plane(self):
+        """#165: double entrance on a stepped south face lands two coplanar leaves."""
+        # Staircase mass: 2-cell treads stepping south. Primary at (15,22) has
+        # interior; lateral (14,22) is a step-corner wall (no interior behind) so
+        # the old face_ok candidate set refused it — pair must still land.
+        cells = set()
+        for x in range(10, 22):
+            zmax = 20 + (x - 10) // 2
+            for z in range(15, zmax + 1):
+                cells.add((x, z))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            b = F.Build(
+                self.spec([
+                    _entrance_row(
+                        id='40-A', portal_id='40-A', face='S', leaves=2,
+                        block='iron_door', at=[15, 22],
+                    ),
+                ]),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            b.build()
+        out = buf.getvalue()
+        self.assertNotIn('no pair cell', out, out)
+        self.assertIn('2-leaf', out)
+        lowers = [(pos, st) for pos, st in b.p.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 2, lowers)
+        xz = sorted((pos[0], pos[2]) for pos, _ in lowers)
+        self.assertEqual(xz[0][1], xz[1][1], 'leaves must share one plane (same z)')
+        self.assertEqual(abs(xz[0][0] - xz[1][0]), 1)
+        # Outer jambs beyond the pair are solid; the free-standing step jamb
+        # outside the footprint is written into keep (#164/#165).
+        lo_x, hi_x = xz[0][0], xz[1][0]
+        z = xz[0][1]
+        b_floor = lowers[0][0][1] - 1
+        for jx in (lo_x - 1, hi_x + 1):
+            for yy in (b_floor + 1, b_floor + 2):
+                self.assertTrue(
+                    b._is_solid(jx, yy, z),
+                    f'missing step/jamb at {(jx, yy, z)}',
+                )
+        built_step = [
+            (jx, yy, z)
+            for jx in (lo_x - 1, hi_x + 1)
+            for yy in (b_floor + 1, b_floor + 2)
+            if (jx, yy, z) in b.keep
+        ]
+        self.assertTrue(built_step, 'expected a kept step block at the shared step')
+        self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
+
+    def test_stepped_wall_double_falls_back_without_lateral_pair(self):
+        """#165: no coplanar wall neighbour → 1-leaf and the 'no pair cell' line."""
+        cells = {(x, z) for x in range(10, 40) for z in range(18, 25)}
+        reg = (25, 24)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            b = F.Build(
+                self.spec([]),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            b.spec['facade_plan'] = {'A': {'faces': {}, 'entrances': []}}
+            b.build()
+            f = b.features[0]
+            for lx in (1, -1):
+                n = (reg[0] + lx, reg[1])
+                f.walls.discard(n)
+                for y in range(f.b, f.b + f.storeys * F.STOREY_H):
+                    b.set(n[0], y, n[1], 'air')
+            f.inner = f.cells - f.walls
+            b.spec['facade_plan'] = {'A': {'faces': {}, 'entrances': [
+                _entrance_row(
+                    id='40-A', portal_id='40-A', face='S', leaves=2,
+                    block='iron_door', at=list(reg),
+                ),
+            ]}}
+            b.plan_doors(f)
+        out = buf.getvalue()
+        self.assertIn('no pair cell', out)
+        self.assertIn('1-leaf', out)
+        lowers = [(pos, st) for pos, st in b.p.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
+
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""

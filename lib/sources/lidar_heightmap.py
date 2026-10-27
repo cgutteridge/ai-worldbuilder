@@ -277,16 +277,27 @@ def map_refs_under(lump: dict, idx) -> list:
 
 
 def report(hm: dict, with_osm: bool = True) -> list:
-    """lumps() plus footprint-map ways under each (map-ref key empty = not mapped)."""
+    """lumps() plus footprint-map ways under each (map-ref key empty = not mapped).
+
+    Also attaches ``map_hints`` (roof:shape / roof:levels / height / building:levels)
+    as designer hints beside lidar — never an override (#159).
+    """
     items = lumps(hm)
     if with_osm:
         from osm_footprints import OSMIndex
         idx = OSMIndex()
         levels = map_levels(idx)
+        hints = map_hints(idx)
         for lp in items:
             lp['map_refs'] = map_refs_under(lp, idx)
             lv = {levels[r] for r in lp['map_refs'] if r in levels}
             lp['map_levels'] = sorted(lv)
+            merged: dict = {}
+            for r in lp['map_refs']:
+                for k, v in (hints.get(r) or {}).items():
+                    merged.setdefault(k, v)
+            if merged:
+                lp['map_hints'] = merged
     return items
 
 
@@ -373,6 +384,24 @@ def map_levels(idx) -> dict:
 osm_levels = map_levels  # back-compat alias
 
 
+def map_hints(idx) -> dict:
+    """{way ref: map hint tags} for footprints carrying roof/height/levels (#159).
+
+    Hints never override lidar; they sit beside the estimate in the report.
+
+    @param idx: osm_footprints.OSMIndex
+    @returns: {ref: {tag: value}}
+    """
+    from building_evidence import map_building_hints
+    from coverage import osm_ref
+    out = {}
+    for _rings, p in idx.buildings:
+        hints = map_building_hints(p)
+        if hints:
+            out[osm_ref(p)] = hints
+    return out
+
+
 def format_report(cell, items: list, source: str | None = None) -> str:
     """Plain-text table of the building report; ``source`` ('composite') is named in the heading when given."""
     lines = [f'LIDAR LUMPS cell {cell[0]},{cell[1]}: {len(items)} building(s)' + (f' [{source}]' if source else ''),
@@ -384,6 +413,10 @@ def format_report(cell, items: list, source: str | None = None) -> str:
                      + f'{lp["columns"]:>4} {str(lp["ground_y"]):>6} {lp["eave_y"]:>4} {lp["ridge_y"]:>5} '
                      f'{str(lp["storeys"]):>2} {lp["roof"]:<8} {str(lp["ridge_axis"] or "-"):<4} {lp["trees_over"]:>5} '
                      f'{",".join(map(str, lp.get("map_levels", []))) or "-":>3} {refs}')
+        hints = lp.get('map_hints') or {}
+        if hints:
+            parts = [f'{k}={v}' for k, v in hints.items()]
+            lines.append('  map hint (never override lidar): ' + ', '.join(parts))
     return '\n'.join(lines)
 
 
