@@ -682,6 +682,45 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertEqual(y, 53)
         self.assertGreaterEqual(y - 1, 52)
 
+    def test_door_clears_inward_vestibule_so_door_to_wall_is_zero(self):
+        """#143: inward column at door height is air; floaters.door_to_wall does not fire."""
+        import floaters as fl
+
+        class HighPavementWorld:
+            """Interior stone to y=49; pavement south of the wall at y=52."""
+
+            def block(self, x, y, z):
+                if z >= 25 and y <= 52:
+                    return 'minecraft:stone'
+                return 'minecraft:stone' if y <= 49 else 'minecraft:air'
+
+        plan, _out = self.build_plan(
+            [_entrance_row(leaves=1, block='iron_door', at=[13, 25], floor_offset=0)],
+            world=HighPavementWorld(),
+        )
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        (x, y, z), st = lowers[0]
+        # Face S → inward is north (−z). Opening height is lower + upper.
+        for dy in (0, 1):
+            key = (x, y + dy, z - 1)
+            cell = plan.cells.get(key, 'minecraft:air')
+            self.assertTrue(
+                fl.is_air(cell) or cell.split('[')[0].endswith(':air'),
+                f'inward vestibule {key} must be air, got {cell!r}',
+            )
+
+        def block_at(bx, by, bz):
+            return plan.cells.get((bx, by, bz)) or HighPavementWorld().block(bx, by, bz)
+
+        flags = fl.cell_glitches(block_at, x, y, z, st)
+        self.assertFalse(
+            any(r['kind'] == 'door_to_wall' for r in flags),
+            flags,
+        )
+
+
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""
 

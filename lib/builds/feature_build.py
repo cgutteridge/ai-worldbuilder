@@ -1740,7 +1740,10 @@ class Build:
         return f.b
 
     def _set_door_leaf(self, cell, face: str, block: str, hinge: str, b: int):
-        """Write one door leaf (lower+upper) and clear the stoop column.
+        """Write one door leaf (lower+upper); clear outside stoop and inward vestibule.
+
+        The inward clear (#143) stops ``door_to_wall`` when a storey floor sits at the
+        door opening: air through the leaf height, floor underfoot left alone.
 
         @param cell: wall ``(x, z)``
         @param face: facing letter
@@ -1757,6 +1760,9 @@ class Build:
         self.set(st[0], b, st[1], 'smooth_stone')
         for y in range(b + 1, b + 4):
             self.set(st[0], y, st[1], 'air')
+        inn = (cell[0] - dx, cell[1] - dz)
+        for y in range(b + 1, b + 4):
+            self.set(inn[0], y, inn[1], 'air')
 
     def plan_doors(self, f: Feature) -> None:
         """Place doors from ``facade_plan[label].entrances``; skip unresolved.
