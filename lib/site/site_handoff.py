@@ -279,18 +279,28 @@ def _portal_photo(p):
 
 
 def portal_facts(portals):
-    """Entrance lines for a feature item: university portals (scripts/portals.py) on the feature's footprint.
+    """Portal input lines for a feature item: register portals on the footprint.
+
+    Portals feed ``facade_plan`` entrances (#145): each must be placed or
+    declared unresolved with provenance. Photos and positions are evidence.
 
     @param portals: portal dicts from the feature (cell_features.missing_features)
     @returns: queue-item lines ([] when none)
     """
     if not portals:
         return []
-    from portals import describe
-    return ([f'Entrances (reference/portals, university register; position is the door, name is what it is called, '
-             f'photos are look-only, 800 px):'] + [f'  {describe(p)}' + (f'  {_portal_photo(p)}' if p['images'] else '')
-                                           for p in portals[:12]]
-            + ['Put a door at each one (portals.door_specs); say in the build note any you skip and why.'])
+    import facade_plan as FP
+
+    def _photo(p):
+        if not p.get('images'):
+            return None
+        try:
+            return _portal_photo(p)
+        except Exception:
+            imgs = p.get('images') or []
+            return imgs[0] if imgs else None
+
+    return FP.format_portal_inputs(portals, photo_for=_photo)
 
 
 def _building_photo(b):

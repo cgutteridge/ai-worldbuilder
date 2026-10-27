@@ -26,18 +26,43 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   ledge_stair    rising stair on 1-block ledges beyond 4 columns (default false)
   door_frame     framed doors on angled walls (default true)
   keep_edits     stoop/step cells survive earlier-build clash filter (default false)
+  facade_plan    optional per-label per-face plan (entrances + glazing slots):
+                   {"<label>": {
+                     "faces": {"N"|"S"|"E"|"W": {
+                       "glazing"?: [same rows as facades],
+                       "roof_edge"?: null|note, "detail"?: []}},
+                     "entrances": [{
+                       "id": "<stable>", "portal_id"?: "<register id>",
+                       "face"?: "N"|"S"|"E"|"W", "leaves"?: 1|2,
+                       "block"?: "<*_door>", "at"?: [x, z],
+                       "canopy"?: {"kind": "none"|"canopy"|"covered_area"},
+                       "steps"?: >=0, "floor_offset"?: int,
+                       "cell"?: [tx, tz],
+                       "provenance": {source, confidence, evidence_ids,
+                                      unresolved_reason}}]}}
+                 Portals are inputs, not a stage: every register portal on the
+                 footprint must be placed or declared unresolved (non-empty
+                 ``provenance.unresolved_reason``). Provenance is
+                 ``lib/site/provenance.py`` (#151). Worlds with no portal
+                 register still list photo-read entrances. Build placement
+                 from this plan is #146; legacy ``doors`` remains until then.
+                 Glazing may live under ``faces[].glazing`` (#130); window
+                 frames are build-time (#131); roof/facade greeblies stay in
+                 ``details`` / ``roofs.edge`` (#132) — entrance canopy is here.
   doors          optional per-portal door map (university register ids):
                    {"<portal id>": {"leaves": 1|2, "block": "<*_door>"}}
                  leaves 2 = mirrored hinges; dry run prints each beside the portal name.
                  Absent/empty → legacy front/rear single spruce doors.
+                 Deprecated by ``facade_plan``; removed in #146.
   facades        optional per-label per-face table of window rows (photo reading):
                    {"<label>": {"N"|"S"|"E"|"W": [
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
                       "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
                  One row list per exposed face (every storey the evidence
-                 shows). A pane is placed only when the finished build has
-                 non-air on both sides along the wall line and above and
-                 below; otherwise the wall block stays. Dry run prints how
+                 shows). Prefer ``facade_plan[label].faces[face].glazing`` when
+                 writing new specs. A pane is placed only when the finished
+                 build has non-air on both sides along the wall line and above
+                 and below; otherwise the wall block stays. Dry run prints how
                  many panes were skipped that way per face, plus glazed
                  share for every exposed face and storey; faces with no
                  facade rows are marked ``no evidence read`` (report only,
@@ -49,10 +74,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "face"?: "N"|"S"|"E"|"W"}]}
                  Roof kinds: plant_room, vent, louvred_vent, skylight,
                  solar_panel, lift_overrun. Facade kinds: drainpipe, sign,
-                 canopy, ledge, fascia_band (``face`` required). Placed after
-                 the shell and roof; dry run prints each detail and its
-                 source. Positions from aerial (roofs) / street photos
-                 (facades); large plant heights from lidar.
+                 canopy, ledge, fascia_band (``face`` required). Entrance
+                 canopy / covered area belongs on ``facade_plan`` entrances,
+                 not here. Placed after the shell and roof; dry run prints
+                 each detail and its source. Positions from aerial (roofs) /
+                 street photos (facades); large plant heights from lidar.
   exclude        optional per-label boxes cut out of the map footprint (outline larger
                  than the real building, or neighbours sharing the outline):
                    {"<label>": [[x0, z0, x1, z1], ...]}   inclusive block coords
@@ -100,6 +126,7 @@ from numpy.lib.stride_tricks import sliding_window_view as _sw
 from script_env import ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
+import facade_plan as facade_plan_mod  # noqa: E402
 import portals  # noqa: E402
 from site_kit import (  # noqa: E402
     Plan, apply, bid, fresh_planning_world, guard_door_frames, guard_roof_jogs,
@@ -558,6 +585,7 @@ def load_spec(path) -> dict:
     spec.setdefault('floor', 'smooth_stone')
     spec.setdefault('doors', {})
     spec.setdefault('facades', {})
+    spec.setdefault('facade_plan', {})
     spec.setdefault('details', {})
     spec.setdefault('zones', {})
     spec.setdefault('exclude', {})
@@ -583,10 +611,31 @@ def load_spec(path) -> dict:
                 raise SystemExit(f'{path}: label {no} needs a way, storeys and roof')
     _validate_doors(path, spec)
     _validate_facades(path, spec, labels)
+    _validate_facade_plan(path, spec, labels)
     _validate_details(path, spec, labels)
     _validate_zones(path, spec, labels)
     _validate_exclude(path, spec, labels)
     return spec
+
+
+def _validate_facade_plan(path, spec: dict, labels: set) -> None:
+    """Validate optional ``facade_plan`` via ``lib/builds/facade_plan.py``.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: labels declared in ``ways``
+    @raises SystemExit: on invalid facade_plan
+    """
+    try:
+        facade_plan_mod.validate_facade_plan(
+            spec.get('facade_plan') or {},
+            labels=labels,
+            storeys=spec.get('storeys') or {},
+            portal_ids=None,
+            path=f'{path}: facade_plan',
+        )
+    except facade_plan_mod.FacadePlanError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _validate_roof_edge(path, lab: str, roof: dict) -> None:

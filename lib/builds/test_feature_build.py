@@ -48,6 +48,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['wall'], 'bricks')
         self.assertEqual(spec['floor'], 'smooth_stone')
         self.assertEqual(spec['facades'], {})
+        self.assertEqual(spec['facade_plan'], {})
         self.assertEqual(spec['details'], {})
         self.assertEqual(spec['doors'], {})
         self.assertEqual(spec['zones'], {})

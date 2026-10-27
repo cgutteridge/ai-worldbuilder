@@ -292,6 +292,26 @@ class BriefLidarGhost(Base):
         self.assertIn('Ghost ground only', brief)
 
 
+class PortalFactsFacadePlan(unittest.TestCase):
+    """#145: portal brief feeds facade_plan, not door_specs."""
+
+    def test_portal_facts_asks_for_facade_plan_not_door_specs(self):
+        lines = H.portal_facts([
+            {'id': '57-A', 'label': 'Side', 'x': 10, 'z': 20, 'images': ['http://example/57.jpg']},
+            {'id': '40-A', 'label': 'Main', 'x': 11, 'z': 21, 'images': []},
+        ])
+        text = '\n'.join(lines)
+        self.assertIn('57-A', text)
+        self.assertIn('10,20', text)
+        self.assertIn('facade_plan', text)
+        self.assertIn('unresolved', text.lower())
+        self.assertNotIn('door_specs', text)
+        self.assertNotIn('Put a door at each one', text)
+
+    def test_portal_facts_empty_when_no_portals(self):
+        self.assertEqual(H.portal_facts([]), [])
+        self.assertEqual(H.portal_facts(None), [])
+
 
 if __name__ == '__main__':
     unittest.main()

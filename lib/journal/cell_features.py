@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Find major features (buildings) a cell still lacks, packaged for queueing.
+"""Find major features (buildings and water bodies) a cell still lacks, packaged for queueing.
 
-Each feature also lists the university entrances ("portals", scripts/portals.py) on its footprint: door positions
-and names for the build, with photos to look at.
+Each building feature also lists the university entrances ("portals", scripts/portals.py)
+on its footprint: door positions and names for the build, with photos to look at.
 
 A feature is any build recorded in the cell journal that is not a layer pass
 (ground, trees, decor, foliage, canopy, undo, markers). A vector-map building is "in a
 feature" when at least COVERED_FRAC of its footprint columns are touched by one.
+Mapped water bodies (#148) use the same coverage rule on their outline columns.
 
 Packaging: each non-home building (campus block, shop, church...) is its own feature.
 Homes that overlap the cell and are not yet in a feature are grouped by street, then
 split where the gap between neighbouring footprints exceeds JOIN_GAP, so one terrace
 or run of houses becomes one feature. Outbuildings (sheds, garages) are left to their
-house plot.
+house plot. Connected water columns become ``kind: water_body`` candidates.
 
   python3 scripts/cell_features.py --cell 48,-43
 """
@@ -38,6 +39,7 @@ from coverage import (  # noqa: E402
 from osm_footprints import OSMIndex  # noqa: E402
 from portals import describe, for_footprint  # noqa: E402
 from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
+from water_body import MIN_WATER_COLUMNS, water_body_components  # noqa: E402
 
 COVERED_FRAC = 0.5
 JOIN_GAP = 12         # blocks between footprints that still count as one run of houses
@@ -187,19 +189,64 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
     }
 
 
-def missing_features(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> list:
-    """Buildings overlapping the cell that no feature build covers, packaged as features.
+def missing_water_bodies(
+    tx: int,
+    tz: int,
+    *,
+    water_columns: set | None = None,
+    covered: set | None = None,
+) -> list:
+    """Mapped water bodies overlapping the cell that no feature build covers (#148).
+
+    @param tx: cell X
+    @param tz: cell Z
+    @param water_columns: optional precomputed water columns; default loads ``OSMGround``
+    @param covered: optional precomputed feature_columns()
+    @returns: list of ``kind: water_body`` candidate dicts (outline, bbox, refs, …)
+    """
+    covered = feature_columns() if covered is None else covered
+    if water_columns is None:
+        try:
+            from ground_sources import OSMGround  # noqa: WPS433
+            water_columns = set(OSMGround((tx, tz)).water)
+        except (OSError, RuntimeError, ValueError, FileNotFoundError):
+            # Unit fixtures / no world: no vector-map water to propose.
+            return []
+    x0, z0, x1, z1 = cell_bbox(tx, tz, tx, tz)
+    in_cell = {(x, z) for x, z in water_columns if x0 <= x <= x1 and z0 <= z <= z1}
+    out = []
+    for body in water_body_components(in_cell, cell=(tx, tz), min_columns=MIN_WATER_COLUMNS):
+        outline = [(int(c[0]), int(c[1])) for c in body['outline']]
+        if outline and sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
+            continue
+        out.append(body)
+    return out
+
+
+def missing_features(
+    tx: int,
+    tz: int,
+    idx: OSMIndex | None = None,
+    covered: set | None = None,
+    *,
+    water_columns: set | None = None,
+) -> list:
+    """Buildings and water bodies overlapping the cell that no feature build covers.
 
     @param tx: cell X
     @param tz: cell Z
     @param idx: optional shared OSMIndex
     @param covered: optional precomputed feature_columns()
-    @returns: [{'kind': 'building'|'houses', 'label': str, 'street': str|None,
+    @param water_columns: optional water columns for tests; default loads ``OSMGround``
+    @returns: [{'kind': 'building'|'houses'|'water_body', 'label': str, 'street': str|None,
                 'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
                 'portals': [portal],
-                'pictures': [university building (scripts/buildings.py: photo + outline)]}], buildings first, then streets
+                'pictures': [university building (scripts/buildings.py: photo + outline)]}],
+        buildings first, then streets, then water bodies
     """
-    return footprint_progress(tx, tz, idx=idx, covered=covered)['unbuilt']
+    covered = feature_columns() if covered is None else covered
+    buildings = footprint_progress(tx, tz, idx=idx, covered=covered)['unbuilt']
+    return buildings + missing_water_bodies(tx, tz, water_columns=water_columns, covered=covered)
 
 
 def main(argv=None) -> int:
@@ -209,6 +256,9 @@ def main(argv=None) -> int:
     tx, tz = (int(v) for v in a.cell.split(','))
     for f in missing_features(tx, tz):
         print(f"{f['kind']:9} {f['label']}  bbox={f['bbox']}  {','.join(f['refs'][:6])}")
+        if f['kind'] == 'water_body':
+            print(f"          outline {f.get('area')} columns  water_level={f.get('water_level')}")
+            continue
         for q in f['portals']:
             print(f'          entrance {describe(q)}')
         for q in f['pictures']:
