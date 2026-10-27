@@ -4,15 +4,6 @@
   "nextTaskId": 129,
   "tasks": [
     {
-      "id": 125,
-      "title": "Pitched roofs over lidar ridges in zoned features",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: feature_build requires roofs[label].kind == flat for any label with a zones entry (feature_build.py:503); assign_roof_zones snaps the DSM to plateau levels, so a ridge becomes stepped flat terraces. roof_pitched (single hip from the footprint edge) cannot express wings at different heights, so zoned buildings cannot be pitched at all. The West Building designer also read 'flat roof behind brick parapet' from a street photo without checking the lidar profile. Evidence: lidar DSM over West (w34391673) rises and falls across its wings, 48->52->48 and 49->56->51 m AOD; the spec snapped it to 44/48/51/54. Covers issue I-009 (roof built flat where the real building has a pitched roof), snag S-013. Scope: allow kind pitched with zones; within each zone, where the DSM shows a ridge, build stair-slab slopes from the zone eave up to the ridge along the ridge line; plateaus stay flat. One line in the design brief: check the lidar profile before calling a roof flat. Done when a dry run of west_w34391673 shows a ridge along the lidar ridge line and SUSU's flat roof is unchanged. Check line S-013: West's roof rises to a ridge where the lidar shows one, with no stepped flat terraces. One regression test only; no new gates or lints."
-    },
-    {
       "id": 126,
       "title": "Roof material from evidence, varying per zone",
       "status": "todo",
