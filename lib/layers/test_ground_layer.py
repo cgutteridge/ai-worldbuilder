@@ -233,6 +233,27 @@ class TestGroundDecisions(unittest.TestCase):
         for q in fp:
             self.assertNotIn(q, ys)
 
+    def test_diagonal_wall_band_bbox_narrow_7_still_fills(self):
+        """#160 live: 3-wide diagonal beside a wall merges to bbox narrow=7; still fills."""
+        live = {(x, z): (44, 'grass_block') for x in range(0, 14) for z in range(0, 22)}
+        fp = {(x, z) for x in range(10, 14) for z in range(0, 22)}
+        for q in fp:
+            live.pop(q, None)
+        # x 3..9 (span 7) × long z — same bbox class as live 6144..6150 at S-019.
+        pit = {(x, z) for x in range(3, 10) for z in range(2, 20)
+               if (z - 2) // 3 <= (x - 3) <= (z - 2) // 3 + 2}
+        self.assertTrue(pit)
+        for q in pit:
+            live[q] = (36, 'grass_block')
+        xs = [c[0] for c in pit]
+        zs = [c[1] for c in pit]
+        narrow = min(max(xs) - min(xs) + 1, max(zs) - min(zs) + 1)
+        self.assertEqual(narrow, 7, (min(xs), max(xs), min(zs), max(zs)))
+        kind = {q: 'grass' for q in live}
+        ys = gl.level_pits(live, kind, fp)
+        for q in pit:
+            self.assertEqual(ys[q], 44, q)
+
     def test_path_is_carried_straight_across_shade(self):
         # a 3-wide brick path along x with a 9-long shaded gap; lawn above and below
         kind = {(x, z): 'brick' for x in list(range(0, 8)) + list(range(17, 25)) for z in (10, 11, 12)}
