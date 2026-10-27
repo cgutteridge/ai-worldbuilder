@@ -70,6 +70,7 @@ only what the brief / task needs.
    university register entries on the footprint: reference/portals, reference/buildings
      (scripts/portals.py building N, scripts/buildings.py building N)
    Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
+   Water-body (pond) feature: rules/water-body-builds.md
    Designer/builder models (feature/trees/decor): rules/build-roles.md +
      `python3 scripts/build_roles.py show` (ghosts ignore this)
 
