@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 131,
+  "nextTaskId": 132,
   "tasks": [
     {
       "id": 129,
@@ -20,6 +20,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: a spec's facades table usually lists one face per building, and Build.windows punches glass only on listed faces and storeys. Even listed faces are nearly blank above storey 1: SUSU north storey 1 82%, storey 2 3%, storey 3 0%; West east 4-8%; Retail south 8%/3%; Jubilee south 34/25/24%. Covers issue I-004 (glazing far below the photos: windows only on the faces the spec lists), snag S-006. Scope: (1) the dry run lists every exposed face and storey with its glazed share, marking faces with no facade row 'no evidence read' (report, not a gate); (2) the designer brief asks for a facade row for every exposed face, read from street photos and the aerial; where no evidence shows a face, copy the nearest read face and say so in the spec notes. Done when dry runs for susu_w33830305, west_w34391673 and retail_w33830236 list every face with no unexplained gap. Check line S-006: each building's windows look like the photos on every face, upper storeys included. Not verified: whether the low upper-storey shares come from misread photos or omitted rows; check first when picked up. Touches feature_build.py like #125 and #126; sequence them. One regression test only; no new gates or lints."
+    },
+    {
+      "id": 131,
+      "title": "Window panes need a solid frame",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: Build.windows punches glass_pane into any listed face with no framing check (doors have door_frame_issues; windows have no equivalent), so on stepped or diagonal walls a pane meets open air. Covers issue I-013 (glass panes on diagonal walls have no frame), snag S-007. Scope: place a pane only where the finished build has solid wall on both sides along the wall line and above and below; otherwise keep the wall block. The dry run prints the count of panes skipped this way, per face. Done when dry runs for susu_w33830305 and Jubilee report no pane beside air. Check line S-007: every glass pane on SUSU's and Jubilee's diagonal walls has solid blocks all round it. Touches feature_build.py like #125, #126 and #130; sequence them. One regression test only; no new gates or lints."
     }
   ]
 }
