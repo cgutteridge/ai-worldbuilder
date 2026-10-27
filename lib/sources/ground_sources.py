@@ -231,6 +231,7 @@ class OSMGround:
         self.fence: set = set()
         self.soft: set = set()        # mapped parking polygon: the aerial may show it is really lawn
         self.trees: list = []
+        self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
         feats = load_osm(cell)
         self.n_features = len(feats)  # reporting for dry runs (#113); 0 is legitimate
         self._load(feats)
@@ -246,11 +247,19 @@ class OSMGround:
                     self.feat[q] = feat
 
     def _load(self, feats) -> None:
+        from street_furniture import classify
+
         for t, geom, g in feats:
             if geom == 'poly':
                 self._poly(t, g)
             elif geom == 'line':
                 self._line(t, g)
+            elif geom == 'point':
+                kind = classify(t)
+                if kind:
+                    self.furniture.append((int(math.floor(g[0])), int(math.floor(g[1])), kind))
+                elif t.get('natural') == 'tree':
+                    self.trees.append((int(math.floor(g[0])), int(math.floor(g[1]))))
             elif t.get('natural') == 'tree':
                 self.trees.append((int(math.floor(g[0])), int(math.floor(g[1]))))
 

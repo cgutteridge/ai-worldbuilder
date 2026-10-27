@@ -267,6 +267,17 @@ class TestRules(Base):
                 self.build('x', p, plan(0, 0, STONE), cell=(0, 0))
         self.assertEqual(self.applied, [])
 
+    def test_empty_decor_pass_can_finish_a_cell(self):
+        """Part (5): a genuine no-furniture cell may journal an empty decor land (#127)."""
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE), cell=(0, 0))
+        self.build('trees_0_0', 'trees', plan(0, 0, STONE, y=65), cell=(0, 0))
+        self.build('decor_0_0', 'decor', {}, cell=(0, 0))
+        v = self.reg.cell((0, 0))
+        self.assertTrue(v.decor)
+        self.assertTrue(v.done)
+        with self.assertRaises(Refused):
+            self.build('feature_empty', 'feature', {}, cell=(0, 0))
+
     def test_bad_requests_are_refused_loudly(self):
         with self.assertRaises(Refused):
             self.build('x', 'bogus', plan(0, 0, STONE))

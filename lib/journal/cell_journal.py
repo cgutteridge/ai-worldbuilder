@@ -1162,7 +1162,10 @@ class CellRegistry:
             raise Refused('plan name is required')
         positions = {tuple(p): s for p, s in b.cells.items()}
         ghost = b.pass_ in GHOST_PASSES
-        if not positions and not (ghost and b.cell is not None):
+        # Empty trees/decor (and ghost) are allowed when the cell is named: a reviewed
+        # "nothing to place" pass must still finish the cell (#127 / S-012).
+        empty_ok = b.cell is not None and (ghost or b.pass_ in ('trees', 'decor'))
+        if not positions and not empty_ok:
             raise Refused(f'{b.plan}: empty plan')
         if b.cell is not None:
             primary = tuple(b.cell)
