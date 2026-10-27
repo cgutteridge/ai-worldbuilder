@@ -15,23 +15,12 @@
       "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference."
     },
     {
-      "id": 145,
-      "title": "Facade plan with entrances: the designer accounts for every portal",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "notes": "Cause: doors are placed at the wall cell nearest a portal point (portals.framed, DOOR_REACH, #114) and the spec's optional `doors` map is rarely filled, so leaf count, face, canopy and floor height are guessed per door (S-021 sunk 42-B door, S-023 57-A on the wrong face, 40-A single not double). Deliver: a per-face facade plan in the building spec (storeys, glazing, entrances with leaf count, canopy or covered area, steps, floor height against outside ground; room for roof edge and detail). Portals are inputs to it, not a stage: the designer brief shows every portal on the footprint with its photo and position when it has one, and each must be placed or declared unresolved with a reason. Each entrance records its source (given coordinate or register entry, photo read, inference) and confidence. Portals are best effort: a world with no portal register still gets entrances from street-level photos. Relates to #130 (windows on every face), #131 (window frames) and #132 (roof and facade detail): decide whether they become fields of this plan or follow it. Check: 57-A is a single door on the side face under a covered area; 40-A shows double doors; 42-B sits at ground level; a portal left unresolved is listed in the plan and the cell view.",
-      "blockedBy": []
-    },
-    {
       "id": 146,
       "title": "Build reads the facade plan; remove the old portal door path everywhere",
       "status": "todo",
       "priority": "high",
       "complexity": "m",
-      "blockedBy": [
-        145
-      ],
+      "blockedBy": [],
       "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild. Acceptance also includes the old #143 check: after re-applying the specs, 0 patrol door_to_wall flags and doors at the right leaf count; the door row follows the outside ground (I-017)."
     },
     {
@@ -41,15 +30,6 @@
       "complexity": "m",
       "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces. Start with a spike: confirm which code path built West's roof (roof_pitched or the zoned pitched path from #125) before changing either; the flat-roof issue (I-009) is confirmed, so do not regress the ridge shape.",
       "id": 149,
-      "blockedBy": []
-    },
-    {
-      "id": 150,
-      "title": "Decor read from the aerial and photos: hedges round buildings, plaza seating",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "notes": "Cause: #127 places street furniture only where the vector map has points or barriers, so hedges round Retail and plaza seating that show in the aerial are missed (I-008, S-026). Deliver: a decor plan read from the aerial and photos (hedges and borders, seating, bike racks, bins), with each item's source and confidence, and decor built from that plan; items it cannot resolve are listed, not silently skipped. Same pattern as the facade plan (#145): reuse its provenance fields. Keep the bike-rack fences the owner accepted. Check: 48,-44 has hedges round Retail and seating in the plaza where the aerial shows them.",
       "blockedBy": []
     }
   ]
