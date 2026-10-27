@@ -137,20 +137,49 @@ def issues_for(cell) -> list[tuple[str, str]]:
 
 
 def classify(cell, sts, gaps: dict | None, here, lock_task: str) -> str:
+    """Bucket a cell for the status pages.
+
+    ``gaps['footprint']`` is always a summary dict from ``cell_gaps`` (even all zeros),
+    so it must not count as remaining work — only ``unbuilt_footprint`` / other gap keys do.
+    """
     in_flight = (gaps or {}).get('in_flight') or any(v.get('status') == 'applying' for v in sts.values())
     if cell == here or in_flight or f'{cell[0]},{cell[1]}' in (lock_task or ''):
         return 'In progress'
     if gaps is not None:
-        if not any(v for k, v in gaps.items() if v):
+        # Ignore footprint: always a non-empty dict; unbuilt_footprint is the gate (#142).
+        if not any(v for k, v in gaps.items() if v and k != 'footprint'):
             return 'Completed'
         return 'Built, items remaining' if ss.layers_applied(sts) else 'Layers incomplete'
     return 'Built, items remaining' if ss.layers_applied(sts) else 'Layers incomplete'
 
 
+def footprint_text(fp: dict | None) -> str:
+    """Built vs unbuilt footprint area line for cell cards and pages (#142).
+
+    @param fp: ``gaps['footprint']`` or a :func:`site_status.cell_footprint` dict
+    @returns: human-readable summary
+    """
+    return ss.format_footprint(fp)
+
+
 def gap_text(g: dict | None) -> str:
     if g is None:
         return 'not checked'
-    parts = [k.replace('_', ' ') if v is True else f'{k} {len(v) if hasattr(v, "__len__") else v}' for k, v in g.items() if v]
+    fp = (g or {}).get('footprint')
+    has_fp = bool(fp and (fp.get('built_area') or fp.get('unbuilt_area') or fp.get('unbuilt_names')))
+    parts = []
+    for k, v in g.items():
+        if not v or k == 'footprint':
+            continue
+        if k == 'unbuilt_footprint':
+            if has_fp:
+                continue
+            if isinstance(v, (list, tuple)):
+                parts.append('unbuilt footprint: ' + ', '.join(str(n) for n in v))
+            continue
+        parts.append(k.replace('_', ' ') if v is True else f'{k} {len(v) if hasattr(v, "__len__") else v}')
+    if has_fp:
+        parts.append('footprint ' + footprint_text(fp))
     return ', '.join(parts) or 'none'
 
 
@@ -202,6 +231,7 @@ def cell_page(cell, sts, gaps, status, media, here, runlog, elements=()) -> str:
         ('SOURCES', ROOT / f'site/cells/{cell[0]}_{cell[1]}-SOURCES.txt')] if p.exists())
     body = (f'<p class="crumbs"><a href="index.html">All cells</a></p>'
             f'<h1>Cell {cell[0]},{cell[1]} {badge(status, cell == here)}</h1>'
+            # gap_text already includes the footprint line when present — do not append again.
             f'<p class="muted">Ring {ss.ring(cell)} · {bbox(cell)} · remaining per cell_gaps: {e(gap_text(gaps))}</p>'
             f'<p>{links}</p>'
             f'<h2>Layers</h2><table><tr><th>Layer</th><th>Status</th><th>When</th><th>Blocks</th><th>Mismatches</th></tr>{"".join(rows)}</table>'
@@ -282,8 +312,13 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
         for c in cells:
             i = infos[c]
             thumb = f'<img loading="lazy" src="{rel(i["thumb"], out)}" alt="">' if i['thumb'] else ''
+            fp = (i['gaps'] or {}).get('footprint') if i.get('gaps') else None
+            # Completed cards need a separate footprint line; others get it via gap_text.
+            fp_bit = (f'<div class="muted">footprint {e(footprint_text(fp))}</div>'
+                      if fp and i['status'] == 'Completed' else '')
             cards += (f'<div class="card"><a href="cell-{c[0]}_{c[1]}.html">{thumb}</a><h3><a href="cell-{c[0]}_{c[1]}.html">{c[0]},{c[1]}</a> '
                       f'<span class="muted">r{ss.ring(c)}</span></h3><div class="muted">{e(ss.layer_marks(i["sts"]))}</div>'
+                      f'{fp_bit}'
                       f'<div class="muted">{e(gap_text(i["gaps"]) if i["status"] != "Completed" else "")}</div>'
                       f'{"<span class=badge>marker</span>" if c == here else ""}</div>')
         secs += f'<h2>{e(status)} ({len(cells)})</h2><div class="cards">{cards}</div>'
@@ -291,9 +326,10 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
     body = (f'<h1>Cells: completed and in progress</h1>'
             f'<p class="muted">{counts}{f" · not started: {len(not_started)}" if not_started else ""}<br>Marker (where work is): '
             f'{f"{here[0]},{here[1]}" if here else "none"} · Lock: {e(lock)}</p>'
-            f'<p class="muted"><strong>Completed</strong> means <code>site_handoff.cell_gaps</code> is empty. <strong>In progress</strong> means the marker is on it, '
+            f'<p class="muted"><strong>Completed</strong> means <code>site_handoff.cell_gaps</code> is empty (including no unbuilt '
+            f'vector-map footprint). <strong>In progress</strong> means the marker is on it, '
             f'a stage is in flight, or the lock names it. <strong>Built, items remaining</strong> means ground, trees and decor are applied but cell_gaps still lists work '
-            f'(houses, lumps, stale trees). Thumbnails are the cell\'s existing ground preview.</p>{secs}')
+            f'(houses, unbuilt footprint, lumps, stale trees). Thumbnails are the cell\'s existing ground preview.</p>{secs}')
     return page('Cells overview', body)
 
 

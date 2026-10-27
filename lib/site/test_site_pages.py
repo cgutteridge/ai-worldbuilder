@@ -24,13 +24,41 @@ class TestSitePages(unittest.TestCase):
 
     def test_classify(self):
         done = {n: {'status': 'applied'} for n in ('ground-layer', 'trees', 'decor')}
-        none = {'in_flight': [], 'layers': [], 'trees_stale': False, 'features': []}
+        # cell_gaps always sets footprint to a dict (even all zeros) — must still classify Completed.
+        none = {'in_flight': [], 'layers': [], 'trees_stale': False, 'features': [],
+                'unbuilt_footprint': [],
+                'footprint': {'built_area': 0, 'unbuilt_area': 0, 'unbuilt': [], 'unbuilt_names': []}}
         self.assertEqual(sp.classify((1, 1), done, none, (9, 9), ''), 'Completed')
         self.assertEqual(sp.classify((1, 1), done, none, (1, 1), ''), 'In progress')
         self.assertEqual(sp.classify((1, 1), done, {**none, 'features': [1]}, None, ''), 'Built, items remaining')
         self.assertEqual(sp.classify((1, 1), {}, {**none, 'layers': ['decor']}, None, ''), 'Layers incomplete')
         self.assertEqual(sp.classify((1, 1), done, {**none, 'in_flight': ['x']}, None, ''), 'In progress')
         self.assertEqual(sp.classify((1, 1), done, none, None, 'task on 1,1'), 'In progress')
+
+    def test_classify_completed_with_built_only_footprint(self):
+        """#142: footprint summary dict is always truthy; zero unbuilt must still be Completed."""
+        done = {n: {'status': 'applied'} for n in ('ground-layer', 'trees', 'decor')}
+        gaps = {
+            'in_flight': [], 'layers': [], 'trees_stale': False, 'features': [],
+            'unbuilt_footprint': [],
+            'footprint': {'built_area': 400, 'unbuilt_area': 0, 'unbuilt': [], 'unbuilt_names': []},
+        }
+        self.assertEqual(sp.classify((49, -45), done, gaps, None, ''), 'Completed')
+        self.assertIn('400', sp.gap_text(gaps))
+        self.assertIn('0 unbuilt', sp.gap_text(gaps))
+
+    def test_classify_refuses_completed_when_unbuilt_footprint(self):
+        """#142: empty layers/features still cannot read Completed while unbuilt footprint remains."""
+        done = {n: {'status': 'applied'} for n in ('ground-layer', 'trees', 'decor')}
+        gaps = {
+            'in_flight': [], 'layers': [], 'trees_stale': False, 'features': [],
+            'unbuilt_footprint': ['Fixture Hall'],
+            'footprint': {'built_area': 100, 'unbuilt_area': 80, 'unbuilt_names': ['Fixture Hall']},
+        }
+        self.assertEqual(sp.classify((49, -45), done, gaps, None, ''), 'Built, items remaining')
+        self.assertIn('Fixture Hall', sp.gap_text(gaps))
+        self.assertIn('100', sp.footprint_text(gaps['footprint']))
+        self.assertIn('80', sp.footprint_text(gaps['footprint']))
 
     def test_issue_lookup_matches_whole_cell_ids(self):
         with tempfile.TemporaryDirectory() as d:
