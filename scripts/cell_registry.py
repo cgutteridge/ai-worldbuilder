@@ -305,6 +305,14 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
     lines.append(f'  left: {", ".join(v.left) if v.left else "(nothing)"}')
     for f in v.features:
         lines.append(f'  feature {f.id}: {f.status}')
+    # #142 / #154: unbuilt footprint (incl. portals left inside a built outline)
+    try:
+        from site_status import cell_footprint, format_footprint
+        fp = cell_footprint(parse_cell_id(cid))
+        if fp.get('built_area') or fp.get('unbuilt_area'):
+            lines.append(f'  footprint {format_footprint(fp)}')
+    except (OSError, ValueError, KeyError, RuntimeError, SystemExit, ImportError):
+        pass
     for n in v.notes:
         label = 'coverage warning' if n.kind == 'coverage' else n.kind
         lines.append(f'  {label} {n.ref}: {n.body}')

@@ -141,12 +141,74 @@ def _package_unbuilt(singles: list, homes: list, streets) -> list:
     return out
 
 
+def _portal_column(portal: dict) -> tuple[int, int]:
+    """Integer XZ column of a portal entrance.
+
+    @param portal: portal with ``x`` / ``z`` (Minecraft blocks)
+    @returns: ``(x, z)`` rounded to the nearest block
+    """
+    return (int(round(portal['x'])), int(round(portal['z'])))
+
+
+def _uncovered_portals_in_cell(rings, covered: set, cb: tuple[int, int, int, int]) -> list:
+    """Portals on a footprint whose entrance column is in the cell and not built (#154).
+
+    Used when the footprint itself is already judged built (e.g. one large outline
+    that swallowed neighbouring houses the feature build excluded on purpose).
+
+    @param rings: OSM rings for the footprint
+    @param covered: columns touched by any feature build
+    @param cb: cell bbox ``(x0, z0, x1, z1)``
+    @returns: portals in cell whose column is not in ``covered``
+    """
+    x0, z0, x1, z1 = cb
+    out = []
+    for portal in for_footprint(rings):
+        col = _portal_column(portal)
+        if col in covered:
+            continue
+        if not (x0 <= col[0] <= x1 and z0 <= col[1] <= z1):
+            continue
+        out.append(portal)
+    return out
+
+
+def _houses_from_uncovered_portals(portals: list, streets) -> dict:
+    """One unbuilt houses row for portals left inside an otherwise-built footprint (#154).
+
+    @param portals: uncovered portals (same building outline, this cell)
+    @param streets: OSMIndex.streets for nearest-street lookup
+    @returns: a ``kind: houses`` row shaped like :func:`_package_unbuilt` output
+    """
+    buildings = sorted({str(p.get('building') or p['id']) for p in portals})
+    xs = [p['x'] for p in portals]
+    zs = [p['z'] for p in portals]
+    pad = 2
+    bbox = (min(xs) - pad, min(zs) - pad, max(xs) + pad, max(zs) + pad)
+    street = _street_of({'building': 'house'}, bbox, streets)
+    n = len(buildings)
+    return {
+        'kind': 'houses',
+        'street': street,
+        'label': f'{street or "unnamed street"} ({n} houses)',
+        'refs': [f'uos:{b}' for b in buildings],
+        'bbox': bbox,
+        'area': max(1, n),
+        'portals': list(portals),
+        'pictures': [],
+    }
+
+
 def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> dict:
     """Built vs unbuilt vector-map building footprint area overlapping a cell (#142).
 
     Area is the count of building columns that fall inside the cell. A building is
     unbuilt when fewer than COVERED_FRAC of its full footprint columns are touched
     by a feature build — the same rule as :func:`missing_features`.
+
+    When a footprint is judged built, portals on it whose entrance columns are still
+    untouched (and lie in this cell) are still emitted as unbuilt homes (#154): a
+    large outline can swallow houses that the feature build excluded on purpose.
 
     @param tx: cell X
     @param tz: cell Z
@@ -160,6 +222,7 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
     cb = cell_bbox(tx, tz, tx, tz)
     built_area = 0
     singles, homes = [], []
+    orphan_houses: list = []
     for rings, p in idx.buildings:
         if p.get('building') in OUTBUILDINGS:
             continue
@@ -171,6 +234,9 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
         area = len(cols)
         if sum(c in covered for c in full) >= COVERED_FRAC * len(full):
             built_area += area
+            orphans = _uncovered_portals_in_cell(rings, covered, cb)
+            if orphans:
+                orphan_houses.append(_houses_from_uncovered_portals(orphans, idx.streets))
             continue
         xs = [x for x, _ in rings[0]]
         zs = [z for _, z in rings[0]]
@@ -180,7 +246,7 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
             'bbox': (min(xs), min(zs), max(xs), max(zs)), 'area': area,
         }
         (homes if p.get('building') in HOMES else singles).append(item)
-    unbuilt = _package_unbuilt(singles, homes, idx.streets)
+    unbuilt = _package_unbuilt(singles, homes, idx.streets) + orphan_houses
     return {
         'built_area': built_area,
         'unbuilt_area': sum(u['area'] for u in unbuilt),
