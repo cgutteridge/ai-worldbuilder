@@ -90,6 +90,28 @@ def line_cells(pts, half: float) -> dict:
     return out
 
 
+def centre_mark_cells(cells: dict) -> set:
+    """Dashed road centre-line columns, always one cell wide.
+
+    Keeps the 3-on / 3-off dash (``int(along) % 6 < 3``). Distance strictly
+    under half a block wins; when the line falls on a block edge and two
+    neighbours both have ``d == 0.5``, the lexicographically smaller column
+    wins for that along-bucket so the dash is never two blocks wide (#147).
+
+    @param cells: ``line_cells`` map ``{(x, z): (distance, along)}``
+    @returns: set of ``(x, z)`` mark columns
+    """
+    best: dict[int, tuple[float, tuple[int, int]]] = {}
+    for q, (d, a) in cells.items():
+        if d > 0.5 or int(a) % 6 >= 3:
+            continue
+        key = int(a)
+        cur = best.get(key)
+        if cur is None or (d, q) < cur:
+            best[key] = (d, q)
+    return {q for _, q in best.values()}
+
+
 def inside(px: float, pz: float, ring) -> bool:
     """Even-odd point-in-polygon."""
     c = False
@@ -303,7 +325,7 @@ class OSMGround:
             if hw in ROAD_CLASSES and kind == 'tarmac':
                 self.road |= set(cells)
                 if half >= 3 and t.get('oneway') != 'yes':
-                    self.marks |= {q for q, (d, a) in cells.items() if d <= 0.5 and int(a) % 6 < 3}
+                    self.marks |= centre_mark_cells(cells)
         elif hw in PATH_WIDTH:
             self._fid += 1
             self._put(line_cells(pts, PATH_WIDTH[hw] / 2),
