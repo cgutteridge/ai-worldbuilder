@@ -1,6 +1,16 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 168,
-  "tasks": []
+  "nextTaskId": 169,
+  "tasks": [
+    {
+      "id": 168,
+      "title": "Rename the building \"canopy\" to awning_like so it cannot be read as a tree canopy",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-27 (owner). \"canopy\" means the tree crown in ground, trees, lidar layers and canopy_grid/canopy_audit, and also a roof or cover over an entrance in feature specs. The owner's name for the building sense is awning_like (not only awnings: porch roofs, covered areas, canopies). Cause class: Translation (naming). Deliver: rename every building-sense use and leave tree uses alone. Known building-sense sites: facade_plan entrance field `canopy` and CANOPY_KINDS / _validate_canopy in lib/builds/facade_plan.py; the details kind 'canopy' in lib/builds/feature_build.py (detail kinds list and its handler) and the spec docstring there; rules/feature-builds.md; lib/builds/test_facade_plan.py and lib/builds/test_feature_build.py. Decide the name of the kind value 'canopy' inside the field (it is one kind of awning_like) and keep 'none', 'covered_area', 'awning'. Existing world specs that use the old key (worlds/southampton-build/site/builds/retail_w33830236.json) must be migrated, or the loader must refuse the old key with a message naming the new one; no silent alias. Leave lib/sources/test_lidar_query.py (tree layer) and ground/trees code alone. Proof: existing facade_plan and feature_build unit tests renamed and passing, plus a test that the old key is refused, plus a grep check that no tree module mentions awning_like. Helps: all feature builds; unblocks planning the SUSU entrance covered area without the ambiguity."
+    }
+  ]
 }
