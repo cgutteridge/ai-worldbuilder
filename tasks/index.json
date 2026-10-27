@@ -4,15 +4,6 @@
   "nextTaskId": 154,
   "tasks": [
     {
-      "id": 142,
-      "title": "Status pages and morning report show unbuilt footprint per cell",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: morning and site_pages called 48,-45 and 49,-45 complete when about half of 49,-45 was still empty footprint. Deliver: each cell row and the morning report show built vs unbuilt footprint area and the names of unbuilt buildings; a cell with unbuilt footprint cannot show as Completed."
-    },
-    {
       "id": 143,
       "title": "Feature doors land in a one-block vestibule that patrol flags door_to_wall",
       "status": "todo",
@@ -75,15 +66,6 @@
       "blockedBy": [
         151
       ]
-    },
-    {
-      "id": 151,
-      "title": "Shared provenance record for evidence-read plan items",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Why: #145 (facade entrances), #148 (water bodies) and #150 (decor) each say 'record source and confidence and list what is unresolved'; three private versions would drift. Deliver: one helper and schema, built on the existing decision_record evidence store (registry/evidence ids), not a new store: source (given coordinate, register entry, photo read, aerial, lidar, vector map, inference), confidence, evidence ids, and an unresolved reason; helpers to attach it to a plan item and to list a cell's unresolved items for the cell view. Check: unit tests, and #145, #148 and #150 import it and define no provenance fields of their own."
     },
     {
       "id": 152,
