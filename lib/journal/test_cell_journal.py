@@ -332,7 +332,9 @@ class TestUndo(Base):
         self.assertEqual(self.blocks.read(P(0, 0)), STONE)             # the earlier owner is put back
         self.assertEqual(self.blocks.read(P(0, 0, 1)), AIR)
         self.assertEqual(self.reg.owned([P(0, 0), P(0, 0, 1)]), {P(0, 0): ('base', STONE)})
-        self.assertEqual([f.id for f in self.reg.cell((0, 0)).features], ['base'])
+        # #128: undo clears the build only; house stays on the cell plan as planned
+        self.assertEqual([(f.id, f.status) for f in self.reg.cell((0, 0)).features],
+                         [('base', 'built'), ('house', 'planned')])
 
     def test_undo_by_cell_and_pass_clears_the_flag(self):
         self.real_cell()
@@ -823,6 +825,56 @@ class TestBlobStorage(Base):
         self.assertEqual(len(runs), 5)  # y5-6 merge; gap at y7, state change at y9, two more columns
         self.assertEqual(_decode_runs(runs), cells)
         self.assertEqual(_encode_runs({}), [])
+
+
+class TestCellPlan(Base):
+    """#128: cell plan keeps features after undo; houses stay until built or dismissed."""
+
+    def test_undo_keeps_feature_planned_and_recorded_house_until_built_or_dismissed(self):
+        import registry_next as N
+
+        self.real_cell()
+        self.build('jubilee', 'feature', plan(0, 0, STONE))
+        self.reg.change(Undo('jubilee'), self.apply)
+        v = self.reg.cell((0, 0))
+        self.assertIn(('jubilee', 'planned'), [(f.id, f.status) for f in v.features])
+        self.assertIn('feature jubilee=planned', v.left)
+        self.assertFalse(v.done)
+        task = N.next_task(self.reg, root=self.root)
+        self.assertEqual((task['kind'], task['feature'], task['status']),
+                         ('feature', 'jubilee', 'planned'))
+
+        self.reg.change(Note((0, 0), 'plan_feature', 'University Road (6 houses)',
+                             ref='houses_university_road'))
+        v = self.reg.cell((0, 0))
+        self.assertIn(('houses_university_road', 'planned'), [(f.id, f.status) for f in v.features])
+        self.assertIn('feature houses_university_road=planned', v.left)
+
+        with self.assertRaises(Refused):
+            self.reg.change(Note((0, 0), 'plan_feature-dismiss', '', ref='houses_university_road'))
+        with self.assertRaises(Refused):
+            self.reg.change(Note((0, 0), 'plan_feature-dismiss', '  ', ref='houses_university_road'))
+        self.reg.change(Note((0, 0), 'plan_feature-dismiss', 'car park, not a building',
+                             ref='houses_university_road'))
+        v = self.reg.cell((0, 0))
+        self.assertNotIn('houses_university_road', [f.id for f in v.features])
+        self.assertIn(('jubilee', 'planned'), [(f.id, f.status) for f in v.features])
+
+        # Dismissing is deliberate: propose-features --record must not undo it when
+        # missing_features still proposes the same candidate (e.g. a car park).
+        import cell_registry as CR
+        car_park = {
+            'kind': 'houses', 'label': 'University Road (6 houses)', 'street': 'University Road',
+            'refs': ['w1'],
+        }
+        self.assertEqual(CR.record_feature_candidates(self.reg, '0,0', [car_park]), [])
+        v = self.reg.cell((0, 0))
+        self.assertNotIn('houses_university_road', [f.id for f in v.features])
+
+        self.build('jubilee', 'feature', plan(0, 0, STONE))
+        v = self.reg.cell((0, 0))
+        self.assertIn(('jubilee', 'built'), [(f.id, f.status) for f in v.features])
+        self.assertFalse(any(x.startswith('feature jubilee=') for x in v.left))
 
 
 if __name__ == '__main__':

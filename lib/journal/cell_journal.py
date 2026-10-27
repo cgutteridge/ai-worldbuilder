@@ -60,7 +60,10 @@ REAL_PASSES = ELEMENTS  # alias: journal/API still say "real passes" vs ghost
 GHOST_PASSES = ('ghost-ground', 'ghost-features')
 NEUTRAL_PASSES = ('other',)        # owns blocks, no progress meaning (cell markers, clean-ups)
 PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
-NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close')
+# plan_feature / plan_feature-dismiss: cell plan (#128). Undo clears the build only;
+# dismiss is a separate deliberate note with a reason.
+NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
+              'plan_feature', 'plan_feature-dismiss')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
@@ -164,12 +167,14 @@ class Undo:
 
 @dataclass(frozen=True)
 class Note:
-    """Journal-only fact: marker, hold, coverage warning, review or issue note.
+    """Journal-only fact: marker, hold, coverage warning, review, issue or cell-plan note.
 
     @param cell: (tx, tz)
     @param kind: one of :data:`NOTE_KINDS`
-    @param body: ``up|none`` (marker), reason (hold, coverage-dismiss), text otherwise
-    @param ref: warning id / note id (coverage, coverage-dismiss, review, issue, close)
+    @param body: ``up|none`` (marker), reason (hold, coverage-dismiss, plan_feature-dismiss),
+        label (plan_feature), text otherwise
+    @param ref: warning / feature / note id (coverage, coverage-dismiss, plan_feature,
+        plan_feature-dismiss, review, issue, close)
     """
 
     cell: Cell
@@ -233,7 +238,11 @@ class GhostView:
 
 @dataclass(frozen=True)
 class FeatureState:
-    """A feature (pass ``feature`` plan) touching a cell: ``in-progress`` or ``built``."""
+    """A feature on the cell plan: ``planned``, ``in-progress`` or ``built``.
+
+    ``planned`` means the cell must have it (a ``plan_feature`` note, or a prior
+    feature Build including an undone one) but no live Build owns it now.
+    """
 
     id: str
     status: str
@@ -289,8 +298,10 @@ class CellView:
 
     @param ground: ``none|ghost|generated``
     @param ghost: whether ghost ground is expected in the world now
-    @param done: ground generated, trees, decor, every feature built, no marker, no warnings, no open
-        issue note, nothing in flight
+    @param features: cell-plan features (``planned`` / ``in-progress`` / ``built``); undo leaves
+        ``planned``, dismiss removes
+    @param done: ground generated, trees, decor, every planned feature built, no marker, no warnings,
+        nothing in flight
     @param left: short human reasons work remains (same wording as ``what_is_left``)
     """
 
@@ -957,7 +968,10 @@ class CellRegistry:
     def _note_state(self) -> dict:
         if self._note_cache is not None:
             return self._note_cache
-        st: dict = {'marker': None, 'holds': {}, 'warn': {}, 'open': {}, 'cells': set()}
+        st: dict = {
+            'marker': None, 'holds': {}, 'warn': {}, 'open': {}, 'cells': set(),
+            'plan': {}, 'plan_dismissed': {},
+        }
         for n in self._notes:
             cell, kind, ref, body = tuple(n['cell']), n['kind'], n.get('ref', ''), n.get('body', '')
             st['cells'].add(cell)
@@ -975,6 +989,12 @@ class CellRegistry:
                 st['warn'].setdefault(cell, {}).setdefault(ref, body)
             elif kind == 'coverage-dismiss':
                 st['warn'].get(cell, {}).pop(ref, None)
+            elif kind == 'plan_feature':
+                st['plan'].setdefault(cell, {})[ref] = body
+                st['plan_dismissed'].get(cell, {}).pop(ref, None)
+            elif kind == 'plan_feature-dismiss':
+                st['plan'].get(cell, {}).pop(ref, None)
+                st['plan_dismissed'].setdefault(cell, {})[ref] = body
             elif kind in ('review', 'issue'):
                 st['open'].setdefault(cell, {})[ref or f'#{n["seq"]}'] = NoteView(kind, ref, body)
             elif kind == 'close':
@@ -1013,13 +1033,28 @@ class CellRegistry:
             elif e.pass_ == 'ghost-ground' and mine:
                 ghost_ground = not real
             # ghost-features journal lines (legacy) do not affect ground/ghost views
-        feats = []
-        for plan in self._plans:
+        ns = self._note_state()
+        live: dict[str, str] = {}
+        ever: set[str] = set()
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if e.kind != 'build' or e.pass_ != 'feature' or cell not in e.cells:
+                continue
+            if e.status == 'abandoned':
+                continue
+            ever.add(e.plan)
+        for plan in ever:
             e = self._latest(plan)
             if e is not None and e.pass_ == 'feature' and cell in e.cells:
-                feats.append(FeatureState(plan, 'built' if e.status == 'landed' else 'in-progress'))
+                live[plan] = 'built' if e.status == 'landed' else 'in-progress'
+        dismissed = set(ns['plan_dismissed'].get(cell, ()))
+        planned_notes = set(ns['plan'].get(cell, ()))
+        ids = (ever | planned_notes | set(live)) - dismissed
+        # A live Build still shows even if earlier dismissed (dismiss clears the
+        # obligation only once the build is gone).
+        ids |= set(live)
+        feats = [FeatureState(fid, live.get(fid, 'planned')) for fid in ids]
         ground = 'generated' if real else ('ghost' if ghost_ground else 'none')
-        ns = self._note_state()
         warns = ns['warn'].get(cell, {})
         notes = tuple(NoteView('coverage', k, v) for k, v in warns.items()) + tuple(
             ns['open'].get(cell, {}).values())
@@ -1076,12 +1111,16 @@ class CellRegistry:
         return self._note_state()['marker']
 
     def seeds(self) -> list[Cell]:
-        """Cells with any Element started (generated ground, trees, decor, or a feature)."""
+        """Cells with any Element started (generated ground, trees, decor, or a begun feature).
+
+        Planned-only cell-plan notes do not seed the frontier (#128).
+        """
         self._sync()
         out = []
         for c in self._known_cells():
             v = self._derive(c)
-            if v.ground == 'generated' or v.trees or v.decor or v.features:
+            started = any(f.status != 'planned' for f in v.features)
+            if v.ground == 'generated' or v.trees or v.decor or started:
                 out.append(c)
         return out
 
@@ -1311,15 +1350,50 @@ class CellRegistry:
         cell = tuple(n.cell)
         if n.kind == 'marker' and n.body not in ('up', 'none'):
             raise Refused(f'marker body must be up|none, got {n.body!r}')
-        if n.kind in ('coverage', 'coverage-dismiss', 'close') and not n.ref:
+        if n.kind in ('coverage', 'coverage-dismiss', 'close',
+                      'plan_feature', 'plan_feature-dismiss') and not n.ref:
             raise Refused(f'{n.kind} needs a ref')
         if n.kind == 'coverage-dismiss':
             if not n.body.strip():
                 raise Refused('dismissing a coverage warning needs a reason')
             if n.ref not in self._note_state()['warn'].get(cell, {}):
                 raise Refused(f'no open coverage warning {n.ref!r} on cell {list(cell)}')
+        if n.kind == 'plan_feature-dismiss':
+            if not n.body.strip():
+                raise Refused('dismissing a planned feature needs a reason')
+            open_ids = self._plan_feature_ids(cell)
+            if n.ref not in open_ids:
+                raise Refused(f'no planned feature {n.ref!r} on cell {list(cell)}')
         seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
         return Receipt(seq, 'landed')
+
+    def plan_dismissed_ids(self, cell: Cell) -> set[str]:
+        """Feature ids deliberately dismissed from the cell plan (#128).
+
+        A later ``plan_feature`` note clears a dismissal; ``propose-features --record``
+        must skip these ids so a re-run does not undo the dismiss.
+
+        @param cell: (tx, tz)
+        @returns: dismissed feature plan ids for the cell
+        """
+        self._sync()
+        return set(self._note_state()['plan_dismissed'].get(tuple(cell), ()))
+
+    def _plan_feature_ids(self, cell: Cell) -> set[str]:
+        """Feature ids still on the cell plan (notes + ever-built, minus dismissals).
+
+        @param cell: (tx, tz)
+        @returns: open plan feature ids (excludes live-only that were dismissed while built)
+        """
+        ns = self._note_state()
+        dismissed = set(ns['plan_dismissed'].get(cell, ()))
+        ever: set[str] = set()
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if (e.kind == 'build' and e.pass_ == 'feature' and cell in e.cells
+                    and e.status != 'abandoned'):
+                ever.add(e.plan)
+        return (ever | set(ns['plan'].get(cell, ()))) - dismissed
 
     # ---- follow-ups: ghost ground ensure ---------------------------------------------------
     def _ghost_needs(self, scope: set[Cell] | None = None) -> list[tuple[Cell, str]]:
