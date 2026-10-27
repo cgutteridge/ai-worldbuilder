@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 165,
+  "nextTaskId": 166,
   "tasks": [
     {
       "id": 160,
@@ -74,33 +74,45 @@
     },
     {
       "id": 162,
-      "title": "One underground test skips culverts, tunnels and covered ways in ground sources",
+      "title": "Underground waterways (culverts, tunnels, covered) are never rasterised as open water",
       "status": "todo",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Split from #156. Cause: ground_sources._line skips a waterway only when tunnel=yes or level<0, so tunnel=culvert with layer=-1 would rasterise as open water; highway lines have their own partial check. Deliver: one shared underground test used for every highway and waterway line in OSMGround: skip tunnel=* (any value), covered=yes, layer<0, level<0 and indoor=*; building_passage skipped when the surface above is a footprint column (the passage runs under a building) and kept when it is open air. Files: lib/sources/ground_sources.py and its test. Proof: unit tests on OSMGround: a culvert line (tunnel=culvert, layer=-1) beside a stream line giving only the stream columns; a covered footway giving no surface columns; a building_passage under a footprint giving none and in the open giving its columns. No live-world test. Helps: any cell with streams, culverts or underpasses, all worlds. Independent of #156 (fixture data only)."
+      "notes": "Split from #156. Cause: ground_sources._line skips a waterway only when tunnel=yes or level<0, so tunnel=culvert with layer=-1 would rasterise as open water (seven culvert and tunnel stream lines in the campus box, none yet in cell 48,-45). Highway lines are not affected: bridge, tunnel and layer lines already go into OSMGround.bridge ('not ours to surface') and stay that way. Deliver: in _line, one underground test for waterway lines: skip tunnel with any value except building_passage, covered=yes, layer<0, level<0 and indoor=*. building_passage is not a waterway case and is left alone (the ground layer already skips footprint columns). Add waterway=drain to the accepted set only if the owner wants drains as water (default: no). Files: lib/sources/ground_sources.py, lib/sources/test_ground_sources_osm.py. Proof: unit tests on OSMGround: a culvert line (tunnel=culvert, layer=-1) beside a stream line gives only the stream columns; a covered=yes stream and a layer=-1 stream give none; a building_passage highway still lands in .bridge as before. No live-world test. Independent of #156 (fixture data only). Helps: any cell with streams or culverts, all worlds. Reviewed 2026-10-27."
     },
     {
       "id": 163,
-      "title": "Mapped water polygons are the water-body feature's outline",
+      "title": "Water-body candidates carry the mapped way id and source, and streams are not proposed as ponds",
       "status": "todo",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [
-        156,
         162
       ],
-      "notes": "Split from #156. Cause: water_body_components takes water columns but nothing hands it the mapped natural=water polygons of a cell, so a pond needs a hand-written outline. Deliver: the water-body planning step passes OSMGround water polygons (after the underground test #162) to water_body_components and proposes one water-body candidate per component with provenance source vector_map. Needs #156 so the polygons are fetched. Proof: unit test with a fixture clip holding one natural=water polygon giving one candidate with its outline and source; no live-world test. Helps: the pond in 48,-45 (I-014, formal pool way 141657072 is the first test), any cell with ponds or fountains, all worlds."
+      "notes": "Split from #156; premise corrected on review. cell_features.missing_water_bodies already feeds OSMGround.water to water_body_components, so nothing needs to be handed over. Real gaps: OSMGround keeps only columns, so a candidate's refs are synthetic water_<x>_<z> and cannot name the mapped way; the candidate provenance source is not set to vector_map (not found where it would be set); stream and drain line columns merge into pond components and are labelled pond. Deliver: polygon water and line water are kept as separate sources in OSMGround; water-body candidates carry the OSM way id and provenance source vector_map; stream lines are not proposed as ponds. Files: lib/sources/ground_sources.py (keep way ids for polygons), lib/builds/water_body.py, lib/journal/cell_features.py, lib/journal/test_cell_features.py. Proof: unit test with a fixture clip holding a natural=water polygon (way 141657072 style id) and a stream line: one candidate with that way id and source vector_map, and no candidate from the stream. No live-world test. Blocked by #162 so culverts do not become ponds; #156 is needed only for the live effect (the pool is fetched), not for the fixture test. Helps: the pond in 48,-45 (I-014), any cell with ponds or fountains."
     },
     {
       "id": 164,
-      "title": "Doors reach their portal on rotated stepped walls: framed single or double",
+      "title": "Doors on stepped rotated walls get a built jamb where no framed cell exists",
       "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [],
-      "notes": "Split from #143 review. Cause (2026-10-27 rebuilds): on mass edges rotated ~25-30 degrees the wall steps in 1-2 cell runs, so (1) no wall cell has a jamb on both sides at door height, and the door frame guard rejects every cell within ~14 blocks of the Jubilee portal (18-A register 6267,-5523; framed cell found only at 6254,-5533), and (2) no free pair cell exists so double doors fall back to one leaf (west 40-A/40-B, susu 42-C, retail 57-A). Not verified: whether pairing across a step (cells on adjacent rows) or adding jamb blocks on the step would satisfy the guard. Deliver: _pick_entrance_wall / plan_doors choose a framed cell nearest the portal (or build the missing jamb on a step) and pair leaves across a step where the plan says double; any move away from the register coordinate is printed with its distance. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py (and test_door_frames.py). Proof: unit test on a rotated-wall fixture: a portal on a stepped diagonal gets a framed door within 3 blocks, a double lands as two leaves, and a plan that cannot is refused with the distance. No live-world test. Helps: every building not aligned to the grid, all worlds."
+      "blockedBy": [
+        143
+      ],
+      "notes": "Split from #143 review; revised on independent review. Cause (2026-10-27 rebuilds): on mass edges rotated ~25-30 degrees the wall steps in 1-2 cell runs. _entrance_wall_candidates already returns the nearest framed cell, so the nearest one can be ~14 blocks from the portal (Jubilee 18-A register 6267,-5523, framed cell only at 6254,-5533) simply because none is nearer; its jamb test is f.walls membership, not solid blocks at b and b+1 (unverified whether this matches guard_door_frames), and its fallback to unframed cells is then refused by the guard (SystemExit with the door-frames json). Deliver: plan_doors / _set_door_leaf build the missing jamb blocks at b+1 and b+2 (and keep them in the plan's keep set) so a door stays on the register cell; the framed-cell test uses block solidity like the guard; any door still moved away from the register coordinate prints its distance. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py, lib/builds/test_door_frames.py. Blocked by #143 (both edit _set_door_leaf and plan_doors). Proof: stepped-wall fixture: door_frame_issues returns [] and the door stays on the register cell (distance 0). No live-world test. Double-leaf landing is #165. Helps: every building not aligned to the grid, all worlds."
+    },
+    {
+      "id": 165,
+      "title": "Planned double doors land as two leaves on a stepped wall",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [
+        164
+      ],
+      "notes": "Split from #164 review. Cause: on stepped walls the second leaf needs a lateral neighbour cell that is wall at b and b+1; pairing across a step (diagonal-adjacent cell) is refused by the frame guard and would put the two leaves in different planes, so do not do that. Seen 2026-10-27: west 40-A/40-B, susu 42-C, retail 57-A plan double and land single. Deliver: after #164 builds the jamb, plan_doors pairs leaves laterally only and builds the step block at the shared step. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: stepped-wall fixture: a double entrance gives two leaves in one plane with door_frame_issues empty; a fixture with no lateral room still falls back to one leaf with the 'no pair cell' line. No live-world test. Helps: every building not aligned to the grid, all worlds."
     }
   ]
 }
