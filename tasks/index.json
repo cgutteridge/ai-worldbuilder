@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 138,
+  "nextTaskId": 139,
   "tasks": [
     {
       "id": 130,
@@ -33,11 +33,13 @@
     {
       "id": 133,
       "title": "Rebuild fixtures for undo tests",
-      "status": "todo",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints)."
+      "blockedBy": [
+        138
+      ],
+      "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints). Add a property test: apply N rebuilds of a layer with NO base owner underneath, then undo them all; the world must equal the start. (A bent fixture in the 2026-10-27 undo-check fix hid exactly this.)"
     },
     {
       "id": 134,
@@ -79,6 +81,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Cause: AGENTS.md shows site_lock.py run without --world, which the script requires, and nothing points at where tests live (lib/<category>/test_*.py, scripts/test_*.py, run via scripts/run_tests.py --only <stem>). Fix the lock example and add one pointer for test locations. Docs-only; can commit straight to main."
+    },
+    {
+      "id": 138,
+      "title": "Cell-pass undo restores the world before the first build",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints)."
     }
   ]
 }
