@@ -1194,8 +1194,10 @@ class CellRegistry:
         if b.pass_ == 'ghost-features':
             raise Refused('ghost-features is withdrawn; use coloured ghost ground tops (task #68)')
         owners = self._owners_in(positions, exclude=frozenset(b.modifies) | {b.plan})
+        # ``payload.keep`` (door openings / keep_edits) may overwrite earlier owners (#143).
+        keep = set(getattr(b.payload, 'keep', ()) or ()) if b.payload is not None else set()
         clash = {p: (o.plan, o.state, positions[p]) for p, o in owners.items()
-                 if not o.ghost and o.state != positions[p]}
+                 if not o.ghost and o.state != positions[p] and p not in keep}
         if clash:
             raise Clash(clash)
         actual = self.blocks.read_many(positions) if positions else {}
