@@ -53,6 +53,14 @@ hand-off. Fold these into that pass — they are not a separate step:
   `{block, where: outer|all}` — `outer` skips zone steps; `all` edges every
   step ([feature-builds.md](feature-builds.md),
   [evidence-order.md](evidence-order.md)).
+- **Roof and facade detail** ([building-review.md](building-review.md)). From
+  the aerial sheet, list plant rooms, vents, louvred vents, skylights, solar
+  panels and lift overruns that read at street scale; from street photos, list
+  drainpipes, signs, canopies, ledges and fascia bands. Write each into the
+  spec `details` table (`kind`, `at`, `size`, `source`; facade rows need
+  `face`). Heights of large roof plant from lidar; XY from the aerial / photo.
+  Omit `details` (or leave it empty) only when none are visible — say so in
+  `notes`.
 
 Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
 hybrid scoring and ghost baseline stay bake-off-only

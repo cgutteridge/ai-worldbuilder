@@ -21,7 +21,10 @@ One building per review. Skip any building that already has an open feature issu
    Before painting or adding to a roof, print the live columns (top block and Y per cell) and compare with the lidar grid; a
    later build can have left pits, holes or lidar-rim bands (SU retail: a 5-wide pit round the north edge, 2026-10-16).
    The aerial sheet shows roof greeblies (user, 2026-10-16): plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets. List
-   them per roof in this step; lidar often misses small roof plant — aerial is the source for those.
+   them per roof in this step and write them into the feature spec `details` table
+   (`rules/feature-builds.md`); lidar often misses small roof plant — aerial is the source for those.
+   Facade greeblies from street photos (drainpipe, sign, canopy, ledge, fascia band) go in the same table.
+
    From the same aerial (and street level when the cap shows), answer the roof-edge questions already on the designer
    list: edge on the roof? what block? outer only or steps too? Default is none — set `roofs[label].edge` only when
    the photo shows a parapet, coping or flat overhang fringe (`rules/feature-builds.md`, `rules/evidence-order.md`).
@@ -44,8 +47,10 @@ One building per review. Skip any building that already has an open feature issu
  - **Extents from cells, not drawings.** A shape read off a picture (box, polygon) is a hint for where to look. Lowered roofs, colour
    patches and membrane areas are defined by lidar cells of the feature's own part, so a colour cannot spill onto a neighbour and a
    rim cell cannot stand up as a pillar. Edge (coping) cells are never recoloured.
- - **Follow-up steps of a feature** (`--lower`, `--greeblies`, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
-   see FEATURE FOLLOW-UP STEPS in `rules/craftsmanship.md`. Re-run steps rather than patching by hand.
+ - **Follow-up steps of a feature** (`--lower`, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
+   roof and facade greeblies live in the feature spec `details` table and rebuild with the
+   building (not a separate `--greeblies` flag). See GREEBLIES in `rules/craftsmanship.md`.
+   Re-run steps rather than patching by hand.
  - **One defect is a class.** When the user finds one (a door with no jamb, a trench from the door generator, a canopy from a vector-map
    `building=roof` tag that aerial does not show), fix it, then add the guard to `site_kit.apply` or the generator and run an audit over
    everything already built (`scripts/door_audit.py`: 142 of 700 doors unframed, issue / next-task Q-182 era). No evidence in aerial or lidar for a

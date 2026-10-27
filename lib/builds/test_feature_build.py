@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -47,6 +48,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['wall'], 'bricks')
         self.assertEqual(spec['floor'], 'smooth_stone')
         self.assertEqual(spec['facades'], {})
+        self.assertEqual(spec['details'], {})
         self.assertEqual(spec['doors'], {})
         self.assertEqual(spec['zones'], {})
         self.assertEqual(spec['exclude'], {})
@@ -1285,6 +1287,162 @@ class ZoneMaterialsColourTest(unittest.TestCase):
         self.assertRegex(out, r'A zone 45:.*suggest \w+')
         self.assertRegex(out, r'A zone 50:.*suggest \w+')
         self.assertIn('rgb=', out)
+
+
+class DetailsSpecTest(unittest.TestCase):
+    """Seam: per-label details table (roof + facade greeblies) validates and defaults."""
+
+    def write(self, spec: dict) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 's.json'
+        path.write_text(json.dumps(spec))
+        return path
+
+    def good(self) -> dict:
+        return {
+            'name': 'detail_demo',
+            'ways': {'1': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S'}],
+        }
+
+    def test_details_optional_default_empty(self):
+        spec = F.load_spec(self.write(self.good()))
+        self.assertEqual(spec['details'], {})
+
+    def test_loads_roof_and_facade_details(self):
+        ok = {
+            **self.good(),
+            'details': {
+                'A': [
+                    {
+                        'kind': 'plant_room',
+                        'at': [12, 56, 22],
+                        'size': [3, 2, 2],
+                        'source': 'aerial NW plant box',
+                    },
+                    {
+                        'kind': 'drainpipe',
+                        'at': [10, 50, 24],
+                        'size': [1, 6, 1],
+                        'face': 'S',
+                        'source': 'street photo south',
+                    },
+                ],
+            },
+        }
+        spec = F.load_spec(self.write(ok))
+        self.assertEqual(spec['details']['A'][0]['kind'], 'plant_room')
+        self.assertEqual(spec['details']['A'][1]['face'], 'S')
+
+    def test_bad_details_refused(self):
+        good = self.good()
+        base_row = {
+            'kind': 'vent',
+            'at': [11, 56, 21],
+            'size': [1, 1, 1],
+            'source': 'aerial',
+        }
+        cases = [
+            {**good, 'details': {'B': [base_row]}},
+            {**good, 'details': {'A': [{**base_row, 'kind': 'chimney'}]}},
+            {**good, 'details': {'A': [{**base_row, 'at': [11, 21]}]}},
+            {**good, 'details': {'A': [{**base_row, 'size': [0, 1, 1]}]}},
+            {**good, 'details': {'A': [{**base_row, 'source': ''}]}},
+            {**good, 'details': {'A': [{**base_row, 'kind': 'drainpipe'}]}},
+            {**good, 'details': {'A': [{**base_row, 'kind': 'sign', 'face': 'X'}]}},
+            {**good, 'details': {'A': 'vent'}},
+        ]
+        for bad in cases:
+            with self.subTest(bad=bad.get('details')):
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write(bad))
+
+
+class DetailsBuildTest(unittest.TestCase):
+    """Seam: details place after the shell; dry-run prints each kind and source."""
+
+    def setUp(self):
+        self.cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+
+    def spec(self, details):
+        return {
+            'name': 'unit_details',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'facades': {},
+            'details': details,
+        }
+
+    def test_roof_and_facade_details_place_and_dry_run_lists_source(self):
+        # Flat roof membrane sits at floor + 2*STOREY_H = 56.
+        details = {
+            'A': [
+                {
+                    'kind': 'plant_room',
+                    'at': [12, 57, 21],
+                    'size': [2, 2, 2],
+                    'source': 'aerial plant room',
+                },
+                {
+                    'kind': 'skylight',
+                    'at': [15, 56, 22],
+                    'size': [1, 1, 1],
+                    'source': 'aerial skylight',
+                },
+                {
+                    'kind': 'canopy',
+                    'at': [13, 55, 24],
+                    'size': [2, 1, 1],
+                    'face': 'S',
+                    'source': 'street photo entrance canopy',
+                },
+                {
+                    'kind': 'drainpipe',
+                    'at': [10, 50, 24],
+                    'size': [1, 6, 1],
+                    'face': 'S',
+                    'source': 'street photo south pipe',
+                },
+            ],
+        }
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            plan = F.build(
+                self.spec(details), footprints={'A': self.cells}, world=_StoneWorld(),
+            )
+        out = buf.getvalue()
+        # Plant room sits on a solid pad (not hovering on the membrane slab).
+        self.assertIn('minecraft:gray_concrete', plan.cells.get((12, 57, 21), ''))
+        self.assertIn('minecraft:gray_concrete', plan.cells.get((13, 58, 22), ''))
+        # Skylight replaces the roof membrane with glass.
+        sky = plan.cells.get((15, 56, 22), '')
+        self.assertTrue('glass' in sky, sky)
+        # Canopy overhangs one block south of the south wall.
+        canopy = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
+        self.assertTrue('slab' in canopy, f'expected canopy slab, got {canopy!r}')
+        # Drainpipe on the south wall column.
+        pipe = plan.cells.get((10, 52, 24), '')
+        self.assertTrue('iron' in pipe, pipe)
+        for kind, src in (
+            ('plant_room', 'aerial plant room'),
+            ('skylight', 'aerial skylight'),
+            ('canopy', 'street photo entrance canopy'),
+            ('drainpipe', 'street photo south pipe'),
+        ):
+            self.assertRegex(out, rf'detail {kind}.*source={re.escape(src)}')
 
 
 if __name__ == '__main__':

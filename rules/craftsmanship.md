@@ -225,7 +225,9 @@ ENTRANCES (university register, user, 2026-10-16)
 
 GREEBLIES ARE THE DECOR STEP OF A FEATURE (user, 2026-10-16)
  Roof and site detail (plant, vents, hatches, fans, panels, seams, planting beside the building) is applied after the
- feature's shell, as part of that feature, not as a separate pass.
+ feature's shell, as part of that feature, not as a separate pass. For non-house builds, write them in the
+ `feature_build` spec `details` table (`rules/feature-builds.md`, `rules/building-review.md`); dry run lists each
+ row and its source.
  - Use unusual blocks freely for flavour (iron trapdoors, tinted glass, mushroom stem, terracotta, quartz, blackstone):
    pick by colour and texture read off aerial, not by habit. Look before choosing: `block_reference.py nearest R,G,B [--flat --opaque]`
    lists the closest blocks to a colour, `describe <block>` gives one text line (colours, texture, opacity, shape), and

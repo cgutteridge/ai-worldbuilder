@@ -38,6 +38,16 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   prints glazed share for every exposed face and storey; faces with no
   facade rows are marked `no evidence read` (report only — not a gate).
   Example: `"facades": {"SU": {"N": [{"storey": 1, "glazed_h": 3, "pier": 1}]}}`
+- optional `details` — per-label roof and facade greeblies from the aerial
+  sheet and street photos (`rules/building-review.md`). Each row is
+  `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:
+  roof kinds `plant_room`, `vent`, `louvred_vent`, `skylight`,
+  `solar_panel`, `lift_overrun`; facade kinds `drainpipe`, `sign`,
+  `canopy`, `ledge`, `fascia_band` (`face` required). Placed after the
+  shell; dry run prints each detail and its source. List what reads at
+  street scale, or leave `details` empty / omit it when none are visible.
+  Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
+  "size": [3, 2, 2], "source": "aerial NW plant box"}]}`
 - optional `doors` — per-portal map from the university register
   (`scripts/portals.py`): `{"42-A": {"leaves": 1|2, "block": "iron_door"}}`.
   Pick `block` with `block_reference.py` from the portal photo. `leaves: 2`
