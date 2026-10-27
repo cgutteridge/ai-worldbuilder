@@ -21,14 +21,17 @@ Snags live only inside issues (`worlds/<world>/registry/issues.json`, pics in `r
 `fix-landed` is set by `issues.py sync` only when every element of the snags the fix covers was redesigned (new landed build, changed content) after the fix merged. Never review an issue that is only `open`.
 
 1. `issues.py review I-nnn` gives the packet. Run `sherlock`'s grouping check first (see that skill); tell the owner if a snag looks misfiled.
-2. One plain sentence: the problem, the cause, what was changed.
-3. For **each** snag, no sampling: teleport the player to its position (the player flies themself; do not script the camera):
+2. Brief the owner before moving them, in plain words: the problem as they reported it, the cause, **what the code or method change was**, and **exactly what to check** (the check line, made concrete: what to look at, from where, what should be different).
+3. The owner judges in game. Take them near each snag's position and stop; do not tour, script the camera or take pictures for them:
 
    ```bash
-   .venv/bin/python scripts/mc_player.py move --why "Showing <snag in plain words>" --pos x,y,z --facing x,y,z --gamemode spectator
+   python3 scripts/mc_player.py --world <w> move --why "Showing <snag in plain words>" --pos x,y,z --facing x,y,z --gamemode spectator
    ```
 
-   Show their original picture and words, the element, and the **check line** ("what should look different"). Take a `view_capture` of now beside the original where useful. Ask: fixed or not fixed?
+   `--facing` is a look-at point, not yaw/pitch (convert a stored yaw,pitch). Snags with no stored position (agent snags): pick a spot from the evidence in the snag, say so, and give coordinates in the brief.
+   - Do **one stop at a time**, then ask: fixed or not fixed? Re-showing the original picture is optional.
+   - Take a `view_capture` only when **you** need to see something to decide or diagnose, never as a show-and-tell. If a capture does not show the thing (roof, wall with no door), say so and move on; do not stage more.
+   - You may check with block scans where useful, but give the owner the counts as evidence, not as a verdict.
 4. After the last snag, one question: "Did this resolve ALL N snags?" Record it:
    - all fine: `issues.py verdict I-nnn --all-fixed`
    - otherwise: `issues.py verdict I-nnn --fixed S-001 ... --not-fixed S-003`. The issue returns to `open`; the unresolved snags stay on it.

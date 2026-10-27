@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 145,
+  "nextTaskId": 147,
   "tasks": [
     {
       "id": 130,
@@ -148,6 +148,25 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor."
+    },
+    {
+      "id": 145,
+      "title": "Portal resolution stage: pin each entrance to a wall position, from coordinates if given, else from street-level photos",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "notes": "Cause: doors are placed at the wall cell nearest a portal point (portals.framed, #114), which assumes the portal has a position. Most portals have no lat/long or custom pick, so a door lands wherever the point was guessed (S-021 sunk 42-B door, S-023 57-A on the wrong face). Deliver: a planning stage before feature build that, per portal, records position, face, leaf count, and any canopy or covered area, with the source of each (given coordinate, bespoke reference, read from the street-level photos, or unresolved) and a confidence; bespoke reference material (coordinates, hand picks) short-circuits it as the easy path; unresolved portals are listed, never silently placed. Check: 57-A resolves to the side face with its covered area and a single leaf; 42-B and 40-A resolve to the right face and leaf count from the photos; a portal with a given coordinate skips the photo read and says so."
+    },
+    {
+      "id": 146,
+      "title": "Door and entrance build reads the portal plan (leaf count, face, canopy, ground height)",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        145
+      ],
+      "notes": "Deliver: feature doors consume the resolved portal plan instead of choosing the nearest wall cell; leaf count and face come from the plan, a canopy or covered area is built over the entrance, and the door row is set from the surrounding ground so doors cannot sit below it (I-017). Covers the doors-ignore-photos issue (I-018) and the sunk-door issue (I-017). Check: 57-A single door on the side face under a covered area; 40-A double; 42-B at ground level."
     }
   ]
 }
