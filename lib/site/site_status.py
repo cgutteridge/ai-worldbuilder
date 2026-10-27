@@ -131,14 +131,53 @@ def layers_applied(sts: dict) -> bool:
     return all(layer_status(sts, n) in GOOD for n in LAYER_KEYS)
 
 
+def cell_footprint(cell) -> dict:
+    """Built vs unbuilt vector-map footprint area for a cell (#142).
+
+    Swallows map / world errors the same way ``site_handoff.residual_features`` does,
+    so status and morning stay readable when the clip is missing.
+
+    @param cell: (tx, tz)
+    @returns: ``{built_area, unbuilt_area, unbuilt, unbuilt_names}`` (zeros / empty on failure)
+    """
+    empty = {'built_area': 0, 'unbuilt_area': 0, 'unbuilt': [], 'unbuilt_names': []}
+    try:
+        from cell_features import footprint_progress
+        return footprint_progress(int(cell[0]), int(cell[1]))
+    except (OSError, ValueError, KeyError, RuntimeError, SystemExit):
+        return empty
+
+
+def format_footprint(fp: dict | None) -> str:
+    """One-line built / unbuilt footprint summary for status rows and morning (#142).
+
+    @param fp: from :func:`cell_footprint` / ``footprint_progress``
+    @returns: e.g. ``400 built / 250 unbuilt (Fixture Hall, West Block)``
+    """
+    if not fp:
+        return '0 built / 0 unbuilt'
+    built = int(fp.get('built_area') or 0)
+    unbuilt = int(fp.get('unbuilt_area') or 0)
+    names = [str(n) for n in (fp.get('unbuilt_names') or []) if n]
+    line = f'{built} built / {unbuilt} unbuilt'
+    if names:
+        line += f" ({', '.join(names)})"
+    return line
+
+
 def gap_summary(cell) -> str:
     """Authoritative: site_handoff.cell_gaps (slow). '' when the cell is truly done."""
     import site_handoff
     g = site_handoff.cell_gaps(cell)
     parts = [k.replace('_', ' ') if v is True else f"{k} {len(v) if isinstance(v, (list, tuple, set, dict)) else v}"
-             for k, v in g.items() if v and k != 'in_flight']
+             for k, v in g.items() if v and k not in ('in_flight', 'footprint', 'unbuilt_footprint')]
     if g.get('in_flight'):
         parts.insert(0, 'IN FLIGHT')
+    fp = g.get('footprint')
+    if fp and (fp.get('unbuilt_area') or fp.get('built_area')):
+        parts.append('footprint ' + format_footprint(fp))
+    elif g.get('unbuilt_footprint'):
+        parts.append('unbuilt footprint: ' + ', '.join(str(n) for n in g['unbuilt_footprint']))
     return ', '.join(parts)
 
 
@@ -193,6 +232,8 @@ def cmd_status(stages: dict, gaps: bool = False) -> str:
             row = f"  {flag} {c[0]:>3},{c[1]:<4} {layer_marks(stages[c])}"
             if bad:
                 row += f"   ⚠ {', '.join(bad)}"
+            fp = cell_footprint(c)
+            row += f'   footprint {format_footprint(fp)}'
             if gaps:
                 g = gap_summary(c)
                 n_done += not g
@@ -265,6 +306,16 @@ def cmd_morning(stages: dict, since: datetime | None) -> str:
         lines += ['', 'PROBLEMS / OPEN:'] + [f'  {p}' for p in probs]
     if looks:
         lines += ['', 'NEEDS YOUR EYE:'] + [f'  {l}' for l in looks]
+    lines += ['', 'FOOTPRINT (built vs unbuilt vector-map area per cell):']
+    any_fp = False
+    for c in sorted(stages):
+        fp = cell_footprint(c)
+        if not (fp.get('built_area') or fp.get('unbuilt_area')):
+            continue
+        any_fp = True
+        lines.append(f"  {c[0]},{c[1]}  {format_footprint(fp)}")
+    if not any_fp:
+        lines.append('  (no building footprint overlapping journal cells)')
     lines += ['', cmd_since(stages, since)]
     return '\n'.join(lines)
 

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 import site_status as ss
 
@@ -72,6 +73,40 @@ class TestSiteStatus(unittest.TestCase):
         self.assertIn('strip under Building 2 still paved', out)
         future = ss.cmd_morning(ss.load_stages(), datetime(2999, 1, 1))
         self.assertIn('no run-log entries', future)
+
+    def test_format_footprint_shows_built_unbuilt_and_names(self):
+        """#142: one-line footprint summary for status rows and the morning report."""
+        fp = {
+            'built_area': 400,
+            'unbuilt_area': 250,
+            'unbuilt_names': ['Fixture Hall', 'West Block'],
+        }
+        line = ss.format_footprint(fp)
+        self.assertIn('400 built', line)
+        self.assertIn('250 unbuilt', line)
+        self.assertIn('Fixture Hall', line)
+        self.assertIn('West Block', line)
+        self.assertEqual(ss.format_footprint({'built_area': 10, 'unbuilt_area': 0, 'unbuilt_names': []}),
+                         '10 built / 0 unbuilt')
+
+    def test_status_and_morning_show_footprint_per_cell(self):
+        """#142: each cell row and morning report list built vs unbuilt footprint."""
+        self.jw.seed((47, -45), ground=True, trees=True, decor=True)
+        fp = {
+            'built_area': 120,
+            'unbuilt_area': 80,
+            'unbuilt_names': ['Fixture Hall'],
+            'unbuilt': [{'label': 'Fixture Hall', 'area': 80}],
+        }
+        with mock.patch('site_status.cell_footprint', return_value=fp):
+            status = ss.cmd_status(ss.load_stages())
+            morning = ss.cmd_morning(ss.load_stages(), datetime(2000, 1, 1))
+        self.assertIn('120 built', status)
+        self.assertIn('80 unbuilt', status)
+        self.assertIn('Fixture Hall', status)
+        self.assertIn('FOOTPRINT', morning)
+        self.assertIn('47,-45', morning)
+        self.assertIn('Fixture Hall', morning)
 
 
 if __name__ == '__main__':

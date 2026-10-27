@@ -361,9 +361,11 @@ def cell_gaps(cell, features=True):
     Layers, features and in-flight entries come from the cell's journal view. Optional slow
     checks still report residual vector-map buildings and lidar trees-over-roof. In-flight
     entries (``begun``, an aborted apply) are listed so site_recover can finish them.
+    When ``features`` is true, also records built vs unbuilt footprint area (#142); a
+    non-empty ``unbuilt_footprint`` means the cell must not show as Completed.
 
     @param cell: (tx, tz)
-    @param features: also compute residual_features (slow)
+    @param features: also compute residual_features and footprint progress (slow)
     @returns: gaps dict
     """
     v = _view(cell)
@@ -380,14 +382,25 @@ def cell_gaps(cell, features=True):
     if 'trees' not in layers and v.trees:
         from pass_mask import trees_rule_current
         stale = not trees_rule_current(cell)
+    footprint = {'built_area': 0, 'unbuilt_area': 0, 'unbuilt': [], 'unbuilt_names': []}
+    residual = []
+    if features:
+        try:
+            from cell_features import footprint_progress
+            footprint = footprint_progress(int(cell[0]), int(cell[1]))
+            residual = list(footprint.get('unbuilt') or [])
+        except (OSError, ValueError, KeyError, RuntimeError, SystemExit):
+            residual = residual_features(cell)
     return {
         'in_flight': in_flight,
         'layers': layers,
         'trees_stale': stale,
-        'features': (residual_features(cell) if features else []) + feature_gaps,
+        'features': residual + feature_gaps,
         'trees_over_roof': trees_over_roof_open(cell) if features else [],
         'hold': v.hold,
         'done': v.done,
+        'footprint': footprint,
+        'unbuilt_footprint': list(footprint.get('unbuilt_names') or []),
     }
 
 

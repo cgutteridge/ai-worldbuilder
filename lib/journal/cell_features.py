@@ -109,41 +109,20 @@ def _split_runs(items: list) -> list:
     return groups
 
 
-def missing_features(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> list:
-    """Buildings overlapping the cell that no feature build covers, packaged as features.
+def _package_unbuilt(singles: list, homes: list, streets) -> list:
+    """Package uncovered building items into missing-feature / footprint rows.
 
-    @param tx: cell X
-    @param tz: cell Z
-    @param idx: optional shared OSMIndex
-    @param covered: optional precomputed feature_columns()
-    @returns: [{'kind': 'building'|'houses', 'label': str, 'street': str|None,
-                'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'portals': [portal],
-                'pictures': [university building (scripts/buildings.py: photo + outline)]}], buildings first, then streets
+    @param singles: non-home items with ref/label/bbox/area/portals/pictures
+    @param homes: home items (same shape) still needing a street
+    @param streets: OSMIndex.streets for nearest-street lookup
+    @returns: buildings first, then house runs (each with ``area`` column count)
     """
-    idx = idx or OSMIndex()
-    covered = feature_columns() if covered is None else covered
-    cb = cell_bbox(tx, tz, tx, tz)
-    singles, homes = [], []
-    for rings, p in idx.buildings:
-        if p.get('building') in OUTBUILDINGS:
-            continue
-        cols = list(scan_polygon(rings, cb))
-        if len(cols) < MIN_COLUMNS:
-            continue
-        # whole footprint, so a building straddling the cell edge is judged as one
-        full = list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9))) if len(cols) < 4000 else cols
-        if sum(c in covered for c in full) >= COVERED_FRAC * len(full):
-            continue
-        xs = [x for x, _ in rings[0]]
-        zs = [z for _, z in rings[0]]
-        item = {'ref': osm_ref(p), 'label': property_label(p), 'p': p, 'portals': for_footprint(rings), 'pictures': pictures_for(rings),
-                'bbox': (min(xs), min(zs), max(xs), max(zs))}
-        (homes if p.get('building') in HOMES else singles).append(item)
     out = [{'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
-            'bbox': s['bbox'], 'portals': s['portals'], 'pictures': s['pictures']} for s in sorted(singles, key=lambda s: s['bbox'][:2])]
+            'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures']}
+           for s in sorted(singles, key=lambda s: s['bbox'][:2])]
     by_street: dict = {}
     for h in homes:
-        h['street'] = _street_of(h['p'], h['bbox'], idx.streets)
+        h['street'] = _street_of(h['p'], h['bbox'], streets)
         by_street.setdefault(h['street'], []).append(h)
     for street in sorted(by_street, key=lambda s: s or ''):
         for run in sorted(_split_runs(by_street[street]), key=lambda g: min(o['bbox'][:2] for o in g)):
@@ -153,10 +132,74 @@ def missing_features(tx: int, tz: int, idx: OSMIndex | None = None, covered: set
                 'refs': sorted(o['ref'] for o in run),
                 'bbox': (min(o['bbox'][0] for o in run), min(o['bbox'][1] for o in run),
                          max(o['bbox'][2] for o in run), max(o['bbox'][3] for o in run)),
+                'area': sum(o['area'] for o in run),
                 'portals': [q for o in run for q in o['portals']],
                 'pictures': [q for o in run for q in o['pictures']],
             })
     return out
+
+
+def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> dict:
+    """Built vs unbuilt vector-map building footprint area overlapping a cell (#142).
+
+    Area is the count of building columns that fall inside the cell. A building is
+    unbuilt when fewer than COVERED_FRAC of its full footprint columns are touched
+    by a feature build — the same rule as :func:`missing_features`.
+
+    @param tx: cell X
+    @param tz: cell Z
+    @param idx: optional shared OSMIndex
+    @param covered: optional precomputed feature_columns()
+    @returns: ``{built_area, unbuilt_area, unbuilt, unbuilt_names}`` where ``unbuilt``
+        mirrors :func:`missing_features` rows plus an ``area`` column count
+    """
+    idx = idx or OSMIndex()
+    covered = feature_columns() if covered is None else covered
+    cb = cell_bbox(tx, tz, tx, tz)
+    built_area = 0
+    singles, homes = [], []
+    for rings, p in idx.buildings:
+        if p.get('building') in OUTBUILDINGS:
+            continue
+        cols = list(scan_polygon(rings, cb))
+        if len(cols) < MIN_COLUMNS:
+            continue
+        # whole footprint, so a building straddling the cell edge is judged as one
+        full = list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9))) if len(cols) < 4000 else cols
+        area = len(cols)
+        if sum(c in covered for c in full) >= COVERED_FRAC * len(full):
+            built_area += area
+            continue
+        xs = [x for x, _ in rings[0]]
+        zs = [z for _, z in rings[0]]
+        item = {
+            'ref': osm_ref(p), 'label': property_label(p), 'p': p,
+            'portals': for_footprint(rings), 'pictures': pictures_for(rings),
+            'bbox': (min(xs), min(zs), max(xs), max(zs)), 'area': area,
+        }
+        (homes if p.get('building') in HOMES else singles).append(item)
+    unbuilt = _package_unbuilt(singles, homes, idx.streets)
+    return {
+        'built_area': built_area,
+        'unbuilt_area': sum(u['area'] for u in unbuilt),
+        'unbuilt': unbuilt,
+        'unbuilt_names': [u['label'] for u in unbuilt],
+    }
+
+
+def missing_features(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> list:
+    """Buildings overlapping the cell that no feature build covers, packaged as features.
+
+    @param tx: cell X
+    @param tz: cell Z
+    @param idx: optional shared OSMIndex
+    @param covered: optional precomputed feature_columns()
+    @returns: [{'kind': 'building'|'houses', 'label': str, 'street': str|None,
+                'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
+                'portals': [portal],
+                'pictures': [university building (scripts/buildings.py: photo + outline)]}], buildings first, then streets
+    """
+    return footprint_progress(tx, tz, idx=idx, covered=covered)['unbuilt']
 
 
 def main(argv=None) -> int:
