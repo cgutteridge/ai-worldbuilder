@@ -72,8 +72,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  Optional ``roofs[label].zone_materials`` sets a different mat
                  per plateau. Dry run samples the aerial mosaic over each zone
                  and prints mean colour + nearest ``site_kit`` preview colour
-                 (suggestion only). Prints ``footprint osm=N readable=M pad=P
-                 cover=C%``. Facades/doors/roofs reuse the same label keys.
+                 (suggestion only). After the lidar-mass intersect, disconnected
+                 pieces smaller than ``ZONE_MIN_FOOTPRINT_CELLS`` are dropped
+                 (#153); dry run lists each (cell count and position). Prints
+                 ``footprint osm=N readable=M pad=P cover=C%``. Facades/doors/
+                 roofs reuse the same label keys.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
 Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
@@ -88,7 +91,7 @@ import argparse
 import json
 import math
 import statistics
-from collections import Counter
+from collections import Counter, deque
 from pathlib import Path
 
 import numpy as np
@@ -133,6 +136,11 @@ DETAIL_KINDS = ROOF_DETAIL_KINDS | FACADE_DETAIL_KINDS
 # nDSM (DSM − DTM) at or above this (metres) counts as building mass for zoned
 # footprints. Bare ground inside the vector outline is dropped (#116).
 ZONE_LIDAR_MASS_M = 3.0
+
+# Minimum 4-connected cells to keep a disconnected footprint piece after the
+# lidar-mass intersect. Smaller islands (1–2 cells) otherwise grow walls and a
+# stone cap (#153). Raise this constant if a real small structure must be kept.
+ZONE_MIN_FOOTPRINT_CELLS = 3
 
 
 def _win(a: np.ndarray, k: int, fn) -> np.ndarray:
@@ -191,6 +199,67 @@ def square_footprint(outline: np.ndarray) -> np.ndarray:
     readable = erode_mask(dilate_mask(m))
     readable = dilate_mask(erode_mask(readable))
     return readable[pad:-pad, pad:-pad]
+
+
+def drop_small_footprint_pieces(
+    mask: np.ndarray,
+    xs: np.ndarray,
+    zs: np.ndarray,
+    min_cells: int = ZONE_MIN_FOOTPRINT_CELLS,
+) -> tuple[np.ndarray, list[dict]]:
+    """Keep 4-connected footprint components with at least ``min_cells`` cells.
+
+    Small disconnected pieces after the lidar-mass test are dropped so they do
+    not grow walls. A spur that touches the main mass is the same component and
+    is kept.
+
+    @param mask: boolean footprint (``[z, x]``)
+    @param xs: world x per cell (same shape)
+    @param zs: world z per cell (same shape)
+    @param min_cells: keep components of this size or larger
+    @returns: ``(kept_mask, dropped)`` where each dropped dict has ``n`` (cell
+        count) and ``at`` ``(x, z)`` of the lexicographically first world cell
+    """
+    kept = np.zeros_like(mask, dtype=bool)
+    dropped: list[dict] = []
+    seen = np.zeros_like(mask, dtype=bool)
+    depth, width = mask.shape
+    for r in range(depth):
+        for c in range(width):
+            if not mask[r, c] or seen[r, c]:
+                continue
+            comp: list[tuple[int, int]] = []
+            q = deque([(r, c)])
+            seen[r, c] = True
+            while q:
+                zr, xc = q.popleft()
+                comp.append((zr, xc))
+                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    nr, nc = zr + dr, xc + dc
+                    if (
+                        0 <= nr < depth and 0 <= nc < width
+                        and mask[nr, nc] and not seen[nr, nc]
+                    ):
+                        seen[nr, nc] = True
+                        q.append((nr, nc))
+            if len(comp) >= min_cells:
+                for zr, xc in comp:
+                    kept[zr, xc] = True
+            else:
+                cells_xz = [(int(xs[zr, xc]), int(zs[zr, xc])) for zr, xc in comp]
+                dropped.append({'n': len(comp), 'at': min(cells_xz)})
+    return kept, dropped
+
+
+def dropped_footprint_line(label: str, piece: dict) -> str:
+    """Dry-run line for one dropped disconnected footprint piece.
+
+    @param label: feature label
+    @param piece: dict with ``n`` and ``at`` ``(x, z)``
+    @returns: ``dropped disconnected footprint <label> n=N at (x,z)``
+    """
+    x, z = piece['at']
+    return f'dropped disconnected footprint {label} n={piece["n"]} at ({x},{z})'
 
 
 def snap_to_levels(heights: np.ndarray, levels: list[int] | list[float]) -> np.ndarray:
@@ -304,14 +373,15 @@ def assign_roof_zones(
     axis_deg: float | str = 'auto',
     ground_y: np.ndarray | None = None,
     mass_m: float = ZONE_LIDAR_MASS_M,
-) -> tuple[np.ndarray, np.ndarray, list, float]:
-    """Full zone pipeline: square → lidar-mass intersect → 5×5 median → snap → mode → bucket.
+) -> tuple[np.ndarray, np.ndarray, list, float, list[dict]]:
+    """Full zone pipeline: square → lidar-mass → drop small islands → median → snap → mode → bucket.
 
     Arrays share the same 2-D indexing (row/col). ``xs``/``zs`` hold world block
     coordinates for each cell (needed for rotated bucketing). When ``ground_y`` is
     set, readable cells also need nDSM (DSM − DTM) ≥ ``mass_m`` so bare ground
-    inside the vector outline is dropped (#116). ``exclude`` boxes stay a separate
-    override applied before this pipeline.
+    inside the vector outline is dropped (#116). After that intersect, 4-connected
+    pieces smaller than ``ZONE_MIN_FOOTPRINT_CELLS`` are dropped (#153).
+    ``exclude`` boxes stay a separate override applied before this pipeline.
 
     @param dsm: DSM metres AOD
     @param outline: boolean vector-way footprint
@@ -322,7 +392,8 @@ def assign_roof_zones(
     @param axis_deg: degrees or ``\"auto\"`` (PCA of readable cells)
     @param ground_y: optional block-Y DTM grid (same shape as ``dsm``)
     @param mass_m: nDSM threshold in metres (default ``ZONE_LIDAR_MASS_M``)
-    @returns: ``(readable, zone, levels_used, axis_deg_used)``
+    @returns: ``(readable, zone, levels_used, axis_deg_used, dropped)`` where
+        ``dropped`` lists small islands removed (see ``drop_small_footprint_pieces``)
     """
     from world_frame import y_to_metres_aod
     readable = square_footprint(outline)
@@ -330,6 +401,7 @@ def assign_roof_zones(
         gy = np.asarray(ground_y)
         ground_m = np.vectorize(y_to_metres_aod, otypes=[float])(gy.astype(int))
         readable = readable & ((dsm.astype(float) - ground_m) >= mass_m)
+    readable, dropped = drop_small_footprint_pieces(readable, xs, zs)
     med = _win(dsm.astype(float), 5, np.median)
     if levels == 'auto':
         levels_used: list = auto_plateau_levels(med, readable)
@@ -344,7 +416,7 @@ def assign_roof_zones(
     else:
         axis_used = float(axis_deg)
     zone = bucket_zones(zone, readable, xs, zs, bucket=bucket, axis_deg=axis_used)
-    return readable, zone, levels_used, axis_used
+    return readable, zone, levels_used, axis_used, dropped
 
 
 def zone_ridge_half_steps(
@@ -1117,13 +1189,15 @@ class Build:
             zz, xx = np.mgrid[0:depth, 0:width]
             xs = xx + x0
             zs = zz + z0
-            readable, zone, _levels, _axis = assign_roof_zones(
+            readable, zone, _levels, _axis, dropped = assign_roof_zones(
                 dsm, outline, cfg['levels'], xs, zs,
                 bucket=int(cfg.get('bucket', 4)),
                 axis_deg=cfg.get('axis_deg', 'auto'),
                 ground_y=ground,
             )
             self._zone_pad_lines.append(footprint_pad_line(outline, readable))
+            for piece in dropped:
+                self._zone_pad_lines.append(dropped_footprint_line(f.no, piece))
             new_cells = mask_to_cells(readable, x0, z0)
             pitched = f.roof.get('kind') == 'pitched'
             half_grid = (
