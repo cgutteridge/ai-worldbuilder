@@ -46,15 +46,6 @@
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
     },
     {
-      "id": 141,
-      "title": "verify errors on landed ground whose skipped footprints no feature covers",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: verify only warned about missing specs and decision records, so a cell with half its footprint unbuilt passed with 0 errors (2026-10-27). Deliver: verify reports an error per landed ground layer whose skipped building-footprint columns are not covered by any planned or landed feature, naming the uncovered buildings."
-    },
-    {
       "id": 142,
       "title": "Status pages and morning report show unbuilt footprint per cell",
       "status": "todo",

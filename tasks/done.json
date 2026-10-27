@@ -1184,6 +1184,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: finding what sits above the ghost baseline meant parsing registry/journal.jsonl by hand (cell_registry status takes one cell). Deliver a cell_registry view that names every cell with anything above ghost (ground generated, trees, decor, features) and counts of each, so a purge can be counted in one call. Done 2026-10-27: cell_registry above-ghost lists cells with counts. Merged task/135-list-cells-above-ghost."
+    },
+    {
+      "id": 141,
+      "title": "verify errors on landed ground whose skipped footprints no feature covers",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: verify only warned about missing specs and decision records, so a cell with half its footprint unbuilt passed with 0 errors (2026-10-27). Deliver: verify reports an error per landed ground layer whose skipped building-footprint columns are not covered by any planned or landed feature, naming the uncovered buildings. Done 2026-10-27: verify errors on uncovered footprints after landed ground. Merged task/141-verify-uncovered-footprints."
     }
   ]
 }
