@@ -4,34 +4,12 @@
   "nextTaskId": 154,
   "tasks": [
     {
-      "id": 132,
-      "title": "Roof and facade detail in the building spec",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [
-        145
-      ],
-      "notes": "Cause: the building spec has no vocabulary for roof or facade detail and feature_build places none. rules/building-review.md already asks the designer to list roof greeblies per roof from the aerial (plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets) and names a --greeblies feature follow-up step, but no script or lib has --greeblies (probably lost in the move from the Refine donor; not confirmed). Covers issue I-006 (no roof or facade detail), snags S-009 and S-016. Owner decision (2026-10-27): detail lives in the building spec, not a separate pass, so undo/redo of a building takes its detail with it. Scope: a per-label details table in the spec, each entry a kind, position and size: roof (plant room, vent, louvred vent, skylight, solar panel, lift overrun), facade (drainpipe, sign, canopy, ledge, fascia band); a small block recipe per kind in feature_build, placed after the shell; positions from the aerial (roofs) and street photos (facades), heights of large roof plant from lidar; the designer brief points at building-review and fills details; replace the dead --greeblies reference in the rules with the table; dry run prints each detail and its source. Done when a dry run of SUSU, West or Retail places listed roof and facade details, including Retail's entrance canopy (in its spec notes, never built). Check line S-009, S-016: each building in 48,-44 shows the roof plant and facade detail visible on the aerial and photos. Size l: may split into roof detail and facade detail. Blocked by #125 and #126: details sit on the roofs, and all touch feature_build.py. One regression test per part; no new gates or lints. UPDATE 2026-10-27: build on the per-face facade plan from #145 rather than a second spec table (hence blocked by it). Split: #145 owns entrances and the covered area or canopy over them; this task owns greeblies (roof and facade detail) and does not re-define canopy. Roof detail on stair-and-slab roofs follows #149."
-    },
-    {
-      "id": 133,
-      "title": "Rebuild fixtures for undo tests",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints). Add a property test: apply N rebuilds of a layer with NO base owner underneath, then undo them all; the world must equal the start. (A bent fixture in the 2026-10-27 undo-check fix hid exactly this.)"
-    },
-    {
       "id": 134,
       "title": "Undo a whole cell in order",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [
-        133
-      ],
+      "blockedBy": [],
       "notes": "Cause: purging a cell was done by hand and ran undo passes in the wrong order (ground before features); a refusal then halted the chain. Deliver one element_undo command that undoes everything above ghost in a cell in the fixed order (decor, trees, features, ground), stops at the first refusal and reports what is left. Dry run by default, --apply to write, under the site lock."
     },
     {
