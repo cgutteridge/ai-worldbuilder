@@ -47,6 +47,8 @@ python3 scripts/issues.py --world <w> fix I-nnn --summary "..." --merged-at <UTC
 
 Then the element must be redesigned (not just rebuilt), see `redo`/`refine`. `issues.py sync` or `digest` promotes it.
 
+Wrongly logged fix: `issues.py unfix I-nnn F-n --reason "..."` (keeps the log, marks withdrawn). Park an issue until a system ticket is archived: `issues.py hold I-nnn --until '#140'` (digest and sync skip it).
+
 ## Summary line
 
-At the end of a run or on "where are we": `issues.py digest` ("issues: 6 open, 2 fixes ready for your review").
+At the end of a run or on "where are we": `issues.py digest` ("issues: 6 open, 2 fixes ready for your review, 1 held").

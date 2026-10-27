@@ -301,7 +301,7 @@ class MatchTest(_Root):
 class DigestVerifyTest(_Root):
     def test_digest_counts_and_verify_catches_a_missing_picture(self):
         self.snag()
-        self.assertEqual(L.digest(self.root), 'issues: 1 open, 0 fixes ready for your review')
+        self.assertEqual(L.digest(self.root), 'issues: 1 open, 0 fixes ready for your review, 0 held')
         (self.root / 'registry' / 'issues' / 'img' / 'S-001.png').unlink()
         self.assertTrue(any('picture missing' in m for m in L.verify(self.root)))
 
@@ -309,6 +309,90 @@ class DigestVerifyTest(_Root):
         for bad in ('wall:1,2', 'ground:x', 'feature:', 'trees'):
             with self.assertRaises(L.IssueError):
                 L.parse_element(bad)
+
+
+class UnfixTest(_Root):
+    def setUp(self):
+        super().setUp()
+        self.issue, _ = self.snag()
+        self.journal(*build(1, '2026-10-26T09:00:00Z', 'ground', 'g1', [48, -44], 'aaa'),
+                     *build(3, '2026-10-26T11:00:00Z', 'ground', 'g2', [48, -44], 'bbb'))
+        L.log_fix(self.root, self.issue['id'], summary='premature', merged_at='2026-10-26T10:00:00Z',
+                  checks={'S-001': 'plaza brick'}, ticket='#128')
+        L.sync(self.root)
+
+    def test_unfix_keeps_the_log_and_marks_the_fix_withdrawn(self):
+        fx = L.unfix(self.root, self.issue['id'], 'F-1', reason='check not met until #140')
+        self.assertEqual(fx['id'], 'F-1')
+        self.assertTrue(fx['withdrawn'])
+        self.assertEqual(fx['withdrawn_reason'], 'check not met until #140')
+        got = L.load(self.root)['issues'][0]
+        self.assertEqual(len(got['fixes']), 1)
+        self.assertEqual(got['fixes'][0]['summary'], 'premature')
+        self.assertEqual(got['status'], 'open')
+        self.assertEqual(L.sync(self.root), [])
+        rep = L.rebuild_report(self.root, got)
+        self.assertIsNone(rep)  # no active fix left
+
+    def test_unfix_needs_a_reason(self):
+        with self.assertRaises(L.IssueError):
+            L.unfix(self.root, self.issue['id'], 'F-1', reason='  ')
+
+    def test_unfix_unknown_fix_is_refused(self):
+        with self.assertRaises(L.IssueError):
+            L.unfix(self.root, self.issue['id'], 'F-9', reason='nope')
+
+
+class HoldTest(_Root):
+    def setUp(self):
+        super().setUp()
+        self.tool = Path(tempfile.mkdtemp())
+        (self.tool / 'tasks').mkdir()
+        (self.tool / 'tasks' / 'done.json').write_text(json.dumps({'_comment': '', 'tasks': []}) + '\n')
+        self.addCleanup(lambda: __import__('shutil').rmtree(self.tool, ignore_errors=True))
+        self.issue, _ = self.snag()
+        self.journal(*build(1, '2026-10-26T09:00:00Z', 'ground', 'g1', [48, -44], 'aaa'),
+                     *build(3, '2026-10-26T11:00:00Z', 'ground', 'g2', [48, -44], 'bbb'))
+        L.log_fix(self.root, self.issue['id'], summary='order check', merged_at='2026-10-26T10:00:00Z',
+                  checks={'S-001': 'cell refuses trees until features planned'}, ticket='#128')
+        L.sync(self.root)
+        self.assertEqual(L.load(self.root)['issues'][0]['status'], 'fix-landed')
+
+    def test_hold_hides_fix_landed_from_digest_and_blocks_sync(self):
+        L.hold(self.root, self.issue['id'], until='#140')
+        got = L.load(self.root)['issues'][0]
+        self.assertEqual(got['hold_until'], '#140')
+        self.assertEqual(got['status'], 'fix-landed')  # status kept; digest skips it
+        self.assertEqual(L.digest(self.root, tool_root=self.tool),
+                         'issues: 0 open, 0 fixes ready for your review, 1 held')
+        # a second open issue still syncs; the held one does not re-enter promotion
+        other, _ = self.snag(title='Other', words='other problem')
+        L.log_fix(self.root, other['id'], summary='x', merged_at='2026-10-26T10:00:00Z',
+                  checks={'S-002': 'c'})
+        self.assertEqual(L.sync(self.root, tool_root=self.tool), [other['id']])
+        held = next(i for i in L.load(self.root)['issues'] if i['id'] == self.issue['id'])
+        self.assertEqual(held['status'], 'fix-landed')
+
+    def test_hold_blocks_promotion_while_ticket_is_open(self):
+        open_issue, _ = self.snag(title='Waiting', words='still open for a hold')
+        L.log_fix(self.root, open_issue['id'], summary='early', merged_at='2026-10-26T10:00:00Z',
+                  checks={'S-002': 'looks right'})
+        L.hold(self.root, open_issue['id'], until='#140')
+        self.assertEqual(L.sync(self.root, tool_root=self.tool), [])
+        self.assertEqual(L.load(self.root)['issues'][1]['status'], 'open')
+
+    def test_hold_lifts_when_ticket_is_archived(self):
+        L.hold(self.root, self.issue['id'], until='#140')
+        (self.tool / 'tasks' / 'done.json').write_text(
+            json.dumps({'_comment': '', 'tasks': [{'id': 140, 'title': 'next refuses'}]}) + '\n')
+        self.assertEqual(L.digest(self.root, tool_root=self.tool),
+                         'issues: 0 open, 1 fixes ready for your review, 0 held')
+
+    def test_hold_needs_until_ticket(self):
+        with self.assertRaises(L.IssueError):
+            L.hold(self.root, self.issue['id'], until='')
+        with self.assertRaises(L.IssueError):
+            L.hold(self.root, self.issue['id'], until='not-a-ticket')
 
 
 if __name__ == '__main__':

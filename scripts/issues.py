@@ -10,6 +10,8 @@ A snag is evidence inside an issue; there are no loose snags. Issues never block
   python3 scripts/issues.py --world W diagnose I-004 [--title T] [--cause T] [--stage S ...]
   python3 scripts/issues.py --world W fix    I-004 --summary T --merged-at 2026-10-26T14:20:00Z
                                              --check S-001="what should look different" ... [--ticket #110] [--branch B]
+  python3 scripts/issues.py --world W unfix  I-004 F-1 --reason T   # keep the log; mark the fix withdrawn
+  python3 scripts/issues.py --world W hold   I-004 --until '#140'  # digest/sync skip until that ticket is archived
   python3 scripts/issues.py --world W sync                       # open -> fix-landed where the journal shows a redesign
   python3 scripts/issues.py --world W review I-004               # the packet: every snag, its check, where to teleport
   python3 scripts/issues.py --world W verdict I-004 (--all-fixed | --fixed S-001 S-002 [--not-fixed S-003])
@@ -18,7 +20,7 @@ A snag is evidence inside an issue; there are no loose snags. Issues never block
   python3 scripts/issues.py --world W wontfix I-004 --reason T   # the owner's call
   python3 scripts/issues.py --world W list [--status open|fix-landed|confirmed|wontfix] [--cell tx,tz]
   python3 scripts/issues.py --world W show I-004
-  python3 scripts/issues.py --world W digest                     # one line for a run summary
+  python3 scripts/issues.py --world W digest                     # one line for a run summary (includes held count)
   python3 scripts/issues.py --world W verify
 """
 from __future__ import annotations
@@ -61,8 +63,13 @@ def _show(it: dict) -> str:
                                      s['resolution'] or '') if f)
         out.append(f"  {s['id']} ({flags}) {', '.join(L.element_label(e) for e in s['elements'])}")
         out.append(f"      \"{s['words']}\"" + (f"  pic: registry/{s['image']}" if s['image'] else ''))
+    if it.get('hold_until'):
+        out.append(f"  hold until {it['hold_until']}")
     for f in it['fixes']:
-        out.append(f"  fix {f['id']} {f['ticket']} merged {f['merged_at']}: {f['summary']}")
+        flag = ' WITHDRAWN' if f.get('withdrawn') else ''
+        out.append(f"  fix {f['id']}{flag} {f['ticket']} merged {f['merged_at']}: {f['summary']}")
+        if f.get('withdrawn') and f.get('withdrawn_reason'):
+            out.append(f"      withdrawn: {f['withdrawn_reason']}")
         out += [f'      check {sid}: {line}' for sid, line in f['checks'].items()]
     return '\n'.join(out)
 
@@ -110,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--check', action='append', default=[], metavar='S-001=TEXT')
     p.add_argument('--ticket', default='')
     p.add_argument('--branch', default='')
+    p = sub.add_parser('unfix', help='withdraw a wrongly logged fix (keeps the log)')
+    p.add_argument('issue')
+    p.add_argument('fix')
+    p.add_argument('--reason', required=True)
+    p = sub.add_parser('hold', help='skip digest/sync until a system ticket is archived')
+    p.add_argument('issue')
+    p.add_argument('--until', required=True, metavar='#N', help="system ticket, e.g. '#140'")
     sub.add_parser('sync', help='promote open issues whose elements were redesigned after the fix')
     p = sub.add_parser('review', help='print the review packet')
     p.add_argument('issue')
@@ -172,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
             if rep['uncovered']:
                 print('  also needs a fix covering: ' + ', '.join(rep['uncovered']))
             print('  (the issue becomes fix-landed once every element above is redesigned)')
+        elif args.cmd == 'unfix':
+            fx = L.unfix(root, args.issue, args.fix, reason=args.reason)
+            print(f"withdrew {fx['id']} on {args.issue}: {fx['withdrawn_reason']}")
+        elif args.cmd == 'hold':
+            it = L.hold(root, args.issue, until=args.until)
+            print(f"{it['id']} held until {it['hold_until']}")
         elif args.cmd == 'sync':
             moved = L.sync(root)
             print('fix-landed: ' + (', '.join(moved) if moved else '(none)'))
