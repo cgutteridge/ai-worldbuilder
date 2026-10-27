@@ -980,7 +980,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 f'{len(fp["outside"])} building-like cells stand outside vector-map footprints and '
                 f'{len(fp["blind"])} have no map clip; see {plan.name}-footprint-hits.json. House fronts '
                 'go on the vector-map footprint line (scripts/osm_footprints.py frontage), not at the kerb. '
-                'Missing clip: osm_extract.py --layers buildings,highways. Genuinely unmapped structure '
+                'Missing clip: shims/osm_extract.py --at x,z --cell (full CELL_EXTRACT_LAYERS). '
+                'Genuinely unmapped structure '
                 '(evidence in hand): set plan.outside_footprint_ok = "<reason + evidence id>".')
         print(f'footprint guard overridden ({len(fp["outside"]) + len(fp["blind"])} cells): {why}')
     guard_door_frames(plan, w.block)

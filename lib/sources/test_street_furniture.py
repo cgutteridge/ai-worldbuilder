@@ -65,11 +65,16 @@ class ExtractJobs(unittest.TestCase):
         self.assertEqual(presets['furniture'], list(sf.EXTRACT_JOBS))
 
     def test_osm_extract_shim_wires_extract_jobs(self):
-        """Regression: shims/osm_extract.py installs EXTRACT_JOBS into LAYER_PRESETS."""
+        """Regression: shims/osm_extract.py installs furniture via cell-extract presets."""
         shim = Path(__file__).resolve().parents[2] / 'shims' / 'osm_extract.py'
         text = shim.read_text()
-        self.assertIn('install_furniture_layer_preset', text)
-        self.assertIn('EXTRACT_JOBS', text)
+        self.assertIn('install_cell_extract_layer_presets', text)
+        # Furniture jobs still land in LAYER_PRESETS through osm_cell_extract.
+        import osm_cell_extract as oce
+
+        presets: dict = {}
+        oce.install_cell_extract_layer_presets(presets)
+        self.assertEqual(presets['furniture'], list(sf.EXTRACT_JOBS))
 
 
 class DesignerSpec(unittest.TestCase):
