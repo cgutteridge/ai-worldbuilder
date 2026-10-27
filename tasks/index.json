@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 130,
+  "nextTaskId": 131,
   "tasks": [
     {
       "id": 129,
@@ -11,6 +11,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: in cell 48,-44 the trees come from 58 crowns read by eye from Google z20 crops (world reference/trees-google-crowns.json, 2026-10-16, old Southampton Refine project; trees_layer.google_crowns drops the detector inside its zone, which covers the whole cell). Nothing checks them against lidar. Near snag S-017 the crowns stand on 0-2 m of nDSM while the canopy peaks (8-10 m) lie 4-5 blocks east: (6266,-5572)->(6270,-5575), (6267,-5556)->(6271,-5561), (6265,-5581)->(6270,-5575); two crowns sit about 2 blocks from University Road's centre line. Covers issue I-011 (trees in 48,-44 stand a few blocks off the real trees), snag S-017. Scope: before planting, move each hand-read crown to the highest lidar canopy point (nDSM >= 3 m) within a few blocks (search radius as a named constant); keep a crown in place and print it 'unconfirmed' when no peak is in reach or the peak is on a building footprint. Dry run prints each crown's shift and the share moved. No road rule (owner: fix positions from evidence, not a no-trees-on-roads rule). Done when an offline dry run for 48,-44 moves the three crowns near the snag onto the peaks east of the road and prints shifts for all 58. Check line S-017: the trees along University Road stand on the verge where the real trees are, not on the carriageway. Not verified: that the 8-10 m peaks are trees, not buildings; how the other 55 crowns compare. One regression test only; no new gates or lints."
+    },
+    {
+      "id": 130,
+      "title": "Windows on every face and storey the evidence shows",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: a spec's facades table usually lists one face per building, and Build.windows punches glass only on listed faces and storeys. Even listed faces are nearly blank above storey 1: SUSU north storey 1 82%, storey 2 3%, storey 3 0%; West east 4-8%; Retail south 8%/3%; Jubilee south 34/25/24%. Covers issue I-004 (glazing far below the photos: windows only on the faces the spec lists), snag S-006. Scope: (1) the dry run lists every exposed face and storey with its glazed share, marking faces with no facade row 'no evidence read' (report, not a gate); (2) the designer brief asks for a facade row for every exposed face, read from street photos and the aerial; where no evidence shows a face, copy the nearest read face and say so in the spec notes. Done when dry runs for susu_w33830305, west_w34391673 and retail_w33830236 list every face with no unexplained gap. Check line S-006: each building's windows look like the photos on every face, upper storeys included. Not verified: whether the low upper-storey shares come from misread photos or omitted rows; check first when picked up. Touches feature_build.py like #125 and #126; sequence them. One regression test only; no new gates or lints."
     }
   ]
 }
