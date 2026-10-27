@@ -1122,6 +1122,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Cause: the 2026-10-27 overnight run took `cell_registry.py next` as complete, so cells 48,-45 and 49,-45 went ground, trees, decor with no feature step although their maps hold many buildings (ground skipped ~5,400 building-footprint columns in 49,-45) and were logged complete. Deliver: in .claude/skills/cell-orchestrator/SKILL.md add a per-cell preflight (`cell_registry.py propose-features --cell <c> --record` before ground) and a completion gate: not complete until every footprint the ground report skipped is covered by a planned and landed feature; if features exist on the map but none are planned, stop and say so. Also add to the overnight stop list: the same patrol flag repeating across features. Docs-only; can commit straight to main. Done 2026-10-27: cell-orchestrator skill adds propose-features preflight, footprint completion gate, overnight stop on repeating patrol flag."
+    },
+    {
+      "id": 130,
+      "title": "Windows on every face and storey the evidence shows",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: a spec's facades table usually lists one face per building, and Build.windows punches glass only on listed faces and storeys. Even listed faces are nearly blank above storey 1: SUSU north storey 1 82%, storey 2 3%, storey 3 0%; West east 4-8%; Retail south 8%/3%; Jubilee south 34/25/24%. Covers issue I-004 (glazing far below the photos: windows only on the faces the spec lists), snag S-006. Scope: (1) the dry run lists every exposed face and storey with its glazed share, marking faces with no facade row 'no evidence read' (report, not a gate); (2) the designer brief asks for a facade row for every exposed face, read from street photos and the aerial; where no evidence shows a face, copy the nearest read face and say so in the spec notes. Done when dry runs for susu_w33830305, west_w34391673 and retail_w33830236 list every face with no unexplained gap. Check line S-006: each building's windows look like the photos on every face, upper storeys included. Not verified: whether the low upper-storey shares come from misread photos or omitted rows; check first when picked up. Touches feature_build.py like #125 and #126; sequence them. One regression test only; no new gates or lints. Done 2026-10-27: glazed_share_report lists every exposed face/storey; missing facade rows marked no evidence read; designer brief updated. Merged task/130-windows-every-face."
     }
   ]
 }
