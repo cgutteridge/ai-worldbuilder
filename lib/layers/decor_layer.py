@@ -356,7 +356,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     vmap = OSMGround(cell)
     warm_surface_probe(world, cell[0] * 128 - 2, cell[1] * 128 - 2,
                        cell[0] * 128 + 129, cell[1] * 128 + 129)           # batch reads (#110)
-    way = set(vmap.road) | set(vmap.feat) | set(vmap.water)      # mapped road, path or water columns
+    way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
 
     decor = dplan.build_decor_plan(
         cell,
