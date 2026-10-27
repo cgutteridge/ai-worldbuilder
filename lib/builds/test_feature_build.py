@@ -247,9 +247,16 @@ class BuildPlanTest(unittest.TestCase):
         )
         floor = 50
         eave = floor + 2 * 3
-        roof_ys = [y for (x, y, z), st in plan.cells.items() if 'brick_slab' in st]
-        self.assertTrue(roof_ys, 'expected pitched brick slabs')
+        roof_ys = [
+            y for (x, y, z), st in plan.cells.items()
+            if 'brick_stairs' in st or st.endswith('bricks') or 'brick_slab' in st
+        ]
+        self.assertTrue(roof_ys, 'expected pitched brick stairs/slabs/full')
         self.assertGreaterEqual(max(roof_ys), eave)
+        stairs = [st for st in plan.cells.values() if 'brick_stairs' in st]
+        self.assertTrue(stairs, 'pitched hip must place upslope stairs')
+        self.assertTrue(all('waterlogged=false' in st for st in stairs))
+        self.assertTrue(all('half=bottom' in st for st in stairs))
 
     def test_ghost_ground_owner_does_not_drop_shell_cells(self):
         """Ghost ground must not shrink the offline plan (live apply overwrites)."""
@@ -962,35 +969,38 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         return plan
 
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
-        """Pitched+zones follows the lidar ridge with stair-slabs; flat stays stepped decks."""
+        """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
         pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
-        edge_slabs = [
+        # 5×5 median flattens the peak to a 3-wide plateau; stairs sit on the flanks.
+        slope_stairs = [
             st for (x, y, z), st in pitched.cells.items()
-            if (x, z) in self.cells and x in (10, 18) and 'brick_slab' in st
+            if (x, z) in self.cells and x in (11, 12, 16, 17) and 'brick_stairs' in st
         ]
-        ridge_slabs = [
-            (y, st) for (x, y, z), st in pitched.cells.items()
-            if (x, z) in self.cells and x == 14 and 'brick_slab' in st
-        ]
-        self.assertTrue(edge_slabs, 'expected stair-slabs at the zone eave')
-        self.assertTrue(ridge_slabs, 'expected stair-slabs on the lidar ridge line')
-        ridge_ys = {y for y, _st in ridge_slabs}
-        edge_ys = {
-            y for (x, y, z), st in pitched.cells.items()
-            if (x, z) in self.cells and x in (10, 18) and 'brick_slab' in st
-        }
+        self.assertTrue(slope_stairs, 'expected upslope stairs on the lidar pitch')
+        self.assertTrue(all('half=bottom' in st for st in slope_stairs))
+        self.assertTrue(all('facing=east' in st or 'facing=west' in st for st in slope_stairs))
+        # Highest roof membrane block per column (ignore wall fill under the pitch).
+        top: dict[tuple[int, int], tuple[int, str]] = {}
+        for (x, y, z), st in pitched.cells.items():
+            if (x, z) not in self.cells:
+                continue
+            if not ('brick_stairs' in st or 'brick_slab' in st or st.endswith(':bricks')):
+                continue
+            cur = top.get((x, z))
+            if cur is None or y > cur[0]:
+                top[(x, z)] = (y, st)
+        ridge_ys = {top[c][0] for c in top if c[0] == 14}
+        edge_ys = {top[c][0] for c in top if c[0] in (10, 18)}
+        self.assertTrue(ridge_ys and edge_ys, 'expected ridge and eave membrane')
         self.assertGreater(
             max(ridge_ys), max(edge_ys),
             'ridge must rise above the zone eave (not a flat terrace)',
         )
-        # Must not be stepped full-block plateaus along the ridge
-        stepped_full = [
-            (x, y) for (x, y, z), st in pitched.cells.items()
-            if (x, z) in self.cells and st == 'minecraft:brick' and y in (49, 50, 51, 52)
-        ]
-        self.assertFalse(
-            stepped_full,
-            'pitched+zones must not snap a ridge into stepped full-block terraces',
+        slope_tops = [top[c][1] for c in top if c[0] in (11, 12, 16, 17)]
+        self.assertTrue(slope_tops, 'expected slope membrane columns')
+        self.assertTrue(
+            all('brick_stairs' in st for st in slope_tops),
+            f'pitched+zones slope must be stairs, got {slope_tops!r}',
         )
 
         flat = self._build('flat', [45, 50], self.flat_zone_data, material='smooth_stone')
@@ -1486,6 +1496,136 @@ class DetailsBuildTest(unittest.TestCase):
             ('drainpipe', 'street photo south pipe'),
         ):
             self.assertRegex(out, rf'detail {kind}.*source={re.escape(src)}')
+
+
+class BlockFamilyVariantsTest(unittest.TestCase):
+    """Seam: block_family_variants exposes full/slab/stairs without cross-mat swaps."""
+
+    def test_brick_has_all_three(self):
+        v = F.block_family_variants('brick')
+        self.assertEqual(v['full'], 'bricks')
+        self.assertEqual(v['slab'], 'brick_slab')
+        self.assertEqual(v['stairs'], 'brick_stairs')
+
+    def test_smooth_stone_has_no_stairs(self):
+        v = F.block_family_variants('smooth_stone')
+        self.assertEqual(v['full'], 'smooth_stone')
+        self.assertEqual(v['slab'], 'smooth_stone_slab')
+        self.assertNotIn('stairs', v)
+
+    def test_deepslate_tile_full_is_plural(self):
+        v = F.block_family_variants('deepslate_tile')
+        self.assertEqual(v['full'], 'deepslate_tiles')
+        self.assertEqual(v['stairs'], 'deepslate_tile_stairs')
+
+
+class PitchedRoofStatesTest(unittest.TestCase):
+    """Seam: pitched_roof_states — gable, hip, valley block states (#149)."""
+
+    def test_gable_stairs_face_upslope_ridge_full(self):
+        # Ridge along x at z=2; half-heights rise by 2 toward the ridge.
+        half = {}
+        mats = {}
+        for x in range(0, 5):
+            for z in range(0, 5):
+                half[(x, z)] = 20 + 2 * (2 - abs(z - 2))
+                mats[(x, z)] = 'brick'
+        warn: list[str] = []
+        states = F.pitched_roof_states(half, mats, warnings=warn)
+        self.assertEqual(warn, [])
+        # Low-z slope: +z is south, so facing south toward the ridge
+        self.assertEqual(
+            states[(2, 0)],
+            'brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]',
+        )
+        self.assertEqual(
+            states[(2, 1)],
+            'brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]',
+        )
+        # High-z slope faces north (upslope toward ridge)
+        self.assertEqual(
+            states[(2, 3)],
+            'brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]',
+        )
+        # Ridge is a full block, not a stair terrace
+        self.assertEqual(states[(2, 2)], 'bricks')
+
+    def test_hip_outer_corner_shape(self):
+        # Pyramid: half = 2 * chebyshev dist from outside of a 5×5 (edge=0).
+        cells = {(x, z) for x in range(5) for z in range(5)}
+        half = {}
+        for x, z in cells:
+            d = min(x, z, 4 - x, 4 - z)
+            half[(x, z)] = 10 + 2 * d
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        # Side mid (edge ring): straight stair facing in
+        self.assertEqual(
+            states[(2, 0)],
+            'brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]',
+        )
+        # Footprint corner: diagonal rise only → outer hip stair
+        corner = states[(0, 0)]
+        self.assertIn('brick_stairs', corner)
+        self.assertIn('shape=outer_', corner)
+        self.assertIn('waterlogged=false', corner)
+        self.assertEqual(states[(2, 2)], 'bricks')
+
+    def test_valley_inner_corner_shape(self):
+        # At (1,1)=12: east and north are +2 uphill; NE diagonal is not higher → valley.
+        half = {
+            (0, 0): 10, (1, 0): 12, (2, 0): 14,
+            (0, 1): 12, (1, 1): 12, (2, 1): 14,
+            (0, 2): 14, (1, 2): 14, (2, 2): 12,
+        }
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        v = states[(1, 1)]
+        self.assertIn('brick_stairs', v)
+        self.assertIn('shape=inner_', v)
+        self.assertIn('half=bottom', v)
+        self.assertIn('waterlogged=false', v)
+
+    def test_missing_stairs_falls_back_to_full_and_warns(self):
+        half = {(0, 0): 10, (1, 0): 12}
+        mats = {(0, 0): 'smooth_stone', (1, 0): 'smooth_stone'}
+        warn: list[str] = []
+        states = F.pitched_roof_states(half, mats, warnings=warn)
+        self.assertEqual(states[(0, 0)], 'smooth_stone')
+        self.assertTrue(any('no stairs' in w for w in warn))
+
+
+class PitchedRoofBuildShapesTest(unittest.TestCase):
+    """Integration: build() hip uses stairs; states cover gable/valley via helper."""
+
+    def test_build_hip_places_outer_corner_and_upslope_stairs(self):
+        cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
+        spec = {
+            'name': 'unit_hip',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+        }
+        plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        stairs = [st for st in plan.cells.values() if 'brick_stairs' in st]
+        self.assertTrue(stairs, 'hip roof must place stairs')
+        self.assertTrue(
+            any('facing=south' in st and 'shape=straight' in st for st in stairs),
+            f'expected a straight south-facing slope stair, got {stairs!r}',
+        )
+        self.assertTrue(
+            any('shape=outer_' in st for st in stairs),
+            f'expected outer hip corner stair, got {stairs!r}',
+        )
 
 
 if __name__ == '__main__':
