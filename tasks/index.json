@@ -6,13 +6,13 @@
     {
       "id": 143,
       "title": "Feature doors land in a one-block vestibule that patrol flags door_to_wall",
-      "status": "todo",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
         146
       ],
-      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that."
+      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference."
     },
     {
       "id": 145,
@@ -21,9 +21,7 @@
       "priority": "high",
       "complexity": "l",
       "notes": "Cause: doors are placed at the wall cell nearest a portal point (portals.framed, DOOR_REACH, #114) and the spec's optional `doors` map is rarely filled, so leaf count, face, canopy and floor height are guessed per door (S-021 sunk 42-B door, S-023 57-A on the wrong face, 40-A single not double). Deliver: a per-face facade plan in the building spec (storeys, glazing, entrances with leaf count, canopy or covered area, steps, floor height against outside ground; room for roof edge and detail). Portals are inputs to it, not a stage: the designer brief shows every portal on the footprint with its photo and position when it has one, and each must be placed or declared unresolved with a reason. Each entrance records its source (given coordinate or register entry, photo read, inference) and confidence. Portals are best effort: a world with no portal register still gets entrances from street-level photos. Relates to #130 (windows on every face), #131 (window frames) and #132 (roof and facade detail): decide whether they become fields of this plan or follow it. Check: 57-A is a single door on the side face under a covered area; 40-A shows double doors; 42-B sits at ground level; a portal left unresolved is listed in the plan and the cell view.",
-      "blockedBy": [
-        151
-      ]
+      "blockedBy": []
     },
     {
       "id": 146,
