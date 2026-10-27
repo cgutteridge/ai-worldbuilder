@@ -4,15 +4,6 @@
   "nextTaskId": 133,
   "tasks": [
     {
-      "id": 129,
-      "title": "Snap hand-read tree crowns to the lidar canopy",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: in cell 48,-44 the trees come from 58 crowns read by eye from Google z20 crops (world reference/trees-google-crowns.json, 2026-10-16, old Southampton Refine project; trees_layer.google_crowns drops the detector inside its zone, which covers the whole cell). Nothing checks them against lidar. Near snag S-017 the crowns stand on 0-2 m of nDSM while the canopy peaks (8-10 m) lie 4-5 blocks east: (6266,-5572)->(6270,-5575), (6267,-5556)->(6271,-5561), (6265,-5581)->(6270,-5575); two crowns sit about 2 blocks from University Road's centre line. Covers issue I-011 (trees in 48,-44 stand a few blocks off the real trees), snag S-017. Scope: before planting, move each hand-read crown to the highest lidar canopy point (nDSM >= 3 m) within a few blocks (search radius as a named constant); keep a crown in place and print it 'unconfirmed' when no peak is in reach or the peak is on a building footprint. Dry run prints each crown's shift and the share moved. No road rule (owner: fix positions from evidence, not a no-trees-on-roads rule). Done when an offline dry run for 48,-44 moves the three crowns near the snag onto the peaks east of the road and prints shifts for all 58. Check line S-017: the trees along University Road stand on the verge where the real trees are, not on the carriageway. Not verified: that the 8-10 m peaks are trees, not buildings; how the other 55 crowns compare. One regression test only; no new gates or lints."
-    },
-    {
       "id": 130,
       "title": "Windows on every face and storey the evidence shows",
       "status": "todo",
