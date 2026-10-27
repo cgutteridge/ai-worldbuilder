@@ -456,7 +456,6 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
 # --- 3. how high -------------------------------------------------------------------------
 PIT_DROP = 3            # min blocks below the surrounding rim before a pit is raised (#155)
 PIT_MAX_RADIUS = 2      # max Chebyshev dist from a pit cell to outside the component (#160)
-PIT_MAX_WIDTH = 5       # retained for tests / docs; radius gate replaced bbox narrow (#155)
 PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
 
 

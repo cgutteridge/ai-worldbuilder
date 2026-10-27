@@ -180,6 +180,8 @@ class TestGroundDecisions(unittest.TestCase):
             live[q] = (36, 'grass_block')
         for q in wide:
             live[q] = (36, 'grass_block')
+        self.assertLessEqual(gl._pit_chebyshev_radius(pit), gl.PIT_MAX_RADIUS)
+        self.assertGreater(gl._pit_chebyshev_radius(wide), gl.PIT_MAX_RADIUS)
         kind = {q: 'grass' for q in live}
         ys = gl.level_spikes(live, kind, set())
         ys = gl.level_pits(live, kind, set(), ys)
@@ -244,8 +246,7 @@ class TestGroundDecisions(unittest.TestCase):
                 pit.add((x0 + dx, z))
         for q in pit:
             live[q] = (36, 'grass_block')
-        xs = [c[0] for c in pit]
-        self.assertGreater(max(xs) - min(xs) + 1, gl.PIT_MAX_WIDTH)
+        # bbox x-span is 12 — old width gate would skip; Chebyshev radius still fills.
         self.assertLessEqual(gl._pit_chebyshev_radius(pit), gl.PIT_MAX_RADIUS)
         kind = {q: 'grass' for q in live}
         ys = gl.level_pits(live, kind, set())
