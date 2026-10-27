@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Shim — canonical module: active world ``providers/geofabrik-hampshire/osm_extract.py``.
 
-Also installs street-furniture extract jobs from
-``lib/sources/street_furniture.EXTRACT_JOBS`` into the world module's
-``LAYER_PRESETS`` so ``--layers furniture`` reaches the vector-map cache.
+Installs the tool-owned cell-extract landscape presets
+(``lib/sources/osm_cell_extract``) into the world module's ``LAYER_PRESETS``,
+and defaults ``--layers`` to :data:`osm_cell_extract.CELL_EXTRACT_LAYERS` when
+the caller omits them so a new cell or place clip gets water, waterway,
+barriers, furniture, pedestrian areas, natural and leisure without a hand list.
 """
 from __future__ import annotations
 
@@ -14,20 +16,23 @@ import _provider_shim as _ps
 
 _ps.ensure_import_paths()
 
-from street_furniture import install_furniture_layer_preset  # noqa: E402
+from osm_cell_extract import (  # noqa: E402
+    install_cell_extract_layer_presets,
+    with_default_cell_extract_layers,
+)
 from world_provider import load_world_provider  # noqa: E402
 
 _PACKAGE = "providers/geofabrik-hampshire"
 _FILE = "osm_extract.py"
 
 
-def _load_with_furniture():
-    """Load world osm_extract and install the furniture LAYER_PRESETS entry.
+def _load_with_cell_extract():
+    """Load world osm_extract and install landscape ``LAYER_PRESETS`` entries.
 
     @returns: loaded world provider module
     """
     mod = load_world_provider(_PACKAGE, _FILE, "osm_extract")
-    install_furniture_layer_preset(mod.LAYER_PRESETS)
+    install_cell_extract_layer_presets(mod.LAYER_PRESETS)
     return mod
 
 
@@ -38,8 +43,18 @@ if __name__ == "__main__":
     import script_env
 
     script_env.prepend_world_activation()
-    _mod = _load_with_furniture()
-    raise SystemExit(_mod.main())
+    _mod = _load_with_cell_extract()
+    raise SystemExit(_mod.main(with_default_cell_extract_layers(sys.argv[1:])))
 else:
-    _mod = _load_with_furniture()
+    _mod = _load_with_cell_extract()
     globals().update({k: v for k, v in vars(_mod).items() if not k.startswith("__")})
+    _world_main = _mod.main
+
+    def main(argv: list[str] | None = None) -> int:
+        """CLI entry: default ``--layers`` to the full cell-extract set when omitted.
+
+        @param argv: optional argv without program name (``None`` → ``sys.argv[1:]``)
+        @returns: exit code
+        """
+        raw = list(sys.argv[1:] if argv is None else argv)
+        return _world_main(with_default_cell_extract_layers(raw))

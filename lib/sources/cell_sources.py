@@ -728,8 +728,10 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
         f'# ref_manifest.py add … --useful yes --models footprint,roof,landscape --at {cx},{cz}',
         f'# vector_map: PBF cache under {vm["downloads"].name}/ → extract → '
         f'reference/{vmc.REFERENCE_DIRNAME}/<place>/ (once per project; this world only)',
-        f'python3 scripts/osm_extract.py --cell {tx},{tz} --layers buildings,highways '
-        f'--place PLACE --add   # world provider shim; writes reference/{vmc.REFERENCE_DIRNAME}/',
+        f'python3 shims/osm_extract.py --at {cx},{cz} --cell '
+        f'--place PLACE --add   # defaults to osm_cell_extract.CELL_EXTRACT_LAYERS '
+        f'(buildings+highways+landuse+water+waterway+barrier+furniture+pedestrian+natural+leisure); '
+        f'writes reference/{vmc.REFERENCE_DIRNAME}/',
         f'python3 scripts/osm_footprints.py frontage --bbox {x0},{z0},{x1},{z1}',
         f'python3 scripts/coverage.py status --cell {tx},{tz} --list',
         f'python3 scripts/coverage.py gaps --area highfield',
