@@ -1402,6 +1402,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: OSMGround collects natural=tree points into .trees but no layer reads them; trees_layer takes lidar canopy plus the hand-read crown files only. natural=tree_row lines are not read at all. Deliver: use mapped tree points and tree rows as candidate crown positions in trees_layer (snap to lidar canopy peaks as #129 does; log each rejected point with its reason); tree_row lines laid as a crown sequence. Needs #156 so the points are fetched. Proof: unit test with a fixture cell holding three tree points and a canopy raster; every point inside the cell yields a crown or a logged rejection. No live-world test. Helps: any cell with surveyed trees, all worlds. REVIEW 2026-10-27: say whether mapped tree points with no lidar canopy peak (young trees) are kept as small crowns or rejected with a logged reason. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues. Done 2026-10-27: mapped trees+tree_row crowns; young trees kept as small unconfirmed crowns; merged task/157-mapped-trees (b7bd534 / merge 9646baf)."
+    },
+    {
+      "id": 159,
+      "title": "Building evidence carries roof, height and mapped entrance tags to the designer",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues. Done 2026-10-27: map roof/height hints + entrance snap/rank; merged task/159-building-tags (08feb68)."
     }
   ]
 }
