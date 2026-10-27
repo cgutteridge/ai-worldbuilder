@@ -909,7 +909,13 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     _ensure_world_config()
     pass_ = stage_pass(stage)
     OUT.mkdir(parents=True, exist_ok=True)
-    lo, hi = plan.bounds()
+    empty = not plan.cells
+    # Empty trees/decor plans need an explicit cell (journalled "nothing to place", #127).
+    if empty and cell is None:
+        raise SystemExit(f'{plan.name}: empty plan needs cell=')
+    lo = hi = None
+    if not empty:
+        lo, hi = plan.bounds()
     # Live path: MCP LiveBlocks after the region/open-world gate. Dry path: read-only
     # region files after a server save (#111) — no MCP warm-up.
     if dry:
@@ -917,18 +923,19 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     else:
         w = World()
         ensure_region_matches_open_world()
-        warm = set(plan.cells)
-        warm.update((x, y - 1, z) for x, y, z in plan.cells)
-        for (x, y, z), st in plan.cells.items():
-            n = bid(st)[10:]
-            if n.endswith('_door') and 'half=lower' in st:
-                face = st.split('facing=')[1].split(',')[0].rstrip(']')
-                sides = ((1, 0), (-1, 0)) if face in ('north', 'south') else ((0, 1), (0, -1))
-                for dx, dz in sides:
-                    for dy in (0, 1):
-                        warm.add((x + dx, y + dy, z + dz))
-                warm.add((x, y + 2, z))
-        w.prefetch(warm)
+        if not empty:
+            warm = set(plan.cells)
+            warm.update((x, y - 1, z) for x, y, z in plan.cells)
+            for (x, y, z), st in plan.cells.items():
+                n = bid(st)[10:]
+                if n.endswith('_door') and 'half=lower' in st:
+                    face = st.split('facing=')[1].split(',')[0].rstrip(']')
+                    sides = ((1, 0), (-1, 0)) if face in ('north', 'south') else ((0, 1), (0, -1))
+                    for dx, dz in sides:
+                        for dy in (0, 1):
+                            warm.add((x + dx, y + dy, z + dz))
+                    warm.add((x, y + 2, z))
+            w.prefetch(warm)
     # lint: posts (fences, walls, bars) over half-height blocks float by half a block
     floats = []
     for (x, y, z), st in plan.cells.items():
@@ -994,7 +1001,10 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 '(block_fill cannot place bottom slabs; set plan.keep_bottom_slabs to skip)'
             )
     boxes = plan.boxes()
-    print(f'{plan.name}: {len(plan.cells)} cells in {len(boxes)} boxes; bounds {lo}..{hi}; no clashes')
+    if empty:
+        print(f'{plan.name}: 0 cells (empty {pass_} pass); no clashes')
+    else:
+        print(f'{plan.name}: {len(plan.cells)} cells in {len(boxes)} boxes; bounds {lo}..{hi}; no clashes')
     if dry:
         return
     import site_lock
@@ -1002,7 +1012,9 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     m = Paced()
     blocks = live_blocks()
     registry = cell_registry.open_registry(blocks=blocks)
-    if not registry.entries(plan=plan.name):
+    if empty:
+        structure = None
+    elif not registry.entries(plan=plan.name):
         structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi)
         print('backup:', res)
     else:
@@ -1011,6 +1023,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
             m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
     cell = tuple(cell) if cell else primary_cell(plan.cells)
     record = {**(meta or {}), 'structure': structure}
+
     mask_ref = None
     if mask is not None:
         from pass_mask import verify_integrity, mask_placements

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Layered decor pass for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 4), §2, §3.
 
-Decor here means the OSM-mapped boundary features the grounds classifier already knows:
-hedges, brick walls and iron-bar fences (barrier=hedge/wall/fence), on any ground except mapped road, path and water columns,
-never across a path or beside a build. Site hoarding is left out (temporary, not sure).
+Decor places OSM-mapped boundary features (hedges, brick walls, iron-bar fences) plus
+street furniture (benches, bins, bike racks, lamp posts, bollards, signs) from mapped
+points or a designer spec (``reference/decor-furniture.json``). Barriers sit on soft
+ground; furniture sits on paving, never on a path-line column or against a build.
 Placed only where the live block is air (or a stem/flower, as in §10) and not owned by a
 neighbour or by another mask, clipped to the cell. Then any wall or fence pieces of the same
 type that one extra block could link (face to face, diagonal is disjoint) are joined, one
 block per join, repeating until none remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
-clean readback.
+clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
 
   python3 scripts/decor_layer.py --cell 48,-44            # dry run
   SITE_OWNER=<owner> python3 scripts/decor_layer.py --cell 48,-44 --apply
@@ -16,17 +17,16 @@ clean readback.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections import Counter
-from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
 from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air, neighbour_owned,  # noqa: E402
                           load_masked_positions, warm_surface_probe)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
-from site_kit import Plan, World, full  # noqa: E402
+from site_kit import Plan, World  # noqa: E402
+import street_furniture as sf  # noqa: E402
 
 
 def plan_name(tx: int, tz: int) -> str:
@@ -36,7 +36,7 @@ def plan_name(tx: int, tz: int) -> str:
 
 JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
 NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
-# Ground kinds the decor pass must not sit on or straddle (live surface, not only map way columns).
+# Ground kinds the barrier pass must not sit on or straddle (live surface, not only map way columns).
 _CARRIAGE_KINDS = frozenset({'tarmac', 'paving', 'mark', 'kerb'})
 
 
@@ -125,11 +125,70 @@ def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
     return added
 
 
-def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
-    """Plan the OSM-mapped hedges, walls and fences. Returns (placements, stats).
+def place_furniture(
+    cell: tuple[int, int],
+    items: list[dict],
+    world: World,
+    *,
+    way: set,
+    near1: set,
+    owned: set,
+    masked: set,
+) -> tuple[dict[tuple[int, int, int], str], list[dict]]:
+    """Place street-furniture recipes on paving columns.
 
-    Soft ground only (the live surface is grass), never within a block of a building
-    footprint or a structure build, only into air, clipped to the cell.
+    Skips path-line columns (``way``), columns against a build (``near1``), non-paving
+    surfaces, and any recipe spot that is not air / is owned or masked.
+
+    @param cell: (tx, tz)
+    @param items: ``{x,z,kind,source}`` from map and/or designer
+    @param world: live or planning world
+    @param way: mapped road / path / water columns
+    @param near1: footprint and structure columns dilated by 1
+    @param owned: neighbour-owned block positions
+    @param masked: positions owned by another pass mask
+    @returns: (placements, report rows that were placed)
+    """
+    from surface_probe import surface_y
+
+    found: dict[tuple[int, int, int], str] = {}
+    report: list[dict] = []
+    for item in items:
+        x, z, kind = int(item['x']), int(item['z']), item['kind']
+        q = (x, z)
+        if not cell_contains(cell, *q) or q in near1 or q in way:
+            continue
+        if column_ground_kind(world, x, z) not in sf.PAVING_KINDS:
+            continue
+        top = surface_y(world, x, z)
+        if not top:
+            continue
+        stack = sf.recipe(kind)
+        voxels: dict[tuple[int, int, int], str] = {}
+        ok = True
+        for dy, block in stack:
+            pos = (x, top[0] + dy, z)
+            if not is_air(world.block(*pos)) or pos in owned or pos in masked or pos in found:
+                ok = False
+                break
+            voxels[pos] = block
+        if not ok:
+            continue
+        found.update(voxels)
+        row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
+               'blocks': len(voxels)}
+        if item.get('note'):
+            row['note'] = item['note']
+        report.append(row)
+    return found, report
+
+
+def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
+    """Plan barriers and street furniture for one cell. Returns (placements, stats).
+
+    Barriers: soft ground only, never within a block of a building footprint or structure.
+    Furniture: paving only, never on a path-line column or against a build. Sources are
+    mapped OSM points and ``reference/decor-furniture.json`` (designer).
     """
     from ground_sources import OSMGround
     from osm_footprints import OSMIndex
@@ -184,6 +243,17 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                     stats['blocked_owned'] += 1
                 else:
                     found[pos] = mat
+
+    items = sf.merge_items(sf.map_items(vmap.furniture), sf.designer_items(cell))
+    furniture, furniture_report = place_furniture(
+        cell, items, world, way=way, near1=near1, owned=owned, masked=masked,
+    )
+    # Furniture wins over a barrier block at the same position (rare overlap).
+    found.update(furniture)
+    stats['furniture'] = len(furniture_report)
+    stats['furniture map'] = sum(1 for r in furniture_report if r['source'] == 'map')
+    stats['furniture designer'] = sum(1 for r in furniture_report if r['source'] == 'designer')
+
     def can_place(pos):
         return (cell_contains(cell, pos[0], pos[2]) and (pos[0], pos[2]) not in near1
                 and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
@@ -196,6 +266,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         plan.set(*p, b)
     stats['dropped_outside_cell'] = dropped
     stats['blocks'] = len(clipped)
+    stats['furniture_report'] = furniture_report  # list, not a Counter value; printed by run()
     return clipped, stats
 
 
@@ -206,9 +277,15 @@ def run(cell: tuple[int, int]) -> int:
     name = plan_name(*cell)
     plan = Plan(name)
     placed, stats = plan_cell(cell, plan, fresh_planning_world())
+    furniture_report = stats.pop('furniture_report', [])
     kinds = Counter(placed.values())
     print(f'{name}: {dict(stats)}')
     print(f'  by block: {dict(kinds)}')
+    if furniture_report:
+        print('  street furniture:')
+        for row in furniture_report:
+            note = f" ({row['note']})" if row.get('note') else ''
+            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{note}")
     if placed:
         preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
         apply(plan, dry=True, modifies=ignored_builds(cell))
@@ -216,7 +293,11 @@ def run(cell: tuple[int, int]) -> int:
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
-    """Live apply: lock first, re-plan from the live world, readback, then the mask."""
+    """Live apply: lock first, re-plan from the live world, readback, then the mask.
+
+    An empty placement set still journals a landed decor pass (and an empty mask) so
+    a cell with nothing to place can finish; regenerating ground clears it as usual.
+    """
     import os
     from site_kit import apply
 
@@ -227,12 +308,15 @@ def apply_cell(cell: tuple[int, int]) -> int:
     plan = Plan(name)
     world = World()
     placed, stats = plan_cell(cell, plan, world)
-    if not placed:
-        raise SystemExit('nothing to place; check the dry run')
+    furniture_report = stats.pop('furniture_report', [])
     mask = build_mask('decor', cell, name, placed, lambda p: is_air(world.block(*p)))
-    print(f'{name}: {len(placed)} blocks')
+    print(f'{name}: {len(placed)} blocks ({dict(stats)})')
+    if furniture_report:
+        for row in furniture_report:
+            print(f"  furniture {row['kind']} at {row['x']},{row['z']} source={row['source']}")
     rb = apply(plan, modifies=ignored_builds(cell), stage='decor', cell=cell,
-               strict=True, meta=None, mask=mask)
+               strict=True, meta={'furniture': furniture_report} if furniture_report else None,
+               mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 
