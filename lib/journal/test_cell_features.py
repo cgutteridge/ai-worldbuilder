@@ -67,6 +67,43 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(prog['unbuilt'][0]['label'], 'Empty Hall')
         self.assertEqual(prog['unbuilt'][0]['area'], prog['unbuilt_area'])
 
+    def test_built_footprint_still_emits_uncovered_portals_as_houses(self):
+        """#154: a built outline that swallows houses still proposes their portals.
+
+        Main footprint columns are covered (over COVERED_FRAC); portal columns are not.
+        Those portals must appear as an unbuilt houses row so propose-features can see them.
+        """
+        # Cell 49,-43 is x 6272..6399, z -5504..-5377.
+        big = _square(6275, -5490, 6320, -5430)  # large outline (built)
+        from coverage import scan_polygon, cell_bbox
+        cb = cell_bbox(49, -43, 49, -43)
+        full = set(scan_polygon(big, cb))
+        # Cover most of the footprint; leave a strip around the portal columns free.
+        portal_cols = {(6290, -5464), (6285, -5470), (6300, -5447)}
+        covered = full - portal_cols
+        self.assertGreaterEqual(len(covered) / len(full), cf.COVERED_FRAC)
+
+        portals = [
+            {'id': '1105-A', 'building': '1105', 'label': 'Main', 'x': 6290, 'z': -5464, 'images': []},
+            {'id': '1106-A', 'building': '1106', 'label': 'Main', 'x': 6285, 'z': -5470, 'images': []},
+            {'id': '1102-A', 'building': '1102', 'label': 'Main', 'x': 6300, 'z': -5447, 'images': []},
+        ]
+        idx = SimpleNamespace(
+            buildings=[(big, {'building': 'yes', 'name': 'Big Hall', 'id': 'w9'})],
+            streets=[('University Road', 4, [(6270.0, -5450.0), (6330.0, -5450.0)])],
+        )
+        with mock.patch('cell_features.for_footprint', return_value=portals), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            prog = cf.footprint_progress(49, -43, idx=idx, covered=covered)
+        houses = [u for u in prog['unbuilt'] if u['kind'] == 'houses']
+        self.assertEqual(len(houses), 1, prog['unbuilt'])
+        self.assertEqual(houses[0]['street'], 'University Road')
+        self.assertEqual({p['id'] for p in houses[0]['portals']}, {'1105-A', '1106-A', '1102-A'})
+        self.assertIn('University Road', houses[0]['label'])
+        self.assertGreater(houses[0]['area'], 0)
+
     def test_missing_water_bodies_from_columns(self):
         """#148: connected water columns become water_body candidates until covered."""
         # Cell 48,-45: place a 3×3 pond and a covered 2×2 (below MIN_WATER_COLUMNS after filter).
