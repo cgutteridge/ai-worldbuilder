@@ -2,15 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
   "nextTaskId": 168,
-  "tasks": [
-    {
-      "id": 167,
-      "title": "Ground takes height from lidar, not the live world surface",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Raised 2026-10-27 from the SUSU void review. Rule (owner): lidar is the source of truth for ground height; the live game surface may only inform transitional choices (e.g. matching paving between a feature and ground, either built first), never height. Cause class: Translation. ground_layer.free_columns reads the live surface via surface_y although the module docstring says HOW HIGH is composite lidar; so a wrong ghost baseline is repainted, not corrected. Observed: columns where live is 36-39 and lidar ground is 46-50 stayed low after a ground rerun; some were footprint columns (never touched), one a free column at a cell edge (level_pits rim only sees columns inside the cell). Deliver: ground heights come from lidar_heightmap base (reference world); pits/spikes logic follows from comparing live to lidar rather than live to its neighbours; consider filling under footprint wall bases to lidar ground; rim lookups read across cell edges. Proof: unit test on MemoryBlocks where live dips below lidar and ground raises to lidar, footprint columns and live-only paving hints unchanged. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py, rules/evidence-order.md if it needs the live-surface carve-out wording. Helps: all layered ground, any world on a lidar ghost baseline."
-    }
-  ]
+  "tasks": []
 }
