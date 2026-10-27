@@ -8,6 +8,10 @@ States: ``open`` -> ``fix-landed`` -> ``confirmed``, plus ``wontfix``.
 
 * ``fix`` logs work on an issue (ticket, branch, summary, merge time, one **check** line per
   affected snag). A fix without check lines is refused.
+* ``unfix`` keeps the fix log but marks it **withdrawn** (wrongly claimed); the issue returns to
+  ``open`` if it was ``fix-landed`` on that fix.
+* ``hold --until #N`` parks an issue until system ticket ``#N`` is archived in ``tasks/done.json``;
+  ``digest`` and ``sync`` skip held issues, and the digest says how many are held.
 * ``fix-landed`` is derived, never typed: every element tagged on the snags a fix covers must have a
   new *landed* build in the cell journal after the fix merged, with different content (blob hash)
   from the last build before it. A rerun with unchanged content is not a redesign.
@@ -24,6 +28,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from atomic_json import write_json
+from script_env import TOOL_ROOT  # noqa: E402
 
 STATUSES = ('open', 'fix-landed', 'confirmed', 'wontfix')
 ELEMENT_KINDS = ('feature', 'ground', 'trees', 'decor')
@@ -209,6 +214,69 @@ def _norm(prefix: str, ident: Any) -> str:
     return f'{prefix}-{int(m.group(1)):03d}'
 
 
+def _norm_fix(ident: Any) -> str:
+    """``1``, ``F-1`` and ``F-01`` all name fix 1."""
+    m = re.fullmatch(r'(?:F-)?0*(\d+)', str(ident).strip(), re.I)
+    if not m:
+        raise IssueError(f'bad fix id {ident!r}: expected F-1')
+    return f'F-{int(m.group(1))}'
+
+
+def _norm_ticket(ticket: str) -> str:
+    """Normalise a system tracker id to ``#140``.
+
+    @param ticket: ``#140`` or ``140``
+    @returns: ``#140``
+    @raises IssueError: when the string is not a ticket number
+    """
+    m = re.fullmatch(r'#?(\d+)', str(ticket).strip())
+    if not m:
+        raise IssueError(f'bad ticket {ticket!r}: expected #140')
+    return f'#{int(m.group(1))}'
+
+
+def ticket_is_archived(ticket: str, *, tool_root: Path | str | None = None) -> bool:
+    """Whether a system tracker ticket lives in ``tasks/done.json``.
+
+    @param ticket: ``#140`` or ``140``
+    @param tool_root: tool checkout (default: :data:`TOOL_ROOT`)
+    @returns: True when the ticket id is in the archive
+    """
+    want = int(_norm_ticket(ticket).lstrip('#'))
+    root = Path(tool_root) if tool_root is not None else Path(TOOL_ROOT)
+    path = root / 'tasks' / 'done.json'
+    if not path.exists():
+        return False
+    data = json.loads(path.read_text(encoding='utf-8'))
+    return any(t.get('id') == want for t in data.get('tasks', []))
+
+
+def is_held(issue: dict[str, Any], *, tool_root: Path | str | None = None) -> bool:
+    """Whether digests and sync should skip this issue (hold still active).
+
+    @param issue: issue dict
+    @param tool_root: tool checkout for the archive check
+    @returns: True while ``hold_until`` names a ticket that is not yet archived
+    """
+    until = issue.get('hold_until')
+    if not until:
+        return False
+    return not ticket_is_archived(until, tool_root=tool_root)
+
+
+def active_fix(issue: dict[str, Any]) -> dict[str, Any] | None:
+    """Latest fix that is not withdrawn (may still be judged).
+
+    @param issue: issue dict
+    @returns: fix dict, or None
+    """
+    for fix in reversed(issue.get('fixes') or []):
+        if fix.get('withdrawn'):
+            continue
+        return fix
+    return None
+
+
 def find_issue(store: dict[str, Any], issue_id: str) -> dict[str, Any]:
     """The issue with this id.
 
@@ -383,7 +451,7 @@ def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, ch
     fix = {'id': f"F-{len(issue['fixes']) + 1}", 'ticket': ticket, 'branch': branch,
            'summary': summary.strip(), 'merged_at': merged_at,
            'checks': {_norm('S', k): v.strip() for k, v in checks.items()}, 'logged': now_iso(),
-           'judged': False}
+           'judged': False, 'withdrawn': False, 'withdrawn_reason': ''}
     issue['fixes'].append(fix)
     for sid in checks:
         have[sid]['resolution'] = None
@@ -393,6 +461,60 @@ def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, ch
     _touch(issue, 'fix-logged', f"{fix['id']} {ticket} {summary.strip()}")
     save(root, store)
     return fix
+
+
+def unfix(root: Path | str, issue_id: str, fix_id: str, *, reason: str) -> dict[str, Any]:
+    """Withdraw a wrongly logged fix; keep the log entry.
+
+    The fix stays on the issue with ``withdrawn`` set. If the issue was ``fix-landed`` on that
+    (or any now-inactive) fix, it returns to ``open``.
+
+    @param root: world root
+    @param issue_id: issue
+    @param fix_id: ``F-1``
+    @param reason: why the fix is taken back
+    @returns: the withdrawn fix entry
+    @raises IssueError: unknown fix, empty reason, or already withdrawn
+    """
+    if not reason.strip():
+        raise IssueError('unfix needs a reason')
+    store = load(root)
+    issue = find_issue(store, issue_id)
+    want = _norm_fix(fix_id)
+    fix = next((f for f in issue['fixes'] if f['id'] == want), None)
+    if fix is None:
+        raise IssueError(f'no fix {fix_id} on {issue["id"]}')
+    if fix.get('withdrawn'):
+        raise IssueError(f'{want} on {issue["id"]} is already withdrawn')
+    fix['withdrawn'] = True
+    fix['withdrawn_reason'] = reason.strip()
+    if issue['status'] == 'fix-landed':
+        # sync must re-evaluate any remaining active fix
+        issue['status'] = 'open'
+    _touch(issue, 'fix-withdrawn', f"{want}: {reason.strip()}")
+    save(root, store)
+    return fix
+
+
+def hold(root: Path | str, issue_id: str, *, until: str) -> dict[str, Any]:
+    """Hold an issue until a system tracker ticket is archived.
+
+    Digest and sync skip the issue while ``until`` is not in ``tasks/done.json``. Status is
+    unchanged (a ``fix-landed`` issue stays ``fix-landed`` but is not offered for review).
+
+    @param root: world root
+    @param issue_id: issue
+    @param until: system ticket, e.g. ``#140``
+    @returns: the issue
+    @raises IssueError: bad ticket
+    """
+    ticket = _norm_ticket(until)
+    store = load(root)
+    issue = find_issue(store, issue_id)
+    issue['hold_until'] = ticket
+    _touch(issue, 'held', f'until {ticket}')
+    save(root, store)
+    return issue
 
 
 def fix_elements(issue: dict[str, Any], fix: dict[str, Any]) -> list[dict[str, Any]]:
@@ -412,15 +534,15 @@ def fix_elements(issue: dict[str, Any], fix: dict[str, Any]) -> list[dict[str, A
 
 
 def rebuild_report(root: Path | str, issue: dict[str, Any]) -> dict[str, Any] | None:
-    """Per-element redesign status for an issue's latest fix.
+    """Per-element redesign status for an issue's latest active (non-withdrawn) fix.
 
     @param root: world root
     @param issue: issue dict
-    @returns: ``{'fix', 'elements': [(label, status)], 'ready'}`` or None with no fix logged
+    @returns: ``{'fix', 'elements': [(label, status)], 'ready'}`` or None with no active fix
     """
-    if not issue['fixes']:
+    fix = active_fix(issue)
+    if fix is None:
         return None
-    fix = issue['fixes'][-1]
     if fix.get('judged'):
         return {'fix': fix, 'elements': [], 'uncovered': [], 'ready': False}
     rows = [(element_label(el), redesign_status(root, el, fix['merged_at'])) for el in fix_elements(issue, fix)]
@@ -429,16 +551,21 @@ def rebuild_report(root: Path | str, issue: dict[str, Any]) -> dict[str, Any] | 
             'ready': bool(rows) and not uncovered and all(st == 'redesigned' for _, st in rows)}
 
 
-def sync(root: Path | str) -> list[str]:
+def sync(root: Path | str, *, tool_root: Path | str | None = None) -> list[str]:
     """Promote ``open`` issues to ``fix-landed`` where the journal shows the elements redesigned.
 
+    Skips issues held until a system ticket that is not yet archived.
+
     @param root: world root
+    @param tool_root: tool checkout for hold checks (default: :data:`TOOL_ROOT`)
     @returns: ids promoted
     """
     store = load(root)
     moved = []
     for issue in store['issues']:
         if issue['status'] != 'open':
+            continue
+        if is_held(issue, tool_root=tool_root):
             continue
         rep = rebuild_report(root, issue)
         if rep and rep['ready']:
@@ -456,13 +583,13 @@ def review_packet(root: Path | str, issue_id: str) -> dict[str, Any]:
     @param root: world root
     @param issue_id: issue
     @returns: issue facts, the last fix, and for every snag: words, picture, position, elements, check
-    @raises IssueError: when the issue has no fix logged
+    @raises IssueError: when the issue has no active fix logged
     """
     store = load(root)
     issue = find_issue(store, issue_id)
-    if not issue['fixes']:
+    fix = active_fix(issue)
+    if fix is None:
         raise IssueError(f'{issue["id"]} has no fix logged; nothing to review')
-    fix = issue['fixes'][-1]
     snags = []
     for s in issue['snags']:
         snags.append({**{k: s[k] for k in ('id', 'words', 'agent_notes', 'image', 'pos', 'facing', 'cell',
@@ -511,7 +638,9 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
         by[i]['resolution'] = 'unresolved'
     if all(s['resolution'] == 'fixed' for s in issue['snags']):
         issue['status'] = 'confirmed'
-        issue['fixes'][-1]['judged'] = True
+        fix = active_fix(issue)
+        if fix is not None:
+            fix['judged'] = True
         _touch(issue, 'confirmed', 'all snags fixed')
     else:
         _reopen(issue)
@@ -647,10 +776,11 @@ def match(root: Path | str, *, words: str, elements: list[dict[str, Any]], limit
             why.append('shared wording: ' + ', '.join(shared[:5]))
         if score <= 0:
             continue
+        last = active_fix(it)
         out.append({'issue': it['id'], 'title': it['title'], 'cause': it['cause'], 'status': it['status'],
                     'score': score, 'why': sorted(set(why)),
                     'snags': [{'id': s['id'], 'words': s['words'], 'image': s['image']} for s in it['snags']],
-                    'last_fix': it['fixes'][-1]['summary'] if it['fixes'] else None,
+                    'last_fix': last['summary'] if last else None,
                     'confirmed': it['status'] == 'confirmed'})
     out.sort(key=lambda c: -c['score'])
     return out[:limit]
@@ -658,16 +788,24 @@ def match(root: Path | str, *, words: str, elements: list[dict[str, Any]], limit
 
 # --- listing and checks -------------------------------------------------------------------------
 
-def digest(root: Path | str) -> str:
-    """One run-summary line, e.g. ``issues: 6 open, 2 fixes ready for your review``.
+def digest(root: Path | str, *, tool_root: Path | str | None = None) -> str:
+    """One run-summary line, e.g. ``issues: 6 open, 2 fixes ready for your review, 1 held``.
+
+    Held issues (``hold_until`` ticket not yet archived) are omitted from the open and
+    ready-for-review counts and reported separately.
 
     @param root: world root
+    @param tool_root: tool checkout for hold checks (default: :data:`TOOL_ROOT`)
     @returns: line
     """
-    sync(root)
+    sync(root, tool_root=tool_root)
     its = load(root)['issues']
-    n = lambda st: sum(1 for i in its if i['status'] == st)  # noqa: E731
-    return f"issues: {n('open')} open, {n('fix-landed')} fixes ready for your review"
+    held = [i for i in its if is_held(i, tool_root=tool_root)]
+    held_ids = {i['id'] for i in held}
+    n_open = sum(1 for i in its if i['status'] == 'open' and i['id'] not in held_ids)
+    n_ready = sum(1 for i in its if i['status'] == 'fix-landed' and i['id'] not in held_ids)
+    return (f"issues: {n_open} open, {n_ready} fixes ready for your review, "
+            f"{len(held)} held")
 
 
 def verify(root: Path | str) -> list[str]:
