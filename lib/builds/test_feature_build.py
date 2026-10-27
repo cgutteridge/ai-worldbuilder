@@ -534,7 +534,7 @@ class DoorSpecBuildTest(unittest.TestCase):
 
 
 class ZonesSpecTest(unittest.TestCase):
-    """Seam: load_spec accepts zones; refuses bad from/levels/pitched roof."""
+    """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""
 
     def write(self, spec: dict) -> Path:
         tmp = tempfile.TemporaryDirectory()
@@ -569,22 +569,25 @@ class ZonesSpecTest(unittest.TestCase):
 
     def test_bad_zones_refused(self):
         good = self.good()
-        pitched = {
-            **good,
-            'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}},
-        }
         cases = [
             {**good, 'zones': {'B': {'from': 'lidar', 'levels': [40]}}},
             {**good, 'zones': {'A': {'from': 'osm', 'levels': [40]}}},
             {**good, 'zones': {'A': {'from': 'lidar', 'levels': []}}},
             {**good, 'zones': {'A': {'from': 'lidar', 'levels': 'nope'}}},
             {**good, 'zones': {'A': {'from': 'lidar', 'levels': [40], 'bucket': 0}}},
-            pitched,
         ]
         for bad in cases:
             with self.subTest(bad=bad.get('zones') or bad.get('roofs')):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
+
+        pitched = {
+            **good,
+            'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}},
+        }
+        spec = F.load_spec(self.write(pitched))
+        self.assertEqual(spec['roofs']['A']['kind'], 'pitched')
+        self.assertIn('A', spec['zones'])
 
 
 class ZoneMathTest(unittest.TestCase):
@@ -754,6 +757,112 @@ class ZoneBuildTest(unittest.TestCase):
         west_outer = [pos for pos in outer if pos[0] == 10 and pos[1] == 46]
         self.assertTrue(west_outer, 'expected outer west parapet on low plateau')
 
+
+class PitchedZonesRidgeTest(unittest.TestCase):
+    """#125: pitched+zones → ridge stair-slabs; flat zoned plateaus unchanged."""
+
+    def setUp(self):
+        # 9×5 mass at x=10..18, z=20..24; grids cover x0=9..19, z0=19..25
+        self.cells = {(x, z) for x in range(10, 19) for z in range(20, 25)}
+        self.x0, self.z0 = 9, 19
+        depth, width = 7, 11
+        ground = np.full((depth, width), 40)
+        # DSM ridge along x (eave 48 → peak 52 at centre column x=14)
+        dsm = np.full((depth, width), 48.0)
+        for xi, h in enumerate([48, 48, 49, 50, 52, 50, 49, 48, 48]):
+            dsm[:, 1 + xi] = float(h)  # world x = x0+1+xi → 10..18
+        self.ridge_zone_data = {
+            'A': {'dsm': dsm, 'ground_y': ground, 'x0': self.x0, 'z0': self.z0},
+        }
+        # Two flat plateaus (no within-zone ridge) for the flat-kind check
+        flat_dsm = np.full((depth, width), 45.0)
+        flat_dsm[:, 6:] = 50.0  # x >= 15
+        self.flat_zone_data = {
+            'A': {'dsm': flat_dsm, 'ground_y': ground, 'x0': self.x0, 'z0': self.z0},
+        }
+
+    def _spec(self, kind: str, levels: list, material: str = 'brick'):
+        return {
+            'name': 'unit_pitched_zones',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 3},
+            'roofs': {'A': {'kind': kind, 'material': material}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 40,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'zones': {
+                'A': {'from': 'lidar', 'levels': levels, 'bucket': 2, 'axis_deg': 0},
+            },
+        }
+
+    def _build(self, kind: str, levels: list, zone_data: dict, material: str = 'brick'):
+        buf = io.StringIO()
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(buf):
+            plan = F.build(
+                self._spec(kind, levels, material=material),
+                footprints={'A': self.cells},
+                world=_StoneWorld(),
+                zone_data=zone_data,
+            )
+        return plan
+
+    def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
+        """Pitched+zones follows the lidar ridge with stair-slabs; flat stays stepped decks."""
+        pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
+        edge_slabs = [
+            st for (x, y, z), st in pitched.cells.items()
+            if (x, z) in self.cells and x in (10, 18) and 'brick_slab' in st
+        ]
+        ridge_slabs = [
+            (y, st) for (x, y, z), st in pitched.cells.items()
+            if (x, z) in self.cells and x == 14 and 'brick_slab' in st
+        ]
+        self.assertTrue(edge_slabs, 'expected stair-slabs at the zone eave')
+        self.assertTrue(ridge_slabs, 'expected stair-slabs on the lidar ridge line')
+        ridge_ys = {y for y, _st in ridge_slabs}
+        edge_ys = {
+            y for (x, y, z), st in pitched.cells.items()
+            if (x, z) in self.cells and x in (10, 18) and 'brick_slab' in st
+        }
+        self.assertGreater(
+            max(ridge_ys), max(edge_ys),
+            'ridge must rise above the zone eave (not a flat terrace)',
+        )
+        # Must not be stepped full-block plateaus along the ridge
+        stepped_full = [
+            (x, y) for (x, y, z), st in pitched.cells.items()
+            if (x, z) in self.cells and st == 'minecraft:brick' and y in (49, 50, 51, 52)
+        ]
+        self.assertFalse(
+            stepped_full,
+            'pitched+zones must not snap a ridge into stepped full-block terraces',
+        )
+
+        flat = self._build('flat', [45, 50], self.flat_zone_data, material='smooth_stone')
+        low = [
+            (x, z) for (x, y, z), st in flat.cells.items()
+            if y == 45 and st == 'minecraft:smooth_stone' and (x, z) in self.cells
+        ]
+        high = [
+            (x, z) for (x, y, z), st in flat.cells.items()
+            if y == 50 and st == 'minecraft:smooth_stone' and (x, z) in self.cells
+        ]
+        self.assertTrue(low, 'flat zoned roof must keep the low plateau')
+        self.assertTrue(high, 'flat zoned roof must keep the high plateau')
+        pitched_slabs_on_flat = [
+            st for st in flat.cells.values() if 'slab' in st and 'smooth_stone' in st
+        ]
+        self.assertFalse(
+            pitched_slabs_on_flat,
+            'flat zoned roofs must stay full-block decks, not stair-slabs',
+        )
 
 
 class ZoneGuardFixtureTest(unittest.TestCase):
