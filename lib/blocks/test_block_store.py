@@ -516,6 +516,19 @@ class TestStateHelpers(unittest.TestCase):
                                     'minecraft:oak_fence_gate[facing=north,open=false]'))
         self.assertFalse(same_state('oak_fence_gate[facing=north]', 'minecraft:oak_fence_gate[facing=south]'))
 
+    def test_same_state_ignores_game_owned_stair_shape(self):
+        # pitched roofs plan outer_left/right; the game stores straight (#161)
+        planned = 'oak_stairs[facing=east,half=bottom,shape=outer_left]'
+        actual = 'minecraft:oak_stairs[facing=east,half=bottom,shape=straight]'
+        self.assertTrue(same_state(planned, actual))
+        self.assertTrue(same_state('oak_stairs[facing=west,half=top,shape=outer_right]',
+                                   'minecraft:oak_stairs[facing=west,half=top,shape=straight]'))
+        self.assertFalse(same_state(planned, 'minecraft:oak_stairs[facing=west,half=bottom,shape=straight]'))
+        self.assertFalse(same_state(planned, 'minecraft:oak_stairs[facing=east,half=top,shape=straight]'))
+        self.assertFalse(same_state(planned, 'minecraft:spruce_stairs[facing=east,half=bottom,shape=straight]'))
+        # non-stair: a different planned property still fails
+        self.assertFalse(same_state('oak_slab[type=top]', 'minecraft:oak_slab[type=bottom]'))
+
 
 if __name__ == '__main__':
     unittest.main()

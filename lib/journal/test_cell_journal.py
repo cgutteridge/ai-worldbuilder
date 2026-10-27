@@ -656,6 +656,19 @@ class TestReconcile(Base):
         self.assertEqual(drift.upgraded, 1)
         self.assertEqual(self.reg.cell((0, 0)).features[0].status, 'built')
 
+    def test_feature_with_game_reshaped_stair_reaches_built(self):
+        # pitched roof plans outer_left; game stores straight — same_state must ignore shape (#161)
+        planned = 'minecraft:oak_stairs[facing=east,half=bottom,shape=outer_left]'
+        reshaped = 'minecraft:oak_stairs[facing=east,half=bottom,shape=straight]'
+
+        def place_reshaped(w):
+            self.blocks.write_many({p: reshaped for p in w.cells})
+
+        rec = self.reg.change(Build('roof', 'feature', {P(0, 0): planned}), place_reshaped)
+        self.assertEqual(rec.status, 'landed')
+        self.assertEqual(self.reg.cell((0, 0)).features[0].status, 'built')
+        self.assertTrue(self.reg.reconcile().clean)
+
     def test_ghost_missing_reported_with_a_planner_and_fixed(self):
         reg = self.registry(ghosts=lambda c, l: plan(*c, GREY, y=60) if l == 'ground' else {}, ring=1)
         self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0), reg=reg)
