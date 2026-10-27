@@ -143,6 +143,7 @@ class OSMIndex:
         self.streets = []     # (name, highway, [(x,z)...])
         self.street_props = []  # map properties of each self.streets entry (same order)
         self.areas = []       # (rings, props) of every non-building polygon (landuse/leisure/amenity/...)
+        self.entrances = []   # (x, z, props) entrance=* Point features (#159)
         self.extents = []     # (x0, z0, x1, z1) per clip — where the map was actually checked
         seen = set()
         for src in sorted(root.glob('*/*.geojson')):
@@ -168,6 +169,13 @@ class OSMIndex:
                 elif g['type'] == 'LineString' and p.get('highway'):
                     self.streets.append((p.get('name'), p['highway'], [mc(c) for c in g['coordinates']]))
                     self.street_props.append(p)
+                elif g['type'] == 'Point':
+                    tags = osm_tags(p)
+                    if tags.get('entrance'):
+                        x, z = mc(g['coordinates'][:2])
+                        merged = dict(p)
+                        merged['entrance'] = tags['entrance']
+                        self.entrances.append((x, z, merged))
             if xs:
                 self.extents.append((min(xs), min(zs), max(xs), max(zs)))
         self._cells = None

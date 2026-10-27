@@ -313,5 +313,38 @@ class PortalFactsFacadePlan(unittest.TestCase):
         self.assertEqual(H.portal_facts(None), [])
 
 
+class BuildingMapEvidenceFacts(unittest.TestCase):
+    """#159: feature brief carries map roof/height hints and snapped entrances."""
+
+    def _idx(self):
+        rings = [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]]
+        props = {
+            'building': 'university',
+            'osm_way_id': '42',
+            'other_tags': '"roof:shape"=>"hipped","height"=>"12","building:levels"=>"3"',
+        }
+        idx = mock.Mock()
+        idx.buildings = [(rings, props)]
+        idx.entrances = [
+            (5.0, -1.5, {'entrance': 'main', 'osm_id': '7'}),
+            (11.0, 5.0, {'entrance': 'service', 'osm_id': '8'}),
+        ]
+        return idx
+
+    def test_map_building_tag_facts_lists_hints(self):
+        text = '\n'.join(H.map_building_tag_facts(['w42'], idx=self._idx()))
+        self.assertIn('hint', text.lower())
+        self.assertIn('roof:shape=hipped', text)
+        self.assertIn('height=12', text)
+        self.assertIn('never override', text.lower())
+
+    def test_mapped_entrance_facts_snaps_and_ranks(self):
+        text = '\n'.join(H.mapped_entrance_facts(['w42'], idx=self._idx()))
+        self.assertIn('main', text)
+        self.assertIn('service', text)
+        self.assertLess(text.index('main'), text.index('service'))
+        self.assertIn('at 5,0', text)
+
+
 if __name__ == '__main__':
     unittest.main()

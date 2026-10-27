@@ -268,7 +268,88 @@ def lidar_facts(lumps, bbox):
         b = lp['bbox']
         out.append(f'lidar lump {b[0]},{b[1]}..{b[2]},{b[3]}: {lp.get("storeys")} storeys (estimate), roof {lp["roof"]}, '
                    f'ridge axis {lp.get("ridge_axis") or "-"}' + (f', {lp["trees_over"]} cols tree over roof' if lp.get('trees_over') else ''))
+        hints = lp.get('map_hints') or {}
+        if hints:
+            import building_evidence as BE
+            out.extend(BE.format_evidence_table(BE.evidence_table(map_hints=hints)))
     return out
+
+
+def map_building_tag_facts(refs, idx=None):
+    """Evidence-table hint lines for footprint map tags under the feature (#159).
+
+    Lidar remains the height/roof authority; these tags are hints only.
+
+    @param refs: map way refs on the feature
+    @param idx: optional OSMIndex (tests inject; default loads clips)
+    @returns: brief lines ([] when no tagged footprints or map unavailable)
+    """
+    if not refs:
+        return []
+    try:
+        import building_evidence as BE
+        from coverage import osm_ref
+        from osm_footprints import OSMIndex
+        idx = idx or OSMIndex()
+    except (OSError, ValueError, ImportError, RuntimeError, FileNotFoundError):
+        return []
+    by_ref = {osm_ref(p): p for _rings, p in idx.buildings}
+    merged: dict = {}
+    for ref in refs:
+        for k, v in BE.map_building_hints(by_ref.get(ref) or {}).items():
+            merged.setdefault(k, v)
+    if not merged:
+        return []
+    return BE.format_evidence_table(BE.evidence_table(map_hints=merged))
+
+
+def mapped_entrance_facts(refs, idx=None):
+    """Snapped ``entrance=*`` candidates for facade_plan (#159).
+
+    @param refs: map way refs on the feature
+    @param idx: optional OSMIndex
+    @returns: brief lines ([] when none or map unavailable)
+    """
+    if not refs:
+        return []
+    try:
+        import building_evidence as BE
+        from coverage import osm_ref
+        from osm_footprints import OSMIndex, osm_tags
+        idx = idx or OSMIndex()
+    except (OSError, ValueError, ImportError, RuntimeError, FileNotFoundError):
+        return []
+    want = set(refs)
+    buildings = [(rings, p) for rings, p in idx.buildings if osm_ref(p) in want]
+    if not buildings:
+        return []
+    # Collect entrance nodes near any matching footprint bbox, then snap per footprint.
+    candidates = []
+    seen = set()
+    for rings, _p in buildings:
+        xs = [x for x, _ in rings[0]]
+        zs = [z for _, z in rings[0]]
+        x0, z0, x1, z1 = min(xs) - 4, min(zs) - 4, max(xs) + 4, max(zs) + 4
+        nodes = []
+        for x, z, props in getattr(idx, 'entrances', []):
+            if not (x0 <= x <= x1 and z0 <= z <= z1):
+                continue
+            tags = osm_tags(props)
+            kind = tags.get('entrance') or props.get('entrance')
+            if not kind:
+                continue
+            key = (props.get('osm_id') or props.get('osm_way_id'), round(x, 2), round(z, 2))
+            if key in seen:
+                continue
+            seen.add(key)
+            nodes.append({
+                'x': x, 'z': z, 'entrance': kind,
+                'osm_id': props.get('osm_id') or props.get('osm_way_id'),
+            })
+        candidates.extend(BE.mapped_entrance_candidates(nodes, rings))
+    # Re-rank across footprints so main still leads the brief.
+    candidates.sort(key=lambda c: (BE.entrance_rank(c['entrance']), c['dist'], c['at']))
+    return BE.format_entrance_candidates(candidates)
 
 
 def _portal_photo(p):
@@ -525,7 +606,10 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             'Evidence contact sheet after apply (frontage-and-evidence §4): '
             'python3 scripts/evidence_sheet.py <name>  '
             '(portal-facing cameras, top-down, aerial crop); end refuses FEATURE without it.',
-        ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or []) + lidar_facts(lumps, (x0, z0, x1, z1))
+        ] + portal_facts(f.get('portals') or []) + building_facts(f.get('pictures') or [])
+          + lidar_facts(lumps, (x0, z0, x1, z1))
+          + map_building_tag_facts(f.get('refs') or [])
+          + mapped_entrance_facts(f.get('refs') or [])
           + ([f'First item of a new cell: cell_marker.py --status (must be clean), then --raise {tx},{tz} '
               f'(ensures lidar ghost frontier). {_LIDAR_GHOST_V2_FRONTIER} {_LIDAR_GHOST_V2_SPLIT}']
              if not items else [])))
