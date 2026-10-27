@@ -61,12 +61,12 @@ Done when they are hovering and looking down at the target.
    | Walls, openings, doors | portal + building photos (`portals.py`, `buildings.py`) |
    | Roof colour + **greeblies** | aerial sheet (`google_aerial.py` / `google_window.py`) |
 
-   **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the aerial sheet, list every plant box, vent, louvre, skylight, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible`. A shell-only plan is not a finished redo. Place them with `campus.roof_greeblies` in the same script (same apply, or `--greeblies` before unlock). Heights of plinths/plant from lidar; colours and XY from the aerial sheet.
+   **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the aerial sheet, list every plant box, vent, louvre, skylight, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible` in the spec `notes`. A shell-only plan is not a finished redo. For `feature_build`, put them in the spec `details` table (`rules/feature-builds.md`); they rebuild with the building. Heights of plinths/plant from lidar; colours and XY from the aerial sheet. Facade greeblies (drainpipe, sign, canopy, ledge, fascia) come from street photos into the same table.
 
    Aerial sheet: run `google_aerial.py sheet` / `google_window.py` and `Read` the PNG under `instance/google-aerial/`. Not seeing the sheet is not a reason to skip greeblies; stop and fix the download.
 
    If designer ≠ builder: stop after the table + hand-off artefact; builder continues from the next step.
-7. Dry run (shell + greeblies), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (and `--greeblies` if split). Readback 0.
+7. Dry run (shell + `details`), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (or `feature_build.py site/builds/<name>.json --apply`). Readback 0.
 8. **Hover** again if the player moved during apply.
 9. Release lock. Cue `party-cheer`.
 
