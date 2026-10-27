@@ -77,19 +77,30 @@ def block_id(state: str) -> str:
     return canonical_state(state).split('[')[0]
 
 
-# Blocks whose connection properties the game re-derives from neighbours after placement.
+# Props the game re-derives after placement (skipped by same_state).
 _CONNECTION_PROPS = frozenset({'north', 'south', 'east', 'west', 'up'})
+_STAIR_SHAPE_PROPS = frozenset({'shape'})
 
 
-def _game_derives_connections(block: str) -> bool:
+def _game_derives_connections(block: str) -> frozenset[str]:
+    """Properties the game rewrites for ``block`` after placement (empty if none).
+
+    Panes, bars, fences and walls: neighbour connections. Stairs: ``shape``
+    (pitched roofs plan outer_left/right; the game stores straight).
+    """
     name = block.removeprefix('minecraft:')
-    return name.endswith(('_pane', '_fence', '_wall', '_bars'))
+    if name.endswith(('_pane', '_fence', '_wall', '_bars')):
+        return _CONNECTION_PROPS
+    if name.endswith('_stairs'):
+        return _STAIR_SHAPE_PROPS
+    return frozenset()
 
 
 def same_state(planned: str, actual: str | None) -> bool:
     """Whether ``actual`` satisfies ``planned``: same id and every planned property
     (``waterlogged`` ignored; so are connection properties of panes, bars, fences and walls,
-    which the game rewrites from the neighbours). Mirrored by ``site_kit.same``.
+    and ``shape`` on ``*_stairs``, which the game rewrites from the neighbours).
+    Mirrored by ``site_kit.same``.
 
     @param planned: planned block state
     @param actual: block state read back, or None (unloaded)
@@ -105,9 +116,7 @@ def same_state(planned: str, actual: str | None) -> bool:
     want = dict(kv.split('=') for kv in want_state[want_state.index('[') + 1:-1].split(','))
     got = (dict(kv.split('=') for kv in actual[actual.index('[') + 1:-1].split(','))
            if '[' in actual else {})
-    skip = {'waterlogged'}
-    if _game_derives_connections(block_id(want_state)):
-        skip |= _CONNECTION_PROPS
+    skip = {'waterlogged'} | _game_derives_connections(block_id(want_state))
     return all(got.get(k) == v for k, v in want.items() if k not in skip)
 
 
