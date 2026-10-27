@@ -296,7 +296,8 @@ class OSMGround:
         self.wall: set = set()
         self.fence: set = set()
         self.soft: set = set()        # mapped parking polygon: the aerial may show it is really lawn
-        self.trees: list = []
+        self.trees: list = []         # (x, z) natural=tree points
+        self.tree_rows: list = []     # natural=tree_row polylines as [(x, z), ...] in MC (#157)
         self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
         feats = load_osm(cell)
         self.n_features = len(feats)  # reporting for dry runs (#113); 0 is legitimate
@@ -356,6 +357,10 @@ class OSMGround:
 
     def _line(self, t: dict, pts) -> None:
         hw, b = t.get('highway'), t.get('barrier')
+        if t.get('natural') == 'tree_row':
+            # Keep the polyline in MC; trees_layer samples it into a crown sequence (#157).
+            self.tree_rows.append([(float(p[0]), float(p[1])) for p in pts])
+            return
         if t.get('waterway') in ('stream', 'river', 'canal', 'ditch'):
             if waterway_is_underground(t):
                 return
