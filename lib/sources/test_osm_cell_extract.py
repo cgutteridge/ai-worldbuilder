@@ -17,6 +17,7 @@ REQUIRED_PRESETS = (
     'pedestrian',
     'natural',
     'leisure',
+    'trees',
 )
 
 
@@ -53,6 +54,11 @@ class CellExtractJobList(unittest.TestCase):
             self.assertIn(tag, where_n)
         self.assertEqual(presets['leisure'][0][0], 'multipolygons')
         self.assertIn('leisure', presets['leisure'][0][1])
+        trees = presets['trees']
+        self.assertEqual({j[0] for j in trees}, {'points', 'lines'})
+        blob = ' '.join(j[1] for j in trees)
+        self.assertIn("natural = 'tree'", blob)
+        self.assertIn("natural = 'tree_row'", blob)
 
     def test_does_not_fetch_kerb_or_crossing_nodes(self):
         """Kerb / crossing points stay out of the standard extract jobs."""

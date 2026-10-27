@@ -13,6 +13,11 @@ import trees_layer as tl
 CELL = (900, 900)          # no ground-cells file exists for it, so ground_cols is None
 
 
+def _empty_osm_ground(_cell=None):
+    """Stand-in OSMGround with no mapped trees (keeps unit tests off the live cache)."""
+    return types.SimpleNamespace(trees=[], tree_rows=[])
+
+
 def cover(frac_left=1.0, frac_right=0.0):
     """128x128 cover grid: left half one value, right half another."""
     g = np.zeros((128, 128))
@@ -80,6 +85,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
                 mock.patch.object(tl, 'surface_y', surface), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
+                mock.patch('ground_sources.OSMGround', _empty_osm_ground), \
                 mock.patch.dict(sys.modules, {'osm_footprints': osm}):
             return tl.plan_cell(CELL, plan, FakeWorld())[1]
 
@@ -118,6 +124,7 @@ class TestOverhang(unittest.TestCase):
                 mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, 'grass_block')), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: masked or {}), \
+                mock.patch('ground_sources.OSMGround', _empty_osm_ground), \
                 mock.patch.dict(sys.modules, {'osm_footprints': osm}):
             placed, rep = tl.plan_cell(CELL, plan, world)
         return placed, rep, sets, x0 + 128, z0
@@ -201,6 +208,7 @@ class TestExtraCrowns(unittest.TestCase):
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
                     mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
+                    mock.patch('ground_sources.OSMGround', _empty_osm_ground), \
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())
 
@@ -238,6 +246,8 @@ class TestGoogleCrowns(unittest.TestCase):
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
                     mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
+                    mock.patch('ground_sources.OSMGround', _empty_osm_ground), \
+                    mock.patch.object(tl, 'cell_ndsm', lambda c: None), \
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())
 
@@ -284,6 +294,112 @@ class TestSnapGoogleCrowns(unittest.TestCase):
         self.assertEqual(snapped[2], (10, 10, 3.0))
         self.assertEqual(report[2]['status'], 'unconfirmed')
         self.assertEqual(sum(1 for r in report if r['status'] == 'moved'), 1)
+
+
+class TestMappedTreeCrowns(unittest.TestCase):
+    """Mapped natural=tree points and tree_row lines → crown candidates (#157).
+
+    Young trees with no lidar peak are kept as small crowns (same as #129
+    ``unconfirmed``), not rejected.
+    """
+
+    X0, Z0 = CELL[0] * 128, CELL[1] * 128
+
+    def test_three_in_cell_points_each_yield_crown_or_logged_rejection(self):
+        """Fixture: three tree points + canopy raster; every in-cell point is accounted for."""
+        ndsm = np.zeros((128, 128))
+        ndsm[50, 50] = 1.0
+        ndsm[54, 52] = 8.5   # peak near first point
+        # Second point (20, 20): no peak in reach → young tree, kept small.
+        # Third point (80, 80): peak only on a building → unconfirmed, kept.
+        ndsm[84, 80] = 10.0
+        points = [
+            (self.X0 + 50, self.Z0 + 50),
+            (self.X0 + 20, self.Z0 + 20),
+            (self.X0 + 80, self.Z0 + 80),
+        ]
+        footprints = {(84, 80)}
+        crowns, rejections, snaps = tl.resolve_mapped_tree_crowns(
+            CELL, tree_points=points, tree_rows=[], ndsm=ndsm, footprints=footprints,
+        )
+        # Every in-cell point → crown or rejection (no silent drop).
+        self.assertEqual(len(crowns) + len(rejections), 3)
+        origins = [s['from'] for s in snaps] + [
+            (r['x'] - self.X0, r['z'] - self.Z0) for r in rejections
+        ]
+        self.assertEqual(set(origins), {(50, 50), (20, 20), (80, 80)})
+        # First snapped to the peak.
+        self.assertIn((54, 52, tl.MAPPED_TREE_R), crowns)
+        self.assertEqual(snaps[0]['status'], 'moved')
+        # Young tree (no peak): kept as a small crown, not rejected (#129 match).
+        young = [c for c in crowns if c[0] == 20 and c[1] == 20]
+        self.assertEqual(len(young), 1)
+        self.assertEqual(young[0][2], tl.MAPPED_YOUNG_TREE_R)
+        self.assertEqual(snaps[1]['status'], 'unconfirmed')
+        self.assertEqual(snaps[1].get('reason'), 'no lidar canopy peak')
+        # Peak on building: kept unconfirmed (not rejected).
+        self.assertTrue(any(c[0] == 80 and c[1] == 80 for c in crowns))
+        self.assertEqual(snaps[2]['status'], 'unconfirmed')
+        self.assertEqual(snaps[2].get('reason'), 'peak on building')
+
+    def test_outside_cell_point_is_logged_rejection(self):
+        ndsm = np.zeros((128, 128))
+        points = [
+            (self.X0 + 10, self.Z0 + 10),
+            (self.X0 + 200, self.Z0 + 10),  # outside the 128²
+        ]
+        crowns, rejections, _snaps = tl.resolve_mapped_tree_crowns(
+            CELL, tree_points=points, tree_rows=[], ndsm=ndsm, footprints=set(),
+        )
+        self.assertEqual(len(crowns), 1)
+        self.assertEqual(len(rejections), 1)
+        self.assertEqual(rejections[0]['reason'], 'outside cell')
+        self.assertEqual((rejections[0]['x'], rejections[0]['z']),
+                         (self.X0 + 200, self.Z0 + 10))
+
+    def test_tree_row_becomes_crown_sequence(self):
+        ndsm = np.zeros((128, 128))
+        # Horizontal row along z=40 from dx=10 to dx=30; peaks at each spacing site.
+        for i in range(10, 31, tl.TREE_ROW_SPACING):
+            ndsm[i, 40] = 7.0
+        row = [(self.X0 + 10.0, self.Z0 + 40.0), (self.X0 + 30.0, self.Z0 + 40.0)]
+        crowns, rejections, snaps = tl.resolve_mapped_tree_crowns(
+            CELL, tree_points=[], tree_rows=[row], ndsm=ndsm, footprints=set(),
+        )
+        self.assertEqual(rejections, [])
+        self.assertGreaterEqual(len(crowns), 3)
+        xs = sorted(c[0] for c in crowns)
+        for a, b in zip(xs, xs[1:]):
+            self.assertAlmostEqual(b - a, tl.TREE_ROW_SPACING, delta=1)
+        self.assertTrue(all(c[1] == 40 for c in crowns))
+        self.assertTrue(all(s['status'] == 'moved' for s in snaps))
+
+    def test_planning_inputs_merges_mapped_crowns(self):
+        """Mapped points from OSMGround become crowns in planning_inputs."""
+        x0, z0 = self.X0, self.Z0
+        ndsm = np.zeros((128, 128))
+        ndsm[40, 40] = 9.0
+        fake = types.SimpleNamespace(
+            trees=[(x0 + 40, z0 + 40), (x0 + 15, z0 + 15)],
+            tree_rows=[[(x0 + 5.0, z0 + 60.0), (x0 + 17.0, z0 + 60.0)]],
+        )
+        osm = types.ModuleType('osm_footprints')
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c: ndsm), \
+                mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
+                mock.patch.object(tl, 'ignored_builds', lambda cell: set()), \
+                mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
+                mock.patch.dict(sys.modules, {'osm_footprints': osm}), \
+                mock.patch('cell_registry.view_registry',
+                           lambda: types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs(CELL, osm_ground=fake)
+        self.assertTrue(inputs.mapped)
+        self.assertIsNotNone(inputs.mapped_rejections)
+        local = {(i, j) for i, j, _r in inputs.crowns}
+        self.assertIn((40, 40), local)
+        self.assertIn((15, 15), local)
 
 
 if __name__ == '__main__':

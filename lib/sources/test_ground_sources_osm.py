@@ -96,6 +96,26 @@ class LoadOsmStreetFurniturePointsTest(unittest.TestCase):
         self.assertEqual(ground.trees, [(27, 42)])
 
 
+class LoadOsmTreeRowLinesTest(unittest.TestCase):
+    """#157: natural=tree_row lines are kept as polylines for the trees layer."""
+
+    def test_tree_row_line_is_stored_not_rasterised_as_surface(self):
+        ground = _ground_from_features([
+            {
+                'type': 'Feature',
+                'properties': {'osm_id': '20', 'natural': 'tree_row'},
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[10.0, 40.0], [30.0, 40.0]],
+                },
+            },
+        ])
+        self.assertEqual(len(ground.tree_rows), 1)
+        self.assertEqual(ground.tree_rows[0][0], (10.0, 40.0))
+        self.assertEqual(ground.tree_rows[0][-1], (30.0, 40.0))
+        self.assertFalse(ground.kind, 'tree_row must not paint a ground kind')
+
+
 def _ground_from_features(features: list) -> GS.OSMGround:
     """Build OSMGround((0, 0)) from a synthetic OSGB-cache Feature list."""
     with tempfile.TemporaryDirectory() as td:
