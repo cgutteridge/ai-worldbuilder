@@ -251,5 +251,68 @@ class WaterPolyVsLineTest(unittest.TestCase):
         self.assertEqual(set(ground.water_refs), set(ground.water))
 
 
+_AREA_RING = [[
+    [20.0, 20.0], [28.0, 20.0], [28.0, 28.0], [20.0, 28.0], [20.0, 20.0],
+]]
+_AREA_SAMPLE = (24, 24)  # column centre inside _AREA_RING
+
+
+def _area_feature(osm_id: str, tags: dict) -> dict:
+    """One OSGB-cache polygon Feature with the given OSM tags."""
+    props = {'osm_id': osm_id, **tags}
+    return {
+        'type': 'Feature',
+        'properties': props,
+        'geometry': {'type': 'Polygon', 'coordinates': _AREA_RING},
+    }
+
+
+class GroundAreaTagsTest(unittest.TestCase):
+    """#158: leisure / landuse / natural areas map to kind + priority; surface/sport choose floor."""
+
+    # One row per tag (or tag+surface/sport case): (label, tags, expected_kind, expected_pri_key).
+    CASES = [
+        ('leisure=pitch default', {'leisure': 'pitch'}, 'grass', 'pitch'),
+        ('leisure=pitch surface=asphalt', {'leisure': 'pitch', 'surface': 'asphalt'}, 'tarmac', 'pitch'),
+        ('leisure=pitch surface=tartan', {'leisure': 'pitch', 'surface': 'tartan'}, 'tarmac', 'pitch'),
+        ('leisure=pitch surface=grass', {'leisure': 'pitch', 'surface': 'grass'}, 'grass', 'pitch'),
+        ('leisure=pitch sport=tennis', {'leisure': 'pitch', 'sport': 'tennis'}, 'tarmac', 'pitch'),
+        ('leisure=pitch sport=soccer', {'leisure': 'pitch', 'sport': 'soccer'}, 'grass', 'pitch'),
+        ('leisure=playground', {'leisure': 'playground'}, 'paving', 'pitch'),
+        ('leisure=playground surface=asphalt',
+         {'leisure': 'playground', 'surface': 'asphalt'}, 'tarmac', 'pitch'),
+        ('leisure=track', {'leisure': 'track'}, 'tarmac', 'pitch'),
+        ('leisure=track surface=tartan', {'leisure': 'track', 'surface': 'tartan'}, 'tarmac', 'pitch'),
+        ('landuse=construction', {'landuse': 'construction'}, 'dirt', 'pitch'),
+        ('landuse=allotments', {'landuse': 'allotments'}, 'dirt', 'grass'),
+        ('natural=wetland', {'natural': 'wetland'}, 'grass', 'grass'),
+        ('natural=grassland', {'natural': 'grassland'}, 'grass', 'grass'),
+        ('natural=shrubbery', {'natural': 'shrubbery'}, 'grass', 'wood'),
+    ]
+
+    def test_each_area_tag_maps_kind_and_priority(self):
+        for i, (label, tags, want_kind, pri_key) in enumerate(self.CASES):
+            with self.subTest(label=label):
+                ground = _ground_from_features([_area_feature(str(100 + i), tags)])
+                self.assertEqual(ground.kind.get(_AREA_SAMPLE), want_kind,
+                                 f'{label}: kind at {_AREA_SAMPLE}')
+                self.assertEqual(ground.pri.get(_AREA_SAMPLE), GS.PRI[pri_key],
+                                 f'{label}: priority at {_AREA_SAMPLE}')
+
+    def test_built_landuse_stays_unread(self):
+        """landuse=residential/retail/commercial/industrial must not paint under houses."""
+        for lu in ('residential', 'retail', 'commercial', 'industrial'):
+            with self.subTest(landuse=lu):
+                ground = _ground_from_features([_area_feature('200', {'landuse': lu})])
+                self.assertFalse(ground.kind, f'landuse={lu} must leave kind empty')
+                self.assertFalse(ground.pri, f'landuse={lu} must leave pri empty')
+            with self.subTest(landuse=lu, surface='asphalt'):
+                ground = _ground_from_features([
+                    _area_feature('201', {'landuse': lu, 'surface': 'asphalt'}),
+                ])
+                self.assertFalse(ground.kind,
+                                 f'landuse={lu}+surface must still leave kind empty')
+
+
 if __name__ == '__main__':
     unittest.main()
