@@ -39,6 +39,13 @@ The designer already reads aerial and street-level evidence before writing the
 hand-off. Fold these into that pass — they are not a separate step:
 
 - Storeys, wall material, openings and door type (as today)
+- **Facades on every exposed face.** For each label, write a `facades`
+  row list for every face that has exposed wall (`N`/`S`/`E`/`W`), with a
+  row per storey the street photos and aerial show. Do not stop at the
+  frontage. Where no evidence shows a face, copy the nearest face you did
+  read and say so in the spec `notes` (e.g. "E copied from N — no street
+  view"). Dry run lists every exposed face/storey glazed share and marks
+  missing faces `no evidence read` ([feature-builds.md](feature-builds.md)).
 - Roof form, colour and material — check the lidar profile before calling a roof flat
 - Edge on the roof? what block? outer only or steps too?
   Default **none**: leave `roofs[label].edge` out unless the aerial (or a

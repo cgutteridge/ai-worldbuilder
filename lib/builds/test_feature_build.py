@@ -411,6 +411,37 @@ class FacadeWindowsTest(unittest.TestCase):
         # Share is a percentage the dry-run can compare to the photo
         self.assertTrue(any('%' in ln for ln in lines), lines)
 
+    def test_glazed_share_lists_every_exposed_face_marks_no_evidence(self):
+        """#130: dry-run lists every exposed face/storey; missing facade rows → no evidence read."""
+        # Only the south face has facade rows; N/E/W are exposed on a free rectangle.
+        facades = {
+            'A': {
+                'S': [
+                    {'storey': 1, 'glazed_h': 3, 'pier': 1},
+                    {'storey': 2, 'glazed_h': 2, 'pier': 1},
+                ],
+            }
+        }
+        b = F.Build(self.spec(facades), footprints={'A': self.cells}, world=_StoneWorld())
+        b.build()
+        lines = b.glazed_share_report()
+        for face in 'NSEW':
+            for storey in (1, 2):
+                matching = [
+                    ln for ln in lines
+                    if f'face {face}' in ln and f'storey {storey}' in ln
+                ]
+                self.assertEqual(
+                    len(matching), 1,
+                    f'expected one line for face {face} storey {storey}: {lines}',
+                )
+                line = matching[0]
+                self.assertIn('%', line, line)
+                if face == 'S':
+                    self.assertNotIn('no evidence read', line, line)
+                else:
+                    self.assertIn('no evidence read', line, line)
+
 
 class DoorSpecBuildTest(unittest.TestCase):
     """Seams: build→Plan with per-portal doors, hinge pairing, framing, dry-run print."""

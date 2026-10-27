@@ -1104,6 +1104,50 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: in cell 48,-44 the trees come from 58 crowns read by eye from Google z20 crops (world reference/trees-google-crowns.json, 2026-10-16, old Southampton Refine project; trees_layer.google_crowns drops the detector inside its zone, which covers the whole cell). Nothing checks them against lidar. Near snag S-017 the crowns stand on 0-2 m of nDSM while the canopy peaks (8-10 m) lie 4-5 blocks east: (6266,-5572)->(6270,-5575), (6267,-5556)->(6271,-5561), (6265,-5581)->(6270,-5575); two crowns sit about 2 blocks from University Road's centre line. Covers issue I-011 (trees in 48,-44 stand a few blocks off the real trees), snag S-017. Scope: before planting, move each hand-read crown to the highest lidar canopy point (nDSM >= 3 m) within a few blocks (search radius as a named constant); keep a crown in place and print it 'unconfirmed' when no peak is in reach or the peak is on a building footprint. Dry run prints each crown's shift and the share moved. No road rule (owner: fix positions from evidence, not a no-trees-on-roads rule). Done when an offline dry run for 48,-44 moves the three crowns near the snag onto the peaks east of the road and prints shifts for all 58. Check line S-017: the trees along University Road stand on the verge where the real trees are, not on the carriageway. Not verified: that the 8-10 m peaks are trees, not buildings; how the other 55 crowns compare. One regression test only; no new gates or lints. | Merged task/129-snap-tree-crowns @ c78a215 via ship_branch."
+    },
+    {
+      "id": 137,
+      "title": "Fix stale command examples in the steering docs",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: AGENTS.md shows site_lock.py run without --world, which the script requires, and nothing points at where tests live (lib/<category>/test_*.py, scripts/test_*.py, run via scripts/run_tests.py --only <stem>). Fix the lock example and add one pointer for test locations. Docs-only; can commit straight to main. Done 2026-10-27: AGENTS.md site_lock example includes --world; added test location pointer."
+    },
+    {
+      "id": 139,
+      "title": "Cell-orchestrator skill plans features before building a cell",
+      "status": "done",
+      "priority": "high",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: the 2026-10-27 overnight run took `cell_registry.py next` as complete, so cells 48,-45 and 49,-45 went ground, trees, decor with no feature step although their maps hold many buildings (ground skipped ~5,400 building-footprint columns in 49,-45) and were logged complete. Deliver: in .claude/skills/cell-orchestrator/SKILL.md add a per-cell preflight (`cell_registry.py propose-features --cell <c> --record` before ground) and a completion gate: not complete until every footprint the ground report skipped is covered by a planned and landed feature; if features exist on the map but none are planned, stop and say so. Also add to the overnight stop list: the same patrol flag repeating across features. Docs-only; can commit straight to main. Done 2026-10-27: cell-orchestrator skill adds propose-features preflight, footprint completion gate, overnight stop on repeating patrol flag."
+    },
+    {
+      "id": 130,
+      "title": "Windows on every face and storey the evidence shows",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: a spec's facades table usually lists one face per building, and Build.windows punches glass only on listed faces and storeys. Even listed faces are nearly blank above storey 1: SUSU north storey 1 82%, storey 2 3%, storey 3 0%; West east 4-8%; Retail south 8%/3%; Jubilee south 34/25/24%. Covers issue I-004 (glazing far below the photos: windows only on the faces the spec lists), snag S-006. Scope: (1) the dry run lists every exposed face and storey with its glazed share, marking faces with no facade row 'no evidence read' (report, not a gate); (2) the designer brief asks for a facade row for every exposed face, read from street photos and the aerial; where no evidence shows a face, copy the nearest read face and say so in the spec notes. Done when dry runs for susu_w33830305, west_w34391673 and retail_w33830236 list every face with no unexplained gap. Check line S-006: each building's windows look like the photos on every face, upper storeys included. Not verified: whether the low upper-storey shares come from misread photos or omitted rows; check first when picked up. Touches feature_build.py like #125 and #126; sequence them. One regression test only; no new gates or lints. Done 2026-10-27: glazed_share_report lists every exposed face/storey; missing facade rows marked no evidence read; designer brief updated. Merged task/130-windows-every-face."
+    },
+    {
+      "id": 144,
+      "title": "Decor garden-boundary reads tree canopy as a hedge",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor. Done 2026-10-27: hedges ignore nDSM canopy and brick paths; designer type:none veto. World redo 49,-45 still needed. Merged task/144-decor-hedge-canopy."
+    },
+    {
+      "title": "Road centre-line markings one block wide",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun. Done 2026-10-27: centre-line dashes one cell wide (strict d + tie-break). Merged task/147-road-centre-markings.",
+      "id": 147
     }
   ]
 }
