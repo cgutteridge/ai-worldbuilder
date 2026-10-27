@@ -1267,6 +1267,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: a zoned feature's footprint keeps every outline cell that passes the lidar-mass test (feature_build.py, zone pipeline near line 288: square, lidar-mass intersect, median, snap) and nothing removes small pieces not joined to the main building, so a one- or two-cell piece gets walls and a stone cap. Jubilee's second build has four: a 2-cell spur at (6247,-5461)+(6248,-5461) and single columns at (6260,-5479), (6242,-5473) and (6268,-5519) (I-016, S-020). Not verified: that the lidar-mass test is why they pass. Deliver: after the mass test keep only connected pieces of the footprint big enough to be a building part (a minimum cell count in a named constant) and drop the rest; list what was dropped per feature in the dry run (cell count and position) so a real small structure such as a porch can be kept by the spec. Tests: a main mass plus a 1-cell and a 2-cell piece (both dropped), and a small piece that touches the main mass (kept). Check: after Jubilee is rebuilt none of the four pieces stands in the world and the main building is unchanged. Relates to the footprint trimming in #116; independent of the facade plan (#145). Done 2026-10-27: drop small disconnected zoned footprint islands. Merged task/153-drop-disconnected-footprints."
+    },
+    {
+      "title": "Water bodies as features (ponds)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "notes": "Cause: ground leaves mapped water as terrain (ground_layer.py:170-177) and no feature plan covers a water body, so the pond is whatever the baseline left (I-014, S-018). Not verified: whether the dark basin in 48,-45 is leftover ghost baseline or an unpainted hole. Deliver: a water-body feature in the plan vocabulary with outline from the vector map or aerial, water level, bank and edge; it sits in the cell plan as a feature to build, like a building, and records its evidence and provenance the way the facade plan (#145) does. Check: the pond in 48,-45 is a planned, built feature with water at a sensible level and a defined bank, not a dark hole. Done 2026-10-27: water_body plan+builder+propose-features; rules-context wired. Live 48,-45 pond still to apply. Merged task/148-water-body-features.",
+      "id": 148,
+      "blockedBy": []
     }
   ]
 }
