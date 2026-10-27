@@ -4,15 +4,6 @@
   "nextTaskId": 129,
   "tasks": [
     {
-      "id": 125,
-      "title": "Pitched roofs over lidar ridges in zoned features",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: feature_build requires roofs[label].kind == flat for any label with a zones entry (feature_build.py:503); assign_roof_zones snaps the DSM to plateau levels, so a ridge becomes stepped flat terraces. roof_pitched (single hip from the footprint edge) cannot express wings at different heights, so zoned buildings cannot be pitched at all. The West Building designer also read 'flat roof behind brick parapet' from a street photo without checking the lidar profile. Evidence: lidar DSM over West (w34391673) rises and falls across its wings, 48->52->48 and 49->56->51 m AOD; the spec snapped it to 44/48/51/54. Covers issue I-009 (roof built flat where the real building has a pitched roof), snag S-013. Scope: allow kind pitched with zones; within each zone, where the DSM shows a ridge, build stair-slab slopes from the zone eave up to the ridge along the ridge line; plateaus stay flat. One line in the design brief: check the lidar profile before calling a roof flat. Done when a dry run of west_w34391673 shows a ridge along the lidar ridge line and SUSU's flat roof is unchanged. Check line S-013: West's roof rises to a ridge where the lidar shows one, with no stepped flat terraces. One regression test only; no new gates or lints."
-    },
-    {
       "id": 126,
       "title": "Roof material from evidence, varying per zone",
       "status": "todo",
@@ -29,15 +20,6 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Cause: decor_layer only places OSM barrier lines (hedge, wall, fence), and the osm27700 vector-map cache holds no point features at all (cell 48,-44 on 2026-10-27: 68 footways, 18 steps, 2 hedges, 0 points), so street furniture has neither a source nor a block vocabulary. Covers issue I-008 (decor), snags S-012 (decor dry run planned 0 blocks) and S-014 ('why is there no decor'). Scope: (1) fetch point features into the map cache: amenity=bench|waste_basket|bicycle_parking, highway=street_lamp, barrier=bollard, signs; (2) a block recipe per kind in decor; (3) place each at its mapped position on paving, never on a path line or against a build; (4) where the map has no points, the decor designer reads aerial and street photos and proposes placements as a decor spec (expected to be the main source on campus); (5) small: when there is genuinely nothing to place, --apply records an empty decor pass instead of raising SystemExit (decor_layer.py:231), so a cell can finish; regenerating ground still clears it. Done when a decor dry run for 48,-44 lists street furniture alongside the two hedges, each with its source (map point or designer). Check lines: S-012: decor in 48,-44 plans street furniture, and an empty decor pass can still finish a cell; S-014: benches, bins, bike racks and lamp posts appear along the paved areas in 48,-44. Not verified: how much street furniture is mapped around Highfield. Size l: may split into fetch points / place mapped points / designer spec when picked up. One regression test per part; no new gates or lints."
-    },
-    {
-      "id": 128,
-      "title": "Features stay in the cell plan: undo clears the build only",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: a feature enters a cell's view only through its first apply ('A feature is registered by its first apply; there is no register command', cell_registry.py), and CellRegistry.view skips undone builds (cell_journal.py ~996), so an undone feature vanishes from the cell: after Jubilee was undone (2026-10-26 22:56) status for 48,-44 lists only Retail, SUSU and West, and 'left' is just decor and the marker. propose-features (cell_features.missing_features) finds the University Road houses but nothing records them. Covers issue I-012 (houses and undone features drop out of the cell's obligations), snag S-011. Scope: a cell plan in the journal: a note kind recording each feature or house a cell must have, written from propose-features (an option to record its candidates). The view lists planned-but-unbuilt features under 'left'; 'done' needs each one built. Undo clears the build only: the feature stays in the plan as not built, so next offers it for a redo. Dismissing is a separate, deliberate act with a reason (e.g. 'car park, not a building'); undo never dismisses. Owner calls: the note kind's name; whether next offers features before ground (left open by #118). Done when, in a journal fixture, undoing a built feature keeps it under 'left' and next offers it, and a recorded house stays under 'left' until built or dismissed with a reason. Check line S-011: the University Road houses and Jubilee show under 'left' for 48,-44 until they are built. One regression test only; no new gates or lints."
     }
   ]
 }

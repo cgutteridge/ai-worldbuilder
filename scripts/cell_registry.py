@@ -14,18 +14,19 @@ Per-cell view (folded, never stored)::
 
     ground: none | ghost | generated
     trees, decor: bool
-    features: (id, in-progress | built) for every feature plan touching the cell
+    features: (id, planned | in-progress | built) for every feature on the cell plan
     marker: bool (single marker)   hold: reason | None   notes: coverage warnings, reviews
-    done / left: ground generated + trees + decor + every feature built + no marker + no open
+    done / left: ground generated + trees + decor + every planned feature built + no marker + no open
                  coverage warning + nothing in flight
 
   python3 scripts/cell_registry.py status [--cell tx,tz]
   python3 scripts/cell_registry.py query --feature <id>
   python3 scripts/cell_registry.py query --cell tx,tz
-  python3 scripts/cell_registry.py propose-features --cell tx,tz
+  python3 scripts/cell_registry.py propose-features --cell tx,tz [--record]
   python3 scripts/cell_registry.py hold set tx,tz --reason R
   python3 scripts/cell_registry.py hold clear tx,tz
   python3 scripts/cell_registry.py dismiss-coverage tx,tz --warning-id ID --reason R
+  python3 scripts/cell_registry.py dismiss-feature tx,tz --feature ID --reason R
   python3 scripts/cell_registry.py note tx,tz --kind review --ref REF --body TEXT
   python3 scripts/cell_registry.py next
   python3 scripts/cell_registry.py verify
@@ -34,7 +35,9 @@ Per-cell view (folded, never stored)::
 reconcile compares the journal with the blocks (dry run by default; ``--fix`` re-commits over MCP).
 site_recover = resolve an interrupted apply (land or roll back); reconcile = detect and repair drift forward.
 
-A feature is registered by its first apply (a ``feature`` Build); there is no register command.
+A feature enters the cell plan by a ``plan_feature`` note (``propose-features --record``) or by any
+feature Build that touched the cell (including after undo). Undo clears the build only; dismiss
+(``dismiss-feature`` / ``plan_feature-dismiss``) is a separate act with a reason (#128).
 """
 from __future__ import annotations
 
@@ -175,7 +178,9 @@ def coverage_warnings(v: CellView) -> list[dict[str, str]]:
 
 
 def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
-    """Every feature in the journal: ``{id: {'status', 'cells': ['tx,tz', ...]}}`` (latest live entry).
+    """Every feature on a cell plan: ``{id: {'status', 'cells': ['tx,tz', ...]}}``.
+
+    Status is ``planned``, ``in-progress`` or ``built`` (cell views; #128).
 
     @param reg: registry
     @returns: feature map
@@ -184,6 +189,9 @@ def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
     for v in reg.view().values():
         for f in v.features:
             rec = out.setdefault(f.id, {'status': f.status, 'cells': []})
+            # Prefer built / in-progress over planned when the same id spans cells.
+            if f.status == 'built' or (f.status == 'in-progress' and rec['status'] == 'planned'):
+                rec['status'] = f.status
             rec['cells'].append(cell_id(*v.cell))
     return out
 
@@ -248,8 +256,32 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
     return '\n'.join(lines)
 
 
+def candidate_plan_id(item: dict[str, Any]) -> str:
+    """Stable feature plan id for a ``propose-features`` candidate (#128).
+
+    Buildings use the first vector-map ref (e.g. ``w93729745``). Houses use
+    ``houses_<street_slug>`` when a street is known, else ``houses_`` plus sorted refs.
+    Build specs should reuse this id as ``name`` so the plan matches the Build.
+
+    @param item: one dict from :func:`propose_feature_candidates`
+    @returns: feature plan id for a ``plan_feature`` note ``ref``
+    @raises RegistryError: when the candidate has no refs to key on
+    """
+    import re
+    refs = [str(r) for r in (item.get('refs') or []) if r]
+    if not refs:
+        raise RegistryError(f'candidate {item.get("label")!r} has no refs for a plan id')
+    if item.get('kind') == 'houses':
+        street = (item.get('street') or '').strip()
+        if street:
+            slug = re.sub(r'[^a-z0-9]+', '_', street.lower()).strip('_') or 'unnamed'
+            return f'houses_{slug}'
+        return 'houses_' + '_'.join(sorted(refs))
+    return refs[0]
+
+
 def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
-    """Propose vector-map building feature candidates for a cell (helper for register).
+    """Propose vector-map building feature candidates for a cell.
 
     Calls ``cell_features.missing_features`` for the cell. Errors propagate
     (no silent empty list).
@@ -262,8 +294,35 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     return list(cf.missing_features(tx, tz))
 
 
+def record_feature_candidates(reg: CellRegistry, cid: str,
+                              candidates: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Write ``plan_feature`` notes for propose-features candidates (#128).
+
+    Skips ids already on the cell plan and ids in ``plan_dismissed`` so a re-run
+    of ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature``
+    note would clear the dismissal in the note fold).
+
+    @param reg: registry
+    @param cid: ``tx,tz``
+    @param candidates: optional precomputed list; default loads via :func:`propose_feature_candidates`
+    @returns: list of ``{id, label, kind}`` recorded (skipped when already planned or dismissed)
+    """
+    cell = parse_cell_id(cid)
+    items = candidates if candidates is not None else propose_feature_candidates(cid)
+    skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
+    recorded: list[dict[str, Any]] = []
+    for item in items:
+        fid = candidate_plan_id(item)
+        if fid in skip:
+            continue
+        note(reg, cell, 'plan_feature', str(item.get('label') or ''), fid)
+        skip.add(fid)
+        recorded.append({'id': fid, 'label': item.get('label'), 'kind': item.get('kind')})
+    return recorded
+
+
 def note(reg: CellRegistry, cell: tuple[int, int], kind: str, body: str = '', ref: str = '') -> None:
-    """Journal one Note (the only way to set marker / hold / coverage / review / issue facts).
+    """Journal one Note (marker / hold / coverage / plan_feature / review / issue facts).
 
     @param reg: registry
     @param cell: (tx, tz)
@@ -367,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser('propose-features', help='list vector-map feature candidates for a cell')
     p.add_argument('--cell', required=True)
+    p.add_argument('--record', action='store_true',
+                   help='journal plan_feature notes for each candidate (#128)')
 
     p = sub.add_parser('hold', help='set or clear a cell hold')
     hold_sub = p.add_subparsers(dest='hold_cmd', required=True)
@@ -379,6 +440,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser('dismiss-coverage', help='dismiss a vector-map coverage warning')
     p.add_argument('cell')
     p.add_argument('--warning-id', required=True)
+    p.add_argument('--reason', required=True)
+
+    p = sub.add_parser('dismiss-feature', help='dismiss a planned feature from the cell plan (#128)')
+    p.add_argument('cell')
+    p.add_argument('--feature', required=True, help='feature plan id')
     p.add_argument('--reason', required=True)
 
     p = sub.add_parser('note', help='journal a review note (e.g. trees over roof resolved)')
@@ -428,8 +494,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'propose-features':
-            for item in propose_feature_candidates(args.cell):
+            items = propose_feature_candidates(args.cell)
+            for item in items:
                 print(json.dumps(item, sort_keys=True, default=_json_default))
+            if args.record:
+                recorded = record_feature_candidates(reg, args.cell, items)
+                for rec in recorded:
+                    print(f"recorded plan_feature {rec['id']}: {rec.get('label')}")
+                if not recorded and items:
+                    print('recorded: (all candidates already on the cell plan)')
+                elif not items:
+                    print('recorded: (no candidates)')
             return 0
 
         if args.cmd == 'hold':
@@ -445,6 +520,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == 'dismiss-coverage':
             note(reg, parse_cell_id(args.cell), 'coverage-dismiss', args.reason, args.warning_id)
             print(f'dismissed {args.warning_id} on {args.cell}')
+            return 0
+
+        if args.cmd == 'dismiss-feature':
+            note(reg, parse_cell_id(args.cell), 'plan_feature-dismiss',
+                 args.reason, args.feature)
+            print(f'dismissed feature {args.feature} on {args.cell}: {args.reason}')
             return 0
 
         if args.cmd == 'note':

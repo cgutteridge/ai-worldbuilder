@@ -441,10 +441,12 @@ class TestUndo(Aborted):
     def test_undo_of_a_named_plan_erases_to_the_earlier_owner(self):
         self.run_apply(make_plan('house'))
         self.run_undo('house')
-        # Base setUp dirt is journalled as prior; undo restores it (no under-owner)
+        # Base setUp dirt is journalled as prior; undo restores it (no under-owner).
+        # #128: undo clears the build only; house stays on the cell plan as planned.
         self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:dirt')
         self.assertEqual(self.blocks.read((X0 + 1, 60, Z0)), AIR)   # prior was air
-        self.assertEqual([f.id for f in self.view().features], [])
+        self.assertEqual([(f.id, f.status) for f in self.view().features],
+                         [('house', 'planned')])
 
 
 class TestFollowUps(Base):

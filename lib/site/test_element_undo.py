@@ -50,9 +50,11 @@ class TestFeatureUndo(ElementUndoCase):
 
         self.assertEqual(self.run_live(plan='house', live=True), 0)
 
-        # setUp dirt is journalled as prior; undo restores it (not air)
+        # setUp dirt is journalled as prior; undo restores it (not air).
+        # #128: undo clears the build only; house stays on the cell plan as planned.
         self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:dirt')
-        self.assertEqual([f.id for f in self.reg().cell(CELL).features], [])
+        self.assertEqual([(f.id, f.status) for f in self.reg().cell(CELL).features],
+                         [('house', 'planned')])
 
     def test_dry_run_named_plan_does_not_mutate(self):
         plan = site_kit.Plan('house')

@@ -39,14 +39,17 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                    {"<label>": {"from": "lidar",
                      "levels": [<m AOD>, ...] | "auto",
                      "bucket"?: 4, "axis_deg"?: "auto" | <deg>}}
-                 Splits the mass into flat roof zones (5×5 median DSM, snap to
+                 Splits the mass into roof zones (5×5 median DSM, snap to
                  plateau levels, mode-filter, bucket on the building's rotated
                  grid). Walls rise from local lidar ground so downhill faces gain
-                 storeys. Optional ``roofs[label].edge`` places a parapet on
+                 storeys. ``roofs[label].kind == "flat"``: each zone is a flat
+                 deck at its plateau. ``kind == "pitched"``: within each zone,
+                 where the DSM rises above the plateau (a ridge), stair-slab
+                 slopes run from the zone eave up to the ridge; flat plateaus
+                 stay flat. Optional ``roofs[label].edge`` places a parapet on
                  outer edges or on every zone step (default: none).
-                 Prints ``footprint osm=N readable=M pad=P cover=C%``. Requires
-                 ``roofs[label].kind == "flat"``. Facades/doors/roofs reuse the
-                 same label keys.
+                 Prints ``footprint osm=N readable=M pad=P cover=C%``.
+                 Facades/doors/roofs reuse the same label keys.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
 Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
@@ -310,6 +313,42 @@ def assign_roof_zones(
     return readable, zone, levels_used, axis_used
 
 
+def zone_ridge_half_steps(
+    med: np.ndarray,
+    zone: np.ndarray,
+    readable: np.ndarray,
+    flat_tol_m: float = 1.0,
+) -> np.ndarray:
+    """Half-block rises above each zone plateau for pitched roofs.
+
+    Per snapped level, if the median DSM stays within ``flat_tol_m`` of the
+    plateau, every cell in that zone stays at the eave (flat deck). Otherwise
+    each cell rises ``max(0, round((med - level) * 2))`` half-steps (1 m ≈ 1
+    block), so a lidar ridge becomes stair-slab courses instead of stepped
+    flat terraces.
+
+    @param med: 5×5 median DSM metres AOD
+    @param zone: snapped plateau grid (same shape)
+    @param readable: footprint mask
+    @param flat_tol_m: max rise that still counts as a flat plateau
+    @returns: int half-steps above the zone eave (0 outside readable / flat zones)
+    """
+    out = np.zeros(zone.shape, dtype=int)
+    if not readable.any():
+        return out
+    med_f = med.astype(float)
+    for level in np.unique(zone[readable]):
+        sel = readable & (zone == level)
+        if not sel.any():
+            continue
+        rise_m = med_f - float(level)
+        if float(np.nanmax(rise_m[sel])) < flat_tol_m:
+            continue
+        half = np.maximum(0, np.rint(rise_m * 2).astype(int))
+        out[sel] = half[sel]
+    return out
+
+
 def edge_wall_expose(roof: dict, ground: dict, cell: tuple[int, int]) -> int:
     """Lowest neighbour top (roof if built-on, else ground); wall faces above this.
 
@@ -500,8 +539,11 @@ def _validate_zones(path, spec: dict, labels: set) -> None:
             raise SystemExit(f'{path}: zones[{lab}].axis_deg must be \"auto\" or a number')
         row.setdefault('axis_deg', 'auto')
         roof = spec['roofs'].get(lab) or {}
-        if roof.get('kind') != 'flat':
-            raise SystemExit(f'{path}: zones[{lab}] requires roofs[{lab}].kind == \"flat\"')
+        if roof.get('kind') not in ROOF_KINDS:
+            raise SystemExit(
+                f'{path}: zones[{lab}] needs roofs[{lab}].kind flat|pitched '
+                f'(got {roof.get("kind")!r})'
+            )
 
 
 def _validate_exclude(path, spec: dict, labels: set) -> None:
@@ -802,7 +844,13 @@ class Build:
             )
             self._zone_pad_lines.append(footprint_pad_line(outline, readable))
             new_cells = mask_to_cells(readable, x0, z0)
+            pitched = f.roof.get('kind') == 'pitched'
+            half_grid = (
+                zone_ridge_half_steps(_win(dsm.astype(float), 5, np.median), zone, readable)
+                if pitched else None
+            )
             roof: dict = {}
+            slab: dict = {}
             gy: dict = {}
             zl: dict = {}
             for z in range(depth):
@@ -810,7 +858,13 @@ class Build:
                     if not readable[z, x]:
                         continue
                     wx, wz = x0 + x, z0 + z
-                    roof[(wx, wz)] = metres_aod_to_y(float(zone[z, x]))
+                    eave_y = metres_aod_to_y(float(zone[z, x]))
+                    if half_grid is not None:
+                        h = int(half_grid[z, x])
+                        roof[(wx, wz)] = eave_y + h // 2
+                        slab[(wx, wz)] = 'bottom' if h % 2 == 0 else 'top'
+                    else:
+                        roof[(wx, wz)] = eave_y
                     gy[(wx, wz)] = int(ground[z, x])
                     zl[(wx, wz)] = int(round(float(zone[z, x])))
             # neighbourhood ground for expose() outside the mass
@@ -820,6 +874,7 @@ class Build:
                     gy.setdefault((wx, wz), int(ground[z, x]))
             f.cells = new_cells
             f.zone_roof = roof
+            f.zone_roof_slab = slab if pitched else None
             f.zone_ground = gy
             f.zone_level = zl
             if roof:
@@ -904,14 +959,18 @@ class Build:
         """Per-column shell from local lidar ground up to snapped roof zones.
 
         Walls only where a neighbour top is lower (exterior or zone step).
-        Optional ``f.roof['edge']`` places a parapet (default: none). Interior
-        floor slabs follow the facade storey rhythm from ``f.b`` (median ground).
+        Flat zones place a full-block deck at the plateau Y; pitched zones place
+        stair-slabs (``zone_roof_slab``) rising from the eave toward a lidar
+        ridge. Optional ``f.roof['edge']`` places a parapet (default: none).
+        Interior floor slabs follow the facade storey rhythm from ``f.b``
+        (median ground).
 
         @param k: feature index (ownership / wall rivalry)
         @param f: feature with ``zone_roof`` / ``zone_ground`` filled
         """
         del k  # ownership already baked into f.cells; kept for call-site parity
         roof = f.zone_roof
+        slabs = getattr(f, 'zone_roof_slab', None)
         gy = f.zone_ground
         rm = f.roof['material']
         edge = f.roof.get('edge')
@@ -951,7 +1010,10 @@ class Build:
                     self.set(x, y, z, self.floor_mat)
                 else:
                     self.set(x, y, z, 'air')
-            self.set(x, ry, z, rm)
+            if slabs is not None:
+                self.set(x, ry, z, f'{rm}_slab[type={slabs[(x, z)]}]')
+            else:
+                self.set(x, ry, z, rm)
             if wants_edge(x, z, ry):
                 self.set(x, ry + 1, z, edge['block'])
             else:
