@@ -27,3 +27,14 @@ When `snag` is about to review an issue, check each snag still belongs: same cau
 ## Report shape
 
 Short: the digest line, then findings by issue (plain title first, ID small), each with the evidence, the proposed action, and what you could not establish. End with the suggested sequence. If the backlog is empty or all confirmed, say so and stop.
+
+## Close the case
+
+When nothing is left that you can do without the owner (every proposal answered, no question pending), close out. Committing and pushing your own records is part of the job, not a code change.
+
+1. **Verify.** `issues.py verify` must say OK; if not, report it and stop here.
+2. **Commit the world's issue records only.** The world checkout is shared with other sessions and its index may already hold their changes, so name the paths: `git -C <world> add registry/issues.json registry/issues/img`, then `git -C <world> commit -m "Issues: <what this run changed>" -- registry/issues.json registry/issues/img`. Leave `_intake-pending.png` (the snag skill's scratch) and everything else alone. Push only if the world repo has a remote; say so if it has none.
+3. **Commit tracker edits** (tasks you added with the owner's yes) straight to `main` in the tool repo, then `git push`. A push the hooks or remote refuse is reported, not forced.
+4. **Rename the thread** to 🕵️ plus a short plain name for what this run settled (e.g. `🕵️ Southampton 48,-44 roofs and ghost fixes`), via `set_session_title` with `"self"`. Skip it quietly where the tool is missing.
+5. **Wrap up in Holmes's voice, lightly**: one deduction, then what the owner does next, by name. Usually that is "work the tool backlog: <task titles>", then the redos it unblocks, then "call me back to review <issues>". If nothing is left: "no further work; the case is closed".
+6. Play the `done` sound cue.
