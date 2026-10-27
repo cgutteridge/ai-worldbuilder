@@ -487,6 +487,32 @@ class FacadeWindowsTest(unittest.TestCase):
             st = plan.cells.get((12, floor + dy, 25), '')
             self.assertNotIn('glass_pane', st, f'unframed step cell glazed: {st}')
 
+    def test_one_storey_glazed_h1_gets_glass_under_eave(self):
+        """#131: top-of-wall pane needs the eave as lintel; glazed_h=1 must still glaze."""
+        # Rectangle so lateral neighbours are solid; only the above-check can fail.
+        cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        facades = {
+            'A': {'S': [{'storey': 1, 'glazed_h': 1, 'pier': 0, 'rhythm': 'W'}]},
+        }
+        spec = self.spec(facades)
+        spec['storeys'] = {'A': 1}
+        plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        floor = 50
+        eave_y = floor + F.STOREY_H  # shell top is eave_y - 1; flat roof slab here
+        top_y = eave_y - 1
+        glass = [
+            (x, y, z) for (x, y, z), st in plan.cells.items()
+            if z == 24 and y == top_y and 'glass_pane' in st
+        ]
+        self.assertTrue(
+            glass,
+            'expected glazed_h=1 glass on the top wall row under the eave lintel',
+        )
+        for x, y, z in glass:
+            eave = plan.cells.get((x, eave_y, z), '')
+            self.assertTrue(eave and 'air' not in eave.split('[')[0],
+                            f'pane at {(x, y, z)} needs eave solid above, got {eave!r}')
+
 
 class DoorSpecBuildTest(unittest.TestCase):
     """Seams: build→Plan with per-portal doors, hinge pairing, framing, dry-run print."""

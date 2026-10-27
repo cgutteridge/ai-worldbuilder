@@ -1839,8 +1839,11 @@ class Build:
         self._pane_skips = {}
         for k, f in enumerate(self.features):
             self.doors(k, f)
-            self.windows(f)
+        # Roof before windows so the eave slab can lintel the top glazed row
+        # (_pane_framed needs solid above; wall shell stops at b+height-1).
         self.roof()
+        for f in self.features:
+            self.windows(f)
         if self.idx is not None:
             self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
