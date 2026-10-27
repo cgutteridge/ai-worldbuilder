@@ -11,15 +11,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference. Unblocked after #146: acceptance-only \u2014 fill facade_plan on live specs, re-apply, confirm 0 door_to_wall and leaf counts; close if #146 already satisfies. Discard premature task/143-door-vestibule branch."
-    },
-    {
-      "title": "Pitched roofs use stairs and slabs correctly",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "notes": "Cause: roof_pitched (feature_build.py:1687) writes slabs only and never stairs; the roof in the snag shows full stepped blocks, so first confirm which path built it (the zoned pitched path from #125 is a candidate, not verified) (I-019, S-024). Deliver: pitched roof surfaces use the stair, slab and full block of the roof material, each set by what it means in the game. Stairs: facing up-slope toward the ridge, half bottom for an ordinary slope, shape set at hips, valleys and corners (inner or outer), never used where a flat or vertical face is meant (walkable steps, own collision). Slabs: type bottom or top on purpose; a double slab is never left where a full block was meant. Ridges and eaves use the right half-blocks so the roof does not read as a staircase; waterlogged stays false. A roof material with no stair or slab variant falls back to a full block and says so, never another material (use block_family_variants to check). Tests cover a simple gable, a hip and a valley, asserting each block's state. Check: West's pitched roof reads as a slope, with stairs facing up-slope, corners shaped, and no mismatched slab halves or stray full-block terraces. Start with a spike: confirm which code path built West's roof (roof_pitched or the zoned pitched path from #125) before changing either; the flat-roof issue (I-009) is confirmed, so do not regress the ridge shape.",
-      "id": 149,
-      "blockedBy": []
     }
   ]
 }
