@@ -1213,6 +1213,24 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints). Add a property test: apply N rebuilds of a layer with NO base owner underneath, then undo them all; the world must equal the start. (A bent fixture in the 2026-10-27 undo-check fix hid exactly this.) Done 2026-10-27: journal_testkit.setup_layer_rebuilds + property tests. Merged task/133-undo-rebuild-fixtures."
+    },
+    {
+      "id": 134,
+      "title": "Undo a whole cell in order",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: purging a cell was done by hand and ran undo passes in the wrong order (ground before features); a refusal then halted the chain. Deliver one element_undo command that undoes everything above ghost in a cell in the fixed order (decor, trees, features, ground), stops at the first refusal and reports what is left. Dry run by default, --apply to write, under the site lock. Done 2026-10-27: whole-cell element_undo decor\u2192trees\u2192features\u2192ground. Merged task/134-undo-whole-cell."
+    },
+    {
+      "id": 136,
+      "title": "Purge scope: everything above ghost",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only. Done 2026-10-27: purge skill above-ghost scope (count, whole-cell undo, retire, prove). Merged task/136-purge-above-ghost."
     }
   ]
 }
