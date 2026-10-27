@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 132,
+  "nextTaskId": 133,
   "tasks": [
     {
       "id": 129,
@@ -29,6 +29,18 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: Build.windows punches glass_pane into any listed face with no framing check (doors have door_frame_issues; windows have no equivalent), so on stepped or diagonal walls a pane meets open air. Covers issue I-013 (glass panes on diagonal walls have no frame), snag S-007. Scope: place a pane only where the finished build has solid wall on both sides along the wall line and above and below; otherwise keep the wall block. The dry run prints the count of panes skipped this way, per face. Done when dry runs for susu_w33830305 and Jubilee report no pane beside air. Check line S-007: every glass pane on SUSU's and Jubilee's diagonal walls has solid blocks all round it. Touches feature_build.py like #125, #126 and #130; sequence them. One regression test only; no new gates or lints."
+    },
+    {
+      "id": 132,
+      "title": "Roof and facade detail in the building spec",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        125,
+        126
+      ],
+      "notes": "Cause: the building spec has no vocabulary for roof or facade detail and feature_build places none. rules/building-review.md already asks the designer to list roof greeblies per roof from the aerial (plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets) and names a --greeblies feature follow-up step, but no script or lib has --greeblies (probably lost in the move from the Refine donor; not confirmed). Covers issue I-006 (no roof or facade detail), snags S-009 and S-016. Owner decision (2026-10-27): detail lives in the building spec, not a separate pass, so undo/redo of a building takes its detail with it. Scope: a per-label details table in the spec, each entry a kind, position and size: roof (plant room, vent, louvred vent, skylight, solar panel, lift overrun), facade (drainpipe, sign, canopy, ledge, fascia band); a small block recipe per kind in feature_build, placed after the shell; positions from the aerial (roofs) and street photos (facades), heights of large roof plant from lidar; the designer brief points at building-review and fills details; replace the dead --greeblies reference in the rules with the table; dry run prints each detail and its source. Done when a dry run of SUSU, West or Retail places listed roof and facade details, including Retail's entrance canopy (in its spec notes, never built). Check line S-009, S-016: each building in 48,-44 shows the roof plant and facade detail visible on the aerial and photos. Size l: may split into roof detail and facade detail. Blocked by #125 and #126: details sit on the roofs, and all touch feature_build.py. One regression test per part; no new gates or lints."
     }
   ]
 }
