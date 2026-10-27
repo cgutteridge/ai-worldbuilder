@@ -13,15 +13,6 @@
       "notes": "Cause: OSMGround._poly reads garden and park (as grass) and wood and scrub, and ignores leisure=pitch, playground, track, landuse=construction, allotments and natural=wetland, grassland, shrubbery; surface=* on polygons is not read either. Deliver: map these tags to a ground kind and priority, choosing the floor from surface and sport where tagged (e.g. tartan, asphalt, grass); keep landuse=residential, retail, commercial, industrial unread (they must not paint under houses). Proof: unit tests in the OSMGround fixture style, one row per tag asserting kind and priority. No live-world test. Helps: any cell with sports pitches, playgrounds or building sites, all worlds. Unblocked 2026-10-27: #156 done. WAVE3 2026-10-27: orchestrate-rest continues. WAVE3 claim 2026-10-27."
     },
     {
-      "id": 159,
-      "title": "Building evidence carries roof, height and mapped entrance tags to the designer",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues."
-    },
-    {
       "id": 165,
       "title": "Planned double doors land as two leaves on a stepped wall",
       "status": "doing",
