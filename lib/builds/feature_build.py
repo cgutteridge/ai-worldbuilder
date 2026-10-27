@@ -1758,6 +1758,9 @@ class Build:
         for y, part in ((b + 1, 'lower'), (b + 2, 'upper')):
             self.set(cell[0], y, cell[1],
                      f'{block}[facing={face_name},half={part},hinge={hinge},open=false]')
+        # Lintel on the wall column (shell may have left air at door height on stepped faces).
+        self.keep.add((cell[0], b + 3, cell[1]))
+        self.set(cell[0], b + 3, cell[1], self.wall)
         st = (cell[0] + dx, cell[1] + dz)
         self.keep.add((st[0], b, st[1]))
         self.set(st[0], b, st[1], 'smooth_stone')

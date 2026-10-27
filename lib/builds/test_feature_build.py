@@ -745,6 +745,10 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                     'air' in (b.p.cells.get(key) or 'air'),
                     f'opening clear {key} missing from plan',
                 )
+        lintel = (x, b_floor + 3, z)
+        self.assertIn(lintel, b.keep)
+        self.assertIn('bricks', b.p.cells.get(lintel, ''), lintel)
+        self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
 
 
 class ZonesSpecTest(unittest.TestCase):
