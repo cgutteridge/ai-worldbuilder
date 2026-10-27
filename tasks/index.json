@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 166,
+  "nextTaskId": 167,
   "tasks": [
     {
       "id": 157,
@@ -31,33 +31,22 @@
       "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues."
     },
     {
-      "id": 163,
-      "title": "Water-body candidates carry the mapped way id and source, and streams are not proposed as ponds",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Split from #156; premise corrected on review. cell_features.missing_water_bodies already feeds OSMGround.water to water_body_components, so nothing needs to be handed over. Real gaps: OSMGround keeps only columns, so a candidate's refs are synthetic water_<x>_<z> and cannot name the mapped way; the candidate provenance source is not set to vector_map (not found where it would be set); stream and drain line columns merge into pond components and are labelled pond. Deliver: polygon water and line water are kept as separate sources in OSMGround; water-body candidates carry the OSM way id and provenance source vector_map; stream lines are not proposed as ponds. Files: lib/sources/ground_sources.py (keep way ids for polygons), lib/builds/water_body.py, lib/journal/cell_features.py, lib/journal/test_cell_features.py. Proof: unit test with a fixture clip holding a natural=water polygon (way 141657072 style id) and a stream line: one candidate with that way id and source vector_map, and no candidate from the stream. No live-world test. Blocked by #162 so culverts do not become ponds; #156 is needed only for the live effect (the pool is fetched), not for the fixture test. Helps: the pond in 48,-45 (I-014), any cell with ponds or fountains. Unblocked 2026-10-27: #162 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues."
-    },
-    {
-      "id": 164,
-      "title": "Doors on stepped rotated walls get a built jamb where no framed cell exists",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Split from #143 review; revised on independent review. Cause (2026-10-27 rebuilds): on mass edges rotated ~25-30 degrees the wall steps in 1-2 cell runs. _entrance_wall_candidates already returns the nearest framed cell, so the nearest one can be ~14 blocks from the portal (Jubilee 18-A register 6267,-5523, framed cell only at 6254,-5533) simply because none is nearer; its jamb test is f.walls membership, not solid blocks at b and b+1 (unverified whether this matches guard_door_frames), and its fallback to unframed cells is then refused by the guard (SystemExit with the door-frames json). Deliver: plan_doors / _set_door_leaf build the missing jamb blocks at b+1 and b+2 (and keep them in the plan's keep set) so a door stays on the register cell; the framed-cell test uses block solidity like the guard; any door still moved away from the register coordinate prints its distance. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py, lib/builds/test_door_frames.py. Blocked by #143 (both edit _set_door_leaf and plan_doors). Proof: stepped-wall fixture: door_frame_issues returns [] and the door stays on the register cell (distance 0). No live-world test. Double-leaf landing is #165. Helps: every building not aligned to the grid, all worlds. Unblocked 2026-10-27: #143 done. WAVE3 2026-10-27: orchestrate-rest continues."
-    },
-    {
       "id": 165,
       "title": "Planned double doors land as two leaves on a stepped wall",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
-      "blockedBy": [
-        164
-      ],
-      "notes": "Split from #164 review. Cause: on stepped walls the second leaf needs a lateral neighbour cell that is wall at b and b+1; pairing across a step (diagonal-adjacent cell) is refused by the frame guard and would put the two leaves in different planes, so do not do that. Seen 2026-10-27: west 40-A/40-B, susu 42-C, retail 57-A plan double and land single. Deliver: after #164 builds the jamb, plan_doors pairs leaves laterally only and builds the step block at the shared step. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: stepped-wall fixture: a double entrance gives two leaves in one plane with door_frame_issues empty; a fixture with no lateral room still falls back to one leaf with the 'no pair cell' line. No live-world test. Helps: every building not aligned to the grid, all worlds."
+      "blockedBy": [],
+      "notes": "Split from #164 review. Cause: on stepped walls the second leaf needs a lateral neighbour cell that is wall at b and b+1; pairing across a step (diagonal-adjacent cell) is refused by the frame guard and would put the two leaves in different planes, so do not do that. Seen 2026-10-27: west 40-A/40-B, susu 42-C, retail 57-A plan double and land single. Deliver: after #164 builds the jamb, plan_doors pairs leaves laterally only and builds the step block at the shared step. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: stepped-wall fixture: a double entrance gives two leaves in one plane with door_frame_issues empty; a fixture with no lateral room still falls back to one leaf with the 'no pair cell' line. No live-world test. Helps: every building not aligned to the grid, all worlds. Unblocked 2026-10-27: #164 done. WAVE3: claimed for #165."
+    },
+    {
+      "id": 166,
+      "title": "Remove dead PIT_MAX_WIDTH from ground_layer",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-27 in review. PIT_MAX_WIDTH (lib/layers/ground_layer.py) is unused since d812f7c replaced the bbox width gate with PIT_MAX_RADIUS (Chebyshev radius <= 2); it is kept only for one assertion in lib/layers/test_ground_layer.py and reads as a claim that pits are at most N wide. Only do this if the current ground work has not already removed it. Deliver: delete PIT_MAX_WIDTH; make the wide-depression test assert on _pit_chebyshev_radius > PIT_MAX_RADIUS instead. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py. Proof: python3 scripts/run_tests.py --only test_ground_layer passes; grep PIT_MAX_WIDTH finds nothing. Related idea, not filed: gate pit fill on evidence (footprint adjacency, lidar/OSM says no real cutting or pond) instead of the size proxy, which cannot tell a wide artefact from a wide real depression."
     }
   ]
 }

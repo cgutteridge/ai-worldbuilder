@@ -154,10 +154,11 @@ class UndergroundWaterwayTest(unittest.TestCase):
         ])
         stream_cols = set(GS.line_cells([(10.0, 20.0), (40.0, 20.0)], 0.8))
         culvert_cols = set(GS.line_cells([(10.0, 50.0), (40.0, 50.0)], 0.8))
-        self.assertTrue(ground.water, 'open stream should rasterise to water columns')
-        self.assertTrue(ground.water <= stream_cols,
-                        f'water {ground.water - stream_cols} not on the open stream')
-        self.assertFalse(ground.water & culvert_cols,
+        self.assertFalse(ground.water, 'stream lines are water_line, not pond water (#163)')
+        self.assertTrue(ground.water_line, 'open stream should rasterise to water_line columns')
+        self.assertTrue(ground.water_line <= stream_cols,
+                        f'water_line {ground.water_line - stream_cols} not on the open stream')
+        self.assertFalse(ground.water_line & culvert_cols,
                          'culvert (tunnel=culvert, layer=-1) must not become open water')
 
     def test_covered_and_negative_layer_streams_give_no_water(self):
@@ -187,8 +188,9 @@ class UndergroundWaterwayTest(unittest.TestCase):
                 },
             },
         ])
-        self.assertFalse(ground.water,
+        self.assertFalse(ground.water_line,
                          'covered=yes and layer=-1 streams must not rasterise as open water')
+        self.assertFalse(ground.water)
 
     def test_building_passage_highway_still_lands_in_bridge(self):
         """Highway bridge/tunnel/layer columns stay in .bridge (unchanged by #162)."""
@@ -212,8 +214,41 @@ class UndergroundWaterwayTest(unittest.TestCase):
         ])
         self.assertTrue(ground.bridge, 'expected building_passage+layer highway in .bridge')
         self.assertFalse(ground.water)
+        self.assertFalse(ground.water_line)
         self.assertFalse(any(ground.kind.get(q) == 'tarmac' for q in ground.bridge),
                          'bridge columns are not ours to surface')
+
+
+class WaterPolyVsLineTest(unittest.TestCase):
+    """#163: polygon water keeps way refs; streams stay on water_line only."""
+
+    def test_polygon_water_refs_and_stream_separated(self):
+        ground = _ground_from_features([
+            {
+                'type': 'Feature',
+                'properties': {'osm_way_id': '141657072', 'natural': 'water'},
+                'geometry': {
+                    'type': 'Polygon',
+                    'coordinates': [[
+                        [20.0, 20.0], [28.0, 20.0], [28.0, 28.0], [20.0, 28.0], [20.0, 20.0],
+                    ]],
+                },
+            },
+            {
+                'type': 'Feature',
+                'properties': {'osm_id': '999', 'waterway': 'stream'},
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[80.0, 10.0], [80.0, 100.0]],
+                },
+            },
+        ])
+        self.assertTrue(ground.water)
+        self.assertTrue(ground.water_line)
+        self.assertFalse(ground.water & ground.water_line)
+        self.assertTrue(ground.water_refs)
+        self.assertEqual(set(ground.water_refs.values()), {'w141657072'})
+        self.assertEqual(set(ground.water_refs), set(ground.water))
 
 
 if __name__ == '__main__':

@@ -13,7 +13,8 @@ Packaging: each non-home building (campus block, shop, church...) is its own fea
 Homes that overlap the cell and are not yet in a feature are grouped by street, then
 split where the gap between neighbouring footprints exceeds JOIN_GAP, so one terrace
 or run of houses becomes one feature. Outbuildings (sheds, garages) are left to their
-house plot. Connected water columns become ``kind: water_body`` candidates.
+house plot. Connected polygon water columns become ``kind: water_body`` candidates
+(streams stay off the pond list; #163).
 
   python3 scripts/cell_features.py --cell 48,-43
 """
@@ -260,28 +261,45 @@ def missing_water_bodies(
     tz: int,
     *,
     water_columns: set | None = None,
+    water_refs: dict | None = None,
     covered: set | None = None,
 ) -> list:
-    """Mapped water bodies overlapping the cell that no feature build covers (#148).
+    """Mapped water bodies overlapping the cell that no feature build covers (#148, #163).
+
+    Uses polygon ``natural=water`` only (not stream/drain line columns). Candidates
+    carry OSM way refs and provenance ``source: vector_map``.
 
     @param tx: cell X
     @param tz: cell Z
-    @param water_columns: optional precomputed water columns; default loads ``OSMGround``
+    @param water_columns: optional precomputed polygon water columns; default loads ``OSMGround.water``
+    @param water_refs: optional ``(x, z) -> 'w<id>'`` map; default loads ``OSMGround.water_refs``
     @param covered: optional precomputed feature_columns()
-    @returns: list of ``kind: water_body`` candidate dicts (outline, bbox, refs, …)
+    @returns: list of ``kind: water_body`` candidate dicts (outline, bbox, refs, provenance, …)
     """
     covered = feature_columns() if covered is None else covered
     if water_columns is None:
         try:
             from ground_sources import OSMGround  # noqa: WPS433
-            water_columns = set(OSMGround((tx, tz)).water)
+            ground = OSMGround((tx, tz))
+            water_columns = set(ground.water)
+            if water_refs is None:
+                water_refs = dict(ground.water_refs)
         except (OSError, RuntimeError, ValueError, FileNotFoundError):
             # Unit fixtures / no world: no vector-map water to propose.
             return []
     x0, z0, x1, z1 = cell_bbox(tx, tz, tx, tz)
     in_cell = {(x, z) for x, z in water_columns if x0 <= x <= x1 and z0 <= z <= z1}
+    refs_in_cell = None
+    if water_refs is not None:
+        refs_in_cell = {q: water_refs[q] for q in in_cell if q in water_refs}
     out = []
-    for body in water_body_components(in_cell, cell=(tx, tz), min_columns=MIN_WATER_COLUMNS):
+    for body in water_body_components(
+        in_cell,
+        cell=(tx, tz),
+        min_columns=MIN_WATER_COLUMNS,
+        column_refs=refs_in_cell,
+        provenance_source='vector_map',
+    ):
         outline = [(int(c[0]), int(c[1])) for c in body['outline']]
         if outline and sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
             continue
