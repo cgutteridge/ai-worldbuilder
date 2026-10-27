@@ -248,6 +248,11 @@ def extra_crowns(cell: tuple[int, int], path: Path | None = None) -> list[tuple[
 
 
 GOOGLE_CROWNS = ROOT / 'reference/trees-google-crowns.json'
+# Hand-read aerial crowns often sit a few blocks off the real canopy (S-017 / I-011). Before planting,
+# snap each to the highest nDSM column in this Chebyshev window; no peak or a peak on a building → leave
+# and mark unconfirmed. No road rule — positions come from lidar evidence, not a "keep off carriageway" filter.
+CROWN_SNAP_RADIUS = 6
+CROWN_SNAP_MIN_NDSM_M = 3.0
 
 
 def google_crowns(cell: tuple[int, int], path: Path | None = None):
@@ -258,7 +263,8 @@ def google_crowns(cell: tuple[int, int], path: Path | None = None):
     is the position source there (the z19 mosaic and the lidar both put crowns blocks off, and the lidar holds ~1/3 of them).
     Outside the zones the detector is unchanged. Aerial-sheet crowns go first (they win overlaps), are exempt from the
     vector-map feature-zone skip (a courtyard tree is real) and may stand on PAVED_SURFACES (a plaza tree has a soil pit);
-    every other rule (trunk in cell, air only, mask) is the normal one.
+    every other rule (trunk in cell, air only, mask) is the normal one. Positions are then snapped to nearby lidar
+    nDSM peaks (see ``snap_google_crowns``).
 
     @returns: (zones, [(dx, dz, r) cell-local]) or None when the cell has no entry
     """
@@ -271,6 +277,74 @@ def google_crowns(cell: tuple[int, int], path: Path | None = None):
     x0, z0 = cell[0] * CELL, cell[1] * CELL
     out = [(int(c['x']) - x0, int(c['z']) - z0, float(c['r'])) for c in e['crowns']]
     return [tuple(z) for z in e.get('zones', [])], [c for c in out if 0 <= c[0] < 128 and 0 <= c[1] < 128]
+
+
+def snap_google_crowns(
+    crowns: list[tuple[int, int, float]],
+    ndsm: np.ndarray,
+    footprints: set[tuple[int, int]],
+    radius: int = CROWN_SNAP_RADIUS,
+    min_ndsm: float = CROWN_SNAP_MIN_NDSM_M,
+) -> tuple[list[tuple[int, int, float]], list[dict]]:
+    """Move each hand-read crown to the highest nearby lidar canopy column (nDSM ≥ ``min_ndsm``).
+
+    Search is a Chebyshev window of ``radius`` blocks. The highest qualifying column wins; ties prefer
+    the closer column, then smaller (dx, dz). When no column qualifies, or the winner sits on a building
+    footprint, the crown stays put and the report status is ``unconfirmed``.
+
+    @param crowns: cell-local ``(dx, dz, r)``
+    @param ndsm: nDSM metres, shape ``(128, 128)`` indexed ``[dx, dz]``
+    @param footprints: building footprint columns in cell-local ``(dx, dz)``
+    @param radius: Chebyshev search radius in blocks
+    @param min_ndsm: minimum nDSM (metres) to count as canopy
+    @returns: ``(snapped crowns, per-crown reports)``; each report has ``from``, ``to``, ``shift``,
+              ``status`` (``moved`` | ``unconfirmed``), and ``ndsm`` at the chosen peak
+    """
+    h, w = ndsm.shape
+    out: list[tuple[int, int, float]] = []
+    report: list[dict] = []
+    for i, j, r in crowns:
+        best = None  # (-height, dist2, di, dj)
+        for di in range(max(0, i - radius), min(h, i + radius + 1)):
+            for dj in range(max(0, j - radius), min(w, j + radius + 1)):
+                if max(abs(di - i), abs(dj - j)) > radius:
+                    continue
+                height = float(ndsm[di, dj])
+                if height < min_ndsm:
+                    continue
+                dist2 = (di - i) ** 2 + (dj - j) ** 2
+                key = (-height, dist2, di, dj)
+                if best is None or key < best:
+                    best = key
+        here = float(ndsm[i, j]) if 0 <= i < h and 0 <= j < w else 0.0
+        if best is None or (best[2], best[3]) in footprints:
+            peak_h = here if best is None else float(ndsm[best[2], best[3]])
+            out.append((i, j, r))
+            report.append({'from': (i, j), 'to': (i, j), 'shift': (0, 0),
+                           'status': 'unconfirmed', 'ndsm': peak_h})
+            continue
+        _neg_h, _d2, pi, pj = best
+        shift = (pi - i, pj - j)
+        out.append((pi, pj, r))
+        report.append({'from': (i, j), 'to': (pi, pj), 'shift': shift,
+                       'status': 'moved', 'ndsm': float(ndsm[pi, pj])})
+    return out, report
+
+
+def cell_ndsm(cell: tuple[int, int]) -> np.ndarray | None:
+    """nDSM (DSM − DTM) metres for one cell as ``[dx, dz]``, or None when lidar is unavailable.
+
+    @param cell: ``(tx, tz)``
+    @returns: float array shape ``(128, 128)``, or None
+    """
+    try:
+        import lidar_provider as lp
+        lidar = lp.tile_client(download=False)
+        x0, z0 = cell[0] * CELL, cell[1] * CELL
+        h = lp.mc_heights(lidar, x0, z0, x0 + CELL - 1, z0 + CELL - 1)
+        return np.asarray(h['diff'], dtype=float)
+    except Exception:
+        return None
 
 
 def voxels_for(x: int, z: int, gy: int, r: float) -> dict:
@@ -300,6 +374,7 @@ class TreeInputs:
     ground_cols: set | None
     masked: dict
     footprints: set
+    crown_snaps: list | None = None  # google-crown lidar snap report, when snapped
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -318,9 +393,17 @@ def planning_inputs(cell):
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]
     aerial_sheet = set()
+    crown_snaps = None
+    from osm_footprints import OSMIndex
+    fp = {q for q in OSMIndex().cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
     g = google_crowns(cell)
     if g:
         zones, gc = g
+        ndsm = cell_ndsm(cell)
+        if ndsm is not None:
+            fp_local = {(x - x0, z - z0) for x, z in fp
+                        if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
+            gc, crown_snaps = snap_google_crowns(gc, ndsm, fp_local)
         crowns = gc + [c for c in crowns
                        if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
@@ -328,9 +411,8 @@ def planning_inputs(cell):
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
-    from osm_footprints import OSMIndex
-    fp = {q for q in OSMIndex().cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
-    return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp)
+    return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
+                      crown_snaps)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -345,7 +427,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     crowns, extra, aerial_sheet = inputs.crowns, inputs.extra, inputs.aerial_sheet
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
-    report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': []}
+    report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
+              'crown_snaps': inputs.crown_snaps}
     warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
                        x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
     for i, j, r in crowns:
@@ -419,6 +502,19 @@ def run(cell: tuple[int, int]) -> int:
           f'({sum(1 for t in rep["trees"] if t[3] == "tree")} trees, '
           f'{sum(1 for t in rep["trees"] if t[3] == "bush")} bushes)  skipped {len(rep["skipped"])}  '
           f'blocks {len(placed)}  overhang past cell edge {rep["overhang"]}')
+    snaps = rep.get('crown_snaps') or []
+    if snaps:
+        x0, z0 = tx * CELL, tz * CELL
+        n_moved = sum(1 for s in snaps if s['shift'] != (0, 0))
+        print(f'  google-crown lidar snap: {n_moved}/{len(snaps)} moved '
+              f'({100.0 * n_moved / len(snaps):.0f}%), radius {CROWN_SNAP_RADIUS}, '
+              f'nDSM≥{CROWN_SNAP_MIN_NDSM_M:g} m')
+        for s in snaps:
+            fx, fz = x0 + s['from'][0], z0 + s['from'][1]
+            tx_, tz_ = x0 + s['to'][0], z0 + s['to'][1]
+            dx, dz = s['shift']
+            print(f'    ({fx},{fz})->({tx_},{tz_}) shift ({dx},{dz}) '
+                  f'nDSM {s["ndsm"]:.1f} m  {s["status"]}')
     for x, z, r, why in rep['skipped'][:25]:
         print(f'  skipped ({x},{z}) r{r:.1f}: {why}')
     img = ROOT / f'verification/site/{name}-crowns.png'

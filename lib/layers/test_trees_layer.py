@@ -261,5 +261,30 @@ class TestGoogleCrowns(unittest.TestCase):
             self.assertIsNone(tl.google_crowns(CELL, f))
 
 
+class TestSnapGoogleCrowns(unittest.TestCase):
+    """Hand-read crowns move to the nearest high nDSM peak; otherwise stay and are unconfirmed (#129)."""
+
+    def test_crowns_snap_to_nearby_ndsm_peaks_and_stay_when_unconfirmed(self):
+        ndsm = np.zeros((128, 128))
+        # Peak a few blocks east of a low hand-read spot (S-017-style offset).
+        ndsm[64, 60] = 1.0
+        ndsm[68, 63] = 9.0
+        # Peak on a building footprint: must not move there.
+        ndsm[40, 40] = 0.5
+        ndsm[44, 40] = 10.0
+        # No peak in reach of (10, 10).
+        crowns = [(64, 60, 3.0), (40, 40, 3.0), (10, 10, 3.0)]
+        footprints = {(44, 40)}
+        snapped, report = tl.snap_google_crowns(crowns, ndsm, footprints)
+        self.assertEqual(snapped[0], (68, 63, 3.0))
+        self.assertEqual(report[0]['status'], 'moved')
+        self.assertEqual(report[0]['shift'], (4, 3))
+        self.assertEqual(snapped[1], (40, 40, 3.0))
+        self.assertEqual(report[1]['status'], 'unconfirmed')
+        self.assertEqual(snapped[2], (10, 10, 3.0))
+        self.assertEqual(report[2]['status'], 'unconfirmed')
+        self.assertEqual(sum(1 for r in report if r['status'] == 'moved'), 1)
+
+
 if __name__ == '__main__':
     unittest.main()
