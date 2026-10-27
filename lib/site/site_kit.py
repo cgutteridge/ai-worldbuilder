@@ -1178,6 +1178,10 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
 def _before_footprints(registry, names):
     """Capture each live plan's structure meta and cells before an undo voids them.
 
+    Uses the earliest live build's ``before_<plan>``: undo erases back to the world
+    before the first live build, so a rebuild's later snapshot (which holds the
+    earlier build) is the wrong comparison.
+
     @param registry: open CellRegistry
     @param names: plan names about to be undone
     @returns: ``[(plan, structure_meta, positions), ...]``
@@ -1189,7 +1193,7 @@ def _before_footprints(registry, names):
                 if e.kind == 'build' and not e.undone and e.status != 'begun'
                 and e.meta.get('structure')]
         if cells and live:
-            out.append((n, dict(live[-1].meta['structure']), list(cells)))
+            out.append((n, dict(live[0].meta['structure']), list(cells)))
     return out
 
 

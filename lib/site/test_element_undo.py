@@ -202,6 +202,20 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         self.assertEqual({e.status for e in undos}, {'abandoned'})
         self.assertTrue(all(e.undone for e in undos))
 
+    def test_cell_pass_undo_of_rebuilt_ground_compares_against_earliest_before(self):
+        # Rebuild over a live build: the second before_<plan> holds the first build,
+        # but a cell-pass undo erases both back to the base ghost under them.
+        base = site_kit.Plan('ghost')
+        base.set(X0, 60, Z0, GREY)
+        self.run_apply(base, stage='other', cell=CELL)
+        for state in ('minecraft:grass_block', 'minecraft:stone'):
+            g = site_kit.Plan('g')
+            g.set(X0, 60, Z0, state)
+            self.run_apply(g, stage='ground-layer', cell=CELL, modifies=['ghost'])
+
+        self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
+
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
 
 if __name__ == '__main__':
     unittest.main()
