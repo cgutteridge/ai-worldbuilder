@@ -2220,6 +2220,8 @@ class Build:
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
+        # Door opening clears (#143) and keep_edits stoops: survive both this filter and apply clash.
+        self.p.keep = set(self.keep)
         # cells of earlier real builds are theirs (ghost owners yield: the shell overwrites them)
         from cell_registry import view_registry
         owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
