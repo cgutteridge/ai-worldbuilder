@@ -31,15 +31,6 @@
       "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues."
     },
     {
-      "id": 163,
-      "title": "Water-body candidates carry the mapped way id and source, and streams are not proposed as ponds",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Split from #156; premise corrected on review. cell_features.missing_water_bodies already feeds OSMGround.water to water_body_components, so nothing needs to be handed over. Real gaps: OSMGround keeps only columns, so a candidate's refs are synthetic water_<x>_<z> and cannot name the mapped way; the candidate provenance source is not set to vector_map (not found where it would be set); stream and drain line columns merge into pond components and are labelled pond. Deliver: polygon water and line water are kept as separate sources in OSMGround; water-body candidates carry the OSM way id and provenance source vector_map; stream lines are not proposed as ponds. Files: lib/sources/ground_sources.py (keep way ids for polygons), lib/builds/water_body.py, lib/journal/cell_features.py, lib/journal/test_cell_features.py. Proof: unit test with a fixture clip holding a natural=water polygon (way 141657072 style id) and a stream line: one candidate with that way id and source vector_map, and no candidate from the stream. No live-world test. Blocked by #162 so culverts do not become ponds; #156 is needed only for the live effect (the pool is fetched), not for the fixture test. Helps: the pond in 48,-45 (I-014), any cell with ponds or fountains. Unblocked 2026-10-27: #162 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues."
-    },
-    {
       "id": 165,
       "title": "Planned double doors land as two leaves on a stepped wall",
       "status": "doing",
