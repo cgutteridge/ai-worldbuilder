@@ -26,12 +26,10 @@
     {
       "id": 133,
       "title": "Rebuild fixtures for undo tests",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        138
-      ],
+      "blockedBy": [],
       "notes": "Cause: undo tests hand-roll stage and modifies setup, and missed rebuilds of a layer over itself until the #123 check refused a real ground undo (2026-10-27, Highfield 48,-44). Deliver one test helper in journal_testkit that sets up a ghost base plus N rebuilds of a layer (same, wider, narrower), so undo tests cover rebuilt layers without per-test setup. Known traps: 'ghost-ground' is not an apply stage (use other), and a later build must list the base in modifies. Also covers the interleaved-build case the check refuses today (fails closed, documented in _before_footprints). Add a property test: apply N rebuilds of a layer with NO base owner underneath, then undo them all; the world must equal the start. (A bent fixture in the 2026-10-27 undo-check fix hid exactly this.)"
     },
     {
@@ -65,15 +63,6 @@
         135
       ],
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
-    },
-    {
-      "id": 138,
-      "title": "Cell-pass undo restores the world before the first build",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints). UPDATE 2026-10-27: raised to high because redo, refine and purge all lean on a correct undo, and the stray pillars (I-016) and the void by the walls (I-015) appeared after a cleanup and rebuild of Jubilee. Check whether they are symptoms (not verified) before closing those issues as separate causes."
     },
     {
       "id": 140,

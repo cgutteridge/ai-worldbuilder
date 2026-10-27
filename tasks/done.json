@@ -1148,6 +1148,15 @@
       "complexity": "s",
       "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun. Done 2026-10-27: centre-line dashes one cell wide (strict d + tie-break). Merged task/147-road-centre-markings.",
       "id": 147
+    },
+    {
+      "id": 138,
+      "title": "Cell-pass undo restores the world before the first build",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints). UPDATE 2026-10-27: raised to high because redo, refine and purge all lean on a correct undo, and the stray pillars (I-016) and the void by the walls (I-015) appeared after a cleanup and rebuild of Jubilee. Check whether they are symptoms (not verified) before closing those issues as separate causes. Done 2026-10-27: earliest-prior undo restore; _before_footprints skips under-owner columns. Merged task/138-undo-earliest-prior."
     }
   ]
 }
