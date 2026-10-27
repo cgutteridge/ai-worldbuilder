@@ -1086,6 +1086,15 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Cause: decor_layer only places OSM barrier lines (hedge, wall, fence), and the osm27700 vector-map cache holds no point features at all (cell 48,-44 on 2026-10-27: 68 footways, 18 steps, 2 hedges, 0 points), so street furniture has neither a source nor a block vocabulary. Covers issue I-008 (decor), snags S-012 (decor dry run planned 0 blocks) and S-014 ('why is there no decor'). Scope: (1) fetch point features into the map cache: amenity=bench|waste_basket|bicycle_parking, highway=street_lamp, barrier=bollard, signs; (2) a block recipe per kind in decor; (3) place each at its mapped position on paving, never on a path line or against a build; (4) where the map has no points, the decor designer reads aerial and street photos and proposes placements as a decor spec (expected to be the main source on campus); (5) small: when there is genuinely nothing to place, --apply records an empty decor pass instead of raising SystemExit (decor_layer.py:231), so a cell can finish; regenerating ground still clears it. Done when a decor dry run for 48,-44 lists street furniture alongside the two hedges, each with its source (map point or designer). Check lines: S-012: decor in 48,-44 plans street furniture, and an empty decor pass can still finish a cell; S-014: benches, bins, bike racks and lamp posts appear along the paved areas in 48,-44. Not verified: how much street furniture is mapped around Highfield. Size l: may split into fetch points / place mapped points / designer spec when picked up. One regression test per part; no new gates or lints. | Merged task/127-decor-street-furniture @ 31b76e1 via ship_branch."
+    },
+    {
+      "id": 126,
+      "title": "Roof material from evidence, varying per zone",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: feature_build takes one roofs[label].material per label, and the zoned shell uses it for every roof surface (feature_build.py ~916); the designer picked smooth_stone for SUSU, West and Retail with no roof-colour evidence cited in any spec's notes. Covers issue I-010 (every roof in the cell is one block), snag S-015. Scope: optional per-zone roof material override in the spec; the dry run samples the aerial mosaic over each roof zone and prints its mean colour beside the nearest block from the site_kit colour table, as a suggestion for the designer (not a gate). Done when the dry runs of susu_w33830305, west_w34391673 and retail_w33830236 print a roof colour and suggested block per zone, and a spec can give two zones of one building different materials. Check line S-015: roofs differ between buildings, and within a building, where the aerial shows they differ. Not verified: whether these roofs actually differ in colour on the aerial. Touches feature_build.py like #125; work them in sequence or expect a merge. One regression test only; no new gates or lints. | Merged task/126-roof-material-zones @ e0f5678 via ship_branch."
     }
   ]
 }
