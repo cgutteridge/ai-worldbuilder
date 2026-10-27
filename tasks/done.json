@@ -1294,6 +1294,15 @@
       "complexity": "m",
       "notes": "Cause: #127 places street furniture only where the vector map has points or barriers, so hedges round Retail and plaza seating that show in the aerial are missed (I-008, S-026). Deliver: a decor plan read from the aerial and photos (hedges and borders, seating, bike racks, bins), with each item's source and confidence, and decor built from that plan; items it cannot resolve are listed, not silently skipped. Same pattern as the facade plan (#145): reuse its provenance fields. Keep the bike-rack fences the owner accepted. Check: 48,-44 has hedges round Retail and seating in the plaza where the aerial shows them. Done 2026-10-27: decor plan from aerial/photos with provenance; near1 join ban restored. Merged task/150-decor-aerial-hedges-plaza.",
       "blockedBy": []
+    },
+    {
+      "id": 146,
+      "title": "Build reads the facade plan; remove the old portal door path everywhere",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild. Acceptance also includes the old #143 check: after re-applying the specs, 0 patrol door_to_wall flags and doors at the right leaf count; the door row follows the outside ground (I-017). Done 2026-10-27: doors from facade_plan only; legacy portal path removed. Live specs still need facade_plan then re-apply. Merged task/146-build-facade-plan."
     }
   ]
 }

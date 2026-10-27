@@ -50,7 +50,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['facades'], {})
         self.assertEqual(spec['facade_plan'], {})
         self.assertEqual(spec['details'], {})
-        self.assertEqual(spec['doors'], {})
+        self.assertNotIn('doors', spec)
         self.assertEqual(spec['zones'], {})
         self.assertEqual(spec['exclude'], {})
 
@@ -70,20 +70,16 @@ class LoadSpecTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
 
-    def test_doors_map_accepted_and_bad_leaves_or_block_refused(self):
+    def test_legacy_doors_key_refused(self):
+        """#146: per-portal doors map is gone; entrances live on facade_plan."""
         good = self.good()
-        ok = {**good, 'doors': {'42-A': {'leaves': 2, 'block': 'iron_door'}}}
-        spec = F.load_spec(self.write(ok))
-        self.assertEqual(spec['doors']['42-A'], {'leaves': 2, 'block': 'iron_door'})
-        for bad_doors in (
-            {'42-A': {'leaves': 3, 'block': 'iron_door'}},
-            {'42-A': {'leaves': 2, 'block': 'iron_trapdoor'}},
-            {'42-A': {'leaves': 2, 'block': 'bricks'}},
-            {'42-A': 'iron_door'},
-        ):
-            with self.subTest(bad_doors=bad_doors):
-                with self.assertRaises(SystemExit):
-                    F.load_spec(self.write({**good, 'doors': bad_doors}))
+        with self.assertRaises(SystemExit) as ctx:
+            F.load_spec(self.write({
+                **good,
+                'doors': {'42-A': {'leaves': 2, 'block': 'iron_door'}},
+            }))
+        self.assertIn('doors', str(ctx.exception))
+        self.assertIn('facade_plan', str(ctx.exception))
 
     def test_roof_edge_absent_by_default_and_accepted_when_valid(self):
         spec = F.load_spec(self.write(self.good()))
@@ -199,7 +195,8 @@ class BuildPlanTest(unittest.TestCase):
         floor = 50
         wall_top = floor + 3 * 3 - 1  # 58
         roof_y = floor + 3 * 3       # 59
-        wx, wz = 12, 24
+        # Corner pier (not mid-face): mid columns may get default window rhythm (#146).
+        wx, wz = 10, 24
         self.assertEqual(plan.cells.get((wx, floor, wz)), 'minecraft:bricks')
         self.assertEqual(plan.cells.get((wx, wall_top, wz)), 'minecraft:bricks')
         self.assertIn('smooth_stone_slab', plan.cells.get((12, roof_y, 22), ''))
@@ -524,14 +521,34 @@ class FacadeWindowsTest(unittest.TestCase):
                             f'pane at {(x, y, z)} needs eave solid above, got {eave!r}')
 
 
-class DoorSpecBuildTest(unittest.TestCase):
-    """Seams: build→Plan with per-portal doors, hinge pairing, framing, dry-run print."""
+def _entrance_row(**overrides) -> dict:
+    """Minimal placed facade_plan entrance for build tests."""
+    import provenance as prov
+
+    row = {
+        'id': 'T-A',
+        'portal_id': 'T-A',
+        'face': 'S',
+        'leaves': 1,
+        'block': 'iron_door',
+        'at': [13, 25],
+        'floor_offset': 0,
+        'provenance': prov.provenance_record(
+            source='register_entry', confidence='high',
+        ),
+    }
+    row.update(overrides)
+    return row
+
+
+class FacadePlanEntranceBuildTest(unittest.TestCase):
+    """Seams: build places doors from facade_plan only (#146), including unresolved."""
 
     def setUp(self):
         # Wide enough for a 2-leaf door plus jambs on the south face.
         self.cells = {(x, z) for x in range(10, 17) for z in range(20, 25)}
 
-    def spec(self, doors):
+    def spec(self, entrances, *, facades=None):
         return {
             'name': 'door_feature',
             'ways': {'99': 'A'},
@@ -546,26 +563,22 @@ class DoorSpecBuildTest(unittest.TestCase):
             'wall': 'bricks',
             'floor': 'smooth_stone',
             'ledge_stair': False,
-            'doors': doors,
-            'facades': {},
+            'facades': facades or {},
+            'facade_plan': {'A': {'faces': {}, 'entrances': entrances}},
         }
 
-    def portals(self):
-        return [{
-            'id': 'T-A', 'label': 'Main', 'building': 'T',
-            'x': 13, 'z': 25, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
-            'in_map': True, 'uri': '',
-        }]
-
-    def build_with_portals(self, doors, portals=None):
-        portals = portals if portals is not None else self.portals()
+    def build_plan(self, entrances, *, facades=None, cells=None, world=None):
         buf = io.StringIO()
-        with mock.patch.object(F.portals, 'load', return_value=portals), redirect_stdout(buf):
-            plan = F.build(self.spec(doors), footprints={'A': self.cells}, world=_StoneWorld())
+        with redirect_stdout(buf):
+            plan = F.build(
+                self.spec(entrances, facades=facades),
+                footprints={'A': cells if cells is not None else self.cells},
+                world=world or _StoneWorld(),
+            )
         return plan, buf.getvalue()
 
-    def test_double_door_mirrored_hinges_framed_and_printed(self):
-        plan, out = self.build_with_portals({'T-A': {'leaves': 2, 'block': 'iron_door'}})
+    def test_double_door_mirrored_hinges_and_printed(self):
+        plan, out = self.build_plan([_entrance_row(leaves=2, block='iron_door')])
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
         self.assertEqual(len(lowers), 2, lowers)
@@ -575,12 +588,11 @@ class DoorSpecBuildTest(unittest.TestCase):
         self.assertEqual(xs[1] - xs[0], 1)
         self.assertEqual(door_frame_issues(plan, _StoneWorld().block), [])
         self.assertIn('T-A', out)
-        self.assertIn('Main', out)
         self.assertIn('iron_door', out)
         self.assertIn('2-leaf', out)
 
     def test_single_coloured_door_uses_block(self):
-        plan, out = self.build_with_portals({'T-A': {'leaves': 1, 'block': 'crimson_door'}})
+        plan, out = self.build_plan([_entrance_row(leaves=1, block='crimson_door')])
         lowers = [st for st in plan.cells.values() if 'crimson_door' in st and 'half=lower' in st]
         self.assertEqual(len(lowers), 1)
         self.assertEqual(door_frame_issues(plan, _StoneWorld().block), [])
@@ -588,13 +600,10 @@ class DoorSpecBuildTest(unittest.TestCase):
 
     def test_double_door_survives_facade_glazing(self):
         """Both leaves stay doors when a facade table glazes the south face."""
-        spec = self.spec({'T-A': {'leaves': 2, 'block': 'iron_door'}})
-        spec['facades'] = {
-            'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]},
-        }
-        buf = io.StringIO()
-        with mock.patch.object(F.portals, 'load', return_value=self.portals()), redirect_stdout(buf):
-            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        plan, _out = self.build_plan(
+            [_entrance_row(leaves=2, block='iron_door')],
+            facades={'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}},
+        )
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
         uppers = [(pos, st) for pos, st in plan.cells.items()
@@ -604,47 +613,74 @@ class DoorSpecBuildTest(unittest.TestCase):
         for (x, y, z), _ in lowers + uppers:
             self.assertNotIn('glass_pane', plan.cells.get((x, y, z), ''))
 
-    def test_portal_doors_nearest_within_reach_then_frame(self):
-        """#114: whole-face framed() must not hide a nearer, non-strict wall.
-
-        East face (x=17) of an 8x41 mass. Two-cell nubs on x=18 (z=21-22, 24-25,
-        27-28 and z=31-32, 34-35, 37-38) leave single-cell gaps on the face, so
-        every exposed cell near the portal (gaps at z=29..30 and the single
-        gaps either side) has an unexposed lateral neighbour and is not strict.
-        Nubs are at most two long, so they offer no door candidates of their own.
-        The only strict cells are z>=40, beyond DOOR_REACH. Framing the whole face
-        first returns only those far cells and the door is skipped; picking
-        in-reach walls first, then framing, keeps the gap beside the portal.
-        """
+    def test_places_at_wall_nearest_entrance_at(self):
+        """Designer ``at`` picks the wall cell; no portal-reach chooser."""
         cells = {(x, z) for x in range(10, 18) for z in range(20, 61)}
         for lo in (21, 24, 27, 31, 34, 37):
             cells |= {(18, lo), (18, lo + 1)}
-        portal = {
-            'id': '18-A', 'label': 'Near', 'building': 'T',
-            'x': 18, 'z': 29, 'images': [], 'lat': 0, 'lon': 0, 'e': 0, 'n': 0,
-            'in_map': True, 'uri': '',
-        }
-        buf = io.StringIO()
-        with mock.patch.object(F.portals, 'load', return_value=[portal]), redirect_stdout(buf):
-            plan = F.build(
-                self.spec({'18-A': {'leaves': 1, 'block': 'iron_door'}}),
-                footprints={'A': cells},
-                world=_StoneWorld(),
-            )
-        out = buf.getvalue()
-        # Door placement itself must not be skipped (pane-frame skip lines may say "skipped").
+        plan, out = self.build_plan(
+            [_entrance_row(
+                id='18-A', portal_id='18-A', face='E', leaves=1,
+                block='iron_door', at=[18, 29],
+            )],
+            cells=cells,
+        )
         self.assertNotIn(': skipped', out, out)
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
         self.assertEqual(len(lowers), 1, lowers)
         door_xz = (lowers[0][0][0], lowers[0][0][2])
         self.assertIn(door_xz, {(17, 29), (17, 30)}, door_xz)
-        self.assertLessEqual(
-            (door_xz[0] - 18) ** 2 + (door_xz[1] - 29) ** 2,
-            F.portals.DOOR_REACH ** 2,
-            f'door at {door_xz} farther than DOOR_REACH from portal',
-        )
 
+    def test_unresolved_entrance_not_placed(self):
+        import provenance as prov
+
+        unresolved = _entrance_row(
+            id='99-Z',
+            provenance=prov.provenance_record(
+                source='inference', confidence='low',
+                unresolved_reason='no photo of this face',
+            ),
+        )
+        # drop placement fields that placed rows need — unresolved may omit them
+        for k in ('face', 'leaves', 'block', 'at'):
+            unresolved.pop(k, None)
+        placed = _entrance_row(id='T-A', leaves=1, block='iron_door')
+        plan, out = self.build_plan([placed, unresolved])
+        lowers = [st for st in plan.cells.values() if '_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1)
+        self.assertIn('99-Z', out)
+        self.assertIn('unresolved', out.lower())
+        spruce = [st for st in plan.cells.values() if 'spruce_door' in st]
+        self.assertEqual(spruce, [])
+
+    def test_no_facade_entrances_places_no_legacy_spruce(self):
+        plan, _out = self.build_plan([])
+        doors = [st for st in plan.cells.values() if '_door' in st and 'trapdoor' not in st]
+        self.assertEqual(doors, [])
+
+    def test_door_row_follows_outside_ground_not_below(self):
+        """I-017: door floor y is outside ground + floor_offset (never below outside)."""
+
+        class HighPavementWorld:
+            """Interior stone to y=49; pavement south of the wall at y=52."""
+
+            def block(self, x, y, z):
+                if z >= 25 and y <= 52:
+                    return 'minecraft:stone'
+                return 'minecraft:stone' if y <= 49 else 'minecraft:air'
+
+        plan, _out = self.build_plan(
+            [_entrance_row(leaves=1, block='iron_door', at=[13, 25], floor_offset=0)],
+            world=HighPavementWorld(),
+        )
+        lowers = [(pos, st) for pos, st in plan.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        _x, y, _z = lowers[0][0]
+        # outside ground top is 52 → floor block 52 → lower door leaf at 53
+        self.assertEqual(y, 53)
+        self.assertGreaterEqual(y - 1, 52)
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""
@@ -1147,7 +1183,7 @@ class LivePrefetchTest(unittest.TestCase):
             'floor': 'smooth_stone',
             'ledge_stair': False,
             'facades': {},
-            'doors': {},
+            'facade_plan': {},
             'zones': {},
         }
 

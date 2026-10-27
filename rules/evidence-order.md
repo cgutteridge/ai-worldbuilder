@@ -35,8 +35,8 @@ Provider ids for this place live in `reference/SOURCES.txt`, place-sources catal
   diff`) finds walls and other standing objects. Rim reads low; ground_y is too
   low for a building on a bank. Newer photos win; record the mismatch.
   Heights and surfaces come from the lidar provider only; a baseline or import save is never read as evidence (ADR 003).
-- A portal gives the door's position and name, not its look (door type, canopy, steps): read that from its photo or streetlevel.
-  A building with no portal can still have doors.
+- A portal gives the door's position and name, not its look (door type, canopy, steps): read that from its photo or streetlevel
+  into ``facade_plan`` entrances. A building with no portal can still have photo-read entrances.
 - Some aerial and streetlevel providers are look-only for *durable* evidence: download a
   working copy if the tool does (e.g. aerial PNG under `instance/`), read it,
   write down what it shows — do not hash or commit into `reference/` (`reference/SOURCES.txt`,

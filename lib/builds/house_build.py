@@ -201,12 +201,17 @@ class Build:
                 self.set(x, y, z, 'air')
             self.set(x, b + 3, z, FLOOR)
 
-    def framed(self, h, cand, d):
+    def with_jamb_walls(self, h, cand, d):
         """Door candidates with a wall cell on both sides along the wall, exposed the same way.
 
-        On a diagonal (stair-stepped) wall a door in a step corner has air beside it and is not framed.
+        On a diagonal (stair-stepped) wall a door in a step corner has air beside it and lacks jambs.
         spec door_frame false restores the old pick (kept only to prove the generator against old scripts).
         Second choice: both neighbours are wall cells but one is set forward (a notch). Last: ``cand`` unchanged.
+
+        @param h: house mass
+        @param cand: candidate wall cells
+        @param d: exposure direction
+        @returns: filtered candidate list
         """
         if not self.spec['door_frame']:
             return cand
@@ -228,7 +233,7 @@ class Build:
         cand = [c for c in h.walls if self.exposed(c, f) and (c[0] - fx, c[1] - fz) in h.inner]
         if not cand:
             return
-        cand = self.framed(h, cand, f)
+        cand = self.with_jamb_walls(h, cand, f)
         if f == 'N':
             front_edge = min(c[1] for c in cand)
             cand = [c for c in cand if c[1] <= front_edge + 2]
@@ -263,7 +268,7 @@ class Build:
         # rear door
         cand = [c for c in h.walls if self.exposed(c, r) and (c[0] - DIRS[r][0], c[1] - DIRS[r][1]) in h.inner]
         if cand:
-            cand = self.framed(h, cand, r)
+            cand = self.with_jamb_walls(h, cand, r)
             if r in 'NS':
                 e = min(c[1] for c in cand) if r == 'N' else max(c[1] for c in cand)
                 cc = [c for c in cand if (c[1] <= e + 2 if r == 'N' else c[1] >= e - 2)]

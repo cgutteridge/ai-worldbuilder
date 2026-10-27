@@ -6,22 +6,11 @@
     {
       "id": 143,
       "title": "Feature doors land in a one-block vestibule that patrol flags door_to_wall",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [
-        146
-      ],
-      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference."
-    },
-    {
-      "id": 146,
-      "title": "Build reads the facade plan; remove the old portal door path everywhere",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
       "blockedBy": [],
-      "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild. Acceptance also includes the old #143 check: after re-applying the specs, 0 patrol door_to_wall flags and doors at the right leaf count; the door row follows the outside ground (I-017)."
+      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them. UPDATE 2026-10-27: this is the old door path that #146 removes, and #145 plans floor height against outside ground (the sunk 42-B door, I-017). Do not fix it twice: #146 absorbs the work, and this task is the acceptance check afterwards (re-apply the three specs: 0 patrol door_to_wall flags, two-leaf doors where the plan says double). Close it if #146 already gives that. Premature task/143-door-vestibule (ce1c96e) left unmerged: ticket says #146 absorbs the fix; branch kept for reference. Unblocked after #146: acceptance-only \u2014 fill facade_plan on live specs, re-apply, confirm 0 door_to_wall and leaf counts; close if #146 already satisfies. Discard premature task/143-door-vestibule branch."
     },
     {
       "title": "Pitched roofs use stairs and slabs correctly",

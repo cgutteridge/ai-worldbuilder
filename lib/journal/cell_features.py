@@ -2,7 +2,7 @@
 """Find major features (buildings and water bodies) a cell still lacks, packaged for queueing.
 
 Each building feature also lists the university entrances ("portals", scripts/portals.py)
-on its footprint: door positions and names for the build, with photos to look at.
+on its footprint: designer inputs for ``facade_plan`` entrances (positions, names, photos).
 
 A feature is any build recorded in the cell journal that is not a layer pass
 (ground, trees, decor, foliage, canopy, undo, markers). A vector-map building is "in a
