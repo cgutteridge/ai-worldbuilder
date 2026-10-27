@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Undo one element through the cell journal — feature, ground, trees, or decor.
+"""Undo one element — or everything above ghost in a cell — through the journal.
 
-Plan name (features) or ``--cell tx,tz --pass feature|ground|trees|decor``. Dry run by
-default; ``--apply`` needs ``SITE_OWNER`` and a claimed lock (prefer
-``scripts/site_lock.py run``). Trees and decor keep the mask integrity path
-(``mask_undo``); feature and ground go straight to ``site_kit.undo``.
+Plan name (features) or ``--cell tx,tz --pass feature|ground|trees|decor``. With
+``--cell`` alone, undo every Element above ghost in fixed reverse-build order
+(decor, trees, features, ground); stop at the first refusal and report what is
+left (#134). Dry run by default; ``--apply`` needs ``SITE_OWNER`` and a claimed
+lock (prefer ``scripts/site_lock.py run``). Trees and decor keep the mask
+integrity path (``mask_undo``); feature and ground go straight to ``site_kit.undo``.
 
   python3 scripts/element_undo.py --world <name> house
   python3 scripts/element_undo.py --world <name> --cell 48,-44 --pass ground
-  SITE_OWNER=<owner> python3 scripts/element_undo.py --world <name> house --apply
+  python3 scripts/element_undo.py --world <name> --cell 48,-44
+  SITE_OWNER=<owner> python3 scripts/element_undo.py --world <name> --cell 48,-44 --apply
 """
 from __future__ import annotations
 
@@ -18,6 +21,8 @@ import sys
 
 ELEMENTS = ('feature', 'ground', 'trees', 'decor')
 MASK_PASSES = frozenset({'trees', 'decor'})
+# Reverse of build order (purge skill §1 / layered passes): decor first.
+CELL_UNDO_ORDER = ('decor', 'trees', 'feature', 'ground')
 
 
 def resolve_target(*, plan: str | None = None, cell: tuple[int, int] | None = None,
@@ -25,9 +30,9 @@ def resolve_target(*, plan: str | None = None, cell: tuple[int, int] | None = No
     """Pick a journal Undo target from CLI-shaped arguments.
 
     @param plan: feature (or other) plan name
-    @param cell: ``(tx, tz)`` when undoing a cell pass
-    @param pass_name: one of :data:`ELEMENTS`
-    @returns: plan name string, or ``((tx, tz), pass)``
+    @param cell: ``(tx, tz)`` when undoing a cell pass or the whole cell
+    @param pass_name: one of :data:`ELEMENTS`, or None for whole-cell (#134)
+    @returns: plan name string, or ``((tx, tz), pass_or_None)``
     @raises SystemExit: missing, ambiguous, or invalid combination
     """
     if plan and (cell is not None or pass_name is not None):
@@ -38,13 +43,17 @@ def resolve_target(*, plan: str | None = None, cell: tuple[int, int] | None = No
         if pass_name not in ELEMENTS:
             raise SystemExit(f'--pass must be one of {ELEMENTS}, got {pass_name!r}')
         return (tuple(cell), pass_name)
-    raise SystemExit('need a plan name, or both --cell tx,tz and --pass <element>')
+    if cell is not None and pass_name is None:
+        return (tuple(cell), None)
+    raise SystemExit('need a plan name, --cell tx,tz [--pass <element>], or --cell alone for the whole cell')
 
 
 def _label(target) -> str:
     if isinstance(target, str):
         return target
     (tx, tz), pass_ = target
+    if pass_ is None:
+        return f'{tx},{tz} (whole cell)'
     return f'{tx},{tz} {pass_}'
 
 
@@ -90,25 +99,125 @@ def _apply_journal(target) -> int:
     return 0
 
 
+def passes_above_ghost(cell: tuple[int, int]) -> list[str]:
+    """Elements present above ghost in ``cell``, in :data:`CELL_UNDO_ORDER`.
+
+    Matches :func:`scripts.cell_registry.cells_above_ghost` membership: generated
+    ground, trees, decor, or any feature that is not merely planned.
+
+    @param cell: ``(tx, tz)``
+    @returns: pass names to undo (subset of :data:`CELL_UNDO_ORDER`)
+    """
+    import cell_registry
+
+    v = cell_registry.view_registry().cell(tuple(cell))
+    present: list[str] = []
+    for pass_ in CELL_UNDO_ORDER:
+        if pass_ == 'decor' and v.decor:
+            present.append(pass_)
+        elif pass_ == 'trees' and v.trees:
+            present.append(pass_)
+        elif pass_ == 'feature' and any(f.status != 'planned' for f in v.features):
+            present.append(pass_)
+        elif pass_ == 'ground' and v.ground == 'generated':
+            present.append(pass_)
+    return present
+
+
+def _run_one_pass(cell: tuple[int, int], pass_name: str, *, live: bool,
+                  skip_changed: bool) -> int:
+    """Undo a single cell pass (preview or apply). Same path as a lone ``--pass``.
+
+    @param cell: ``(tx, tz)``
+    @param pass_name: one of :data:`ELEMENTS`
+    @param live: write when True
+    @param skip_changed: trees/decor mask path only
+    @returns: 0 on success
+    @raises SystemExit: nothing to undo or apply refused
+    """
+    target = (tuple(cell), pass_name)
+    names, n = _journal_preview(target)
+
+    if pass_name in MASK_PASSES:
+        from pass_mask import mask_path
+        import mask_undo
+        if mask_path(pass_name, cell).exists():
+            return mask_undo.run(cell, pass_name, live, skip_changed)
+
+    print(f'undo {_label(target)}: {len(names)} plan(s) ({", ".join(names)}), {n} blocks')
+    if not live:
+        print('(dry run; pass --apply to write)')
+        return 0
+    return _apply_journal(target)
+
+
+def run_whole_cell(cell: tuple[int, int], *, live: bool = False,
+                   skip_changed: bool = False) -> int:
+    """Undo every Element above ghost in ``cell``, in :data:`CELL_UNDO_ORDER`.
+
+    Dry run lists the ordered passes and previews each without writing. ``--apply``
+    undoes one pass at a time; the first refusal stops the chain and reports what
+    is left (including the refused pass). Under the site lock when live (via
+    ``SITE_OWNER`` / ``site_lock.py run``).
+
+    @param cell: ``(tx, tz)``
+    @param live: when True, write through the journal
+    @param skip_changed: forwarded to mask_undo for trees/decor
+    @returns: 0 when every present pass undid cleanly
+    @raises SystemExit: nothing above ghost, or a pass refused mid-chain
+    """
+    tx, tz = cell
+    order = passes_above_ghost(cell)
+    if not order:
+        raise SystemExit(f'nothing above ghost to undo in {tx},{tz}')
+
+    print(f'undo cell {tx},{tz}: {", ".join(order)}')
+    undone: list[str] = []
+    left = list(order)
+    for pass_name in order:
+        try:
+            _run_one_pass(cell, pass_name, live=live, skip_changed=skip_changed)
+        except SystemExit as exc:
+            print(f'stopped at {pass_name}: {exc}')
+            print(f'undone: {", ".join(undone) if undone else "(none)"}')
+            print(f'left: {", ".join(left)}')
+            raise SystemExit(
+                f'stopped at {pass_name}; left: {", ".join(left)}'
+            ) from exc
+        undone.append(pass_name)
+        left.pop(0)
+
+    if not live:
+        print('(dry run; pass --apply to write)')
+    else:
+        print(f'undone: {", ".join(undone)}')
+        print('left: (none)')
+    return 0
+
+
 def run(*, plan: str | None = None, cell: tuple[int, int] | None = None,
         pass_name: str | None = None, live: bool = False,
         skip_changed: bool = False) -> int:
     """Plan (and with ``live`` apply) an element undo. Returns 0 on success.
 
-    Trees/decor with a mask on disk delegate to ``mask_undo`` (conflict check + archive).
-    Feature/ground, and trees/decor without a mask, use ``site_kit.undo``. Dry run prints
-    what the journal would erase and writes nothing. Refuses when the journal shows
+    ``--cell`` alone undoes the whole cell (#134). Trees/decor with a mask on disk
+    delegate to ``mask_undo`` (conflict check + archive). Feature/ground, and
+    trees/decor without a mask, use ``site_kit.undo``. Dry run prints what the
+    journal would erase and writes nothing. Refuses when the journal shows
     nothing to undo.
 
     @param plan: plan name (mutually exclusive with cell/pass)
-    @param cell: ``(tx, tz)`` for a cell pass undo
-    @param pass_name: feature | ground | trees | decor
+    @param cell: ``(tx, tz)`` for a cell pass or whole-cell undo
+    @param pass_name: feature | ground | trees | decor, or None for whole cell
     @param live: when True, write through the journal (needs SITE_OWNER + lock)
     @param skip_changed: passed to mask_undo for trees/decor only
     @returns: 0 on success
     @raises SystemExit: nothing to undo, lock/owner missing, or apply failure
     """
     target = resolve_target(plan=plan, cell=cell, pass_name=pass_name)
+    if isinstance(target, tuple) and target[1] is None:
+        return run_whole_cell(target[0], live=live, skip_changed=skip_changed)
+
     names, n = _journal_preview(target)
 
     if isinstance(target, tuple) and target[1] in MASK_PASSES:
@@ -132,9 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     """
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('plan', nargs='?', help='plan name to undo (features)')
-    ap.add_argument('--cell', help='tx,tz for a cell pass undo')
+    ap.add_argument('--cell', help='tx,tz for a cell pass or whole-cell undo')
     ap.add_argument('--pass', dest='pass_name', choices=ELEMENTS,
-                    help='element to undo in --cell')
+                    help='element to undo in --cell (omit for whole cell)')
     ap.add_argument('--apply', action='store_true',
                     help='LIVE: needs SITE_OWNER + claimed lock')
     ap.add_argument('--skip-changed', action='store_true',

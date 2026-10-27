@@ -101,11 +101,103 @@ class TestResolveTarget(unittest.TestCase):
             ((48, -44), 'ground'),
         )
 
+    def test_cell_alone_is_whole_cell(self):
+        self.assertEqual(
+            element_undo.resolve_target(cell=(48, -44)),
+            ((48, -44), None),
+        )
+
     def test_reject_ambiguous(self):
         with self.assertRaises(SystemExit):
             element_undo.resolve_target(plan='house', cell=(0, 0), pass_name='ground')
         with self.assertRaises(SystemExit):
             element_undo.resolve_target()
+
+
+class TestWholeCellUndo(ElementUndoCase):
+    """#134: one command undoes everything above ghost in fixed order."""
+
+    def _seed_above_ghost(self):
+        """Ground + feature + trees + decor in CELL (build order)."""
+        g = site_kit.Plan('g')
+        g.set(X0, 59, Z0, 'minecraft:grass_block')
+        self.run_apply(g, stage='ground-layer', cell=CELL)
+        house = site_kit.Plan('house')
+        house.set(X0, 60, Z0, 'minecraft:bricks')
+        self.run_apply(house)
+        trees = site_kit.Plan('t')
+        trees.set(X0 + 1, 61, Z0, 'minecraft:oak_log')
+        self.run_apply(trees, stage='trees', cell=CELL)
+        decor = site_kit.Plan('d')
+        decor.set(X0 + 2, 61, Z0, 'minecraft:poppy')
+        self.run_apply(decor, stage='decor', cell=CELL)
+        v = self.reg().cell(CELL)
+        self.assertEqual(v.ground, 'generated')
+        self.assertTrue(v.trees)
+        self.assertTrue(v.decor)
+        self.assertEqual([f.id for f in v.features], ['house'])
+
+    def test_dry_run_lists_undo_order_without_mutating(self):
+        self._seed_above_ghost()
+        with mock.patch('builtins.print') as printed:
+            self.assertEqual(element_undo.run(cell=CELL, live=False), 0)
+        text = '\n'.join(str(c.args[0]) for c in printed.call_args_list if c.args)
+        self.assertIn('decor', text)
+        self.assertIn('trees', text)
+        self.assertIn('feature', text)
+        self.assertIn('ground', text)
+        # Fixed order: decor before trees before feature before ground
+        self.assertLess(text.index('decor'), text.index('trees'))
+        self.assertLess(text.index('trees'), text.index('feature'))
+        self.assertLess(text.index('feature'), text.index('ground'))
+        self.assertIn('dry run', text.lower())
+        v = self.reg().cell(CELL)
+        self.assertEqual(v.ground, 'generated')
+        self.assertTrue(v.trees and v.decor)
+        self.assertEqual([f.id for f in v.features], ['house'])
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:bricks')
+
+    def test_apply_undoes_all_above_ghost_in_order(self):
+        self._seed_above_ghost()
+        self.assertEqual(self.run_live(cell=CELL, live=True), 0)
+        v = self.reg().cell(CELL)
+        self.assertEqual(v.ground, 'none')
+        self.assertFalse(v.trees)
+        self.assertFalse(v.decor)
+        self.assertEqual([(f.id, f.status) for f in v.features],
+                         [('house', 'planned')])
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:dirt')
+        self.assertEqual(self.blocks.read((X0, 59, Z0)), AIR)
+        self.assertEqual(self.blocks.read((X0 + 1, 61, Z0)), AIR)
+        self.assertEqual(self.blocks.read((X0 + 2, 61, Z0)), AIR)
+
+    def test_stops_at_first_refusal_and_reports_what_is_left(self):
+        self._seed_above_ghost()
+        before = f'{site_kit.STRUCTURE_NS}:before_house'
+        FakePaced.structures[before][(X0, 60, Z0)] = 'minecraft:gold_block'
+
+        with mock.patch('builtins.print') as printed:
+            with self.assertRaises(SystemExit) as ctx:
+                self.run_live(cell=CELL, live=True)
+        msg = str(ctx.exception).lower()
+        text = '\n'.join(str(c.args[0]) for c in printed.call_args_list if c.args)
+        combined = f'{msg}\n{text}'.lower()
+        self.assertTrue('left' in combined or 'remaining' in combined)
+        self.assertIn('feature', combined)
+        self.assertIn('ground', combined)
+        # decor + trees already undone; feature refused; ground untouched
+        v = self.reg().cell(CELL)
+        self.assertFalse(v.decor)
+        self.assertFalse(v.trees)
+        self.assertEqual([f.id for f in v.features], ['house'])
+        self.assertEqual(v.ground, 'generated')
+        self.assertEqual(self.blocks.read((X0, 60, Z0)), 'minecraft:bricks')
+        self.assertEqual(self.blocks.read((X0, 59, Z0)), 'minecraft:grass_block')
+
+    def test_refuse_when_nothing_above_ghost(self):
+        with self.assertRaises(SystemExit) as ctx:
+            element_undo.run(cell=CELL, live=False)
+        self.assertIn('nothing', str(ctx.exception).lower())
 
 
 class TestDiffAgainstBefore(unittest.TestCase):

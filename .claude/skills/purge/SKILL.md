@@ -23,12 +23,11 @@ Done when the user has said yes to a counted scope.
 
 Claim the lock for every live step: `python3 scripts/site_lock.py run <owner> "purge <scope>" -- <cmd>`. Dry run first when the command has one. Order is the reverse of the build order, and a later pass never outlives its base:
 
-1. **decor**: `element_undo.py --world <name> --cell tx,tz --pass decor --apply`
-2. **trees**: `element_undo.py --world <name> --cell tx,tz --pass trees --apply`
-3. **features**: `element_undo.py --world <name> <plan> --apply` (for a cell, every plan `cell_registry.py query --cell` lists)
-4. **ground**: `element_undo.py --world <name> --cell tx,tz --pass ground --apply`
+- **Element:** one pass or plan — `element_undo.py --world <name> --cell tx,tz --pass decor|trees|ground --apply`, or `element_undo.py --world <name> <plan> --apply` for a feature.
+- **Cell:** one command undoes everything above ghost in fixed order (decor → trees → features → ground); it stops at the first refusal and reports what is left (#134):
+  `element_undo.py --world <name> --cell tx,tz` then `--apply` under the lock. Do not hand-run the four passes out of order.
 
-**Project scope** replaces 1–4 with `dryrun_reset.py --dry-run`, then `--confirm-logged-out` (wipes regions and registry, keeps world-frame, providers and reference downloads).
+**Project scope** uses `dryrun_reset.py --dry-run`, then `--confirm-logged-out` (wipes regions and registry, keeps world-frame, providers and reference downloads).
 
 An interrupted step: `site_recover.py status`. Drift left behind: `cell_registry.py reconcile --fix`. Never hand-copy `.mca` files.
 
