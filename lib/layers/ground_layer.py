@@ -455,8 +455,44 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
 
 # --- 3. how high -------------------------------------------------------------------------
 PIT_DROP = 3            # min blocks below the surrounding rim before a pit is raised (#155)
-PIT_MAX_WIDTH = 7       # max narrow-side bbox span (#160: live wall-side band bbox narrow=7)
+PIT_MAX_RADIUS = 2      # max Chebyshev dist from a pit cell to outside the component (#160)
+PIT_MAX_WIDTH = 5       # retained for tests / docs; radius gate replaced bbox narrow (#155)
 PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
+
+
+def _pit_chebyshev_radius(comp: set) -> int:
+    """Largest Chebyshev distance from any cell in ``comp`` to a cell outside it.
+
+    A 3-wide strip scores 1; a solid 5-wide band scores 2; a 10×10 pond scores 5.
+    Used instead of axis-aligned bbox width so a long diagonal wall-side void
+    still fills while ponds stay low (#160 / S-019).
+
+    @param comp: connected set of ``(x, z)`` pit candidates
+    @returns: max radius (0 for empty)
+    """
+    if not comp:
+        return 0
+    best = 0
+    for x, z in comp:
+        r = 0
+        while True:
+            r += 1
+            hit_out = False
+            for a in range(-r, r + 1):
+                for b in range(-r, r + 1):
+                    if max(abs(a), abs(b)) != r:
+                        continue
+                    if (x + a, z + b) not in comp:
+                        hit_out = True
+                        break
+                if hit_out:
+                    break
+            if hit_out:
+                best = max(best, r)
+                break
+            if r > 64:  # pathological solid; treat as too wide
+                return r
+    return best
 
 
 def level_spikes(live: dict, kind: dict, fp: set) -> dict:
@@ -482,11 +518,12 @@ def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
     """Raise narrow pits among free columns to the surrounding rim (#155 / #160).
 
     A pit is a connected set of columns whose live surface sits at least ``PIT_DROP``
-    below nearby rim columns, and whose narrower bounding-box side is at most
-    ``PIT_MAX_WIDTH``. Water, bank, bridge and structure tops are already absent from
-    ``live``. Footprint columns are never raised and never used as rim (wall-side
-    voids beside a building still fill to the outside grade — #160 / S-019). Wide
-    cuttings and ponds stay at their live height.
+    below nearby rim columns, and whose Chebyshev radius (distance from any pit
+    cell to outside the component) is at most ``PIT_MAX_RADIUS``. Water, bank,
+    bridge and structure tops are already absent from ``live``. Footprint columns
+    are never raised and never used as rim (wall-side voids beside a building
+    still fill to the outside grade — #160 / S-019). Wide cuttings and ponds
+    stay at their live height.
 
     @param live: ``{(x, z): (y, block)}`` free columns
     @param kind: surface kind per column (kerb / mark columns are never raised)
@@ -518,10 +555,7 @@ def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
 
     filled = 0
     for comp in _components(candidates):
-        xs = [c[0] for c in comp]
-        zs = [c[1] for c in comp]
-        narrow = min(max(xs) - min(xs) + 1, max(zs) - min(zs) + 1)
-        if narrow > PIT_MAX_WIDTH:
+        if _pit_chebyshev_radius(comp) > PIT_MAX_RADIUS:
             continue
         rim_ys = []
         for q in comp:

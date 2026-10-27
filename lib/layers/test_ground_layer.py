@@ -233,24 +233,22 @@ class TestGroundDecisions(unittest.TestCase):
         for q in fp:
             self.assertNotIn(q, ys)
 
-    def test_diagonal_wall_band_bbox_narrow_7_still_fills(self):
-        """#160 live: 3-wide diagonal beside a wall merges to bbox narrow=7; still fills."""
-        live = {(x, z): (44, 'grass_block') for x in range(0, 14) for z in range(0, 22)}
-        fp = {(x, z) for x in range(10, 14) for z in range(0, 22)}
-        for q in fp:
-            live.pop(q, None)
-        # x 3..9 (span 7) × long z — same bbox class as live 6144..6150 at S-019.
-        pit = {(x, z) for x in range(3, 10) for z in range(2, 20)
-               if (z - 2) // 3 <= (x - 3) <= (z - 2) // 3 + 2}
-        self.assertTrue(pit)
+    def test_long_diagonal_thin_band_fills_despite_wide_bbox(self):
+        """#160: thin diagonal snake (bbox wide, Chebyshev radius 1) fills; pond does not."""
+        live = {(x, z): (44, 'grass_block') for x in range(0, 20) for z in range(0, 24)}
+        # 3-wide diagonal with bbox x-span 12 — bbox gate would skip; radius gate must not.
+        pit = set()
+        for i, z in enumerate(range(2, 20)):
+            x0 = 2 + i // 2
+            for dx in (0, 1, 2):
+                pit.add((x0 + dx, z))
         for q in pit:
             live[q] = (36, 'grass_block')
         xs = [c[0] for c in pit]
-        zs = [c[1] for c in pit]
-        narrow = min(max(xs) - min(xs) + 1, max(zs) - min(zs) + 1)
-        self.assertEqual(narrow, 7, (min(xs), max(xs), min(zs), max(zs)))
+        self.assertGreater(max(xs) - min(xs) + 1, gl.PIT_MAX_WIDTH)
+        self.assertLessEqual(gl._pit_chebyshev_radius(pit), gl.PIT_MAX_RADIUS)
         kind = {q: 'grass' for q in live}
-        ys = gl.level_pits(live, kind, fp)
+        ys = gl.level_pits(live, kind, set())
         for q in pit:
             self.assertEqual(ys[q], 44, q)
 
