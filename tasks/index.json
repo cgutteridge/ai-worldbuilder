@@ -65,23 +65,12 @@
       "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
     },
     {
-      "id": 140,
-      "title": "next refuses to move past ground on a cell with unplanned building footprints",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features. Also the fix for the planning-order issue (I-007, snag S-010): the check is that next on a fresh cell offers the proposed buildings before ground. #128 alone does not meet it."
-    },
-    {
       "id": 141,
       "title": "verify errors on landed ground whose skipped footprints no feature covers",
       "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        140
-      ],
+      "blockedBy": [],
       "notes": "Cause: verify only warned about missing specs and decision records, so a cell with half its footprint unbuilt passed with 0 errors (2026-10-27). Deliver: verify reports an error per landed ground layer whose skipped building-footprint columns are not covered by any planned or landed feature, naming the uncovered buildings."
     },
     {
@@ -90,9 +79,7 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [
-        140
-      ],
+      "blockedBy": [],
       "notes": "Cause: morning and site_pages called 48,-45 and 49,-45 complete when about half of 49,-45 was still empty footprint. Deliver: each cell row and the morning report show built vs unbuilt footprint area and the names of unbuilt buildings; a cell with unbuilt footprint cannot show as Completed."
     },
     {

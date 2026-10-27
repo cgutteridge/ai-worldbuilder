@@ -1157,6 +1157,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints). UPDATE 2026-10-27: raised to high because redo, refine and purge all lean on a correct undo, and the stray pillars (I-016) and the void by the walls (I-015) appeared after a cleanup and rebuild of Jubilee. Check whether they are symptoms (not verified) before closing those issues as separate causes. Done 2026-10-27: earliest-prior undo restore; _before_footprints skips under-owner columns. Merged task/138-undo-earliest-prior."
+    },
+    {
+      "id": 140,
+      "title": "next refuses to move past ground on a cell with unplanned building footprints",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features. Also the fix for the planning-order issue (I-007, snag S-010): the check is that next on a fresh cell offers the proposed buildings before ground. #128 alone does not meet it. Done 2026-10-27: next returns needs-feature-plan when ground skipped footprints lack plan_feature. Merged task/140-next-unplanned-footprints."
     }
   ]
 }
