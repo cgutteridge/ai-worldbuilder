@@ -43,6 +43,18 @@ class TestDoorFrames(unittest.TestCase):
         self.assertEqual(len(door_frame_issues(p, lambda x, y, z: None)), 2)
         self.assertEqual(door_frame_issues(p, lambda x, y, z: 'minecraft:stone'), [])
 
+    def test_stepped_corner_clean_once_jamb_solids_built(self):
+        """#164: stepped corner fails without jambs; solid jambs at both door heights clear it.
+
+        Matches guard_door_frames solidity (not footprint wall membership).
+        """
+        p = wall_plan(missing={(4, 49), (4, 50), (6, 49), (6, 50)})
+        self.assertEqual(len(door_frame_issues(p, lambda x, y, z: None)), 4)
+        for x in (4, 6):
+            for y in (49, 50):
+                p.set(x, y, 0, 'bricks')
+        self.assertEqual(door_frame_issues(p, lambda x, y, z: None), [])
+
 
 if __name__ == '__main__':
     unittest.main()
