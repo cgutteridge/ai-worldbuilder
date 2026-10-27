@@ -1059,19 +1059,123 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     return rep
 
 
+def diff_against_before(expected, actual):
+    """Compare a footprint to an expected before_<plan> map (#123).
+
+    Independent of the undo's own erase plan: catches restores that match the
+    journalled write list yet disagree with the pre-build world snapshot.
+
+    @param expected: ``{pos: state}`` from the before_<plan> structure (or equivalent)
+    @param actual: ``{pos: state | None}`` read from the world after undo
+    @returns: ``{'checked', 'mismatches', 'mismatch_sample', 'checked_at'}``
+    """
+    bad = {}
+    for p, want in expected.items():
+        got = actual.get(p)
+        if got is None:
+            got = 'minecraft:air'
+        if not same(want, got):
+            bad[str(p)] = [want, got]
+    return {
+        'checked': len(expected),
+        'mismatches': len(bad),
+        'mismatch_sample': dict(list(bad.items())[:60]),
+        'checked_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+
+def load_before_structure_blocks(structure_meta, m=None, save_root=None):
+    """Absolute world blocks from a site_kit ``before_<plan>`` structure save.
+
+    Tests: FakePaced keeps an in-memory absolute map under ``structures[name]``.
+    Live: gzip ``.nbt`` under ``<save>/generated/<ns>/structures/<local>.nbt``.
+
+    @param structure_meta: ``{'name', 'from', 'to'}`` from a build entry's meta
+    @param m: paced MCP client (or FakePaced); used to find in-memory structures
+    @param save_root: Minecraft save directory; default ``world.json`` ``save_path``
+    @returns: ``{(x, y, z): canonical state}``
+    @raises SystemExit: structure cannot be loaded
+    """
+    name = structure_meta['name']
+    origin = structure_meta['from']
+    structs = getattr(type(m), 'structures', None) if m is not None else None
+    if isinstance(structs, dict) and name in structs:
+        return dict(structs[name])
+    _ensure_world_config()
+    root = save_root or (_CFG or {}).get('save_path')
+    if not root:
+        raise SystemExit(f'cannot load structure {name}: no save_path in world.json')
+    from structure_nbt import absolute_blocks, read_structure_file, structure_file_path
+    path = structure_file_path(root, name)
+    if not path.is_file():
+        raise SystemExit(f'cannot load structure {name}: missing {path}')
+    _size, rel = read_structure_file(path)
+    return absolute_blocks(rel, origin)
+
+
+def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
+    """Fail closed when the undo erase plan disagrees with before_<plan> (#123).
+
+    Compared against the journalled erase values *before* any block write, so a
+    mismatch can abandon the begun entry instead of landing a pit.
+
+    @param footprints: ``[(plan_name, structure_meta, positions), ...]`` captured
+        while the builds were still live
+    @param erase: ``{pos: state}`` the undo ticket will write
+    @param m: paced client (for FakePaced structure maps)
+    @param save_root: optional save directory override
+    @raises SystemExit: any footprint position in ``erase`` differs from the structure
+    """
+    for plan_name, structure_meta, positions in footprints:
+        if not positions:
+            continue
+        expected_all = load_before_structure_blocks(structure_meta, m=m, save_root=save_root)
+        expected = {p: expected_all.get(p, 'minecraft:air') for p in positions if p in erase}
+        if not expected:
+            continue
+        rep = diff_against_before(expected, erase)
+        if rep['mismatches']:
+            sample = json.dumps(rep['mismatch_sample'], indent=1)[:800]
+            raise SystemExit(
+                f'undo {plan_name}: erase plan differs from {structure_meta["name"]} '
+                f'({rep["mismatches"]}/{rep["checked"]} mismatches); refusing before write — '
+                f'see sample:\n{sample}'
+            )
+
+
+def _before_footprints(registry, names):
+    """Capture each live plan's structure meta and cells before an undo voids them.
+
+    @param registry: open CellRegistry
+    @param names: plan names about to be undone
+    @returns: ``[(plan, structure_meta, positions), ...]``
+    """
+    out = []
+    for n in names:
+        cells = registry.recorded(n) or {}
+        live = [e for e in registry.entries(plan=n)
+                if e.kind == 'build' and not e.undone and e.status != 'begun'
+                and e.meta.get('structure')]
+        if cells and live:
+            out.append((n, dict(live[-1].meta['structure']), list(cells)))
+    return out
+
+
 def undo(target, *, strict=True, meta=None):
     """Live Undo through the cell journal: erase a plan (name) or a cell pass ``((tx, tz), pass)``
     back to the earlier owners (air where none), with the same gates as :func:`apply`.
 
     The registry computes the erase from the recorded plans; the entry is journalled ``begun``
     before any write and finished after the readback. A structure template of the erased box is
-    saved first (recorded in the entry's meta).
+    saved first (recorded in the entry's meta). Before writes, the erase plan is compared to each
+    plan's apply-time ``before_<plan>`` structure; a difference abandons the begun entry
+    (#123 — journal readback alone can pass while the world would become a pit).
 
     @param target: plan name or ``(cell, pass_)``
     @param strict: a readback mismatch raises and leaves the entry 'begun'
     @param meta: extra meta journalled with the entry
     @returns: Receipt
-    @raises SystemExit: refused, nothing to undo, or readback mismatch
+    @raises SystemExit: refused, nothing to undo, readback mismatch, or before_<plan> drift
     """
     _ensure_world_config()
     from mc_paced import Paced
@@ -1091,6 +1195,7 @@ def undo(target, *, strict=True, meta=None):
         names = sorted({e.plan for e in registry.entries(cells=[cell])
                         if e.kind == 'build' and e.pass_ == pass_ and not e.undone and e.status != 'begun'
                         and (e.cell == cell or pass_ == 'feature')})
+    footprints = _before_footprints(registry, names)
     positions = [p for n in names for p in (registry.recorded(n) or {})]
     record = dict(meta or {})
     if positions:
@@ -1101,19 +1206,31 @@ def undo(target, *, strict=True, meta=None):
         record['structure'], _res = _structure_backup(m, name, lo, hi)
     writer = McpWriter(m)
     try:
-        receipt = registry.change(Undo(target, strict=strict, meta=record), writer)
+        ticket = registry.begin(Undo(target, strict=strict, meta=record))
+    except (InFlight, Refused) as exc:
+        raise _journal_refusal(f'undo {label}', exc) from exc
+    try:
+        verify_erase_matches_before(footprints, ticket.writes.cells, m)
+    except SystemExit:
+        ticket.abandon(reason='erase plan differs from before_<plan> structure (#123)')
+        raise
+    try:
+        writer(ticket.writes)
+        mark = getattr(blocks, 'mark_written', None)
+        if mark is not None:
+            mark()
+        blocks.flush()
+        actual = blocks.read_many(ticket.writes.cells) if ticket.writes.cells else {}
+        receipt = ticket.finish(actual)
     except Mismatch as exc:
         raise SystemExit(f'undo {label}: readback has {exc.mismatches} mismatches; journal entry '
                          f"{exc.seq} left 'begun' (python scripts/site_recover.py status)") from exc
-    except (InFlight, Refused) as exc:
-        raise _journal_refusal(f'undo {label}', exc) from exc
     try:
         registry.ensure(writer)
     except CellJournalError as exc:
         raise SystemExit(f'undo {label}: landed, but the journal follow-ups failed: {exc}') from exc
     print(f'undo {label}: entry {receipt.seq} {receipt.status}, {receipt.planned} blocks')
     return receipt
-
 
 def _readback_report(plan, actual):
     """Readback report from ``{pos: state}`` read after a flush.
