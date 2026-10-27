@@ -1411,6 +1411,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds. Unblocked 2026-10-27: #156 done. WAVE2 2026-10-27: claimed by orchestrate-rest. WAVE3 2026-10-27: orchestrate-rest continues. Done 2026-10-27: map roof/height hints + entrance snap/rank; merged task/159-building-tags (08feb68)."
+    },
+    {
+      "id": 165,
+      "title": "Planned double doors land as two leaves on a stepped wall",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Split from #164 review. Cause: on stepped walls the second leaf needs a lateral neighbour cell that is wall at b and b+1; pairing across a step (diagonal-adjacent cell) is refused by the frame guard and would put the two leaves in different planes, so do not do that. Seen 2026-10-27: west 40-A/40-B, susu 42-C, retail 57-A plan double and land single. Deliver: after #164 builds the jamb, plan_doors pairs leaves laterally only and builds the step block at the shared step. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: stepped-wall fixture: a double entrance gives two leaves in one plane with door_frame_issues empty; a fixture with no lateral room still falls back to one leaf with the 'no pair cell' line. No live-world test. Helps: every building not aligned to the grid, all worlds. Unblocked 2026-10-27: #164 done. WAVE3: claimed for #165. Done 2026-10-27: lateral coplanar double-leaf pairing; merged task/165-double-doors (a9df704 / merge 3ada7fc)."
     }
   ]
 }
