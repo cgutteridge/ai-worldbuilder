@@ -10,7 +10,7 @@
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "LIVE FAIL after #146 (2026-10-27): facade_plan on jubilee_w93729745 / susu_w33830305 / west_w34391673 / retail_w33830236; susu/jubilee/retail re-applied still show 11 door_to_wall lower-half flags (susu 6, west 3, jubilee 2; retail 0). Doubles short: west 40-A/40-B, susu 42-C, retail 57-A plan 2-leaf but land 1-leaf ('no pair cell'). Cause: feature_build._set_door_leaf clears the outside stoop only — never the inward cell (opposite DIRS[face]), so the storey floor / solid behind the door keeps door_to_wall. Do not invent facade_plan or floor_offset hacks — fix the door clear tool. Deliver: _set_door_leaf (or its caller) clears the inward column at door height the same way as the outside stoop (air through the door opening; leave floor underfoot); unit test that a door with solid inward at b+1/b+2 is cleared and floaters.door_to_wall does not fire; re-apply affected features under site_lock --world southampton-build; west_w34391673 still mismatched (seq 196) — fix/re-apply as part of acceptance. Acceptance: site_patrol (or floaters) shows 0 door_to_wall on those four features; planned double leaves land as 2-leaf where the wall has a pair cell. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Prior notes about #146 absorbing this were wrong — #146 removed the old portal path but left the stoop-only clear."
+      "notes": "LIVE FAIL after #146 (2026-10-27): facade_plan on jubilee_w93729745 / susu_w33830305 / west_w34391673 / retail_w33830236; susu/jubilee/retail re-applied still show 11 door_to_wall lower-half flags (susu 6, west 3, jubilee 2; retail 0). Doubles short: west 40-A/40-B, susu 42-C, retail 57-A plan 2-leaf but land 1-leaf ('no pair cell'). Cause: feature_build._set_door_leaf clears the outside stoop only \u2014 never the inward cell (opposite DIRS[face]), so the storey floor / solid behind the door keeps door_to_wall. Do not invent facade_plan or floor_offset hacks \u2014 fix the door clear tool. Deliver: _set_door_leaf (or its caller) clears the inward column at door height the same way as the outside stoop (air through the door opening; leave floor underfoot); unit test that a door with solid inward at b+1/b+2 is cleared and floaters.door_to_wall does not fire; re-apply affected features under site_lock --world southampton-build; west_w34391673 still mismatched (seq 196) \u2014 fix/re-apply as part of acceptance. Acceptance: site_patrol (or floaters) shows 0 door_to_wall on those four features; planned double leaves land as 2-leaf where the wall has a pair cell. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Prior notes about #146 absorbing this were wrong \u2014 #146 removed the old portal path but left the stoop-only clear."
     },
     {
       "id": 156,
@@ -53,15 +53,6 @@
         156
       ],
       "notes": "Cause: roof:shape, roof:levels and height are in the cached building clips but only building:levels is read (lidar_heightmap.map_levels); entrance=* points are not fetched, and the facade plan (#145) lists entrances from photos only. Deliver: put roof:shape, roof:levels and height in the feature evidence table as hints beside lidar (never an override); fetch entrance points and offer them as candidate door positions snapped to the footprint edge, ranked main before service and emergency. Proof: evidence-table unit tests with a fixture footprint carrying those tags, and a snap test for an entrance node. No live-world test. Helps: any building with mapped tags, all worlds."
-    },
-    {
-      "id": 160,
-      "title": "level_pits fills wall-side voids next to footprints (S-019 / #155 live fail)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Follow-up to #155. LIVE FAIL 2026-10-27: ground --apply on 48,-44 under site_lock planned 35 other pits then readback mismatches; seq 211 rolled back via site_recover. Tops at x 6145–6147, z -5520 stay y=36 vs neighbour (6144,-5520) y=44. Cause: (6146,-5520)/(6147,-5520) skipped by adj-to-footprint guard in level_pits; (6145,-5520) in a candidate component with bbox narrow=6 > PIT_MAX_WIDTH 5. Deliver: retune level_pits so free columns beside a footprint can fill to the outside rim (never raise footprint columns; never use footprint tops as the rim target). Raise PIT_MAX_WIDTH if the live 3-wide band's bbox needs it. Unit test: wall-side pit adjacent to fp fills to rim y; footprint columns unchanged; wide depression still skipped. Acceptance: ground rerun on 48,-44 under site_lock --world southampton-build; those three columns match y=44; no bad fill into footprints. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py. Helps: S-019 / I-015 void-beside-walls."
     },
     {
       "id": 161,
