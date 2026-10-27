@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 139,
+  "nextTaskId": 145,
   "tasks": [
     {
       "id": 130,
@@ -90,6 +90,64 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: with no owner underneath, _prepare_undo restores the prior blob of the LATEST targeted build, so undoing a layer rebuilt over itself leaves the first build's blocks instead of the world before either (seen in the undo test with no ghost base, 2026-10-27). The #123 before_<plan> check is a second oracle that disagrees whenever a plan has several live builds; the 2026-10-27 fix only moved it to the earliest covering snapshot. Deliver: per position, restore the prior from the earliest targeted build that touched it, so the journal alone is correct; then make the snapshot check read the same source or reduce it to pit detection (also removes the interleaved-build false refusal noted in _before_footprints)."
+    },
+    {
+      "id": 139,
+      "title": "Cell-orchestrator skill plans features before building a cell",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Cause: the 2026-10-27 overnight run took `cell_registry.py next` as complete, so cells 48,-45 and 49,-45 went ground, trees, decor with no feature step although their maps hold many buildings (ground skipped ~5,400 building-footprint columns in 49,-45) and were logged complete. Deliver: in .claude/skills/cell-orchestrator/SKILL.md add a per-cell preflight (`cell_registry.py propose-features --cell <c> --record` before ground) and a completion gate: not complete until every footprint the ground report skipped is covered by a planned and landed feature; if features exist on the map but none are planned, stop and say so. Also add to the overnight stop list: the same patrol flag repeating across features. Docs-only; can commit straight to main."
+    },
+    {
+      "id": 140,
+      "title": "next refuses to move past ground on a cell with unplanned building footprints",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: next only offers registry items, so a cell with buildings but no recorded features is indistinguishable from a cell with no buildings and steps ground to trees to decor (2026-10-27, cells 48,-45 and 49,-45). Deliver: when a cell's ground layer skipped building footprints and no plan_feature covers them, next returns a needs-feature-plan item (or runs propose-features --record itself) instead of the trees layer. Test: a fixture cell with one footprint and no features."
+    },
+    {
+      "id": 141,
+      "title": "verify errors on landed ground whose skipped footprints no feature covers",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        140
+      ],
+      "notes": "Cause: verify only warned about missing specs and decision records, so a cell with half its footprint unbuilt passed with 0 errors (2026-10-27). Deliver: verify reports an error per landed ground layer whose skipped building-footprint columns are not covered by any planned or landed feature, naming the uncovered buildings."
+    },
+    {
+      "id": 142,
+      "title": "Status pages and morning report show unbuilt footprint per cell",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [
+        140
+      ],
+      "notes": "Cause: morning and site_pages called 48,-45 and 49,-45 complete when about half of 49,-45 was still empty footprint. Deliver: each cell row and the morning report show built vs unbuilt footprint area and the names of unbuilt buildings; a cell with unbuilt footprint cannot show as Completed."
+    },
+    {
+      "id": 143,
+      "title": "Feature doors land in a one-block vestibule that patrol flags door_to_wall",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them."
+    },
+    {
+      "id": 144,
+      "title": "Decor garden-boundary reads tree canopy as a hedge",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor."
     }
   ]
 }
