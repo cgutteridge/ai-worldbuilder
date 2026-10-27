@@ -12,11 +12,12 @@ This module derives them, cheapest evidence first, and tags each segment with it
                  rear   neighbour plot, edge runs across the plot   (open edge: nothing, no evidence)
   3. CONVENTION  site/gardens/<street>.json says what each role is made of on that street
                (one streetlevel look per street run; per-house overrides by house number).
-  4. AERIAL    a segment whose aerial colour is a continuous dark-green strip is a hedge, whatever
-               the convention says (hedges are the one boundary the z19 aerial can see).
+  4. AERIAL    a segment whose aerial colour is a continuous dark-green strip (ignoring nDSM tree-
+               canopy columns) is a hedge, unless the designer convention vetoes that role with
+               ``type: none`` (hedges are the one boundary the z19 aerial can see; canopy is not a hedge).
 
 No convention for a street = no fence/wall (accuracy over invention); only aerial hedges show.
-Reads the vector map, the aerial and the live ground surface; never an earlier fence build.
+Reads the vector map, the aerial, the lidar tree mask and the live ground surface; never an earlier fence build.
 
   python3 scripts/garden_sources.py --cell 47,-43 [--bbox x0,z0,x1,z1]     # report + overlay PNG
 """
@@ -62,6 +63,51 @@ def role_spec(conv: dict | None, number: str, role: str) -> dict | None:
     t = spec['type']
     return {'type': t, 'block': spec.get('block') or DEFAULT_BLOCK[t],
             'height': int(spec.get('height') or DEFAULT_HEIGHT[t]), 'depth': spec.get('depth')}
+
+
+def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
+    """True when the designer explicitly set this role to ``none`` (blocks aerial hedge).
+
+    Missing street / role is not a veto: aerial hedges may still appear. An override or
+    street entry with ``type: none`` (or a null / empty spec) is a veto.
+
+    @param conv: street convention dict from ``load_convention``, or None
+    @param number: house number string
+    @param role: ``front`` / ``side_front`` / ``side_back`` / ``rear``
+    @returns: whether aerial hedge promotion is forbidden for this role
+    """
+    if not conv:
+        return False
+    over = (conv.get('overrides') or {}).get(str(number), {})
+    if role in over:
+        spec = over[role]
+        return not spec or spec.get('type') in (None, 'none')
+    if role in conv:
+        spec = conv[role]
+        return not spec or spec.get('type') in (None, 'none')
+    return False
+
+
+def tree_canopy_columns(cell: tuple[int, int], maps=None) -> set[tuple[int, int]]:
+    """Columns whose lidar heightmap kind is tree / tree-over-roof (nDSM canopy mask).
+
+    @param cell: ``(tx, tz)``
+    @param maps: optional ``lidar_heightmap.Maps`` (tests); default is the shared lidar Maps
+    @returns: set of ``(x, z)`` canopy columns; empty when lidar is unavailable
+    """
+    import numpy as np
+    import lidar_heightmap as L
+
+    try:
+        hm = (maps or L.Maps()).of(cell)
+    except Exception:
+        return set()
+    kind = hm['kind']
+    x0, z0 = int(hm['x0']), int(hm['z0'])
+    out: set[tuple[int, int]] = set()
+    for i, j in zip(*np.nonzero((kind == L.TREE) | (kind == L.TREE_OVER_ROOF))):
+        out.add((x0 + int(i), z0 + int(j)))
+    return out
 
 
 def plots_for(box: tuple[int, int, int, int], margin: int = 60):
@@ -204,10 +250,20 @@ def straighten(cells) -> list:
     return out
 
 
-def hedge_share(cells: list, rgb: dict) -> float:
-    """Share of the cells whose aerial colour is dark saturated green (hedge/shrub strip)."""
+def hedge_share(cells: list, rgb: dict, canopy: set | None = None) -> float:
+    """Share of non-canopy cells whose aerial colour is dark saturated green (hedge/shrub strip).
+
+    Tree-canopy columns (nDSM / lidar tree mask) are excluded so woodland crowns are not
+    read as garden hedges.
+
+    @param cells: candidate boundary columns
+    @param rgb: ``{(x, z): (r, g, b)}`` aerial samples
+    @param canopy: columns to ignore (tree canopy); None means ignore none
+    @returns: fraction in ``[0, 1]``, or 0 when no scorables remain
+    """
     from ground_sources import aerial_class
-    seen = [aerial_class(rgb[q]) for q in cells if q in rgb]
+    skip = canopy or ()
+    seen = [aerial_class(rgb[q]) for q in cells if q in rgb and q not in skip]
     return (sum(1 for c in seen if c == 'shade') / len(seen)) if seen else 0.0
 
 
@@ -215,11 +271,13 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
     """{(x, z): (type, block, height)} fence/wall/hedge columns for one cell, plus a report.
 
     ``rgb`` is the cell's aerial sampler output (ground_sources.aerial_rgb); fetched if omitted.
+    Aerial hedge promotion ignores nDSM tree-canopy columns and respects designer ``type: none``.
     """
     from ground_sources import aerial_rgb, cell_box
 
     box = cell_box(cell)
     rgb = rgb if rgb is not None else aerial_rgb(cell)
+    canopy = tree_canopy_columns(cell)
     owner, info, street, idx = plots_for(box)
     seg = segments(owner, info, street, idx, box)
     out, rep = {}, []
@@ -227,11 +285,14 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         meta = info[i]
         conv = load_convention(meta['street'])
         spec = role_spec(conv, meta['number'], role)
+        vetoed = role_vetoed(conv, meta['number'], role)
         near = [q for q in cells if math.hypot(q[0] - meta['centre'][0], q[1] - meta['centre'][1]) <= 30]
-        share = hedge_share(near, rgb) if len(near) >= 4 else 0.0   # only the house's own garden
+        share = hedge_share(near, rgb, canopy=canopy) if len(near) >= 4 else 0.0   # only the house's own garden
         src = 'convention' if spec else 'none'
-        if share >= HEDGE_SHARE and len(cells) >= 4:
+        if share >= HEDGE_SHARE and len(cells) >= 4 and not vetoed:
             spec, src = {'type': 'hedge', 'block': HEDGE_BLOCK, 'height': 2, 'depth': None}, 'aerial hedge'
+        elif share >= HEDGE_SHARE and len(cells) >= 4 and vetoed:
+            src = 'aerial hedge vetoed'
         if spec and spec.get('depth') and role.startswith('side'):
             fx, fz = meta['foot'] or meta['centre']
             cells = [q for q in cells if math.hypot(q[0] - fx, q[1] - fz) <= spec['depth'] + 12]
