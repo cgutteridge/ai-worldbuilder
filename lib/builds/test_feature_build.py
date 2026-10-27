@@ -749,6 +749,8 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertIn(lintel, b.keep)
         self.assertIn('bricks', b.p.cells.get(lintel, ''), lintel)
         self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
+        self.assertTrue(hasattr(b.p, 'keep') and lintel in b.p.keep,
+                        'plan.keep must carry door keeps for apply clash')
 
 
 class ZonesSpecTest(unittest.TestCase):

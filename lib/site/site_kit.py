@@ -996,10 +996,12 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         plans = ', '.join(sorted({f.plan for f in flight}))
         raise SystemExit(f'{plan.name}: cells are in an aborted apply ({plans}); '
                          'python scripts/site_recover.py status')
-    # clash report from the journal's ownership: ghost owners yield (never clash); begun excluded
+    # clash report from the journal's ownership: ghost owners yield (never clash); begun excluded.
+    # ``plan.keep`` (door openings / keep_edits stoops) may overwrite earlier builds (#143).
+    keep = set(getattr(plan, 'keep', ()) or ())
     owned = view.owned(plan.cells, exclude=set(modifies) | {plan.name}, real_only=True)
     clash = {str(q): [owned[q][0], owned[q][1], st] for q, st in plan.cells.items()
-             if q in owned and owned[q][1] != st}
+             if q in owned and owned[q][1] != st and q not in keep}
     if clash:
         (OUT / f'{plan.name}-clashes.json').write_text(json.dumps(clash, indent=1))
         raise SystemExit(f'{len(clash)} cells belong to earlier builds; see {plan.name}-clashes.json')
