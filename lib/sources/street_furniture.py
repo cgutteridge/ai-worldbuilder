@@ -114,43 +114,101 @@ def recipe(kind: str) -> list[tuple[int, str]]:
     return list(RECIPES[kind])
 
 
-def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
-    """Designer-proposed furniture for one cell from ``decor-furniture.json``.
+BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence'})
 
-    File shape: ``{"tx,tz": {"evidence": "...", "items": [{"x","z","kind","note"?}]}}``.
+
+def _load_designer_entry(cell: tuple[int, int], path: Path | None = None) -> dict:
+    """Raw designer JSON entry for one cell, or ``{}`` when missing/invalid."""
+    spec = Path(path) if path is not None else DESIGNER_SPEC
+    if not spec.is_file():
+        return {}
+    try:
+        data = json.loads(spec.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entry = data.get(f'{cell[0]},{cell[1]}')
+    return entry if isinstance(entry, dict) else {}
+
+
+def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
+    """Designer-proposed furniture and barrier strips for one cell.
+
+    File shape: ``{"tx,tz": {"evidence": "...", "items": [
+      {"x","z","kind","note"?},
+      {"kind":"hedge","cells":[[x,z],...],"note"?,"allow_against_build"?}
+    ]}}``.
     Missing file or missing cell key → empty list.
 
     @param cell: (tx, tz)
     @param path: override spec path (tests)
-    @returns: item dicts with at least ``x``, ``z``, ``kind``
+    @returns: item dicts (furniture with ``x``/``z``/``kind``, or barriers with ``cells``)
     """
-    spec = Path(path) if path is not None else DESIGNER_SPEC
-    if not spec.is_file():
+    entry = _load_designer_entry(cell, path)
+    if not entry:
         return []
-    try:
-        data = json.loads(spec.read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
-    entry = data.get(f'{cell[0]},{cell[1]}')
-    if not isinstance(entry, dict):
-        return []
+    evidence = str(entry['evidence']) if entry.get('evidence') else ''
     out: list[dict] = []
     for raw in entry.get('items') or []:
         if not isinstance(raw, dict):
             continue
         kind = raw.get('kind')
-        if kind not in RECIPES:
+        if kind in RECIPES:
+            try:
+                x, z = int(raw['x']), int(raw['z'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            item = {'x': x, 'z': z, 'kind': kind, 'source': 'designer'}
+            if raw.get('note'):
+                item['note'] = str(raw['note'])
+            if evidence:
+                item['evidence'] = evidence
+            out.append(item)
             continue
-        try:
-            x, z = int(raw['x']), int(raw['z'])
-        except (KeyError, TypeError, ValueError):
+        if kind in BARRIER_KINDS and raw.get('cells'):
+            cells = []
+            for c in raw['cells']:
+                try:
+                    cells.append([int(c[0]), int(c[1])])
+                except (TypeError, ValueError, IndexError):
+                    continue
+            if not cells:
+                continue
+            item = {
+                'kind': kind,
+                'cells': cells,
+                'source': 'designer',
+                'allow_against_build': bool(raw.get('allow_against_build', kind == 'hedge')),
+            }
+            if raw.get('note'):
+                item['note'] = str(raw['note'])
+            if evidence:
+                item['evidence'] = evidence
+            out.append(item)
+    return out
+
+
+def designer_observations(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
+    """Unresolved photo/aerial observations for one cell (no coordinate yet).
+
+    File shape under the cell key: ``"observations": [{"kind","note","unresolved_reason"?}]``.
+
+    @param cell: (tx, tz)
+    @param path: override spec path (tests)
+    @returns: observation dicts for the decor plan
+    """
+    entry = _load_designer_entry(cell, path)
+    out: list[dict] = []
+    for raw in entry.get('observations') or []:
+        if not isinstance(raw, dict) or not raw.get('kind'):
             continue
-        item = {'x': x, 'z': z, 'kind': kind, 'source': 'designer'}
+        obs = {'kind': str(raw['kind'])}
         if raw.get('note'):
-            item['note'] = str(raw['note'])
-        if entry.get('evidence'):
-            item['evidence'] = str(entry['evidence'])
-        out.append(item)
+            obs['note'] = str(raw['note'])
+        if raw.get('unresolved_reason'):
+            obs['unresolved_reason'] = str(raw['unresolved_reason'])
+        elif entry.get('evidence'):
+            obs['note'] = obs.get('note') or str(entry['evidence'])
+        out.append(obs)
     return out
 
 

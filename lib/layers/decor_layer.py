@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Layered decor pass for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 4), §2, §3.
 
-Decor places OSM-mapped boundary features (hedges, brick walls, iron-bar fences) plus
-street furniture (benches, bins, bike racks, lamp posts, bollards, signs) from mapped
-points or a designer spec (``reference/decor-furniture.json``). Barriers sit on soft
-ground; furniture sits on paving, never on a path-line column or against a build.
-Placed only where the live block is air (or a stem/flower, as in §10) and not owned by a
-neighbour or by another mask, clipped to the cell. Then any wall or fence pieces of the same
-type that one extra block could link (face to face, diagonal is disjoint) are joined, one
-block per join, repeating until none remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
+Decor builds from a decor plan (#150): aerial/photo/map/designer barriers and street
+furniture, each with shared provenance. Barriers sit on soft ground; furniture sits on
+paving, never on a path-line column. Building-border hedges from the aerial may sit
+against a footprint; other barriers and furniture stay clear of builds. Items the plan
+cannot resolve are listed, not silently skipped. Placed only where the live block is air
+(or a stem/flower, as in §10) and not owned by a neighbour or by another mask, clipped to
+the cell. Then any wall or fence pieces of the same type that one extra block could link
+(face to face, diagonal is disjoint) are joined, one block per join, repeating until none
+remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
 clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
 
   python3 scripts/decor_layer.py --cell 48,-44            # dry run
@@ -19,6 +20,8 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from script_env import ROOT  # noqa: E402
 
@@ -26,6 +29,8 @@ from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_ai
                           load_masked_positions, warm_surface_probe)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
+import decor_plan as dplan  # noqa: E402
+import provenance as prov  # noqa: E402
 import street_furniture as sf  # noqa: E402
 
 
@@ -67,12 +72,47 @@ def on_carriageway(world: World, x: int, z: int) -> bool:
     return False
 
 
+def may_join_at(
+    pos: tuple[int, int, int],
+    mat: str,
+    *,
+    cell: tuple[int, int],
+    near1: set,
+    allow_near1_mats: set[str],
+    owned: set,
+    masked: set,
+    world: World,
+) -> bool:
+    """True when ``join_pieces`` may place ``mat`` at ``pos``.
+
+    Footprint-ring columns (``near1``) are banned by default. Only materials that
+    already have ``allow_against_build`` placements (building-border hedges) may
+    join into that ring. Live block must be air/flower, and the spot must not be
+    owned or masked.
+
+    @param pos: candidate (x, y, z)
+    @param mat: joinable block id being considered
+    @param cell: (tx, tz) cell bounds
+    @param near1: footprint and structure columns dilated by 1
+    @param allow_near1_mats: materials already placed with allow_against_build
+    @param owned: neighbour-owned block positions
+    @param masked: positions owned by another pass mask
+    @param world: live or planning world
+    @returns: whether the join candidate is allowed
+    """
+    xz = (pos[0], pos[2])
+    if xz in near1 and mat not in allow_near1_mats:
+        return False
+    return (cell_contains(cell, pos[0], pos[2])
+            and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
+
+
 def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
                 present: dict[tuple[int, int, int], str] | None = None) -> dict[tuple[int, int, int], str]:
     """Extra blocks that link separate walls/fences of the same type, one block per join.
 
     Pieces touch only face to face (diagonal is disjoint). A candidate is an empty spot
-    (`can_place(pos)`) with face neighbours in two or more different pieces of one type;
+    (`can_place(pos, mat)`) with face neighbours in two or more different pieces of one type;
     live same-type blocks next to the plan count as pieces too (`live(pos)` -> block id), as
     do `present` blocks (planned spots where that type is already standing).
     Supported candidates (solid block below, or planned) go first, then the lowest x, y, z;
@@ -103,7 +143,7 @@ def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
                     parent[find(p)] = find(q)
         while True:
             cands = {(p[0] + d[0], p[1] + d[1], p[2] + d[2]) for p in nodes for d in NEIGHBOURS} - nodes
-            cands = [c for c in cands if can_place(c) and c not in found and c not in added]
+            cands = [c for c in cands if can_place(c, mat) and c not in found and c not in added]
 
             def supported(c):
                 below = (c[0], c[1] - 1, c[2])
@@ -136,34 +176,46 @@ def place_furniture(
     near1: set,
     owned: set,
     masked: set,
-) -> tuple[dict[tuple[int, int, int], str], list[dict]]:
+) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place street-furniture recipes on paving columns.
 
-    Skips path-line columns (``way``), columns against a build (``near1``), non-paving
-    surfaces, and any recipe spot that is not air / is owned or masked.
+    Skips path-line columns (``way``), columns against a build (``near1``) unless the
+    item sets ``allow_against_build``, non-paving surfaces, and any recipe spot that is
+    not air / is owned or masked. Failed rows are returned as unplaced plan-shaped dicts.
 
     @param cell: (tx, tz)
-    @param items: ``{x,z,kind,source}`` from map and/or designer
+    @param items: ``{x,z,kind,source}`` from the decor plan
     @param world: live or planning world
     @param way: mapped road / path / water columns
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
-    @returns: (placements, report rows that were placed)
+    @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
     from surface_probe import surface_y
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
+    unplaced: list[dict] = []
     for item in items:
         x, z, kind = int(item['x']), int(item['z']), item['kind']
         q = (x, z)
-        if not cell_contains(cell, *q) or q in near1 or q in way:
+        allow = bool(item.get('allow_against_build'))
+        if not cell_contains(cell, *q):
+            unplaced.append(dplan.mark_unplaced(item, 'outside cell'))
+            continue
+        if q in way:
+            unplaced.append(dplan.mark_unplaced(item, 'on path/road/water column'))
+            continue
+        if q in near1 and not allow:
+            unplaced.append(dplan.mark_unplaced(item, 'against build'))
             continue
         if column_ground_kind(world, x, z) not in sf.PAVING_KINDS:
+            unplaced.append(dplan.mark_unplaced(item, 'not on paving'))
             continue
         top = surface_y(world, x, z)
         if not top:
+            unplaced.append(dplan.mark_unplaced(item, 'no surface'))
             continue
         stack = sf.recipe(kind)
         voxels: dict[tuple[int, int, int], str] = {}
@@ -175,22 +227,121 @@ def place_furniture(
                 break
             voxels[pos] = block
         if not ok:
+            unplaced.append(dplan.mark_unplaced(item, 'blocked by live or owned block'))
             continue
         found.update(voxels)
         row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
                'blocks': len(voxels)}
         if item.get('note'):
             row['note'] = item['note']
+        if item.get('plan_id'):
+            row['plan_id'] = item['plan_id']
         report.append(row)
-    return found, report
+    return found, report, unplaced
+
+
+def place_barriers_from_plan(
+    cell: tuple[int, int],
+    items: Sequence[Mapping[str, Any]],
+    world: World,
+    *,
+    way: set,
+    near1: set,
+    owned: set,
+    masked: set,
+) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
+    """Place barrier plan items (hedges, walls, fences) onto soft ground.
+
+    Building-border hedges with ``allow_against_build`` may occupy the near1 ring;
+    other barriers still skip it. Columns that cannot be placed are returned as
+    unplaced copies with an unresolved reason.
+
+    @param cell: (tx, tz)
+    @param items: barrier role plan items
+    @param world: live or planning world
+    @param way: mapped road / path / water columns
+    @param near1: footprint and structure columns dilated by 1
+    @param owned: neighbour-owned block positions
+    @param masked: positions owned by another pass mask
+    @returns: (placements, placed report rows, unplaced items)
+    """
+    from surface_probe import surface_y
+
+    found: dict[tuple[int, int, int], str] = {}
+    present: dict[tuple[int, int, int], str] = {}
+    report: list[dict] = []
+    unplaced: list[dict] = []
+    for item in items:
+        if item.get('role') != 'barrier':
+            continue
+        if prov.is_unresolved(item.get('provenance')):
+            continue
+        kind = item.get('kind')
+        mat = item.get('block') or dplan.DEFAULT_BLOCK.get(kind or '', '')
+        height = int(item.get('height') or dplan.DEFAULT_HEIGHT.get(kind or '', 1))
+        allow = bool(item.get('allow_against_build'))
+        cells = item.get('cells') or []
+        if not cells:
+            unplaced.append(dplan.mark_unplaced(item, 'no cells'))
+            continue
+        for raw in cells:
+            q = (int(raw[0]), int(raw[1]))
+            if not cell_contains(cell, *q):
+                continue
+            if q in near1 and not allow:
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'against build',
+                ))
+                continue
+            top = surface_y(world, *q)
+            if not top or q in way:
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'on road/path/water or no surface',
+                ))
+                continue
+            if on_carriageway(world, q[0], q[1]):
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'on carriageway',
+                ))
+                continue
+            if top[1].endswith('_carpet'):
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'on carpet top',
+                ))
+                continue
+            col_ok = False
+            for i in range(1, height + 1):
+                pos = (q[0], top[0] + i, q[1])
+                if not is_air(world.block(*pos)):
+                    continue
+                if pos in owned or pos in masked or pos in found:
+                    continue
+                found[pos] = mat
+                col_ok = True
+            if col_ok:
+                report.append({
+                    'x': q[0], 'z': q[1], 'kind': kind, 'block': mat, 'height': height,
+                    'source': (item.get('provenance') or {}).get('source', ''),
+                    'plan_id': item.get('id'),
+                    'allow_against_build': allow,
+                })
+            else:
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'blocked by live or owned block',
+                ))
+    return found, report, unplaced
 
 
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     """Plan barriers and street furniture for one cell. Returns (placements, stats).
 
-    Barriers: soft ground only, never within a block of a building footprint or structure.
-    Furniture: paving only, never on a path-line column or against a build. Sources are
-    mapped OSM points and ``reference/decor-furniture.json`` (designer).
+    Builds a decor plan (#150) from aerial, photos, map and designer, then places
+    resolved rows. Unresolved plan items and failed placements are listed in stats.
     """
     from ground_sources import OSMGround
     from osm_footprints import OSMIndex
@@ -203,62 +354,71 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     near = fp | owned_cols
     near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
     vmap = OSMGround(cell)
-    found: dict[tuple[int, int, int], str] = {}
-    present: dict[tuple[int, int, int], str] = {}
-    stats = Counter()
-    from garden_sources import garden_barriers
-    groups = [(vmap.hedge, 'oak_leaves[persistent=true]', 2), (vmap.wall, 'brick_wall', 1),
-              (vmap.fence, 'iron_bars', 1)]
-    mapped = {q for g in groups for q in g[0]}
-    by_kind: dict = {}
-    for q, (_t, blk, gh) in garden_barriers(cell).items():     # derived per-parcel garden boundaries
-        if q not in mapped:                                    # a mapped barrier wins
-            by_kind.setdefault((blk, gh), set()).add(q)
-    groups += [(cells, blk, gh) for (blk, gh), cells in sorted(by_kind.items())]
-    stats['garden columns'] = sum(len(c) for c in by_kind.values())
     warm_surface_probe(world, cell[0] * 128 - 2, cell[1] * 128 - 2,
                        cell[0] * 128 + 129, cell[1] * 128 + 129)           # batch reads (#110)
     way = set(vmap.road) | set(vmap.feat) | set(vmap.water)      # mapped road, path or water columns
-    for cells, mat, h in groups:
-        for q in sorted(cells):
-            if not cell_contains(cell, *q) or q in near1:
+
+    decor = dplan.build_decor_plan(
+        cell,
+        map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
+        map_furniture=list(vmap.furniture),
+        designer_items=sf.designer_items(cell),
+        photo_observations=sf.designer_observations(cell),
+        footprint={q for q in fp if cell_contains(cell, *q)},
+    )
+    unresolved = list(dplan.unresolved_items(decor))
+
+    barrier_items = [
+        i for i in decor['items']
+        if i.get('role') == 'barrier' and not prov.is_unresolved(i.get('provenance'))
+    ]
+    found, barrier_report, barrier_unplaced = place_barriers_from_plan(
+        cell, barrier_items, world, way=way, near1=near1, owned=owned, masked=masked,
+    )
+    present: dict[tuple[int, int, int], str] = {}
+    # Re-scan for present standing pieces (join_pieces needs them).
+    for item in barrier_items:
+        mat = item.get('block') or dplan.DEFAULT_BLOCK.get(item.get('kind') or '', '')
+        for raw in item.get('cells') or []:
+            q = (int(raw[0]), int(raw[1]))
+            if not cell_contains(cell, *q):
                 continue
             top = surface_y(world, *q)
             if top and top[1] == mat:
-                present[(q[0], top[0], q[1])] = mat   # already standing: a piece for joining
-            if not top or q in way:
-                stats['on road/path/water'] += 1
-                continue
-            if on_carriageway(world, q[0], q[1]):
-                stats['on carriageway'] += 1
-                continue
-            if top[1].endswith('_carpet'):      # structure top (roof/deck), not ground: posts would float
-                stats['on carpet top'] += 1
-                continue
-            for i in range(1, h + 1):
-                pos = (q[0], top[0] + i, q[1])
-                if not is_air(world.block(*pos)):
-                    stats['blocked_live'] += 1
+                present[(q[0], top[0], q[1])] = mat
+            if top:
+                for i in range(1, int(item.get('height') or 1) + 1):
+                    pos = (q[0], top[0] + i, q[1])
                     if bare(world.block(*pos)) == f'minecraft:{mat}':
                         present[pos] = mat
-                elif pos in owned or pos in masked:
-                    stats['blocked_owned'] += 1
-                else:
-                    found[pos] = mat
 
-    items = sf.merge_items(sf.map_items(vmap.furniture), sf.designer_items(cell))
-    furniture, furniture_report = place_furniture(
-        cell, items, world, way=way, near1=near1, owned=owned, masked=masked,
+    furniture_items = dplan.resolved_furniture(decor)
+    furniture, furniture_report, furniture_unplaced = place_furniture(
+        cell, furniture_items, world, way=way, near1=near1, owned=owned, masked=masked,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
     found.update(furniture)
-    stats['furniture'] = len(furniture_report)
-    stats['furniture map'] = sum(1 for r in furniture_report if r['source'] == 'map')
-    stats['furniture designer'] = sum(1 for r in furniture_report if r['source'] == 'designer')
 
-    def can_place(pos):
-        return (cell_contains(cell, pos[0], pos[2]) and (pos[0], pos[2]) not in near1
-                and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
+    stats: Counter = Counter()
+    stats['furniture'] = len(furniture_report)
+    stats['furniture map'] = sum(1 for r in furniture_report if r['source'] == 'vector_map')
+    stats['furniture designer'] = sum(
+        1 for r in furniture_report if r['source'] in ('aerial', 'photo_read', 'inference')
+    )
+    stats['barriers'] = len(barrier_report)
+    stats['unresolved'] = len(unresolved)
+    stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced)
+
+    # Joins may enter near1 only for materials already placed with allow_against_build.
+    allow_near1_mats = {
+        r['block'] for r in barrier_report if r.get('allow_against_build') and r.get('block')
+    }
+
+    def can_place(pos, mat=''):
+        return may_join_at(
+            pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
+            owned=owned, masked=masked, world=world,
+        )
 
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)
     found.update(joins)
@@ -269,7 +429,39 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['dropped_outside_cell'] = dropped
     stats['blocks'] = len(clipped)
     stats['furniture_report'] = furniture_report  # list, not a Counter value; printed by run()
+    stats['barrier_report'] = barrier_report
+    stats['unresolved_items'] = unresolved
+    stats['unplaced_items'] = barrier_unplaced + furniture_unplaced
+    stats['decor_plan'] = decor
     return clipped, stats
+
+
+def _print_plan_notes(stats: dict) -> None:
+    """Print furniture, unresolved and unplaced rows from plan_cell stats."""
+    furniture_report = stats.get('furniture_report') or []
+    if furniture_report:
+        print('  street furniture:')
+        for row in furniture_report:
+            note = f" ({row['note']})" if row.get('note') else ''
+            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{note}")
+    barrier_report = stats.get('barrier_report') or []
+    if barrier_report:
+        print('  barriers:')
+        for row in barrier_report:
+            flag = ' against-build' if row.get('allow_against_build') else ''
+            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{flag}")
+    unresolved = stats.get('unresolved_items') or []
+    if unresolved:
+        print(f'  unresolved ({len(unresolved)}):')
+        for item in unresolved:
+            reason = (item.get('provenance') or {}).get('unresolved_reason', '')
+            print(f"    {item.get('id')} {item.get('kind')}: {reason}")
+    unplaced = stats.get('unplaced_items') or []
+    if unplaced:
+        print(f'  unplaced ({len(unplaced)}):')
+        for item in unplaced:
+            reason = (item.get('provenance') or {}).get('unresolved_reason', '')
+            print(f"    {item.get('id')} {item.get('kind')}: {reason}")
 
 
 def run(cell: tuple[int, int]) -> int:
@@ -280,14 +472,19 @@ def run(cell: tuple[int, int]) -> int:
     plan = Plan(name)
     placed, stats = plan_cell(cell, plan, fresh_planning_world())
     furniture_report = stats.pop('furniture_report', [])
+    barrier_report = stats.pop('barrier_report', [])
+    unresolved = stats.pop('unresolved_items', [])
+    unplaced = stats.pop('unplaced_items', [])
+    stats.pop('decor_plan', None)
     kinds = Counter(placed.values())
     print(f'{name}: {dict(stats)}')
     print(f'  by block: {dict(kinds)}')
-    if furniture_report:
-        print('  street furniture:')
-        for row in furniture_report:
-            note = f" ({row['note']})" if row.get('note') else ''
-            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{note}")
+    _print_plan_notes({
+        'furniture_report': furniture_report,
+        'barrier_report': barrier_report,
+        'unresolved_items': unresolved,
+        'unplaced_items': unplaced,
+    })
     if placed:
         preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
         apply(plan, dry=True, modifies=ignored_builds(cell))
@@ -311,14 +508,36 @@ def apply_cell(cell: tuple[int, int]) -> int:
     world = World()
     placed, stats = plan_cell(cell, plan, world)
     furniture_report = stats.pop('furniture_report', [])
+    barrier_report = stats.pop('barrier_report', [])
+    unresolved = stats.pop('unresolved_items', [])
+    unplaced = stats.pop('unplaced_items', [])
+    decor = stats.pop('decor_plan', None)
     mask = build_mask('decor', cell, name, placed, lambda p: is_air(world.block(*p)))
     print(f'{name}: {len(placed)} blocks ({dict(stats)})')
-    if furniture_report:
-        for row in furniture_report:
-            print(f"  furniture {row['kind']} at {row['x']},{row['z']} source={row['source']}")
+    _print_plan_notes({
+        'furniture_report': furniture_report,
+        'barrier_report': barrier_report,
+        'unresolved_items': unresolved,
+        'unplaced_items': unplaced,
+    })
+    meta = {
+        'furniture': furniture_report,
+        'barriers': barrier_report,
+        'unresolved': [
+            {'id': i.get('id'), 'kind': i.get('kind'),
+             'reason': (i.get('provenance') or {}).get('unresolved_reason', '')}
+            for i in unresolved
+        ],
+        'unplaced': [
+            {'id': i.get('id'), 'kind': i.get('kind'),
+             'reason': (i.get('provenance') or {}).get('unresolved_reason', '')}
+            for i in unplaced
+        ],
+    }
+    if decor is not None:
+        meta['plan_item_count'] = len(decor.get('items') or [])
     rb = apply(plan, modifies=ignored_builds(cell), stage='decor', cell=cell,
-               strict=True, meta={'furniture': furniture_report} if furniture_report else None,
-               mask=mask)
+               strict=True, meta=meta, mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 

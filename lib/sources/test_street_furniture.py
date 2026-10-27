@@ -86,16 +86,32 @@ class DesignerSpec(unittest.TestCase):
                         {'x': 6201, 'z': -5550, 'kind': 'not_a_kind'},
                         {'x': 6202, 'z': -5550},  # missing kind
                         'skip-me',
+                        {'kind': 'hedge', 'cells': [[6210, -5580], [6211, -5580]],
+                         'note': 'Retail border', 'allow_against_build': True},
+                    ],
+                    'observations': [
+                        {'kind': 'bench', 'note': 'more plaza seating',
+                         'unresolved_reason': 'visible in aerial but xy unclear'},
                     ],
                 },
                 '0,0': {'items': [{'x': 1, 'z': 2, 'kind': 'bollard'}]},
             }))
             items = sf.designer_items((48, -44), path)
-        self.assertEqual(len(items), 1)
+            obs = sf.designer_observations((48, -44), path)
+            missing_items = sf.designer_items((9, 9), path)
+            missing_obs = sf.designer_observations((9, 9), path)
+        self.assertEqual(len(items), 2)
         self.assertEqual(items[0]['kind'], 'bench')
         self.assertEqual(items[0]['source'], 'designer')
         self.assertEqual(items[0]['evidence'], 'aerial sheet + street photo')
-        self.assertEqual(sf.designer_items((9, 9), path), [])
+        self.assertEqual(items[1]['kind'], 'hedge')
+        self.assertEqual(items[1]['cells'], [[6210, -5580], [6211, -5580]])
+        self.assertTrue(items[1]['allow_against_build'])
+        self.assertEqual(len(obs), 1)
+        self.assertEqual(obs[0]['kind'], 'bench')
+        self.assertIn('unclear', obs[0]['unresolved_reason'])
+        self.assertEqual(missing_items, [])
+        self.assertEqual(missing_obs, [])
 
     def test_merge_prefers_map_over_designer_at_same_column(self):
         mapped = sf.map_items([(10, 20, 'bench')])
