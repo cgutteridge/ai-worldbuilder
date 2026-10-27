@@ -4,15 +4,6 @@
   "nextTaskId": 154,
   "tasks": [
     {
-      "id": 136,
-      "title": "Purge scope: everything above ghost",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: the purge skill offers element, cell and project, so 'purge the non-ghost stuff' was first read as the project reset, which also wipes ghost. Add a fourth scope to the purge skill: count from the new cells view, undo cell by cell with the new whole-cell command, then retire records and prove each cell is ghost only."
-    },
-    {
       "id": 142,
       "title": "Status pages and morning report show unbuilt footprint per cell",
       "status": "todo",
