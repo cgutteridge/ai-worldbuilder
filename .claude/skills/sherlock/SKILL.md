@@ -14,7 +14,11 @@ Tone: Sherlock Holmes, lightly. An occasional "the game is afoot" or "elementary
 3. **Regroup.** Say, with reasons: this snag has a different cause, move it out (`move`); these two issues are the same case, merge them (`merge`); this issue is not worth fixing (`wontfix`); this one looks resolved by work already merged (check its fix log and `sync`).
 4. **Find fixes ready for review.** Issues at `fix-landed`; and issues where a fix is logged but the element was not redesigned since (say which element needs a `redo`/`refine`).
 5. **Propose tasks.** For causes with no fix yet, draft system-tracker tasks (title, cause, which snags/issue they cover, the check line per snag). Add with `task-index-manager` only when the owner says yes. Tool tasks go to `tasks/`; place work does not.
-6. **Say what to do next**, as a sequence: "do tasks 1, 2 and 4, then redo Jubilee and the ground in 48,-44, then call me back to review I-004 and I-007."
+6. **Say what to do next**, as a sequence: "do the pitched-roof and decor-finish tasks, then redo Jubilee and the ground in 48,-44, then call me back to review the window glazing (I-004) and unproposed features (I-007) issues."
+
+## Name things, never just number them
+
+An ID alone (I-004, S-011, #118, "task 2") means nothing to the owner. Every mention, in reports, sequences and above all in a question the owner must answer, gives the plain title first and the ID after: "log the vector-map fix (#113) on the plaza-and-paths issue (I-001)?", not "log #113 on I-001?". A question must stand on its own: say what the action does and what it touches, so the owner can answer without scrolling back.
 
 ## Grouping check before a review
 
