@@ -41,7 +41,7 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   not treated as another building's footprint. Dry run still prints the
   footprint counts, so check `cover` after clipping.
 - optional `zones` — per-label lidar roof plateaus **within one footprint**
-  (one vector way, several flat roof heights). Use when a single `storeys`
+  (one vector way, several roof heights). Use when a single `storeys`
   count cannot express terraced roofs (e.g. SUSU w33830305 with plateaus at
   41/45/46/47/48/50 m AOD). Example:
 
@@ -60,10 +60,12 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
   bucket on the building's rotated grid so zone edges are straight runs.
   Walls rise from **local** lidar ground so downhill faces gain storeys.
+  With `roofs[label].kind == "flat"`, each zone is a flat deck. With
+  `kind == "pitched"`, within each zone a lidar ridge becomes stair-slab
+  slopes from the zone eave up to the ridge; flat plateaus stay flat.
   Roof edging is optional via `roofs[label].edge` (default none — no
   parapet, no flat overhang fringe). Facades, doors, and roofs reuse the
-  same label keys. Requires `roofs[label].kind == "flat"`. Dry run prints
-  `footprint osm=N readable=M pad=P cover=C%`.
+  same label keys. Dry run prints `footprint osm=N readable=M pad=P cover=C%`.
 
 Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial). Do not copy a peer spec or a per-run build script. Do
