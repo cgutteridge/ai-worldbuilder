@@ -234,6 +234,16 @@ class TestOwnership(Base):
         self.assertEqual(ctx.exception.clashes, {P(0, 0): ('a', STONE, DIRT)})
         self.assertEqual(len(self.lines()), 2)                      # nothing journalled for the refusal
 
+    def test_payload_keep_may_overwrite_earlier_owner(self):
+        """#143: door opening cells on plan.keep skip the journal clash."""
+        self.build('a', 'feature', {P(0, 0): STONE})
+
+        class _Payload:
+            keep = {P(0, 0)}
+
+        self.build('b', 'feature', {P(0, 0): DIRT}, payload=_Payload())
+        self.assertEqual(self.reg.owned([P(0, 0)]), {P(0, 0): ('b', DIRT)})
+
     def test_same_state_is_not_a_clash_and_own_plan_may_rebuild(self):
         self.build('a', 'feature', {P(0, 0): STONE})
         self.build('b', 'feature', {P(0, 0): STONE})
