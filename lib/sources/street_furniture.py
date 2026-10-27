@@ -33,12 +33,21 @@ RECIPES: dict[str, list[tuple[int, str]]] = {
     'waste_basket': [(1, 'cauldron')],
     'bicycle_parking': [(1, 'iron_bars')],
     'street_lamp': [(1, 'oak_fence'), (2, 'oak_fence'), (3, 'lantern')],
-    'bollard': [(1, 'smooth_stone_wall')],
+    'bollard': [(1, 'stone_brick_wall')],
     'sign': [(1, 'oak_sign')],
 }
 
+# Real Minecraft wall blocks used elsewhere in this repo (decor / garden / block ref).
+# Recipe ``*_wall`` names must be one of these — ``smooth_stone_wall`` is not a block.
+REAL_WALL_BLOCKS = frozenset({
+    'brick_wall',
+    'stone_brick_wall',
+    'cobblestone_wall',
+})
+
 # GDAL OSM extract jobs: (gdal_layer, SQL WHERE, default model tags).
-# World osm_extract LAYER_PRESETS['furniture'] should match this list.
+# Installed into world osm_extract ``LAYER_PRESETS['furniture']`` by the tool
+# shim (``shims/osm_extract.py``) via :func:`install_furniture_layer_preset`.
 EXTRACT_JOBS: list[tuple[str, str, list[str]]] = [
     (
         'points',
@@ -52,6 +61,20 @@ EXTRACT_JOBS: list[tuple[str, str, list[str]]] = [
         ['context'],
     ),
 ]
+
+
+def install_furniture_layer_preset(
+    layer_presets: dict[str, list[tuple[str, str, list[str]]]],
+) -> None:
+    """Wire :data:`EXTRACT_JOBS` into an osm_extract ``LAYER_PRESETS`` dict.
+
+    Overwrites any existing ``furniture`` entry so the tool vocabulary is the
+    single source of truth for fetching street-furniture points into
+    ``reference/vector_map``.
+
+    @param layer_presets: mutable world (or test) ``LAYER_PRESETS`` mapping
+    """
+    layer_presets['furniture'] = list(EXTRACT_JOBS)
 
 DESIGNER_SPEC = ROOT / 'reference' / 'decor-furniture.json'
 

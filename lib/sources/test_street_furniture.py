@@ -34,6 +34,11 @@ class ClassifyAndRecipes(unittest.TestCase):
             for dy, block in stack:
                 self.assertGreaterEqual(dy, 1, kind)
                 self.assertTrue(block and ':' not in block, block)
+                if block.endswith('_wall'):
+                    self.assertIn(
+                        block, sf.REAL_WALL_BLOCKS,
+                        f'{kind} recipe uses unknown wall block {block!r}',
+                    )
 
 
 class ExtractJobs(unittest.TestCase):
@@ -46,6 +51,25 @@ class ExtractJobs(unittest.TestCase):
         where = ' '.join(job[1] for job in sf.EXTRACT_JOBS)
         for needle in ('bench', 'waste_basket', 'bicycle_parking', 'street_lamp', 'bollard'):
             self.assertIn(needle, where)
+
+    def test_extract_jobs_install_into_layer_presets(self):
+        """Tool extract path consumes EXTRACT_JOBS (shim installs furniture preset)."""
+        presets: dict = {
+            'buildings': [('multipolygons', "building IS NOT NULL", ['footprint'])],
+        }
+        sf.install_furniture_layer_preset(presets)
+        self.assertEqual(presets['furniture'], list(sf.EXTRACT_JOBS))
+        # Overwrite any stale world copy with the tool vocabulary.
+        presets['furniture'] = [('points', "amenity = 'bench'", ['context'])]
+        sf.install_furniture_layer_preset(presets)
+        self.assertEqual(presets['furniture'], list(sf.EXTRACT_JOBS))
+
+    def test_osm_extract_shim_wires_extract_jobs(self):
+        """Regression: shims/osm_extract.py installs EXTRACT_JOBS into LAYER_PRESETS."""
+        shim = Path(__file__).resolve().parents[2] / 'shims' / 'osm_extract.py'
+        text = shim.read_text()
+        self.assertIn('install_furniture_layer_preset', text)
+        self.assertIn('EXTRACT_JOBS', text)
 
 
 class DesignerSpec(unittest.TestCase):
