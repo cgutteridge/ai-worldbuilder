@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+"""Decor plan read from aerial, photos, map and designer (#150).
+
+Each barrier or furniture item carries shared ``provenance``
+(``lib/site/provenance.py``). Items that cannot be placed are kept on the plan
+with a non-empty ``unresolved_reason`` — never silently dropped. The decor
+layer builds only resolved rows.
+
+Sources (cheapest first; later still listed when they add something new):
+
+  * vector map barriers and furniture points
+  * garden plot barriers (convention / aerial hedge)
+  * aerial dark-green rings immediately outside building footprints
+  * designer ``reference/decor-furniture.json`` (and optional observations)
+  * photo observations that name a kind but no coordinate → unresolved
+"""
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
+
+import provenance as prov
+
+HEDGE_BLOCK = 'oak_leaves[persistent=true]'
+DEFAULT_HEIGHT = {
+    'hedge': 2,
+    'brick_wall': 1,
+    'iron_bars': 1,
+    'spruce_fence': 2,
+}
+DEFAULT_BLOCK = {
+    'hedge': HEDGE_BLOCK,
+    'brick_wall': 'brick_wall',
+    'iron_bars': 'iron_bars',
+    'spruce_fence': 'spruce_fence',
+}
+BARRIER_KINDS = frozenset(DEFAULT_BLOCK)
+CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
+MIN_BORDER_CELLS = 4
+
+
+def _item_id(prefix: str, *parts: Any) -> str:
+    body = '-'.join(str(p).replace(',', 'm') for p in parts)
+    return f'{prefix}-{body}'
+
+
+def aerial_building_border_hedges(
+    footprint: set[tuple[int, int]],
+    rgb: Mapping[tuple[int, int], Any],
+    canopy: set[tuple[int, int]] | None = None,
+    *,
+    min_cells: int = MIN_BORDER_CELLS,
+    evidence_ids: Sequence[str] = (),
+    root=None,
+) -> list[dict[str, Any]]:
+    """Hedge plan items from dark-green aerial columns immediately outside footprints.
+
+    Tree-canopy columns are ignored. Components shorter than ``min_cells`` are
+    still returned, marked unresolved, so the gap is listed rather than skipped.
+
+    @param footprint: building footprint columns
+    @param rgb: aerial colour samples ``{(x, z): rgb}``
+    @param canopy: lidar/nDSM tree-canopy columns to ignore
+    @param min_cells: minimum connected columns for a resolved hedge strip
+    @param evidence_ids: evidence ids attached to each item's provenance
+    @param root: world root for evidence id checks; ``None`` skips the check
+    @returns: hedge barrier items (resolved and unresolved)
+    """
+    from ground_sources import aerial_class
+    from garden_sources import components
+
+    skip = canopy or set()
+    shade: set[tuple[int, int]] = set()
+    for x, z in footprint:
+        for dx, dz in CARDINAL:
+            q = (x + dx, z + dz)
+            if q in footprint or q in skip or q not in rgb:
+                continue
+            if aerial_class(rgb[q]) == 'shade':
+                shade.add(q)
+    if not shade:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for i, group in enumerate(sorted(components(shade), key=lambda g: (min(g), len(g)))):
+        cells = sorted(group)
+        item: dict[str, Any] = {
+            'id': _item_id('hedge-border', i, cells[0][0], cells[0][1]),
+            'kind': 'hedge',
+            'role': 'barrier',
+            'cells': [list(c) for c in cells],
+            'block': HEDGE_BLOCK,
+            'height': DEFAULT_HEIGHT['hedge'],
+            'allow_against_build': True,
+            'note': 'aerial dark-green strip against building footprint',
+        }
+        reason = ''
+        if len(cells) < min_cells:
+            reason = f'too short for a hedge strip ({len(cells)} < {min_cells} columns)'
+        prov.attach_provenance(
+            item,
+            source='aerial',
+            confidence='low' if reason else 'medium',
+            evidence_ids=evidence_ids,
+            unresolved_reason=reason,
+            root=root,
+        )
+        out.append(item)
+    return out
+
+
+def _barrier_item(
+    kind: str,
+    cells: Iterable[tuple[int, int]],
+    *,
+    source: str,
+    confidence: str,
+    evidence_ids: Sequence[str] = (),
+    allow_against_build: bool = False,
+    note: str = '',
+    block: str | None = None,
+    height: int | None = None,
+    item_id: str = '',
+    root=None,
+) -> dict[str, Any]:
+    ordered = sorted({(int(x), int(z)) for x, z in cells})
+    item: dict[str, Any] = {
+        'id': item_id or _item_id(kind, ordered[0][0], ordered[0][1]) if ordered else _item_id(kind, 'empty'),
+        'kind': kind,
+        'role': 'barrier',
+        'cells': [list(c) for c in ordered],
+        'block': block or DEFAULT_BLOCK[kind],
+        'height': int(height if height is not None else DEFAULT_HEIGHT[kind]),
+        'allow_against_build': bool(allow_against_build),
+    }
+    if note:
+        item['note'] = note
+    prov.attach_provenance(
+        item,
+        source=source,
+        confidence=confidence,
+        evidence_ids=evidence_ids,
+        root=root,
+    )
+    return item
+
+
+def _furniture_item(
+    x: int,
+    z: int,
+    kind: str,
+    *,
+    source: str,
+    confidence: str,
+    evidence_ids: Sequence[str] = (),
+    note: str = '',
+    root=None,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        'id': _item_id(kind, x, z),
+        'kind': kind,
+        'role': 'furniture',
+        'cell': [int(x), int(z)],
+    }
+    if note:
+        item['note'] = note
+    prov.attach_provenance(
+        item,
+        source=source,
+        confidence=confidence,
+        evidence_ids=evidence_ids,
+        root=root,
+    )
+    return item
+
+
+def _designer_source(item: Mapping[str, Any]) -> tuple[str, str]:
+    """Map a designer row to (provenance source, confidence)."""
+    blob = f"{item.get('evidence') or ''} {item.get('note') or ''}".lower()
+    if 'photo' in blob or 'streetview' in blob or 'street view' in blob:
+        return 'photo_read', 'medium'
+    if 'aerial' in blob or item.get('source') == 'designer':
+        return 'aerial', 'medium'
+    return 'inference', 'low'
+
+
+def _footprint_columns(cell: tuple[int, int]) -> set[tuple[int, int]]:
+    """Building footprint columns that touch the cell (live OSM index)."""
+    from ground_sources import cell_box
+    from osm_footprints import OSMIndex
+
+    x0, z0, x1, z1 = cell_box(cell)
+    return {
+        q for q in OSMIndex().cells()
+        if x0 <= q[0] <= x1 and z0 <= q[1] <= z1
+    }
+
+
+def build_decor_plan(
+    cell: tuple[int, int],
+    *,
+    map_barriers: Mapping[str, set[tuple[int, int]]] | None = None,
+    map_furniture: Sequence[tuple[int, int, str]] = (),
+    designer_items: Sequence[Mapping[str, Any]] = (),
+    photo_observations: Sequence[Mapping[str, Any]] = (),
+    garden: Mapping[tuple[int, int], tuple[str, str, int]] | None = None,
+    rgb: Mapping[tuple[int, int], Any] | None = None,
+    canopy: set[tuple[int, int]] | None = None,
+    footprint: set[tuple[int, int]] | None = None,
+    evidence_ids: Sequence[str] = (),
+    root=None,
+) -> dict[str, Any]:
+    """Build a decor plan for one cell from map, garden, aerial and photos.
+
+    @param cell: ``(tx, tz)``
+    @param map_barriers: optional ``{'hedge'|'wall'|'fence': set[(x,z)]}``; fetched when omitted
+    @param map_furniture: ``(x, z, kind)`` triples from the vector map
+    @param designer_items: rows from ``decor-furniture.json`` (may include ``evidence``)
+    @param photo_observations: kind/note rows without coordinates → unresolved
+    @param garden: optional garden barrier map; ``garden_barriers(cell)`` when omitted
+    @param rgb: optional aerial colours; fetched when omitted
+    @param canopy: optional tree-canopy columns
+    @param footprint: optional building columns; OSM index when omitted
+    @param evidence_ids: default evidence ids for aerial-derived rows
+    @param root: world root for provenance evidence checks
+    @returns: ``{'cell': [tx, tz], 'items': [...]}``
+    """
+    from ground_sources import OSMGround, aerial_rgb
+    import garden_sources as gs
+    import street_furniture as sf
+
+    items: list[dict[str, Any]] = []
+    seen_barrier: set[tuple[int, int]] = set()
+    seen_furniture: set[tuple[int, int]] = set()
+
+    vmap = None
+    if map_barriers is None or garden is None:
+        vmap = OSMGround(cell)
+    if map_barriers is None:
+        assert vmap is not None
+        map_barriers = {'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)}
+    if not map_furniture and vmap is not None:
+        map_furniture = list(vmap.furniture)
+    if garden is None:
+        garden = gs.garden_barriers(cell, rgb=rgb)
+    if rgb is None:
+        rgb = aerial_rgb(cell)
+    if canopy is None:
+        canopy = gs.tree_canopy_columns(cell)
+    if footprint is None:
+        footprint = _footprint_columns(cell)
+
+    kind_map = {'hedge': 'hedge', 'wall': 'brick_wall', 'fence': 'iron_bars'}
+    for key, kind in kind_map.items():
+        cols = map_barriers.get(key) or set()
+        if not cols:
+            continue
+        for group in gs.components(cols):
+            for q in group:
+                seen_barrier.add(q)
+            items.append(_barrier_item(
+                kind, group,
+                source='vector_map', confidence='high',
+                evidence_ids=evidence_ids, root=root,
+                item_id=_item_id(f'map-{kind}', min(group)[0], min(group)[1]),
+            ))
+
+    by_garden: dict[tuple[str, str, int], list[tuple[int, int]]] = {}
+    for q, (typ, blk, h) in garden.items():
+        if q in seen_barrier:
+            continue
+        by_garden.setdefault((typ, blk, int(h)), []).append(q)
+    for (typ, blk, h), cols in sorted(by_garden.items()):
+        kind = typ if typ in BARRIER_KINDS else 'hedge'
+        # Garden aerial hedges already went through garden_sources; treat as aerial.
+        src = 'aerial' if kind == 'hedge' and blk == HEDGE_BLOCK else 'register_entry'
+        for group in gs.components(cols):
+            for q in group:
+                seen_barrier.add(q)
+            items.append(_barrier_item(
+                kind, group,
+                source=src, confidence='medium',
+                evidence_ids=evidence_ids, root=root,
+                block=blk, height=h,
+                item_id=_item_id(f'garden-{kind}', min(group)[0], min(group)[1]),
+            ))
+
+    border_items = aerial_building_border_hedges(
+        footprint, rgb, canopy,
+        evidence_ids=evidence_ids, root=root,
+    )
+    for item in border_items:
+        cells = [tuple(c) for c in item.get('cells') or []]
+        fresh = [c for c in cells if c not in seen_barrier]
+        if not fresh and not prov.is_unresolved(item.get('provenance')):
+            continue
+        if fresh and len(fresh) != len(cells):
+            item['cells'] = [list(c) for c in sorted(fresh)]
+            if len(fresh) < MIN_BORDER_CELLS and not prov.is_unresolved(item.get('provenance')):
+                item['provenance'] = prov.provenance_record(
+                    source='aerial',
+                    confidence='low',
+                    evidence_ids=evidence_ids,
+                    unresolved_reason=(
+                        f'too short for a hedge strip after map overlap '
+                        f'({len(fresh)} < {MIN_BORDER_CELLS} columns)'
+                    ),
+                    root=root,
+                )
+        for c in fresh:
+            seen_barrier.add(c)
+        items.append(item)
+
+    for x, z, kind in map_furniture:
+        if kind not in sf.RECIPES or (x, z) in seen_furniture:
+            continue
+        seen_furniture.add((x, z))
+        items.append(_furniture_item(
+            x, z, kind,
+            source='vector_map', confidence='high',
+            evidence_ids=evidence_ids, root=root,
+        ))
+
+    for raw in designer_items:
+        kind = raw.get('kind')
+        if kind not in sf.RECIPES:
+            # Designer may propose barrier strips with cells.
+            if kind in BARRIER_KINDS and raw.get('cells'):
+                cells = [(int(c[0]), int(c[1])) for c in raw['cells']]
+                fresh = [c for c in cells if c not in seen_barrier]
+                if not fresh:
+                    continue
+                for c in fresh:
+                    seen_barrier.add(c)
+                src, conf = _designer_source(raw)
+                items.append(_barrier_item(
+                    kind, fresh,
+                    source=src, confidence=conf,
+                    evidence_ids=evidence_ids, root=root,
+                    allow_against_build=bool(raw.get('allow_against_build', kind == 'hedge')),
+                    note=str(raw.get('note') or ''),
+                    item_id=_item_id(f'designer-{kind}', fresh[0][0], fresh[0][1]),
+                ))
+            continue
+        try:
+            x, z = int(raw['x']), int(raw['z'])
+        except (KeyError, TypeError, ValueError):
+            items.append(prov.attach_provenance(
+                {
+                    'id': _item_id('designer', kind, 'missing-xy'),
+                    'kind': kind,
+                    'role': 'furniture',
+                    'note': str(raw.get('note') or ''),
+                },
+                source='aerial',
+                confidence='low',
+                evidence_ids=evidence_ids,
+                unresolved_reason='designer furniture row has no x,z',
+                root=root,
+            ))
+            continue
+        if (x, z) in seen_furniture:
+            continue
+        seen_furniture.add((x, z))
+        src, conf = _designer_source(raw)
+        items.append(_furniture_item(
+            x, z, kind,
+            source=src, confidence=conf,
+            evidence_ids=evidence_ids, root=root,
+            note=str(raw.get('note') or ''),
+        ))
+
+    for i, obs in enumerate(photo_observations):
+        kind = str(obs.get('kind') or 'unknown')
+        reason = str(obs.get('unresolved_reason') or '').strip() or (
+            'photo observation has no MC coordinate'
+        )
+        item = {
+            'id': _item_id('photo', kind, i),
+            'kind': kind,
+            'role': 'furniture' if kind in sf.RECIPES else 'barrier',
+            'note': str(obs.get('note') or ''),
+        }
+        if obs.get('cell') is not None:
+            item['cell'] = [int(obs['cell'][0]), int(obs['cell'][1])]
+        if obs.get('cells'):
+            item['cells'] = [[int(c[0]), int(c[1])] for c in obs['cells']]
+        src = 'photo_read'
+        # Resolved photo rows (have coords) keep empty unresolved_reason.
+        if item.get('cell') or item.get('cells'):
+            reason = str(obs.get('unresolved_reason') or '').strip()
+        prov.attach_provenance(
+            item,
+            source=src,
+            confidence='low' if reason else 'medium',
+            evidence_ids=list(obs.get('evidence_ids') or evidence_ids),
+            unresolved_reason=reason,
+            root=root,
+        )
+        items.append(item)
+
+    return {'cell': [int(cell[0]), int(cell[1])], 'items': items}
+
+
+def unresolved_items(plan: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Plan items whose provenance names a non-empty unresolved reason.
+
+    @param plan: decor plan from :func:`build_decor_plan`
+    @returns: unresolved items in plan order
+    """
+    return [i for i in plan.get('items') or [] if prov.is_unresolved(i.get(prov.PROVENANCE_KEY))]
+
+
+def resolved_barriers(
+    plan: Mapping[str, Any],
+) -> dict[tuple[int, int], tuple[str, str, int]]:
+    """Resolved barrier columns → ``(kind, block, height)`` for the decor layer.
+
+    @param plan: decor plan
+    @returns: column map ready for placement
+    """
+    out: dict[tuple[int, int], tuple[str, str, int]] = {}
+    for item in plan.get('items') or []:
+        if item.get('role') != 'barrier' or prov.is_unresolved(item.get(prov.PROVENANCE_KEY)):
+            continue
+        kind = item.get('kind')
+        if kind not in BARRIER_KINDS:
+            continue
+        block = item.get('block') or DEFAULT_BLOCK[kind]
+        height = int(item.get('height') or DEFAULT_HEIGHT[kind])
+        for c in item.get('cells') or []:
+            out[(int(c[0]), int(c[1]))] = (kind, block, height)
+    return out
+
+
+def resolved_furniture(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Resolved furniture rows as ``{x,z,kind,source,...}`` for :func:`place_furniture`.
+
+    @param plan: decor plan
+    @returns: furniture item dicts
+    """
+    out: list[dict[str, Any]] = []
+    for item in plan.get('items') or []:
+        if item.get('role') != 'furniture' or prov.is_unresolved(item.get(prov.PROVENANCE_KEY)):
+            continue
+        cell = item.get('cell')
+        if not cell:
+            continue
+        row = {
+            'x': int(cell[0]),
+            'z': int(cell[1]),
+            'kind': item['kind'],
+            'source': (item.get(prov.PROVENANCE_KEY) or {}).get('source', 'inference'),
+            'plan_id': item.get('id'),
+            'allow_against_build': bool(item.get('allow_against_build')),
+        }
+        if item.get('note'):
+            row['note'] = item['note']
+        out.append(row)
+    return out
+
+
+def mark_unplaced(item: Mapping[str, Any], reason: str) -> dict[str, Any]:
+    """Copy a plan item with ``unresolved_reason`` set after a failed place attempt.
+
+    Accepts full plan items or thin furniture rows (``x``/``z``/``kind``/``source``).
+
+    @param item: original plan item or furniture row
+    @param reason: why placement failed
+    @returns: new item dict with updated provenance
+    """
+    out = dict(item)
+    prev = dict(item.get(prov.PROVENANCE_KEY) or {})
+    source = prev.get('source') or item.get('source') or 'inference'
+    # Furniture rows use legacy source labels (map/designer); map them onto SOURCES.
+    if source == 'map':
+        source = 'vector_map'
+    elif source == 'designer':
+        source = 'aerial'
+    if source not in prov.SOURCES:
+        source = 'inference'
+    out[prov.PROVENANCE_KEY] = prov.provenance_record(
+        source=source,
+        confidence=prev.get('confidence') or 'low',
+        evidence_ids=prev.get('evidence_ids') or (),
+        unresolved_reason=reason,
+    )
+    return out

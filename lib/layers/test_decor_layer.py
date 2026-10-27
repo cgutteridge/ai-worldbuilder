@@ -105,7 +105,8 @@ class TestPlaceFurniture(unittest.TestCase):
             {'x': 10, 'z': 20, 'kind': 'bench', 'source': 'map'},
             {'x': 13, 'z': 20, 'kind': 'waste_basket', 'source': 'designer'},
         ]
-        found, report = self._place(items, way=set(), near1=set())
+        found, report, unplaced = self._place(items, way=set(), near1=set())
+        self.assertEqual(unplaced, [])
         self.assertIn((10, self.surface_y + 1, 20), found)
         self.assertEqual(found[(10, self.surface_y + 1, 20)], 'spruce_stairs')
         self.assertEqual(found[(13, self.surface_y + 1, 20)], 'cauldron')
@@ -121,8 +122,13 @@ class TestPlaceFurniture(unittest.TestCase):
             {'x': 12, 'z': 20, 'kind': 'bollard', 'source': 'map'},     # against build
             {'x': 10, 'z': 20, 'kind': 'street_lamp', 'source': 'map'},
         ]
-        found, report = self._place(items)
+        found, report, unplaced = self._place(items)
         self.assertEqual({(r['x'], r['z']) for r in report}, {(10, 20)})
+        self.assertEqual(len(unplaced), 2)
+        self.assertEqual(
+            {(u['x'], u['z'], u['provenance']['unresolved_reason']) for u in unplaced},
+            {(11, 20, 'on path/road/water column'), (12, 20, 'against build')},
+        )
         for dy, block in sf.recipe('street_lamp'):
             self.assertEqual(found[(10, self.surface_y + dy, 20)], block)
 
