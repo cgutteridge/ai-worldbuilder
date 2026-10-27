@@ -19,6 +19,7 @@ from journal_testkit import AIR, FakePaced, LiveApplyCase
 
 CELL = (48, -44)
 X0, Z0 = 6150, -5600
+ORIGIN = (X0, 60, Z0)
 GREY = 'minecraft:light_gray_concrete'
 
 
@@ -205,56 +206,48 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
     def test_cell_pass_undo_of_rebuilt_ground_compares_against_earliest_before(self):
         # Rebuild over a live build: the second before_<plan> holds the first build,
         # but a cell-pass undo erases both back to the base ghost under them.
-        base = site_kit.Plan('ghost')
-        base.set(X0, 60, Z0, GREY)
-        self.run_apply(base, stage='other', cell=CELL)
-        for state in ('minecraft:grass_block', 'minecraft:stone'):
-            g = site_kit.Plan('g')
-            g.set(X0, 60, Z0, state)
-            self.run_apply(g, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        info = self.setup_layer_rebuilds(
+            cell=CELL, origin=ORIGIN, shapes=('same', 'same'),
+            rebuild_blocks=('minecraft:grass_block', 'minecraft:stone'),
+        )
 
         self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
 
-        self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
+        self.assertEqual(self.blocks.read(ORIGIN), info['start'][ORIGIN])
 
     def test_cell_pass_undo_of_rebuilt_ground_with_no_base_restores_start(self):
         # #138: no owner underneath — journal priors alone must restore the start
         # world (the 2026-10-27 bent fixture hid this behind a ghost base).
-        self.blocks.write((X0, 60, Z0), GREY)
-        self.blocks.flush()
-        for i, state in enumerate(('minecraft:grass_block', 'minecraft:stone', 'minecraft:dirt')):
-            g = site_kit.Plan('g')
-            g.set(X0, 60, Z0, state)
-            kw = {'stage': 'ground-layer', 'cell': CELL}
-            if i:
-                kw['modifies'] = ['g']
-            self.run_apply(g, **kw)
+        info = self.setup_layer_rebuilds(
+            cell=CELL, origin=ORIGIN, shapes=('same', 'same', 'same'),
+            with_base=False,
+            rebuild_blocks=('minecraft:grass_block', 'minecraft:stone', 'minecraft:dirt'),
+        )
 
         self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
 
-        self.assertEqual(self.blocks.read((X0, 60, Z0)), GREY)
+        self.assertEqual(self.blocks.read(ORIGIN), info['start'][ORIGIN])
 
     def test_rebuild_wider_than_first_build_still_undoes(self):
         # The rebuild covers a column the first build never wrote; that column must
         # use the second build's before_<plan>, not be forced to air or an earlier box.
         far = (X0 + 20, 60, Z0)
-        self.blocks.write(far, GREY)
-        self.blocks.flush()
-        base = site_kit.Plan('ghost')
-        base.set(X0, 60, Z0, GREY)
-        base.set(*far, GREY)
-        self.run_apply(base, stage='other', cell=CELL)
-        first = site_kit.Plan('g')
-        first.set(X0, 60, Z0, 'minecraft:grass_block')
-        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        self.setup_layer_rebuilds(
+            cell=CELL, origin=ORIGIN, shapes=('same',),
+            rebuild_blocks=('minecraft:grass_block',),
+        )
         # FakePaced snapshots the whole world into every structure; poison the first
         # snapshot at ``far`` so a box-based check would disagree — writer membership
         # must keep ``far`` on the second before_<plan> only (#138).
         FakePaced.structures[f'{site_kit.STRUCTURE_NS}:before_g'][far] = 'minecraft:gold_block'
+        # Widen in a second rebuild (helper already landed base+first; far was not in
+        # the base, so seed it then rebuild wider over ghost + self).
+        self.blocks.write(far, GREY)
+        self.blocks.flush()
         second = site_kit.Plan('g')
         second.set(X0, 60, Z0, 'minecraft:stone')
         second.set(*far, 'minecraft:stone')
-        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost'])
+        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost', 'g'])
 
         self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
 
@@ -299,19 +292,12 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         # Shared column written by g1 → house → g2. Journal erase restores house
         # (under-owner); earliest live writer's before_g1 predates house and would
         # false-refuse if the footprint check bound that column (#138).
-        mid = (X0, 60, Z0)
-        base = site_kit.Plan('ghost')
-        base.set(*mid, GREY)
-        self.run_apply(base, stage='other', cell=CELL)
-        first = site_kit.Plan('g')
-        first.set(*mid, 'minecraft:grass_block')
-        self.run_apply(first, stage='ground-layer', cell=CELL, modifies=['ghost'])
-        house = site_kit.Plan('house')
-        house.set(*mid, 'minecraft:bricks')
-        self.run_apply(house, modifies=['ghost', 'g'])
-        second = site_kit.Plan('g')
-        second.set(*mid, 'minecraft:stone')
-        self.run_apply(second, stage='ground-layer', cell=CELL, modifies=['ghost', 'house'])
+        mid = ORIGIN
+        self.setup_layer_rebuilds(
+            cell=CELL, origin=ORIGIN, shapes=('same', 'same'),
+            rebuild_blocks=('minecraft:grass_block', 'minecraft:stone'),
+            interleaved={'name': 'house', 'pos': mid, 'block': 'minecraft:bricks', 'after': 0},
+        )
 
         self.assertEqual(self.run_live(cell=CELL, pass_name='ground', live=True), 0)
 

@@ -5,11 +5,24 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cell_registry as CR
 import registry_verify as V
-from cell_journal import Build
+from cell_journal import Build, Note
 from journal_testkit import JournalWorld
+
+
+_FOOTPRINT = {
+    'id': 'w141hall',
+    'kind': 'building',
+    'label': 'Fixture Hall',
+    'street': None,
+    'refs': ['w141hall'],
+    'bbox': (6160, -5600, 6180, -5580),
+    'portals': [],
+    'pictures': [],
+}
 
 
 class VerifyLeftoversTest(unittest.TestCase):
@@ -72,6 +85,57 @@ class VerifyJournalTest(unittest.TestCase):
         report = V.run_verify(root=self.root, check_world=False)
         self.assertGreater(report['error_count'], 0)
         self.assertNotEqual(V.exit_code(report), 0)
+
+    def test_landed_ground_with_uncovered_footprint_is_error(self):
+        """#141: landed ground whose skipped footprints lack a planned/landed feature → error."""
+        self.jw.seed((48, -44), ground=True)
+        with mock.patch(
+            'registry_next.unplanned_footprint_candidates',
+            return_value=[_FOOTPRINT],
+        ):
+            issues = V.check_uncovered_footprints(self.reg())
+        self.assertEqual(len(issues), 1)
+        issue = issues[0]
+        self.assertEqual(issue['id'], 'uncovered-footprint:48,-44')
+        self.assertEqual(issue['severity'], V.SEVERITY_ERROR)
+        self.assertIn('Fixture Hall', issue['message'])
+        self.assertIn('w141hall', issue['message'])
+        self.assertEqual(issue.get('buildings'), ['Fixture Hall'])
+
+        with mock.patch(
+            'registry_next.unplanned_footprint_candidates',
+            return_value=[_FOOTPRINT],
+        ):
+            report = V.run_verify(root=self.root, check_world=False)
+        self.assertTrue(any(i['id'] == 'uncovered-footprint:48,-44' for i in report['issues']))
+        self.assertGreater(report['error_count'], 0)
+        self.assertNotEqual(V.exit_code(report), 0)
+
+    def test_planned_or_landed_footprint_clears_uncovered_error(self):
+        """#141: plan_feature / landed feature / dismiss means no uncovered-footprint error."""
+        self.jw.seed((48, -44), ground=True)
+        with mock.patch('registry_next.unplanned_footprint_candidates', return_value=[]):
+            self.assertEqual(V.check_uncovered_footprints(self.reg()), [])
+
+        # Sanity: the #140 helper itself treats a plan_feature as covering.
+        footprint = [{
+            'kind': 'building', 'label': 'Fixture Hall', 'street': None,
+            'refs': ['w141hall'], 'bbox': (6160, -5600, 6180, -5580),
+            'portals': [], 'pictures': [],
+        }]
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'Fixture Hall', ref='w141hall'))
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=footprint):
+            self.assertEqual(V.check_uncovered_footprints(self.reg()), [])
+
+    def test_no_ground_yet_skips_uncovered_footprint_check(self):
+        """#141: only landed ground layers are checked — empty / ghost cells stay quiet."""
+        self.jw.seed((48, -44), ghost_ground=True)
+        with mock.patch(
+            'registry_next.unplanned_footprint_candidates',
+            return_value=[_FOOTPRINT],
+        ) as propose:
+            self.assertEqual(V.check_uncovered_footprints(self.reg()), [])
+        propose.assert_not_called()
 
 
 if __name__ == '__main__':

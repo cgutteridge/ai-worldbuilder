@@ -20,6 +20,7 @@ Per-cell view (folded, never stored)::
                  coverage warning + nothing in flight
 
   python3 scripts/cell_registry.py status [--cell tx,tz]
+  python3 scripts/cell_registry.py above-ghost [--json]
   python3 scripts/cell_registry.py query --feature <id>
   python3 scripts/cell_registry.py query --cell tx,tz
   python3 scripts/cell_registry.py propose-features --cell tx,tz [--record]
@@ -194,6 +195,60 @@ def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
                 rec['status'] = f.status
             rec['cells'].append(cell_id(*v.cell))
     return out
+
+
+def cells_above_ghost(reg: CellRegistry) -> dict[str, Any]:
+    """Every cell with anything above ghost, with per-kind counts (#135).
+
+    Membership matches :meth:`CellRegistry.seeds`: generated ground, trees, decor,
+    or a feature that is not merely planned. Ghost-only and planned-only cells are
+    omitted. Counts are 0/1 for ground, trees and decor; features is the number of
+    non-planned features on the cell plan. Totals sum those counts across cells.
+
+    @param reg: registry
+    @returns: ``{'cells': [{'cell', 'ground', 'trees', 'decor', 'features'}, ...],
+               'totals': {'cells', 'ground', 'trees', 'decor', 'features'}}``
+               with cells sorted by id
+    """
+    rows: list[dict[str, Any]] = []
+    for cell in sorted(reg.seeds()):
+        v = reg.cell(cell)
+        features = sum(1 for f in v.features if f.status != 'planned')
+        rows.append({
+            'cell': cell_id(*cell),
+            'ground': 1 if v.ground == 'generated' else 0,
+            'trees': 1 if v.trees else 0,
+            'decor': 1 if v.decor else 0,
+            'features': features,
+        })
+    totals = {
+        'cells': len(rows),
+        'ground': sum(r['ground'] for r in rows),
+        'trees': sum(r['trees'] for r in rows),
+        'decor': sum(r['decor'] for r in rows),
+        'features': sum(r['features'] for r in rows),
+    }
+    return {'cells': rows, 'totals': totals}
+
+
+def format_cells_above_ghost(report: dict[str, Any]) -> str:
+    """Human text for :func:`cells_above_ghost` (purge counting).
+
+    @param report: return value of :func:`cells_above_ghost`
+    @returns: multi-line summary then one line per cell
+    """
+    t = report['totals']
+    lines = [
+        f"cells: {t['cells']}",
+        f"ground: {t['ground']}  trees: {t['trees']}  decor: {t['decor']}  "
+        f"features: {t['features']}",
+    ]
+    for r in report['cells']:
+        lines.append(
+            f"{r['cell']}: ground={r['ground']} trees={r['trees']} "
+            f"decor={r['decor']} features={r['features']}"
+        )
+    return '\n'.join(lines)
 
 
 def latest_entries(reg: CellRegistry, *, prefix: str = '', ghosts: bool = False) -> list:
@@ -419,6 +474,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser('status', help='print registry summary or one cell')
     p.add_argument('--cell', default=None, help='tx,tz')
 
+    p = sub.add_parser('above-ghost',
+                       help='list cells with anything above ghost and count each kind (#135)')
+    p.add_argument('--json', action='store_true', help='print JSON report')
+
     p = sub.add_parser('query', help='query a feature or what is left in a cell')
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument('--feature', help='feature id (build slug)')
@@ -479,6 +538,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == 'status':
             print(_format_status(reg, args.cell))
+            return 0
+
+        if args.cmd == 'above-ghost':
+            report = cells_above_ghost(reg)
+            if args.json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(format_cells_above_ghost(report))
             return 0
 
         if args.cmd == 'query':

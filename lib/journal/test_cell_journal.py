@@ -409,21 +409,34 @@ class TestUndo(Base):
         self.assertIsNone(self.reg.cells_at(9999))
 
     def test_cell_pass_undo_of_rebuilt_layer_restores_world_before_first_build(self):
-        # #138: no owner underneath — undo must use the earliest targeted prior, not
-        # the latest (which holds the first build). N rebuilds then cell-pass undo
-        # must leave the world equal to the start.
-        start = {P(0, 0): DIRT, P(0, 0, 1): AIR}
-        self.blocks.write(P(0, 0), DIRT)
-        self.blocks.flush()
-        states = (STONE, GREY, GLASS)
-        for i, state in enumerate(states):
-            kw = {'cell': (0, 0)}
-            if i:
-                kw['modifies'] = ('g',)
-            self.build('g', 'ground', {P(0, 0): state}, **kw)
-        self.reg.change(Undo(((0, 0), 'ground')), self.apply)
-        self.assertEqual(self.blocks.read(P(0, 0)), start[P(0, 0)])
-        self.assertEqual(self.blocks.read(P(0, 0, 1)), start[P(0, 0, 1)])
+        # #138 / #133: no owner underneath — for any N, rebuilds then cell-pass undo
+        # leave the world equal to the start (earliest targeted prior, not latest).
+        from journal_testkit import setup_layer_rebuilds
+
+        materials = (STONE, GREY, GLASS, DIRT, 'minecraft:cobblestone')
+        for n in (1, 2, 3, 5):
+            with self.subTest(n=n):
+                journal = self.root / 'registry' / 'journal.jsonl'
+                if journal.exists():
+                    journal.write_text('')
+                self.blocks = MemoryBlocks(default=AIR, strict_flush=True)
+                self.applied = []
+                self.reg = self.registry()
+                origin = P(0, 0)
+
+                def land(name, pass_, cells, *, cell=None, modifies=()):
+                    return self.build(name, pass_, cells, cell=cell, modifies=modifies)
+
+                info = setup_layer_rebuilds(
+                    land, cell=(0, 0), origin=origin,
+                    shapes=tuple(['same'] * n),
+                    with_base=False, blocks=self.blocks,
+                    start_block=DIRT, rebuild_blocks=materials[:n],
+                )
+                self.reg.change(Undo(((0, 0), 'ground')), self.apply)
+                for pos, want in info['start'].items():
+                    self.assertEqual(self.blocks.read(pos), want)
+                self.assertEqual(self.blocks.read(P(0, 0, 1)), AIR)
 
     def test_cell_pass_undo_wider_rebuild_uses_each_position_earliest_prior(self):
         # Column only the second build touched must restore that build's prior, not

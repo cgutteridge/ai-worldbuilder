@@ -121,6 +121,33 @@ class RegistryCliTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 R.propose_feature_candidates('48,-44')
 
+    def test_cells_above_ghost_names_cells_and_counts_each_kind(self):
+        """#135: one view of every cell with anything above ghost, for purge counting."""
+        from cell_journal import Note
+        # Ghost-only and planned-only must not appear; real layers and built features must.
+        self.jw.seed((0, 0), ghost_ground=True)
+        self.jw.reg.change(Note((1, 1), 'plan_feature', 'planned only', 'planned_house'))
+        self.jw.seed((49, -44), ground=True, trees=True, features=('barn',))
+        reg = R.view_registry(self.root)
+        report = R.cells_above_ghost(reg)
+        self.assertEqual(report['cells'], [
+            {'cell': '48,-44', 'ground': 1, 'trees': 0, 'decor': 0, 'features': 1},
+            {'cell': '49,-44', 'ground': 1, 'trees': 1, 'decor': 0, 'features': 1},
+        ])
+        self.assertEqual(report['totals'],
+                         {'cells': 2, 'ground': 2, 'trees': 1, 'decor': 0, 'features': 2})
+        code, out = run('--root', self.root, 'above-ghost')
+        self.assertEqual(code, 0)
+        self.assertIn('cells: 2', out)
+        self.assertIn('ground: 2  trees: 1  decor: 0  features: 2', out)
+        self.assertIn('48,-44: ground=1 trees=0 decor=0 features=1', out)
+        self.assertIn('49,-44: ground=1 trees=1 decor=0 features=1', out)
+        self.assertNotIn('0,0:', out)
+        self.assertNotIn('1,1:', out)
+        code, out = run('--root', self.root, 'above-ghost', '--json')
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), report)
+
 
 CELL = (48, -44)
 X0, Z0 = 6150, -5600
