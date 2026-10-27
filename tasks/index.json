@@ -4,24 +4,6 @@
   "nextTaskId": 166,
   "tasks": [
     {
-      "id": 160,
-      "title": "level_pits fills wall-side voids next to footprints (S-019 / #155 live fail)",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Follow-up to #155. LIVE FAIL 2026-10-27: ground --apply on 48,-44 under site_lock planned 35 other pits then readback mismatches; seq 211 rolled back via site_recover. Tops at x 6145\u20136147, z -5520 stay y=36 vs neighbour (6144,-5520) y=44. Cause: (6146,-5520)/(6147,-5520) skipped by adj-to-footprint guard in level_pits; (6145,-5520) in a candidate component with bbox narrow=6 > PIT_MAX_WIDTH 5. Deliver: retune level_pits so free columns beside a footprint can fill to the outside rim (never raise footprint columns; never use footprint tops as the rim target). Raise PIT_MAX_WIDTH if the live 3-wide band's bbox needs it. Unit test: wall-side pit adjacent to fp fills to rim y; footprint columns unchanged; wide depression still skipped. Acceptance: ground rerun on 48,-44 under site_lock --world southampton-build; those three columns match y=44; no bad fill into footprints. Files: lib/layers/ground_layer.py, lib/layers/test_ground_layer.py. Helps: S-019 / I-015 void-beside-walls. Done 2026-10-27: removed adj-to-footprint candidate skip; PIT_MAX_WIDTH 5\u21926; wall-side pit unit test. Merged task/160-wall-side-pit-fill (b89aea4 / merge eba0213). Live ground rerun on 48,-44 still required for S-019 acceptance. LIVE RETUNE 2026-10-27: after adj-fp removal, wall-side band merges into candidate component bbox narrow=7 > PIT_MAX_WIDTH 6 (x 6144\u20136150); pits_filled 45 elsewhere but 6145\u20136147 stayed y=36; apply seq 213 rolled back (2 mismatches). Raising PIT_MAX_WIDTH and re-verifying. REVIEW 2026-10-27: state why the retune value is 7 and not a general rule (width of the live wall-side band vs PIT_MAX_WIDTH); say whether I-017 door floors (susu 42-A/B/C/D pit then ground 3-8 higher) and Jubilee panes below ground (I-013) clear once these columns fill, since door floors read the ground just outside each door. WAVE 2026-10-27: code on main (adj-fp removed, PIT_MAX_RADIUS Chebyshev gate); orchestrator live-verifying S-019 columns, not filing a duplicate ticket yet."
-    },
-    {
-      "id": 143,
-      "title": "Feature doors clear the inward vestibule cell so door_to_wall is 0",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "LIVE FAIL after #146 (2026-10-27): facade_plan on jubilee_w93729745 / susu_w33830305 / west_w34391673 / retail_w33830236; susu/jubilee/retail re-applied still show 11 door_to_wall lower-half flags (susu 6, west 3, jubilee 2; retail 0). Doubles short: west 40-A/40-B, susu 42-C, retail 57-A plan 2-leaf but land 1-leaf ('no pair cell'). Cause: feature_build._set_door_leaf clears the outside stoop only \u2014 never the inward cell (opposite DIRS[face]), so the storey floor / solid behind the door keeps door_to_wall. Do not invent facade_plan or floor_offset hacks \u2014 fix the door clear tool. Deliver: _set_door_leaf (or its caller) clears the inward column at door height the same way as the outside stoop (air through the door opening; leave floor underfoot); unit test that a door with solid inward at b+1/b+2 is cleared and floaters.door_to_wall does not fire; re-apply affected features under site_lock --world southampton-build; west_w34391673 still mismatched (seq 196) \u2014 fix/re-apply as part of acceptance. Acceptance: site_patrol (or floaters) shows 0 door_to_wall on those four features; planned double leaves land as 2-leaf where the wall has a pair cell. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Prior notes about #146 absorbing this were wrong \u2014 #146 removed the old portal path but left the stoop-only clear. REVIEW 2026-10-27: (1) Two-leaf landing is a separate limit: most 'no pair cell' fallbacks (west 40-A/40-B, susu 42-C, retail 57-A) have no second wall cell with a jamb either side on a rotated stepped wall, so this task will not turn them into 2-leaf; acceptance for #143 is 0 door_to_wall only, and two-leaf landing is carried by #164. (2) The vestibule fix leaves the storey floor underfoot. WAVE 2026-10-27: code already on main (inward clear + keep/lintel/plan/journal); orchestrator live-verifying acceptance, not re-implementing."
-    },
-    {
       "id": 157,
       "title": "Trees layer reads mapped tree points and tree rows from the vector map",
       "status": "doing",
