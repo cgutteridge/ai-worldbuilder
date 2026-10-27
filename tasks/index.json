@@ -114,15 +114,6 @@
       "notes": "Cause: feature_build lays storey floors every 3 blocks from a median-ground level but places each door on its own wall column's lidar ground, so the door's inside cell is floor or solid; 6 flags in the world after 2026-10-27 (jubilee 1, susu 3, west 2). Doors also fall back to one leaf when no pair cell is free (42-B, 57-A, 40-A/B, 18-A). Deliver: tie storey floors to local ground at each door, or clear the inside cell; then a re-apply of the three specs gives 0 patrol flags and keeps two-leaf doors where the spec asks for them."
     },
     {
-      "id": 144,
-      "title": "Decor garden-boundary reads tree canopy as a hedge",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor."
-    },
-    {
       "id": 145,
       "title": "Facade plan with entrances: the designer accounts for every portal",
       "status": "todo",
@@ -140,14 +131,6 @@
         145
       ],
       "notes": "Deliver: feature doors and entrances are built from the facade plan (#145) only. Cleanup is part of the task, not a follow-up: remove the nearest-wall-cell door chooser (feature_build.py framed / DOOR_REACH), the legacy front/rear spruce default, the per-portal `doors` map and its spec docs, and scripts/door_audit.py's assumptions about them; keep scripts/portals.py and the register as an evidence reader feeding the designer. Update every place that still tells an agent or designer to put a door at the portal or to use `doors`: rules/craftsmanship.md (ENTRANCES), rules/feature-builds.md, rules/building-review.md, rules/evidence-order.md, rules/rules-context.md, .claude/skills/redo, lib/journal/cell_features.py and lib/evidence/evidence_sheet.py output, bakeoff scenarios and checks that rely on the old door spec, and the tests. Gate: a grep for the removed names (framed, DOOR_REACH, the `doors` key, 'door at every portal') finds nothing outside tasks/done.json and history; unit tests cover entrances read from the plan, including unresolved portals. Door row is set from outside ground so doors cannot sit below it (I-017). Covers I-018 and I-017. Check: the 57-A, 40-A and 42-B checks in #145 hold after a rebuild."
-    },
-    {
-      "title": "Road centre-line markings one block wide",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun.",
-      "id": 147
     },
     {
       "title": "Water bodies as features (ponds)",

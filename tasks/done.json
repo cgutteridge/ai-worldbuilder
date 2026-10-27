@@ -1131,6 +1131,23 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause: a spec's facades table usually lists one face per building, and Build.windows punches glass only on listed faces and storeys. Even listed faces are nearly blank above storey 1: SUSU north storey 1 82%, storey 2 3%, storey 3 0%; West east 4-8%; Retail south 8%/3%; Jubilee south 34/25/24%. Covers issue I-004 (glazing far below the photos: windows only on the faces the spec lists), snag S-006. Scope: (1) the dry run lists every exposed face and storey with its glazed share, marking faces with no facade row 'no evidence read' (report, not a gate); (2) the designer brief asks for a facade row for every exposed face, read from street photos and the aerial; where no evidence shows a face, copy the nearest read face and say so in the spec notes. Done when dry runs for susu_w33830305, west_w34391673 and retail_w33830236 list every face with no unexplained gap. Check line S-006: each building's windows look like the photos on every face, upper storeys included. Not verified: whether the low upper-storey shares come from misread photos or omitted rows; check first when picked up. Touches feature_build.py like #125 and #126; sequence them. One regression test only; no new gates or lints. Done 2026-10-27: glazed_share_report lists every exposed face/storey; missing facade rows marked no evidence read; designer brief updated. Merged task/130-windows-every-face."
+    },
+    {
+      "id": 144,
+      "title": "Decor garden-boundary reads tree canopy as a hedge",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause: in 49,-45 decor the aerial hedge reading took the east wood's canopy (x6371..6381, z-5751..-5735) as a garden hedge on Broadlands Road plots and placed 52 oak_leaves, 3 columns on the brick path; a designer spec cannot override it (2026-10-27). Deliver: ignore canopy pixels (use the nDSM tree mask) and treat brick paths like roads; designer spec can veto a detected hedge. Then redo 49,-45 decor. Done 2026-10-27: hedges ignore nDSM canopy and brick paths; designer type:none veto. World redo 49,-45 still needed. Merged task/144-decor-hedge-canopy."
+    },
+    {
+      "title": "Road centre-line markings one block wide",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "notes": "Cause: ground_sources.py:306 marks every road cell whose distance d from the centre line is <= 0.5 (and int(a)%6<3 along it), so a line on a block edge marks the two cells either side: dashes 3 long and 2 wide (I-020, S-025). Not verified: how line_cells measures d. Deliver: markings one cell wide whichever way the line falls (strict d < 0.5 plus a one-cell tie-break); tests with a line on a block edge and on a block centre. Check: University Road in 48,-44 has single-block white dashes, evenly spaced, after the ground is rerun. Done 2026-10-27: centre-line dashes one cell wide (strict d + tie-break). Merged task/147-road-centre-markings.",
+      "id": 147
     }
   ]
 }
