@@ -208,6 +208,31 @@ class TestGroundDecisions(unittest.TestCase):
             self.assertEqual(plan.cells[(x, 36, z)], 'minecraft:grass_block')
             self.assertNotIn((x, 37, z), plan.cells)
 
+    def test_wall_side_pit_beside_footprint_fills_to_outside_rim(self):
+        """#160 / S-019: free columns next to a footprint fill; footprint tops are not the rim."""
+        # Outside strip at y=44; 3-wide pit at y=36 hugging the east face of a building
+        # whose interior columns sit at y=39 (must not become the fill target).
+        live = {(x, z): (44, 'grass_block') for x in range(0, 10) for z in range(0, 8)}
+        fp = {(x, z) for x in range(0, 4) for z in range(0, 8)}
+        for q in fp:
+            live.pop(q, None)  # footprint columns are not free
+        pit = {(x, z) for x in (4, 5, 6) for z in range(1, 7)}
+        for q in pit:
+            live[q] = (36, 'grass_block')
+        # Interior-like lows just west of the pit stay in fp (absent from live); add a
+        # decoy free column far north that must not pull the rim down.
+        kind = {q: 'grass' for q in live}
+        ys = gl.level_pits(live, kind, fp)
+        for q in pit:
+            self.assertEqual(ys[q], 44, q)
+        for q in live:
+            if q not in pit:
+                self.assertEqual(ys[q], 44, q)
+        self.assertGreaterEqual(ys.get('_pits_filled', 0), len(pit))
+        # Footprint never appears in the height map as a raised free column.
+        for q in fp:
+            self.assertNotIn(q, ys)
+
     def test_path_is_carried_straight_across_shade(self):
         # a 3-wide brick path along x with a 9-long shaded gap; lawn above and below
         kind = {(x, z): 'brick' for x in list(range(0, 8)) + list(range(17, 25)) for z in (10, 11, 12)}

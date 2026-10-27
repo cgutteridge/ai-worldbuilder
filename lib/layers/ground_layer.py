@@ -455,7 +455,7 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
 
 # --- 3. how high -------------------------------------------------------------------------
 PIT_DROP = 3            # min blocks below the surrounding rim before a pit is raised (#155)
-PIT_MAX_WIDTH = 5       # max narrow-side span of a fillable pit (3-wide band fits; ponds do not)
+PIT_MAX_WIDTH = 6       # max narrow-side bbox span (#160: wall-side bands can hit 6)
 PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
 
 
@@ -479,17 +479,18 @@ def level_spikes(live: dict, kind: dict, fp: set) -> dict:
 
 
 def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
-    """Raise narrow pits among free columns to the surrounding rim (#155).
+    """Raise narrow pits among free columns to the surrounding rim (#155 / #160).
 
     A pit is a connected set of columns whose live surface sits at least ``PIT_DROP``
     below nearby rim columns, and whose narrower bounding-box side is at most
     ``PIT_MAX_WIDTH``. Water, bank, bridge and structure tops are already absent from
-    ``live``; columns next to a building footprint are left alone. Wide cuttings and
-    ponds stay at their live height.
+    ``live``. Footprint columns are never raised and never used as rim (wall-side
+    voids beside a building still fill to the outside grade — #160 / S-019). Wide
+    cuttings and ponds stay at their live height.
 
     @param live: ``{(x, z): (y, block)}`` free columns
     @param kind: surface kind per column (kerb / mark columns are never raised)
-    @param fp: building footprint columns
+    @param fp: building footprint columns (excluded from candidates and rim)
     @param ys: optional heights from :func:`level_spikes` (preserves ``_levelled``)
     @returns: height map with pit columns raised; ``_pits_filled`` counts raised columns
     """
@@ -500,9 +501,7 @@ def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
 
     candidates: set = set()
     for q, y in heights.items():
-        if kind.get(q) in ('kerb', 'mark'):
-            continue
-        if any((q[0] + a, q[1] + b) in fp for a in (-1, 0, 1) for b in (-1, 0, 1)):
+        if q in fp or kind.get(q) in ('kerb', 'mark'):
             continue
         rim = []
         for a in range(-PIT_RIM_REACH, PIT_RIM_REACH + 1):
