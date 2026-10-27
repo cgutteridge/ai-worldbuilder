@@ -1743,7 +1743,9 @@ class Build:
         """Write one door leaf (lower+upper); clear outside stoop and inward vestibule.
 
         The inward clear (#143) stops ``door_to_wall`` when a storey floor sits at the
-        door opening: air through the leaf height, floor underfoot left alone.
+        door opening: air through the leaf height, floor underfoot left alone. Opening
+        air/stoop cells are always added to ``keep`` so the earlier-build clash filter
+        cannot drop them when ground already owns the column (live jubilee/west fail).
 
         @param cell: wall ``(x, z)``
         @param face: facing letter
@@ -1757,11 +1759,14 @@ class Build:
             self.set(cell[0], y, cell[1],
                      f'{block}[facing={face_name},half={part},hinge={hinge},open=false]')
         st = (cell[0] + dx, cell[1] + dz)
+        self.keep.add((st[0], b, st[1]))
         self.set(st[0], b, st[1], 'smooth_stone')
         for y in range(b + 1, b + 4):
+            self.keep.add((st[0], y, st[1]))
             self.set(st[0], y, st[1], 'air')
         inn = (cell[0] - dx, cell[1] - dz)
         for y in range(b + 1, b + 4):
+            self.keep.add((inn[0], y, inn[1]))
             self.set(inn[0], y, inn[1], 'air')
 
     def plan_doors(self, f: Feature) -> None:

@@ -720,6 +720,32 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             flags,
         )
 
+    def test_door_opening_clears_are_kept_against_earlier_build_clash(self):
+        """#143: stoop/inward air survives owned-ground clash (keep_edits off)."""
+        cells = {(x, z) for x in range(10, 17) for z in range(20, 25)}
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            b = F.Build(
+                self.spec([_entrance_row(leaves=1, block='iron_door', at=[13, 25])]),
+                footprints={'A': cells},
+                world=_StoneWorld(),
+            )
+            b.build()
+        lowers = [(pos, st) for pos, st in b.p.cells.items()
+                  if 'iron_door' in st and 'half=lower' in st]
+        self.assertEqual(len(lowers), 1, lowers)
+        (x, y, z), _ = lowers[0]
+        # Face S → out +z, in −z; floor under door is y-1.
+        b_floor = y - 1
+        for ox, oz in ((0, 1), (0, -1)):
+            for yy in range(b_floor + 1, b_floor + 4):
+                key = (x + ox, yy, z + oz)
+                self.assertIn(key, b.keep, f'opening clear {key} must be kept')
+                self.assertTrue(
+                    'air' in (b.p.cells.get(key) or 'air'),
+                    f'opening clear {key} missing from plan',
+                )
+
 
 class ZonesSpecTest(unittest.TestCase):
     """Seam: load_spec accepts zones (flat or pitched); refuses bad from/levels."""
