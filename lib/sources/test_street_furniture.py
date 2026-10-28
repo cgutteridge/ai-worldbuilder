@@ -118,6 +118,14 @@ class DesignerSpec(unittest.TestCase):
         self.assertEqual(missing_items, [])
         self.assertEqual(missing_obs, [])
 
+    def test_loads_coordinate_photo_and_aerial_object_labels(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'decor-furniture.json'
+            labels = [{'kind': 'vehicle', 'cell': [4, 5], 'source': 'aerial',
+                       'evidence_ids': ['aerial1']}]
+            path.write_text(json.dumps({'0,0': {'observations': labels}}))
+            self.assertEqual(sf.designer_observations((0, 0), path), labels)
+
     def test_merge_prefers_map_over_designer_at_same_column(self):
         mapped = sf.map_items([(10, 20, 'bench')])
         designed = [{'x': 10, 'z': 20, 'kind': 'waste_basket', 'source': 'designer'},

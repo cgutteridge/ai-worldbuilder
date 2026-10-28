@@ -150,6 +150,60 @@ class TestBuildDecorPlan(unittest.TestCase):
         self.assertEqual(dp.unresolved_items(plan)[0]['id'], 'u1')
 
 
+class TestLidarFurniture(unittest.TestCase):
+    """Photo/aerial labels identify lidar objects; lidar alone never identifies cars."""
+
+    def plan(self, observations, *, footprint=None, canopy=None, map_furniture=()):
+        import numpy as np
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((16, 16), 64),
+              'h': np.full((16, 16), 64), 'kind': np.zeros((16, 16))}
+        for x, z in ((4, 4), (4, 5), (10, 10)):
+            hm['h'][x, z] = 65
+        return dp.build_decor_plan(
+            (0, 0), map_barriers={}, map_furniture=map_furniture,
+            garden={}, rgb={}, footprint=footprint or set(),
+            canopy=canopy or set(), lidar_hm=hm, photo_observations=observations,
+        )
+
+    def test_photo_furniture_places_one_recipe_per_object_and_vehicle_does_not(self):
+        from decor_layer import place_furniture
+        plan = self.plan([
+            {'kind': 'waste_basket', 'cell': [4, 4], 'evidence_ids': ['photo1']},
+            {'kind': 'vehicle', 'cell': [10, 10], 'evidence_ids': ['photo1']},
+        ])
+        rows = dp.resolved_furniture(plan)
+        self.assertEqual([(r['x'], r['z'], r['kind']) for r in rows],
+                         [(4, 4, 'waste_basket')])
+        world = mock.Mock()
+        world.block.return_value = 'minecraft:air'
+        with mock.patch('decor_layer.column_ground_kind', return_value='paving'), \
+                mock.patch('surface_probe.surface_y', return_value=(64, 'stone')):
+            placed, _, _ = place_furniture(
+                (0, 0), rows, world, way=set(), near1=set(), owned=set(), masked=set())
+        self.assertEqual(placed, {(4, 65, 4): 'cauldron'})
+
+    def test_unlabelled_or_conflicting_object_never_places(self):
+        for observations in ([], [
+            {'kind': 'bench', 'cell': [4, 4]},
+            {'kind': 'vehicle', 'cell': [4, 5]},
+        ]):
+            self.assertEqual(dp.resolved_furniture(self.plan(observations)), [])
+
+    def test_vehicle_label_overrides_generic_map_furniture(self):
+        plan = self.plan([{'kind': 'vehicle', 'cell': [4, 4]}],
+                         map_furniture=[(4, 5, 'bench')])
+        self.assertEqual(dp.resolved_furniture(plan), [])
+
+    def test_footprints_and_tree_canopy_excluded(self):
+        plan = self.plan([], footprint={(4, 4), (4, 5)}, canopy={(10, 10)})
+        self.assertEqual(plan['items'], [])
+
+    def test_aerial_label_resolves_and_other_sources_do_not(self):
+        for source, count in [('aerial', 1), ('vector_map', 0)]:
+            plan = self.plan([{'kind': 'bollard', 'cell': [4, 4], 'source': source}])
+            self.assertEqual(len(dp.resolved_furniture(plan)), count)
+
+
 class TestPlaceRespectsBuildingBorder(unittest.TestCase):
     """Building-border hedges may sit in the near1 ring; other barriers may not."""
 

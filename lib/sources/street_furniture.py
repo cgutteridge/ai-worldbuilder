@@ -202,6 +202,15 @@ def designer_observations(cell: tuple[int, int], path: Path | None = None) -> li
         if not isinstance(raw, dict) or not raw.get('kind'):
             continue
         obs = {'kind': str(raw['kind'])}
+        if raw.get('cell') is not None:
+            try:
+                obs['cell'] = [int(raw['cell'][0]), int(raw['cell'][1])]
+            except (TypeError, ValueError, IndexError):
+                continue
+        if raw.get('source'):
+            obs['source'] = str(raw['source'])
+        if raw.get('evidence_ids'):
+            obs['evidence_ids'] = list(raw['evidence_ids'])
         if raw.get('note'):
             obs['note'] = str(raw['note'])
         if raw.get('unresolved_reason'):
