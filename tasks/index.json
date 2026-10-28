@@ -11,51 +11,6 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
-    },
-    {
-      "id": 181,
-      "title": "osm_extract: resolve the vector_map provider from the world config",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "shims/osm_extract.py hardcodes _PACKAGE = providers/geofabrik-hampshire (line 25), so a world with a different regional extract (Ventnor needed geofabrik-isle-of-wight) cannot use the shim and the Ventnor build ran a throwaway script instead. Resolve the vector_map provider id from the active world's config/local-providers.json (cell_sources.provider_package_dir) and fail clearly when none is set. Found in the Ventnor new-world run."
-    },
-    {
-      "id": 182,
-      "title": "New worlds: generate or share osmconf.ini for the vector_map extractor",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "The extract step needs an osmconf.ini; nothing in the tool repo creates it (no reference to it outside worlds), so the Ventnor run copied one by hand from Southampton. Either generate it when scaffolding a new world / provider, or point the extractor at one shared copy in the tool repo. Pair with the osm_extract provider-resolution task."
-    },
-    {
-      "id": 183,
-      "title": "Scaffold command for a new world's vector_map provider",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "In the Ventnor run the agent made geofabrik-isle-of-wight by hand-copying the Southampton extractor because the Hampshire extract does not cover the Isle of Wight. Add a command (or skill-driven script) that scaffolds a regional-extract provider for a new world from a Geofabrik extract name, including the osmconf.ini and the catalogue row, and checks the extract covers the bbox. Update the new-world-build skill section 3 to use it."
-    },
-    {
-      "id": 184,
-      "title": "templates: .gitignore for a new world repo",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "A new world is its own git repo but there is no template .gitignore for downloads/ and caches; the Ventnor run copied Southampton's by hand. Add one under templates/ (e.g. templates/new-world-site or a new templates/new-world-repo) and have the new-world-build skill copy it. The skill's close checklist currently says to copy an existing world's."
-    },
-    {
-      "id": 186,
-      "title": "Shims fail from a plain checkout: import script_env needs PYTHONPATH=scripts:lib",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "From a clean checkout with no .venv, python3 shims/lidar_extremes.py fails with ModuleNotFoundError: script_env (shims/lidar_extremes.py puts only the repo root on sys.path); it works with PYTHONPATH=scripts:lib. Same pattern for the other shims. Make shims add scripts/ and lib/ to sys.path themselves (or via _provider_shim), so the documented command works, then drop the PYTHONPATH prefix from the new-world-build skill."
     }
   ]
 }
