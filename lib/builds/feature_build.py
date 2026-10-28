@@ -91,8 +91,8 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  deck at its plateau. ``kind == "pitched"``: within each zone,
                  where the DSM rises above the plateau (a ridge), stair / slab /
                  full-block slopes run from the zone eave up to the ridge
-                 (stairs face upslope; hips/valleys set shape; flat plateaus
-                 stay flat). Optional ``roofs[label].edge`` places a parapet on
+                 (stairs face upslope; shape from same-Y stair neighbours;
+                 flat plateaus stay flat). Optional ``roofs[label].edge`` places a parapet on
                  outer edges or on every zone step (default: none).
                  Optional ``roofs[label].zone_materials`` sets a different mat
                  per plateau. Dry run samples the aerial mosaic over each zone
@@ -562,10 +562,8 @@ def stair(mat: str, facing: str, half: str = 'bottom') -> str:
     return f'{mat}_stairs[facing={facing},half={half}]'
 
 
-# Cardinal deltas and left/right relative to a stair facing (upslope).
+# Cardinal deltas for pitched-roof upslope detection.
 _ROOF_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
-_ROOF_LEFT = {'east': 'north', 'west': 'south', 'south': 'east', 'north': 'west'}
-_ROOF_RIGHT = {'east': 'south', 'west': 'north', 'south': 'west', 'north': 'east'}
 # Roof materials with no stair / slab block in vanilla 1.21 (never invent another mat).
 _ROOF_NO_STAIRS = frozenset({'smooth_stone'})
 _ROOF_NO_SLAB = frozenset()
@@ -625,40 +623,69 @@ def _roof_slab(mat: str, typ: str) -> str:
     return f'{mat}_slab[type={typ},waterlogged=false]'
 
 
-def _corner_shape(facing: str, other: str, kind: str) -> str:
-    """Map a second orthogonal direction onto ``inner_*`` / ``outer_*``.
+_ROOF_FACE_ORDER = ('north', 'east', 'south', 'west')
 
-    @param facing: primary upslope facing
-    @param other: orthogonal facing that also rises (valley) or falls (hip)
-    @param kind: ``inner`` or ``outer``
-    @returns: shape property value
+
+def regularise_roof_half_heights(
+    half_heights: dict[tuple[int, int], int],
+    levels: dict[tuple[int, int], int] | None = None,
+) -> dict[tuple[int, int], int]:
+    """Lower cliffs so neighbouring columns differ by at most 2 half-steps.
+
+    Lidar is only a guide for roofs: a Minecraft stair skin cannot bridge a
+    taller jump in one column, so peaks drop toward their neighbours until
+    every N4 step within a roof zone is 0, 1 or 2 half-blocks. Distinct zoned
+    plateaus keep their intentional wall-backed height changes.
+
+    @param half_heights: ``{(x, z): half_height}`` raw membrane tops
+    @param levels: optional semantic zone level per column; only equal levels join
+    @returns: new dict with the same keys, cliffs pulled down
     """
-    if _ROOF_LEFT[facing] == other:
-        return f'{kind}_left'
-    if _ROOF_RIGHT[facing] == other:
-        return f'{kind}_right'
-    return 'straight'
+    h = dict(half_heights)
+    pending = deque(h)
+    queued = set(h)
+    while pending:
+        x, z = pending.popleft()
+        queued.remove((x, z))
+        for dx, dz in N4:
+            c = (x + dx, z + dz)
+            if (c in h and h[c] > h[(x, z)] + 2
+                    and (levels is None or levels[c] == levels[(x, z)])):
+                h[c] = h[(x, z)] + 2
+                if c not in queued:
+                    pending.append(c)
+                    queued.add(c)
+    return h
 
 
 def pitched_roof_states(
     half_heights: dict[tuple[int, int], int],
     materials: dict[tuple[int, int], str],
     warnings: list[str] | None = None,
+    levels: dict[tuple[int, int], int] | None = None,
 ) -> dict[tuple[int, int], str]:
     """Choose stair / slab / full block states for a pitched-roof heightfield.
 
     ``half_heights`` is the membrane top in half-blocks (``2 * y`` for a full
-    block or bottom-slab course at ``y``, ``2 * y + 1`` for a top slab). A rise
-    of 2 half-steps toward a neighbour is a stair facing upslope; hips and
-    valleys set ``shape`` from the orthogonal neighbours; flat / ridge cells
-    use a full block (even) or top slab (odd). Missing stair/slab variants
-    fall back to the family's full block and append a warning.
+    block or bottom-slab course at ``y``, ``2 * y + 1`` for a top slab). Heights
+    are regularised first (N4 steps at most 2 within a zone). A rise of 2
+    half-steps toward a neighbour is a stair facing upslope; hip eaves with only a diagonal rise
+    also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
+    (vanilla neighbour rule via ``roof_lint.stair_shape_from_neighbours``), not
+    from height differences on the diagonal. Flat / ridge cells use a full
+    block (even) or top slab (odd). Missing stair/slab variants fall back to
+    the family's full block and append a warning.
 
     @param half_heights: ``{(x, z): half_height}``
     @param materials: ``{(x, z): material prefix}`` (must cover every column)
     @param warnings: optional list that receives fallback messages
-    @returns: ``{(x, z): block state}`` (place at ``y = half_height // 2``)
+    @param levels: optional semantic zone levels preserving intentional plateau steps
+    @returns: ``{(x, z): block state}`` (place at ``y = half_height // 2`` after
+        regularisation)
     """
+    from roof_lint import stair_shape_from_neighbours
+
+    half_heights = regularise_roof_half_heights(half_heights, levels)
     warn = warnings if warnings is not None else []
     fam_cache: dict[str, dict[str, str]] = {}
     out: dict[tuple[int, int], str] = {}
@@ -676,79 +703,78 @@ def pitched_roof_states(
     def h_at(x: int, z: int) -> int | None:
         return half_heights.get((x, z))
 
-    for (x, z), h in half_heights.items():
-        mat = materials[(x, z)]
-        f = fam(mat)
-        ups: list[str] = []
-        for face, (dx, dz) in _ROOF_DELTA.items():
-            nh = h_at(x + dx, z + dz)
-            if nh is not None and nh >= h + 2:
-                ups.append(face)
-        # Prefer orthogonal pairs for corners; else a single upslope.
-        ortho_pair = None
+    def ups_at(x: int, z: int, h: int) -> list[str]:
+        return [
+            face for face in _ROOF_FACE_ORDER
+            if (nh := h_at(x + _ROOF_DELTA[face][0], z + _ROOF_DELTA[face][1])) is not None
+            and nh >= h + 2
+        ]
+
+    def ortho_pair_of(ups: list[str]) -> tuple[str, str] | None:
         for i, a in enumerate(ups):
             for b in ups[i + 1:]:
                 ax, az = _ROOF_DELTA[a]
                 bx, bz = _ROOF_DELTA[b]
                 if ax * bx + az * bz == 0:
-                    ortho_pair = (a, b)
-                    break
-            if ortho_pair:
-                break
+                    return (a, b)
+        return None
 
-        if ortho_pair:
-            a, b = ortho_pair
-            dx = _ROOF_DELTA[a][0] + _ROOF_DELTA[b][0]
-            dz = _ROOF_DELTA[a][1] + _ROOF_DELTA[b][1]
-            diag = h_at(x + dx, z + dz)
-            if diag is not None and diag > h:
-                kind = 'outer'  # hip: diagonal keeps rising
-            else:
-                kind = 'inner'  # valley: gutter between two rises
-            shape = _corner_shape(a, b, kind)
-            if 'stairs' in f:
-                out[(x, z)] = _roof_stair(mat, a, shape=shape)
-            else:
-                out[(x, z)] = fallback(mat, 'stairs')
-            continue
-
+    # Pass 1: facing only (shape is game-owned from same-Y neighbours).
+    facings: dict[tuple[int, int], str] = {}
+    for (x, z), h in half_heights.items():
+        ups = ups_at(x, z, h)
+        pair = ortho_pair_of(ups)
         if len(ups) == 1:
-            facing = ups[0]
-            if 'stairs' in f:
-                out[(x, z)] = _roof_stair(mat, facing, shape='straight')
-            else:
-                out[(x, z)] = fallback(mat, 'stairs')
-            continue
-
-        # Hip eave corner: no cardinal +2 rise, but a diagonal neighbour is higher.
-        diag_pair = None
-        for a, (ax, az) in _ROOF_DELTA.items():
-            for b, (bx, bz) in _ROOF_DELTA.items():
-                if a >= b or ax * bx + az * bz != 0:
-                    continue
-                nh = h_at(x + ax + bx, z + az + bz)
-                if nh is not None and nh >= h + 2:
-                    diag_pair = (a, b)
+            facings[(x, z)] = ups[0]
+        elif pair is not None:
+            facings[(x, z)] = pair[0]
+        elif not ups:
+            diag_pair = None
+            for a in _ROOF_FACE_ORDER:
+                for b in _ROOF_FACE_ORDER:
+                    if a >= b:
+                        continue
+                    ax, az = _ROOF_DELTA[a]
+                    bx, bz = _ROOF_DELTA[b]
+                    if ax * bx + az * bz != 0:
+                        continue
+                    nh = h_at(x + ax + bx, z + az + bz)
+                    if nh is not None and nh >= h + 2:
+                        diag_pair = (a, b)
+                        break
+                if diag_pair:
                     break
             if diag_pair:
-                break
-        if diag_pair:
-            a, b = diag_pair
-            shape = _corner_shape(a, b, 'outer')
+                facings[(x, z)] = diag_pair[0]
+
+    # Pass 2: shape from same-Y stair neighbours; slabs / fulls elsewhere.
+    for (x, z), h in half_heights.items():
+        mat = materials[(x, z)]
+        f = fam(mat)
+        if (x, z) in facings:
+            facing = facings[(x, z)]
+            y = h // 2
+            adjacent: dict[str, tuple[str, str] | None] = {}
+            for face, (dx, dz) in _ROOF_DELTA.items():
+                npos = (x + dx, z + dz)
+                if (npos not in facings or half_heights[npos] // 2 != y
+                        or 'stairs' not in fam(materials[npos])):
+                    adjacent[face] = None
+                else:
+                    adjacent[face] = (facings[npos], 'bottom')
+            shape = stair_shape_from_neighbours(facing, 'bottom', adjacent)
             if 'stairs' in f:
-                out[(x, z)] = _roof_stair(mat, a, shape=shape)
+                out[(x, z)] = _roof_stair(mat, facing, shape=shape)
             else:
                 out[(x, z)] = fallback(mat, 'stairs')
             continue
 
-        # Flat, ridge, or shallow (±1 half-step) course.
         if h % 2 == 1:
             if 'slab' in f:
                 out[(x, z)] = _roof_slab(mat, 'top')
             else:
                 out[(x, z)] = fallback(mat, 'slab')
         else:
-            # Even course: full block (not a bottom slab — apply rewrites those).
             out[(x, z)] = f['full']
 
     return out
@@ -1444,6 +1470,9 @@ class Build:
                         roof[(wx, wz)] = eave_y
                     gy[(wx, wz)] = int(ground[z, x])
                     zl[(wx, wz)] = int(round(float(zone[z, x])))
+            if pitched:
+                half_h = regularise_roof_half_heights(half_h, zl)
+                roof = {c: h // 2 for c, h in half_h.items()}
             # neighbourhood ground for expose() outside the mass
             for z in range(depth):
                 for x in range(width):
@@ -1559,7 +1588,7 @@ class Build:
                 c: roof_material_for_zone(f.roof, zl.get(c)) for c in halfs
             }
             pitched_states = pitched_roof_states(
-                halfs, mats, warnings=self._roof_warnings,
+                halfs, mats, warnings=self._roof_warnings, levels=zl,
             )
 
         def top_of(q: tuple[int, int]) -> int:
@@ -2200,7 +2229,9 @@ class Build:
                         dist[n] = dist[c] + 1
                         nq.append(n)
             q = nq
-        half_heights = {c: 2 * (eave + d) for c, d in dist.items()}
+        half_heights = regularise_roof_half_heights(
+            {c: 2 * (eave + d) for c, d in dist.items()},
+        )
         materials = {c: rm for c in dist}
         states = pitched_roof_states(
             half_heights, materials, warnings=self._roof_warnings,

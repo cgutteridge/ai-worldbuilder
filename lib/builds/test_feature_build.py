@@ -1257,6 +1257,45 @@ class PitchedZonesRidgeTest(unittest.TestCase):
             )
         return plan
 
+    def test_zoned_shell_uses_regularised_heights_for_placement(self):
+        half_grid = np.zeros((7, 11), dtype=int)
+        half_grid[:, 5:] = 10  # raw five-block cliff inside one roof
+        builder = F.Build(
+            self._spec('pitched', [48]), footprints={'A': self.cells},
+            world=_StoneWorld(), zone_data=self.ridge_zone_data,
+        )
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                mock.patch.object(F, 'zone_ridge_half_steps', return_value=half_grid), \
+                redirect_stdout(io.StringIO()):
+            plan = builder.build()
+        feature = builder.features[0]
+        self.assertLess(feature.zone_roof_half[(14, 22)], 106)
+        for (x, z), h in feature.zone_roof_half.items():
+            self.assertEqual(feature.zone_roof[(x, z)], h // 2)
+            state = plan.cells[(x, h // 2, z)]
+            self.assertTrue('brick_stairs' in state or 'brick_slab' in state or state.endswith(':bricks'))
+        from roof_lint import stair_shape_mismatches
+        self.assertEqual(stair_shape_mismatches(plan.cells), [])
+
+    def test_pitched_zones_preserve_distinct_flat_plateau_levels(self):
+        builder = F.Build(
+            self._spec('pitched', [45, 50]), footprints={'A': self.cells},
+            world=_StoneWorld(), zone_data=self.flat_zone_data,
+        )
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                mock.patch.object(F, 'zone_ridge_half_steps', return_value=np.zeros((7, 11), dtype=int)), \
+                redirect_stdout(io.StringIO()):
+            pitched = builder.build()
+        feature = builder.features[0]
+        self.assertEqual({feature.zone_roof[c] for c in feature.cells}, {45, 50})
+        for c in feature.cells:
+            self.assertEqual(feature.zone_roof[c], feature.zone_level[c])
+        # The semantic zone step has an exposed wall, not a noisy roof cliff.
+        # Smoothing across it would lower the taller mass toward the low wing.
+        high = {pos for pos, st in pitched.cells.items()
+                if pos[1] == 50 and st == 'minecraft:bricks' and (pos[0], pos[2]) in self.cells}
+        self.assertTrue(high)
+
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
         """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
         pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
@@ -1809,7 +1848,24 @@ class BlockFamilyVariantsTest(unittest.TestCase):
 
 
 class PitchedRoofStatesTest(unittest.TestCase):
-    """Seam: pitched_roof_states — gable, hip, valley block states (#149)."""
+    """Seam: pitched_roof_states — gable, hip, valley; shape from same-Y neighbours (#149, #169)."""
+
+    def _place_membrane(self, half, states):
+        """Write pitched membrane into MemoryBlocks at ``y = half // 2``."""
+        from block_store import MemoryBlocks
+        store = MemoryBlocks(default='air')
+        for (x, z), st in states.items():
+            store.write((x, half[(x, z)] // 2, z), st)
+        store.flush()
+        return store
+
+    def _assert_shapes_match_neighbours(self, half, states):
+        """Planned stair shapes must equal the vanilla same-Y neighbour rule."""
+        from roof_lint import stair_shape_mismatches
+        adjusted = F.regularise_roof_half_heights(half)
+        store = self._place_membrane(adjusted, states)
+        positions = [(x, adjusted[(x, z)] // 2, z) for x, z in states]
+        self.assertEqual(stair_shape_mismatches(store.read_many(positions)), [])
 
     def test_gable_stairs_face_upslope_ridge_full(self):
         # Ridge along x at z=2; half-heights rise by 2 toward the ridge.
@@ -1838,6 +1894,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         )
         # Ridge is a full block, not a stair terrace
         self.assertEqual(states[(2, 2)], 'bricks')
+        self._assert_shapes_match_neighbours(half, states)
 
     def test_hip_outer_corner_shape(self):
         # Pyramid: half = 2 * chebyshev dist from outside of a 5×5 (edge=0).
@@ -1853,12 +1910,13 @@ class PitchedRoofStatesTest(unittest.TestCase):
             states[(2, 0)],
             'brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]',
         )
-        # Footprint corner: diagonal rise only → outer hip stair
+        # Footprint corner: diagonal rise only → outer hip stair from edge neighbour
         corner = states[(0, 0)]
         self.assertIn('brick_stairs', corner)
         self.assertIn('shape=outer_', corner)
         self.assertIn('waterlogged=false', corner)
         self.assertEqual(states[(2, 2)], 'bricks')
+        self._assert_shapes_match_neighbours(half, states)
 
     def test_valley_inner_corner_shape(self):
         # At (1,1)=12: east and north are +2 uphill; NE diagonal is not higher → valley.
@@ -1874,6 +1932,90 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertIn('shape=inner_', v)
         self.assertIn('half=bottom', v)
         self.assertIn('waterlogged=false', v)
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_valley_inner_even_when_diagonal_is_higher(self):
+        # Same valley ups at (1,1), but NE diagonal is taller — old height-diff
+        # logic called this outer; same-Y neighbours still form an inner.
+        half = {
+            (0, 0): 10, (1, 0): 12, (2, 0): 14,
+            (0, 1): 12, (1, 1): 12, (2, 1): 14,
+            (0, 2): 14, (1, 2): 14, (2, 2): 16,
+        }
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertIn('shape=inner_', states[(1, 1)])
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_straight_run_same_height_neighbours(self):
+        half = {(x, 0): 10 for x in range(3)}
+        half.update({(x, 1): 12 for x in range(3)})
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        for x in range(3):
+            self.assertEqual(
+                states[(x, 0)],
+                'brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]',
+            )
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_three_rises_picks_stable_facing_and_neighbour_shape(self):
+        # Local saddle: N/E/S all +2 → ortho pair (N,E), facing north; shape from neighbours.
+        half = {
+            (1, 0): 14,
+            (0, 1): 12, (1, 1): 12, (2, 1): 14,
+            (1, 2): 14,
+        }
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertIn('brick_stairs', states[(1, 1)])
+        self.assertIn('facing=north', states[(1, 1)])
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_slab_beside_stair_does_not_force_corner(self):
+        # Odd half-height neighbour is a top slab, not a stair → shape stays straight.
+        half = {(0, 0): 10, (1, 0): 11, (0, 1): 12}
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertIn('brick_stairs', states[(0, 0)])
+        self.assertIn('shape=straight', states[(0, 0)])
+        self.assertIn('_slab', states[(1, 0)])
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_full_block_beside_stair_does_not_force_corner(self):
+        # Ridge full block upslope of a stair — not a stair neighbour, shape stays straight.
+        half = {(0, 0): 10, (1, 0): 12}
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertEqual(
+            states[(0, 0)],
+            'brick_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]',
+        )
+        self.assertEqual(states[(1, 0)], 'bricks')
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_full_block_fallback_is_not_a_stair_neighbour(self):
+        half = {(0, 0): 10, (1, 0): 10, (0, 1): 10, (1, 1): 12}
+        mats = {c: 'brick' for c in half}
+        mats[(1, 0)] = 'smooth_stone'  # no vanilla stair family
+        states = F.pitched_roof_states(half, mats)
+        self.assertEqual(states[(1, 0)], 'smooth_stone')
+        self.assertIn('shape=straight', states[(0, 0)])
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_regularisation_is_stable_and_does_not_mutate_input(self):
+        raw = {(0, 0): 10, (1, 0): 18, (2, 0): 20, (3, 0): 22}
+        expected = {(0, 0): 10, (1, 0): 12, (2, 0): 14, (3, 0): 16}
+        self.assertEqual(F.regularise_roof_half_heights(raw), expected)
+        self.assertEqual(F.regularise_roof_half_heights(dict(reversed(list(raw.items())))), expected)
+        self.assertEqual(F.regularise_roof_half_heights(expected), expected)
+        self.assertEqual(raw[(1, 0)], 18)
+
+    def test_regularise_lowers_cliff_taller_than_one_stair(self):
+        raw = {(0, 0): 10, (1, 0): 18}
+        got = F.regularise_roof_half_heights(raw)
+        self.assertEqual(got[(0, 0)], 10)
+        self.assertEqual(got[(1, 0)], 12)
 
     def test_missing_stairs_falls_back_to_full_and_warns(self):
         half = {(0, 0): 10, (1, 0): 12}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Roof lint: find ridges that jog sideways between neighbouring rows.
+"""Roof lint: ridge jogs and stair shapes that fight the game's neighbour rule.
 
 A real pitched roof (gable or hip) on a squared Minecraft footprint keeps each ridge
 on one straight block line. A ridge whose position shifts by one or more columns from
@@ -7,6 +7,12 @@ one row to the next means the slope under it has been displaced sideways, so eve
 on that seam changes height and the roof reads as zig-zagged / misaligned blocks
 (I-034: broadlands_rd_56_62 squared a 22 deg pair as three stepped segments, each with
 its own ridge column).
+
+The stable stair ``shape`` follows stairs at the **same Y** (and same ``half``)
+beside the block (vanilla ``StairBlock.getStairsShape``). Explicit batch-written
+states may persist until a neighbour update, so live readback is separate. Plans
+must set facing so that rule yields the intended outer/inner/straight mitre, and
+write that same shape into the state; otherwise joins change after apply (#169).
 
   python3 scripts/roof_lint.py <build> [<build> ...]   # recorded plans in the cell journal
   python3 scripts/roof_lint.py --all
@@ -25,6 +31,10 @@ OUT = ROOT / 'verification/site'
 
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
 _UP = {'east': ('x', 1), 'west': ('x', -1), 'south': ('z', 1), 'north': ('z', -1)}
+_STAIR_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
+_STAIR_LEFT = {'east': 'north', 'west': 'south', 'south': 'east', 'north': 'west'}
+_STAIR_RIGHT = {'east': 'south', 'west': 'north', 'south': 'west', 'north': 'east'}
+_STAIR_OPP = {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}
 _SKIP = ('minecraft:air', 'minecraft:light', 'minecraft:cave_air')
 _THIN = ('pane', 'pot', 'potted', 'torch', 'lantern', 'sign', 'button', 'fence', 'wall', 'bars',
          'door', 'carpet', 'leaves', 'flower', 'sapling', 'grass[', 'short_grass', 'fern')
@@ -34,6 +44,85 @@ def _props(state: str) -> dict:
     if '[' not in state:
         return {}
     return dict(kv.split('=', 1) for kv in state[state.index('[') + 1:-1].split(','))
+
+
+def stair_shape_from_neighbours(
+    facing: str,
+    half: str,
+    adjacent: dict[str, tuple[str, str] | None],
+) -> str:
+    """Vanilla stair ``shape`` from same-Y cardinal stair neighbours.
+
+    Matches ``StairBlock.getStairsShape`` / ``canTakeShape``: only neighbours that
+    are stairs with the same ``half`` participate. Outer corners look at the
+    neighbour in the facing direction; inner corners look behind. A conflicting
+    stair on the check side forces ``straight``.
+
+    @param facing: this stair's facing
+    @param half: ``bottom`` or ``top``
+    @param adjacent: ``{north|south|east|west: (facing, half) | None}`` for the
+        four same-Y neighbours (``None`` = missing, non-stair, or other half)
+    @returns: ``straight`` / ``outer_left`` / ``outer_right`` / ``inner_left`` /
+        ``inner_right``
+    """
+    front = adjacent.get(facing)
+    if front is not None and front[1] == half:
+        ff = front[0]
+        if ff in (_STAIR_LEFT[facing], _STAIR_RIGHT[facing]):
+            other = adjacent.get(_STAIR_OPP[ff])
+            if not (other is not None and other[0] == facing and other[1] == half):
+                return 'outer_left' if ff == _STAIR_LEFT[facing] else 'outer_right'
+    behind = adjacent.get(_STAIR_OPP[facing])
+    if behind is not None and behind[1] == half:
+        bf = behind[0]
+        if bf in (_STAIR_LEFT[facing], _STAIR_RIGHT[facing]):
+            other = adjacent.get(bf)
+            if not (other is not None and other[0] == facing and other[1] == half):
+                return 'inner_left' if bf == _STAIR_LEFT[facing] else 'inner_right'
+    return 'straight'
+
+
+def _stair_facing_half(state: str) -> tuple[str, str] | None:
+    """Parse stair facing/half from a block state, or None if not a bottom/top stair."""
+    if '_stairs' not in state:
+        return None
+    p = _props(state)
+    facing = p.get('facing')
+    half = p.get('half', 'bottom')
+    if facing not in _STAIR_DELTA or half not in ('bottom', 'top'):
+        return None
+    return facing, half
+
+
+def stair_shape_mismatches(cells: dict) -> list[dict]:
+    """Stairs whose planned ``shape`` disagrees with the same-Y neighbour rule.
+
+    @param cells: ``{(x, y, z): block state}`` (a Plan's cells or a recorded journal plan)
+    @returns: list of ``{x, y, z, facing, half, planned, expected}`` — one per mismatch
+    """
+    by_pos = {}
+    for (x, y, z), s in cells.items():
+        if s in _SKIP or any(t in s.split(':', 1)[-1] for t in _THIN):
+            continue
+        fh = _stair_facing_half(s)
+        if fh is None:
+            continue
+        by_pos[(x, y, z)] = (s, fh[0], fh[1], _props(s).get('shape', 'straight'))
+
+    out = []
+    for (x, y, z), (state, facing, half, planned) in by_pos.items():
+        adjacent: dict[str, tuple[str, str] | None] = {}
+        for face, (dx, dz) in _STAIR_DELTA.items():
+            n = by_pos.get((x + dx, y, z + dz))
+            adjacent[face] = (n[1], n[2]) if n is not None else None
+        expected = stair_shape_from_neighbours(facing, half, adjacent)
+        if planned != expected:
+            out.append({
+                'x': x, 'y': y, 'z': z,
+                'facing': facing, 'half': half,
+                'planned': planned, 'expected': expected,
+            })
+    return out
 
 
 def _tops(cells: dict) -> dict:
@@ -143,9 +232,9 @@ def _load(name: str) -> dict:
 
 
 def main() -> int:
-    """CLI: report ridge jogs for recorded builds.
+    """CLI: report ridge jogs and stair-shape mismatches for recorded builds.
 
-    @returns: process exit code (1 if any jog was found)
+    @returns: process exit code (1 if any jog or stair-shape mismatch was found)
     """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('builds', nargs='*')
@@ -160,15 +249,23 @@ def main() -> int:
         ap.error('name a build or pass --all')
     bad = 0
     for n in names:
-        jogs = ridge_jogs(_load(n))
-        if jogs:
+        cells = _load(n)
+        jogs = ridge_jogs(cells)
+        shapes = stair_shape_mismatches(cells)
+        if jogs or shapes:
             bad += 1
-            print(f'{n}: {len(jogs)} ridge jog(s)')
-            for j in jogs[:8]:
-                print(f"   ridge along {'z' if j['axis'] == 'x' else 'x'} row {j['row']}: "
-                      f"{j['axis']}={j['pos']:g} -> {j['next_pos']:g} (y{j['y']}, shift {j['shift']:+g})")
+            if jogs:
+                print(f'{n}: {len(jogs)} ridge jog(s)')
+                for j in jogs[:8]:
+                    print(f"   ridge along {'z' if j['axis'] == 'x' else 'x'} row {j['row']}: "
+                          f"{j['axis']}={j['pos']:g} -> {j['next_pos']:g} (y{j['y']}, shift {j['shift']:+g})")
+            if shapes:
+                print(f'{n}: {len(shapes)} stair-shape mismatch(es)')
+                for m in shapes[:8]:
+                    print(f"   ({m['x']},{m['y']},{m['z']}) facing={m['facing']} "
+                          f"planned={m['planned']} expected={m['expected']}")
     if not bad:
-        print(f'{len(names)} build(s): no ridge jogs')
+        print(f'{len(names)} build(s): no ridge jogs, 0 stair-shape mismatches')
     return 1 if bad else 0
 
 
