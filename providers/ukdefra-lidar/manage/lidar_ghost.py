@@ -125,7 +125,7 @@ def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
         raise ValueError(f'ring must be >= 0, got {ring}')
     out: list[tuple[int, int]] = []
     for r in range(0 if include_focus else 1, ring + 1):
-        out.extend(cellmath.ring_cells(r, origin=focus))
+        out.extend(cellmath.ring_cells(r, home=focus))
     return out
 
 

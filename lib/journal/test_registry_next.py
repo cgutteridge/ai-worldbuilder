@@ -18,7 +18,7 @@ class NextTaskTest(unittest.TestCase):
         self.addCleanup(self.jw.__exit__)
         self.root = self.jw.root
         (self.root / 'site' / 'archive').mkdir(parents=True)
-        cellmath.reload_grid({'cell': {'size': 128, 'origin': [48, -44]}})
+        cellmath.reload_grid({'cell': {'size': 128, 'home': [48, -44]}})
         self.addCleanup(cellmath.reload_grid)
 
     def in_progress(self, fid, cell=(48, -44)):

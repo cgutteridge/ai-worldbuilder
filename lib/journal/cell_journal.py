@@ -1149,7 +1149,7 @@ class CellRegistry:
         for s in self.seeds():
             out.add(s)
             for r in range(1, depth + 1):
-                out.update(cellmath.ring_cells(r, origin=s))
+                out.update(cellmath.ring_cells(r, home=s))
         return frozenset(out)
 
     # ---- writing: prepare / begin / finish -------------------------------------------------

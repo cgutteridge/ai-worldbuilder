@@ -141,6 +141,8 @@ def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     data = json.loads(p.read_text())
     if 'offsets' not in data:
         raise SystemExit(f'{p} missing offsets')
+    if 'origin' in (data.get('cell') or {}):
+        raise SystemExit(f'{p}: cell.origin has been renamed to cell.home; update the frame')
     frame = WorldFrame(data)
     if path is None:
         _FRAME = frame
@@ -160,7 +162,6 @@ def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
         'OFFSET_E': f.offset_e,
         'OFFSET_N': f.offset_n,
         'SEA_LEVEL': f.sea_level,
-        'TOP_OF_WORLD': d.get('top_of_world'),
         'ELEVATION_PLUGIN': d.get('elevation_plugin'),
     }
 
@@ -929,7 +930,7 @@ def main(argv: list[str] | None = None) -> int:
             'offsets': {'easting': f.offset_e, 'northing': f.offset_n},
             'cell': f.data.get('cell') or {
                 'size': cellmath.cell_size(),
-                'origin': list(cellmath.origin_cell()),
+                'home': list(cellmath.home_cell()),
             },
             'y_offset': f.y_offset,
             'elevation_plugin': f.data.get('elevation_plugin'),

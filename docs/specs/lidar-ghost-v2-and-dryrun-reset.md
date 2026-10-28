@@ -13,7 +13,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 ## Solution
 
-1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the origin cell to seed the ghost frontier.
+1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the home cell to seed the ghost frontier.
 2. **Lidar ghost v2 (amended #68)** — Maintain a **frontier** of cells that should show placeholders: any cell with an **Element** started in the **registry** (feature, ground, trees, or decor) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** (DTM fill + colour-coded top from DSM − DTM) until **real ground** exists there. After **every successful Element apply**, **refresh** the frontier and ensure missing ghost ground.
 3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
 

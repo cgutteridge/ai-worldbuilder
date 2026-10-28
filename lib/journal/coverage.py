@@ -795,8 +795,8 @@ def focus_cell() -> tuple[int, int]:
     if cur is not None:
         return cur
     try:
-        from cellmath import origin_cell
-        return origin_cell()
+        from cellmath import home_cell
+        return home_cell()
     except Exception:
         pass
     if COVERAGE_TXT.exists():
@@ -806,7 +806,7 @@ def focus_cell() -> tuple[int, int]:
         )
         if m:
             return int(m.group(1)), int(m.group(2))
-    raise SystemExit('no registry marker, origin cell, or COVERAGE.txt focus line')
+    raise SystemExit('no registry marker, home cell, or COVERAGE.txt focus line')
 
 
 def cell_rollup(areas: list, touched: set, signoffs: dict) -> list:
