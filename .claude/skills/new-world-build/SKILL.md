@@ -96,7 +96,7 @@ Once `y_offset` is locked, give the world its first ground: lidar ghost around t
 python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py apply --cell <home cell> --ring 1
 ```
 
-   Use `--ring 0` for the home cell alone (fast, a few cells' worth of wait avoided) when the user only wants a quick look.
+   Use `--ring 0` for the home cell alone (just the home cell, fastest) when the user only wants a quick look.
 2. Then set the world spawn at the home point and put the player there (the spawn step in 1d), with the game open on the world.
 3. Ask the user to look around: does the terrain match the place (sea level, the hill, the shoreline), is the highest ground under the build limit, and does anything jitter? Fix `y_offset` or the offsets now if not; nothing real is built yet.
 
