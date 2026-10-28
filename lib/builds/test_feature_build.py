@@ -1588,6 +1588,191 @@ class OfflineGuardsTest(unittest.TestCase):
         self.assertIn('roof ridge(s) jog sideways', str(ctx.exception))
 
 
+class PitchedMaterialOwnershipTest(unittest.TestCase):
+    """#170: photo-derived roof membership owns materials across lidar zones."""
+
+    def _spec(self):
+        return {
+            'name': 'unit_pitch_materials', 'ways': {'99': 'A'},
+            'storeys': {'A': 1},
+            'roofs': {'A': {'kind': 'pitched', 'material': 'brick',
+                            'zone_materials': {'45': 'polished_deepslate'}}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'wall': 'stone', 'floor': 'smooth_stone',
+            'zones': {'A': {'levels': [45, 47, 48], 'from': 'lidar'}},
+        }
+
+    def _region(self, level=47, x0=-1, x1=10, z0=-1, z1=4):
+        return {'level': level, 'polygon': [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]}
+
+    def _shell(self, heights, levels, regions=None):
+        spec = self._spec()
+        if regions is not None:
+            spec['roofs']['A']['material_regions'] = regions
+        builder = F.Build(spec, footprints={'A': set(heights)}, world=_StoneWorld())
+        f = builder.features[0]
+        f.b = 40
+        f.zone_roof_half = heights
+        f.zone_roof = {c: h // 2 for c, h in heights.items()}
+        f.zone_ground = {c: 40 for c in heights}
+        f.zone_level = levels
+        f.roof_material_level = F.roof_material_levels(f.roof, levels)
+        builder.shell_zoned(0, f)
+        return {
+            c: builder.p.cells[(c[0], h // 2, c[1])]
+            for c, h in heights.items()
+        }, f.roof_material_level
+
+    def test_explicit_roof_membership_sets_stair_full_and_slab_materials(self):
+        heights = {(x, z): h for z in range(3)
+                   for x, h in enumerate([90, 92, 94, 96, 97, 96, 94, 92, 90])}
+        levels = {c: 47 if 2 <= c[0] <= 6 else 45 for c in heights}
+
+        blocks, owners = self._shell(heights, levels, [self._region()])
+
+        self.assertEqual(set(owners.values()), {47})
+        self.assertTrue(any('_stairs[' in st for st in blocks.values()))
+        self.assertTrue(any(st == 'minecraft:bricks' for st in blocks.values()))
+        self.assertTrue(any(st.startswith('minecraft:brick_slab[')
+                            for st in blocks.values()))
+        for c, state in blocks.items():
+            self.assertTrue(state.startswith(('minecraft:brick_stairs[',
+                                              'minecraft:bricks', 'minecraft:brick_slab[')),
+                            (c, state))
+        self.assertEqual(levels[(0, 0)], 45, 'evidence zones are not rewritten')
+
+    def test_narrow_lower_deck_and_independent_pitch_keep_their_material(self):
+        heights = {(x, z): h for z in range(3)
+                   for x, h in enumerate([90, 92, 94, 92, 90, 90, 96, 96, 96])}
+        # A separate low pitch meets the upper platform: it is not the main roof.
+        heights.update({(x, 4): h for x, h in enumerate([90, 92, 94, 96, 96, 96])})
+        levels = {c: 47 if (6 <= c[0] or (c[1] < 3 and c[0] == 2)
+                            or (c[1] == 4 and c[0] >= 3)) else 45
+                  for c in heights}
+
+        blocks, owners = self._shell(
+            heights, levels, [self._region(x0=0, x1=5, z0=0, z1=3)],
+        )
+
+        self.assertEqual(owners[(5, 1)], 45, 'one-block lower strip stays separate')
+        for c, state in blocks.items():
+            if (c[1] == 4 and c[0] < 3) or (c[1] < 3 and c[0] == 5):
+                self.assertIn('polished_deepslate', state, (c, state))
+            elif c[1] == 4:
+                self.assertIn('brick', state, (c, state))
+            elif c[0] < 5:
+                self.assertIn('brick', state, (c, state))
+
+    def test_unmapped_and_legacy_roofs_keep_zone_only_lookup(self):
+        heights = {(x, 0): h for x, h in enumerate([90, 92, 94, 96, 96])}
+        levels = {c: 45 if c[0] < 3 else 47 for c in heights}
+
+        legacy, legacy_owners = self._shell(heights, levels)
+        empty, empty_owners = self._shell(heights, levels, [])
+
+        self.assertEqual(legacy, empty)
+        self.assertEqual(legacy_owners, levels)
+        self.assertEqual(empty_owners, levels)
+        self.assertIn('polished_deepslate', legacy[(2, 0)])
+        self.assertIn('brick', legacy[(3, 0)])
+
+    def test_prepared_lidar_slope_uses_explicit_membership_in_shell(self):
+        spec = self._spec()
+        spec['zones']['A'].update(levels=[45, 47], bucket=1, axis_deg=0)
+        spec['roofs']['A']['material_regions'] = [self._region(x0=3, x1=12, z0=0, z1=15)]
+        profile = [45, 45, 45, 46, 47, 48, 49, 50, 49, 48, 47, 46, 45, 45, 45]
+        dsm = np.tile(profile, (15, 1)).astype(float)
+        cells = {(x, z) for x in range(15) for z in range(15)}
+        builder = F.Build(
+            spec, footprints={'A': cells}, world=_StoneWorld(),
+            zone_data={'A': {'x0': 0, 'z0': 0, 'dsm': dsm,
+                             'ground_y': np.full((15, 15), 40)}},
+        )
+
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)):
+            builder.prepare_zones()
+        f = builder.features[0]
+        builder.shell_zoned(0, f)
+
+        c = (3, 7)
+        self.assertEqual(f.zone_level[c], 45)
+        self.assertEqual(f.roof_material_level[c], 47)
+        self.assertTrue(builder.p.cells[(c[0], f.zone_roof[c], c[1])].startswith(
+            'minecraft:brick_stairs[',
+        ))
+        self.assertEqual(f.roof_material_level[(0, 7)], 45)
+        self.assertIn('A material region 0: level 47 columns 135', builder._zone_pad_lines)
+
+    def test_regions_clip_to_roof_and_use_block_centres(self):
+        levels = {(0, 0): 45, (1, 0): 47, (2, 0): 45}
+        roof = {'material_regions': [self._region(x0=-100, x1=1.5)]}
+
+        owners = F.roof_material_levels(roof, levels)
+
+        self.assertEqual(owners, {(0, 0): 47, (1, 0): 47, (2, 0): 45})
+        self.assertEqual(set(owners), set(levels))
+
+    def test_rejects_overlapping_empty_and_unknown_level_regions(self):
+        levels = {(0, 0): 45, (1, 0): 47}
+        cases = [
+            ([self._region(), self._region()], 'overlapping'),
+            ([self._region(x0=10, x1=12)], 'no roof columns'),
+            ([self._region(level=49)], 'unknown plateau'),
+            ([{'level': 47, 'polygon': [[0, 0], [1, 0], [2, 0]]}], 'no roof columns'),
+        ]
+        for regions, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(SystemExit, message):
+                F.roof_material_levels({'material_regions': regions}, levels)
+        with self.assertRaisesRegex(SystemExit, 'no prepared roof columns'):
+            F.roof_material_levels({'material_regions': [self._region()]}, {})
+
+    def test_declared_plateau_may_own_roof_even_when_no_cells_snapped_to_it(self):
+        levels = {(0, 0): 45}
+
+        owners = F.roof_material_levels(
+            {'material_regions': [self._region()]}, levels, known_levels=[45, 47],
+        )
+
+        self.assertEqual(owners, {(0, 0): 47})
+
+    def test_region_validation_rejects_malformed_rows_and_unknown_plateaus(self):
+        cases = [
+            (None, 'must be a list'),
+            ([{}], 'needs'),
+            ([dict(self._region(), extra=True)], 'needs'),
+            ([dict(self._region(), level=49)], 'unknown plateau'),
+            ([dict(self._region(), level='47')], 'finite plateau'),
+            ([dict(self._region(), level=True)], 'finite plateau'),
+            ([dict(self._region(), level=float('nan'))], 'finite plateau'),
+            ([dict(self._region(), polygon=[[0, 0], [1, 0]])], 'three vertices'),
+            ([dict(self._region(), polygon=[[0, 0], [0, 0], [0, 0]])], 'distinct'),
+            ([dict(self._region(), polygon=[[0, 0], [1, 0], [2, float('inf')]])], 'finite'),
+            ([dict(self._region(), polygon=[[0, 0], [1, 0], [2, True]])], 'finite'),
+        ]
+        for regions, message in cases:
+            with self.subTest(regions=regions):
+                spec = self._spec()
+                spec['roofs']['A']['material_regions'] = regions
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / 'spec.json'
+                    path.write_text(json.dumps(spec))
+                    with self.assertRaisesRegex(SystemExit, message):
+                        F.load_spec(path)
+
+    def test_regions_require_pitched_zoned_roofs_and_accept_auto_levels(self):
+        for kind, zones in [('flat', {'A': {'levels': [45, 47], 'from': 'lidar'}}),
+                            ('pitched', {})]:
+            spec = self._spec()
+            spec['roofs']['A'].update(kind=kind, material_regions=[self._region()])
+            spec['zones'] = zones
+            with self.subTest(kind=kind, zones=zones), self.assertRaisesRegex(SystemExit, 'requires'):
+                F._validate_material_regions('spec', spec)
+        spec = self._spec()
+        spec['zones']['A']['levels'] = 'auto'
+        spec['roofs']['A']['material_regions'] = [self._region()]
+        F._validate_material_regions('spec', spec)
+
+
 class ZoneMaterialsColourTest(unittest.TestCase):
     """#126: per-zone roof material override + dry-run colour suggestion."""
 

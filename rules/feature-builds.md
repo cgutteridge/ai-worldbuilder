@@ -17,12 +17,29 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
   edge?: {block, where: outer|all},
-  zone_materials?: {<level_m_AOD>: <mat>}}}`. Absent `edge` = no roof
+  zone_materials?: {<level_m_AOD>: <mat>},
+  material_regions?: [{level: <m_AOD>, polygon: [[x,z], ...]}]}}`.
+  Absent `edge` = no roof
   edging (default). When set, `block` is the parapet/coping mat;
   `where: outer` skips zone steps, `where: all` edges every step.
   Flat-roof overhang fringe only when `edge` is set (pitched overhang
   unchanged). Optional `zone_materials` overrides `material` per lidar
-  plateau (same level keys as `zones`). Dry run prints each zone's mean
+  plateau (same level keys as `zones`). A pitched roof with `zones` may also
+  declare `material_regions` from photo/aerial evidence when a lidar zone cuts
+  across a roof. Each row assigns its polygon's roof columns to a declared
+  plateau's material, resolved through `zone_materials` and then the default
+  `material`. This applies to stairs, slabs and full blocks alike; roof geometry
+  and snapped evidence zones are unchanged. `level` is a finite number from
+  `zones[label].levels` (for `auto`, an observed plateau). It need not have any
+  columns snapped to it when explicitly declared. `polygon` has at least three
+  distinct finite `[x,z]` vertices in MC coordinates; the existing even-odd
+  rasterizer tests block centres and clips membership to the prepared footprint.
+  Regions with no roof columns, unknown levels or overlapping assigned columns
+  are rejected. Unassigned columns retain the legacy zone-based material; no
+  geometry heuristic guesses roof ownership. Keep adjacent lower decks out of
+  the main roof's polygon. Flat roofs do not accept `material_regions`.
+  Dry run prints each material region's label, plateau and assigned column count,
+  then each zone's mean
   aerial colour and a suggested block from the site_kit colour table
   (suggestion only — not a gate).
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
