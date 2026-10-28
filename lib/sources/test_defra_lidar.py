@@ -10,6 +10,7 @@ for _p in (_ROOT / "shims", _ROOT / "scripts"):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 
+import contextlib
 import io
 import json
 import tempfile
@@ -168,7 +169,6 @@ class Fetching(unittest.TestCase):
                 self.assertIsNone(lidar.fetch_tile('DTM', 0, 0))
 
     def test_ensure_reports_tile_count_and_steps(self):
-        import contextlib
         with tempfile.TemporaryDirectory() as tmp:
             lidar = dl.DefraLidar(Path(tmp))
             err = io.StringIO()
@@ -183,7 +183,6 @@ class Fetching(unittest.TestCase):
             self.assertIn('fetch finished in', out)
 
     def test_ensure_is_silent_when_nothing_to_fetch(self):
-        import contextlib
         with tempfile.TemporaryDirectory() as tmp:
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
@@ -191,7 +190,6 @@ class Fetching(unittest.TestCase):
             self.assertEqual(err.getvalue(), '')
 
     def test_read_with_progress_prints_bytes_and_returns_all(self):
-        import contextlib
         class Resp:
             headers = {'Content-Length': str(3 << 20)}
             def __init__(self): self.n = 3
@@ -203,6 +201,30 @@ class Fetching(unittest.TestCase):
             data = dl._read_with_progress(Resp(), 'DTM 1E-1N')
         self.assertEqual(len(data), 3 << 20)
         self.assertIn('DTM 1E-1N  3/3 MB', err.getvalue())
+
+    def test_short_read_raises_so_http_retries(self):
+        class Resp:
+            headers = {'Content-Length': '10'}
+            n = 0
+            def read(self, size):
+                self.n += 1
+                return b'xxx' if self.n == 1 else b''
+        with self.assertRaises(dl.urllib.error.URLError):
+            dl._read_with_progress(Resp(), 'DTM 1E-1N')
+
+    def test_lookup_line_only_when_catalogue_not_cached(self):
+        cat = {'results': []}
+        with tempfile.TemporaryDirectory() as tmp:
+            lidar = dl.DefraLidar(Path(tmp))
+            with mock.patch.object(dl, '_http', lambda *a, **k: json.dumps(cat).encode()), \
+                    mock.patch.object(dl, 'catalogue_polygon', lambda e, n: {}):
+                first, second = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stderr(first):
+                    lidar.fetch_tile('DTM', 0, 0, step='[1/1]')
+                with contextlib.redirect_stderr(second):
+                    lidar.fetch_tile('DTM', 0, 0)
+            self.assertIn('  [1/1] DTM 0E-0N  looking up', first.getvalue())
+            self.assertEqual(second.getvalue(), '')
 
     def test_error_page_is_not_cached_as_catalogue(self):
         with tempfile.TemporaryDirectory() as tmp:

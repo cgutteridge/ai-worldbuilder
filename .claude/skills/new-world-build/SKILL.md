@@ -53,7 +53,7 @@ python3 scripts/new_blank_world.py --world <name>
 python3 scripts/check_instance.py --world <name>
 ```
 
-   The template has no chunks; the game generates them on first open. The in-game name stays as in `level.dat` until renamed in the game (Edit World); the folder name is what the tools use.
+   The template has no chunks; the game generates them on first open. The in-game name (`LevelName` in `level.dat`) is set to the folder name; the folder name is what the tools use.
 4. **Move spawn to home.** The template's spawn is a leftover from another world, and with 0, 0 offsets (0, 0) is nowhere useful. With the world open, set the world spawn and put the player at the home point (MCP `level_set_spawn_point`, then teleport), so the first time the game opens it is at the right place.
 5. Not a copy of Southampton2023 unless legacy.
 6. If a newer Minecraft version is in use than the template's (`Version.Name` in `level.dat`): open the world once in the game to upgrade it, log out, then refresh `templates/empty-world/` (copy without `session.lock`, `players/`, `*.dat_old`, `*.mca`; keep the single bedrock layer at Y −64 in `world_gen_settings.dat`) and commit.

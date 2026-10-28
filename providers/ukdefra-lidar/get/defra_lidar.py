@@ -128,6 +128,7 @@ def tiles_for(e0: float, n0: float, e1: float, n1: float) -> list[tuple[int, int
     return [(e, n) for e in range(a, c + 1, TILE_M) for n in range(b, d + 1, TILE_M)]
 
 
+TILE_MB = 75                            # rough size of one tile zip, for the wait warnings
 PROGRESS_EVERY_S = 5                    # seconds between byte-progress lines on a long download
 
 
@@ -142,6 +143,8 @@ def _read_with_progress(r, label: str) -> bytes:
             last = time.monotonic()
             of = f'/{total / 1e6:.0f}' if total else ''
             print(f'    {label}  {done / 1e6:.0f}{of} MB', file=sys.stderr, flush=True)
+    if total and done != total:
+        raise urllib.error.URLError(f'short read: {done} of {total} bytes')    # retried by _http
     return b''.join(parts)
 
 
@@ -236,19 +239,21 @@ class DefraLidar:
         @param step: progress prefix such as ``[2/4]``, printed with each status line
         """
         name = f'{model} {e}E-{n}N'
-        print(f'  {step} {name}  looking up in the DEFRA catalogue', file=sys.stderr, flush=True)
+        lead = f'  {step} ' if step else '  '
+        if not (self.cache / 'catalogue' / f'{e}E-{n}N.json').is_file():
+            print(f'{lead}{name}  looking up in the DEFRA catalogue', file=sys.stderr, flush=True)
         uri = pick_uri(self.catalogue(e, n), model)
         if uri is None:
             return None
-        print(f'  {step} {name}  downloading (about 75 MB)  {uri.split("?")[0]}', file=sys.stderr, flush=True)
+        print(f'{lead}{name}  downloading (about {TILE_MB} MB)  {uri.split("?")[0]}', file=sys.stderr, flush=True)
         z = zipfile.ZipFile(io.BytesIO(_http(uri, label=name)))
         out = None
-        for name in z.namelist():
-            if name.lower().endswith('.tif'):
-                dest = self._dir(model) / Path(name).name      # basename only: never trust paths inside a zip
+        for member in z.namelist():
+            if member.lower().endswith('.tif'):
+                dest = self._dir(model) / Path(member).name      # basename only: never trust paths inside a zip
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_name(dest.name + '.part')
-                tmp.write_bytes(z.read(name))
+                tmp.write_bytes(z.read(member))
                 tmp.replace(dest)
                 out = dest
         self._tiles.pop(model, None)
@@ -262,7 +267,7 @@ class DefraLidar:
             model, e, n = todo[0]
             raise LookupError(f'{model} tile {e}E-{n}N is not cached and download is off')
         if todo:
-            print(f'lidar: {len(todo)} tile download(s) needed ({", ".join(models)}; about 75 MB each, '
+            print(f'lidar: {len(todo)} tile download(s) needed ({", ".join(models)}; about {TILE_MB} MB each, '
                   f'this can take several minutes)', file=sys.stderr, flush=True)
         began = time.monotonic()
         for i, (model, e, n) in enumerate(todo, 1):

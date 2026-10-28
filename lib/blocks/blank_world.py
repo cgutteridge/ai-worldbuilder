@@ -7,7 +7,9 @@ only ever creates a new folder: an existing target is refused, never overwritten
 """
 from __future__ import annotations
 
+import gzip
 import shutil
+import struct
 from pathlib import Path
 
 TOOL_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -17,11 +19,33 @@ TEMPLATE = TOOL_ROOT / 'templates' / 'empty-world'
 _SKIP = shutil.ignore_patterns('session.lock', 'players', '*.dat_old', '*.mca', 'README.txt')
 
 
-def create_blank_world(save: Path, template: Path = TEMPLATE) -> Path:
-    """Copy the empty-world template to a new save folder.
+def set_level_name(level_dat: Path, name: str) -> None:
+    """Rewrite the ``LevelName`` string in a gzipped ``level.dat`` (the in-game world name).
+
+    NBT strings carry only their own length, so the one tag is patched in the bytes.
+
+    @param level_dat: path to the save's level.dat
+    @param name: new in-game name
+    @raises RuntimeError: when the file has no single ``LevelName`` string tag
+    """
+    raw = gzip.decompress(Path(level_dat).read_bytes())
+    key = b'\x08\x00\x09LevelName'
+    i = raw.find(key)
+    if i < 0 or raw.count(key) != 1:
+        raise RuntimeError(f'{level_dat}: expected exactly one LevelName tag')
+    at = i + len(key)
+    old = struct.unpack_from('>H', raw, at)[0]
+    new = name.encode('utf-8')
+    Path(level_dat).write_bytes(gzip.compress(
+        raw[:at] + struct.pack('>H', len(new)) + new + raw[at + 2 + old:]))
+
+
+def create_blank_world(save: Path, template: Path = TEMPLATE, name: str | None = None) -> Path:
+    """Copy the empty-world template to a new save folder and name it.
 
     @param save: new save folder (its parent, the instance's ``saves/``, must exist)
     @param template: template folder (tests)
+    @param name: in-game world name (default: the folder name)
     @returns: the created save path
     @raises FileExistsError: when ``save`` already exists
     @raises FileNotFoundError: when the parent folder or template is missing
@@ -36,4 +60,5 @@ def create_blank_world(save: Path, template: Path = TEMPLATE) -> Path:
     if not template.is_dir():
         raise FileNotFoundError(f'template missing: {template}')
     shutil.copytree(template, save, ignore=_SKIP)
+    set_level_name(save / 'level.dat', name or save.name)
     return save
