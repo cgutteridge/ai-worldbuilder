@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 188,
+  "nextTaskId": 189,
   "tasks": [
     {
       "id": 178,
@@ -11,6 +11,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
+    },
+    {
+      "id": 188,
+      "title": "Tile-aligned bbox pulls in extra lidar tiles (new-world-build skill and tiles_for)",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "2026-10-28, Sheffield bootstrap: bbox-mc 430000,-390000,440000,-385000 (exactly tile-aligned, 2 tiles intended) fetched 6 tiles / 12 downloads (about 900 MB, not 300 MB). Cause: defra_lidar.tiles_for adds 1 m east and north for bilinear corners, so a box ending exactly on a tile edge reaches the next tile column and row. Not a bug in tiles_for, but the new-world-build skill promises 1 tile (aligned) / 2 / 4 and never says to end an aligned box 1 m inside the upper edge (e.g. x1=439998). Fix: say so in the skill section 0 and the tile-count step, or have lidar_extremes warn when the box ends on a tile edge and print the tile count before fetching."
     }
   ]
 }
