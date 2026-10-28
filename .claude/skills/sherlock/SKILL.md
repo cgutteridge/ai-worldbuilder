@@ -40,7 +40,7 @@ Apply each accepted change. Commit nothing yet beyond what Close the case says.
 
 ## 3. 🕵️ Check fixes
 
-Switch to 🕵️. `issues.py sync`, then `digest`. For every issue at `fix-landed`, run the `snag` skill's review (section B): grouping check first, brief, one stop at a time, owner's verdict recorded with `verdict`. Keep going until no issue is left at `fix-landed`, or the owner stops. A "not fixed" verdict that shows a new cause sends you back to 🔍; a task idea sends you to 🔧.
+Switch to 🕵️. `issues.py sync`, then `digest`. For every issue at `fix-landed`, run the `snag` skill's review (section B): grouping check first, the one-screen card (snag with picture, fix in a line or two, the question; see the `snag` skill), one stop at a time, owner's verdict recorded with `verdict`. Keep going until no issue is left at `fix-landed`, or the owner stops. A "not fixed" verdict that shows a new cause sends you back to 🔍; a task idea sends you to 🔧.
 
 Issues that are only `open` are never reviewed; if their fix is logged but the element is `not-rebuilt`, they go into the builds handoff.
 

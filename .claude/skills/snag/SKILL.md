@@ -21,7 +21,12 @@ Snags live only inside issues (`worlds/<world>/registry/issues.json`, pics in `r
 `fix-landed` is set by `issues.py sync` only when every element of the snags the fix covers was redesigned (new landed build, changed content) after the fix merged. Never review an issue that is only `open`.
 
 1. `issues.py review I-nnn` gives the packet. Run `sherlock`'s grouping check first (see that skill); tell the owner if a snag looks misfiled.
-2. Brief the owner before moving them, in plain words: the problem as they reported it, the cause, **what the code or method change was**, and **exactly what to check** (the check line, made concrete: what to look at, from where, what should be different).
+2. Brief the owner before moving them, **short enough to read on one screen at a glance**: a three-part card, plain words, plain titles first (IDs small, after):
+   - **The snag:** the owner's words in a line or two, plus its picture (`Read` the image in `registry/issues/img/` so it shows; no picture: say so, no staging).
+   - **The fix:** one or two lines on what changed (the code or method), not the cause story and not the ticket history.
+   - **The question:** what to look at, from where, what should now be different (the check line made concrete), ending in the question the owner answers (fixed or not fixed?).
+
+   An issue with several snags gets one card per stop, not one long brief. No tables, no lists of counts; evidence only if the owner asks.
 3. The owner judges in game. Take them near each snag's position and stop; do not tour, script the camera or take pictures for them:
 
    ```bash
