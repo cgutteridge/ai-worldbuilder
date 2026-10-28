@@ -161,6 +161,21 @@ class TestPlaceFurniture(unittest.TestCase):
             (13, 20, 'designer', 'waste_basket'),
         })
 
+    def test_allows_lawn_but_not_carriageway(self):
+        items = [
+            {'x': 10, 'z': 20, 'kind': 'bench', 'source': 'map'},
+            {'x': 13, 'z': 20, 'kind': 'bench', 'source': 'map'},
+        ]
+        kinds = {10: None, 13: 'tarmac'}
+        with mock.patch('decor_layer.column_ground_kind',
+                        side_effect=lambda w, x, z: kinds[x]), \
+                mock.patch('surface_probe.surface_y', self._surface):
+            _, report, unplaced = dl.place_furniture(
+                (0, 0), items, self.world, way=set(), near1=set(), owned=set(), masked=set())
+        self.assertEqual({(r['x'], r['z']) for r in report}, {(10, 20)})
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced],
+                         ['on carriageway'])
+
     def test_skips_path_line_and_near_build(self):
         items = [
             {'x': 11, 'z': 20, 'kind': 'bench', 'source': 'map'},       # path line
