@@ -42,7 +42,7 @@ Provider ids for this place live in `reference/SOURCES.txt`, place-sources catal
   a feature) but never the target height — a wrong ghost baseline must be raised
   to lidar, not repainted. Decor and features place objects that sit above the
   terrain (cars, planters, kiosks); ground must not raise dirt under them.
-- A portal gives the door's position and name, not its look (door type, canopy, steps): read that from its photo or streetlevel
+- A portal gives the door's position and name, not its look (door type, awning_like, steps): read that from its photo or streetlevel
   into ``facade_plan`` entrances. A building with no portal can still have photo-read entrances.
 - Some aerial and streetlevel providers are look-only for *durable* evidence: download a
   working copy if the tool does (e.g. aerial PNG under `instance/`), read it,
