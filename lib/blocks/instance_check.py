@@ -12,11 +12,13 @@ from pathlib import Path
 REQUIRED_JARS = ('fabric-api', 'minecraft-fabric-mcp')
 
 
-def check_instance(save: Path, *, mcp_reachable: bool | None = None) -> list[tuple[str, bool, str]]:
+def check_instance(save: Path, *, mcp_reachable: bool | None = None,
+                   save_open: bool | None = None) -> list[tuple[str, bool, str]]:
     """Check a save and its instance.
 
     @param save: the save folder from ``world.json``
     @param mcp_reachable: result of the MCP liveness probe (None = not probed)
+    @param save_open: whether a running game holds ``session.lock`` (None = not probed)
     @returns: ``(check, ok, detail)`` rows
     """
     rows: list[tuple[str, bool, str]] = []
@@ -37,8 +39,10 @@ def check_instance(save: Path, *, mcp_reachable: bool | None = None) -> list[tup
         except ValueError:
             pass
     rows.append(('MCP config port', port == 8765, f'{cfg} port={port} (tool expects 8765)'))
-    rows.append(('save not open', not (save / 'session.lock').exists() or mcp_reachable is True,
-                 'session.lock present means the game has the world open (fine for MCP work)'))
+    if save_open is not None:
+        rows.append(('save open in game', True, 'yes' if save_open else 'no (game closed)'))
     if mcp_reachable is not None:
-        rows.append(('MCP server answers', mcp_reachable, '127.0.0.1:8765'))
+        closed = save_open is False
+        rows.append(('MCP server answers', mcp_reachable or closed,
+                     '127.0.0.1:8765' + (' (not expected: game closed)' if closed and not mcp_reachable else '')))
     return rows
