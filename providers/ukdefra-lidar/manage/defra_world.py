@@ -62,7 +62,11 @@ def has_first_return(lidar: dl.DefraLidar, cell: tuple[int, int]) -> bool:
 
 
 def heightmap(cell: tuple[int, int], lidar: dl.DefraLidar, idx) -> dict:
-    """lidar_heightmap-compatible map of one cell: {'cell', 'x0', 'z0', 'h', 'base', 'roof', 'kind'}.
+    """lidar_heightmap-compatible map of one cell: cell, x0, z0, h, base, terrain, roof, kind.
+
+    ``terrain`` is the bare-terrain (DTM) ground height. ``base`` remains the
+    solid surface top (DSM-derived except under trees). Free ground uses
+    ``terrain`` (#172); footprint / roof work keeps ``base``.
 
     Trees use the first-return DSM when it is cached (see module doc), else any tall column outside a footprint.
     """
@@ -87,12 +91,14 @@ def heightmap(cell: tuple[int, int], lidar: dl.DefraLidar, idx) -> dict:
     top = ground + feature
     h = top.astype(np.int16)
     base = np.where(tree, ground, top).astype(np.int16)
+    terrain = ground.astype(np.int16)
     roof = np.where(bld, top + 1, 0).astype(np.int16)
     kind = np.full(h.shape, lh.GROUND, dtype=np.uint8)
     kind[bld] = lh.ROOF
     kind[structure] = lh.STRUCTURE
     kind[tree] = lh.TREE
-    return {'cell': cell, 'x0': x0, 'z0': z0, 'h': h, 'base': base, 'roof': roof, 'kind': kind}
+    return {'cell': cell, 'x0': x0, 'z0': z0, 'h': h, 'base': base, 'terrain': terrain,
+            'roof': roof, 'kind': kind}
 
 
 class DefraWorld:

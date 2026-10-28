@@ -228,17 +228,47 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertEqual(ys.get('_from_lidar'), 0)
 
     def test_lidar_base_map_reads_maps_across_columns(self):
-        """#167: lidar base comes from Maps.get(..., 'base') (cell edges ok)."""
+        """#172: free columns prefer Maps.get(..., 'terrain'); fall back to 'base' (#167)."""
         fields = []
 
         class StubMaps:
             def get(self, x, z, field='h'):
                 fields.append(field)
+                if field == 'terrain':
+                    raise KeyError('terrain')
                 return 50 if x == 10 else 0
 
         got = gl.lidar_base_map([(10, 20), (11, 20)], StubMaps())
         self.assertEqual(got, {(10, 20): 50})
-        self.assertEqual(fields, ['base', 'base'])
+        self.assertEqual(fields, ['terrain', 'base', 'terrain', 'base'])
+
+    def test_lidar_base_map_prefers_terrain_over_surface_base(self):
+        """#172: car/planter surface above DTM must not raise free ground (I-026).
+
+        Before/after on a cell after ground apply — count road/paving columns
+        whose live Y is above the 8-neighbour median of the same kind (expect
+        near 0)::
+
+            python3 scripts/run_tests.py --only test_ground_layer
+            # in-game / after apply, e.g. cell of I-026:
+            # python3 -c "from lidar_heightmap import Maps; m=Maps(); ...
+            #   sum(1 for ... if m.get(x,z,'base')>m.get(x,z,'terrain'))"
+        """
+        class StubMaps:
+            def get(self, x, z, field='h'):
+                # Surface (DSM top) is 45; bare terrain (DTM) is 40 — a parked car.
+                if field == 'terrain':
+                    return 40
+                if field == 'base':
+                    return 45
+                raise KeyError(field)
+
+        got = gl.lidar_base_map([(5, 5)], StubMaps())
+        self.assertEqual(got, {(5, 5): 40})
+        live = {(5, 5): (40, 'stone')}
+        ys = gl.ground_heights(live, got)
+        self.assertEqual(ys[(5, 5)], 40)
+        self.assertEqual(ys.get('_from_lidar'), 1)
 
     def test_narrow_pit_is_raised_wide_depression_is_not(self):
         """#155: a 3-wide deep pit fills to the rim; a wide sunken area stays low."""

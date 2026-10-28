@@ -79,11 +79,22 @@ class DefraWorldTest(unittest.TestCase):
         self.assertEqual(int(hm['kind'][i, j]), lh.TREE)
         self.assertEqual(int(hm['base'][i, j]), self.sea + GROUND_DTM)
         self.assertEqual(int(hm['h'][i, j]), self.sea + GROUND_DTM + 5)
+        self.assertEqual(int(hm['terrain'][i, j]), self.sea + GROUND_DTM)
 
     def test_flat_ground_is_ground(self):
         hm = self.world.heightmap(CELL)
         i, j = 90 - hm['x0'], -100 - hm['z0']
         self.assertEqual((int(hm['kind'][i, j]), int(hm['h'][i, j]), int(hm['roof'][i, j])), (lh.GROUND, self.sea + GROUND_DTM, 0))
+        self.assertEqual(int(hm['terrain'][i, j]), self.sea + GROUND_DTM)
+
+    def test_terrain_is_dtm_when_surface_base_is_higher(self):
+        """#172: terrain stays at DTM while structure base is the DSM top."""
+        hm = self.world.heightmap(CELL)
+        # Building column: base/h are roof top; terrain is bare ground under it.
+        i, j = 15 - hm['x0'], -45 - hm['z0']
+        self.assertEqual(int(hm['kind'][i, j]), lh.ROOF)
+        self.assertGreater(int(hm['base'][i, j]), int(hm['terrain'][i, j]))
+        self.assertEqual(int(hm['terrain'][i, j]), self.sea + GROUND_DTM)
 
     def test_block_scan_gives_the_same_columns_as_the_heightmap(self):
         hm = self.world.heightmap(CELL)
@@ -153,6 +164,13 @@ class FirstReturnTest(unittest.TestCase):
         i, j = 42 - self.hm['x0'], -78 - self.hm['z0']
         self.assertEqual(int(self.hm['h'][i, j]), int(self.hm['base'][i, j]))
         self.assertEqual(int(self.hm['base'][i, j]), self.sea + GROUND_DTM + 5)
+        self.assertEqual(int(self.hm['terrain'][i, j]), self.sea + GROUND_DTM)
+
+    def test_maps_get_reads_terrain(self):
+        """#172: Maps.get accepts field 'terrain' from the composite heightmap."""
+        maps = lh.Maps(self.world)
+        self.assertEqual(maps.get(42, -78, 'terrain'), self.sea + GROUND_DTM)
+        self.assertEqual(maps.get(42, -78, 'base'), self.sea + GROUND_DTM + 5)
 
     def test_roof_stays_a_roof_and_scrub_stays_ground(self):
         self.assertEqual(self.kind(15, -45), lh.ROOF)
