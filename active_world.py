@@ -123,11 +123,9 @@ def load_world_config(*, reload: bool = False) -> dict[str, Any]:
             f"Active world config missing: {path} (WORLD_ROOT={root})"
         )
     data = json.loads(path.read_text(encoding="utf-8"))
-    gameworld_id = data.get("gameworld_id") or data.get("world_name")
+    gameworld_id = data.get("gameworld_id")
     if not gameworld_id:
-        raise ValueError(
-            f"{path} must set gameworld_id (or legacy world_name)"
-        )
+        raise ValueError(f"{path} must set gameworld_id")
     data["gameworld_id"] = str(gameworld_id)
     return data
 

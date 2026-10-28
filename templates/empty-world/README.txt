@@ -4,7 +4,7 @@ Chunks, player data and session files are deliberately not stored; the game
 generates chunks on first open.
 
 Use: copy this folder to instance/saves/<WorldName>/ and set config/world.json
-(world_name, save_path, region_path, map_maker_status). Set LevelName in level.dat
+(gameworld_id, save_path, region_path). Set LevelName in level.dat
 by opening it once in the game, or keep the name SouthamptonAI.
 
 Place memory (ISSUES, NOTES, coverage, REVIEWS; progress in registry/journal.jsonl)

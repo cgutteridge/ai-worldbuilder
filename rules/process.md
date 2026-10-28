@@ -32,8 +32,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  reference/LOGGING.txt  how to log refs (dedupe, token budget, privacy)
  reference/manifest.jsonl  append-only index of every fetched asset
  config/world.json      save + region paths
- config/world-frame.json         CRS, offsets, Y offset, bounds, anchor
- config/map-maker-offsets.json  legacy OFFSET_* mirror of world-frame
+ config/world-frame.json         CRS, offsets, Y offset, bounds (sole home; not in the save)
 
  Retired progress files (do not recreate; `cell_registry.py verify` fails if
  present): old queue / focus / holds / retired coverage-done files / aerial-review /

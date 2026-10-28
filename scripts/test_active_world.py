@@ -159,8 +159,8 @@ class ActiveWorldContractTests(unittest.TestCase):
                 self.assertEqual(frame["offsets"]["easting"], 1.0)
                 self.assertEqual(frame["offsets"]["northing"], 2.0)
 
-    def test_legacy_world_name_accepted(self) -> None:
-        """Legacy world_name fills gameworld_id when the new key is absent."""
+    def test_world_name_alone_rejected(self) -> None:
+        """A world.json with only the retired world_name key has no gameworld_id."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_fictional_world(
@@ -171,7 +171,8 @@ class ActiveWorldContractTests(unittest.TestCase):
             with _isolated_world(root):
                 import active_world as aw
 
-                self.assertEqual(aw.gameworld_id(), "LegacyName")
+                with self.assertRaises(ValueError):
+                    aw.gameworld_id()
 
     def test_set_world_resolves_under_worlds(self) -> None:
         """``set_world(name)`` resolves ``worlds/<name>`` when the directory exists."""

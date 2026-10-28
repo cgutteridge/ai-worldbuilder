@@ -4,7 +4,7 @@
 Prefer ``scripts/world_frame.py`` for new code. This module keeps the historic
 ``to_mc`` / ``to_osgb`` / ``load_offsets`` names used across the tree.
 
-Offsets come from ``config/world-frame.json`` (legacy shape still available via
+Offsets come from ``config/world-frame.json`` (OFFSET_E shape still available via
 ``load_offsets`` for callers that expect OFFSET_E / SEA_LEVEL keys).
 
   python3 scripts/osgb.py to-mc 441900 112100
@@ -19,8 +19,6 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import world_frame as wf  # noqa: E402
-
-OFFSETS = ROOT / 'config/map-maker-offsets.json'
 
 
 def load_offsets(path: Path | None = None) -> dict:

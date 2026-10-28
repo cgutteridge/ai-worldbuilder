@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Single home for place geography ↔ Minecraft coordinates.
 
-Reads ``config/world-frame.json`` (CRS, offsets, Y offset, bounds, anchor).
+Reads ``config/world-frame.json`` (CRS, offsets, Y offset, bounds, cell grid).
 Converts between WGS84, OSGB36 / other EPSG, Minecraft x/z(/y), coverage cells,
 and web-mercator XYZ tiles. Prefer this module over scattered OFFSET_E /
 private CRS copies.
@@ -76,14 +76,6 @@ def frame_path() -> Path:
     return _require_root() / 'config' / 'world-frame.json'
 
 
-def legacy_offsets_path() -> Path:
-    """Path to legacy ``config/map-maker-offsets.json`` in the active world.
-
-    @returns: absolute path
-    """
-    return _require_root() / 'config' / 'map-maker-offsets.json'
-
-
 def clear_frame_cache() -> None:
     """Drop the cached :class:`WorldFrame` (call after switching world)."""
     global _FRAME
@@ -91,11 +83,9 @@ def clear_frame_cache() -> None:
 
 
 def __getattr__(name: str):
-    """Lazy ``FRAME_PATH`` / ``LEGACY_OFFSETS`` / ``ROOT`` for callers and CLIs."""
+    """Lazy ``FRAME_PATH`` / ``ROOT`` for callers and CLIs."""
     if name == 'FRAME_PATH':
         return frame_path()
-    if name == 'LEGACY_OFFSETS':
-        return legacy_offsets_path()
     if name == 'ROOT':
         return _require_root()
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
@@ -128,7 +118,7 @@ class WorldFrame:
     @property
     def y_offset(self) -> int:
         """Block Y of metres AOD 0 (same role as legacy SEA_LEVEL)."""
-        return int(self.data.get('y_offset', self.data.get('sea_level', 11)))
+        return int(self.data.get('y_offset', 11))
 
     @property
     def sea_level(self) -> int:
@@ -139,11 +129,6 @@ class WorldFrame:
     def bounds_mc(self) -> dict:
         """Inclusive MC rectangle: west/east/north/south."""
         return dict(self.data['bounds_mc'])
-
-    @property
-    def anchor(self) -> dict:
-        """Real-world point mapped to MC (0, 0)."""
-        return dict(self.data.get('anchor') or {})
 
 
 def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
@@ -157,47 +142,18 @@ def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     if _FRAME is not None and not reload and path is None:
         return _FRAME
     p = path or frame_path()
-    legacy = legacy_offsets_path()
-    if not p.exists() and legacy.exists():
-        frame = WorldFrame(_legacy_to_frame(json.loads(legacy.read_text())))
-    else:
-        data = json.loads(p.read_text())
-        for key in ('offsets', 'bounds_mc'):
-            if key not in data:
-                raise SystemExit(f'{p} missing {key}')
-        frame = WorldFrame(data)
+    data = json.loads(p.read_text())
+    for key in ('offsets', 'bounds_mc'):
+        if key not in data:
+            raise SystemExit(f'{p} missing {key}')
+    frame = WorldFrame(data)
     if path is None:
         _FRAME = frame
     return frame
 
 
-def _legacy_to_frame(o: dict) -> dict:
-    """Build a world-frame dict from map-maker-offsets.json shape."""
-    return {
-        'place': 'Southampton',
-        'crs': 'EPSG:27700',
-        'grid': o.get('GRID', 'OSGB36'),
-        'anchor': {
-            'description': 'Legacy map-maker origin (from offsets)',
-            'osgb': {'easting': o['OFFSET_E'], 'northing': o['OFFSET_N']},
-            'mc': {'x': 0, 'z': 0},
-        },
-        'offsets': {'easting': o['OFFSET_E'], 'northing': o['OFFSET_N']},
-        'bounds_mc': {
-            'west': o['WEST'], 'east': o['EAST'],
-            'north': o['NORTH'], 'south': o['SOUTH'],
-        },
-        'y_offset': o.get('SEA_LEVEL', 11),
-        'sea_level': o.get('SEA_LEVEL', 11),
-        'top_of_world': o.get('TOP_OF_WORLD'),
-        'extend_downwards': o.get('EXTEND_DOWNWARDS'),
-        'elevation_plugin': o.get('ELEVATION_PLUGIN'),
-        'map_zoom': o.get('MAP_ZOOM'),
-    }
-
-
 def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
-    """OFFSET_E-shaped dict for callers that still expect map-maker-offsets keys.
+    """OFFSET_E-shaped dict (OFFSET_E, SEA_LEVEL, ...) built from the world frame.
 
     @param frame: optional loaded frame
     @returns: dict with OFFSET_E, OFFSET_N, WEST…SEA_LEVEL, …
@@ -215,14 +171,7 @@ def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
         'SOUTH': b['south'],
         'SEA_LEVEL': f.sea_level,
         'TOP_OF_WORLD': d.get('top_of_world'),
-        'EXTEND_DOWNWARDS': d.get('extend_downwards'),
         'ELEVATION_PLUGIN': d.get('elevation_plugin'),
-        'FLATLAND': d.get('flatland', 0),
-        'FLOOD': d.get('flood', 0),
-        'MAP_ZOOM': d.get('map_zoom'),
-        'SCALE': None,
-        'ROTATE': None,
-        'YSHIFT': None,
     }
 
 
@@ -998,7 +947,6 @@ def main(argv: list[str] | None = None) -> int:
             'path': str(fp.relative_to(root)) if fp.exists() else None,
             'place': f.data.get('place'),
             'crs': f.crs,
-            'anchor': f.anchor,
             'offsets': {'easting': f.offset_e, 'northing': f.offset_n},
             'bounds_mc': f.bounds_mc,
             'cell': f.data.get('cell') or {
