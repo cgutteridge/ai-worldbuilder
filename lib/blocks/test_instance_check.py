@@ -38,6 +38,12 @@ class InstanceCheckTest(unittest.TestCase):
         self.assertFalse(ok['MCP config port'])
         self.assertTrue(ok['save folder'])
 
+    def test_mcp_down_only_fails_when_game_is_open(self):
+        closed = self._ok(IC.check_instance(self.save, mcp_reachable=False, save_open=False))
+        self.assertTrue(closed['MCP server answers'])
+        opened = self._ok(IC.check_instance(self.save, mcp_reachable=False, save_open=True))
+        self.assertFalse(opened['MCP server answers'])
+
     def test_writes_nothing(self):
         before = sorted(p for p in self.inst.rglob('*'))
         IC.check_instance(self.save)
