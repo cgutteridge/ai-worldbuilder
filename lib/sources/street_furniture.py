@@ -188,9 +188,13 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
 
 
 def designer_observations(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
-    """Unresolved photo/aerial observations for one cell (no coordinate yet).
+    """Photo/aerial observations that classify lidar objects or record uncertainty.
 
-    File shape under the cell key: ``"observations": [{"kind","note","unresolved_reason"?}]``.
+    File shape under the cell key: ``"observations": [{"kind", "note"?,
+    "cell": [x,z]?, "source": "photo_read"|"aerial"?, "evidence_ids": [...]?,
+    "unresolved_reason"?}]``. Coordinate-bearing permanent furniture labels can
+    authorize a detected lidar object's placement; source defaults to photo_read.
+    Missing coordinates or unresolved_reason keep observations unresolved.
 
     @param cell: (tx, tz)
     @param path: override spec path (tests)
