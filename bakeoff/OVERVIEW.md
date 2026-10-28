@@ -29,3 +29,17 @@ python3 bakeoff/model_bakeoff.py --world bakeoff usage R-001 --input 12000 --out
 Sitting sequence: [`sitting_steps` in config.json](config.json). Rules / pad fairness: [PROTOCOL.md](PROTOCOL.md), [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md). Skill: `bakeoff/skills/model-bakeoff` (Claude discovers via `.claude/skills/model-bakeoff` symlink).
 
 Active tiers for now: **low** and **mid** only. High / non-bulk models are catalogued with `--no-bulk` and never scheduled.
+
+## Sealed answers (operator only)
+
+The feature-selection answer key lives at
+`~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json`, outside both
+`worlds/` and the Minecraft instance. Keep that directory private (0700) and
+its file readable only by its owner (0600). Include it in private backups;
+never commit it or copy its contents into prompts, logs, packs or results.
+
+`python3 bakeoff/model_bakeoff.py --world bakeoff sealed-path` prints only
+the location. Operators can set `AI_WORLDBUILDER_SEALED_TRUTH` to an absolute
+private path on another data volume. No bake-off agent command reads the key;
+scoring remains the operator's job. The old donor instance can be retired only
+after the file has been moved and independently backed up.

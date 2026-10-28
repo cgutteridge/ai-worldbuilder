@@ -1485,6 +1485,32 @@ class HybridRoundTests(unittest.TestCase):
 
 
 
+
+
+class SealedAnswersLocationTests(unittest.TestCase):
+    def test_default_is_private_and_does_not_read_answers(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(Path, 'read_text', side_effect=AssertionError('sealed read')):
+            self.assertEqual(MB.sealed_answers_path(), Path.home() / '.local/share/ai-worldbuilder/bakeoff-sealed/truth.json')
+
+    def test_override_cannot_put_answers_in_checkout(self):
+        with mock.patch.dict(os.environ, {'AI_WORLDBUILDER_SEALED_TRUTH': str(MB.ROOT / 'worlds/key.json')}):
+            with self.assertRaisesRegex(ValueError, 'outside'):
+                MB.sealed_answers_path()
+
+    def test_relative_override_is_rejected(self):
+        with mock.patch.dict(os.environ, {'AI_WORLDBUILDER_SEALED_TRUTH': 'private/truth.json'}):
+            with self.assertRaisesRegex(ValueError, 'absolute'):
+                MB.sealed_answers_path()
+
+    def test_cli_only_prints_location_without_loading_world(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(Path, 'read_text', side_effect=AssertionError('sealed read')), mock.patch('sys.stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(MB.main(['--world', 'not-a-real-world', 'sealed-path']), 0)
+            self.assertEqual(output.getvalue().strip(), str(MB.sealed_answers_path()))
+
+    def test_operator_override(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {'AI_WORLDBUILDER_SEALED_TRUTH': td + '/truth.json'}):
+            self.assertEqual(MB.sealed_answers_path(), Path(td).resolve() / 'truth.json')
+
+
 if __name__ == '__main__':
     unittest.main()
-

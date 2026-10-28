@@ -38,4 +38,4 @@ Task: `feature_design`, pilot pack `v1`. Each model builds the Students' Union (
 
 ## A note on `truth.json`
 
-The sealed file `bakeoff-sealed/truth.json` is not a results file. It is the answer key for the feature-selection check ("which building is the largest in the cell"), written before any run so models cannot see it. Its contents are deliberately not copied here, because bake-off packs and docs are readable by the models under test.
+The sealed file `~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json` is not a results file. It is the answer key for the feature-selection check ("which building is the largest in the cell"), written before any run so models cannot see it. Its contents are deliberately not copied here, because bake-off packs and docs are readable by the models under test.
