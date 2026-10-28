@@ -123,7 +123,6 @@ def _stub_world(name: str) -> Path:
     (config / 'world-frame.json').write_text(
         json.dumps({
             'offsets': {'easting': 0, 'northing': 0},
-            'bounds_mc': {'west': 0, 'east': 1, 'north': 0, 'south': -1},
         }),
         encoding='utf-8',
     )

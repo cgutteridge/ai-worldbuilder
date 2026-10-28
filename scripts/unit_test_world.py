@@ -41,7 +41,6 @@ def unit_test_world() -> Iterator[Path]:
             'place': 'Unit test fixture',
             'crs': 'EPSG:27700',
             'offsets': {'easting': 436248, 'northing': 109608},
-            'bounds_mc': {'west': 0, 'east': 11604, 'north': 0, 'south': -8666},
             'cell': {'size': 128, 'origin': [48, -44]},
             'y_offset': 11,
         }))

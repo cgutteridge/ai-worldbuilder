@@ -34,7 +34,7 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 
 from geodetic import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
-from osgb import in_bounds, load_offsets, to_mc, to_osgb  # noqa: E402
+from osgb import load_offsets, to_mc, to_osgb  # noqa: E402
 from ref_manifest import mc_tiles_for_bbox  # noqa: E402
 from terrace import snap_slope  # noqa: E402
 from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402
@@ -81,7 +81,7 @@ def coord_triple_from_mc(x: int, z: int) -> dict:
 
     @param x: Minecraft X
     @param z: Minecraft Z
-    @returns: dict with easting, northing, lat, lon, mc, in_bounds
+    @returns: dict with easting, northing, lat, lon, mc
     """
     e, n = to_osgb(x, z)
     lat, lon = osgb_to_wgs84(e, n)
@@ -89,7 +89,6 @@ def coord_triple_from_mc(x: int, z: int) -> dict:
         'mc': {'x': x, 'z': z},
         'osgb': {'easting': round(e, 2), 'northing': round(n, 2)},
         'wgs84': {'lat': round(lat, 6), 'lon': round(lon, 6)},
-        'in_bounds': in_bounds(x, z),
     }
 
 
@@ -98,7 +97,7 @@ def coord_triple_from_osgb(e: float, n: float) -> dict:
 
     @param e: easting
     @param n: northing
-    @returns: dict with mc, osgb, wgs84, in_bounds
+    @returns: dict with mc, osgb, wgs84
     """
     x, z = to_mc(e, n)
     lat, lon = osgb_to_wgs84(e, n)
@@ -106,7 +105,6 @@ def coord_triple_from_osgb(e: float, n: float) -> dict:
         'mc': {'x': x, 'z': z},
         'osgb': {'easting': round(e, 2), 'northing': round(n, 2)},
         'wgs84': {'lat': round(lat, 6), 'lon': round(lon, 6)},
-        'in_bounds': in_bounds(x, z),
     }
 
 
@@ -115,7 +113,7 @@ def coord_triple_from_wgs84(lat: float, lon: float) -> dict:
 
     @param lat: latitude
     @param lon: longitude
-    @returns: dict with mc, osgb, wgs84, in_bounds
+    @returns: dict with mc, osgb, wgs84
     """
     e, n = wgs84_to_osgb(lat, lon)
     x, z = to_mc(e, n)
@@ -123,7 +121,6 @@ def coord_triple_from_wgs84(lat: float, lon: float) -> dict:
         'mc': {'x': x, 'z': z},
         'osgb': {'easting': round(e, 2), 'northing': round(n, 2)},
         'wgs84': {'lat': round(lat, 6), 'lon': round(lon, 6)},
-        'in_bounds': in_bounds(x, z),
     }
 
 
@@ -513,7 +510,7 @@ def cmd_convert(args: argparse.Namespace) -> int:
         _print_json(rec)
     else:
         mc, osg, wgs = rec['mc'], rec['osgb'], rec['wgs84']
-        print(f"MC X{mc['x']} Z{mc['z']}  ({'in' if rec['in_bounds'] else 'OUT OF'} bounds)")
+        print(f"MC X{mc['x']} Z{mc['z']}")
         print(f"OSGB E{osg['easting']} N{osg['northing']}")
         print(f"WGS84 {wgs['lat']}, {wgs['lon']}")
     return 0

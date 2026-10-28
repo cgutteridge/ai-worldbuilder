@@ -19,7 +19,6 @@ from terrace import BROADLANDS_N_SLOPE  # noqa: E402
 class ConvertMcTest(unittest.TestCase):
     def test_mc_osgb_roundtrip(self):
         rec = geo.coord_triple_from_mc(5652, -2492)
-        self.assertTrue(rec['in_bounds'])
         self.assertEqual(rec['mc']['x'], 5652)
         e, n = rec['osgb']['easting'], rec['osgb']['northing']
         back = geo.coord_triple_from_osgb(e, n)

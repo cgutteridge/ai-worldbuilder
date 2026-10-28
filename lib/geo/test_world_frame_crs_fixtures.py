@@ -31,7 +31,6 @@ def _frame(crs: str, easting: float, northing: float) -> wf.WorldFrame:
         'place': f'Fictional fixture {crs}',
         'crs': crs,
         'offsets': {'easting': easting, 'northing': northing},
-        'bounds_mc': {'west': -20000, 'east': 20000, 'north': 20000, 'south': -20000},
         'y_offset': 11,
     })
 
