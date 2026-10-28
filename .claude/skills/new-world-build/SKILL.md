@@ -12,7 +12,7 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
 
 - Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Point `active_world.py` at it before writing place files.
 - **Empty world** from `templates/empty-world/` (flat, one bedrock layer at the world floor Y −64, structures off, weather off, MC 26.2 format; see its README.txt). Never start from a generated city-mesh save or a third-party heightmap export; heights come from the lidar provider only.
-- **Start with the home location.** Ask the user for the place they want to start at (we used the Highfield campus). Everything below follows from it. Name it (e.g. Bargate, campus centre).
+- **Start with the home location.** Ask the user for the place they want to start at (we used the Highfield campus). Everything below follows from it. Name it (e.g. Bargate, campus centre). **Pin the exact point**: agree a specific lat/lon (or grid reference), check it with `world_frame.py to-mc`/`to-wgs84` and an aerial or map, and have the user confirm it before the frame is written; the home cell comes from this point.
 - **Bbox: explain it, then ask.** Say this to the user in plain words every time, before asking for a size:
   - Lidar comes as **fixed tiles** (in Britain, 5 km squares on the national grid, each DTM and DSM about 75 MB). A tile can't be downloaded in part, so the bbox doesn't choose how much data you get; it chooses **which tiles** download now. A box straddling a tile line needs 2 or 4 tiles; one aligned to the grid needs 1.
   - The bbox has two jobs: it picks the first download, and it is the area the Y-offset check scans for lowest ground and highest roof (section 2). It does not limit the world: later cells fetch the neighbouring tiles when first needed.
@@ -22,6 +22,7 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
     - **Wider box (2 or 4 tiles):** the min/max is more trustworthy and neighbours are cached for later, at the cost of several times the download and any sea or empty tiles in it.
     - Prefer the aligned box when the high and low points are known to be inside it; prefer the wider box for unfamiliar terrain (cliffs, valleys, tall structures).
   - Smallest sensible box: home plus the highest and lowest land expected. A 5 km box is a starting point, not a rule.
+  - **Coastal homes:** sea has no lidar and nothing to build, so shift the box inland rather than centring it on the shore.
 - Vanilla Overworld build range is **Y −64…319** (384 blocks, limit 320). Terrain plus buildings plus trees in the bbox must fit in it; that is what the Y checkpoint (section 2) is for.
 
 Done when the user has named the home place and a rough bbox.
@@ -62,7 +63,7 @@ python3 scripts/check_instance.py --world <name>
 ```
 
    The template has no chunks; the game generates them on first open. The in-game name (`LevelName` in `level.dat`) is set to the folder name; the folder name is what the tools use.
-4. **Move spawn to home.** The template's spawn is a leftover from another world, and with 0, 0 offsets (0, 0) is nowhere useful. With the world open, set the world spawn and put the player at the home point (MCP `level_set_spawn_point`, then teleport), so the first time the game opens it is at the right place.
+4. **Move spawn to home** (needs the game open on the world; if it is not open yet, say so and do it in section 2b once the user has opened it). The template's spawn is a leftover from another world, and with 0, 0 offsets (0, 0) is nowhere useful. With the world open, set the world spawn and put the player at the home point (MCP `level_set_spawn_point`, then teleport), so the first time the game opens it is at the right place.
 5. Not a copy of Southampton2023 unless legacy.
 6. If a newer Minecraft version is in use than the template's (`Version.Name` in `level.dat`): open the world once in the game to upgrade it, log out, then refresh `templates/empty-world/` (copy without `session.lock`, `players/`, `*.dat_old`, `*.mca`; keep the single bedrock layer at Y −64 in `world_gen_settings.dat`) and commit.
 
@@ -77,11 +78,11 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 2. Run highs/lows:
 
 ```bash
-.venv/bin/python shims/lidar_extremes.py --bbox-mc x0,z0,x1,z1 --fetch
+PYTHONPATH=scripts:lib python3 shims/lidar_extremes.py --world <name> --bbox-mc x0,z0,x1,z1 --fetch
 ```
 
 3. Fit the range: with `y_offset = 0` the lowest ground (DTM min) must be at least −64 and the highest DSM (roofs, trees, towers) at most 319. If the area sits outside that, pick `y_offset` so the lowest ground lands a little above −64 (about −50, leaving room for foundations and cellars) and the highest surface stays below 319. If the total relief (DSM max minus DTM min) is over about 350 m, the bbox is too tall: shrink it. Also check the lidar datum is not ellipsoidal (heights above the ellipsoid are tens of metres off sea level).
-4. Talk through DTM/DSM min/max and the suggested `y_offset` with the user. Lock only after they confirm.
+4. Show the user the arithmetic, not just the tool's answer: DTM min + `y_offset` ≥ −64 and DSM max + `y_offset` ≤ 319, with the actual numbers. The tool's "suggested" offset only aims ground min near 64; it can be wrong (it can push the tops over 319), so override it when the real fit says so and say why. Lock only after they confirm.
 5. Write `y_offset` into `world-frame.json`.
 
 Play `need-you` and **stop** until the user confirms the offset. Do not apply world edits before that.
@@ -93,7 +94,7 @@ Once `y_offset` is locked, give the world its first ground: lidar ghost around t
 1. Run it live under the site lock, in the background (ground pass about 25-55 s a cell; ring 1 is 9 cells, so roughly 5-9 minutes; relay progress):
 
 ```bash
-python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py apply --cell <home cell> --ring 1
+python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- env PYTHONPATH=scripts:lib python3 shims/lidar_ghost.py --world <name> apply --cell <home cell> --ring 1
 ```
 
    Use `--ring 0` for the home cell alone (just the home cell, fastest) when the user only wants a quick look.
@@ -106,13 +107,22 @@ Done when the ghost is placed, the player stands at home on real terrain, and th
 
 1. Author `config/local-providers.json` for the place (required types covered by system + local together: at least `vector_map`, `lidar`, one `aerial`). Reuse system providers; do not copy nationwide feeds into the world repo.
 2. Point at worldbuilder `reference/TYPES.txt` and start a place `reference/SOURCES.txt` catalogue.
-3. **vector_map (once per project):** download the regional source into this world's `downloads/` (cache), extract place clips into `reference/vector_map/<place>/` via the local vector_map provider shim. Shared across cells; do not symlink or `osm_root=` into another world. Contract: `scripts/vector_map_clips.py`.
+3. **vector_map (once per project):** choose a regional extract that actually covers the bbox (test it: clip a known building or road near home before relying on it; a county extract may stop at a coast or boundary). Before downloading, tell the user the filename, source and size and wait for a yes. Download the regional source into this world's `downloads/` (cache), extract place clips into `reference/vector_map/<place>/` (use the place name for the clip folder) via the local vector_map provider shim. Shared across cells; do not symlink or `osm_root=` into another world. Contract: `scripts/vector_map_clips.py`.
 4. Scaffold place memory:
    - `templates/new-world-site/` → world checkout `site/` (ISSUES, NOTES, COVERAGE, REVIEWS, cells/, thin stubs for process docs).
    - Registry: nothing to copy. `registry/` is created by the first journal write (`templates/new-world-registry/README.txt`, ADR 004).
    Do **not** copy craft/process prose into the world — that lives in ai-worldbuilder `rules/`. Do **not** create retired progress files under site/ — `cell_registry.py verify` treats them as leftovers. Progress starts empty; tools populate the journal.
 
-Done when checklist providers have `how` strings, `evaluate-data-source` would not flag an empty type slot that the place needs, and vector_map clips (if required) land under this world's `reference/vector_map/` via the download/cache contract.
+Done when checklist providers have `how` strings, running the `evaluate-data-source` skill over the catalogue finds no empty type slot the place needs (`vector_map`, `lidar`, `aerial`), and vector_map clips (if required) land under this world's `reference/vector_map/` via the download/cache contract.
+
+## 4. Close
+
+Run this once at the end, instead of repeating open items in every message:
+
+1. `python3 scripts/world_frame.py --world <name> info` and `python3 scripts/check_instance.py --world <name>` pass.
+2. The world repo is committed and has a `.gitignore` for `downloads/` and other caches (copy an existing world's until a template exists).
+3. Every tool gap or workaround met during the run is filed in `tasks/index.json` via the `task-index-manager` skill (tool gaps only; never world work), or the user has said not to.
+4. List anything still open (e.g. the user's check at home) in one short list and ask once.
 
 ## Out of scope (stop)
 
