@@ -145,7 +145,7 @@ class Fetching(unittest.TestCase):
                                 'resolution': {'id': '1'}, 'uri': 'https://example.test/dtm'}]}
             calls = []
 
-            def fake_http(url, data=None, headers=None, tries=3):
+            def fake_http(url, data=None, headers=None, tries=3, label=None):
                 calls.append(url)
                 return json.dumps(cat).encode() if data is not None else zbuf.getvalue()
 
@@ -166,6 +166,43 @@ class Fetching(unittest.TestCase):
             with mock.patch.object(dl, '_http', lambda *a, **k: json.dumps({'results': []}).encode()), \
                     mock.patch.object(dl, 'catalogue_polygon', lambda e, n: {}):
                 self.assertIsNone(lidar.fetch_tile('DTM', 0, 0))
+
+    def test_ensure_reports_tile_count_and_steps(self):
+        import contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            lidar = dl.DefraLidar(Path(tmp))
+            err = io.StringIO()
+            with mock.patch.object(dl, '_http', lambda *a, **k: json.dumps({'results': []}).encode()), \
+                    mock.patch.object(dl, 'catalogue_polygon', lambda e, n: {}), \
+                    contextlib.redirect_stderr(err):
+                absent = lidar.ensure(455100, 75100, 456100, 76100)
+            out = err.getvalue()
+            self.assertEqual(absent, [('DTM', 455000, 75000), ('DSM', 455000, 75000)])
+            self.assertIn('2 tile download(s) needed', out)
+            self.assertIn('[2/2] DSM 455000E-75000N  none published here', out)
+            self.assertIn('fetch finished in', out)
+
+    def test_ensure_is_silent_when_nothing_to_fetch(self):
+        import contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                dl.DefraLidar(Path(tmp)).ensure(0, 0, 0, 0, models=())
+            self.assertEqual(err.getvalue(), '')
+
+    def test_read_with_progress_prints_bytes_and_returns_all(self):
+        import contextlib
+        class Resp:
+            headers = {'Content-Length': str(3 << 20)}
+            def __init__(self): self.n = 3
+            def read(self, size):
+                self.n -= 1
+                return b'x' * (1 << 20) if self.n >= 0 else b''
+        err = io.StringIO()
+        with mock.patch.object(dl, 'PROGRESS_EVERY_S', 0), contextlib.redirect_stderr(err):
+            data = dl._read_with_progress(Resp(), 'DTM 1E-1N')
+        self.assertEqual(len(data), 3 << 20)
+        self.assertIn('DTM 1E-1N  3/3 MB', err.getvalue())
 
     def test_error_page_is_not_cached_as_catalogue(self):
         with tempfile.TemporaryDirectory() as tmp:
