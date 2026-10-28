@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -181,14 +182,16 @@ _OSTN15_GRID = 'uk_os_OSTN15_NTv2_OSGBtoETRS.tif'
 def _ensure_proj_data() -> None:
     """Append system PROJ data dirs that carry the OSTN15 grid, once per process.
 
-    pyproj's bundled share/proj often omits UK grids; Homebrew ``proj`` installs
-    them under ``/opt/homebrew/share/proj``. Appending that path (when present)
-    lets ``Transformer`` pick OSTN15 without requiring ``PROJ_NETWORK``.
+    Honour explicit PROJ_DATA (or legacy PROJ_LIB) search paths before common
+    system installations. Appending a directory containing the grid lets
+    ``Transformer`` pick OSTN15 without requiring ``PROJ_NETWORK``.
     """
     global _PROJ_DATA_READY
     if _PROJ_DATA_READY:
         return
-    for candidate in _SYSTEM_PROJ_DATA_CANDIDATES:
+    configured = os.environ.get('PROJ_DATA') or os.environ.get('PROJ_LIB', '')
+    candidates = [Path(value).expanduser() for value in configured.split(os.pathsep) if value]
+    for candidate in (*candidates, *_SYSTEM_PROJ_DATA_CANDIDATES):
         if (candidate / _OSTN15_GRID).is_file():
             datadir.append_data_dir(str(candidate))
             break
