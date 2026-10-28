@@ -63,6 +63,16 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   per-portal `doors` map is refused. Face slots `roof_edge` / `detail` are
   reserved; real roof edge and greeblies stay on `roofs.edge` / `details`.
   Window frames are build-time (#131), not plan fields.
+  `plan_doors` reads each placed entrance's `awning_like` and queues its cover
+  until after shell, roof and detail placement. `awning` and `covered_area`
+  use roof-material bottom slabs at door top + 1, one block wider on each
+  side than the actual leaves, projecting outward over the step-out by `depth`
+  blocks (default 1 when omitted or 0). `covered_area` uses the same geometry
+  with a larger specified depth; it does not carve walls. `porch_roof` adds
+  wall-material posts at the two outer front corners, from step-out ground
+  to the slab underside. Building-mass columns are skipped; the door approach
+  stays walkable. Kind `none` and unresolved/unplaced entrances add no cover.
+  Dry run prints `door <id> cover <kind> depth <n>` for each placed cover.
 - optional `facades` — legacy per-label per-face window table from street
   photos and the aerial (glazing height, pier width, wall material, bay
   rhythm `WW_BB_WW`). Prefer `facade_plan[label].faces[face].glazing`.
