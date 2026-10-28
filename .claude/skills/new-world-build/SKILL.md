@@ -76,6 +76,14 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 
 1. Ensure lidar coverage for the bbox (national composite plugin or whatever `world-frame.json` names).
    The first fetch is slow: slow; take the per-tile time from the lidar provider's README (England: about 1 minute per tile per product, so 4 tiles x DTM and DSM took about 7.5 minutes). Run it in the background, tell the user the tile count first, and relay the `[i/N]` progress lines as they appear. Note the elapsed time it reports.
+   **While it downloads, offer the primer** ("want the basics while we wait?"). Skip it if they decline or already know the system. Keep it short, plain, and drawn from the sources named, not from memory:
+   - **Cells:** the world is a grid of square cells (`cell.size` 128 blocks, from `world-frame.json`); the build starts at the home cell and grows in rings around it (`rules/radial-good-enough.md`), one active cell at a time. Progress lives in the registry (`cell_registry.py next`).
+   - **Features cross cell edges:** a building or bridge belongs to every cell its volume touches, so a feature near an edge is built from the cell that owns it and shows in its neighbours. That is why the ghost is laid a ring wider than the home cell.
+   - **Elements:** the four kinds of lasting content in a cell, built in this order (`rules/handoff-layered-passes.md`): feature (buildings, bridges, anything large with its own build and undo), ground (surfaces, lawns, paving), trees, decor (hedges, street furniture, small things). Trees and decor only go on air, so their undo is exact.
+   - **Reference types** (`reference/TYPES.txt`): `vector_map` (footprints, roads, landuse), `poi_register` (named entrances, building ids), `aerial` (roofs, ground surface, canopy), `streetlevel` (storeys, walls, doors, materials), `lidar` (heights only). Which type answers which question: `rules/evidence-order.md`. Features use vector_map footprints, lidar heights, aerial roofs and streetlevel walls; ground uses aerial; trees use aerial cover plus lidar tree columns.
+   - **Ghost:** a placeholder ground from lidar (DTM terrain with a surface colour showing DSM minus DTM: light grey about 0, grey 1-2 m, black over 2 m), so they can see where buildings stand before anything real is built. Real ground replaces it later. No volumetric ghost buildings.
+   - **If in doubt, start with building the first cell** (the home cell): it teaches the loop faster than more explanation, and the registry's `next` picks the task.
+
 2. Run highs/lows:
 
 ```bash
