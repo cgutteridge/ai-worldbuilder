@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shim — canonical module: active world ``providers/geofabrik-hampshire/osm_extract.py``.
+"""Shim — resolve the active world's packaged ``vector_map`` provider.
 
 Installs the tool-owned cell-extract landscape presets
 (``lib/sources/osm_cell_extract``) into the world module's ``LAYER_PRESETS``,
@@ -10,6 +10,7 @@ barriers, furniture, pedestrian areas, natural and leisure without a hand list.
 from __future__ import annotations
 
 import sys
+import importlib.util
 from pathlib import Path
 
 import _provider_shim as _ps
@@ -20,9 +21,7 @@ from osm_cell_extract import (  # noqa: E402
     install_cell_extract_layer_presets,
     with_default_cell_extract_layers,
 )
-from world_provider import load_world_provider  # noqa: E402
-
-_PACKAGE = "providers/geofabrik-hampshire"
+from cell_sources import load_place_sources, provider_package_dir  # noqa: E402
 _FILE = "osm_extract.py"
 
 
@@ -31,7 +30,26 @@ def _load_with_cell_extract():
 
     @returns: loaded world provider module
     """
-    mod = load_world_provider(_PACKAGE, _FILE, "osm_extract")
+    data = load_place_sources()
+    candidates = [row for row in data.get('providers', [])
+                  if 'vector_map' in row.get('types', []) and row.get('package')]
+    if len(candidates) != 1:
+        raise ImportError(
+            'Configure exactly one packaged vector_map provider in '
+            'config/local-providers.json (system catalogue also considered); '
+            f'found {len(candidates)}'
+        )
+    row = candidates[0]
+    package = provider_package_dir(row['id'], data)
+    path = package / _FILE if package is not None else None
+    if path is None or not path.is_file():
+        raise ImportError(f"vector_map provider {row['id']!r} has no {_FILE}")
+    spec = importlib.util.spec_from_file_location('_active_osm_extract', path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'cannot load vector_map provider: {path}')
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
     install_cell_extract_layer_presets(mod.LAYER_PRESETS)
     return mod
 
