@@ -101,7 +101,10 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   sets each stair's facing from the upslope and its `shape` from stairs
   at the **same block Y** (the game's neighbour rule — not from height
   differences on the diagonal). `python3 scripts/roof_lint.py` checks
-  planned stair shapes against that rule. Rebuilt hips and valleys also
+  planned stair shapes against that rule. Inside a zoned mass, an open upper
+  stair edge facing a taller roof column gets wall backing at the lower
+  stair's Y when that cell would otherwise be air; solid floors and exterior
+  air stay as they are. Rebuilt hips and valleys also
   need an in-game check for light holes; a correct neighbour shape alone
   does not prove the roof is sealed. Roof edging is optional via
   `roofs[label].edge` (default none — no parapet, no flat overhang

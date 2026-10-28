@@ -1634,6 +1634,43 @@ class Build:
                 self.set(x, ry + 1, z, edge['block'])
             else:
                 self.set(x, ry + 1, z, 'air')
+        if pitched_states is not None:
+            self._back_roof_stair_edges(roof, pitched_states)
+
+    def _back_roof_stair_edges(self, roof: dict, states: dict) -> None:
+        """Close horizontal slits beside lower stairs inside a zoned roof mass.
+
+        ``edge_wall_expose`` compares whole-block tops. At the lowest adjacent
+        roof Y it can leave air below a taller column, even when a lower stair's
+        upper half opens into that air. Back only those openings with wall;
+        existing floors and exterior air are left alone.
+
+        @param roof: membrane block Y per owned roof column
+        @param states: membrane states (after same-Y stair shape derivation)
+        """
+        for (x, z), state in states.items():
+            if '_stairs[' not in state:
+                continue
+            props = dict(kv.split('=', 1) for kv in state.split('[', 1)[1][:-1].split(','))
+            facing = props['facing']
+            shape = props.get('shape', 'straight')
+            # A straight stair's upper half fills its facing side. Inner
+            # corners also fill their left/right side; outer corners fill
+            # only a quadrant, so every side has an open upper part.
+            closed = {facing}
+            if shape.startswith('outer_'):
+                closed = set()
+            elif shape.startswith('inner_'):
+                turn = -1 if shape.endswith('_left') else 1
+                closed.add(_ROOF_FACE_ORDER[(_ROOF_FACE_ORDER.index(facing) + turn) % 4])
+            y = roof[(x, z)]
+            for face, (dx, dz) in _ROOF_DELTA.items():
+                neighbour = (x + dx, z + dz)
+                if face in closed or roof.get(neighbour, y) <= y:
+                    continue
+                pos = (neighbour[0], y, neighbour[1])
+                if self.p.cells.get(pos) == 'minecraft:air':
+                    self.set(*pos, self.wall)
 
     def top_solid(self, x, z):
         for y in range(70, 40, -1):

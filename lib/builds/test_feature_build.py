@@ -1296,6 +1296,59 @@ class PitchedZonesRidgeTest(unittest.TestCase):
                 if pos[1] == 50 and st == 'minecraft:bricks' and (pos[0], pos[2]) in self.cells}
         self.assertTrue(high)
 
+    def test_zoned_shell_backs_horizontal_gap_beside_stair(self):
+        # Synthetic version of West's reported opening: an east-facing stair
+        # at (6165,60,-5631), air in the taller south column at the same Y,
+        # and an existing full floor at Y59. That floor cannot close a
+        # horizontal slit through the stair's partly open south upper edge.
+        cells = {(x, z) for x in range(6163, 6168) for z in range(-5633, -5628)}
+        rows = [
+            [120, 120, 120, 120, 120],
+            [120, 120, 120, 122, 122],
+            [120, 120, 120, 122, 124],
+            [120, 120, 122, 124, 124],
+            [120, 120, 122, 124, 124],
+        ]
+        raw = {(6163 + x, -5633 + z): h for z, row in enumerate(rows) for x, h in enumerate(row)}
+        halfs = F.regularise_roof_half_heights(raw)
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': cells}, world=_StoneWorld())
+        feature = builder.features[0]
+        feature.b = 41
+        feature.zone_ground = {c: 41 for c in cells}
+        feature.zone_level = {c: 49 for c in cells}
+        feature.zone_roof_half = halfs
+        feature.zone_roof = {c: h // 2 for c, h in halfs.items()}
+        builder.shell_zoned(0, feature)
+        self.assertIn('facing=east', builder.p.cells[(6165, 60, -5631)])
+        self.assertIn('shape=straight', builder.p.cells[(6165, 60, -5631)])
+        self.assertEqual(builder.p.cells[(6165, 59, -5630)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(6165, 60, -5630)], 'minecraft:bricks')
+        self.assertIn('brick_stairs', builder.p.cells[(6165, 61, -5630)])
+
+    def test_stair_backing_only_closes_open_edges_inside_taller_columns(self):
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': self.cells}, world=_StoneWorld())
+        # Test full versus partial upper-edge coverage for every stair shape.
+        closed = {'straight': {'east'}, 'inner_left': {'east', 'north'},
+                  'inner_right': {'east', 'south'}, 'outer_left': set(), 'outer_right': set()}
+        for shape, solid_edges in closed.items():
+            for face, (dx, dz) in F._ROOF_DELTA.items():
+                with self.subTest(shape=shape, face=face):
+                    builder.p.cells.clear()
+                    builder.p.set(dx, 50, dz, 'air')
+                    roof = {(0, 0): 50, (dx, dz): 51}
+                    states = {(0, 0): f'brick_stairs[facing=east,half=bottom,shape={shape}]'}
+                    builder._back_roof_stair_edges(roof, states)
+                    expected = 'minecraft:air' if face in solid_edges else 'minecraft:bricks'
+                    self.assertEqual(builder.p.cells[(dx, 50, dz)], expected)
+        builder.p.cells.clear()
+        builder.p.set(0, 50, 1, 'smooth_stone')
+        states = {(0, 0): 'brick_stairs[facing=east,half=bottom,shape=straight]'}
+        builder._back_roof_stair_edges({(0, 0): 50, (0, 1): 51}, states)
+        self.assertEqual(builder.p.cells[(0, 50, 1)], 'minecraft:smooth_stone')
+        builder.p.cells.clear()
+        builder._back_roof_stair_edges({(0, 0): 50}, states)
+        self.assertEqual(builder.p.cells, {}, 'backing must not expand outside the roof mass')
+
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
         """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
         pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
