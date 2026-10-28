@@ -34,7 +34,7 @@ def _entrance(**overrides) -> dict:
         'leaves': 1,
         'block': 'iron_door',
         'at': [10, 20],
-        'canopy': {'kind': 'covered_area'},
+        'awning_like': {'kind': 'covered_area'},
         'steps': 0,
         'floor_offset': 0,
         'cell': [48, -44],
@@ -50,7 +50,7 @@ class FacadePlanValidateTest(unittest.TestCase):
     def test_empty_plan_ok(self):
         FP.validate_facade_plan({}, labels={'A'}, storeys={'A': 2})
 
-    def test_resolved_entrance_with_canopy_and_floor_offset(self):
+    def test_resolved_entrance_with_awning_like_and_floor_offset(self):
         plan = {
             'A': {
                 'faces': {
@@ -59,14 +59,14 @@ class FacadePlanValidateTest(unittest.TestCase):
                     },
                 },
                 'entrances': [
-                    _entrance(id='57-A', leaves=1, canopy={'kind': 'covered_area'}),
+                    _entrance(id='57-A', leaves=1, awning_like={'kind': 'covered_area'}),
                     _entrance(
                         id='40-A',
                         portal_id='40-A',
                         face='E',
                         leaves=2,
                         block='oak_door',
-                        canopy={'kind': 'none'},
+                        awning_like={'kind': 'none'},
                         floor_offset=0,
                     ),
                 ],
@@ -76,6 +76,45 @@ class FacadePlanValidateTest(unittest.TestCase):
         placed = FP.placed_entrances(plan)
         self.assertEqual({e['id'] for e in placed}, {'57-A', '40-A'})
         self.assertEqual(next(e for e in placed if e['id'] == '40-A')['leaves'], 2)
+
+    def test_old_entrance_key_canopy_refused_naming_awning_like(self):
+        """No silent alias: legacy field ``canopy`` must name the new key."""
+        row = _entrance()
+        row.pop('awning_like')
+        row['canopy'] = {'kind': 'covered_area'}
+        with self.assertRaises(FP.FacadePlanError) as ctx:
+            FP.validate_facade_plan(
+                {'A': {'faces': {}, 'entrances': [row]}},
+                labels={'A'},
+                storeys={'A': 1},
+            )
+        msg = str(ctx.exception)
+        self.assertIn('awning_like', msg)
+        self.assertIn('canopy', msg)
+
+    def test_awning_like_kinds_accepted(self):
+        for kind in ('none', 'awning', 'covered_area', 'porch_roof'):
+            with self.subTest(kind=kind):
+                FP.validate_facade_plan(
+                    {'A': {'faces': {}, 'entrances': [
+                        _entrance(awning_like={'kind': kind}),
+                    ]}},
+                    labels={'A'},
+                    storeys={'A': 1},
+                )
+
+    def test_old_awning_like_kind_canopy_refused_naming_porch_roof(self):
+        with self.assertRaises(FP.FacadePlanError) as ctx:
+            FP.validate_facade_plan(
+                {'A': {'faces': {}, 'entrances': [
+                    _entrance(awning_like={'kind': 'canopy'}),
+                ]}},
+                labels={'A'},
+                storeys={'A': 1},
+            )
+        msg = str(ctx.exception)
+        self.assertIn('porch_roof', msg)
+        self.assertIn('canopy', msg)
 
     def test_unresolved_entrance_needs_reason_via_provenance(self):
         plan = {
@@ -113,7 +152,7 @@ class FacadePlanValidateTest(unittest.TestCase):
             {**base, 'face': 'X'},
             {**base, 'floor_offset': '0'},
             {**base, 'steps': -1},
-            {**base, 'canopy': {'kind': 'awning'}},
+            {**base, 'awning_like': {'kind': 'tent'}},
             {
                 **base,
                 'provenance': {
@@ -174,7 +213,7 @@ class FacadePlanValidateTest(unittest.TestCase):
                         portal_id=None,
                         face='N',
                         leaves=1,
-                        canopy={'kind': 'none'},
+                        awning_like={'kind': 'none'},
                         provenance=_prov(source='photo_read', confidence='medium'),
                     ),
                 ],
@@ -288,7 +327,10 @@ class FacadePlanLoadSpecTest(unittest.TestCase):
                     'S': {'glazing': [{'storey': 1, 'glazed_h': 2, 'pier': 0}]},
                 },
                 'entrances': [
-                    _entrance(id='42-B', portal_id='42-B', floor_offset=0, canopy={'kind': 'none'}),
+                    _entrance(
+                        id='42-B', portal_id='42-B', floor_offset=0,
+                        awning_like={'kind': 'none'},
+                    ),
                 ],
             },
         }

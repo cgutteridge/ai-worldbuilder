@@ -35,7 +35,8 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                        "id": "<stable>", "portal_id"?: "<register id>",
                        "face"?: "N"|"S"|"E"|"W", "leaves"?: 1|2,
                        "block"?: "<*_door>", "at"?: [x, z],
-                       "canopy"?: {"kind": "none"|"canopy"|"covered_area"},
+                       "awning_like"?: {"kind": "none"|"awning"|"covered_area"|
+                                        "porch_roof"},
                        "steps"?: >=0, "floor_offset"?: int,
                        "cell"?: [tx, tz],
                        "provenance": {source, confidence, evidence_ids,
@@ -51,7 +52,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  and front/rear spruce default are removed (#146).
                  Glazing may live under ``faces[].glazing`` (#130); window
                  frames are build-time (#131); roof/facade greeblies stay in
-                 ``details`` / ``roofs.edge`` (#132) — entrance canopy is here.
+                 ``details`` / ``roofs.edge`` (#132) — entrance awning_like is
+                 here (not a tree canopy; legacy entrance key ``canopy`` is
+                 refused).
   facades        optional per-label per-face table of window rows (photo reading):
                    {"<label>": {"N"|"S"|"E"|"W": [
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
@@ -72,10 +75,12 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "face"?: "N"|"S"|"E"|"W"}]}
                  Roof kinds: plant_room, vent, louvred_vent, skylight,
                  solar_panel, lift_overrun. Facade kinds: drainpipe, sign,
-                 canopy, ledge, fascia_band (``face`` required). Entrance
-                 canopy / covered area belongs on ``facade_plan`` entrances,
-                 not here. Placed after the shell and roof; dry run prints
-                 each detail and its source. Positions from aerial (roofs) /
+                 awning_like, ledge, fascia_band (``face`` required). Entrance
+                 awning_like / covered area belongs on ``facade_plan``
+                 entrances, not here. Legacy details kind ``canopy`` is
+                 refused. Placed after the shell and roof; dry run prints
+                 each detail and its source. Roof detail columns without solid
+                 roof below are clipped and reported. Positions from aerial (roofs) /
                  street photos (facades); large plant heights from lidar.
   exclude        optional per-label boxes cut out of the map footprint (outline larger
                  than the real building, or neighbours sharing the outline):
@@ -151,7 +156,7 @@ ROOF_DETAIL_KINDS = frozenset({
     'plant_room', 'vent', 'louvred_vent', 'skylight', 'solar_panel', 'lift_overrun',
 })
 FACADE_DETAIL_KINDS = frozenset({
-    'drainpipe', 'sign', 'canopy', 'ledge', 'fascia_band',
+    'drainpipe', 'sign', 'awning_like', 'ledge', 'fascia_band',
 })
 DETAIL_KINDS = ROOF_DETAIL_KINDS | FACADE_DETAIL_KINDS
 
@@ -1163,6 +1168,11 @@ def _validate_details(path, spec: dict, labels: set) -> None:
             if not isinstance(row, dict):
                 raise SystemExit(f'{pref} must be an object')
             kind = row.get('kind')
+            if kind == 'canopy':
+                raise SystemExit(
+                    f'{pref} kind \'canopy\' is renamed to \'awning_like\' '
+                    f'(allowed: {sorted(DETAIL_KINDS)})'
+                )
             if kind not in DETAIL_KINDS:
                 raise SystemExit(
                     f'{pref} kind must be one of {sorted(DETAIL_KINDS)}')
@@ -1269,6 +1279,7 @@ class Build:
         self._zone_pad_lines: list[str] = []
         self._roof_warnings: list[str] = []
         self._pane_skips: dict[tuple[str, str], int] = {}
+        self._detail_clip_lines: list[str] = []
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
@@ -2380,7 +2391,7 @@ class Build:
         # same refusals as the live apply, so the designer sees them before hand-off (#99)
         guard_door_frames(self.p, self.live.block)
         guard_roof_jogs(self.p)
-        # Greeblies after the outside-slab prune so canopy/ledge overhangs survive.
+        # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
         for line in self._zone_pad_lines:
             print(line)
@@ -2442,7 +2453,7 @@ class Build:
                     f"detail {row['kind']} {f.no} at ({ax},{ay},{az}) "
                     f"size {sx}x{sy}x{sz}{face_bit} source={row['source']}"
                 )
-        return lines
+        return lines + self._detail_clip_lines
 
     def _detail_box(self, at: list | tuple, size: list | tuple):
         """Yield ``(x, y, z)`` cells in an inclusive min-corner box.
@@ -2458,29 +2469,35 @@ class Build:
                 for dz in range(sz):
                     yield (ax + dx, ay + dy, az + dz)
 
-    def _solidify_roof_under(self, at: list | tuple, size: list | tuple, mat: str) -> None:
+    def _solidify_roof_under(
+        self, at: list | tuple, size: list | tuple, mat: str, supported: set[tuple[int, int]],
+    ) -> None:
         """Replace slab/stair membrane under a roof detail so it does not hover.
 
         @param at: detail min corner
         @param size: detail size
         @param mat: full-block material for the pad
+        @param supported: roof-supported horizontal cells of this detail
         """
         ax, ay, az = at
         sx, _sy, sz = size
         for dx in range(sx):
             for dz in range(sz):
                 x, z = ax + dx, az + dz
+                if (x, z) not in supported:
+                    continue
                 below = (x, ay - 1, z)
                 st = self.p.cells.get(below, '')
                 name = st.split('[')[0] if st else ''
-                if any(tok in name for tok in ('_slab', '_stairs', '_carpet', '_trapdoor')):
+                if any(tok in name for tok in ('_slab', '_stairs')):
                     self.set(x, ay - 1, z, mat)
 
-    def _place_detail(self, f: Feature, row: dict) -> None:
+    def _place_detail(self, f: Feature, row: dict, roof_cells: set[tuple[int, int, int]]) -> None:
         """Place one validated detail recipe after the shell and roof.
 
         @param f: feature mass owning the label
         @param row: details table row
+        @param roof_cells: finished shell/roof snapshot, before any details
         """
         kind = row['kind']
         at = row['at']
@@ -2490,68 +2507,105 @@ class Build:
         sx, sy, sz = size
         rm = f.roof.get('material') or 'smooth_stone'
 
+        supported = None
         if kind in ROOF_DETAIL_KINDS:
-            self._solidify_roof_under(at, size, rm if kind != 'skylight' else rm)
+            # Only the shell/roof can support a detail: an earlier recipe must
+            # not turn an unsupported column into support for a later one.
+            supported = set()
+            for dx in range(sx):
+                for dz in range(sz):
+                    x, z = ax + dx, az + dz
+                    if (x, ay - 1, z) in roof_cells:
+                        supported.add((x, z))
+            clipped = sx * sz - len(supported)
+            if clipped:
+                self._detail_clip_lines.append(
+                    f'detail {kind} {f.no} at ({ax},{ay},{az}) '
+                    f'unsupported cells={clipped}; clipped'
+                )
+            self._solidify_roof_under(at, size, rm, supported)
+
+        def place(x, y, z, state):
+            if supported is None or (x, z) in supported:
+                self.set(x, y, z, state)
 
         if kind == 'plant_room':
             for x, y, z in self._detail_box(at, size):
-                self.set(x, y, z, 'gray_concrete')
+                place(x, y, z, 'gray_concrete')
             for dx in range(sx):
                 for dz in range(sz):
-                    self.set(ax + dx, ay + sy, az + dz, 'iron_trapdoor[half=bottom,open=false]')
+                    place(ax + dx, ay + sy, az + dz, 'iron_trapdoor[half=bottom,open=false]')
         elif kind == 'vent':
-            self.set(ax, ay, az, 'iron_bars')
+            place(ax, ay, az, 'iron_bars')
             if sy > 1:
-                self.set(ax, ay + 1, az, 'iron_trapdoor[half=bottom,open=false]')
+                place(ax, ay + 1, az, 'iron_trapdoor[half=bottom,open=false]')
         elif kind == 'louvred_vent':
             for x, y, z in self._detail_box(at, size):
-                self.set(x, y, z, 'iron_trapdoor[half=bottom,open=false]')
+                place(x, y, z, 'iron_trapdoor[half=bottom,open=false]')
         elif kind == 'skylight':
             for x, y, z in self._detail_box(at, size):
-                self.set(x, y, z, 'glass')
+                place(x, y, z, 'glass')
         elif kind == 'solar_panel':
             for x, y, z in self._detail_box(at, (sx, 1, sz)):
-                self.set(x, y, z, 'black_stained_glass')
+                place(x, y, z, 'black_stained_glass')
         elif kind == 'lift_overrun':
             for x, y, z in self._detail_box(at, size):
-                self.set(x, y, z, 'smooth_stone')
+                place(x, y, z, 'smooth_stone')
         elif kind == 'drainpipe':
             for dy in range(sy):
-                self.set(ax, ay + dy, az, 'iron_bars')
+                place(ax, ay + dy, az, 'iron_bars')
         elif kind == 'sign':
             dx, dz = DIRS[face]
-            self.set(ax, ay, az, 'smooth_stone')
-            self.set(
+            place(ax, ay, az, 'smooth_stone')
+            place(
                 ax + dx, ay, az + dz,
                 f'oak_wall_sign[facing={FACE[face]}]',
             )
-        elif kind == 'canopy':
+        elif kind == 'awning_like':
             dx, dz = DIRS[face]
             for i in range(max(sx, sz)):
                 if face in 'NS':
                     x, z = ax + i, az
                 else:
                     x, z = ax, az + i
-                self.set(x + dx, ay, z + dz, f'{rm}_slab[type=bottom]')
+                place(x + dx, ay, z + dz, f'{rm}_slab[type=bottom]')
         elif kind == 'ledge':
             for x, y, z in self._detail_box(at, (sx, 1, sz)):
-                self.set(x, y, z, f'{rm}_slab[type=bottom]')
+                place(x, y, z, f'{rm}_slab[type=bottom]')
         elif kind == 'fascia_band':
             for x, y, z in self._detail_box(at, size):
-                self.set(x, y, z, 'terracotta')
+                place(x, y, z, 'terracotta')
 
     def details(self) -> None:
         """Place every ``details`` row after the shell and roof.
 
         @returns: None
         """
+        self._detail_clip_lines = []
+        # These are the full/slab/stair families used by the built structure;
+        # thin roof edging (carpets/trapdoors) is deliberately not support.
+        support_names = set()
+        for f in self.features:
+            materials = [f.roof.get('material') or 'smooth_stone', self.wall, self.floor_mat]
+            materials.extend((f.roof.get('zone_materials') or {}).values())
+            for material in materials:
+                support_names.update(block_family_variants(material).values())
+            edge = f.roof.get('edge') or {}
+            block = bid(edge.get('block') or 'air')[10:]
+            if not block.endswith(('_carpet', '_trapdoor', '_wall', '_fence', '_pane')):
+                if block not in ('air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars'):
+                    support_names.add(block)
+        roof_cells = {
+            pos for pos, state in self.p.cells.items()
+            if bid(state)[10:] in support_names or bid(state)[10:].endswith(('_slab', '_stairs'))
+        }
         by_no = {f.no: f for f in self.features}
         for lab, rows in (self.spec.get('details') or {}).items():
             f = by_no.get(lab)
             if f is None:
                 continue
             for row in rows:
-                self._place_detail(f, row)
+                self._place_detail(f, row, roof_cells)
 
 
 def build(

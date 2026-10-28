@@ -34,7 +34,7 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   street photos (`lib/builds/facade_plan.py`). Shape:
   `{"SU": {"faces": {"S": {"glazing": [{"storey": 1, "glazed_h": 2, "pier": 1}]}},
   "entrances": [{"id": "57-A", "portal_id": "57-A", "face": "S", "leaves": 1,
-  "block": "iron_door", "canopy": {"kind": "covered_area"}, "steps": 0,
+  "block": "iron_door", "awning_like": {"kind": "covered_area"}, "steps": 0,
   "floor_offset": 0, "cell": [48, -44],
   "provenance": {"source": "register_entry", "confidence": "high",
   "evidence_ids": [], "unresolved_reason": ""}}]}}`.
@@ -60,10 +60,17 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:
   roof kinds `plant_room`, `vent`, `louvred_vent`, `skylight`,
   `solar_panel`, `lift_overrun`; facade kinds `drainpipe`, `sign`,
-  `canopy`, `ledge`, `fascia_band` (`face` required). Entrance canopy /
-  covered area belongs on `facade_plan` entrances. Placed after the
-  shell; dry run prints each detail and its source. List what reads at
-  street scale, or leave `details` empty / omit it when none are visible.
+  `awning_like`, `ledge`, `fascia_band` (`face` required). Entrance
+  `awning_like` / covered area belongs on `facade_plan` entrances
+  (kinds `none` / `awning` / `covered_area` / `porch_roof`; not a tree
+  canopy; legacy key `canopy` and kind value `canopy` are refused).
+  Placed after the shell; dry run prints each detail and its source.
+  A roof detail sits on solid roof; cells over air are clipped. Each horizontal
+  cell needs a full block, slab or stair directly below the row; unsupported
+  columns (including caps) are omitted and the dry run reports label, kind,
+  position and clipped cell count. Other details do not count as roof support.
+  List what reads at street scale, or leave `details` empty / omit it
+  when none are visible.
   Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
   "size": [3, 2, 2], "source": "aerial NW plant box"}]}`
 - optional `exclude` — per-label boxes cut out of that label's map footprint,
