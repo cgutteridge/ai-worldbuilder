@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 189,
+  "nextTaskId": 196,
   "tasks": [
     {
       "id": 178,
@@ -11,6 +11,73 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
+    },
+    {
+      "id": 189,
+      "title": "Zoned flat roofs write the full-block name for slab-family materials, and the dry run warns on unknown block ids",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the flat-roof-writes-a-nonexistent-block issue (I-027, snags S-035, S-039); independent review applied. Cause class: Translation. In lib/builds/feature_build.py the zoned build writes the roof deck as self.set(x, ry, z, rm) (about line 1740) with the raw material name; only pitched_roof_states maps names through block_family_variants (_ROOF_FULL_NAME, deepslate_tile to deepslate_tiles). So a zoned flat roof asking for deepslate_tile wrote minecraft:deepslate_tile, which does not exist, and the roof stayed air (George Thomas, w146985469; reconcile --fix repaired 0 of 1). The plain roof_flat path writes <material>_slab and is not the bug. Nothing in the dry run checks that a planned block id exists. Not verified: that w146985469 takes the zoned path. Deliver: (1) the zoned flat branch uses block_family_variants(rm)['full']; roof_flat stays on _slab; (2) the dry run prints 'unknown block id <id> x<count>' for every planned id not in the valid block list, naming the source of that list (the minecraft_world block registry or a vendored list); (3) tests in lib/builds/test_feature_build.py: a zoned flat deepslate_tile roof plans deepslate_tiles, and a made-up id is reported. Check: python3 scripts/run_tests.py --only test_feature_build passes; a dry run on a spec with a bad id prints the unknown line; after re-applying w146985469 with the spec set back to deepslate_tile, reconcile shows no roof mismatch. Fixes I-027; log the fix on it with check lines for S-035 and S-039."
+    },
+    {
+      "id": 190,
+      "title": "A zoned feature whose lidar mask comes out empty refuses with a clear message instead of an AttributeError",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the small-building roof-zone crash issue (I-028, snags S-036, S-040); independent review applied. Cause class: Translation. prepare_zones (lib/builds/feature_build.py about lines 1593-1594) sets f.b only 'if roof:'; clear() (about 1603) falls back to f.b whenever zone_roof is falsy. If the readable lidar mask is empty (small building, nDSM mass filter, or the #153 island drop with its 3-cell minimum), f.b is unset and the dry run raises AttributeError. One zone level is not shown to be the trigger (assign_roof_zones accepts one level). Not verified: that the Cycle store (w171869344, 63 columns, one storey) hits this; not reproduced. Deliver: (1) a unit test in lib/builds/test_feature_build.py with a zoned feature, one level and a tiny or low injected zone_data, that reproduces the AttributeError; (2) in prepare_zones, refuse with a plain message naming the feature label, 'no zone cells survived', the 3-cell minimum and the mass threshold, or fall back to the unzoned floor path and print a note; (3) a test for the chosen behaviour, plus a passing one-level zone with enough mass. Check: python3 scripts/run_tests.py --only test_feature_build passes; the Cycle store dry run with one zone level plans or prints the message, with no traceback. Fixes I-028; log the fix on it with check lines for S-036 and S-040."
+    },
+    {
+      "id": 191,
+      "title": "An unzoned feature takes its floor from lidar bare terrain, not the live world",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the floor-from-live-world issue (I-029, snags S-037, S-041); independent review applied. Cause class: Translation. floor_y (lib/builds/feature_build.py about lines 1459-1486) takes the median live surface from a ring round the plot and applies max(y, floor_min); build() (about 2479-2482) calls it only for features without zones. Zoned features set f.b from lidar ground (about line 1594). So the live ghost rim sets floor, wall and roof levels on unzoned buildings. Evidence from the snags, not re-verified: Cycle store (w171869344) floor from live surface y52, lidar ground 54, roof 3 blocks below lidar; the designer worked round it with floor_min 55; a door on the east face was pushed into the roof. Source of truth: lidar bare terrain (DTM, as #172), then the designer's floor_min as an override, then the live surface only for transitions (doorstep). Deliver: (1) an unzoned feature's f.b comes from lidar bare-terrain ground under the footprint; floor_min still wins; (1a) state whether a mixed group (mode 'group', takes min f.b over its features, about 2486-2491) keeps that rule; (2) check how _outside_door_floor (about 1927) and its _column_floor fallback behave once unzoned f.b is lidar: keep the live read of the outside surface for the stoop transition only; (3) tests in lib/builds/test_feature_build.py, including a fixture lidar grid (ground 54, live rim 52) that plans floor 54 with floor_min 55 still winning, and one where the live rim is higher than lidar and the door does not end up inside the roof (many existing fixtures pass floor_min 40-50 and will shift); (4) rules/feature-builds.md updated (floor_min doc about line 48; a floor-source line near 128). Check: python3 scripts/run_tests.py --only test_feature_build passes; the Cycle store dry run without floor_min prints b 54 (needs the lidar cache). Fixes I-029; log the fix with check lines for S-037 and S-041."
+    },
+    {
+      "id": 192,
+      "title": "Windows are built from facade_plan glazing rows; the legacy facades table is removed",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the windows-ignore-facade-plan issue (I-030, snags S-038, S-042); independent review applied. Cause class: Capability. Build.windows (lib/builds/feature_build.py about line 2237) reads only spec['facades']. facade_plan glazing rows pass validate_glazing_rows (lib/builds/facade_plan.py) but nothing reads them; its docstring (about line 46) says glazing is read 'in a later cleanup'. #130 only added the dry-run report and #131 the pane framing check; neither changed the source of the rows. Blast radius: about 23 of 24 southampton-build site/builds specs have a non-empty facades table (one uses facade_plan glazing), including EEE Building (w35683388) and Wind Tunnel (w141677991). Also reading facades: glazed_share_report (about 2329), _validate_facades (about 1185) and the docstring (lines 62-73), about 37 mentions in test_feature_build.py, test_facade_plan.py, rules/build-roles.md (52-54), rules/feature-builds.md (76-84), archive round file r005_haiku_susu.json. Deliver: (1) Build.windows and glazed_share_report read facade_plan[label].faces[face].glazing; (2) delete the legacy path (_validate_facades, spec.setdefault('facades'), the docstring) and refuse a 'facades' key with a pointer to facade_plan, as 'doors' is refused; (3) rewrite the facades table in every spec under worlds/*/site/builds (about 23 files, scripted) into facade_plan glazing; (4) update test_feature_build.py, test_facade_plan.py, rules/feature-builds.md, rules/build-roles.md and the designer brief (name where it lives, or drop that item); (5) gate: grep for the 'facades' key finds nothing outside tasks/done.json, snag text and history. Migration stays in this task: the legacy reader must not outlive it. Check: python3 scripts/run_tests.py --only test_feature_build passes; the EEE Building (w35683388) dry run reports the same glazed shares as before the migration. Fixes I-030; log the fix with check lines for S-038 and S-042. Not verified: that no open task overlaps (none in the index mentions glazing)."
+    },
+    {
+      "id": 193,
+      "title": "Roof vents are built as a small capped box, not a lone iron-bars pole",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the vents-show-as-a-lone-pole issue (I-032, snag S-045); independent review applied. Cause class: Translation. In lib/builds/feature_build.py the 'vent' kind (_place_detail) writes a single iron_bars block, plus an optional trapdoor above it; bars only connect to neighbours, so a lone block renders as a pole. Not verified: which SUSU vents are the poles (S-045 does not name them). The drainpipe kind is a vertical bar column and may be a deliberate pole; leave it unless the owner asks, and decide that separately. Deliver: a vent is a box of the size the designer gives (1x1 or larger): a gray_concrete body with an iron_trapdoor cap, no iron_bars; no iron_bars in any roof detail kind except the drainpipe; tests in lib/builds/test_feature_build.py (1x1 and a larger vent); the vent line in rules/building-review.md and the redo skill updated if they describe the old form. Same function as the skylight task (I-033); this one lands first. Check: a unit test shows no iron_bars in the output of any roof detail other than drainpipe; after the SUSU rebuild a block scan of its roof (w33830305) finds no lone iron_bars. Fixes I-032; log the fix with a check line for S-045."
+    },
+    {
+      "id": 194,
+      "title": "Skylights are recessed into the roof, and only where there is roof, instead of sitting on top",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [
+        193
+      ],
+      "notes": "Raised 2026-10-28 from the skylights-are-glass-boxes issue (I-033, snags S-046, S-054); independent review applied; owner added the edge check. Cause class: Capability (no recessed form). In lib/builds/feature_build.py the skylight kind fills its box with plain glass from the detail's 'at' y, which designers set to the first block above the roof, and _solidify_roof_under makes the roof below a full block, so the glass is a box on the roof, never an opening in it. Not verified: whether designers set 'at' one level too high or the recipe cannot express a recess either way; S-054 is an agent note and decides nothing. Waits for the vents task (#193): both edit _place_detail. Deliver: (1) a skylight replaces the roof's top-level block with glass (a recess); supported cells are not raised above the roof; (2) a skylight must lie fully within the roof: every cell of its box intersects roof at the top level; if any cell is over air or off the roof edge the skylight is not built (no partial skylight) and the dry run prints one line naming the label, position and cells off the roof so the designer moves or shrinks it (builds on #171's solid-roof check, which clips unsupported cells but was written for boxes above the roof); (3) 'at' means roof top level; update the skylight line in rules/building-review.md and rules/feature-builds.md and the redo skill; (4) tests in lib/builds/test_feature_build.py. Check: a unit test puts skylight glass at roof-top y with nothing above it, and a skylight half over a diagonal roof edge is not built and is reported, and one fully on the roof is recessed; after rebuilding r3176751 and SUSU a block scan finds no glass above the roof surface and none with air beneath. Fixes I-033; log the fix with check lines for S-046 and S-054."
+    },
+    {
+      "id": 195,
+      "title": "Industrial chimneys are built as hollow round stacks on big roofs, sized from photos and spec, with lidar as a rough check",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [
+        193
+      ],
+      "notes": "Raised 2026-10-28 from the thin-chimneys issue (I-034, snag S-048, building w66696201); independent review applied. Cause class: Capability. ROOF_DETAIL_KINDS (lib/builds/feature_build.py about line 159) has no chimney kind, so a chimney is a 1x1 'vent'. In w66696201's spec the stacks are 4 'vent' rows (1x2x1 at y77, x6385-6397, z-5556..-5550), described as white cylindrical fume-extract stacks, lidar spike 68-70 m on a 65 m deck (about 3-5 m tall); the notes say the aerial leans about (-1,-6) against lidar. Not verified: that S-048 means those four stacks (the snag has only a picture); no street photo is cited. Owner direction 2026-10-28: industrial chimneys, round cylinders on top of big buildings, vertical or with sides that taper; hollow and open to the sky, so lidar is weak on them: trust lidar less. Waits for #193 (same function _place_detail; no iron_bars in roof details). Deliver: (1) a 'chimney' roof detail kind: centre, base diameter, top diameter (taper), height, round or square, optional rim or band; built as stepped rings (no true cylinder), hollow, open top, only on solid roof (#171 check); (2) rules and designer brief: size from photos and the spec, lidar as a rough check only; (3) the dry run prints planned height against lidar as a warning, not an error; (4) tests in lib/builds/test_feature_build.py: vertical, tapered and square; (5) update rules/feature-builds.md, rules/building-review.md and .claude/skills/redo/SKILL.md (step 6 lists the greeblies). Check: the dry run of w66696201 shows each stack at its specified height and taper; after rebuild a block scan shows a hollow stack of the planned height. Fixes I-034; log the fix with a check line for S-048; reword I-034's cause (the problem is height and form, not a missing roof kind)."
     }
   ]
 }
