@@ -358,12 +358,15 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                        cell[0] * 128 + 129, cell[1] * 128 + 129)           # batch reads (#110)
     way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
 
+    from lidar_heightmap import reference_world
+
     decor = dplan.build_decor_plan(
         cell,
         map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
         map_furniture=list(vmap.furniture),
         designer_items=sf.designer_items(cell),
         photo_observations=sf.designer_observations(cell),
+        lidar_hm=reference_world().heightmap(cell),
         footprint={q for q in fp if cell_contains(cell, *q)},
     )
     unresolved = list(dplan.unresolved_items(decor))

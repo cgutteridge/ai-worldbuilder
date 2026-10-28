@@ -242,3 +242,25 @@ ground, trees and decor; features are done as needed.
 When doing ground and decor for a cell, REVIEW THE NEIGHBOURING CELLS first (edge paths,
 roads, hedges, shade-bridged paths and noise filters all read evidence across the cell edge).
 Old ground scripts are retired: backups/retired-ground-scripts-2026-10-14.tar.gz.
+
+LIDAR OBJECTS IN DECOR (#173)
+  - Ground uses bare terrain; decor reads composite DSM minus DTM and groups
+    connected raised columns outside building footprints and tree canopy/kinds.
+  - Lidar height alone never identifies furniture. Unlabelled, conflicting,
+    unknown and vehicle objects remain unresolved and place no blocks. A vehicle
+    label also blocks generic map/designer furniture on that object.
+  - Classify an object after reading a street photo or aerial. Reuse the cell's
+    reference/decor-furniture.json observations, for example:
+      "observations": [{"kind":"waste_basket", "cell":[6200,-5550],
+                        "source":"photo_read", "evidence_ids":["street-photo-1"]},
+                       {"kind":"vehicle", "cell":[6203,-5550],
+                        "source":"aerial", "evidence_ids":["aerial-1"]}]
+    cell is the MC [x,z] of a detected column (not the registry cell); source is
+    photo_read (default) or aerial. Known street_furniture recipe kinds identify
+    permanent furniture. Unknown kinds never authorize a build. Keep uncertain
+    observations unresolved with unresolved_reason; do not guess a label from
+    lidar shape or colour samples alone.
+  - One classified object places one existing furniture recipe at the observed
+    column on the actual ground, subject to the usual paving, ownership, mask
+    and clearance guards. The plan retains lidar_cells and lidar_height for
+    inspection; DSM height does not raise the ground or become a vehicle mesh.
