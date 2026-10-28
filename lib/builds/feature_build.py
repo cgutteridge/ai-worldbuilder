@@ -108,7 +108,11 @@ Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
 (portal-facing + top-down + aerial; records path on ``*-result.json``; handoff
 ``end`` refuses FEATURE without it).
 
-Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply]
+Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply [--overwrite]]
+
+``--apply`` refuses a plan with a landed, not-undone build in the journal (a re-apply
+leaves old blocks outside the new plan); undo it first, or pass ``--overwrite``.
+Begun / mismatched entries do not block (site_recover / reconcile own those).
 """
 from __future__ import annotations
 

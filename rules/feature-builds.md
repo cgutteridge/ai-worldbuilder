@@ -7,7 +7,7 @@ terraces). Roof and fabric rules: `rules/craftsmanship.md`. Houses stay on
 ## Live path
 
 Every non-house building feature apply uses **`scripts/feature_build.py`** with
-a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
+a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`; `--apply` refuses a plan that already has a landed build (`element_undo.py` it first, or `--overwrite`). Spec keys
 (full list in the `feature_build` module docstring):
 
 - `name` — plan / cells-record name
