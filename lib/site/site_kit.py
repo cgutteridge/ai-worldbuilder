@@ -111,6 +111,8 @@ def full_block_for_bottom_slab(state: str) -> str | None:
     name = bid(state)[len('minecraft:'):-len('_slab')]
     if name in _WOOD_SLAB:
         return f'minecraft:{name}_planks'
+    if name == 'deepslate_tile':
+        return 'minecraft:deepslate_tiles'
     if name == 'brick':
         return 'minecraft:bricks'
     if name.endswith('_brick'):

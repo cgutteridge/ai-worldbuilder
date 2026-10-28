@@ -325,6 +325,19 @@ class BuildPlanTest(unittest.TestCase):
 class CliDryRunTest(unittest.TestCase):
     """Seam: run() previews and dry-applies (never live unless apply=True)."""
 
+    def test_dry_run_slab_normalization_keeps_valid_deepslate_full_id(self):
+        spec = {'name': 'slab_integration', 'ways': {'1': 'A'},
+                'storeys': {'A': 1}, 'roofs': {'A': {'kind': 'flat', 'material': 'deepslate_tile'}},
+                'groups': [{'nos': ['A'], 'front': 'N'}], 'floor_min': 50}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'spec.json'
+            path.write_text(json.dumps(spec))
+            (F.ROOT / 'verification/site').mkdir(parents=True, exist_ok=True)
+            with mock.patch('mc_paced.Client'), mock.patch.object(F, 'preview'), redirect_stdout(io.StringIO()):
+                plan = F.run(path, footprints={'A': {(x, z) for x in range(4) for z in range(4)}}, world=_StoneWorld())
+        self.assertTrue('minecraft:deepslate_tiles' in plan.cells.values())
+        self.assertFalse('minecraft:deepslate_tile' in plan.cells.values())
+
     def test_run_dry_calls_preview_and_apply_dry(self):
         cells = {(x, z) for x in range(0, 4) for z in range(0, 4)}
         spec = {
