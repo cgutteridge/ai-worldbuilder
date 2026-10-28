@@ -4,60 +4,13 @@
   "nextTaskId": 188,
   "tasks": [
     {
-      "id": 175,
-      "title": "logout_gate: work without fcntl (Windows)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "lib/blocks/logout_gate.py session_lock_held uses fcntl.lockf (POSIX only), so the logout gate and scripts/check_instance.py fail on Windows. Replace with a portable check (msvcrt.locking on Windows, or try opening the lock file exclusively). Keep the rule that session.lock existence proves nothing. Add a test with a fake lock."
-    },
-    {
-      "id": 176,
-      "title": "Portability pass for Linux and Windows users",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Audit tool-repo assumptions before sharing the code: python3 vs py -3 in AGENTS.md and skills; jq/grep/zsh in hooks; pyproj OSTN15 lookup only checks Homebrew paths (lib/geo/world_frame.py); GDAL/ogr2ogr requirement for osm_extract; agent-soundboard cue must be optional; any absolute /Users paths left in tool docs. Document Windows as WSL-first unless fixed. Setup doc: docs/minecraft-instance-setup.md."
-    },
-    {
-      "id": 177,
-      "title": "Give sealed bake-off answers a home outside worlds/",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Southampton Refine/instance/bakeoff-sealed/truth.json holds sealed bake-off answers that must stay out of agent view, and it sits in the donor instance being retired. Decide a location (outside worlds/ and the Minecraft instance), point bakeoff/model_bakeoff.py at it, document it in bakeoff/OVERVIEW.md. Blocks task 178."
-    },
-    {
       "id": 178,
       "title": "Retire the donor Minecraft instances and old launcher profiles",
-      "status": "blocked",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [
-        177
-      ],
-      "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md."
-    },
-    {
-      "id": 179,
-      "title": "Rename cell.origin to the home cell; drop stale top_of_world",
       "status": "todo",
       "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "The new-world guide calls the start cell the home cell but the key is still cell.origin (lib/geo/cellmath.py origin_cell(), world_frame.py info, both world-frame.json files, unit_test_world, docs). Rename to cell.home with a clear error for the old key. Also remove top_of_world (254, stale: build range is Y -64..319, nothing reads it) from the frames and legacy_offsets_dict, and use 'origin' only for MC (0,0)."
-    },
-    {
-      "id": 180,
-      "title": "Test large block coordinates in the game for new-world 0/0 offsets",
-      "status": "todo",
-      "priority": "medium",
       "complexity": "xs",
       "blockedBy": [],
-      "notes": "New-world guide recommends offsets 0,0 so x = easting, z = -northing (about 442000, -115000 for Southampton). Unverified: client rendering, physics and region/cell tooling at coordinates in the hundreds of thousands. Build a throwaway world at such coordinates, check rendering jitter, entity movement, region file naming and cell ids, then confirm or tighten the guide (fallback: offsets = home rounded to 10 km)."
+      "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
     },
     {
       "id": 181,
@@ -94,15 +47,6 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "A new world is its own git repo but there is no template .gitignore for downloads/ and caches; the Ventnor run copied Southampton's by hand. Add one under templates/ (e.g. templates/new-world-site or a new templates/new-world-repo) and have the new-world-build skill copy it. The skill's close checklist currently says to copy an existing world's."
-    },
-    {
-      "id": 185,
-      "title": "lidar_extremes: suggested y_offset can push tops over 319",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "providers/ukdefra-lidar/review/lidar_extremes.py reports suggested_y_offset_for_ground_near_64, which only aims the DTM minimum near 64. For Ventnor (DTM 0-243 m, DSM 275 m) it suggested an offset that would put tops at 339, above the 319 build limit; the agent had to override it. Make the suggestion respect both limits (ground min >= -64 with margin, DSM max <= 319), or say plainly when no offset fits."
     },
     {
       "id": 186,
