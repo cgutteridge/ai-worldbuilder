@@ -578,6 +578,90 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             )
         return plan, buf.getvalue()
 
+    def test_entrance_awning_survives_roof_and_keeps_door_walkable(self):
+        plan, out = self.build_plan([
+            _entrance_row(awning_like={'kind': 'awning'}),
+        ])
+        for x in (12, 13, 14):
+            self.assertEqual(plan.cells.get((x, 52, 25)),
+                             'minecraft:smooth_stone_slab[type=bottom]')
+        self.assertEqual(plan.cells.get((13, 51, 25)), 'minecraft:air')
+        self.assertEqual(plan.cells.get((13, 50, 25)), 'minecraft:air')
+        self.assertIn('door T-A cover awning depth 1', out)
+
+    def test_covered_area_depth_and_double_leaf_width(self):
+        plan, out = self.build_plan([
+            _entrance_row(leaves=2, awning_like={'kind': 'covered_area', 'depth': 3}),
+        ])
+        slabs = {pos for pos, state in plan.cells.items()
+                 if pos[1] == 52 and pos[2] >= 25 and 'slab' in state}
+        self.assertEqual(slabs, {(x, 52, z) for x in range(12, 16) for z in range(25, 28)})
+        self.assertIn('door T-A cover covered_area depth 3', out)
+
+    def test_porch_roof_posts_stand_at_front_corners(self):
+        plan, out = self.build_plan([
+            _entrance_row(awning_like={'kind': 'porch_roof', 'depth': 2}),
+        ])
+        for x in (12, 14):
+            for y in (50, 51):
+                self.assertEqual(plan.cells.get((x, y, 26)), 'minecraft:bricks')
+            self.assertEqual(plan.cells.get((x, 52, 26)),
+                             'minecraft:smooth_stone_slab[type=bottom]')
+        for y in (50, 51):
+            self.assertNotIn('bricks', plan.cells.get((13, y, 26), ''))
+        self.assertIn('door T-A cover porch_roof depth 2', out)
+
+    def test_zero_cover_depth_defaults_to_one(self):
+        plan, out = self.build_plan([
+            _entrance_row(awning_like={'kind': 'awning', 'depth': 0}),
+        ])
+        self.assertEqual(plan.cells.get((13, 52, 25)),
+                         'minecraft:smooth_stone_slab[type=bottom]')
+        self.assertNotIn('slab', plan.cells.get((13, 52, 26), ''))
+        self.assertIn('cover awning depth 1', out)
+
+    def test_east_facing_cover_extends_outward_and_uses_roof_material(self):
+        spec = self.spec([_entrance_row(
+            face='E', at=[16, 22], awning_like={'kind': 'awning', 'depth': 2},
+        )])
+        spec['roofs']['A']['material'] = 'brick'
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        slabs = {pos for pos, state in plan.cells.items()
+                 if pos[1] == 52 and pos[0] >= 17 and 'slab' in state}
+        self.assertEqual(slabs, {(x, 52, z) for x in (17, 18) for z in (21, 22, 23)})
+        self.assertEqual(plan.cells[(18, 52, 22)], 'minecraft:brick_slab[type=bottom]')
+
+    def test_cover_skips_building_mass_beside_entrance(self):
+        cells = self.cells | {(12, 25), (12, 26)}
+        plain, _ = self.build_plan([_entrance_row()], cells=cells)
+        covered, _ = self.build_plan([
+            _entrance_row(awning_like={'kind': 'awning', 'depth': 2}),
+        ], cells=cells)
+        for z in (25, 26):
+            self.assertEqual(covered.cells.get((12, 52, z)), plain.cells.get((12, 52, z)))
+        self.assertEqual(covered.cells.get((13, 52, 26)),
+                         'minecraft:smooth_stone_slab[type=bottom]')
+
+    def test_none_cover_leaves_plan_unchanged(self):
+        plain, _ = self.build_plan([_entrance_row()])
+        none, out = self.build_plan([_entrance_row(awning_like={'kind': 'none'})])
+        self.assertEqual(none.cells, plain.cells)
+        self.assertNotIn(' cover ', out)
+
+    def test_unresolved_entrance_builds_no_cover(self):
+        import provenance as prov
+
+        plan, out = self.build_plan([_entrance_row(
+            awning_like={'kind': 'porch_roof', 'depth': 3},
+            provenance=prov.provenance_record(
+                source='inference', confidence='low', unresolved_reason='no photo',
+            ),
+        )])
+        empty, _ = self.build_plan([])
+        self.assertEqual(plan.cells, empty.cells)
+        self.assertNotIn(' cover ', out)
+
     def test_double_door_mirrored_hinges_and_printed(self):
         plan, out = self.build_plan([_entrance_row(leaves=2, block='iron_door')])
         lowers = [(pos, st) for pos, st in plan.cells.items()

@@ -40,7 +40,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                        "face"?: "N"|"S"|"E"|"W", "leaves"?: 1|2,
                        "block"?: "<*_door>", "at"?: [x, z],
                        "awning_like"?: {"kind": "none"|"awning"|"covered_area"|
-                                        "porch_roof"},
+                                        "porch_roof", "depth"?: >=0},
                        "steps"?: >=0, "floor_offset"?: int,
                        "cell"?: [tx, tz],
                        "provenance": {source, confidence, evidence_ids,
@@ -1369,6 +1369,7 @@ class Build:
         self._roof_warnings: list[str] = []
         self._pane_skips: dict[tuple[str, str], int] = {}
         self._detail_clip_lines: list[str] = []
+        self._entrance_covers: list[tuple] = []
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
@@ -2028,7 +2029,7 @@ class Build:
         return None
 
     def plan_doors(self, f: Feature) -> None:
-        """Place doors from ``facade_plan[label].entrances``; skip unresolved.
+        """Place doors and queue entrance covers; skip unresolved entrances.
 
         @param f: feature mass
         """
@@ -2080,12 +2081,16 @@ class Build:
             if not isinstance(offset, int) or isinstance(offset, bool):
                 offset = 0
             b = self._outside_door_floor(f, cells[0], face, offset)
+            cover_y = max(self._outside_door_floor(f, c, face, offset) for c in cells) + 3
             hinges = ('left',) if leaves == 1 else ('left', 'right')
             for cell, hinge in zip(cells, hinges):
                 leaf_b = self._outside_door_floor(f, cell, face, offset)
                 self._set_door_leaf(cell, face, block, hinge, leaf_b)
                 placed.add(cell)
                 f.door_cells.add(cell)
+            cover = row.get('awning_like') or {}
+            if cover.get('kind') in ('awning', 'covered_area', 'porch_roof'):
+                self._entrance_covers.append((f, eid, cover, face, cells, cover_y))
             dx, dz = DIRS[face]
             self.step_out((cells[0][0] + dx, cells[0][1] + dz), face, b)
             if f.door is None:
@@ -2094,6 +2099,36 @@ class Build:
                 f'door {eid} {leaves}-leaf {block} '
                 f'at {cells[0][0]},{b + 1},{cells[0][1]} facing {FACE[face]}'
             )
+
+    def entrance_covers(self) -> None:
+        """Place covers queued by ``plan_doors`` after roof and detail passes.
+
+        Slab roofs extend one block beyond each leaf edge. Porch posts stand
+        at the two outer front corners, leaving the door approach walkable.
+
+        @returns: None
+        """
+        for f, eid, cover, face, cells, roof_y in self._entrance_covers:
+            depth = cover.get('depth') or 1
+            kind = cover['kind']
+            dx, dz = DIRS[face]
+            lx, lz = (1, 0) if face in 'NS' else (0, 1)
+            start = cells[0]
+            width = len(cells)
+            material = block_family_variants(f.roof.get('material') or 'smooth_stone')
+            for lateral in range(-1, width + 1):
+                for outward in range(1, depth + 1):
+                    x = start[0] + lx * lateral + dx * outward
+                    z = start[1] + lz * lateral + dz * outward
+                    if (x, z) in self.by_no_all_cells:
+                        continue
+                    self.set(x, roof_y, z, f"{material['slab']}[type=bottom]")
+                    if kind == 'porch_roof' and outward == depth and lateral in (-1, width):
+                        ground_y = self.top_solid(x, z)
+                        if ground_y is not None:
+                            for y in range(ground_y + 1, roof_y):
+                                self.set(x, y, z, self.wall)
+            print(f'door {eid} cover {kind} depth {depth}')
 
     def face_runs(self, f: Feature, face: str) -> list[list]:
         """Contiguous straight wall runs exposed to ``face``, each sorted along the face.
@@ -2489,6 +2524,7 @@ class Build:
         guard_roof_jogs(self.p)
         # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
+        self.entrance_covers()
         for line in self._zone_pad_lines:
             print(line)
         for line in self._roof_warnings:
