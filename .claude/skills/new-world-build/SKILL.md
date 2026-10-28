@@ -48,11 +48,11 @@ Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and 
 
 ### 1c. Home cell
 
-Record the **home cell**: the cell containing the home point (`world_frame.py to-cell --mc x,z`), written as `cell.origin` in `world-frame.json` (it is the cell the build starts from and rings out of). Keep `cell.size` at 128. Set `bounds_mc` from the bbox corners converted with `world_frame.py` (use the key meanings in `world-frame.json.example`); the home cell must be inside it.
+Record the **home cell**: the cell containing the home point (`world_frame.py to-cell --mc x,z`), written as `cell.origin` in `world-frame.json` (it is the cell the build starts from and rings out of). Keep `cell.size` at 128. Convert the bbox corners to MC with `world_frame.py to-mc`; they go to the Y checkpoint (section 2) and the first lidar fetch, not into the frame file (nothing reads a bounds key). The home cell must lie inside the bbox.
 
 ### 1d. Write and check
 
-1. Write `config/world-frame.json`: `crs`, `grid`, `offsets`, `bounds_mc`, `cell`, `y_offset` (placeholder 0 until section 2), `elevation_plugin`.
+1. Write `config/world-frame.json`: `crs`, `grid`, `offsets`, `cell`, `y_offset` (placeholder 0 until section 2), `elevation_plugin`.
 2. Confirm conversions: `python3 scripts/world_frame.py --world <name> info` and `to-mc` / `to-wgs84` for the home point. For XYZ tile codes and pixel offsets use `to-wm` / `from-wm` (or `batch-wm`); do not add a second mercator path.
 3. Set `gameworld_id` and `save_path` in `config/world.json`: `save_path` is a new folder inside your standalone Minecraft instance's `saves/` (see `docs/minecraft-instance-setup.md`; the region folder is derived). Then create the blank save (refuses if it exists; the only write this tool makes under `saves/`):
 
