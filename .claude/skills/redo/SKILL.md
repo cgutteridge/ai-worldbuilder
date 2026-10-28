@@ -66,9 +66,10 @@ Done when they are hovering and looking down at the target.
    Aerial sheet: run `google_aerial.py sheet` / `google_window.py` and `Read` the PNG under `instance/google-aerial/`. Not seeing the sheet is not a reason to skip greeblies; stop and fix the download.
 
    If designer ≠ builder: stop after the table + hand-off artefact; builder continues from the next step.
-7. Dry run (shell + `details`), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (or `feature_build.py site/builds/<name>.json --apply`). Readback 0.
-8. **Hover** again if the player moved during apply.
-9. Release lock. Cue `party-cheer`.
+7. **Clear the old build first.** If the feature has a landed journal entry (it was built before), `SITE_OWNER=<owner> .venv/bin/python scripts/element_undo.py --world <world> <name> --apply` (via `site_lock.py run`/the claimed lock) *before* applying. A plain re-apply only writes the new plan's cells, so old roof, stair and edit blocks outside it survive. Skip only when `redo_here` shows no landed entry for the plan.
+8. Dry run (shell + `details`), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (or `feature_build.py site/builds/<name>.json --apply`). Readback 0.
+9. **Hover** again if the player moved during apply.
+10. Release lock. Cue `party-cheer`.
 
 Done when readback is clean, the docstring has a greeblie list (or explicit none), greeblies are applied, they are hovering looking down, and the lock is released. Say what was rebuilt (name + script).
 
