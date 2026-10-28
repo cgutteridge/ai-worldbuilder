@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 173,
+  "nextTaskId": 174,
   "tasks": [
     {
       "id": 169,
@@ -40,6 +40,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Raised 2026-10-28 from the decor-blocks-in-the-roadway issue (I-026, snags S-034 and S-031); independent review applied. Cause class: Translation. Owner's layering rule: there are two lidar products, surface (DSM) and bare terrain (DTM); the difference is objects (cars, planters, kiosks, features). Ground uses the terrain; decor and features build the objects; trees use the difference only to help place trees. Today ground_heights (lib/layers/ground_layer.py about lines 488-511) takes the heightmap 'base' for every column, and base is the surface top: in providers/ukdefra-lidar/manage/defra_world.py heightmap() (about lines 64-95) ground is the DTM height, feature is DSM minus DTM, top is ground plus feature and base = where(tree, ground, top), so only tree columns get the terrain height. The DTM is computed there (ground_y) but not exported, so Maps.get(x, z, 'base') cannot reach it. Cars, kiosks and planters were therefore raised into roads and paving, with dirt beneath. Deliver: (1) the heightmap dict gains a 'terrain' array (the DTM ground height heightmap() already computes); (2) Maps.get accepts the field 'terrain'; (3) lidar_base_map and ground_heights use it for free columns; footprint and roof columns keep 'base'; (4) where a provider or a live Maps has no 'terrain', ground falls back to 'base'; (5) fix the lidar_heightmap.py docstring that calls base 'top of solid ground' and the wording in rules/evidence-order.md. Scope: this fixes road and paving bumps only; the 'blocks instead of hedges' part is a decor matter. Cost to note: once ground stops raising objects, decor and features must place them, or cars and planters vanish; check the decor tasks before relying on that. Files: providers/ukdefra-lidar/manage/defra_world.py, lib/sources/lidar_heightmap.py, lib/layers/ground_layer.py, lib/sources/test_defra_world.py, lib/layers/test_ground_layer.py, rules/evidence-order.md. Proof: a unit test where a column's surface sits above its terrain and ground does not raise it. Check: name the command in the task for a before and after count of road and paving columns above their neighbours' median on a rerun (expect near 0), plus an in-game look at the road in the snag. Related: #167 (ground height from lidar, done). Helps: every ground pass in every world on a lidar baseline."
+    },
+    {
+      "id": 173,
+      "title": "Decor places permanent lidar-detected objects, using photo plus lidar to skip vehicles",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 after the I-026 rebuild (#172 landed). Cause class: Capability. Ground now builds bare terrain only, so objects the lidar sees above it (surface minus terrain: planters, kiosks, bins, bollards, cars) are built by nothing: decor_plan and street_furniture use only map, aerial and designer plans and never read lidar. Deliver: decor takes lidar object columns outside footprints and trees, groups them into objects, and places one only when a street photo or the aerial identifies it as permanent furniture; vehicles and other transient objects are dropped by design (a parked car must not be built). Owner's rule: needs photo plus lidar together to place objects and avoid cars. Check decor_plan/street_furniture for an existing photo or aerial classification step to reuse before adding one. Proof: a unit test where a lidar object column with a permanent-furniture label is placed and one labelled vehicle is not. Related: #172, I-026. Helps: every ground pass on a lidar baseline."
     }
   ]
 }
