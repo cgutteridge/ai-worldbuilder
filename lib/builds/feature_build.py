@@ -13,12 +13,16 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   storeys        {"<label>": <int >= 1>} clear storeys (each STOREY_H blocks high)
   roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>",
                    "edge"?: {"block": "<mat>", "where": "outer"|"all"},
-                   "zone_materials"?: {"<level_m_AOD>": "<mat>", ...}}}
+                   "zone_materials"?: {"<level_m_AOD>": "<mat>", ...},
+                   "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...]}]}}
                  Absent edge = no roof edging. Present: block is the parapet /
                  coping mat; where "outer" skips zone steps, "all" edges every
                  step. Flat-roof overhang fringe only when edge is set.
                  Optional zone_materials overrides ``material`` per lidar
                  plateau level (metres AOD, same keys as ``zones[].levels``).
+                 Pitched roofs may set material_regions [{level, polygon}]
+                 from photo/aerial evidence to assign a roof's material across
+                 lidar-zone boundaries. Unmapped columns retain zone lookup.
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
   wall / floor   wall and interior floor materials (defaults bricks / smooth_stone)
   floor_min      minimum floor y or null
@@ -839,6 +843,7 @@ def load_spec(path) -> dict:
     _validate_details(path, spec, labels)
     _validate_zones(path, spec, labels)
     _validate_exclude(path, spec, labels)
+    _validate_material_regions(path, spec)
     return spec
 
 
@@ -916,6 +921,44 @@ def _validate_zone_materials(path, lab: str, roof: dict) -> None:
             )
 
 
+def _validate_material_regions(path, spec: dict) -> None:
+    """Validate explicit pitched-roof membership; raster checks need the footprint.
+
+    @param path: spec path used in diagnostics
+    @param spec: validated roof and lidar-zone configuration
+    @raises SystemExit: on malformed region, polygon or unknown plateau
+    """
+    for lab, roof in spec['roofs'].items():
+        if 'material_regions' not in roof:
+            continue
+        rows = roof['material_regions']
+        context = f'{path}: roofs[{lab}].material_regions'
+        if not isinstance(rows, list):
+            raise SystemExit(f'{context} must be a list')
+        if roof['kind'] != 'pitched' or lab not in spec['zones']:
+            raise SystemExit(f'{context} requires a pitched roof with zones')
+        configured = spec['zones'][lab]['levels']
+        for i, row in enumerate(rows):
+            prefix = f'{context}[{i}]'
+            if not isinstance(row, dict) or set(row) != {'level', 'polygon'}:
+                raise SystemExit(f'{prefix} needs {{level, polygon}}')
+            level = row['level']
+            if isinstance(level, bool) or not isinstance(level, (int, float)) or not math.isfinite(level):
+                raise SystemExit(f'{prefix}.level must be a finite plateau number')
+            if configured != 'auto' and level not in configured:
+                raise SystemExit(f'{prefix}: unknown plateau {level}')
+            polygon = row['polygon']
+            if not isinstance(polygon, list) or len(polygon) < 3:
+                raise SystemExit(f'{prefix}.polygon needs at least three vertices')
+            for point in polygon:
+                if (not isinstance(point, list) or len(point) != 2
+                        or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                               or not math.isfinite(v) for v in point)):
+                    raise SystemExit(f'{prefix}.polygon vertices must be finite [x, z] numbers')
+            if len({tuple(p) for p in polygon}) < 3:
+                raise SystemExit(f'{prefix}.polygon needs three distinct vertices')
+
+
 def roof_material_for_zone(roof: dict, level: int | float | None) -> str:
     """Resolve slab/full material for one roof column.
 
@@ -939,6 +982,52 @@ def roof_material_for_zone(roof: dict, level: int | float | None) -> str:
     if str(level) in zm:
         return zm[str(level)]
     return default
+
+
+def roof_material_levels(
+    roof: dict, levels: dict, *, label: str = 'roof',
+    known_levels: list | None = None, reports: list[str] | None = None,
+) -> dict:
+    """Apply designer roof membership to material lookup keys, preserving zones.
+
+    Polygons use the footprint rasterizer's block-centre convention and are
+    clipped to the prepared roof columns. Unmapped columns retain their lidar
+    zone. Overlapping regions are rejected rather than made order-dependent.
+
+    @param roof: roofs[label] entry with optional material_regions
+    @param levels: prepared column to lidar plateau map
+    @param label: label used in diagnostics
+    @param known_levels: declared or auto-discovered plateaus; otherwise observed zones
+    @param reports: optional dry-run diagnostic lines to append
+    @returns: independent column to material plateau map
+    @raises SystemExit: on empty, overlapping or unknown-level regions
+    """
+    owners = dict(levels)
+    assigned: set = set()
+    known = set(known_levels if known_levels is not None else levels.values())
+    if not roof.get('material_regions'):
+        return owners
+    if not levels:
+        raise SystemExit(f'{label} material_regions: no prepared roof columns')
+    from coverage import scan_polygon
+
+    xs, zs = zip(*levels)
+    bbox = (min(xs), min(zs), max(xs), max(zs))
+    for i, row in enumerate(roof.get('material_regions') or []):
+        level = float(row['level'])
+        if level not in known:
+            raise SystemExit(f'{label} material_regions[{i}]: unknown plateau {level:g}')
+        polygon = row['polygon']
+        cells = set(scan_polygon([polygon], bbox)) & levels.keys()
+        if not cells:
+            raise SystemExit(f'{label} material_regions[{i}]: no roof columns inside polygon')
+        if cells & assigned:
+            raise SystemExit(f'{label} material_regions[{i}]: overlapping roof columns')
+        owners.update({c: level for c in cells})
+        assigned.update(cells)
+        if reports is not None:
+            reports.append(f'{label} material region {i}: level {level:g} columns {len(cells)}')
+    return owners
 
 
 def mean_rgb_255(samples: list[tuple[float, float, float]]) -> tuple[int, int, int] | None:
@@ -1494,6 +1583,12 @@ class Build:
             f.zone_roof_half = half_h if pitched else None
             f.zone_ground = gy
             f.zone_level = zl
+            f.roof_material_level = (
+                roof_material_levels(
+                    f.roof, zl, label=f.no, known_levels=_levels,
+                    reports=self._zone_pad_lines,
+                ) if pitched else zl
+            )
             if roof:
                 f.b = int(statistics.median(gy[c] for c in roof))
         # rebuild ownership after readable expansion
@@ -1591,12 +1686,13 @@ class Build:
         halfs = getattr(f, 'zone_roof_half', None)
         gy = f.zone_ground
         zl = getattr(f, 'zone_level', None) or {}
+        material_levels = getattr(f, 'roof_material_level', zl)
         edge = f.roof.get('edge')
         datum = f.b
         pitched_states: dict[tuple[int, int], str] | None = None
         if halfs is not None:
             mats = {
-                c: roof_material_for_zone(f.roof, zl.get(c)) for c in halfs
+                c: roof_material_for_zone(f.roof, material_levels.get(c)) for c in halfs
             }
             pitched_states = pitched_roof_states(
                 halfs, mats, warnings=self._roof_warnings, levels=zl,
@@ -1626,7 +1722,7 @@ class Build:
         for (x, z), ry in roof.items():
             g = gy[(x, z)]
             expose = edge_wall_expose(roof, gy, (x, z))
-            rm = roof_material_for_zone(f.roof, zl.get((x, z)))
+            rm = roof_material_for_zone(f.roof, material_levels.get((x, z)))
             for y in range(g - 4, g):
                 self.set(x, y, z, 'stone')
             self.set(x, g, z, self.floor_mat)
