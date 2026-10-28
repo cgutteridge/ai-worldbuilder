@@ -212,6 +212,18 @@ class Fetching(unittest.TestCase):
         with self.assertRaises(dl.urllib.error.URLError):
             dl._read_with_progress(Resp(), 'DTM 1E-1N')
 
+    def test_http_retries_a_short_read(self):
+        class Resp:
+            headers = {'Content-Length': '3'}
+            def __init__(self, body): self.body = [body]
+            def read(self, size=-1): return self.body.pop() if self.body else b''
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        resps = [Resp(b'xx'), Resp(b'xyz')]
+        with mock.patch.object(dl.urllib.request, 'urlopen', lambda *a, **k: resps.pop(0)), \
+                mock.patch.object(dl.time, 'sleep', lambda s: None):
+            self.assertEqual(dl._http('https://example.test/z', label='DTM 1E-1N'), b'xyz')
+
     def test_lookup_line_only_when_catalogue_not_cached(self):
         cat = {'results': []}
         with tempfile.TemporaryDirectory() as tmp:
