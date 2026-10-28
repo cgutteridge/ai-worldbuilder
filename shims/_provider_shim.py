@@ -55,6 +55,11 @@ def ensure_import_paths() -> None:
         sys.path.insert(0, str(path))
 
 
+# CLI shims import script_env before calling load_provider. Bootstrap at import
+# time too, so plain-checkout commands need no PYTHONPATH or editable install.
+ensure_import_paths()
+
+
 def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:
     """Load ``providers/<id>/<role>/<module_name>.py`` and cache it privately.
 

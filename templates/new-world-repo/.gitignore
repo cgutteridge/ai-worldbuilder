@@ -1,0 +1,9 @@
+# Downloads and generated working data; keep reference evidence and registry.
+/downloads/
+/instance/
+/verification/
+/cache/
+.venv/
+**/__pycache__/
+*.pyc
+.DS_Store

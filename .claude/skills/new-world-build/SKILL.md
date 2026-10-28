@@ -10,7 +10,7 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
 
 ## 0. Home and defaults
 
-- Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Point `active_world.py` at it before writing place files.
+- Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Copy `templates/new-world-repo/.gitignore` to its root before adding files. Point `active_world.py` at it before writing place files.
 - **Empty world** from `templates/empty-world/` (flat, one bedrock layer at the world floor Y −64, structures off, weather off, MC 26.2 format; see its README.txt). Never start from a generated city-mesh save or a third-party heightmap export; heights come from the lidar provider only.
 - **Start with the home location.** Ask the user for the place they want to start at (we used the Highfield campus). Everything below follows from it. Name it (e.g. Bargate, campus centre). **Pin the exact point**: agree a specific lat/lon (or grid reference), check it with `world_frame.py to-mc`/`to-wgs84` and an aerial or map, and have the user confirm it before the frame is written; the home cell comes from this point.
 - **Bbox: explain it, then ask.** Say this to the user in plain words every time, before asking for a size:
@@ -78,7 +78,7 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 2. Run highs/lows:
 
 ```bash
-PYTHONPATH=scripts:lib python3 shims/lidar_extremes.py --world <name> --bbox-mc x0,z0,x1,z1 --fetch
+python3 shims/lidar_extremes.py --world <name> --bbox-mc x0,z0,x1,z1 --fetch
 ```
 
 3. Fit the range: with `y_offset = 0` the lowest ground (DTM min) must be at least −64 and the highest DSM (roofs, trees, towers) at most 319. If the area sits outside that, pick `y_offset` so the lowest ground lands a little above −64 (about −50, leaving room for foundations and cellars) and the highest surface stays below 319. If the total relief (DSM max minus DTM min) is over about 350 m, the bbox is too tall: shrink it. Also check the lidar datum is not ellipsoidal (heights above the ellipsoid are tens of metres off sea level).
@@ -94,7 +94,7 @@ Once `y_offset` is locked, give the world its first ground: lidar ghost around t
 1. Run it live under the site lock, in the background (ground pass about 25-55 s a cell; ring 1 is 9 cells, so roughly 5-9 minutes; relay progress):
 
 ```bash
-python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- env PYTHONPATH=scripts:lib python3 shims/lidar_ghost.py --world <name> apply --cell <home cell> --ring 1
+python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py --world <name> apply --cell <home cell> --ring 1
 ```
 
    Use `--ring 0` for the home cell alone (just the home cell, fastest) when the user only wants a quick look.
@@ -107,7 +107,7 @@ Done when the ghost is placed, the player stands at home on real terrain, and th
 
 1. Author `config/local-providers.json` for the place (required types covered by system + local together: at least `vector_map`, `lidar`, one `aerial`). Reuse system providers; do not copy nationwide feeds into the world repo.
 2. Point at worldbuilder `reference/TYPES.txt` and start a place `reference/SOURCES.txt` catalogue.
-3. **vector_map (once per project):** choose a regional extract that actually covers the bbox (test it: clip a known building or road near home before relying on it; a county extract may stop at a coast or boundary). Before downloading, tell the user the filename, source and size and wait for a yes. Download the regional source into this world's `downloads/` (cache), extract place clips into `reference/vector_map/<place>/` (use the place name for the clip folder) via the local vector_map provider shim. Shared across cells; do not symlink or `osm_root=` into another world. Contract: `scripts/vector_map_clips.py`.
+3. **vector_map (once per project, world-local):** choose a Geofabrik extract id from the [published index](https://download.geofabrik.de/technical.html), then run `python3 scripts/scaffold_vector_map.py --world <name> --extract <id> --bbox-wgs84 west,south,east,north`. This creates the regional provider, its GDAL `osmconf.ini`, and the catalogue row only after the complete bbox fits inside the published clipping polygon (including holes and coastal notches). It fetches index metadata, never the PBF; `--index-file <index-v1.json>` supports offline use. It refuses to replace an existing vector_map choice. After downloading, clip a known building or road near home with `python3 shims/osm_extract.py --world <name> --at X,Z --cell --place PLACE` and inspect the output before relying on it. Before downloading, tell the user the filename, source and size and wait for a yes. Download the regional source into this world's `downloads/` (cache), extract place clips into `reference/vector_map/<place>/` (use the place name for the clip folder) via the local vector_map provider shim. Shared across cells; do not symlink or `osm_root=` into another world. Contract: `scripts/vector_map_clips.py`.
 4. Scaffold place memory:
    - `templates/new-world-site/` → world checkout `site/` (ISSUES, NOTES, COVERAGE, REVIEWS, cells/, thin stubs for process docs).
    - Registry: nothing to copy. `registry/` is created by the first journal write (`templates/new-world-registry/README.txt`, ADR 004).
@@ -120,7 +120,7 @@ Done when checklist providers have `how` strings, running the `evaluate-data-sou
 Run this once at the end, instead of repeating open items in every message:
 
 1. `python3 scripts/world_frame.py --world <name> info` and `python3 scripts/check_instance.py --world <name>` pass.
-2. The world repo is committed and has a `.gitignore` for `downloads/` and other caches (copy an existing world's until a template exists).
+2. The world repo is committed and has the `.gitignore` from `templates/new-world-repo/` for `downloads/` and other caches.
 3. Every tool gap or workaround met during the run is filed in `tasks/index.json` via the `task-index-manager` skill (tool gaps only; never world work), or the user has said not to.
 4. List anything still open (e.g. the user's check at home) in one short list and ask once.
 
