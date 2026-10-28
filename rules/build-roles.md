@@ -43,8 +43,8 @@ hand-off. Fold these into that pass — they are not a separate step:
   Write `facade_plan` per label. The brief lists every portal on the footprint
   with its position and photo when it has one — those are inputs, not a build
   stage. For each portal: place an entrance (face, leaf count, door block,
-  canopy or covered area, steps, `floor_offset` against outside ground) **or**
-  declare it unresolved with `provenance.unresolved_reason` (shared
+  `awning_like` or covered area, steps, `floor_offset` against outside ground)
+  **or** declare it unresolved with `provenance.unresolved_reason` (shared
   provenance schema). Record `provenance.source` / `confidence` /
   `evidence_ids` on every entrance. No portal register? Still add entrances
   from street-level photos (`photo_read`). Unresolved entrances stay in the
@@ -67,12 +67,12 @@ hand-off. Fold these into that pass — they are not a separate step:
 - **Roof and facade detail** ([building-review.md](building-review.md)). From
   the aerial sheet, list plant rooms, vents, louvred vents, skylights, solar
   panels and lift overruns that read at street scale; from street photos, list
-  drainpipes, signs, ledges and fascia bands (entrance canopy / covered area
-  lives on the facade_plan entrance, not as a free-floating detail). Write
-  each into the spec `details` table (`kind`, `at`, `size`, `source`; facade
-  rows need `face`). Heights of large roof plant from lidar; XY from the
-  aerial / photo. Omit `details` (or leave it empty) only when none are
-  visible — say so in `notes`.
+  drainpipes, signs, ledges and fascia bands (entrance `awning_like` /
+  covered area lives on the facade_plan entrance, not as a free-floating
+  detail). Write each into the spec `details` table (`kind`, `at`, `size`,
+  `source`; facade rows need `face`). Heights of large roof plant from lidar;
+  XY from the aerial / photo. Omit `details` (or leave it empty) only when
+  none are visible — say so in `notes`.
 
 Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
 hybrid scoring and ghost baseline stay bake-off-only

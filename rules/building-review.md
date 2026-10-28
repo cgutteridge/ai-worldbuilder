@@ -23,6 +23,8 @@ One building per review. Skip any building that already has an open feature issu
    The aerial sheet shows roof greeblies (user, 2026-10-16): plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets. List
    them per roof in this step and write them into the feature spec `details` table
    (`rules/feature-builds.md`); lidar often misses small roof plant — aerial is the source for those.
+   A roof detail sits on solid roof; cells over air are clipped. Check the dry-run
+   clipped-cell report against the roof outline before rebuilding.
    Facade greeblies from street photos (drainpipe, sign, canopy, ledge, fascia band) go in the same table.
 
    From the same aerial (and street level when the cap shows), answer the roof-edge questions already on the designer

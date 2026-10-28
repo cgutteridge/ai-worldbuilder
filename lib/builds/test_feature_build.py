@@ -15,6 +15,7 @@ import numpy as np
 import feature_build as F
 import site_kit
 from site_kit import door_frame_issues
+from block_store import MemoryBlocks
 
 
 class LoadSpecTest(unittest.TestCase):
@@ -1296,6 +1297,59 @@ class PitchedZonesRidgeTest(unittest.TestCase):
                 if pos[1] == 50 and st == 'minecraft:bricks' and (pos[0], pos[2]) in self.cells}
         self.assertTrue(high)
 
+    def test_zoned_shell_backs_horizontal_gap_beside_stair(self):
+        # Synthetic version of West's reported opening: an east-facing stair
+        # at (6165,60,-5631), air in the taller south column at the same Y,
+        # and an existing full floor at Y59. That floor cannot close a
+        # horizontal slit through the stair's partly open south upper edge.
+        cells = {(x, z) for x in range(6163, 6168) for z in range(-5633, -5628)}
+        rows = [
+            [120, 120, 120, 120, 120],
+            [120, 120, 120, 122, 122],
+            [120, 120, 120, 122, 124],
+            [120, 120, 122, 124, 124],
+            [120, 120, 122, 124, 124],
+        ]
+        raw = {(6163 + x, -5633 + z): h for z, row in enumerate(rows) for x, h in enumerate(row)}
+        halfs = F.regularise_roof_half_heights(raw)
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': cells}, world=_StoneWorld())
+        feature = builder.features[0]
+        feature.b = 41
+        feature.zone_ground = {c: 41 for c in cells}
+        feature.zone_level = {c: 49 for c in cells}
+        feature.zone_roof_half = halfs
+        feature.zone_roof = {c: h // 2 for c, h in halfs.items()}
+        builder.shell_zoned(0, feature)
+        self.assertIn('facing=east', builder.p.cells[(6165, 60, -5631)])
+        self.assertIn('shape=straight', builder.p.cells[(6165, 60, -5631)])
+        self.assertEqual(builder.p.cells[(6165, 59, -5630)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(6165, 60, -5630)], 'minecraft:bricks')
+        self.assertIn('brick_stairs', builder.p.cells[(6165, 61, -5630)])
+
+    def test_stair_backing_only_closes_open_edges_inside_taller_columns(self):
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': self.cells}, world=_StoneWorld())
+        # Test full versus partial upper-edge coverage for every stair shape.
+        closed = {'straight': {'east'}, 'inner_left': {'east', 'north'},
+                  'inner_right': {'east', 'south'}, 'outer_left': set(), 'outer_right': set()}
+        for shape, solid_edges in closed.items():
+            for face, (dx, dz) in F._ROOF_DELTA.items():
+                with self.subTest(shape=shape, face=face):
+                    builder.p.cells.clear()
+                    builder.p.set(dx, 50, dz, 'air')
+                    roof = {(0, 0): 50, (dx, dz): 51}
+                    states = {(0, 0): f'brick_stairs[facing=east,half=bottom,shape={shape}]'}
+                    builder._back_roof_stair_edges(roof, states)
+                    expected = 'minecraft:air' if face in solid_edges else 'minecraft:bricks'
+                    self.assertEqual(builder.p.cells[(dx, 50, dz)], expected)
+        builder.p.cells.clear()
+        builder.p.set(0, 50, 1, 'smooth_stone')
+        states = {(0, 0): 'brick_stairs[facing=east,half=bottom,shape=straight]'}
+        builder._back_roof_stair_edges({(0, 0): 50, (0, 1): 51}, states)
+        self.assertEqual(builder.p.cells[(0, 50, 1)], 'minecraft:smooth_stone')
+        builder.p.cells.clear()
+        builder._back_roof_stair_edges({(0, 0): 50}, states)
+        self.assertEqual(builder.p.cells, {}, 'backing must not expand outside the roof mass')
+
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
         """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
         pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
@@ -1926,6 +1980,22 @@ class DetailsSpecTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
 
+    def test_old_detail_kind_canopy_refused_naming_awning_like(self):
+        """No silent alias: legacy details kind ``canopy`` must name awning_like."""
+        good = self.good()
+        row = {
+            'kind': 'canopy',
+            'at': [11, 55, 21],
+            'size': [2, 1, 1],
+            'face': 'S',
+            'source': 'street photo',
+        }
+        with self.assertRaises(SystemExit) as ctx:
+            F.load_spec(self.write({**good, 'details': {'A': [row]}}))
+        msg = str(ctx.exception)
+        self.assertIn('awning_like', msg)
+        self.assertIn('canopy', msg)
+
 
 class DetailsBuildTest(unittest.TestCase):
     """Seam: details place after the shell; dry-run prints each kind and source."""
@@ -1964,16 +2034,16 @@ class DetailsBuildTest(unittest.TestCase):
                 },
                 {
                     'kind': 'skylight',
-                    'at': [15, 56, 22],
+                    'at': [15, 57, 22],
                     'size': [1, 1, 1],
                     'source': 'aerial skylight',
                 },
                 {
-                    'kind': 'canopy',
+                    'kind': 'awning_like',
                     'at': [13, 55, 24],
                     'size': [2, 1, 1],
                     'face': 'S',
-                    'source': 'street photo entrance canopy',
+                    'source': 'street photo entrance awning_like',
                 },
                 {
                     'kind': 'drainpipe',
@@ -1993,22 +2063,104 @@ class DetailsBuildTest(unittest.TestCase):
         # Plant room sits on a solid pad (not hovering on the membrane slab).
         self.assertIn('minecraft:gray_concrete', plan.cells.get((12, 57, 21), ''))
         self.assertIn('minecraft:gray_concrete', plan.cells.get((13, 58, 22), ''))
-        # Skylight replaces the roof membrane with glass.
-        sky = plan.cells.get((15, 56, 22), '')
+        # Skylight sits on the roof membrane.
+        sky = plan.cells.get((15, 57, 22), '')
         self.assertTrue('glass' in sky, sky)
-        # Canopy overhangs one block south of the south wall.
-        canopy = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
-        self.assertTrue('slab' in canopy, f'expected canopy slab, got {canopy!r}')
+        # Awning-like overhangs one block south of the south wall.
+        overhang = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
+        self.assertTrue('slab' in overhang, f'expected awning_like slab, got {overhang!r}')
         # Drainpipe on the south wall column.
         pipe = plan.cells.get((10, 52, 24), '')
         self.assertTrue('iron' in pipe, pipe)
         for kind, src in (
             ('plant_room', 'aerial plant room'),
             ('skylight', 'aerial skylight'),
-            ('canopy', 'street photo entrance canopy'),
+            ('awning_like', 'street photo entrance awning_like'),
             ('drainpipe', 'street photo south pipe'),
         ):
             self.assertRegex(out, rf'detail {kind}.*source={re.escape(src)}')
+
+
+    def detail_plan(self, rows, supports):
+        """Plan only details over explicit MemoryBlocks roof fixtures."""
+        roof = MemoryBlocks(supports, default='air')
+        builder = F.Build(self.spec({'A': rows}), footprints={'A': self.cells}, world=_StoneWorld())
+        for pos in supports:
+            builder.p.set(*pos, roof.read(pos))
+        builder.details()
+        return builder
+
+    def test_supported_roof_detail_box_unchanged(self):
+        row = {'kind': 'plant_room', 'at': [12, 57, 21], 'size': [2, 2, 2], 'source': 'fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in (12, 13) for z in (21, 22)}
+        builder = self.detail_plan([row], supports)
+        for x in (12, 13):
+            for z in (21, 22):
+                for y in (57, 58):
+                    self.assertEqual(builder.p.cells[(x, y, z)], 'minecraft:gray_concrete')
+                self.assertIn('iron_trapdoor', builder.p.cells[(x, 59, z)])
+        self.assertFalse(any('unsupported' in line for line in builder.detail_report()))
+
+    def test_every_roof_detail_clips_diagonal_unsupported_columns(self):
+        for kind in sorted(F.ROOF_DETAIL_KINDS):
+            with self.subTest(kind=kind):
+                row = {'kind': kind, 'at': [12, 57, 21], 'size': [2, 2, 2], 'source': 'fixture'}
+                # Stair and slab both support a detail. The missing diagonal
+                # corner must stay empty through the whole recipe, caps too.
+                supports = {
+                    (12, 56, 21): 'smooth_stone_slab[type=bottom]',
+                    (13, 56, 21): 'smooth_stone',
+                    (12, 56, 22): 'brick_stairs[facing=north,half=bottom,shape=straight]',
+                }
+                builder = self.detail_plan([row], supports)
+                self.assertTrue(any(p[1] >= 57 for p in builder.p.cells))
+                for y in (57, 58, 59):
+                    self.assertNotIn((13, y, 22), builder.p.cells)
+                self.assertIn(
+                    f'detail {kind} A at (12,57,21) unsupported cells=1; clipped',
+                    builder.detail_report(),
+                )
+
+    def test_build_prints_clipped_row_and_omits_overhanging_glass(self):
+        row = {'kind': 'skylight', 'at': [17, 57, 22], 'size': [2, 1, 1], 'source': 'fixture'}
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            plan = F.build(self.spec({'A': [row]}), footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertIn('glass', plan.cells[(17, 57, 22)])
+        self.assertEqual(plan.cells.get((18, 57, 22), 'minecraft:air'), 'minecraft:air')
+        self.assertIn('detail skylight A at (17,57,22) unsupported cells=1; clipped', buf.getvalue())
+
+    def test_unsupported_vent_anchor_is_clipped_even_if_box_has_support(self):
+        row = {'kind': 'vent', 'at': [12, 57, 21], 'size': [2, 2, 1], 'source': 'fixture'}
+        builder = self.detail_plan([row], {(13, 56, 21): 'smooth_stone'})
+        self.assertNotIn((12, 57, 21), builder.p.cells)
+        self.assertNotIn((12, 58, 21), builder.p.cells)
+
+    def test_prior_detail_does_not_become_roof_support(self):
+        rows = [
+            {'kind': 'plant_room', 'at': [12, 57, 21], 'size': [1, 2, 1], 'source': 'fixture'},
+            {'kind': 'skylight', 'at': [12, 59, 21], 'size': [1, 1, 1], 'source': 'fixture'},
+        ]
+        builder = self.detail_plan(rows, {(12, 56, 21): 'smooth_stone'})
+        self.assertIn('iron_trapdoor', builder.p.cells[(12, 59, 21)])
+        self.assertIn('detail skylight A at (12,59,21) unsupported cells=1; clipped', builder.detail_report())
+
+    def test_air_fluid_and_thin_roof_edge_are_not_support(self):
+        for state in ('air', 'cave_air', 'void_air', 'water', 'iron_bars', 'moss_carpet', 'iron_trapdoor'):
+            with self.subTest(state=state):
+                row = {'kind': 'skylight', 'at': [12, 57, 21], 'size': [1, 1, 1], 'source': 'fixture'}
+                builder = self.detail_plan([row], {(12, 56, 21): state})
+                self.assertNotIn((12, 57, 21), builder.p.cells)
+
+    def test_zone_material_and_full_roof_edge_support_details(self):
+        rows = [{'kind': 'skylight', 'at': [12, 57, 21], 'size': [2, 1, 1], 'source': 'fixture'}]
+        builder = F.Build(self.spec({'A': rows}), footprints={'A': self.cells}, world=_StoneWorld())
+        builder.features[0].roof.update({'zone_materials': {'60': 'deepslate_tile'}, 'edge': {'block': 'polished_andesite'}})
+        builder.p.set(12, 56, 21, 'deepslate_tile_stairs[facing=north,half=bottom,shape=straight]')
+        builder.p.set(13, 56, 21, 'polished_andesite')
+        builder.details()
+        self.assertIn('glass', builder.p.cells[(12, 57, 21)])
+        self.assertIn('glass', builder.p.cells[(13, 57, 21)])
 
 
 class BlockFamilyVariantsTest(unittest.TestCase):
