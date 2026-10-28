@@ -21,7 +21,7 @@ coordinate-conversion implementation.
   python3 scripts/geo.py tiles --bbox 7040,-5560,7140,-5500 --zoom 18 --mosaic 3
 
 WGS84 paths use in-process pyproj via world_frame / geodetic. MC ↔ OSGB uses
-config/world-frame.json (legacy map-maker-offsets shape still available).
+config/world-frame.json.
 """
 from __future__ import annotations
 

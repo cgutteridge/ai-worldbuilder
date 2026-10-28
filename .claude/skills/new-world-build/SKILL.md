@@ -20,7 +20,7 @@ Done when the user has named place, anchor, and rough bbox.
 
 ## 1. World frame
 
-1. Write `config/world-frame.json`: `crs`, `anchor`, `offsets`, `bounds_mc`, `y_offset` (placeholder), elevation plugin.
+1. Write `config/world-frame.json`: `crs`, `offsets`, `bounds_mc`, `y_offset` (placeholder), elevation plugin.
 2. Confirm conversions: `.venv/bin/python scripts/world_frame.py info` and `to-mc` / `to-wgs84` for the anchor. For XYZ tile codes and pixel offsets use `to-wm` / `from-wm` (or `batch-wm`); do not add a second mercator path.
 3. Create the save from the template (refuse if the target exists):
 
@@ -29,7 +29,7 @@ test ! -e "instance/saves/<WorldName>" && cp -R templates/empty-world "instance/
 ```
 
    The template has no chunks; the game generates them on first open. The in-game name stays `SouthamptonAI` until renamed in the game (Edit World); the folder name is what the tools use.
-4. Set `world_name`, `save_path`, `region_path` (`<save>/dimensions/minecraft/overworld/region`) and `map_maker_status` in `config/world.json`. Not a copy of Southampton2023 unless legacy.
+4. Set `gameworld_id`, `save_path` and `region_path` (`<save>/dimensions/minecraft/overworld/region`) in `config/world.json`. Not a copy of Southampton2023 unless legacy.
 5. If a newer Minecraft version is in use than the template's (`Version.Name` in `level.dat`): open the world once in the game to upgrade it, log out, then refresh `templates/empty-world/` (copy without `session.lock`, `players/`, `*.dat_old`, `*.mca`) and commit.
 
 Done when `world_frame.py info` prints the new place and anchor.
@@ -44,7 +44,7 @@ Done when `world_frame.py info` prints the new place and anchor.
 ```
 
 3. Talk through DTM/DSM min/max and suggested `y_offset` with the user. Lock only after they confirm.
-4. Write `y_offset` / `sea_level` into `world-frame.json`.
+4. Write `y_offset` into `world-frame.json`.
 
 Play `need-you` and **stop** until the user confirms the offset. Do not apply world edits before that.
 

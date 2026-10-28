@@ -919,7 +919,7 @@ def brief_hint(item):
     if 'CIVIC' in t:
         hints.insert(1, 'site/PLACES.txt (CIVIC)')
     if 'OSGB' in t or 'COORD' in t:
-        hints.insert(1, 'scripts/osgb.py / config/map-maker-offsets.json')
+        hints.insert(1, 'scripts/world_frame.py / config/world-frame.json')
     cell = _cell_for_item(item)
     if cell is not None:
         rel = sources_path(*cell).relative_to(ROOT)
