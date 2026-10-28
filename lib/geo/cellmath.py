@@ -1,13 +1,13 @@
 """Single owner of coverage-cell maths for the active world.
 
-Owns cell size, origin, bounds, cell→region mapping, ring order, ``parse_cell``,
-canonical id format ``tx,tz``, and sparse MC tile ids. Origin cell and cell size
+Owns cell size, home cell, bounds, cell→region mapping, ring order, ``parse_cell``,
+canonical id format ``tx,tz``, and sparse MC tile ids. Home cell and cell size
 come from the active world's ``config/world-frame.json`` (``cell.size``,
-``cell.origin``); defaults match Southampton (128 / 48,-44) when absent.
+``cell.home``); defaults match Southampton (128 / 48,-44) when absent.
 
 A cell ``(tx, tz)`` covers blocks x in ``[tx*size, tx*size+size-1]``,
 z in ``[tz*size, tz*size+size-1]``. North is −Z. Pure functions aside from
-reading the world frame for size/origin.
+reading the world frame for size/home.
 """
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ from typing import Any
 REGION_BLOCKS = 512
 
 _DEFAULT_CELL_SIZE = 128
-_DEFAULT_ORIGIN: tuple[int, int] = (48, -44)
+_DEFAULT_HOME: tuple[int, int] = (48, -44)
 
 _SIZE: int = _DEFAULT_CELL_SIZE
-_ORIGIN: tuple[int, int] = _DEFAULT_ORIGIN
+_HOME: tuple[int, int] = _DEFAULT_HOME
 _LOADED = False
 
 N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -41,12 +41,12 @@ def _frame_path() -> Path | None:
 
 
 def reload_grid(frame: dict[str, Any] | None = None, *, path: Path | None = None) -> None:
-    """Reload cell size and origin from a frame dict or world-frame.json.
+    """Reload cell size and home cell from a frame dict or world-frame.json.
 
     @param frame: optional already-loaded world-frame object
     @param path: optional path to world-frame.json (ignored when ``frame`` set)
     """
-    global _SIZE, _ORIGIN, _LOADED, CELL, ORIGIN_CELL
+    global _SIZE, _HOME, _LOADED, CELL, HOME_CELL
     data = frame
     if data is None:
         p = path or _frame_path()
@@ -59,13 +59,15 @@ def reload_grid(frame: dict[str, Any] | None = None, *, path: Path | None = None
     size = int(cell.get('size', _DEFAULT_CELL_SIZE))
     if size <= 0 or (size & (size - 1)) != 0:
         raise ValueError(f'cell.size must be a positive power of two, got {size}')
-    origin = cell.get('origin', list(_DEFAULT_ORIGIN))
-    if not (isinstance(origin, (list, tuple)) and len(origin) == 2):
-        raise ValueError(f'cell.origin must be [tx, tz], got {origin!r}')
+    if 'origin' in cell:
+        raise ValueError('cell.origin has been renamed to cell.home; update config/world-frame.json')
+    home = cell.get('home', list(_DEFAULT_HOME))
+    if not (isinstance(home, (list, tuple)) and len(home) == 2):
+        raise ValueError(f'cell.home must be [tx, tz], got {home!r}')
     _SIZE = size
-    _ORIGIN = (int(origin[0]), int(origin[1]))
+    _HOME = (int(home[0]), int(home[1]))
     CELL = _SIZE
-    ORIGIN_CELL = _ORIGIN
+    HOME_CELL = _HOME
     _LOADED = True
 
 
@@ -85,15 +87,15 @@ def cell_size() -> int:
     return CELL
 
 
-def origin_cell() -> tuple[int, int]:
+def home_cell() -> tuple[int, int]:
     """Configured radial-focus cell (ring 0).
 
-    Honours test patches of module-level ``ORIGIN_CELL``.
+    Honours test patches of module-level ``HOME_CELL``.
 
     @returns: (tx, tz)
     """
     _ensure_loaded()
-    return ORIGIN_CELL
+    return HOME_CELL
 
 
 def cell_shift() -> int:
@@ -106,7 +108,7 @@ def cell_shift() -> int:
 
 # Back-compat module constants (updated by reload_grid).
 CELL = _DEFAULT_CELL_SIZE
-ORIGIN_CELL = _DEFAULT_ORIGIN
+HOME_CELL = _DEFAULT_HOME
 
 
 def parse_cell(spec: str) -> tuple[int, int]:
@@ -192,28 +194,28 @@ def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int, size: int | None = None) -
     return tx0 * s, tz0 * s, (tx1 + 1) * s - 1, (tz1 + 1) * s - 1
 
 
-def ring_distance(cell: tuple[int, int], origin: tuple[int, int] | None = None) -> int:
-    """Chebyshev ring number of a cell around ``origin``.
+def ring_distance(cell: tuple[int, int], home: tuple[int, int] | None = None) -> int:
+    """Chebyshev ring number of a cell around ``home``.
 
     @param cell: (tx, tz)
-    @param origin: focus cell (default: configured origin)
+    @param home: focus cell (default: configured home cell)
     @returns: ring index
     """
-    ox, oz = origin if origin is not None else origin_cell()
+    ox, oz = home if home is not None else home_cell()
     return max(abs(cell[0] - ox), abs(cell[1] - oz))
 
 
-def ring_cells(r: int, origin: tuple[int, int] | None = None) -> list[tuple[int, int]]:
+def ring_cells(r: int, home: tuple[int, int] | None = None) -> list[tuple[int, int]]:
     """Cells of Chebyshev ring r: north centre first, then clockwise.
 
     Order: top edge from the centre column eastward, down the east side, back along
     the bottom, up the west side, finishing the top edge.
 
     @param r: ring radius
-    @param origin: focus cell (default: configured origin)
+    @param home: focus cell (default: configured home cell)
     @returns: cells on that ring
     """
-    ox, oz = (origin if origin is not None else origin_cell())
+    ox, oz = (home if home is not None else home_cell())
     if r == 0:
         return [(ox, oz)]
     return ([(ox + dx, oz - r) for dx in range(0, r + 1)]
@@ -300,4 +302,4 @@ try:
     reload_grid()
 except Exception:
     CELL = _DEFAULT_CELL_SIZE
-    ORIGIN_CELL = _DEFAULT_ORIGIN
+    HOME_CELL = _DEFAULT_HOME

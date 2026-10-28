@@ -8,7 +8,6 @@ fine with the world open.
 """
 from __future__ import annotations
 
-import fcntl
 import subprocess
 import sys
 from pathlib import Path
@@ -37,7 +36,7 @@ def play_need_you() -> None:
 
 
 def session_lock_held(lock: Path) -> bool:
-    """Whether a running Minecraft holds ``lock`` (a POSIX lock, as Java takes).
+    """Whether a running Minecraft holds ``lock`` (the OS lock Java takes).
 
     Minecraft leaves the file behind after the world closes, so existence proves nothing.
 
@@ -47,10 +46,22 @@ def session_lock_held(lock: Path) -> bool:
     try:
         with open(lock, 'r+b') as fh:
             try:
-                fcntl.lockf(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if sys.platform == 'win32':
+                    import msvcrt
+
+                    # Java locks the file from byte zero. An overlapping byte
+                    # detects that lock without changing the stale lock file.
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.lockf(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.lockf(fh, fcntl.LOCK_UN)
             except OSError:
                 return True
-            fcntl.lockf(fh, fcntl.LOCK_UN)
     except FileNotFoundError:
         return False
     except OSError:

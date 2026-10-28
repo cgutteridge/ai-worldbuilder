@@ -43,3 +43,5 @@ the bake-off **world checkout** stays at `worlds/bakeoff/` and is selected via
 `--world bakeoff` like any other world.
 
 Retired: the environment variable `AI_WORLDBUILDER_WORLD_ROOT` is no longer read.
+
+The cell grid uses `cell.size` and `cell.home: [tx, tz]`. To migrate an older frame, rename `cell.origin` to `cell.home` (keeping its coordinates) and remove `top_of_world`; build limits come from Minecraft, not the frame. Legacy `cell.origin` is rejected with a migration error.

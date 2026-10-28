@@ -93,6 +93,23 @@ def bakeoffs_root(path: Path | None = None) -> Path:
     return Path(path) if path is not None else DEFAULT_BAKEOFFS
 
 
+def sealed_answers_path() -> Path:
+    """Locate the operator-only answer key without opening it.
+
+    Kept outside the tool checkout and Minecraft instance. The override is for
+    operators with a separate private data volume; agent commands never read it.
+    """
+    override = os.environ.get('AI_WORLDBUILDER_SEALED_TRUTH')
+    path = (Path(override).expanduser() if override else
+            Path.home() / '.local/share/ai-worldbuilder/bakeoff-sealed/truth.json')
+    if not path.is_absolute():
+        raise ValueError('sealed answer path must be absolute')
+    path = path.resolve()
+    if path.is_relative_to(ROOT.resolve()):
+        raise ValueError('sealed answers must live outside the tool checkout and worlds/')
+    return path
+
+
 def utc_now() -> str:
     """ISO-8601 UTC timestamp with trailing Z.
 
@@ -2618,6 +2635,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--root', type=Path, default=None, help='override bakeoff/ path')
     sub = ap.add_subparsers(dest='cmd', required=True)
 
+    sub.add_parser('sealed-path', help='print the private answer-key location, never its contents')
     sub.add_parser('status', help='list rounds and suggest next sitting')
     p_next = sub.add_parser('next', help='print next suggested sitting as JSON')
     p_next.add_argument('--task')
@@ -2800,6 +2818,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = ap.parse_args(argv)
+    if args.cmd == 'sealed-path':
+        try:
+            print(sealed_answers_path())
+        except ValueError as exc:
+            ap.error(str(exc))
+        return 0
     from script_env import activate_world_from_args
     activate_world_from_args(args)
     root = bakeoffs_root(args.root)

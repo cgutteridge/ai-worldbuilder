@@ -8,7 +8,7 @@ reset world starts with a fresh journal and nothing is migrated or restored.
 
 The save lives in the standalone Minecraft instance and this tool never deletes
 inside it: delete and recreate the world in the game first (a live reset refuses
-while region files remain), then raise the origin cell (ghost frontier).
+while region files remain), then raise the home cell (ghost frontier).
 
   python3 scripts/dryrun_reset.py --dry-run
   python3 scripts/dryrun_reset.py --confirm-logged-out
@@ -283,7 +283,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         'warnings': [],
         'next_steps': [
             'Live reset needs a blank save: delete and recreate the world in the game first (this tool never deletes inside saves/).',
-            'Raise the origin cell (cell_marker.py --raise <origin>) to seed the ghost frontier.',
+            'Raise the home cell (cell_marker.py --raise <home>) to seed the ghost frontier.',
             'python3 scripts/cell_registry.py verify  # expect no issues; registry/ appears with the first journal write',
         ],
     }

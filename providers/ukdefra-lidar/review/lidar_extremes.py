@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 
 from script_env import ROOT  # noqa: E402
@@ -47,6 +48,34 @@ def _bbox_mc(args: argparse.Namespace) -> tuple[int, int, int, int]:
         zs = [c[1] for c in corners]
         return min(xs), min(zs), max(xs), max(zs)
     raise SystemExit('need --cell, --bbox-mc, or --bbox-osgb')
+
+
+def suggest_y_offset(ground_min: float, top_max: float) -> dict:
+    """Fit ground and surface into the build range with room below and above.
+
+    @param ground_min: lowest DTM height in metres above datum
+    @param top_max: highest DSM height in metres above datum
+    @returns: integer suggestion (or None), feasible interval and explanation
+    """
+    # Leave 14 blocks below the lowest ground and four above the highest surface.
+    ground_floor, top_ceiling = -50, 315
+    lower = math.ceil(ground_floor - ground_min)
+    upper = math.floor(top_ceiling - top_max)
+    fits = lower <= upper
+    suggested = min(max(math.floor(64 - ground_min), lower), upper) if fits else None
+    return {
+        'suggested_y_offset': suggested,
+        'offset_min': lower,
+        'offset_max': upper,
+        'ground_floor': ground_floor,
+        'top_ceiling': top_ceiling,
+        'reason': (
+            'Ground and tops fit with 14 blocks below ground and four above the surface.'
+            if fits else
+            'No integer y_offset fits this relief with 14 blocks below ground and four '
+            'above the surface; shrink the survey area or explicitly reconsider the margins.'
+        ),
+    }
 
 
 def extremes(
@@ -99,10 +128,8 @@ def extremes(
             'vanilla −64…319 with headroom. Recommend surveying ≥ 5 km × 5 km.'
         ),
     }
-    # Suggested offset that puts DTM min near Y=64 (playable surface band).
-    target_ground = 64
-    suggested = int(target_ground - int(__import__('math').trunc(float(dtm_v.min()))))
-    out['suggested_y_offset_for_ground_near_64'] = suggested
+    out['y_offset_fit'] = suggest_y_offset(out['dtm_m']['min'], out['dsm_m']['max'])
+    out['suggested_y_offset'] = out['y_offset_fit']['suggested_y_offset']
     return out
 
 
@@ -131,7 +158,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"DSM m  min={rec['dsm_m']['min']:.2f}  max={rec['dsm_m']['max']:.2f}  mean={rec['dsm_m']['mean']:.2f}")
     y = rec['mc_y_with_current_offset']
     print(f"MC Y (current offset): ground {y['ground_min']}…{y['ground_max']}  tops {y['top_min']}…{y['top_max']}")
-    print(f"suggested y_offset (ground min ≈ 64): {rec['suggested_y_offset_for_ground_near_64']}")
+    print(f"suggested y_offset: {rec['suggested_y_offset']}")
+    print(rec['y_offset_fit']['reason'])
     print(rec['note'])
     return 0
 

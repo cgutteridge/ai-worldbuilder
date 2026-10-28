@@ -96,10 +96,12 @@ hand. Use `--no-push` only when the owner asks to keep the merge local.
 ## Stop (cap or any halt)
 
 Leave the branch **unmerged**. Tell the owner the branch name, last verdict,
-and what is left. Play:
+and what is left. Play the optional local cue if installed:
 
 ```bash
-python3 ~/Projects/agent-soundboard/scripts/play.py need-you
+if [ -f "$HOME/Projects/agent-soundboard/scripts/play.py" ]; then
+  python3 "$HOME/Projects/agent-soundboard/scripts/play.py" need-you
+fi
 ```
 
 ## Model policy

@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,6 +141,8 @@ def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     data = json.loads(p.read_text())
     if 'offsets' not in data:
         raise SystemExit(f'{p} missing offsets')
+    if 'origin' in (data.get('cell') or {}):
+        raise SystemExit(f'{p}: cell.origin has been renamed to cell.home; update the frame')
     frame = WorldFrame(data)
     if path is None:
         _FRAME = frame
@@ -159,7 +162,6 @@ def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
         'OFFSET_E': f.offset_e,
         'OFFSET_N': f.offset_n,
         'SEA_LEVEL': f.sea_level,
-        'TOP_OF_WORLD': d.get('top_of_world'),
         'ELEVATION_PLUGIN': d.get('elevation_plugin'),
     }
 
@@ -181,14 +183,16 @@ _OSTN15_GRID = 'uk_os_OSTN15_NTv2_OSGBtoETRS.tif'
 def _ensure_proj_data() -> None:
     """Append system PROJ data dirs that carry the OSTN15 grid, once per process.
 
-    pyproj's bundled share/proj often omits UK grids; Homebrew ``proj`` installs
-    them under ``/opt/homebrew/share/proj``. Appending that path (when present)
-    lets ``Transformer`` pick OSTN15 without requiring ``PROJ_NETWORK``.
+    Honour explicit PROJ_DATA (or legacy PROJ_LIB) search paths before common
+    system installations. Appending a directory containing the grid lets
+    ``Transformer`` pick OSTN15 without requiring ``PROJ_NETWORK``.
     """
     global _PROJ_DATA_READY
     if _PROJ_DATA_READY:
         return
-    for candidate in _SYSTEM_PROJ_DATA_CANDIDATES:
+    configured = os.environ.get('PROJ_DATA') or os.environ.get('PROJ_LIB', '')
+    candidates = [Path(value).expanduser() for value in configured.split(os.pathsep) if value]
+    for candidate in (*candidates, *_SYSTEM_PROJ_DATA_CANDIDATES):
         if (candidate / _OSTN15_GRID).is_file():
             datadir.append_data_dir(str(candidate))
             break
@@ -926,7 +930,7 @@ def main(argv: list[str] | None = None) -> int:
             'offsets': {'easting': f.offset_e, 'northing': f.offset_n},
             'cell': f.data.get('cell') or {
                 'size': cellmath.cell_size(),
-                'origin': list(cellmath.origin_cell()),
+                'home': list(cellmath.home_cell()),
             },
             'y_offset': f.y_offset,
             'elevation_plugin': f.data.get('elevation_plugin'),

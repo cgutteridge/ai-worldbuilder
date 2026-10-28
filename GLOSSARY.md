@@ -37,7 +37,7 @@ _Avoid_: TODO.txt, retired world queue files, system tasks in the world registry
 ## Cells and registry
 
 **Cell**:
-A 128×128 Minecraft block patch on the world grid (`tx,tz`), sized and originated from `config/world-frame.json` via `cellmath`. Work is planned and recorded per cell.
+A 128×128 Minecraft block patch on the world grid (`tx,tz`), sized and given a home cell by `config/world-frame.json` via `cellmath`. Work is planned and recorded per cell.
 _Avoid_: chunk (unless meaning an MC chunk), tile (unless meaning a map/lidar tile)
 
 **Cell registry**:
@@ -105,6 +105,9 @@ _Avoid_: Type, source family keyed only by vendor
 **World frame**:
 How real geography maps into Minecraft: CRS, offsets, Y offset, bounds, anchor. Stored in the world’s `config/world-frame.json`; read via `scripts/world_frame.py`.
 _Avoid_: scattering OFFSET_E / SEA_LEVEL / private CRS subprocesses across scripts
+
+**Home cell**:
+The cell containing the chosen starting point; ring 0 for radial planning. Stored as `cell.home` in the world frame and read with `cellmath.home_cell()`. Minecraft (0, 0) is the block origin and may be in a different cell.
 
 **XYZ tile position**:
 A Web Mercator slippy-map tile `z/x/y` plus floating-point pixel offsets on a 256-pixel *logical* tile: `east_px` rightward and `south_px` downward from the northwest corner (not northings; independent of downloaded image size). Convert with `scripts/world_frame.py` (`to-wm` / `from-wm` / `batch-wm`).
