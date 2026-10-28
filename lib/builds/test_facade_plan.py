@@ -223,7 +223,7 @@ class FacadePlanValidateTest(unittest.TestCase):
         plan['A']['entrances'][0].pop('portal_id', None)
         FP.validate_facade_plan(plan, labels={'A'}, storeys={'A': 1}, portal_ids=[])
 
-    def test_glazing_row_matches_facades_shape(self):
+    def test_glazing_rows_use_storey_height_pier_and_rhythm(self):
         plan = {
             'A': {
                 'faces': {

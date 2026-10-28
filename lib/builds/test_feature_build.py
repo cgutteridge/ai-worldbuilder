@@ -18,6 +18,36 @@ from site_kit import door_frame_issues
 from block_store import MemoryBlocks
 
 
+def _glazing_plan(rows, plan=None):
+    """Compose facade-plan fixture data without a production legacy reader."""
+    result = dict(plan or {})
+    for label, faces in rows.items():
+        body = dict(result.get(label) or {})
+        body['faces'] = {**body.get('faces', {}), **{face: {'glazing': values} for face, values in faces.items()}}
+        result[label] = body
+    return result
+
+
+class _FixtureLidar:
+    """External DTM fixture: bare terrain maps to block Y=49 in the test frame."""
+    def missing(self, *args):
+        return []
+
+    def sample(self, product, east, north, geocraft=True):
+        return np.full(np.asarray(east).shape, 38.0)
+
+
+_lidar_fixture = mock.patch('lidar_provider.tile_client', return_value=_FixtureLidar())
+
+
+def setUpModule():
+    _lidar_fixture.start()
+
+
+def tearDownModule():
+    _lidar_fixture.stop()
+
+
 class LoadSpecTest(unittest.TestCase):
     """Seam: load_spec validates and fills defaults."""
 
@@ -48,7 +78,6 @@ class LoadSpecTest(unittest.TestCase):
         )
         self.assertEqual(spec['wall'], 'bricks')
         self.assertEqual(spec['floor'], 'smooth_stone')
-        self.assertEqual(spec['facades'], {})
         self.assertEqual(spec['facade_plan'], {})
         self.assertEqual(spec['details'], {})
         self.assertNotIn('doors', spec)
@@ -70,6 +99,10 @@ class LoadSpecTest(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
+
+    def test_legacy_glazing_key_is_refused_with_migration_pointer(self):
+        with self.assertRaisesRegex(SystemExit, 'facade_plan'):
+            F.load_spec(self.write({**self.good(), 'facades': {}}))
 
     def test_legacy_doors_key_refused(self):
         """#146: per-portal doors map is gone; entrances live on facade_plan."""
@@ -191,6 +224,27 @@ class BuildPlanTest(unittest.TestCase):
             'ledge_stair': False,
         }
 
+    def test_dry_run_reports_unknown_planned_block_ids_and_source(self):
+        spec = self.spec()
+        spec['wall'] = 'made_up_wall'
+        output = io.StringIO()
+        with redirect_stdout(output):
+            F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertRegex(output.getvalue(), r'unknown block id minecraft:made_up_wall x[1-9][0-9]*')
+        self.assertIn('vendored Minecraft 26.2', output.getvalue())
+
+    def test_unzoned_floor_uses_lidar_ground_not_live_rim(self):
+        spec = self.spec(floor_y=None)
+        data = {'A': {'x0': 10, 'z0': 20, 'ground_y': np.full((5, 5), 54)}}
+        class LiveRim52:
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= 52 else 'minecraft:air'
+        output = io.StringIO()
+        with redirect_stdout(output):
+            plan = F.build(spec, footprints={'A': self.cells}, world=LiveRim52(), zone_data=data)
+        self.assertIn('A b 54 ', output.getvalue())
+        self.assertEqual(plan.cells[(12, 54, 22)], 'minecraft:smooth_stone')
+
     def test_three_storey_flat_roof_shell_height(self):
         plan = F.build(self.spec(storeys=3, kind='flat'), footprints={'A': self.cells}, world=_StoneWorld())
         floor = 50
@@ -309,39 +363,39 @@ class FacadeSpecTest(unittest.TestCase):
             'storeys': {'A': 2},
             'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
             'groups': [{'nos': ['A'], 'front': 'S'}],
-            'facades': {
+            'facade_plan': _glazing_plan({
                 'A': {
                     'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1, 'wall': 'bricks'}],
                     'N': [{'storey': 1, 'glazed_h': 2, 'pier': 1, 'rhythm': 'WW_WW'}],
                 }
-            },
+            }),
         }
 
     def test_loads_facade_table(self):
         spec = F.load_spec(self.write(self.good()))
-        self.assertEqual(spec['facades']['A']['S'][0]['glazed_h'], 3)
-        self.assertEqual(spec['facades']['A']['N'][0]['rhythm'], 'WW_WW')
-        self.assertEqual(spec['facades']['A']['S'][0]['pier'], 1)
+        self.assertEqual(spec['facade_plan']['A']['faces']['S']['glazing'][0]['glazed_h'], 3)
+        self.assertEqual(spec['facade_plan']['A']['faces']['N']['glazing'][0]['rhythm'], 'WW_WW')
+        self.assertEqual(spec['facade_plan']['A']['faces']['S']['glazing'][0]['pier'], 1)
 
     def test_facades_optional_default_empty(self):
-        base = {k: v for k, v in self.good().items() if k != 'facades'}
+        base = {k: v for k, v in self.good().items() if k != 'facade_plan'}
         spec = F.load_spec(self.write(base))
-        self.assertEqual(spec['facades'], {})
+        self.assertEqual(spec['facade_plan'], {})
 
     def test_bad_facade_rows_refused(self):
         good = self.good()
         cases = [
-            {**good, 'facades': {'B': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'X': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 0, 'glazed_h': 3, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 3, 'glazed_h': 3, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 4, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 0, 'pier': 1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': -1}]}}},
-            {**good, 'facades': {'A': {'S': [{'storey': 1, 'glazed_h': 3}]}}},
+            {**good, 'facade_plan': _glazing_plan({'B': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'X': [{'storey': 1, 'glazed_h': 3, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 0, 'glazed_h': 3, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 3, 'glazed_h': 3, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 1, 'glazed_h': 4, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 1, 'glazed_h': 0, 'pier': 1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 1, 'glazed_h': 3, 'pier': -1}]}})},
+            {**good, 'facade_plan': _glazing_plan({'A': {'S': [{'storey': 1, 'glazed_h': 3}]}})},
         ]
         for bad in cases:
-            with self.subTest(bad=bad.get('facades')):
+            with self.subTest(bad=bad.get('facade_plan')):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
 
@@ -368,8 +422,20 @@ class FacadeWindowsTest(unittest.TestCase):
             'wall': 'bricks',
             'floor': 'smooth_stone',
             'ledge_stair': False,
-            'facades': facades,
+            'facade_plan': _glazing_plan(facades),
         }
+
+    def test_facade_plan_glazing_drives_windows_and_evidence_report(self):
+        spec = self.spec({})
+        spec['facade_plan'] = {'A': {'faces': {'S': {'glazing': [
+            {'storey': 1, 'glazed_h': 2, 'pier': 1, 'rhythm': 'BBBBBBBB'}
+        ]}}}}
+        with redirect_stdout(io.StringIO()) as output:
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertFalse(any('glass' in state for (x, y, z), state in plan.cells.items() if z == 24))
+        south = [line for line in output.getvalue().splitlines() if 'face S storey 1' in line]
+        self.assertTrue(south)
+        self.assertNotIn('no evidence read', south[0])
 
     def test_storey1_glazed_3_pier_1_places_full_height_glass(self):
         # Q-198 done criterion: "storey 1 glazed 3 high, pier 1"
@@ -564,8 +630,8 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             'wall': 'bricks',
             'floor': 'smooth_stone',
             'ledge_stair': False,
-            'facades': facades or {},
-            'facade_plan': {'A': {'faces': {}, 'entrances': entrances}},
+            
+            'facade_plan': _glazing_plan(facades or {}, {'A': {'faces': {}, 'entrances': entrances}}),
         }
 
     def build_plan(self, entrances, *, facades=None, cells=None, world=None):
@@ -577,6 +643,29 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                 world=world or _StoneWorld(),
             )
         return plan, buf.getvalue()
+
+    def test_high_live_rim_does_not_put_unzoned_door_in_roof(self):
+        class HighRimWorld:
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= 60 else 'minecraft:air'
+        spec = self.spec([_entrance_row(leaves=1, at=[13, 24])])
+        spec['storeys']['A'] = 1
+        spec['floor_min'] = 55
+        grids = {'A': {'x0': 10, 'z0': 20, 'ground_y': np.full((5, 7), 54)}}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=HighRimWorld(), zone_data=grids)
+        lower = [p for p, state in plan.cells.items() if '_door[' in state and 'half=lower' in state]
+        self.assertEqual(len(lower), 1)
+        self.assertEqual(lower[0][1], 56)
+        self.assertIn('slab', plan.cells[(13, 58, 22)])
+
+    def test_entrance_cover_preserves_other_real_ground_ownership(self):
+        from journal_testkit import JournalWorld
+        pos = (13, 52, 26)
+        with JournalWorld() as journal:
+            journal.build('ground_owner', 'ground', {pos: 'minecraft:light_gray_concrete'}, cell=(0, 0))
+            plan, _ = self.build_plan([_entrance_row(awning_like={'kind': 'covered_area', 'depth': 3})])
+        self.assertFalse(pos in plan.cells)
 
     def test_entrance_awning_survives_roof_and_keeps_door_walkable(self):
         plan, out = self.build_plan([
@@ -1241,6 +1330,29 @@ class ZoneBuildTest(unittest.TestCase):
             )
         return plan, buf.getvalue()
 
+    def test_empty_zone_mask_refuses_with_feature_and_thresholds(self):
+        for levels in ([45], 'auto'):
+            spec = self.spec()
+            spec['zones']['A']['levels'] = levels
+            data = {'A': {**self.zone_data['A'], 'dsm': np.full((6, 8), 20.0)}}
+            with self.assertRaisesRegex(SystemExit, r'A: no zone cells survived.*3-cell minimum.*mass threshold'):
+                F.build(spec, footprints={'A': self.cells}, world=_StoneWorld(), zone_data=data)
+
+    def test_single_zone_with_sufficient_lidar_mass_plans(self):
+        spec = self.spec()
+        spec['zones']['A']['levels'] = [45]
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld(), zone_data=self.zone_data)
+        self.assertTrue(any(y == 56 and state == 'minecraft:smooth_stone' for (x, y, z), state in plan.cells.items()))
+
+    def test_zoned_flat_roof_resolves_slab_family_to_full_block(self):
+        spec = self.spec()
+        spec['roofs']['A']['material'] = 'deepslate_tile'
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld(), zone_data=self.zone_data)
+        self.assertIn('minecraft:deepslate_tiles', plan.cells.values())
+        self.assertNotIn('minecraft:deepslate_tile', plan.cells.values())
+
     def test_zoned_build_default_none_no_parapet(self):
         plan, out = self._build()
         self.assertIn('footprint osm=', out)
@@ -1612,8 +1724,8 @@ class LivePrefetchTest(unittest.TestCase):
             'wall': 'bricks',
             'floor': 'smooth_stone',
             'ledge_stair': False,
-            'facades': {},
-            'facade_plan': {},
+            
+            'facade_plan': _glazing_plan({}, {}),
             'zones': {},
         }
 
@@ -2102,9 +2214,24 @@ class DetailsBuildTest(unittest.TestCase):
             'wall': 'bricks',
             'floor': 'smooth_stone',
             'ledge_stair': False,
-            'facades': {},
+            'facade_plan': _glazing_plan({}),
             'details': details,
         }
+
+    def test_chimney_spec_normalizes_dimensions_and_refuses_invalid_shape(self):
+        base = {'name': 'stack', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+                'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+                'groups': [{'nos': ['A'], 'front': 'N'}]}
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'height': 4,
+               'base_diameter': 5, 'top_diameter': 3, 'shape': 'round', 'source': 'photo'}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'stack.json'
+            path.write_text(json.dumps({**base, 'details': {'A': [row]}}))
+            loaded = F.load_spec(path)
+            self.assertEqual(loaded['details']['A'][0]['size'], [5, 4, 5])
+            path.write_text(json.dumps({**base, 'details': {'A': [{**row, 'shape': 'triangle'}]}}))
+            with self.assertRaisesRegex(SystemExit, 'round or square'):
+                F.load_spec(path)
 
     def test_roof_and_facade_details_place_and_dry_run_lists_source(self):
         # Flat roof membrane sits at floor + 2*STOREY_H = 56.
@@ -2118,7 +2245,7 @@ class DetailsBuildTest(unittest.TestCase):
                 },
                 {
                     'kind': 'skylight',
-                    'at': [15, 57, 22],
+                    'at': [15, 56, 22],
                     'size': [1, 1, 1],
                     'source': 'aerial skylight',
                 },
@@ -2148,7 +2275,7 @@ class DetailsBuildTest(unittest.TestCase):
         self.assertIn('minecraft:gray_concrete', plan.cells.get((12, 57, 21), ''))
         self.assertIn('minecraft:gray_concrete', plan.cells.get((13, 58, 22), ''))
         # Skylight sits on the roof membrane.
-        sky = plan.cells.get((15, 57, 22), '')
+        sky = plan.cells.get((15, 56, 22), '')
         self.assertTrue('glass' in sky, sky)
         # Awning-like overhangs one block south of the south wall.
         overhang = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
@@ -2174,6 +2301,73 @@ class DetailsBuildTest(unittest.TestCase):
         builder.details()
         return builder
 
+    def test_tapered_square_chimney_has_open_rim_and_band(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [5, 4, 5],
+               'base_diameter': 5, 'top_diameter': 3, 'height': 4, 'shape': 'square',
+               'material': 'white_concrete', 'rim': 'stone',
+               'band': {'offset': 1, 'block': 'black_concrete'}, 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in range(11, 16) for z in range(20, 25)}
+        builder = self.detail_plan([row], supports)
+        self.assertEqual(builder.p.cells[(15, 57, 22)], 'minecraft:white_concrete')
+        self.assertEqual(builder.p.cells[(14, 60, 22)], 'minecraft:stone')
+        self.assertEqual(builder.p.cells.get((15, 60, 22), 'minecraft:air'), 'minecraft:air')
+        self.assertEqual(builder.p.cells[(13, 60, 22)], 'minecraft:air')
+        band = [x for (x, y, z), state in builder.p.cells.items() if y == 58 and state == 'minecraft:black_concrete']
+        self.assertEqual(max(band) - min(band) + 1, 4)
+
+    def test_chimney_solidifies_its_slab_base_without_hover_gap(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [3, 4, 3],
+               'base_diameter': 3, 'top_diameter': 3, 'height': 4,
+               'shape': 'round', 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone_slab[type=bottom]' for x in range(12, 15) for z in range(21, 24)}
+        builder = self.detail_plan([row], supports)
+        self.assertEqual(builder.p.cells[(12, 56, 22)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(12, 57, 22)], 'minecraft:white_concrete')
+        self.assertEqual(builder.p.cells[(13, 60, 22)], 'minecraft:air')
+
+    def test_chimney_rough_check_does_not_hide_corrupt_lidar(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [3, 4, 3],
+               'base_diameter': 3, 'top_diameter': 3, 'height': 4,
+               'shape': 'round', 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in range(12, 15) for z in range(21, 24)}
+        with mock.patch('lidar_provider.mc_heights', side_effect=ValueError('corrupt lidar')):
+            with self.assertRaisesRegex(ValueError, 'corrupt lidar'):
+                self.detail_plan([row], supports)
+
+    def test_vertical_chimney_is_hollow_open_and_reports_rough_lidar_check(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [5, 4, 5],
+               'base_diameter': 5, 'top_diameter': 5, 'height': 4, 'shape': 'round',
+               'material': 'white_concrete', 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in range(11, 16) for z in range(20, 25)}
+        builder = self.detail_plan([row], supports)
+        self.assertEqual(builder.p.cells.get((15, 60, 22)), 'minecraft:white_concrete')
+        self.assertTrue(all(builder.p.cells.get((13, y, 22), 'minecraft:air') == 'minecraft:air' for y in range(57, 61)))
+        self.assertFalse(any(y > 60 for x, y, z in builder.p.cells))
+        self.assertTrue(any('planned height=4' in line and 'lidar' in line for line in builder.detail_report()))
+
+    def test_skylight_is_recessed_and_rejects_whole_box_off_roof(self):
+        row = {'kind': 'skylight', 'at': [12, 56, 21], 'size': [2, 1, 2], 'source': 'fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in (12, 13) for z in (21, 22)}
+        builder = self.detail_plan([row], supports)
+        self.assertTrue(all(builder.p.cells[pos] == 'minecraft:glass' for pos in supports))
+        self.assertFalse(any(y > 56 for x, y, z in builder.p.cells))
+        del supports[(13, 56, 22)]
+        rejected = self.detail_plan([row], supports)
+        self.assertFalse(any('glass' in state for state in rejected.p.cells.values()))
+        self.assertTrue(any('cells off roof' in line and 'not built' in line and 'A at (12,56,21)' in line for line in rejected.detail_report()))
+
+    def test_vents_fill_requested_box_and_cap_without_bars(self):
+        for size in ([1, 1, 1], [2, 2, 2]):
+            row = {'kind': 'vent', 'at': [12, 57, 21], 'size': size, 'source': 'fixture'}
+            support = {(x, 56, z): 'smooth_stone' for x in (12, 13) for z in (21, 22)}
+            builder = self.detail_plan([row], support)
+            for x in range(12, 12 + size[0]):
+                for z in range(21, 21 + size[2]):
+                    for y in range(57, 57 + size[1]):
+                        self.assertEqual(builder.p.cells[(x, y, z)], 'minecraft:gray_concrete')
+                    self.assertIn('iron_trapdoor', builder.p.cells[(x, 57 + size[1], z)])
+            self.assertFalse(any('iron_bars' in state for state in builder.p.cells.values()))
+
     def test_supported_roof_detail_box_unchanged(self):
         row = {'kind': 'plant_room', 'at': [12, 57, 21], 'size': [2, 2, 2], 'source': 'fixture'}
         supports = {(x, 56, z): 'smooth_stone' for x in (12, 13) for z in (21, 22)}
@@ -2186,7 +2380,7 @@ class DetailsBuildTest(unittest.TestCase):
         self.assertFalse(any('unsupported' in line for line in builder.detail_report()))
 
     def test_every_roof_detail_clips_diagonal_unsupported_columns(self):
-        for kind in sorted(F.ROOF_DETAIL_KINDS):
+        for kind in sorted(F.ROOF_DETAIL_KINDS - {'skylight', 'chimney'}):
             with self.subTest(kind=kind):
                 row = {'kind': kind, 'at': [12, 57, 21], 'size': [2, 2, 2], 'source': 'fixture'}
                 # Stair and slab both support a detail. The missing diagonal
@@ -2198,6 +2392,7 @@ class DetailsBuildTest(unittest.TestCase):
                 }
                 builder = self.detail_plan([row], supports)
                 self.assertTrue(any(p[1] >= 57 for p in builder.p.cells))
+                self.assertFalse(any('iron_bars' in state for state in builder.p.cells.values()))
                 for y in (57, 58, 59):
                     self.assertNotIn((13, y, 22), builder.p.cells)
                 self.assertIn(
@@ -2205,14 +2400,14 @@ class DetailsBuildTest(unittest.TestCase):
                     builder.detail_report(),
                 )
 
-    def test_build_prints_clipped_row_and_omits_overhanging_glass(self):
-        row = {'kind': 'skylight', 'at': [17, 57, 22], 'size': [2, 1, 1], 'source': 'fixture'}
-        buf = io.StringIO()
-        with redirect_stdout(buf):
+    def test_build_rejects_whole_skylight_overhanging_roof(self):
+        row = {'kind': 'skylight', 'at': [17, 56, 22], 'size': [2, 1, 1], 'source': 'fixture'}
+        with redirect_stdout(io.StringIO()) as output:
             plan = F.build(self.spec({'A': [row]}), footprints={'A': self.cells}, world=_StoneWorld())
-        self.assertIn('glass', plan.cells[(17, 57, 22)])
-        self.assertEqual(plan.cells.get((18, 57, 22), 'minecraft:air'), 'minecraft:air')
-        self.assertIn('detail skylight A at (17,57,22) unsupported cells=1; clipped', buf.getvalue())
+        self.assertNotIn('glass', plan.cells.get((17, 56, 22), ''))
+        self.assertNotIn('glass', plan.cells.get((18, 56, 22), ''))
+        self.assertIn('cells off roof', output.getvalue())
+        self.assertIn('not built', output.getvalue())
 
     def test_unsupported_vent_anchor_is_clipped_even_if_box_has_support(self):
         row = {'kind': 'vent', 'at': [12, 57, 21], 'size': [2, 2, 1], 'source': 'fixture'}
@@ -2227,7 +2422,7 @@ class DetailsBuildTest(unittest.TestCase):
         ]
         builder = self.detail_plan(rows, {(12, 56, 21): 'smooth_stone'})
         self.assertIn('iron_trapdoor', builder.p.cells[(12, 59, 21)])
-        self.assertIn('detail skylight A at (12,59,21) unsupported cells=1; clipped', builder.detail_report())
+        self.assertTrue(any('skylight A at (12,59,21)' in line and 'not built' in line for line in builder.detail_report()))
 
     def test_air_fluid_and_thin_roof_edge_are_not_support(self):
         for state in ('air', 'cave_air', 'void_air', 'water', 'iron_bars', 'moss_carpet', 'iron_trapdoor'):
@@ -2237,14 +2432,14 @@ class DetailsBuildTest(unittest.TestCase):
                 self.assertNotIn((12, 57, 21), builder.p.cells)
 
     def test_zone_material_and_full_roof_edge_support_details(self):
-        rows = [{'kind': 'skylight', 'at': [12, 57, 21], 'size': [2, 1, 1], 'source': 'fixture'}]
+        rows = [{'kind': 'skylight', 'at': [12, 56, 21], 'size': [2, 1, 1], 'source': 'fixture'}]
         builder = F.Build(self.spec({'A': rows}), footprints={'A': self.cells}, world=_StoneWorld())
         builder.features[0].roof.update({'zone_materials': {'60': 'deepslate_tile'}, 'edge': {'block': 'polished_andesite'}})
         builder.p.set(12, 56, 21, 'deepslate_tile_stairs[facing=north,half=bottom,shape=straight]')
         builder.p.set(13, 56, 21, 'polished_andesite')
         builder.details()
-        self.assertIn('glass', builder.p.cells[(12, 57, 21)])
-        self.assertIn('glass', builder.p.cells[(13, 57, 21)])
+        self.assertIn('glass', builder.p.cells[(12, 56, 21)])
+        self.assertIn('glass', builder.p.cells[(13, 56, 21)])
 
 
 class BlockFamilyVariantsTest(unittest.TestCase):

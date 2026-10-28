@@ -43,9 +43,8 @@ entrance roof (formerly the kind value ``canopy``). The legacy entrance field
 
 Relation to neighbouring work:
 
-- **#130 windows:** glazing rows may live under ``faces[face].glazing`` (same
-  shape as the legacy ``facades`` table). Legacy ``facades`` still loads until
-  a later cleanup; readers that know ``facade_plan`` prefer its glazing.
+- **Windows:** ``faces[face].glazing`` is the only source for window rows;
+  placement and glazed-share reporting both read it.
 - **#131 window frames:** build-time only — not plan fields.
 - **#132 roof/facade detail:** stays in sibling ``details`` / ``roofs.edge``.
   Entrance awning_like / covered area is owned here; face slots ``roof_edge``
@@ -74,6 +73,18 @@ _FACE_RESERVED = ('roof_edge', 'detail')
 
 class FacadePlanError(ValueError):
     """Refused facade_plan input (shape, entrance, glazing, or portal coverage)."""
+
+
+def glazing_by_face(plan: Mapping[str, Any] | None, label: str) -> dict:
+    """Return the evidenced glazing rows for a label, keyed by face.
+
+    @param plan: label-to-plan mapping (or None)
+    @param label: feature label
+    @returns: face-to-glazing-row mapping, omitting empty rows
+    """
+    body = (plan or {}).get(label) or {}
+    return {face: data['glazing'] for face, data in (body.get('faces') or {}).items()
+            if data.get('glazing')}
 
 
 def iter_entrances(plan: Mapping[str, Any] | None) -> list[dict[str, Any]]:
