@@ -1702,6 +1702,22 @@ class DetailsSpecTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write(bad))
 
+    def test_old_detail_kind_canopy_refused_naming_awning_like(self):
+        """No silent alias: legacy details kind ``canopy`` must name awning_like."""
+        good = self.good()
+        row = {
+            'kind': 'canopy',
+            'at': [11, 55, 21],
+            'size': [2, 1, 1],
+            'face': 'S',
+            'source': 'street photo',
+        }
+        with self.assertRaises(SystemExit) as ctx:
+            F.load_spec(self.write({**good, 'details': {'A': [row]}}))
+        msg = str(ctx.exception)
+        self.assertIn('awning_like', msg)
+        self.assertIn('canopy', msg)
+
 
 class DetailsBuildTest(unittest.TestCase):
     """Seam: details place after the shell; dry-run prints each kind and source."""
@@ -1745,11 +1761,11 @@ class DetailsBuildTest(unittest.TestCase):
                     'source': 'aerial skylight',
                 },
                 {
-                    'kind': 'canopy',
+                    'kind': 'awning_like',
                     'at': [13, 55, 24],
                     'size': [2, 1, 1],
                     'face': 'S',
-                    'source': 'street photo entrance canopy',
+                    'source': 'street photo entrance awning_like',
                 },
                 {
                     'kind': 'drainpipe',
@@ -1772,16 +1788,16 @@ class DetailsBuildTest(unittest.TestCase):
         # Skylight replaces the roof membrane with glass.
         sky = plan.cells.get((15, 56, 22), '')
         self.assertTrue('glass' in sky, sky)
-        # Canopy overhangs one block south of the south wall.
-        canopy = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
-        self.assertTrue('slab' in canopy, f'expected canopy slab, got {canopy!r}')
+        # Awning-like overhangs one block south of the south wall.
+        overhang = plan.cells.get((13, 55, 25), '') or plan.cells.get((14, 55, 25), '')
+        self.assertTrue('slab' in overhang, f'expected awning_like slab, got {overhang!r}')
         # Drainpipe on the south wall column.
         pipe = plan.cells.get((10, 52, 24), '')
         self.assertTrue('iron' in pipe, pipe)
         for kind, src in (
             ('plant_room', 'aerial plant room'),
             ('skylight', 'aerial skylight'),
-            ('canopy', 'street photo entrance canopy'),
+            ('awning_like', 'street photo entrance awning_like'),
             ('drainpipe', 'street photo south pipe'),
         ):
             self.assertRegex(out, rf'detail {kind}.*source={re.escape(src)}')

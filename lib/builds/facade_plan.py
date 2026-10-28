@@ -24,7 +24,8 @@ Shape (per way label)::
           "leaves"?: 1|2,                     # required when placed
           "block"?: "<*_door>",               # required when placed
           "at"?: [x, z],
-          "canopy"?: {"kind": "none"|"canopy"|"covered_area", "depth"?: int},
+          "awning_like"?: {"kind": "none"|"awning"|"covered_area"|"porch_roof",
+                           "depth"?: int},
           "steps"?: int >= 0,
           "floor_offset"?: int,               # blocks vs outside ground (0 = level)
           "cell"?: [tx, tz],                  # for cell-view unresolved listing
@@ -35,6 +36,11 @@ Shape (per way label)::
     }
   }
 
+``awning_like`` is any roof or cover over an entrance (awning, porch roof,
+covered area) — not a tree canopy. Kind ``porch_roof`` is a solid projecting
+entrance roof (formerly the kind value ``canopy``). The legacy entrance field
+``canopy`` is refused (no silent alias).
+
 Relation to neighbouring work:
 
 - **#130 windows:** glazing rows may live under ``faces[face].glazing`` (same
@@ -42,8 +48,8 @@ Relation to neighbouring work:
   a later cleanup; readers that know ``facade_plan`` prefer its glazing.
 - **#131 window frames:** build-time only — not plan fields.
 - **#132 roof/facade detail:** stays in sibling ``details`` / ``roofs.edge``.
-  Entrance canopy / covered area is owned here; face slots ``roof_edge`` and
-  ``detail`` are reserved room only.
+  Entrance awning_like / covered area is owned here; face slots ``roof_edge``
+  and ``detail`` are reserved room only.
 - **#146:** ``feature_build`` places doors from placed entrances only; the old
   ``doors`` map / nearest-wall portal path is removed.
 """
@@ -55,7 +61,10 @@ from typing import Any
 import provenance as prov
 
 FACES = ('N', 'S', 'E', 'W')
-CANOPY_KINDS = ('none', 'canopy', 'covered_area')
+# Entrance cover kinds. ``porch_roof`` replaces the old kind value ``canopy``
+# (tree-ambiguous); ``awning`` is fabric-style; ``covered_area`` is a recess /
+# soffit; ``none`` is flush with no cover.
+AWNING_LIKE_KINDS = ('none', 'awning', 'covered_area', 'porch_roof')
 PROVENANCE_KEY = prov.PROVENANCE_KEY
 STOREY_H = 3
 
@@ -182,18 +191,31 @@ def validate_glazing_rows(
             raise FacadePlanError(f'{path} wall must be a string')
 
 
-def _validate_canopy(canopy: Any, path: str) -> None:
-    if canopy is None:
+def _validate_awning_like(awning_like: Any, path: str) -> None:
+    """Validate an entrance ``awning_like`` object (cover over the door).
+
+    @param awning_like: object with ``kind`` and optional ``depth``, or ``None``
+    @param path: error prefix (entrance path)
+    @raises FacadePlanError: on invalid shape or kind
+    """
+    if awning_like is None:
         return
-    if not isinstance(canopy, dict):
-        raise FacadePlanError(f'{path} canopy must be an object')
-    kind = canopy.get('kind')
-    if kind not in CANOPY_KINDS:
-        raise FacadePlanError(f'{path} canopy.kind must be one of {CANOPY_KINDS}')
-    if 'depth' in canopy and canopy['depth'] is not None:
-        depth = canopy['depth']
+    if not isinstance(awning_like, dict):
+        raise FacadePlanError(f'{path} awning_like must be an object')
+    kind = awning_like.get('kind')
+    if kind == 'canopy':
+        raise FacadePlanError(
+            f'{path} awning_like.kind {kind!r} is renamed to \'porch_roof\' '
+            f'(allowed: {AWNING_LIKE_KINDS})'
+        )
+    if kind not in AWNING_LIKE_KINDS:
+        raise FacadePlanError(
+            f'{path} awning_like.kind must be one of {AWNING_LIKE_KINDS}'
+        )
+    if 'depth' in awning_like and awning_like['depth'] is not None:
+        depth = awning_like['depth']
         if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
-            raise FacadePlanError(f'{path} canopy.depth must be int >= 0')
+            raise FacadePlanError(f'{path} awning_like.depth must be int >= 0')
 
 
 def _validate_provenance(raw: Any, path: str) -> dict[str, Any]:
@@ -276,7 +298,12 @@ def validate_entrance(row: Any, *, path: str) -> None:
             raise FacadePlanError(f'{path} floor_offset must be an int')
 
     if 'canopy' in row:
-        _validate_canopy(row.get('canopy'), path)
+        raise FacadePlanError(
+            f'{path} uses removed key \'canopy\'; rename to \'awning_like\' '
+            f'(kinds {AWNING_LIKE_KINDS}; old kind \'canopy\' → \'porch_roof\')'
+        )
+    if 'awning_like' in row:
+        _validate_awning_like(row.get('awning_like'), path)
 
     if 'cell' in row and row['cell'] is not None:
         cell = row['cell']
@@ -442,9 +469,9 @@ def format_portal_inputs(
         lines.append(f'  … and {len(portals) - limit} more')
     lines.append(
         'Account for every portal in facade_plan entrances: place it (face, leaves, '
-        'block, canopy/covered area, steps, floor_offset vs outside ground) or declare '
-        'it unresolved with provenance.unresolved_reason. A world with no portal '
-        'register still gets entrances from street-level photos (photo_read).'
+        'block, awning_like/covered area, steps, floor_offset vs outside ground) or '
+        'declare it unresolved with provenance.unresolved_reason. A world with no '
+        'portal register still gets entrances from street-level photos (photo_read).'
     )
     return lines
 

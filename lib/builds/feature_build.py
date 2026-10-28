@@ -35,7 +35,8 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                        "id": "<stable>", "portal_id"?: "<register id>",
                        "face"?: "N"|"S"|"E"|"W", "leaves"?: 1|2,
                        "block"?: "<*_door>", "at"?: [x, z],
-                       "canopy"?: {"kind": "none"|"canopy"|"covered_area"},
+                       "awning_like"?: {"kind": "none"|"awning"|"covered_area"|
+                                        "porch_roof"},
                        "steps"?: >=0, "floor_offset"?: int,
                        "cell"?: [tx, tz],
                        "provenance": {source, confidence, evidence_ids,
@@ -51,7 +52,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  and front/rear spruce default are removed (#146).
                  Glazing may live under ``faces[].glazing`` (#130); window
                  frames are build-time (#131); roof/facade greeblies stay in
-                 ``details`` / ``roofs.edge`` (#132) — entrance canopy is here.
+                 ``details`` / ``roofs.edge`` (#132) — entrance awning_like is
+                 here (not a tree canopy; legacy entrance key ``canopy`` is
+                 refused).
   facades        optional per-label per-face table of window rows (photo reading):
                    {"<label>": {"N"|"S"|"E"|"W": [
                      {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
@@ -72,9 +75,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "face"?: "N"|"S"|"E"|"W"}]}
                  Roof kinds: plant_room, vent, louvred_vent, skylight,
                  solar_panel, lift_overrun. Facade kinds: drainpipe, sign,
-                 canopy, ledge, fascia_band (``face`` required). Entrance
-                 canopy / covered area belongs on ``facade_plan`` entrances,
-                 not here. Placed after the shell and roof; dry run prints
+                 awning_like, ledge, fascia_band (``face`` required). Entrance
+                 awning_like / covered area belongs on ``facade_plan``
+                 entrances, not here. Legacy details kind ``canopy`` is
+                 refused. Placed after the shell and roof; dry run prints
                  each detail and its source. Positions from aerial (roofs) /
                  street photos (facades); large plant heights from lidar.
   exclude        optional per-label boxes cut out of the map footprint (outline larger
@@ -151,7 +155,7 @@ ROOF_DETAIL_KINDS = frozenset({
     'plant_room', 'vent', 'louvred_vent', 'skylight', 'solar_panel', 'lift_overrun',
 })
 FACADE_DETAIL_KINDS = frozenset({
-    'drainpipe', 'sign', 'canopy', 'ledge', 'fascia_band',
+    'drainpipe', 'sign', 'awning_like', 'ledge', 'fascia_band',
 })
 DETAIL_KINDS = ROOF_DETAIL_KINDS | FACADE_DETAIL_KINDS
 
@@ -1137,6 +1141,11 @@ def _validate_details(path, spec: dict, labels: set) -> None:
             if not isinstance(row, dict):
                 raise SystemExit(f'{pref} must be an object')
             kind = row.get('kind')
+            if kind == 'canopy':
+                raise SystemExit(
+                    f'{pref} kind \'canopy\' is renamed to \'awning_like\' '
+                    f'(allowed: {sorted(DETAIL_KINDS)})'
+                )
             if kind not in DETAIL_KINDS:
                 raise SystemExit(
                     f'{pref} kind must be one of {sorted(DETAIL_KINDS)}')
@@ -2312,7 +2321,7 @@ class Build:
         # same refusals as the live apply, so the designer sees them before hand-off (#99)
         guard_door_frames(self.p, self.live.block)
         guard_roof_jogs(self.p)
-        # Greeblies after the outside-slab prune so canopy/ledge overhangs survive.
+        # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
         for line in self._zone_pad_lines:
             print(line)
@@ -2457,7 +2466,7 @@ class Build:
                 ax + dx, ay, az + dz,
                 f'oak_wall_sign[facing={FACE[face]}]',
             )
-        elif kind == 'canopy':
+        elif kind == 'awning_like':
             dx, dz = DIRS[face]
             for i in range(max(sx, sz)):
                 if face in 'NS':
