@@ -65,6 +65,10 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   (kinds `none` / `awning` / `covered_area` / `porch_roof`; not a tree
   canopy; legacy key `canopy` and kind value `canopy` are refused).
   Placed after the shell; dry run prints each detail and its source.
+  A roof detail sits on solid roof; cells over air are clipped. Each horizontal
+  cell needs a full block, slab or stair directly below the row; unsupported
+  columns (including caps) are omitted and the dry run reports label, kind,
+  position and clipped cell count. Other details do not count as roof support.
   List what reads at street scale, or leave `details` empty / omit it
   when none are visible.
   Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
