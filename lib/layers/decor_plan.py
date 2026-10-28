@@ -196,6 +196,59 @@ def _footprint_columns(cell: tuple[int, int]) -> set[tuple[int, int]]:
     }
 
 
+def lidar_objects(hm, footprint, canopy, observations, *, root=None):
+    """Group DSM−DTM columns and resolve only photo/aerial furniture labels.
+
+    Labels use the existing observation schema: ``kind``, ``cell: [x,z]``,
+    optional ``source`` (photo_read or aerial), evidence_ids and note. A label
+    must lie on the object. Unknown, conflicting and transient labels never
+    authorize placement. Returns plan items plus all detected object columns.
+    """
+    from garden_sources import components
+    import street_furniture as sf
+    from lidar_heightmap import TREE, TREE_OVER_ROOF, ROOF
+
+    if not hm or 'terrain' not in hm:
+        return [], set()
+    columns = set()
+    for i in range(hm['h'].shape[0]):
+        for j in range(hm['h'].shape[1]):
+            q = (int(hm['x0']) + i, int(hm['z0']) + j)
+            if q in footprint or q in canopy or hm['kind'][i, j] in (TREE, TREE_OVER_ROOF, ROOF):
+                continue
+            if hm['terrain'][i, j] > 0 and hm['h'][i, j] > hm['terrain'][i, j]:
+                columns.add(q)
+    out = []
+    for group in sorted(components(columns), key=min):
+        labels = [o for o in observations if o.get('cell') and tuple(o['cell']) in group]
+        valid = [o for o in labels if o.get('kind') in sf.RECIPES
+                 and o.get('source', 'photo_read') in ('photo_read', 'aerial')
+                 and not o.get('unresolved_reason')]
+        # Any incompatible label blocks the whole component, including a vehicle
+        # touching an otherwise plausible furniture observation.
+        kinds = {o.get('kind') for o in labels}
+        resolved = bool(valid) and len(kinds) == 1 and len(valid) == len(labels)
+        label = valid[0] if resolved else {}
+        x, z = tuple(label['cell']) if resolved else min(group)
+        kind = str(label.get('kind') or 'unknown')
+        item = _furniture_item(
+            x, z, kind, source=label.get('source', 'photo_read') if resolved else 'inference',
+            confidence='medium' if resolved else 'low',
+            evidence_ids=label.get('evidence_ids') or (), root=root,
+            note=str(label.get('note') or 'lidar surface above bare terrain'),
+        )
+        item['id'] = _item_id('lidar-object', *min(group))
+        item['lidar_cells'] = [list(q) for q in sorted(group)]
+        item['lidar_height'] = max(int(hm['h'][a - hm['x0'], b - hm['z0']]
+                                       - hm['terrain'][a - hm['x0'], b - hm['z0']])
+                                   for a, b in group)
+        if not resolved:
+            item['provenance']['unresolved_reason'] = (
+                'lidar object needs an unambiguous photo/aerial permanent furniture label')
+        out.append(item)
+    return out, columns
+
+
 def build_decor_plan(
     cell: tuple[int, int],
     *,
@@ -203,6 +256,7 @@ def build_decor_plan(
     map_furniture: Sequence[tuple[int, int, str]] = (),
     designer_items: Sequence[Mapping[str, Any]] = (),
     photo_observations: Sequence[Mapping[str, Any]] = (),
+    lidar_hm: Mapping[str, Any] | None = None,
     garden: Mapping[tuple[int, int], tuple[str, str, int]] | None = None,
     rgb: Mapping[tuple[int, int], Any] | None = None,
     canopy: set[tuple[int, int]] | None = None,
@@ -216,7 +270,8 @@ def build_decor_plan(
     @param map_barriers: optional ``{'hedge'|'wall'|'fence': set[(x,z)]}``; fetched when omitted
     @param map_furniture: ``(x, z, kind)`` triples from the vector map
     @param designer_items: rows from ``decor-furniture.json`` (may include ``evidence``)
-    @param photo_observations: kind/note rows without coordinates → unresolved
+    @param photo_observations: photo/aerial kind/note rows; cell coordinates label lidar objects
+    @param lidar_hm: DSM/DTM heightmap; omitted means no lidar candidates
     @param garden: optional garden barrier map; ``garden_barriers(cell)`` when omitted
     @param rgb: optional aerial colours; fetched when omitted
     @param canopy: optional tree-canopy columns
@@ -370,7 +425,17 @@ def build_decor_plan(
             note=str(raw.get('note') or ''),
         ))
 
+    object_items, object_columns = lidar_objects(
+        lidar_hm, footprint, canopy, photo_observations, root=root)
+    # A lidar component supersedes generic map/designer points: a map bench
+    # must not resurrect a component identified as a parked vehicle.
+    items = [item for item in items
+             if not (item.get('role') == 'furniture'
+                     and tuple(item.get('cell') or ()) in object_columns)]
+    items.extend(object_items)
     for i, obs in enumerate(photo_observations):
+        if obs.get('cell') and tuple(obs['cell']) in object_columns:
+            continue
         kind = str(obs.get('kind') or 'unknown')
         reason = str(obs.get('unresolved_reason') or '').strip() or (
             'photo observation has no MC coordinate'

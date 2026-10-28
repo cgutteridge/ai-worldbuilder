@@ -188,9 +188,13 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
 
 
 def designer_observations(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
-    """Unresolved photo/aerial observations for one cell (no coordinate yet).
+    """Photo/aerial observations that classify lidar objects or record uncertainty.
 
-    File shape under the cell key: ``"observations": [{"kind","note","unresolved_reason"?}]``.
+    File shape under the cell key: ``"observations": [{"kind", "note"?,
+    "cell": [x,z]?, "source": "photo_read"|"aerial"?, "evidence_ids": [...]?,
+    "unresolved_reason"?}]``. Coordinate-bearing permanent furniture labels can
+    authorize a detected lidar object's placement; source defaults to photo_read.
+    Missing coordinates or unresolved_reason keep observations unresolved.
 
     @param cell: (tx, tz)
     @param path: override spec path (tests)
@@ -202,6 +206,15 @@ def designer_observations(cell: tuple[int, int], path: Path | None = None) -> li
         if not isinstance(raw, dict) or not raw.get('kind'):
             continue
         obs = {'kind': str(raw['kind'])}
+        if raw.get('cell') is not None:
+            try:
+                obs['cell'] = [int(raw['cell'][0]), int(raw['cell'][1])]
+            except (TypeError, ValueError, IndexError):
+                continue
+        if raw.get('source'):
+            obs['source'] = str(raw['source'])
+        if raw.get('evidence_ids'):
+            obs['evidence_ids'] = list(raw['evidence_ids'])
         if raw.get('note'):
             obs['note'] = str(raw['note'])
         if raw.get('unresolved_reason'):
