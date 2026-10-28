@@ -16,6 +16,7 @@ Bootstrap only. Use the platform setup in `docs/minecraft-instance-setup.md` (Wi
 - **Bbox: explain it, then ask.** Say this to the user in plain words every time, before asking for a size:
   - Lidar comes as **fixed tiles** (in Britain, 5 km squares on the national grid, each DTM and DSM about 75 MB). A tile can't be downloaded in part, so the bbox doesn't choose how much data you get; it chooses **which tiles** download now. A box straddling a tile line needs 2 or 4 tiles; one aligned to the grid needs 1.
   - The bbox has two jobs: it picks the first download, and it is the area the Y-offset check scans for lowest ground and highest roof (section 2). It does not limit the world: later cells fetch the neighbouring tiles when first needed.
+  - An aligned box must end **1 m inside** the upper (east and north) tile edge, e.g. `x1=439998`, not `440000`: `tiles_for` adds 1 m east and north for bilinear corners, so a box ending exactly on a tile edge pulls in the next tile column and row (Sheffield: 2 intended tiles fetched 6).
   - Compute how many tiles the candidate box needs (the lidar provider's `tiles_for`, or its `tiles` command) and tell the user, with the rough download size and that the first download is slow.
   - Offer both options with their trade-offs, and give a recommendation for this place:
     - **Aligned box (1 tile):** fastest start (about 150 MB), but the Y check only sees that tile; extremes outside it are missed, and a wrong Y offset is expensive to undo.
