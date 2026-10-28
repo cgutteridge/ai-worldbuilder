@@ -4,12 +4,12 @@ description: >-
   Repair an element (feature, ground, trees, decor) or cell that is nearly right,
   and learn from it. Use when the user says refine, fix this, almost, not quite,
   or points at a built thing that is close but wrong. Diagnoses the cause, fixes
-  in place, proposes general tool tasks. For a clean-slate rebuild use purge.
+  in place, files the lesson as issues and snags (never tasks). For a clean-slate rebuild use purge.
 ---
 
 Human-invoked repair. The old build **is** the reference here (the opposite of `purge` / `redo`): keep what is right, change what is wrong, find out why it went wrong.
 
-Two outputs, always both: **the fix** and **the lesson** (a general cause, and zero to three tool tasks). The lesson serves every build type, so it is stated as a class of failure, never as this place's geometry.
+Two outputs, always both: **the fix** and **the lesson** (a general cause, filed on the issue as a note). The lesson serves every build type, so it is stated as a class of failure, never as this place's geometry.
 
 Cell journal rules (ADR 004) apply: fix with a new named build that declares `modifies=()`; never edit a BUILT plan to patch the world. Snags that stay open: `snag` skill (`scripts/issues.py add`).
 
@@ -56,17 +56,17 @@ Done when readback is clean and the defects from §2 are gone on the new capture
 
 ## 4. Lesson
 
-Turn the causes into tool tasks, and only those that pass all of these:
+Builders do not propose or add tool tasks. Diagnosis and tasks are a human step (`sherlock` and the owner). Record what you learned on the issue instead: a general cause in `--words` or `--agent-notes`, or an investigation note on the snag, with any guessed diagnosis or suggested fix labelled as a suggestion (`--source agent`, `--confidence suspected`). Check `tasks/index.json` and `tasks/done.json` for the same cause first and name any task you find in the note, so `sherlock` can link it. Write the lesson to this standard:
 
 - **General:** names a failure class and the build types it touches; no street names, building ids or coordinates in the title or notes (those go in the issue).
 - **Upstream:** changes a generator, shared `lib/` function, evidence step or rule so the defect cannot recur. Prefer extending an existing check or rule over a new one; a new special case for one building type is a rejection.
 - **Cheap:** its proof is a unit test on `MemoryBlocks` or an existing audit. No new live-world test, no new fetches.
 - **New:** `tasks/index.json` and `tasks/done.json` searched for the same cause first; if found, add a note to that task instead.
 
-Present at most three, each as: title, cause class, which build types it helps, rough size, how it would be proven. Say "no general lesson" when that is the truth. Add the approved ones with `task-index-manager` (tracker-only edit, straight to `main`); place-specific leftovers go to the `snag` skill (`scripts/issues.py`).
+File up to three lessons, each with: cause class, which build types it helps, how it could be proven. Say "no general lesson" when that is the truth. All of it goes through the `snag` skill (`scripts/issues.py`); do not edit `tasks/`.
 
-Done when each defect is covered by a landed fix, a task, an issue, or "accepted", and the user has the task list to approve.
+Done when each defect is covered by a landed fix, a task, an issue, or "accepted", and any general lesson is filed on its issue.
 
 ## 5. Check with the human
 
-When a place fix is `fix-landed`, walk it with the `snag` skill review path. Then ask once about the task list.
+When a place fix is `fix-landed`, walk it with the `snag` skill review path. Do not ask about tasks; `sherlock` turns issues into tasks.

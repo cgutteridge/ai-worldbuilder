@@ -16,7 +16,7 @@ No region backup or restore exists (ADR 004). The journal Undo saves a structure
 
 1. Scope is one of: **element** (feature id, or ground / trees / decor of a cell), **cell** (all four elements of one cell), **above-ghost** (every cell that still has anything above the lidar ghost — keeps ghost), **project** (the whole active world, including ghost). Resolve element/cell with `cell_registry.py status` / `query`. Resolve above-ghost with `cell_registry.py above-ghost` (totals + per-cell counts; `#135`). Ask if it is ambiguous — phrases like "purge the non-ghost stuff" / "wipe everything above ghost" are **above-ghost**, not project.
 2. Say what will go, in numbers: cells, features by name, passes. For above-ghost, quote the `above-ghost` totals (cells / ground / trees / decor / features) and the cell list. Wait for a clear yes. Cell, above-ghost and project scopes need a yes naming that scope. Project scope also needs the player off the server (`dryrun_reset.py` refuses otherwise).
-3. Note the why in one line, as a class of failure (evidence / translation / capability / bar, as in `refine` §2), never as geometry. It is for tool tasks, not for the redesign.
+3. Note the why in one line, as a class of failure (evidence / translation / capability / bar, as in `refine` §2), never as geometry. It is for the issue record, not for the redesign.
 
 Done when the user has said yes to a counted scope.
 
@@ -72,4 +72,4 @@ Done when the redesign has started from the evidence table, or the user has defe
 
 ## 5. Lesson
 
-If the why from §0 points at a tool cause (not a one-off), propose up to three tasks as `refine` §4 defines them: general, upstream, cheap, new. Otherwise say "no general lesson".
+If the why from §0 points at a tool cause (not a one-off), file up to three lessons as `refine` §4 defines them (general, upstream, cheap, new) on the issue as notes or snags. Do not propose or add tool tasks. Otherwise say "no general lesson".
