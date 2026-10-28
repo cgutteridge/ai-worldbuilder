@@ -44,7 +44,7 @@ Never use web mercator (`EPSG:3857`, about 1.6× too big at 51°N), a feet-based
 
 ### 1b. Offsets: default 0, 0
 
-Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Also test once in the game (fly to home and look around): if rendering jitters at large coordinates, fall back to the rounded offsets. Existing worlds keep their offsets (Southampton is 436248, 109608).
+Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Check for rendering jitter (blocks or the hand shaking at large coordinates) only once the first ghost exists (section 2b): an empty bedrock floor shows nothing. If it jitters, fall back to the rounded offsets and redo the frame before anything real is built. Existing worlds keep their offsets (Southampton is 436248, 109608).
 
 ### 1c. Home cell
 
@@ -85,6 +85,22 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 5. Write `y_offset` into `world-frame.json`.
 
 Play `need-you` and **stop** until the user confirms the offset. Do not apply world edits before that.
+
+## 2b. First ghost at the home cell
+
+Once `y_offset` is locked, give the world its first ground: lidar ghost around the home cell, so the user has real terrain to look at (the Y fit, jitter, and where home is) instead of bare bedrock.
+
+1. Run it live under the site lock, in the background (ground pass about 25-55 s a cell; ring 1 is 9 cells, so roughly 5-9 minutes; relay progress):
+
+```bash
+python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py apply --cell <home cell> --ring 1
+```
+
+   Use `--ring 0` for the home cell alone (fast, a few cells' worth of wait avoided) when the user only wants a quick look.
+2. Then set the world spawn at the home point and put the player there (the spawn step in 1d), with the game open on the world.
+3. Ask the user to look around: does the terrain match the place (sea level, the hill, the shoreline), is the highest ground under the build limit, and does anything jitter? Fix `y_offset` or the offsets now if not; nothing real is built yet.
+
+Done when the ghost is placed, the player stands at home on real terrain, and the user has looked around.
 
 ## 3. Place sources
 
