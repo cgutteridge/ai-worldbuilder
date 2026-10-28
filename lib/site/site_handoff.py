@@ -114,7 +114,7 @@ def top_open():
 
 LAYER_STAGES = ('ground', 'trees', 'decor')
 QUEUE_DONE = SITE / 'archive' / 'QUEUE-done.txt'
-from cellmath import ORIGIN_CELL, ring_cells  # noqa: E402,F401
+from cellmath import HOME_CELL, ring_cells  # noqa: E402,F401
 
 
 TREES_OVER_ROOF = 'trees-over-roof'      # journal review-note ref prefix: trees-over-roof:x0,z0,x1,z1
@@ -517,7 +517,7 @@ def next_cell(max_ring=12):
     """
     del max_ring
     from registry_next import next_task
-    from cellmath import origin_cell, ring_distance
+    from cellmath import home_cell, ring_distance
 
     task = next_task()
     if task is None:
@@ -526,7 +526,7 @@ def next_cell(max_ring=12):
     if not cell:
         return None
     tx, tz = (int(x) for x in str(cell).split(','))
-    return tx, tz, ring_distance((tx, tz), origin_cell())
+    return tx, tz, ring_distance((tx, tz), home_cell())
 
 
 def requeue_plan(max_ring=12):
@@ -536,7 +536,7 @@ def requeue_plan(max_ring=12):
     @returns: [(tx, tz, ring, gaps)] in ring order
     """
     from cell_registry import view_registry
-    from cellmath import origin_cell, ring_distance
+    from cellmath import home_cell, ring_distance
 
     del max_ring
     out = []
@@ -546,7 +546,7 @@ def requeue_plan(max_ring=12):
         g = cell_gaps((tx, tz))
         if not (g.get('in_flight') or g['layers'] or g['trees_stale'] or g['features'] or g.get('trees_over_roof')):
             continue
-        out.append((tx, tz, ring_distance((tx, tz), origin_cell()), g))
+        out.append((tx, tz, ring_distance((tx, tz), home_cell()), g))
     return out
 
 

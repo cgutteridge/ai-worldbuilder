@@ -41,7 +41,7 @@ def unit_test_world() -> Iterator[Path]:
             'place': 'Unit test fixture',
             'crs': 'EPSG:27700',
             'offsets': {'easting': 436248, 'northing': 109608},
-            'cell': {'size': 128, 'origin': [48, -44]},
+            'cell': {'size': 128, 'home': [48, -44]},
             'y_offset': 11,
         }))
         (config / 'local-providers.json').write_text(json.dumps({'providers': []}))

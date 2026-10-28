@@ -47,6 +47,17 @@ class OsGbMcTest(unittest.TestCase):
         o = wf.legacy_offsets_dict()
         self.assertEqual(o['OFFSET_E'], 436248)
         self.assertEqual(o['SEA_LEVEL'], 11)
+        self.assertNotIn('TOP_OF_WORLD', o)
+
+    def test_legacy_origin_frame_has_migration_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'world-frame.json'
+            path.write_text(json.dumps({
+                'offsets': {'easting': 0, 'northing': 0},
+                'cell': {'origin': [1, 2]},
+            }))
+            with self.assertRaisesRegex(SystemExit, r'cell\.origin.*cell\.home'):
+                wf.load_frame(path)
 
 
 class CellTest(unittest.TestCase):

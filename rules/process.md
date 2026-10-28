@@ -109,7 +109,7 @@ BUILT plan in place to “fix” the world.
  Rebuild ALL of an area. Do not leave weird unprocessed holes.
 
  Origin (current focus): Highfield campus centre — see site/COVERAGE.txt
- (OSGB E442400 N115200 → MC X6152 Z-5592; origin cell tx=48 tz=-44).
+ (OSGB E442400 N115200 → MC X6152 Z-5592; home cell tx=48 tz=-44).
  Expand outward in Chebyshev rings.
 
  128×128 MC cells (aligned with sparse mc_tiles), ring order per

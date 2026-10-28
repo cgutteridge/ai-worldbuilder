@@ -49,7 +49,7 @@ Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and 
 
 ### 1c. Home cell
 
-Record the **home cell**: the cell containing the home point (`world_frame.py to-cell --mc x,z`), written as `cell.origin` in `world-frame.json` (it is the cell the build starts from and rings out of). Keep `cell.size` at 128. Convert the bbox corners to MC with `world_frame.py to-mc`; they go to the Y checkpoint (section 2) and the first lidar fetch, not into the frame file (nothing reads a bounds key). The home cell must lie inside the bbox.
+Record the **home cell**: the cell containing the home point (`world_frame.py to-cell --mc x,z`), written as `cell.home` in `world-frame.json` (it is the cell the build starts from and rings out of). Keep `cell.size` at 128. Convert the bbox corners to MC with `world_frame.py to-mc`; they go to the Y checkpoint (section 2) and the first lidar fetch, not into the frame file (nothing reads a bounds key). The home cell must lie inside the bbox.
 
 ### 1d. Write and check
 
@@ -82,7 +82,7 @@ PYTHONPATH=scripts:lib python3 shims/lidar_extremes.py --world <name> --bbox-mc 
 ```
 
 3. Fit the range: with `y_offset = 0` the lowest ground (DTM min) must be at least −64 and the highest DSM (roofs, trees, towers) at most 319. If the area sits outside that, pick `y_offset` so the lowest ground lands a little above −64 (about −50, leaving room for foundations and cellars) and the highest surface stays below 319. If the total relief (DSM max minus DTM min) is over about 350 m, the bbox is too tall: shrink it. Also check the lidar datum is not ellipsoidal (heights above the ellipsoid are tens of metres off sea level).
-4. Show the user the arithmetic, not just the tool's answer: DTM min + `y_offset` ≥ −64 and DSM max + `y_offset` ≤ 319, with the actual numbers. The tool's "suggested" offset only aims ground min near 64; it can be wrong (it can push the tops over 319), so override it when the real fit says so and say why. Lock only after they confirm.
+4. Show the user the arithmetic, not just the tool's answer: DTM min + `y_offset` ≥ −64 and DSM max + `y_offset` ≤ 319, with the actual numbers. The tool suggests an integer offset with lowest ground at or above −50 and highest surface at or below 315, aiming ground near 64 when it fits. If `suggested_y_offset` is null, its `y_offset_fit` explains that no offset fits those margins; shrink the survey area or discuss the margins before choosing an offset. Lock only after they confirm.
 5. Write `y_offset` into `world-frame.json`.
 
 Play `need-you` and **stop** until the user confirms the offset. Do not apply world edits before that.

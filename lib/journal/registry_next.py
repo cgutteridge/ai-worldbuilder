@@ -5,7 +5,7 @@ longer steers this; snags live in ``registry/issues.json`` via ``scripts/issues.
 and never block a cell — ticket #121).
 
 Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
-configured origin (Chebyshev distance, then clockwise ring order from north), over the
+configured home cell (Chebyshev distance, then clockwise ring order from north), over the
 cell journal views (``CellRegistry.view()``).
 Order inside a cell: ground → features (by id) → needs-feature-plan when the
 vector map still has unplanned footprints (#140) → trees → decor.
@@ -106,7 +106,7 @@ def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] |
     @param marker: the marker cell, or None
     @returns: cell view or None when everything is done
     """
-    origin = cellmath.origin_cell()
+    home = cellmath.home_cell()
     if marker is not None:
         v = views.get(marker)
         if v is not None and not v.done and not v.hold and _undone_work_in_cell(v):
@@ -117,8 +117,8 @@ def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] |
     for cell, v in views.items():
         if v.done or v.hold or not _undone_work_in_cell(v):
             continue
-        dist = cellmath.ring_distance(cell, origin)
-        ring = cellmath.ring_cells(dist, origin)
+        dist = cellmath.ring_distance(cell, home)
+        ring = cellmath.ring_cells(dist, home)
         try:
             idx = ring.index(cell)
         except ValueError:
