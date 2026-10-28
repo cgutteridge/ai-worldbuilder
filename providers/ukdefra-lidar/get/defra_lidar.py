@@ -128,12 +128,31 @@ def tiles_for(e0: float, n0: float, e1: float, n1: float) -> list[tuple[int, int
     return [(e, n) for e in range(a, c + 1, TILE_M) for n in range(b, d + 1, TILE_M)]
 
 
-def _http(url: str, data: bytes | None = None, headers: dict | None = None, tries: int = 3) -> bytes:
+PROGRESS_EVERY_S = 5                    # seconds between byte-progress lines on a long download
+
+
+def _read_with_progress(r, label: str) -> bytes:
+    """Read a response in chunks, printing 'label  done/total MB' to stderr every few seconds."""
+    total = int(r.headers.get('Content-Length') or 0)
+    parts, done, last = [], 0, time.monotonic()
+    while chunk := r.read(1 << 20):
+        parts.append(chunk)
+        done += len(chunk)
+        if time.monotonic() - last >= PROGRESS_EVERY_S:
+            last = time.monotonic()
+            of = f'/{total / 1e6:.0f}' if total else ''
+            print(f'    {label}  {done / 1e6:.0f}{of} MB', file=sys.stderr, flush=True)
+    return b''.join(parts)
+
+
+def _http(url: str, data: bytes | None = None, headers: dict | None = None, tries: int = 3,
+          label: str | None = None) -> bytes:
+    """GET/POST with retries; ``label`` turns on byte-progress lines (for the big tile zips)."""
     req = urllib.request.Request(url, data=data, headers={'User-Agent': USER_AGENT, **(headers or {})})
     for k in range(tries):
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
-                return r.read()
+                return _read_with_progress(r, label) if label else r.read()
         except (urllib.error.URLError, TimeoutError):
             if k == tries - 1:
                 raise
@@ -211,13 +230,18 @@ class DefraLidar:
         write_json(p, answer)
         return answer
 
-    def fetch_tile(self, model: str, e: int, n: int) -> Path | None:
-        """Download the zip for one tile and unpack its GeoTIFF; None when DEFRA publishes none there (sea, Wales)."""
+    def fetch_tile(self, model: str, e: int, n: int, step: str = '') -> Path | None:
+        """Download the zip for one tile and unpack its GeoTIFF; None when DEFRA publishes none there (sea, Wales).
+
+        @param step: progress prefix such as ``[2/4]``, printed with each status line
+        """
+        name = f'{model} {e}E-{n}N'
+        print(f'  {step} {name}  looking up in the DEFRA catalogue', file=sys.stderr, flush=True)
         uri = pick_uri(self.catalogue(e, n), model)
         if uri is None:
             return None
-        print(f'  {model} {e}E-{n}N  {uri.split("?")[0]}', file=sys.stderr)
-        z = zipfile.ZipFile(io.BytesIO(_http(uri)))
+        print(f'  {step} {name}  downloading (about 75 MB)  {uri.split("?")[0]}', file=sys.stderr, flush=True)
+        z = zipfile.ZipFile(io.BytesIO(_http(uri, label=name)))
         out = None
         for name in z.namelist():
             if name.lower().endswith('.tif'):
@@ -233,12 +257,24 @@ class DefraLidar:
     def ensure(self, e0: float, n0: float, e1: float, n1: float, models=('DTM', 'DSM')) -> list[tuple[str, int, int]]:
         """Fetch every missing tile under the box. Returns the (model, e, n) with no data published."""
         absent = []
-        for model in models:
-            for e, n in self.missing(model, e0, n0, e1, n1):
-                if not self.download:
-                    raise LookupError(f'{model} tile {e}E-{n}N is not cached and download is off')
-                if self.fetch_tile(model, e, n) is None:
-                    absent.append((model, e, n))
+        todo = [(model, e, n) for model in models for e, n in self.missing(model, e0, n0, e1, n1)]
+        if todo and not self.download:
+            model, e, n = todo[0]
+            raise LookupError(f'{model} tile {e}E-{n}N is not cached and download is off')
+        if todo:
+            print(f'lidar: {len(todo)} tile download(s) needed ({", ".join(models)}; about 75 MB each, '
+                  f'this can take several minutes)', file=sys.stderr, flush=True)
+        began = time.monotonic()
+        for i, (model, e, n) in enumerate(todo, 1):
+            t0 = time.monotonic()
+            if self.fetch_tile(model, e, n, step=f'[{i}/{len(todo)}]') is None:
+                absent.append((model, e, n))
+                print(f'  [{i}/{len(todo)}] {model} {e}E-{n}N  none published here', file=sys.stderr, flush=True)
+            else:
+                print(f'  [{i}/{len(todo)}] {model} {e}E-{n}N  done in {time.monotonic() - t0:.0f} s',
+                      file=sys.stderr, flush=True)
+        if todo:
+            print(f'lidar: fetch finished in {time.monotonic() - began:.0f} s', file=sys.stderr, flush=True)
         return absent
 
     # ---- sampling --------------------------------------------------------------------------------------------
