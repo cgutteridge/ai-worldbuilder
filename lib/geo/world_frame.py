@@ -125,11 +125,6 @@ class WorldFrame:
         """Alias of y_offset for legacy callers."""
         return self.y_offset
 
-    @property
-    def bounds_mc(self) -> dict:
-        """Inclusive MC rectangle: west/east/north/south."""
-        return dict(self.data['bounds_mc'])
-
 
 def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
     """Load and cache the world-frame config.
@@ -143,9 +138,8 @@ def load_frame(path: Path | None = None, *, reload: bool = False) -> WorldFrame:
         return _FRAME
     p = path or frame_path()
     data = json.loads(p.read_text())
-    for key in ('offsets', 'bounds_mc'):
-        if key not in data:
-            raise SystemExit(f'{p} missing {key}')
+    if 'offsets' not in data:
+        raise SystemExit(f'{p} missing offsets')
     frame = WorldFrame(data)
     if path is None:
         _FRAME = frame
@@ -156,19 +150,14 @@ def legacy_offsets_dict(frame: WorldFrame | None = None) -> dict:
     """OFFSET_E-shaped dict (OFFSET_E, SEA_LEVEL, ...) built from the world frame.
 
     @param frame: optional loaded frame
-    @returns: dict with OFFSET_E, OFFSET_N, WEST…SEA_LEVEL, …
+    @returns: dict with OFFSET_E, OFFSET_N, OFFSET_*, SEA_LEVEL, …
     """
     f = frame or load_frame()
-    b = f.bounds_mc
     d = f.data
     return {
         'GRID': d.get('grid', 'OSGB36'),
         'OFFSET_E': f.offset_e,
         'OFFSET_N': f.offset_n,
-        'WEST': b['west'],
-        'EAST': b['east'],
-        'NORTH': b['north'],
-        'SOUTH': b['south'],
         'SEA_LEVEL': f.sea_level,
         'TOP_OF_WORLD': d.get('top_of_world'),
         'ELEVATION_PLUGIN': d.get('elevation_plugin'),
@@ -340,19 +329,6 @@ def mc_grid_to_en(xs, zs, frame: WorldFrame | None = None):
     """
     f = frame or load_frame()
     return f.offset_e + xs, f.offset_n - zs
-
-
-def in_bounds(x: int, z: int, frame: WorldFrame | None = None) -> bool:
-    """True if (x, z) lies inside the configured MC rectangle.
-
-    @param x: Minecraft X
-    @param z: Minecraft Z
-    @param frame: optional frame
-    @returns: whether inside bounds
-    """
-    f = frame or load_frame()
-    b = f.bounds_mc
-    return b['west'] <= x <= b['east'] and b['south'] <= z <= b['north']
 
 
 # ---- WGS84 ↔ MC (composed) ---------------------------------------------------
@@ -948,7 +924,6 @@ def main(argv: list[str] | None = None) -> int:
             'place': f.data.get('place'),
             'crs': f.crs,
             'offsets': {'easting': f.offset_e, 'northing': f.offset_n},
-            'bounds_mc': f.bounds_mc,
             'cell': f.data.get('cell') or {
                 'size': cellmath.cell_size(),
                 'origin': list(cellmath.origin_cell()),
@@ -971,7 +946,7 @@ def main(argv: list[str] | None = None) -> int:
             a, b = _parse_pair(xy, 'x,y')
             e, n = transform_epsg([(a, b)], srs, f.crs)[0]
             x, z = osgb_to_mc(e, n, f)
-        print(f'MC X{x} Z{z}  ({"in" if in_bounds(x, z, f) else "OUT OF"} bounds)')
+        print(f'MC X{x} Z{z}')
         return 0
 
     if args.cmd == 'to-osgb':

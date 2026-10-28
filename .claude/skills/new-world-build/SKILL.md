@@ -20,7 +20,7 @@ Done when the user has named place, anchor, and rough bbox.
 
 ## 1. World frame
 
-1. Write `config/world-frame.json`: `crs`, `offsets`, `bounds_mc`, `y_offset` (placeholder), elevation plugin.
+1. Write `config/world-frame.json`: `crs`, `offsets`, `y_offset` (placeholder), elevation plugin.
 2. Confirm conversions: `.venv/bin/python scripts/world_frame.py info` and `to-mc` / `to-wgs84` for the anchor. For XYZ tile codes and pixel offsets use `to-wm` / `from-wm` (or `batch-wm`); do not add a second mercator path.
 3. Set `gameworld_id` and `save_path` in `config/world.json`: `save_path` is a new folder inside your standalone Minecraft instance's `saves/` (see `docs/minecraft-instance-setup.md`; the region folder is derived). Then create the blank save (refuses if it exists; the only write this tool makes under `saves/`):
 

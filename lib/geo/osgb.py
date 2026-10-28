@@ -59,22 +59,6 @@ def to_osgb(x: float, z: float, offsets: dict | None = None) -> tuple[float, flo
     return wf.mc_to_osgb(x, z)
 
 
-def in_bounds(x: int, z: int, offsets: dict | None = None) -> bool:
-    """True if (x, z) lies inside the place map rectangle.
-
-    @param x: Minecraft X
-    @param z: Minecraft Z
-    @param offsets: optional legacy offset dict
-    @returns: whether the point is inside WEST..EAST, SOUTH..NORTH
-    """
-    if offsets is not None:
-        return (
-            offsets['WEST'] <= x <= offsets['EAST']
-            and offsets['SOUTH'] <= z <= offsets['NORTH']
-        )
-    return wf.in_bounds(x, z)
-
-
 def main(argv: list[str] | None = None) -> int:
     """CLI: info | to-mc E N | to-osgb X Z."""
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -84,10 +68,6 @@ def main(argv: list[str] | None = None) -> int:
             'grid': o.get('GRID'),
             'OFFSET_E': o['OFFSET_E'],
             'OFFSET_N': o['OFFSET_N'],
-            'bounds_mc': {
-                'west': o['WEST'], 'east': o['EAST'],
-                'south': o['SOUTH'], 'north': o['NORTH'],
-            },
             'sea_level': o.get('SEA_LEVEL'),
             'elevation': o.get('ELEVATION_PLUGIN'),
             'world_frame': str(wf.FRAME_PATH.relative_to(ROOT)),
@@ -97,14 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'to-mc' and len(argv) == 3:
         e, n = float(argv[1]), float(argv[2])
         x, z = to_mc(e, n, o)
-        print(f'OSGB E{e:.1f} N{n:.1f}  ->  MC X{x} Z{z}'
-              f'  ({"in" if in_bounds(x, z, o) else "OUT OF"} bounds)')
+        print(f'OSGB E{e:.1f} N{n:.1f}  ->  MC X{x} Z{z}')
         return 0
     if cmd == 'to-osgb' and len(argv) == 3:
         x, z = float(argv[1]), float(argv[2])
         e, n = to_osgb(x, z, o)
-        print(f'MC X{x:.0f} Z{z:.0f}  ->  OSGB E{e:.1f} N{n:.1f}'
-              f'  ({"in" if in_bounds(int(x), int(z), o) else "OUT OF"} bounds)')
+        print(f'MC X{x:.0f} Z{z:.0f}  ->  OSGB E{e:.1f} N{n:.1f}')
         return 0
     print(__doc__, file=sys.stderr)
     return 2

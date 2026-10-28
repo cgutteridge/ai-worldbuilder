@@ -141,12 +141,6 @@ class ActiveWorldContractTests(unittest.TestCase):
                     "place": "Test",
                     "crs": "EPSG:27700",
                     "offsets": {"easting": 1.0, "northing": 2.0},
-                    "bounds_mc": {
-                        "west": 0,
-                        "east": 10,
-                        "north": 0,
-                        "south": -10,
-                    },
                     "y_offset": 11,
                 },
             )

@@ -47,7 +47,6 @@ class OsGbMcTest(unittest.TestCase):
         o = wf.legacy_offsets_dict()
         self.assertEqual(o['OFFSET_E'], 436248)
         self.assertEqual(o['SEA_LEVEL'], 11)
-        self.assertTrue(wf.in_bounds(5652, -2492))
 
 
 class CellTest(unittest.TestCase):
@@ -182,10 +181,6 @@ def _fictional_frame_pinning(
     return wf.WorldFrame({
         'crs': 'EPSG:27700',
         'offsets': {'easting': e - mx, 'northing': n + mz},
-        'bounds_mc': {
-            'west': mx - 50, 'east': mx + 50,
-            'north': mz + 50, 'south': mz - 50,
-        },
         'y_offset': 11,
     })
 

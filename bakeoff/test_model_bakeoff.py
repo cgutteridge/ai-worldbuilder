@@ -778,9 +778,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 encoding='utf-8',
             )
             (world / 'config' / 'world-frame.json').write_text(
-                json.dumps({'offsets': {'easting': 0, 'northing': 0}, 'bounds_mc': {
-                    'west': 0, 'east': 1, 'north': 0, 'south': -1,
-                }}),
+                json.dumps({'offsets': {'easting': 0, 'northing': 0}}),
                 encoding='utf-8',
             )
             script = TOOL_ROOT / 'bakeoff' / 'model_bakeoff.py'
