@@ -177,10 +177,10 @@ def place_furniture(
     owned: set,
     masked: set,
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
-    """Place street-furniture recipes on paving columns.
+    """Place street-furniture recipes on any non-carriageway surface column.
 
     Skips path-line columns (``way``), columns against a build (``near1``) unless the
-    item sets ``allow_against_build``, non-paving surfaces, and any recipe spot that is
+    item sets ``allow_against_build``, carriageway surfaces (road, marking, kerb), and any recipe spot that is
     not air / is owned or masked. Failed rows are returned as unplaced plan-shaped dicts.
 
     @param cell: (tx, tz)
@@ -210,8 +210,8 @@ def place_furniture(
         if q in near1 and not allow:
             unplaced.append(dplan.mark_unplaced(item, 'against build'))
             continue
-        if column_ground_kind(world, x, z) not in sf.PAVING_KINDS:
-            unplaced.append(dplan.mark_unplaced(item, 'not on paving'))
+        if column_ground_kind(world, x, z) in sf.ROAD_KINDS:
+            unplaced.append(dplan.mark_unplaced(item, 'on carriageway'))
             continue
         top = surface_y(world, x, z)
         if not top:

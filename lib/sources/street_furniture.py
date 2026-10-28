@@ -79,7 +79,8 @@ def install_furniture_layer_preset(
 DESIGNER_SPEC = ROOT / 'reference' / 'decor-furniture.json'
 
 # Live surface kinds that may host street furniture (plaza / paved walk).
-PAVING_KINDS = frozenset({'paving', 'brick'})
+# Surfaces furniture must not stand on (car lanes); lawn, gravel, paths and paving are fine.
+ROAD_KINDS = frozenset({'tarmac', 'mark', 'kerb'})
 
 
 def classify(tags: dict) -> str | None:
