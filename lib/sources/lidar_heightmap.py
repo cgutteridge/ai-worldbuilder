@@ -8,7 +8,11 @@ the live world, so the report is stable across builds and resets. ``heightmap(wo
 Per column (cell = 128 x 128, arrays indexed [x - x0, z - z0]):
   h      top of the lidar surface: carpet is ignored (it sits ON the lidar), leaves and logs count, because
          where there is no building a tree is log + leaf. Grass tufts and flowers are ignored.
-  base   top of the solid ground under any carpet / leaves / logs (ground or wall top, no vegetation)
+  base   solid surface top under carpet / leaves / logs (DSM-derived wall or object top; under trees the
+         bare ground). Not the bare-terrain grade for free ground — see ``terrain``.
+  terrain bare-terrain (DTM) ground height when the provider exports it; used by the ground layer for
+         free columns so cars / planters / kiosks on the DSM do not raise the road (#172). Absent on
+         live column scans; callers fall back to ``base``.
   roof   y of the roof carpet over the column, 0 if none
   kind   0 ground / paving, 1 roof (building lump), 2 tree, 3 tree overhanging a roof,
          4 structure (composite lidar only: tall solid outside any footprint-map polygon)
@@ -99,13 +103,15 @@ def heightmap(world, cell: tuple[int, int]) -> dict:
 
     @param world: a live World, or a world with its own ``heightmap(cell)`` (composite world, ReferenceWorld)
     @param cell: (tx, tz)
-    @returns: {'cell', 'x0', 'z0', 'h', 'base', 'roof', 'kind'} with 128x128 int16 / uint8 arrays
+    @returns: {'cell', 'x0', 'z0', 'h', 'base', 'roof', 'kind'} (plus ``terrain`` when
+        the world provider exports it) with 128x128 int16 / uint8 arrays
     """
     own = getattr(world, 'heightmap', None)
     if own is not None:
         return own(cell)
     x0, z0, _x1, _z1 = cellmath.bounds(cell)
     n = cellmath.CELL
+    # Live column scan has no DTM; ground falls back from missing ``terrain`` to ``base`` (#172).
     arr = {k: np.zeros((n, n), dtype=np.int16) for k in ('h', 'base', 'roof')}
     arr['kind'] = np.zeros((n, n), dtype=np.uint8)
     for i in range(n):
@@ -151,7 +157,11 @@ class Maps:
         return top_of(self.of(cellmath.cell_of(x, z)), x, z)
 
     def get(self, x: int, z: int, field: str = 'h') -> int:
-        """One array value at (x, z): field is 'h', 'base', 'roof' or 'kind'."""
+        """One array value at (x, z): field is 'h', 'base', 'terrain', 'roof' or 'kind'.
+
+        ``terrain`` is present on composite lidar heightmaps; live column scans
+        omit it (KeyError) so ground can fall back to ``base`` (#172).
+        """
         hm = self.of(cellmath.cell_of(x, z))
         return int(hm[field][x - hm['x0'], z - hm['z0']])
 

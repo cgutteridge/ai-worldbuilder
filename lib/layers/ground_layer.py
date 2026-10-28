@@ -461,43 +461,52 @@ PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
 
 
 def lidar_base_map(columns, maps=None) -> dict:
-    """Lidar ground ``base`` Y for each column via ``lidar_heightmap.Maps`` (#167).
+    """Lidar HOW-HIGH Y for free columns via ``lidar_heightmap.Maps`` (#172 / #167).
+
+    Prefers bare-terrain ``terrain`` (DTM) so cars, planters and kiosks on the
+    DSM surface do not raise road or paving. Falls back to ``base`` when a
+    provider or live ``Maps`` has no ``terrain`` array. Footprint / roof
+    columns keep using ``base`` elsewhere; this helper only serves free ground.
 
     Lookups load neighbouring cells when a column sits on a cell edge. Columns
-    whose base is 0 (empty / missing) are omitted so callers can fall back to
-    the live surface for height only when lidar is absent.
+    whose Y is 0 (empty / missing) are omitted so callers can fall back to
+    the live surface when lidar is absent.
 
     @param columns: iterable of ``(x, z)``
     @param maps: optional ``Maps`` (tests / injected evidence); default is the
         shared lidar reference
-    @returns: ``{(x, z): base_y}`` for columns with a positive lidar base
+    @returns: ``{(x, z): y}`` for columns with a positive lidar height
     """
     from lidar_heightmap import Maps
     m = maps if maps is not None else Maps()
     out = {}
     for x, z in columns:
-        try:
-            base = int(m.get(x, z, 'base'))
-        except (LookupError, KeyError, IndexError, TypeError, ValueError):
-            continue
-        if base > 0:
-            out[(x, z)] = base
+        y = None
+        for field in ('terrain', 'base'):
+            try:
+                y = int(m.get(x, z, field))
+                break
+            except (LookupError, KeyError, IndexError, TypeError, ValueError):
+                continue
+        if y is not None and y > 0:
+            out[(x, z)] = y
     return out
 
 
 def ground_heights(live: dict, lidar_ys: dict) -> dict:
-    """Target surface Y per free column: lidar base is HOW HIGH (#167).
+    """Target surface Y per free column: lidar bare terrain is HOW HIGH (#172 / #167).
 
     The live game surface may sit below a correct lidar ground (wrong ghost
     baseline, unfinished fill). Those columns rise to lidar. A real depression
     that lidar also reports stays low. Neighbour-rim pit / spike levelling is
     not applied on top of lidar — a wide wrong-baseline void still rises.
 
-    When lidar base is missing (absent or 0), the live surface Y is kept.
+    When lidar height is missing (absent or 0), the live surface Y is kept.
+    Values come from :func:`lidar_base_map` (``terrain``, else ``base``).
 
     @param live: ``{(x, z): (y, block)}`` free columns
-    @param lidar_ys: ``{(x, z): base_y}`` from :func:`lidar_base_map`
-    @returns: height map; ``_from_lidar`` counts columns that used lidar base
+    @param lidar_ys: ``{(x, z): y}`` from :func:`lidar_base_map`
+    @returns: height map; ``_from_lidar`` counts columns that used lidar height
     """
     out = {}
     from_lidar = 0
