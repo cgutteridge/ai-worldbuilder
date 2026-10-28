@@ -2467,17 +2467,14 @@ class Build:
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
         # Door opening clears (#143) and keep_edits stoops: survive both this filter and apply clash.
         self.p.keep = set(self.keep)
-        # cells of earlier real builds are theirs (ghost owners yield: the shell overwrites them)
-        from cell_registry import view_registry
-        owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
-        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
-            del self.p.cells[q]
+        self._preserve_real_owners()
         # same refusals as the live apply, so the designer sees them before hand-off (#99)
         guard_door_frames(self.p, self.live.block)
         guard_roof_jogs(self.p)
         # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
         self.entrance_covers()
+        self._preserve_real_owners()
         for line in self._zone_pad_lines:
             print(line)
         for line in self._roof_warnings:
@@ -2509,6 +2506,14 @@ class Build:
             if name not in valid_ids:
                 print(f'unknown block id {name} x{count} (source: vendored Minecraft 26.2 client blockstates; config/minecraft-block-ids-26.2.txt)')
         return self.p
+
+    def _preserve_real_owners(self) -> None:
+        """Keep real-build cells intact after shell and late detail placement."""
+        # cells of earlier real builds are theirs (ghost owners yield: the shell overwrites them)
+        from cell_registry import view_registry
+        owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
+        for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
+            del self.p.cells[q]
 
     def footprint_overlap_report(self) -> list[str]:
         """Path / open-lidar / aerial overlap lines for each feature mass (dry-run).

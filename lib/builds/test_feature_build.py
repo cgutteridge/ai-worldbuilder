@@ -659,6 +659,14 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertEqual(lower[0][1], 56)
         self.assertIn('slab', plan.cells[(13, 58, 22)])
 
+    def test_entrance_cover_preserves_other_real_ground_ownership(self):
+        from journal_testkit import JournalWorld
+        pos = (13, 52, 26)
+        with JournalWorld() as journal:
+            journal.build('ground_owner', 'ground', {pos: 'minecraft:light_gray_concrete'}, cell=(0, 0))
+            plan, _ = self.build_plan([_entrance_row(awning_like={'kind': 'covered_area', 'depth': 3})])
+        self.assertFalse(pos in plan.cells)
+
     def test_entrance_awning_survives_roof_and_keeps_door_walkable(self):
         plan, out = self.build_plan([
             _entrance_row(awning_like={'kind': 'awning'}),
