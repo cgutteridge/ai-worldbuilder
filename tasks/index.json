@@ -2,24 +2,5 @@
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
   "nextTaskId": 175,
-  "tasks": [
-    {
-      "id": 173,
-      "title": "Decor places permanent lidar-detected objects, using photo plus lidar to skip vehicles",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Raised 2026-10-28 after the I-026 rebuild (#172 landed). Cause class: Capability. Ground now builds bare terrain only, so objects the lidar sees above it (surface minus terrain: planters, kiosks, bins, bollards, cars) are built by nothing: decor_plan and street_furniture use only map, aerial and designer plans and never read lidar. Deliver: decor takes lidar object columns outside footprints and trees, groups them into objects, and places one only when a street photo or the aerial identifies it as permanent furniture; vehicles and other transient objects are dropped by design (a parked car must not be built). Owner's rule: needs photo plus lidar together to place objects and avoid cars. Check decor_plan/street_furniture for an existing photo or aerial classification step to reuse before adding one. Proof: a unit test where a lidar object column with a permanent-furniture label is placed and one labelled vehicle is not. Related: #172, I-026. Helps: every ground pass on a lidar baseline."
-    },
-    {
-      "id": 174,
-      "title": "Door build places the entrance cover (awning_like) from the facade plan",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Raised 2026-10-28 from the SUSU entrance covered-area issue (I-021, snag S-027; also the covered-entrance part of I-018). Cause class: Capability. facade_plan entrances accept and validate awning_like (lib/builds/facade_plan.py) but plan_doors in lib/builds/feature_build.py never reads it; awning_like is only built from free-standing details rows. Not verified: what the SUSU portal photos show at each entrance. Deliver: after the shell and roof are built (as details() does, so the roof pass does not overwrite it), a cover is placed over each placed entrance whose awning_like.kind is not none. Two geometries: awning and covered_area = a row of roof-material bottom slabs at door top + 1, as wide as the door leaves plus 1 block each side, extending out `depth` blocks over the step-out (depth default 1 when absent or 0; covered_area simply uses the larger depth, no wall carving); porch_roof = the same slab roof plus a post at each outer front corner standing on the step-out ground. Cells inside the building mass are skipped; the door stays walkable. Unresolved entrances and kind none build nothing. Dry-run prints `door <id> cover <kind> depth <n>`. Files: lib/builds/feature_build.py, colocated tests in lib/builds/test_feature_build.py (one per kind, none builds nothing, depth changes extent, unresolved entrance builds no cover, existing details awning_like row unchanged), rules/feature-builds.md (geometry per kind, plan_doors reads it). The spec edit that adds awning_like to the SUSU entrance (susu_w33830305) is part of the check, not the code change: the designer or rebuild adds it after reading the photo. Check S-027: after rebuilding susu_w33830305 with an awning_like entry on its entrance, a roof stands over the door in game and the door is still walkable."
-    }
-  ]
+  "tasks": []
 }
