@@ -74,7 +74,7 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 `y_offset` is the block Y that real height 0 m maps to (Y = height + `y_offset`). Default **0**: sea level (the lidar datum, e.g. Ordnance Datum Newlyn in Britain) is Y 0. Change it only when the area needs it, for example a site 1000 m above sea level.
 
 1. Ensure lidar coverage for the bbox (national composite plugin or whatever `world-frame.json` names).
-   The first fetch is slow (minutes: about 75 MB per tile per product). Run it in the background, tell the user the tile count first, and relay the `[i/N]` progress lines as they appear. Note the elapsed time it reports.
+   The first fetch is slow: measured at about 1 minute per tile per product (45-73 MB each), so 4 tiles x DTM and DSM took about 7.5 minutes. Run it in the background, tell the user the tile count first, and relay the `[i/N]` progress lines as they appear. Note the elapsed time it reports.
 2. Run highs/lows:
 
 ```bash

@@ -112,15 +112,6 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "From a clean checkout with no .venv, python3 shims/lidar_extremes.py fails with ModuleNotFoundError: script_env (shims/lidar_extremes.py puts only the repo root on sys.path); it works with PYTHONPATH=scripts:lib. Same pattern for the other shims. Make shims add scripts/ and lib/ to sys.path themselves (or via _provider_shim), so the documented command works, then drop the PYTHONPATH prefix from the new-world-build skill."
-    },
-    {
-      "id": 187,
-      "title": "Measure the first lidar fetch and record it in rules/slow-commands.md",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "The fetch now prints [i/N] progress and per-tile and total elapsed time (task/lidar-fetch-progress). Run it on a real new world (e.g. Ventnor tile 455000E-75000N, DTM and DSM) and add the measured time and tile size to rules/slow-commands.md, then put the figure in the new-world-build skill's slow-fetch warning."
     }
   ]
 }
