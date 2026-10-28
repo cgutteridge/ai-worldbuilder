@@ -6,7 +6,7 @@ description: >-
   refining an existing place's cell registry.
 ---
 
-Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you` when a prerequisite is missing. Starting order: home location, projection, offsets 0/0, home cell, blank save, spawn, lidar, Y offset.
+Bootstrap only. Use the platform setup in `docs/minecraft-instance-setup.md` (Windows: WSL). Sound cues are optional; skip them when agent-soundboard is not installed. Do not invent CRS math beyond `world_frame`. Stop with `need-you` when a prerequisite is missing. Starting order: home location, projection, offsets 0/0, home cell, blank save, spawn, lidar, Y offset.
 
 ## 0. Home and defaults
 
@@ -45,7 +45,7 @@ Never use web mercator (`EPSG:3857`, about 1.6× too big at 51°N), a feet-based
 
 ### 1b. Offsets: default 0, 0
 
-Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Check for rendering jitter (blocks or the hand shaking at large coordinates) only once the first ghost exists (section 2b): an empty bedrock floor shows nothing. If it jitters, fall back to the rounded offsets and redo the frame before anything real is built. Existing worlds keep their offsets (Southampton is 436248, 109608).
+Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Check for rendering jitter (blocks or the hand shaking at large coordinates) only once the first ghost exists (section 2b): an empty bedrock floor shows nothing. If it jitters, fall back to the rounded offsets and redo the frame before anything real is built. Existing worlds keep their offsets (Southampton is 436248, 109608). The [live coordinate check](../../../docs/large-coordinate-check.md) passed near (442000, −115000) on Minecraft 26.2; multi-million coordinates still need the same per-world visual check.
 
 ### 1c. Home cell
 
