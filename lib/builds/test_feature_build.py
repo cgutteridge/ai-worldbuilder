@@ -2307,6 +2307,25 @@ class DetailsBuildTest(unittest.TestCase):
         band = [x for (x, y, z), state in builder.p.cells.items() if y == 58 and state == 'minecraft:black_concrete']
         self.assertEqual(max(band) - min(band) + 1, 4)
 
+    def test_chimney_solidifies_its_slab_base_without_hover_gap(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [3, 4, 3],
+               'base_diameter': 3, 'top_diameter': 3, 'height': 4,
+               'shape': 'round', 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone_slab[type=bottom]' for x in range(12, 15) for z in range(21, 24)}
+        builder = self.detail_plan([row], supports)
+        self.assertEqual(builder.p.cells[(12, 56, 22)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(12, 57, 22)], 'minecraft:white_concrete')
+        self.assertEqual(builder.p.cells[(13, 60, 22)], 'minecraft:air')
+
+    def test_chimney_rough_check_does_not_hide_corrupt_lidar(self):
+        row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [3, 4, 3],
+               'base_diameter': 3, 'top_diameter': 3, 'height': 4,
+               'shape': 'round', 'source': 'photo fixture'}
+        supports = {(x, 56, z): 'smooth_stone' for x in range(12, 15) for z in range(21, 24)}
+        with mock.patch('lidar_provider.mc_heights', side_effect=ValueError('corrupt lidar')):
+            with self.assertRaisesRegex(ValueError, 'corrupt lidar'):
+                self.detail_plan([row], supports)
+
     def test_vertical_chimney_is_hollow_open_and_reports_rough_lidar_check(self):
         row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [5, 4, 5],
                'base_diameter': 5, 'top_diameter': 5, 'height': 4, 'shape': 'round',

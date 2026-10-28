@@ -76,7 +76,12 @@ class FacadePlanError(ValueError):
 
 
 def glazing_by_face(plan: Mapping[str, Any] | None, label: str) -> dict:
-    """Return the evidenced glazing rows for a label, keyed by face."""
+    """Return the evidenced glazing rows for a label, keyed by face.
+
+    @param plan: label-to-plan mapping (or None)
+    @param label: feature label
+    @returns: face-to-glazing-row mapping, omitting empty rows
+    """
     body = (plan or {}).get(label) or {}
     return {face: data['glazing'] for face, data in (body.get('faces') or {}).items()
             if data.get('glazing')}

@@ -1402,7 +1402,11 @@ class Build:
         return None
 
     def floor_y(self, f: Feature) -> int:
-        """Median lidar bare-terrain floor under the footprint, with floor_min override."""
+        """Median lidar bare-terrain floor under the footprint, with floor_min override.
+
+        @param f: feature whose footprint samples the DTM
+        @returns: median ground block Y, raised by floor_min when specified
+        """
         if f.no in self.zone_data:
             grid = self.zone_data[f.no]
             ground = np.asarray(grid['ground_y'], dtype=float)
@@ -2603,6 +2607,8 @@ class Build:
             if off:
                 self._detail_clip_lines.append(f'detail chimney {f.no} at ({ax},{ay},{az}) cells off roof={off}; not built')
                 return
+            for x, z in base:
+                self._solidify_roof_under((x, ay, z), (1, 1, 1), block_family_variants(rm)['full'], {(x, z)})
             for y, ring, interior in layers:
                 material = row.get('material', 'white_concrete')
                 band = row.get('band') or {}
@@ -2615,17 +2621,14 @@ class Build:
                 for x, z in interior:
                     self.set(x, y, z, 'air')
             lidar_top = 'unavailable'
-            try:
-                if f.no in self.zone_data and 'dsm' in self.zone_data[f.no]:
-                    grid = self.zone_data[f.no]
-                    lidar_top = metres_aod_to_y(float(grid['dsm'][az - grid['z0'], ax - grid['x0']]))
-                else:
-                    import lidar_provider as lp
-                    client = lp.tile_client(download=False)
-                    if not any(client.missing(product, *lp.mc_box_en(ax, az, ax, az)) for product in ('DTM', 'DSM')):
-                        lidar_top = int(lp.mc_heights(client, ax, az, ax, az)['top_y'][0, 0])
-            except (OSError, ValueError, LookupError, IndexError):
-                pass
+            if f.no in self.zone_data and 'dsm' in self.zone_data[f.no]:
+                grid = self.zone_data[f.no]
+                lidar_top = metres_aod_to_y(float(grid['dsm'][az - grid['z0'], ax - grid['x0']]))
+            else:
+                import lidar_provider as lp
+                client = lp.tile_client(download=False)
+                if not any(client.missing(product, *lp.mc_box_en(ax, az, ax, az)) for product in ('DTM', 'DSM')):
+                    lidar_top = int(lp.mc_heights(client, ax, az, ax, az)['top_y'][0, 0])
             self._detail_clip_lines.append(
                 f'chimney {f.no} at ({ax},{ay},{az}) planned height={row["height"]} '
                 f'diameter={row["base_diameter"]}->{row["top_diameter"]} '
