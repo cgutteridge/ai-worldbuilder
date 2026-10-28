@@ -2773,9 +2773,21 @@ def build(
     ).build()
 
 
+def landed_build_seqs(name: str) -> list[int]:
+    """Journal seqs of live (landed, not undone) builds recorded under plan ``name``.
+
+    @param name: plan name
+    @returns: seq numbers, empty when the plan has no live build
+    """
+    import cell_registry
+    return [e.seq for e in cell_registry.view_registry().entries(plan=name)
+            if e.kind == 'build' and e.status == 'landed' and not e.undone]
+
+
 def run(
     spec_path,
     do_apply: bool = False,
+    overwrite: bool = False,
     footprints: dict | None = None,
     world=None,
     osm_root=None,
@@ -2786,6 +2798,7 @@ def run(
 
     @param spec_path: path to site/builds/<name>.json
     @param do_apply: when True, live apply; otherwise dry run
+    @param overwrite: apply over a plan that already has a landed build (default: refuse)
     @param footprints: optional label→cells map
     @param world: optional World-like
     @param osm_root: optional clip root (tests / fixtures only; not cross-world)
@@ -2794,6 +2807,14 @@ def run(
     @returns: Plan
     """
     spec = load_spec(spec_path)
+    if do_apply and not overwrite:
+        seqs = landed_build_seqs(spec['name'])
+        if seqs:
+            raise SystemExit(
+                f'{spec["name"]}: already built (journal seq {seqs[-1]}). A re-apply writes only '
+                'the new plan, so old blocks outside it survive. Undo first: '
+                f'element_undo.py --world <world> {spec["name"]} --apply; '
+                'or pass --overwrite to apply over it anyway.')
     plan = build(
         spec, footprints=footprints, world=world, osm_root=osm_root,
         zone_data=zone_data, aerial_rgb=aerial_rgb,
@@ -2809,5 +2830,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('spec', help='site/builds/<name>.json')
     ap.add_argument('--apply', action='store_true')
+    ap.add_argument('--overwrite', action='store_true',
+                    help='apply over a plan that already has a landed build (leaves stale blocks)')
     a = ap.parse_args()
-    run(a.spec, do_apply=a.apply)
+    run(a.spec, do_apply=a.apply, overwrite=a.overwrite)

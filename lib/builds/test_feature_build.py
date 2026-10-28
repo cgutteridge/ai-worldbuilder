@@ -2206,6 +2206,38 @@ class DetailsSpecTest(unittest.TestCase):
         self.assertIn('canopy', msg)
 
 
+class ReapplyGuardTest(unittest.TestCase):
+    """Seam: a live run() refuses a plan with a landed build unless overwrite is set."""
+
+    SPEC = {'name': 'guarded', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+            'roofs': {'A': {'kind': 'flat', 'material': 'stone'}},
+            'groups': [{'nos': ['A'], 'front': 'N'}], 'floor_min': 50}
+    CELLS = {'A': {(x, z) for x in range(4) for z in range(4)}}
+
+    def _run(self, seqs, **kw):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'spec.json'
+            path.write_text(json.dumps(self.SPEC))
+            (F.ROOT / 'verification/site').mkdir(parents=True, exist_ok=True)
+            with mock.patch.object(F, 'landed_build_seqs', return_value=seqs), \
+                    mock.patch.object(F, 'preview'), mock.patch.object(F, 'apply') as applied, \
+                    redirect_stdout(io.StringIO()):
+                F.run(path, do_apply=True, footprints=self.CELLS, world=_StoneWorld(), **kw)
+        return applied
+
+    def test_refuses_apply_over_landed_build(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._run([417])
+        self.assertIn('element_undo.py', str(ctx.exception))
+        self.assertIn('--overwrite', str(ctx.exception))
+
+    def test_overwrite_applies_over_landed_build(self):
+        self.assertTrue(self._run([417], overwrite=True).called)
+
+    def test_first_build_applies(self):
+        self.assertTrue(self._run([]).called)
+
+
 class DetailsBuildTest(unittest.TestCase):
     """Seam: details place after the shell; dry-run prints each kind and source."""
 
