@@ -102,9 +102,21 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`. Spec keys
   With `roofs[label].kind == "flat"`, each zone is a flat deck. With
   `kind == "pitched"`, within each zone a lidar ridge becomes stair-slab
   slopes from the zone eave up to the ridge; flat plateaus stay flat.
-  Roof edging is optional via `roofs[label].edge` (default none — no
-  parapet, no flat overhang fringe). Facades, doors, and roofs reuse the
-  same label keys. Dry run prints `footprint osm=N readable=M pad=P cover=C%`.
+  Lidar heights are only a guide: the builder regularises them so
+  neighbouring columns within each roof zone differ by at most one stair
+  (2 half-blocks); intentional steps between distinct zone levels stay. It then
+  sets each stair's facing from the upslope and its `shape` from stairs
+  at the **same block Y** (the game's neighbour rule — not from height
+  differences on the diagonal). `python3 scripts/roof_lint.py` checks
+  planned stair shapes against that rule. Inside a zoned mass, an open upper
+  stair edge facing a taller roof column gets wall backing at the lower
+  stair's Y when that cell would otherwise be air; solid floors and exterior
+  air stay as they are. Rebuilt hips and valleys also
+  need an in-game check for light holes; a correct neighbour shape alone
+  does not prove the roof is sealed. Roof edging is optional via
+  `roofs[label].edge` (default none — no parapet, no flat overhang
+  fringe). Facades, doors, and roofs reuse the same label keys. Dry run
+  prints `footprint osm=N readable=M pad=P cover=C%`.
 
 Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial). Do not copy a peer spec or a per-run build script. Do

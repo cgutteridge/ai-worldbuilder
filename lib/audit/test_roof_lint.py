@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Unit tests for the roof ridge-jog lint (no world / OSM access).
+"""Unit tests for the roof ridge-jog and stair-shape lint (no world / OSM access).
 
   python3 -m unittest scripts/test_roof_lint.py
 """
 import sys
 import unittest
+import io
+from contextlib import redirect_stdout
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-from roof_lint import ridge_jogs  # noqa: E402
+from roof_lint import (  # noqa: E402
+    ridge_jogs,
+    stair_shape_from_neighbours,
+    stair_shape_mismatches,
+)
 
 T = 'minecraft:deepslate_tile'
 
@@ -60,6 +67,90 @@ class RidgeJogTest(unittest.TestCase):
                 cells[(x, 50 - d, rz + d)] = f'{T}_stairs[facing=north,half=bottom]'
         self.assertEqual([j['axis'] for j in ridge_jogs(cells)], ['z'])
 
+
+class StairShapeFromNeighboursTest(unittest.TestCase):
+    """Seam: vanilla same-Y neighbour rule (#169)."""
+
+    def test_outer_right_from_front_neighbour(self):
+        adj = {'east': ('south', 'bottom'), 'west': None, 'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'outer_right')
+
+    def test_outer_left_from_front_neighbour(self):
+        adj = {'east': ('north', 'bottom'), 'west': None, 'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'outer_left')
+
+    def test_inner_right_from_behind_neighbour(self):
+        adj = {'west': ('south', 'bottom'), 'east': None, 'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'inner_right')
+
+    def test_inner_left_from_behind_neighbour(self):
+        adj = {'west': ('north', 'bottom'), 'east': None, 'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'inner_left')
+
+    def test_straight_run_and_non_stair_neighbours(self):
+        adj = {'east': ('south', 'bottom'), 'west': ('south', 'bottom'),
+               'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('south', 'bottom', adj), 'straight')
+        adj_slab = {'east': None, 'west': ('south', 'bottom'),
+                    'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('south', 'bottom', adj_slab), 'straight')
+
+    def test_conflicting_check_side_forces_straight(self):
+        # Behind faces south, but south neighbour faces the same way as us.
+        adj = {'west': ('south', 'bottom'), 'south': ('east', 'bottom'),
+               'east': None, 'north': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'straight')
+
+    def test_different_half_is_ignored(self):
+        adj = {'east': ('south', 'top'), 'west': None, 'north': None, 'south': None}
+        self.assertEqual(
+            stair_shape_from_neighbours('east', 'bottom', adj), 'straight')
+
+
+class StairShapeMismatchLintTest(unittest.TestCase):
+    def test_cli_reports_shape_mismatch_and_returns_failure(self):
+        import roof_lint
+        cells = {
+            (0, 50, 0): f'{T}_stairs[facing=east,half=bottom,shape=straight]',
+            (1, 50, 0): f'{T}_stairs[facing=south,half=bottom,shape=straight]',
+        }
+        output = io.StringIO()
+        with mock.patch.object(sys, 'argv', ['roof_lint.py', 'unit-roof']), \
+                mock.patch.object(roof_lint, '_load', return_value=cells), \
+                redirect_stdout(output):
+            self.assertEqual(roof_lint.main(), 1)
+        self.assertIn('1 stair-shape mismatch(es)', output.getvalue())
+        self.assertIn('expected=outer_right', output.getvalue())
+
+    def test_matching_outer_plan_is_clean(self):
+        cells = {
+            (0, 50, 0): f'{T}_stairs[facing=east,half=bottom,shape=outer_right]',
+            (1, 50, 0): f'{T}_stairs[facing=south,half=bottom,shape=straight]',
+        }
+        self.assertEqual(stair_shape_mismatches(cells), [])
+
+    def test_wrong_planned_shape_is_reported(self):
+        cells = {
+            (0, 50, 0): f'{T}_stairs[facing=east,half=bottom,shape=straight]',
+            (1, 50, 0): f'{T}_stairs[facing=south,half=bottom,shape=straight]',
+        }
+        bad = stair_shape_mismatches(cells)
+        self.assertEqual(len(bad), 1)
+        self.assertEqual(bad[0]['expected'], 'outer_right')
+        self.assertEqual(bad[0]['planned'], 'straight')
+
+    def test_straight_gable_plan_has_no_shape_mismatches(self):
+        cells = gable({}, 10, 0, 4)
+        # gable helper omits shape= → defaults to straight; same-Y neighbours face
+        # the same way along each row, so expected is straight.
+        self.assertEqual(stair_shape_mismatches(cells), [])
 
 
 if __name__ == '__main__':
