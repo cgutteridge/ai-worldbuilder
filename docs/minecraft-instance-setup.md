@@ -53,4 +53,4 @@ Check everything (read-only): `python3 scripts/check_instance.py --world <name>`
 
 - Do not put a save inside a world checkout or this repo, and do not symlink saves.
 - Open one world at a time; both the tool and the mod assume ports 8765 / 8766.
-- Quit the game before anything touches region files on disk (`--confirm-logged-out`).
+- Reading is fine with the world open (planning reads of region files, MCP queries). Only commands that write, delete or replace region files need the world closed: leave the world (exit to the title screen) and pass `--confirm-logged-out`. The game itself can stay open.

@@ -1,8 +1,10 @@
-"""Refuse region-file rewrites until the player has left the Minecraft save (ticket #32).
+"""Refuse region-file writes until the player has left the world (ticket #32).
 
-Commands that swap ``.mca`` files must pass ``--confirm-logged-out``. Even with that
-flag, a held ``session.lock`` or a reachable MCP bridge still refuses — the world
-must be fully idle.
+Only commands that write, delete or replace ``.mca`` files use this gate, and they must
+pass ``--confirm-logged-out``. "Logged out" means the world is closed (exit to the
+title screen, which releases ``session.lock`` and stops the MCP bridge); the game
+itself can stay open. Reads never use the gate: planning reads of ``.mca`` files are
+fine with the world open.
 """
 from __future__ import annotations
 
@@ -13,11 +15,11 @@ from pathlib import Path
 
 
 class LogoutGateError(RuntimeError):
-    """Region rewrite refused: player must leave the save."""
+    """Region write refused: player must leave the world."""
 
 
 def play_need_you() -> None:
-    """Ask the user (soundboard) to log out of the world.
+    """Ask the user (soundboard) to leave the world (title screen).
 
     Best-effort: missing soundboard must not block the refusal path.
     """
@@ -89,7 +91,7 @@ def require_logged_out(
     save_path: Path | None = None,
     play_cue: bool = True,
 ) -> None:
-    """Refuse unless the operator confirmed logout and the save looks idle.
+    """Refuse a region write unless the operator confirmed logout and the save looks idle.
 
     @param confirm_logged_out: CLI ``--confirm-logged-out``
     @param save_path: override save directory (tests)
@@ -100,19 +102,19 @@ def require_logged_out(
         if play_cue:
             play_need_you()
         raise LogoutGateError(
-            'region rewrite refused: pass --confirm-logged-out after quitting '
-            'the Minecraft save (title screen / exit). Sound cue: need-you.'
+            'region write refused: leave the world (exit to the title screen; the game can '
+            'stay open), then pass --confirm-logged-out. Sound cue: need-you.'
         )
     save = resolve_save_path(save_path)
     if save is not None:
         lock = save / 'session.lock'
         if session_lock_held(lock):
             raise LogoutGateError(
-                f'region rewrite refused: {lock} is held (Minecraft still holds the save). '
-                'Quit to title / exit completely, then retry with --confirm-logged-out.'
+                f'region write refused: {lock} is held (Minecraft still holds the save). '
+                'Exit the world to the title screen, then retry with --confirm-logged-out.'
             )
     if mcp_world_reachable():
         raise LogoutGateError(
-            'region rewrite refused: Minecraft MCP bridge is reachable (world likely open). '
-            'Quit the save completely, then retry with --confirm-logged-out.'
+            'region write refused: Minecraft MCP bridge is reachable (world likely open). '
+            'Exit the world to the title screen, then retry with --confirm-logged-out.'
         )

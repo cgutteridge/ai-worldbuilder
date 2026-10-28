@@ -236,7 +236,7 @@ def check_preconditions(*, force: bool = False, confirm_logged_out: bool = False
     cannot bypass ``session.lock`` or a live MCP bridge.
 
     @param force: legacy alias for confirm_logged_out
-    @param confirm_logged_out: operator confirmed quit
+    @param confirm_logged_out: operator confirmed the world is closed (title screen)
     @returns: warning lines (empty when ok)
     @raises SystemExit: when refused
     """
@@ -252,7 +252,7 @@ def check_preconditions(*, force: bool = False, confirm_logged_out: bool = False
     if lk and not confirmed:
         raise SystemExit(
             f'site lock held by {lk.get("owner")} for {lk.get("task")!r}; '
-            'release first or pass --confirm-logged-out after quitting the save.')
+            'release first or pass --confirm-logged-out after leaving the world (title screen).')
     if lk and confirmed:
         warnings.append(
             f'warning: lock still held by {lk.get("owner")} ({lk.get("task")!r}) — release after reset')
@@ -266,7 +266,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
     @param dry_run: print plan only
     @param archive_site: move existing site tree to backups/<stamp>-dryrun-site first
     @param force: override lock / MCP refusal
-    @param confirm_logged_out: operator confirmed quit
+    @param confirm_logged_out: operator confirmed the world is closed (title screen)
     @returns: report dict
     """
     region_dir = load_region_dir()
@@ -324,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--archive-site', action='store_true',
                     help='move the current site/ tree to backups/<timestamp>-dryrun-site before scaffold')
     ap.add_argument('--confirm-logged-out', action='store_true',
-                    help='required for live reset: confirm the Minecraft save is closed')
+                    help='required for live reset: confirm you have left the world (title screen; the game can stay open)')
     ap.add_argument('--force', action='store_true',
                     help='legacy alias for --confirm-logged-out (still refuses if session.lock/MCP up)')
     add_world_arg(ap)
