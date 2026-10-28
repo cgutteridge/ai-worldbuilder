@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 171,
+  "nextTaskId": 172,
   "tasks": [
     {
       "id": 168,
@@ -31,6 +31,15 @@
         169
       ],
       "notes": "Raised 2026-10-28 from the dark-stairs-in-a-brick-roof issue (I-023, snag S-030); independent review applied. Cause class: Translation. A roof column takes its material from its lidar zone alone (roof_material_for_zone, lib/builds/feature_build.py, called at about lines 1559 and 1589). zone_ridge_half_steps (about line 447) treats a whole zone as pitched when any of it rises 1 m or more, so a lower zone's material climbs the slope of a higher roof: in one rebuilt roof 363 stairs of the lower zone's material appeared and 117 of them touched main-roof columns. Not verified when written: how the eave rows land in the lower zone (the exact-tie idea in snap_to_levels is unproven and ties are rare; the nearest-level snap plus mode_filter and bucket_zones is a likelier source; no zone-grid dump yet); the roof in game. Deliver: a sloped column takes the material of the roof it rises from, not only its zone's material; the spec stays the owner of zone_materials; no old path is removed, only the zone-only lookup. The tie-break change is out of scope; file it separately only if a zone-grid dump shows ties happen. Files: lib/builds/feature_build.py (roof_material_for_zone and its callers, zone_ridge_half_steps), lib/builds/test_feature_build.py (already has the snap test), and the zone_materials text in rules/feature-builds.md. Related: #126 (zone materials), #125 (pitched zones). Blocked by the roof stair task (#169) because both touch the pitched-zone code path. Proof: unit tests with two zone levels asserting each column's material. Check: re-run the dry run for the zoned feature in the snag and count stairs of the lower zone's material that touch only main-roof columns (expect 0), and look at the roof in game. Helps: any zoned pitched feature that gives each zone its own material."
+    },
+    {
+      "id": 171,
+      "title": "Roof details are checked for solid roof under them before they are placed",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-28 from the glass-hangs-over-the-roof-edge issue (I-025, snags S-032 and S-044); independent review applied. Cause class: Capability. _validate_details (lib/builds/feature_build.py about line 1116) checks only types and shapes; _place_detail (about line 2411) places each box blindly; _solidify_roof_under (about line 2393) only swaps slab, stair, carpet or trapdoor blocks that already exist below, so air below stays air. Designers copy aerial rectangles against slanted roof edges, so boxes hang over the edge: on one rebuilt building 5 of 12 skylight blocks and 6 of 16 solar-panel blocks had air beneath. Across the specs of one world, 18 specs carry 105 roof detail rows, 59 of them skylights, and none is checked. Deliver: (1) after the roof is built, test each cell of a roof detail box (every kind in ROOF_DETAIL_KINDS) for a full, slab or stair block at the level below; air does not count; (2) clip the unsupported cells out of the box; (3) the dry run prints one line per row with unsupported cells (label, kind, position, count); (4) add 'a roof detail sits on solid roof; cells over air are clipped' to rules/feature-builds.md and rules/building-review.md (this covers the designer brief); (5) move or shrink the one existing spec row that overhangs, or confirm the new check clips it. Out of scope: refusing a build (it would block all 18 specs). Proof: unit tests on MemoryBlocks (a fully supported box is unchanged; a box over a diagonal edge is clipped; the dry-run line is present). Check: python3 scripts/run_tests.py --only test_feature_build passes; the dry run for the feature in the snags lists the clipped row; after a rebuild, block_scan_region finds no glass block with air at the level below. Related: the issue that skylight rows sit one block above the roof instead of opening it (I-033) is a different cause and still passes this check. Helps: all roof detail kinds on every feature."
     }
   ]
 }
