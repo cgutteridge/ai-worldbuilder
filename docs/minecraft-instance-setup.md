@@ -54,3 +54,51 @@ Check everything (read-only): `python3 scripts/check_instance.py --world <name>`
 - Do not put a save inside a world checkout or this repo, and do not symlink saves.
 - Open one world at a time; both the tool and the mod assume ports 8765 / 8766.
 - Reading is fine with the world open (planning reads of region files, MCP queries). Only commands that write, delete or replace region files need the world closed: leave the world (exit to the title screen) and pass `--confirm-logged-out`. The game itself can stay open.
+
+## Tool platforms and dependencies
+
+The Minecraft instance can run on macOS, Linux or Windows. Run the worldbuilder
+itself on macOS, Linux, or **WSL 2 on Windows**. Native Windows is not yet a supported
+end-to-end tool environment: `cell_journal` and the full test-runner lock use
+POSIX `fcntl`. The read-only `check_instance.py` save-lock probe supports both
+POSIX and native Windows file locks.
+
+Commands in AGENTS.md and project skills use a POSIX shell and `python3`.
+On macOS/Linux/WSL create and activate `.venv`, then install the dependencies from
+`pyproject.toml`:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -e .
+python3 scripts/install_git_hooks.py
+```
+
+Use Git and Python from the same environment. In WSL, run the clone, tests and
+Git hooks inside WSL; write the save path as WSL sees it (for example
+`/mnt/c/minecraft-mcp/saves/MyWorld`). Keep the Minecraft instance on Windows.
+If checking an individual read-only command from native PowerShell, replace
+`python3` with `py -3`; POSIX shell snippets and `.venv/bin/` paths do not translate
+verbatim. The pre-commit hook uses Bash, Git and Python 3, with no jq, grep or zsh
+requirement. Git for Windows alone does not supply the POSIX Python locks.
+
+The Python dependencies do not install GDAL command-line programs. Vector-map
+extraction needs `ogr2ogr` with support for regional PBF extracts; bulk lidar workflows may also need
+GDAL tools. Install your platform's GDAL package (for example `gdal-bin` on
+Debian/Ubuntu/WSL or `gdal` with Homebrew), then check `ogr2ogr --version` in the
+same shell before extracting. Follow the selected provider's README for its
+additional dependencies and data downloads.
+
+For accurate British National Grid conversions, install the OSTN15 grid
+`uk_os_OSTN15_NTv2_OSGBtoETRS.tif` in a PROJ data directory. The tool checks common
+Homebrew/Linux directories and the directories listed in `PROJ_DATA` (legacy
+`PROJ_LIB` also works); separate multiple directories with the platform's path
+separator. Set the variable before starting the command. Without the grid,
+conversions use the documented metre-level fallback; no grid download happens
+unless PROJ network access is enabled explicitly.
+
+Agent soundboard cues are optional local conveniences. If
+`~/Projects/agent-soundboard/scripts/play.py` is absent, skip cues; a missing cue
+must never block a tool command or imply that extra software is required.
+Repository docs use portable home-relative or example paths. World-owned
+`config/world.json` may contain that world's machine-specific absolute save path.

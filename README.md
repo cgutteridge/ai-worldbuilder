@@ -17,7 +17,9 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-Point conversion (WGS84 ↔ OSGB and other EPSG pairs) uses in-process **pyproj** via `scripts/world_frame.py`. For centimetre-level OS National Grid results, install PROJ data that includes the OSTN15 grid (Homebrew `proj` provides it under `/opt/homebrew/share/proj`) or set `PROJ_NETWORK=ON` so PROJ can download the grid. Without OSTN15, pyproj falls back to a Helmert shift (~metre accuracy). GDAL remains appropriate for bulk lidar/raster file work, not for individual point conversion.
+On Windows, run the tool in **WSL 2**; see [platform setup](docs/minecraft-instance-setup.md#tool-platforms-and-dependencies) for Python, Git hooks and GDAL. Native Windows is not yet supported by the journal and full test runner.
+
+Point conversion (WGS84 ↔ OSGB and other EPSG pairs) uses in-process **pyproj** via `scripts/world_frame.py`. For centimetre-level OS National Grid results, install PROJ data that includes the OSTN15 grid (common Homebrew and Linux PROJ data directories are detected; set `PROJ_DATA` for another installation) or set `PROJ_NETWORK=ON` so PROJ can download the grid. Without OSTN15, pyproj falls back to a Helmert shift (~metre accuracy). GDAL remains appropriate for bulk lidar/raster file work, not for individual point conversion.
 
 ## Active world
 

@@ -37,6 +37,31 @@ FBM_HELMERT_E = 442070.61748948053
 FBM_HELMERT_N = 112799.04379774761
 
 
+class ProjDataDiscoveryTest(unittest.TestCase):
+    def test_explicit_proj_data_directory_is_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            grid_dir = Path(tmp) / 'custom-proj'
+            grid_dir.mkdir()
+            (grid_dir / wf._OSTN15_GRID).touch()
+            with mock.patch.object(wf, '_PROJ_DATA_READY', False), \
+                    mock.patch.object(wf, '_SYSTEM_PROJ_DATA_CANDIDATES', ()), \
+                    mock.patch.dict(wf.os.environ, {'PROJ_DATA': str(grid_dir)}), \
+                    mock.patch.object(wf.datadir, 'append_data_dir') as append:
+                wf._ensure_proj_data()
+                wf._ensure_proj_data()
+            append.assert_called_once_with(str(grid_dir))
+
+    def test_legacy_proj_lib_directory_is_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / wf._OSTN15_GRID).touch()
+            with mock.patch.object(wf, '_PROJ_DATA_READY', False), \
+                    mock.patch.object(wf, '_SYSTEM_PROJ_DATA_CANDIDATES', ()), \
+                    mock.patch.dict(wf.os.environ, {'PROJ_DATA': '', 'PROJ_LIB': tmp}), \
+                    mock.patch.object(wf.datadir, 'append_data_dir') as append:
+                wf._ensure_proj_data()
+            append.assert_called_once_with(tmp)
+
+
 class OsGbMcTest(unittest.TestCase):
     def test_roundtrip(self):
         e, n = wf.mc_to_osgb(5652, -2492)
