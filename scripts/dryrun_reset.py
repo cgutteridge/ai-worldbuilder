@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Reset the active world for another empty-world dry run (spec: lidar ghost v2).
 
-Wipes Minecraft overworld region chunks and agent place memory while keeping world
+Wipes agent place memory (the Minecraft save is never touched; it must already be blank) while keeping world
 frame, providers, and reference downloads. Erases the registry directory (the cell
 journal and its plan blobs, ADR 004); the first journal write recreates it, so a
 reset world starts with a fresh journal and nothing is migrated or restored.
 
-Player must **leave the save** before a live reset; reopen afterward so chunks
-regenerate empty, then raise the origin cell (ghost frontier).
+The save lives in the standalone Minecraft instance and this tool never deletes
+inside it: delete and recreate the world in the game first (a live reset refuses
+while region files remain), then raise the origin cell (ghost frontier).
 
   python3 scripts/dryrun_reset.py --dry-run
   python3 scripts/dryrun_reset.py --confirm-logged-out
@@ -66,16 +67,12 @@ def load_region_dir() -> Path:
 
     @returns: path to ``.../dimensions/minecraft/overworld/region``
     """
-    from active_world import load_world_config
+    from active_world import region_path
 
-    cfg = load_world_config()
-    raw = cfg.get('region_path')
-    if not raw:
-        raise SystemExit('config/world.json missing region_path')
-    path = Path(raw)
-    if not path.is_absolute():
-        path = ROOT / path
-    return path
+    try:
+        return region_path()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def lock_held() -> dict | None:
@@ -146,7 +143,7 @@ def site_wipe_paths() -> dict[str, list[str]]:
 def preserved_paths(region_dir: Path) -> list[str]:
     """Human-readable preserved roots for dry-run output.
 
-    @param region_dir: overworld region directory (listed for delete, not preserve)
+    @param region_dir: overworld region directory
     @returns: sorted path strings
     """
     out = [
@@ -214,17 +211,22 @@ def _journal_entry_count() -> int:
     return sum(1 for line in journal.read_text(encoding='utf-8').splitlines() if line.strip())
 
 
-def delete_regions(region_dir: Path) -> list[str]:
-    """Delete all ``.mca`` files in the overworld region folder.
+def require_blank_world(region_dir: Path) -> None:
+    """Refuse a live reset while the save still holds chunks.
 
-    @param region_dir: live region directory
-    @returns: deleted file names
+    The save belongs to the standalone Minecraft instance and this tool never
+    deletes inside it. The owner makes the world blank (delete and recreate it in
+    the game, or create a fresh one with ``scripts/new_blank_world.py``).
+
+    @param region_dir: overworld region directory
+    @raises SystemExit: when ``.mca`` files are still present
     """
-    deleted = []
-    for p in list_region_files(region_dir):
-        p.unlink()
-        deleted.append(p.name)
-    return deleted
+    present = list_region_files(region_dir)
+    if present:
+        raise SystemExit(
+            f'{len(present)} region file(s) still in {region_dir}. This tool does not '
+            'delete inside the Minecraft save: delete and recreate the world in the '
+            'game (or run scripts/new_blank_world.py), then re-run.')
 
 
 def check_preconditions(*, force: bool = False, confirm_logged_out: bool = False) -> list[str]:
@@ -274,13 +276,13 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         'dry_run': dry_run,
         'world_root': str(ROOT),
         'region_dir': str(region_dir),
-        'regions_to_delete': [p.name for p in regions],
+        'regions_present': [p.name for p in regions],
         'preserved': preserved_paths(region_dir),
         'wipe': wipe,
         'archive_site': archive_site,
         'warnings': [],
         'next_steps': [
-            'Re-open the Minecraft save so overworld chunks regenerate empty.',
+            'Live reset needs a blank save: delete and recreate the world in the game first (this tool never deletes inside saves/).',
             'Raise the origin cell (cell_marker.py --raise <origin>) to seed the ghost frontier.',
             'python3 scripts/cell_registry.py verify  # expect no issues; registry/ appears with the first journal write',
         ],
@@ -288,6 +290,7 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
     if dry_run:
         return report
     report['warnings'] = check_preconditions(force=force, confirm_logged_out=confirm_logged_out)
+    require_blank_world(region_dir)
     stamp = time.strftime('%Y-%m-%d-%H%M%S')
     if archive_site and SITE.is_dir():
         dest = ROOT / 'backups' / f'{stamp}-dryrun-site'
@@ -297,7 +300,6 @@ def run_reset(*, dry_run: bool, archive_site: bool, force: bool = False,
         SITE.mkdir(parents=True, exist_ok=True)
     clear_place_artifacts()
     scaffold_site()
-    report['regions_deleted'] = delete_regions(region_dir)
     report['registry'] = {
         'dir_present': REGISTRY.exists(),
         'journal_entries': _journal_entry_count(),

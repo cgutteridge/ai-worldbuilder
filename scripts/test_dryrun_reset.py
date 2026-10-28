@@ -60,7 +60,7 @@ class DryRunOutput(unittest.TestCase):
         with self._patch_world():
             rep = dr.run_reset(dry_run=True, archive_site=False, force=False)
         self.assertTrue(rep['dry_run'])
-        self.assertIn('r.0.0.mca', rep['regions_to_delete'])
+        self.assertIn('r.0.0.mca', rep['regions_present'])
         removed = rep['wipe']['removed']
         self.assertIn('site/QUEUE.txt', removed)
         self.assertIn('site/CURRENT-CELL.json', removed)
@@ -79,6 +79,7 @@ class DryRunOutput(unittest.TestCase):
         (self.site / 'LOCK.json').write_text(json.dumps({
             'owner': 'agent', 'task': 'old', 'claimed': hb, 'heartbeat': hb,
         }))
+        (self.region / 'r.0.0.mca').unlink()
         template = _ROOT / 'templates' / 'new-world-site'
         with self._patch_world(), mock.patch.object(dr, 'TEMPLATE', template), \
              mock.patch('logout_gate.require_logged_out'):
@@ -93,7 +94,18 @@ class DryRunOutput(unittest.TestCase):
         self.assertFalse((self.site / 'LOCK.json').exists())
         self.assertIn('warning', (rep.get('warnings') or ['warning'])[0])
 
+    def test_live_reset_refuses_while_save_has_chunks(self):
+        template = _ROOT / 'templates' / 'new-world-site'
+        with self._patch_world(), mock.patch.object(dr, 'TEMPLATE', template), \
+             mock.patch('logout_gate.require_logged_out'):
+            with self.assertRaises(SystemExit) as ctx:
+                dr.run_reset(dry_run=False, archive_site=False, confirm_logged_out=True)
+        self.assertIn('does not', str(ctx.exception))
+        self.assertTrue((self.region / 'r.0.0.mca').exists())
+        self.assertTrue((self.site / 'QUEUE.txt').exists())
+
     def test_reset_world_verifies_clean(self):
+        (self.region / 'r.0.0.mca').unlink()
         template = _ROOT / 'templates' / 'new-world-site'
         with self._patch_world(), mock.patch.object(dr, 'TEMPLATE', template), \
              mock.patch('logout_gate.require_logged_out'):
@@ -102,7 +114,6 @@ class DryRunOutput(unittest.TestCase):
         self.assertEqual(rep['verify']['issues'], [])
         self.assertTrue(rep['verify']['ok'])
         self.assertFalse((self.world / 'registry').exists())
-        self.assertEqual(rep['regions_deleted'], ['r.0.0.mca'])
 
     def test_new_world_registry_template_is_readme_only(self):
         """ADR 004: no JSON scaffold; first journal write creates registry/."""

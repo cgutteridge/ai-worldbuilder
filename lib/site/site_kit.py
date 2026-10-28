@@ -47,8 +47,9 @@ def reload_world_config() -> None:
         )
     root = Path(script_env.ROOT)
     _CFG = json.loads((root / 'config/world.json').read_text())
-    region_raw = _CFG.get('region_path')
-    REGION = Path(region_raw) if region_raw else (root / 'save' / 'region')
+    import active_world
+    save = active_world.resolve_save(_CFG.get('save_path'), False)
+    REGION = (save / 'dimensions' / 'minecraft' / 'overworld' / 'region') if save else (root / 'save' / 'region')
     STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
     OUT = root / 'verification/site'
 
@@ -1138,7 +1139,8 @@ def load_before_structure_blocks(structure_meta, m=None, save_root=None):
     if isinstance(structs, dict) and name in structs:
         return dict(structs[name])
     _ensure_world_config()
-    root = save_root or (_CFG or {}).get('save_path')
+    import active_world
+    root = save_root or active_world.save_path(required=False)
     if not root:
         raise SystemExit(f'cannot load structure {name}: no save_path in world.json')
     from structure_nbt import absolute_blocks, read_structure_file, structure_file_path

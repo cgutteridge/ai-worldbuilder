@@ -151,6 +151,52 @@ def load_world_frame(*, reload: bool = False) -> dict[str, Any]:
     return data
 
 
+def save_path(*, required: bool = True) -> Path | None:
+    """Minecraft save folder for the active world (read-only to this tool).
+
+    The save lives in a standalone Minecraft instance outside this project;
+    ``config/world.json`` ``save_path`` references it. A relative value is taken
+    against the world root.
+
+    @param required: raise when ``save_path`` is unset (else return None)
+    @returns: absolute save path, or None when unset and not required
+    @raises RuntimeError: when required and ``save_path`` is unset
+    """
+    raw = load_world_config().get("save_path")
+    return resolve_save(raw, required)
+
+
+def resolve_save(raw: Any, required: bool) -> Path | None:
+    """Resolve a ``save_path`` value against the world root.
+
+    @param raw: the config value (may be empty)
+    @param required: raise when empty
+    @returns: absolute path or None
+    """
+    if not raw:
+        if required:
+            raise RuntimeError(
+                f"{world_config_path()} missing save_path "
+                "(point it at the save inside your Minecraft instance; "
+                "see docs/minecraft-instance-setup.md)"
+            )
+        return None
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else world_root() / path
+
+
+def region_path(*, required: bool = True) -> Path | None:
+    """Overworld region folder, derived from :func:`save_path`.
+
+    @param required: raise when ``save_path`` is unset (else return None)
+    @returns: ``<save>/dimensions/minecraft/overworld/region`` or None
+    """
+    save = save_path(required=required)
+    if save is None:
+        return None
+    return save / "dimensions" / "minecraft" / "overworld" / "region"
+
+
 def gameworld_id() -> str:
     """Return the active world's gameworld id (Minecraft world identity)."""
     return str(load_world_config()["gameworld_id"])

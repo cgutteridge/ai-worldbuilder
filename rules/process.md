@@ -31,7 +31,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  reference/aerial/      aerial / ortho crops (local, gitignored content)
  reference/LOGGING.txt  how to log refs (dedupe, token budget, privacy)
  reference/manifest.jsonl  append-only index of every fetched asset
- config/world.json      save + region paths
+ config/world.json      gameworld_id + save_path (save lives in the standalone Minecraft instance; read-only to the tool)
  config/world-frame.json         CRS, offsets, Y offset, bounds (sole home; not in the save)
 
  Retired progress files (do not recreate; `cell_registry.py verify` fails if

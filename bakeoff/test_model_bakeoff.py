@@ -774,7 +774,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 shutil.rmtree(world)
             (world / 'config').mkdir(parents=True)
             (world / 'config' / 'world.json').write_text(
-                json.dumps({'gameworld_id': 'bakeoff', 'region_path': str(world)}),
+                json.dumps({'gameworld_id': 'bakeoff', 'save_path': str(world)}),
                 encoding='utf-8',
             )
             (world / 'config' / 'world-frame.json').write_text(

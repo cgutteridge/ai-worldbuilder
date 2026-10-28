@@ -159,6 +159,41 @@ class ActiveWorldContractTests(unittest.TestCase):
                 self.assertEqual(frame["offsets"]["easting"], 1.0)
                 self.assertEqual(frame["offsets"]["northing"], 2.0)
 
+    def test_save_and_region_paths_derived(self) -> None:
+        """region_path is derived from save_path; a relative save_path is taken from the world root."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_fictional_world(
+                root,
+                world={"gameworld_id": "W", "save_path": "../inst/saves/W"},
+                frame={"offsets": {"easting": 0, "northing": 0}},
+            )
+            with _isolated_world(root):
+                import active_world as aw
+
+                save = aw.save_path()
+                self.assertEqual(save, root.resolve() / ".." / "inst" / "saves" / "W")
+                self.assertEqual(
+                    aw.region_path(), save / "dimensions" / "minecraft" / "overworld" / "region"
+                )
+
+    def test_missing_save_path(self) -> None:
+        """Without save_path: required raises with the setup hint, optional gives None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_fictional_world(
+                root,
+                world={"gameworld_id": "W"},
+                frame={"offsets": {"easting": 0, "northing": 0}},
+            )
+            with _isolated_world(root):
+                import active_world as aw
+
+                self.assertIsNone(aw.save_path(required=False))
+                with self.assertRaises(RuntimeError) as ctx:
+                    aw.save_path()
+                self.assertIn("minecraft-instance-setup", str(ctx.exception))
+
     def test_world_name_alone_rejected(self) -> None:
         """A world.json with only the retired world_name key has no gameworld_id."""
         with tempfile.TemporaryDirectory() as tmp:
