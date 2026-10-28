@@ -19,6 +19,22 @@ TEMPLATE = TOOL_ROOT / 'templates' / 'empty-world'
 _SKIP = shutil.ignore_patterns('session.lock', 'players', '*.dat_old', '*.mca', 'README.txt')
 
 
+def _modified_utf8(text: str) -> bytes:
+    """Java modified UTF-8, the encoding of NBT strings: NUL as C0 80, non-BMP as surrogate pairs of 3 bytes each."""
+    b = text.encode('utf-16-be', 'surrogatepass')
+    out = bytearray()
+    for (unit,) in struct.iter_unpack('>H', b):
+        out += b'\xc0\x80' if unit == 0 else chr(unit).encode('utf-8', 'surrogatepass')
+    return bytes(out)
+
+
+def _checked_name(name: str) -> bytes:
+    new = _modified_utf8(name)
+    if len(new) > 0xFFFF:
+        raise ValueError(f'world name too long: {len(new)} bytes')
+    return new
+
+
 def set_level_name(level_dat: Path, name: str) -> None:
     """Rewrite the ``LevelName`` string in a gzipped ``level.dat`` (the in-game world name).
 
@@ -27,6 +43,7 @@ def set_level_name(level_dat: Path, name: str) -> None:
     @param level_dat: path to the save's level.dat
     @param name: new in-game name
     @raises RuntimeError: when the file has no single ``LevelName`` string tag
+    @raises ValueError: when the name is longer than an NBT string allows (65535 bytes)
     """
     raw = gzip.decompress(Path(level_dat).read_bytes())
     key = b'\x08\x00\x09LevelName'
@@ -35,7 +52,7 @@ def set_level_name(level_dat: Path, name: str) -> None:
         raise RuntimeError(f'{level_dat}: expected exactly one LevelName tag')
     at = i + len(key)
     old = struct.unpack_from('>H', raw, at)[0]
-    new = name.encode('utf-8')
+    new = _checked_name(name)
     Path(level_dat).write_bytes(gzip.compress(
         raw[:at] + struct.pack('>H', len(new)) + new + raw[at + 2 + old:]))
 
@@ -59,6 +76,8 @@ def create_blank_world(save: Path, template: Path = TEMPLATE, name: str | None =
             '(docs/minecraft-instance-setup.md)')
     if not template.is_dir():
         raise FileNotFoundError(f'template missing: {template}')
+    name = name or save.name
+    _checked_name(name)                  # fail before anything is created
     shutil.copytree(template, save, ignore=_SKIP)
-    set_level_name(save / 'level.dat', name or save.name)
+    set_level_name(save / 'level.dat', name)
     return save
