@@ -21,13 +21,18 @@ _SKIP = shutil.ignore_patterns('session.lock', 'players', '*.dat_old', '*.mca', 
 
 def _modified_utf8(text: str) -> bytes:
     """Java modified UTF-8, the encoding of NBT strings: NUL as C0 80, non-BMP as surrogate pairs of 3 bytes each."""
+    b = text.encode('utf-16-be', 'surrogatepass')
     out = bytearray()
-    for unit in struct.unpack(f'>{len(text.encode("utf-16-be")) // 2}H', text.encode('utf-16-be')):
-        if unit == 0:
-            out += b'\xc0\x80'
-        else:
-            out += chr(unit).encode('utf-8', 'surrogatepass')
+    for (unit,) in struct.iter_unpack('>H', b):
+        out += b'\xc0\x80' if unit == 0 else chr(unit).encode('utf-8', 'surrogatepass')
     return bytes(out)
+
+
+def _checked_name(name: str) -> bytes:
+    new = _modified_utf8(name)
+    if len(new) > 0xFFFF:
+        raise ValueError(f'world name too long: {len(new)} bytes')
+    return new
 
 
 def set_level_name(level_dat: Path, name: str) -> None:
@@ -47,9 +52,7 @@ def set_level_name(level_dat: Path, name: str) -> None:
         raise RuntimeError(f'{level_dat}: expected exactly one LevelName tag')
     at = i + len(key)
     old = struct.unpack_from('>H', raw, at)[0]
-    new = _modified_utf8(name)
-    if len(new) > 0xFFFF:
-        raise ValueError(f'world name too long: {len(new)} bytes')
+    new = _checked_name(name)
     Path(level_dat).write_bytes(gzip.compress(
         raw[:at] + struct.pack('>H', len(new)) + new + raw[at + 2 + old:]))
 
@@ -73,6 +76,8 @@ def create_blank_world(save: Path, template: Path = TEMPLATE, name: str | None =
             '(docs/minecraft-instance-setup.md)')
     if not template.is_dir():
         raise FileNotFoundError(f'template missing: {template}')
+    name = name or save.name
+    _checked_name(name)                  # fail before anything is created
     shutil.copytree(template, save, ignore=_SKIP)
-    set_level_name(save / 'level.dat', name or save.name)
+    set_level_name(save / 'level.dat', name)
     return save

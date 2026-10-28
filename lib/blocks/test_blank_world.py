@@ -41,15 +41,19 @@ class BlankWorldTest(unittest.TestCase):
     def test_non_bmp_and_nul_use_java_modified_utf8(self):
         self.assertEqual(BW._modified_utf8('a\x00b'), b'a\xc0\x80b')
         self.assertEqual(BW._modified_utf8('\U0001F600'), b'\xed\xa0\xbd\xed\xb8\x80')   # surrogate pair, 3 bytes each
+        self.assertEqual(BW._modified_utf8('\ud800'), b'\xed\xa0\x80')                    # lone surrogate
         self.assertEqual(BW._modified_utf8('Ventnor \u2013'), 'Ventnor \u2013'.encode('utf-8'))
 
-    def test_level_dat_still_parses_after_rename(self):
-        out = BW.create_blank_world(self.saves / 'x', name='Ventnor seafront')
-        self.assertEqual(self._level_name(out), 'Ventnor seafront')
+    def test_non_bmp_name_is_written_as_modified_utf8(self):
+        # nbt_read decodes strict UTF-8, so check the raw bytes (Java reads the 3-byte surrogate form)
+        out = BW.create_blank_world(self.saves / 'x', name='V \U0001F600')
+        raw = gzip.decompress((out / 'level.dat').read_bytes())
+        self.assertIn(b'\x00\x08V \xed\xa0\xbd\xed\xb8\x80', raw)
 
     def test_too_long_name_is_a_value_error(self):
         with self.assertRaises(ValueError):
             BW.create_blank_world(self.saves / 'long', name='x' * 70000)
+        self.assertFalse((self.saves / 'long').exists())
 
     def test_level_dat_without_level_name_raises(self):
         f = self.saves / 'level.dat'
