@@ -20,11 +20,15 @@ One building per review. Skip any building that already has an open feature issu
    from boxes drawn on a picture; the aerial sheet decides colours and greeblies, not heights (user, 2026-10-16: "you ignored the lidar").
    Before painting or adding to a roof, print the live columns (top block and Y per cell) and compare with the lidar grid; a
    later build can have left pits, holes or lidar-rim bands (SU retail: a 5-wide pit round the north edge, 2026-10-16).
-   The aerial sheet shows roof greeblies (user, 2026-10-16): plant boxes, vents, louvred vents, skylights, solar panels, lift overruns, parapets. List
+   The aerial sheet shows roof greeblies (user, 2026-10-16): plant boxes, capped box vents, louvred vents, recessed skylights, hollow industrial chimneys, solar panels, lift overruns, parapets. List
    them per roof in this step and write them into the feature spec `details` table
    (`rules/feature-builds.md`); lidar often misses small roof plant — aerial is the source for those.
    A roof detail sits on solid roof; cells over air are clipped. Check the dry-run
-   clipped-cell report against the roof outline before rebuilding.
+   clipped-cell report against the roof outline before rebuilding. Skylights
+   replace the roof-top layer and reject the entire box if any cell is off roof.
+   Vents are concrete boxes with trapdoor caps, never bar poles. Industrial
+   chimneys are hollow open stepped rings, vertical or tapered; photo/spec
+   dimensions win and lidar is only a rough check for these hollow stacks.
    Facade greeblies from street photos (drainpipe, sign, canopy, ledge, fascia band) go in the same table.
 
    From the same aerial (and street level when the cap shows), answer the roof-edge questions already on the designer

@@ -49,15 +49,15 @@ hand-off. Fold these into that pass — they are not a separate step:
   `evidence_ids` on every entrance. No portal register? Still add entrances
   from street-level photos (`photo_read`). Unresolved entrances stay in the
   plan and show on the cell view via their `cell` / `cells`.
-- **Facades on every exposed face.** Prefer glazing under
-  `facade_plan[label].faces[face].glazing` (same row shape as legacy
-  `facades`). For each face with exposed wall (`N`/`S`/`E`/`W`), one row per
+- **Glazing on every exposed face.** Write window rows only under
+  `facade_plan[label].faces[face].glazing`. For each face with exposed wall (`N`/`S`/`E`/`W`), one row per
   storey the street photos and aerial show. Do not stop at the frontage.
   Where no evidence shows a face, copy the nearest face you did read and say
   so in the spec `notes` (e.g. "E copied from N — no street view"). Dry run
   lists every exposed face/storey glazed share and marks missing faces
   `no evidence read` ([feature-builds.md](feature-builds.md)).
 - Roof form, colour and material — check the lidar profile before calling a roof flat
+- Industrial chimneys: photo/spec diameter, taper and height; hollow open stacks are weak lidar targets. Use lidar only as a rough check, never to flatten them.
 - Edge on the roof? what block? outer only or steps too?
   Default **none**: leave `roofs[label].edge` out unless the aerial (or a
   street-level cap) shows a parapet, coping or flat overhang fringe. When set,

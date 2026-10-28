@@ -33,7 +33,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   facade_plan    optional per-label per-face plan (entrances + glazing slots):
                    {"<label>": {
                      "faces": {"N"|"S"|"E"|"W": {
-                       "glazing"?: [same rows as facades],
+                       "glazing"?: [{storey, glazed_h, pier, wall?, rhythm?}],
                        "roof_edge"?: null|note, "detail"?: []}},
                      "entrances": [{
                        "id": "<stable>", "portal_id"?: "<register id>",
@@ -59,19 +59,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  ``details`` / ``roofs.edge`` (#132) — entrance awning_like is
                  here (not a tree canopy; legacy entrance key ``canopy`` is
                  refused).
-  facades        optional per-label per-face table of window rows (photo reading):
-                   {"<label>": {"N"|"S"|"E"|"W": [
-                     {"storey": 1..n, "glazed_h": 1..3, "pier": >=0,
-                      "wall"?: "<mat>", "rhythm"?: "WW_BB_WW"}]}}
-                 One row list per exposed face (every storey the evidence
-                 shows). Prefer ``facade_plan[label].faces[face].glazing`` when
-                 writing new specs. A pane is placed only when the finished
-                 build has non-air on both sides along the wall line and above
-                 and below; otherwise the wall block stays. Dry run prints how
-                 many panes were skipped that way per face, plus glazed
-                 share for every exposed face and storey; faces with no
-                 facade rows are marked ``no evidence read`` (report only,
-                 not a gate).
+  Windows use facade_plan[label].faces[face].glazing only. Panes need solid
+  framing on both sides, above and below; missing frames are reported. The
+  dry run prints glazed share per exposed face/storey and marks missing rows
+  as no evidence read. Legacy top-level window tables are refused.
   details        optional per-label roof/facade greeblies (building-review):
                    {"<label>": [
                      {"kind": "<roof|facade kind>", "at": [x, y, z],
@@ -131,9 +122,10 @@ from pathlib import Path
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view as _sw
 
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, TOOL_ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
+from chimney import chimney_layers, validate_chimney
 import facade_plan as facade_plan_mod  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
@@ -157,7 +149,7 @@ ROOF_KINDS = frozenset({'flat', 'pitched'})
 EDGE_WHERE = frozenset({'outer', 'all'})
 ZONE_FROM = frozenset({'lidar'})
 ROOF_DETAIL_KINDS = frozenset({
-    'plant_room', 'vent', 'louvred_vent', 'skylight', 'solar_panel', 'lift_overrun',
+    'plant_room', 'vent', 'louvred_vent', 'skylight', 'solar_panel', 'lift_overrun', 'chimney',
 })
 FACADE_DETAIL_KINDS = frozenset({
     'drainpipe', 'sign', 'awning_like', 'ledge', 'fascia_band',
@@ -436,6 +428,8 @@ def assign_roof_zones(
         ground_m = np.vectorize(y_to_metres_aod, otypes=[float])(gy.astype(int))
         readable = readable & ((dsm.astype(float) - ground_m) >= mass_m)
     readable, dropped = drop_small_footprint_pieces(readable, xs, zs)
+    if not readable.any():
+        return readable, np.zeros_like(dsm, dtype=float), ([] if levels == 'auto' else list(levels)), 0.0, dropped
     med = _win(dsm.astype(float), 5, np.median)
     if levels == 'auto':
         levels_used: list = auto_plateau_levels(med, readable)
@@ -808,11 +802,12 @@ def load_spec(path) -> dict:
     spec.setdefault('door_frame', True)
     spec.setdefault('wall', 'bricks')
     spec.setdefault('floor', 'smooth_stone')
-    spec.setdefault('facades', {})
     spec.setdefault('facade_plan', {})
     spec.setdefault('details', {})
     spec.setdefault('zones', {})
     spec.setdefault('exclude', {})
+    if 'facades' in spec:
+        raise SystemExit(f'{path}: "facades" was removed; use facade_plan[label].faces[face].glazing')
     if 'doors' in spec:
         raise SystemExit(
             f'{path}: "doors" was removed; place entrances on facade_plan '
@@ -838,7 +833,6 @@ def load_spec(path) -> dict:
         for no in g['nos']:
             if no not in labels or no not in spec['storeys'] or no not in spec['roofs']:
                 raise SystemExit(f'{path}: label {no} needs a way, storeys and roof')
-    _validate_facades(path, spec, labels)
     _validate_facade_plan(path, spec, labels)
     _validate_details(path, spec, labels)
     _validate_zones(path, spec, labels)
@@ -1182,57 +1176,6 @@ def _validate_exclude(path, spec: dict, labels: set) -> None:
                 raise SystemExit(f'{path}: exclude[{lab}] box {box} must be [x0, z0, x1, z1] ints, min <= max')
 
 
-def _validate_facades(path, spec: dict, labels: set) -> None:
-    """Validate optional per-face facade table rows.
-
-    @param path: spec path (for error text)
-    @param spec: feature spec being loaded
-    @param labels: known way labels
-    @raises SystemExit: on invalid facade structure
-    """
-    facades = spec.get('facades') or {}
-    if not isinstance(facades, dict):
-        raise SystemExit(f'{path}: facades must be an object')
-    for lab, faces in facades.items():
-        if lab not in labels:
-            raise SystemExit(f'{path}: facades label {lab} has no way')
-        if not isinstance(faces, dict):
-            raise SystemExit(f'{path}: facades[{lab}] must be face→rows')
-        n_storeys = spec['storeys'][lab]
-        for face, rows in faces.items():
-            if face not in DIRS:
-                raise SystemExit(f'{path}: facades[{lab}] bad face {face}')
-            if not isinstance(rows, list) or not rows:
-                raise SystemExit(f'{path}: facades[{lab}][{face}] needs a non-empty row list')
-            seen = set()
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise SystemExit(f'{path}: facades[{lab}][{face}] row must be an object')
-                storey = row.get('storey')
-                glazed_h = row.get('glazed_h')
-                pier = row.get('pier')
-                if not isinstance(storey, int) or storey < 1 or storey > n_storeys:
-                    raise SystemExit(
-                        f'{path}: facades[{lab}][{face}] storey must be int 1..{n_storeys}')
-                if storey in seen:
-                    raise SystemExit(f'{path}: facades[{lab}][{face}] duplicate storey {storey}')
-                seen.add(storey)
-                if not isinstance(glazed_h, int) or glazed_h < 1 or glazed_h > STOREY_H:
-                    raise SystemExit(
-                        f'{path}: facades[{lab}][{face}] glazed_h must be int 1..{STOREY_H}')
-                if not isinstance(pier, int) or pier < 0:
-                    raise SystemExit(f'{path}: facades[{lab}][{face}] pier must be int >= 0')
-                if 'rhythm' in row and row['rhythm'] is not None:
-                    if not isinstance(row['rhythm'], str) or not row['rhythm']:
-                        raise SystemExit(f'{path}: facades[{lab}][{face}] rhythm must be a non-empty string')
-                    bad = [c for c in row['rhythm'] if c not in 'WB_']
-                    if bad:
-                        raise SystemExit(
-                            f'{path}: facades[{lab}][{face}] rhythm chars must be W/B/_ (got {bad!r})')
-                if 'wall' in row and row['wall'] is not None and not isinstance(row['wall'], str):
-                    raise SystemExit(f'{path}: facades[{lab}][{face}] wall must be a string')
-
-
 def _validate_details(path, spec: dict, labels: set) -> None:
     """Validate optional per-label roof/facade detail (greeblie) rows.
 
@@ -1271,6 +1214,8 @@ def _validate_details(path, spec: dict, labels: set) -> None:
                 or not all(isinstance(v, int) and not isinstance(v, bool) for v in at)
             ):
                 raise SystemExit(f'{pref} at must be [x, y, z] ints')
+            if kind == 'chimney':
+                validate_chimney(row, pref)
             size = row.get('size')
             if (
                 not isinstance(size, (list, tuple)) or len(size) != 3
@@ -1321,7 +1266,7 @@ class Build:
             do not point at another world's clips.
         @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
             (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
-            When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
+            Unzoned labels may inject ground_y without dsm. When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
         @param aerial_rgb: optional ``{(x, z): (r, g, b) 0..1}`` for roof-colour
             dry-run lines (tests). When omitted, samples the place aerial mosaic.
         """
@@ -1457,30 +1402,28 @@ class Build:
         return None
 
     def floor_y(self, f: Feature) -> int:
-        """Floor level from plot-edge surface, honouring floor_min.
-
-        @param f: feature mass
-        @returns: floor y
-        """
-        ring = set()
-        for (x, z) in f.cells:
-            for dx in range(-7, 8):
-                for dz in range(-7, 8):
-                    c = (x + dx, z + dz)
-                    if max(abs(dx), abs(dz)) >= 4 and c not in self.by_no_all_cells:
-                        ring.add(c)
-        near = {(x + dx, z + dz) for (x, z) in f.cells for dx in range(-3, 4) for dz in range(-3, 4)}
-        cols = ring - near
-        self._prefetch_live((x, y, z) for x, z in cols for y in range(75, 30, -1))
-        ys = [self.surf(x, z) for x, z in cols]
-        ys = [y for y in ys if y]
-        if not ys:
-            y = self.spec['floor_min'] if self.spec['floor_min'] is not None else 50
+        """Median lidar bare-terrain floor under the footprint, with floor_min override."""
+        if f.no in self.zone_data:
+            grid = self.zone_data[f.no]
+            ground = np.asarray(grid['ground_y'], dtype=float)
+            x0, z0 = int(grid['x0']), int(grid['z0'])
         else:
-            y = int(statistics.median(ys))
-            if self.spec['floor_min'] is not None:
-                y = max(y, self.spec['floor_min'])
-        return y
+            import lidar_provider as lp
+            from world_frame import load_frame, mc_grid_to_en
+            xs, zs = zip(*f.cells)
+            x0, z0, x1, z1 = min(xs), min(zs), max(xs), max(zs)
+            lidar = lp.tile_client(download=False)
+            if lidar.missing('DTM', *lp.mc_box_en(x0, z0, x1, z1)):
+                raise SystemExit(f'{self.name} {f.no}: lidar DTM cache missing for floor')
+            xx, zz = np.meshgrid(np.arange(x0, x1 + 1), np.arange(z0, z1 + 1))
+            frame = load_frame()
+            east, north = mc_grid_to_en(xx, zz, frame)
+            ground = np.trunc(lidar.sample('DTM', east, north, True)) + frame.y_offset
+        values = [float(ground[z - z0, x - x0]) for x, z in f.cells]
+        if not all(math.isfinite(y) for y in values):
+            raise SystemExit(f'{self.name} {f.no}: lidar DTM has no valid ground under footprint')
+        y = int(statistics.median(values))
+        return max(y, self.spec['floor_min']) if self.spec['floor_min'] is not None else y
 
     def _feature_has_zones(self, f: Feature) -> bool:
         """True when this label has a zones entry in the spec."""
@@ -1547,6 +1490,11 @@ class Build:
             self._zone_pad_lines.append(footprint_pad_line(outline, readable))
             for piece in dropped:
                 self._zone_pad_lines.append(dropped_footprint_line(f.no, piece))
+            if not readable.any():
+                raise SystemExit(
+                    f'{self.name} {f.no}: no zone cells survived; '
+                    f'{ZONE_MIN_FOOTPRINT_CELLS}-cell minimum, mass threshold {ZONE_LIDAR_MASS_M:g} m (DSM - DTM)'
+                )
             new_cells = mask_to_cells(readable, x0, z0)
             pitched = f.roof.get('kind') == 'pitched'
             half_grid = (
@@ -1737,7 +1685,7 @@ class Build:
             if pitched_states is not None:
                 self.set(x, ry, z, pitched_states[(x, z)])
             else:
-                self.set(x, ry, z, rm)
+                self.set(x, ry, z, block_family_variants(rm)['full'])
             if wants_edge(x, z, ry):
                 self.set(x, ry + 1, z, edge['block'])
             else:
@@ -1940,10 +1888,11 @@ class Build:
         outside = self.top_solid(*st)
         if outside is None:
             outside = self._column_floor(f, cell)
-        b = outside + int(floor_offset)
-        if b < outside:
-            b = outside
-        return b
+        floor = self._column_floor(f, cell)
+        top = (getattr(f, 'zone_roof', None) or {}).get(cell, f.b + f.storeys * STOREY_H)
+        # The live approach may choose a transition level, but cannot put the
+        # entrance through the roof/lintel.
+        return min(max(outside + int(floor_offset), outside), max(floor, top - 3))
 
     def _column_floor(self, f: Feature, cell: tuple[int, int]) -> int:
         """Floor y at a column (local lidar ground when zoned, else ``f.b``).
@@ -2240,7 +2189,7 @@ class Build:
         Panes need a solid frame (both wall-line sides plus above and below); otherwise
         the wall block is kept and the skip is counted for the dry-run report.
         """
-        facades = (self.spec.get('facades') or {}).get(f.no)
+        facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
         if not facades:
             self._windows_placeholder(f)
             return
@@ -2326,7 +2275,7 @@ class Build:
         """
         lines = []
         for f in self.features:
-            facades = (self.spec.get('facades') or {}).get(f.no) or {}
+            facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no) or {}
             for face in sorted('NSEW'):
                 run = self.face_run(f, face)
                 if not run:
@@ -2547,6 +2496,14 @@ class Build:
             print(line)
         for line in self.footprint_overlap_report():
             print(line)
+        valid_ids = {
+            line for line in (TOOL_ROOT / 'config/minecraft-block-ids-26.2.txt').read_text().splitlines()
+            if line and not line.startswith('#')
+        }
+        counts = Counter(state.split('[', 1)[0] for state in self.p.cells.values())
+        for name, count in sorted(counts.items()):
+            if name not in valid_ids:
+                print(f'unknown block id {name} x{count} (source: vendored Minecraft 26.2 client blockstates; config/minecraft-block-ids-26.2.txt)')
         return self.p
 
     def footprint_overlap_report(self) -> list[str]:
@@ -2639,6 +2596,57 @@ class Build:
         sx, sy, sz = size
         rm = f.roof.get('material') or 'smooth_stone'
 
+        if kind == 'chimney':
+            layers = chimney_layers(row)
+            base = layers[0][1] | layers[0][2]
+            off = sorted((x, az0) for x, az0 in base if (x, ay - 1, az0) not in roof_cells)
+            if off:
+                self._detail_clip_lines.append(f'detail chimney {f.no} at ({ax},{ay},{az}) cells off roof={off}; not built')
+                return
+            for y, ring, interior in layers:
+                material = row.get('material', 'white_concrete')
+                band = row.get('band') or {}
+                if band.get('offset') == y - ay:
+                    material = band['block']
+                if y == ay + row['height'] - 1 and row.get('rim'):
+                    material = row['rim']
+                for x, z in ring:
+                    self.set(x, y, z, material)
+                for x, z in interior:
+                    self.set(x, y, z, 'air')
+            lidar_top = 'unavailable'
+            try:
+                if f.no in self.zone_data and 'dsm' in self.zone_data[f.no]:
+                    grid = self.zone_data[f.no]
+                    lidar_top = metres_aod_to_y(float(grid['dsm'][az - grid['z0'], ax - grid['x0']]))
+                else:
+                    import lidar_provider as lp
+                    client = lp.tile_client(download=False)
+                    if not any(client.missing(product, *lp.mc_box_en(ax, az, ax, az)) for product in ('DTM', 'DSM')):
+                        lidar_top = int(lp.mc_heights(client, ax, az, ax, az)['top_y'][0, 0])
+            except (OSError, ValueError, LookupError, IndexError):
+                pass
+            self._detail_clip_lines.append(
+                f'chimney {f.no} at ({ax},{ay},{az}) planned height={row["height"]} '
+                f'diameter={row["base_diameter"]}->{row["top_diameter"]} '
+                f'top={ay + row["height"] - 1}; lidar top={lidar_top} (rough check only; photo/spec dimensions win)'
+            )
+            return
+
+        if kind == 'skylight':
+            off = [(ax + dx, ay, az + dz) for dx in range(sx) for dz in range(sz)
+                   if (ax + dx, ay, az + dz) not in roof_cells
+                   or any(x == ax + dx and z == az + dz and y > ay for x, y, z in roof_cells)]
+            if off:
+                self._detail_clip_lines.append(
+                    f'detail skylight {f.no} at ({ax},{ay},{az}) cells off roof={off}; not built'
+                )
+                return
+            for dx in range(sx):
+                for dz in range(sz):
+                    self.set(ax + dx, ay, az + dz, 'glass')
+            return
+
         supported = None
         if kind in ROOF_DETAIL_KINDS:
             # Only the shell/roof can support a detail: an earlier recipe must
@@ -2661,22 +2669,15 @@ class Build:
             if supported is None or (x, z) in supported:
                 self.set(x, y, z, state)
 
-        if kind == 'plant_room':
+        if kind in ('plant_room', 'vent'):
             for x, y, z in self._detail_box(at, size):
                 place(x, y, z, 'gray_concrete')
             for dx in range(sx):
                 for dz in range(sz):
                     place(ax + dx, ay + sy, az + dz, 'iron_trapdoor[half=bottom,open=false]')
-        elif kind == 'vent':
-            place(ax, ay, az, 'iron_bars')
-            if sy > 1:
-                place(ax, ay + 1, az, 'iron_trapdoor[half=bottom,open=false]')
         elif kind == 'louvred_vent':
             for x, y, z in self._detail_box(at, size):
                 place(x, y, z, 'iron_trapdoor[half=bottom,open=false]')
-        elif kind == 'skylight':
-            for x, y, z in self._detail_box(at, size):
-                place(x, y, z, 'glass')
         elif kind == 'solar_panel':
             for x, y, z in self._detail_box(at, (sx, 1, sz)):
                 place(x, y, z, 'black_stained_glass')
