@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 179,
+  "nextTaskId": 181,
   "tasks": [
     {
       "id": 175,
@@ -40,6 +40,24 @@
         177
       ],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md."
+    },
+    {
+      "id": 179,
+      "title": "Rename cell.origin to the home cell; drop stale top_of_world",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "The new-world guide calls the start cell the home cell but the key is still cell.origin (lib/geo/cellmath.py origin_cell(), world_frame.py info, both world-frame.json files, unit_test_world, docs). Rename to cell.home with a clear error for the old key. Also remove top_of_world (254, stale: build range is Y -64..319, nothing reads it) from the frames and legacy_offsets_dict, and use 'origin' only for MC (0,0)."
+    },
+    {
+      "id": 180,
+      "title": "Test large block coordinates in the game for new-world 0/0 offsets",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "New-world guide recommends offsets 0,0 so x = easting, z = -northing (about 442000, -115000 for Southampton). Unverified: client rendering, physics and region/cell tooling at coordinates in the hundreds of thousands. Build a throwaway world at such coordinates, check rendering jitter, entity movement, region file naming and cell ids, then confirm or tighten the guide (fallback: offsets = home rounded to 10 km)."
     }
   ]
 }
