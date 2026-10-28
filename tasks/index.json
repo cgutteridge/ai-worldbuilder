@@ -4,15 +4,6 @@
   "nextTaskId": 175,
   "tasks": [
     {
-      "id": 170,
-      "title": "Pitched roof stairs take the material of the roof they belong to",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Raised 2026-10-28 from the dark-stairs-in-a-brick-roof issue (I-023, snag S-030); independent review applied. Cause class: Translation. A roof column takes its material from its lidar zone alone (roof_material_for_zone, lib/builds/feature_build.py, called at about lines 1559 and 1589). zone_ridge_half_steps (about line 447) treats a whole zone as pitched when any of it rises 1 m or more, so a lower zone's material climbs the slope of a higher roof: in one rebuilt roof 363 stairs of the lower zone's material appeared and 117 of them touched main-roof columns. Not verified when written: how the eave rows land in the lower zone (the exact-tie idea in snap_to_levels is unproven and ties are rare; the nearest-level snap plus mode_filter and bucket_zones is a likelier source; no zone-grid dump yet); the roof in game. Deliver: a sloped column takes the material of the roof it rises from, not only its zone's material; the spec stays the owner of zone_materials; no old path is removed, only the zone-only lookup. The tie-break change is out of scope; file it separately only if a zone-grid dump shows ties happen. Files: lib/builds/feature_build.py (roof_material_for_zone and its callers, zone_ridge_half_steps), lib/builds/test_feature_build.py (already has the snap test), and the zone_materials text in rules/feature-builds.md. Related: #126 (zone materials), #125 (pitched zones). Blocked by the roof stair task (#169) because both touch the pitched-zone code path. Proof: unit tests with two zone levels asserting each column's material. Check: re-run the dry run for the zoned feature in the snag and count stairs of the lower zone's material that touch only main-roof columns (expect 0), and look at the roof in game. Helps: any zoned pitched feature that gives each zone its own material.\n\nOwner-authorized scope update 2026-10-28: height geometry cannot distinguish a real narrow dark lower roof from a mis-zoned brick eave. Extend the spec with explicit roof membership: roofs[label].material_regions=[{level:49,polygon:[[x,z],...]}]. Resolve region levels through existing zone_materials/default; unassigned columns retain zone lookup. Remove speculative propagation. Validate and test, independently review and ship; real-feature validation uses a temporary spec only. DRY RUNS ONLY; no world/spec writes or live Minecraft changes."
-    },
-    {
       "id": 173,
       "title": "Decor places permanent lidar-detected objects, using photo plus lidar to skip vehicles",
       "status": "todo",
