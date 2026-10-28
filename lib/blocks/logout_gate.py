@@ -76,22 +76,9 @@ def resolve_save_path(save_path: Path | None = None) -> Path | None:
     if save_path is not None:
         return Path(save_path)
     try:
-        from active_world import load_world_config
-        from script_env import ROOT
+        from active_world import save_path as _save_path
 
-        cfg = load_world_config()
-        raw = cfg.get('save_path')
-        if not raw:
-            region = cfg.get('region_path')
-            if region:
-                # .../dimensions/minecraft/overworld/region → save root is 4 parents up
-                p = Path(region)
-                if not p.is_absolute():
-                    p = Path(ROOT) / p
-                return p.parents[3] if len(p.parents) >= 4 else p.parent
-            return None
-        path = Path(raw)
-        return path if path.is_absolute() else Path(ROOT) / path
+        return _save_path(required=False)
     except Exception:
         return None
 

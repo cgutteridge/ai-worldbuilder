@@ -25,7 +25,7 @@ tree is `.gitignore`d; each subdirectory is its own git repo.
 
 | Path | Role |
 | --- | --- |
-| `config/world.json` | **Gameworld identity** + runtime paths. Required: `gameworld_id` (Minecraft world / save identity). May also carry `save_path`, `region_path`, `structure_namespace`, etc. Legacy `world_name` is accepted as `gameworld_id`. |
+| `config/world.json` | **Gameworld identity** + the save reference. Required: `gameworld_id`. `save_path` points at the save in the standalone Minecraft instance (absolute, or relative to the world root); the region folder is derived. The tool treats the save as read-only; see `docs/minecraft-instance-setup.md`. Also `structure_namespace`, `player_uuid`. |
 | `config/world-frame.json` | **World frame**: CRS, horizontal offsets, bounds, cell grid, Y offset. The only home for offsets and projection; nothing of this lives in the Minecraft save. |
 | `config/local-providers.json` | Below-national feeds for this place only. Entries with code set `package` to `providers/<id>`. |
 | `providers/<id>/` | Local provider fetch/CLI modules (see that world’s `providers/README.md`). |

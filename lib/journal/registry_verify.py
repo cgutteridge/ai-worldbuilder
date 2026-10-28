@@ -258,12 +258,11 @@ def check_world_presence(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
     """
     out: list[dict[str, Any]] = []
     try:
-        from active_world import load_world_config
-        cfg = load_world_config()
-        region = Path(cfg.get('region_path') or '')
-        if region and not region.is_absolute():
-            region = root / region
+        from active_world import region_path
+        region = region_path(required=False)
     except Exception:
+        return out
+    if region is None:
         return out
     if not region.is_dir():
         return [_issue('region:missing-dir', SEVERITY_ERROR, f'region path missing: {region}')]

@@ -117,7 +117,7 @@ def _stub_world(name: str) -> Path:
     config = world / 'config'
     config.mkdir(parents=True, exist_ok=True)
     (config / 'world.json').write_text(
-        json.dumps({'gameworld_id': name, 'region_path': str(world / 'region')}),
+        json.dumps({'gameworld_id': name, 'save_path': str(world / 'save')}),
         encoding='utf-8',
     )
     (config / 'world-frame.json').write_text(

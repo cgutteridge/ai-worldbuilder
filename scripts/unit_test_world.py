@@ -30,12 +30,11 @@ def unit_test_world() -> Iterator[Path]:
         root = Path(tmp)
         config = root / 'config'
         config.mkdir()
-        region = root / 'save' / 'region'
+        region = root / 'save' / 'dimensions' / 'minecraft' / 'overworld' / 'region'
         region.mkdir(parents=True)
         (config / 'world.json').write_text(json.dumps({
             'gameworld_id': 'unit-test',
             'save_path': str(root / 'save'),
-            'region_path': str(region),
             'structure_namespace': 'southampton_refine',
         }))
         (config / 'world-frame.json').write_text(json.dumps({
