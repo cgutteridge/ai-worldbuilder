@@ -13,7 +13,15 @@ Bootstrap only. Do not invent CRS math beyond `world_frame`. Stop with `need-you
 - Create the new world as its **own git repo** under `worlds/<name>/` (gitignored by ai-worldbuilder). Point `active_world.py` at it before writing place files.
 - **Empty world** from `templates/empty-world/` (flat, one bedrock layer at the world floor Y −64, structures off, weather off, MC 26.2 format; see its README.txt). Never start from a generated city-mesh save or a third-party heightmap export; heights come from the lidar provider only.
 - **Start with the home location.** Ask the user for the place they want to start at (we used the Highfield campus). Everything below follows from it. Name it (e.g. Bargate, campus centre).
-- Ask bbox size; **recommend ≥ 5 km × 5 km** around home. Explain a bad offset is expensive to undo.
+- **Bbox: explain it, then ask.** Say this to the user in plain words every time, before asking for a size:
+  - Lidar comes as **fixed tiles** (in Britain, 5 km squares on the national grid, each DTM and DSM about 75 MB). A tile can't be downloaded in part, so the bbox doesn't choose how much data you get; it chooses **which tiles** download now. A box straddling a tile line needs 2 or 4 tiles; one aligned to the grid needs 1.
+  - The bbox has two jobs: it picks the first download, and it is the area the Y-offset check scans for lowest ground and highest roof (section 2). It does not limit the world: later cells fetch the neighbouring tiles when first needed.
+  - Compute how many tiles the candidate box needs (the lidar provider's `tiles_for`, or its `tiles` command) and tell the user, with the rough download size and that the first download is slow.
+  - Offer both options with their trade-offs, and give a recommendation for this place:
+    - **Aligned box (1 tile):** fastest start (about 150 MB), but the Y check only sees that tile; extremes outside it are missed, and a wrong Y offset is expensive to undo.
+    - **Wider box (2 or 4 tiles):** the min/max is more trustworthy and neighbours are cached for later, at the cost of several times the download and any sea or empty tiles in it.
+    - Prefer the aligned box when the high and low points are known to be inside it; prefer the wider box for unfamiliar terrain (cliffs, valleys, tall structures).
+  - Smallest sensible box: home plus the highest and lowest land expected. A 5 km box is a starting point, not a rule.
 - Vanilla Overworld build range is **Y −64…319** (384 blocks, limit 320). Terrain plus buildings plus trees in the bbox must fit in it; that is what the Y checkpoint (section 2) is for.
 
 Done when the user has named the home place and a rough bbox.
@@ -65,6 +73,7 @@ Done when `world_frame.py info` prints the new place, offsets and home cell, and
 `y_offset` is the block Y that real height 0 m maps to (Y = height + `y_offset`). Default **0**: sea level (the lidar datum, e.g. Ordnance Datum Newlyn in Britain) is Y 0. Change it only when the area needs it, for example a site 1000 m above sea level.
 
 1. Ensure lidar coverage for the bbox (national composite plugin or whatever `world-frame.json` names).
+   The first fetch is slow (minutes: about 75 MB per tile per product). Run it in the background, tell the user the tile count first, and relay the `[i/N]` progress lines as they appear. Note the elapsed time it reports.
 2. Run highs/lows:
 
 ```bash
