@@ -647,24 +647,50 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             'facade_plan': _glazing_plan(facades or {}, {'A': {'faces': {}, 'entrances': entrances}}),
         }
 
-    def build_plan(self, entrances, *, facades=None, cells=None, world=None):
+    def build_plan(self, entrances, *, facades=None, cells=None, world=None, zone_data=None):
         buf = io.StringIO()
         with redirect_stdout(buf):
             plan = F.build(
                 self.spec(entrances, facades=facades),
                 footprints={'A': cells if cells is not None else self.cells},
                 world=world or _StoneWorld(),
+                zone_data=zone_data,
             )
         return plan, buf.getvalue()
+
+    def test_door_uses_lidar_and_refuses_stale_live_ground(self):
+        class GroundWorld:
+            def __init__(self, y):
+                self.y = y
+
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= self.y else 'minecraft:air'
+
+        grids = {'A': {'x0': 9, 'z0': 19, 'ground_y': np.full((7, 9), 51)}}
+        for live_y, offset, expected_y in ((49, 0, 52), (49, 2, 54), (42, 0, None)):
+            with self.subTest(live_y=live_y, offset=offset):
+                plan, out = self.build_plan(
+                    [_entrance_row(floor_offset=offset)],
+                    world=GroundWorld(live_y), zone_data=grids,
+                )
+                lower = [p for p, state in plan.cells.items()
+                         if 'iron_door' in state and 'half=lower' in state]
+                if expected_y is None:
+                    self.assertEqual(lower, [])
+                    self.assertIn('door T-A: refused', out)
+                    self.assertIn('live y=42', out)
+                    self.assertIn('lidar y=51', out)
+                else:
+                    self.assertEqual([p[1] for p in lower], [expected_y])
 
     def test_high_live_rim_does_not_put_unzoned_door_in_roof(self):
         class HighRimWorld:
             def block(self, x, y, z):
-                return 'minecraft:stone' if y <= 60 else 'minecraft:air'
+                return 'minecraft:stone' if y <= 58 else 'minecraft:air'
         spec = self.spec([_entrance_row(leaves=1, at=[13, 24])])
         spec['storeys']['A'] = 1
         spec['floor_min'] = 55
-        grids = {'A': {'x0': 10, 'z0': 20, 'ground_y': np.full((5, 7), 54)}}
+        grids = {'A': {'x0': 9, 'z0': 19, 'ground_y': np.full((7, 9), 55)}}
         with redirect_stdout(io.StringIO()):
             plan = F.build(spec, footprints={'A': self.cells}, world=HighRimWorld(), zone_data=grids)
         lower = [p for p, state in plan.cells.items() if '_door[' in state and 'half=lower' in state]
@@ -857,9 +883,12 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                     return 'minecraft:stone'
                 return 'minecraft:stone' if y <= 49 else 'minecraft:air'
 
+        ground = np.full((6, 7), 49)
+        ground[-1, :] = 52
         plan, _out = self.build_plan(
             [_entrance_row(leaves=1, block='iron_door', at=[13, 25], floor_offset=0)],
             world=HighPavementWorld(),
+            zone_data={'A': {'x0': 10, 'z0': 20, 'ground_y': ground}},
         )
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]
@@ -881,9 +910,12 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                     return 'minecraft:stone'
                 return 'minecraft:stone' if y <= 49 else 'minecraft:air'
 
+        ground = np.full((6, 7), 49)
+        ground[-1, :] = 52
         plan, _out = self.build_plan(
             [_entrance_row(leaves=1, block='iron_door', at=[13, 25], floor_offset=0)],
             world=HighPavementWorld(),
+            zone_data={'A': {'x0': 10, 'z0': 20, 'ground_y': ground}},
         )
         lowers = [(pos, st) for pos, st in plan.cells.items()
                   if 'iron_door' in st and 'half=lower' in st]

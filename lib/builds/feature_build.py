@@ -1882,9 +1882,9 @@ class Build:
     def _outside_door_floor(
         self, f: Feature, cell, face: str, floor_offset: int,
     ) -> int:
-        """Door floor y from outside ground + offset; never below outside ground (I-017).
+        """Door floor from outside lidar ground; refuse stale live approaches (#204).
 
-        @param f: feature mass (fallback when outside ground is unknown)
+        @param f: feature mass
         @param cell: wall ``(x, z)``
         @param face: facing letter
         @param floor_offset: blocks relative to outside ground (0 = level)
@@ -1892,14 +1892,35 @@ class Build:
         """
         dx, dz = DIRS[face]
         st = (cell[0] + dx, cell[1] + dz)
+        if f.no in self.zone_data:
+            grid = self.zone_data[f.no]
+            ground = np.asarray(grid['ground_y'])
+            ix, iz = st[0] - grid['x0'], st[1] - grid['z0']
+            if not (0 <= iz < ground.shape[0] and 0 <= ix < ground.shape[1]):
+                raise ValueError(f'lidar ground unavailable at {st[0]},{st[1]}')
+            outside = float(ground[iz, ix])
+        else:
+            import lidar_provider as lp
+            from world_frame import load_frame, mc_grid_to_en
+            lidar = lp.tile_client(download=False)
+            if lidar.missing('DTM', *lp.mc_box_en(*st, *st)):
+                raise ValueError(f'lidar DTM cache missing at {st[0]},{st[1]}')
+            frame = load_frame()
+            east, north = mc_grid_to_en(np.array([st[0]]), np.array([st[1]]), frame)
+            outside = float(np.trunc(lidar.sample('DTM', east, north, True))[0] + frame.y_offset)
+        if not math.isfinite(outside):
+            raise ValueError(f'lidar ground unavailable at {st[0]},{st[1]}')
+        outside = int(outside)
         self._prefetch_live((st[0], y, st[1]) for y in range(70, 40, -1))
-        outside = self.top_solid(*st)
-        if outside is None:
-            outside = self._column_floor(f, cell)
+        live_y = self.top_solid(*st)
+        if live_y is None or abs(live_y - outside) > 3:
+            raise ValueError(
+                f'live y={live_y}, lidar y={outside} at {st[0]},{st[1]} '
+                '(maximum difference 3 blocks)'
+            )
         floor = self._column_floor(f, cell)
         top = (getattr(f, 'zone_roof', None) or {}).get(cell, f.b + f.storeys * STOREY_H)
-        # The live approach may choose a transition level, but cannot put the
-        # entrance through the roof/lintel.
+        # Keep the opening below its roof/lintel.
         return min(max(outside + int(floor_offset), outside), max(floor, top - 3))
 
     def _column_floor(self, f: Feature, cell: tuple[int, int]) -> int:
@@ -2037,11 +2058,15 @@ class Build:
             offset = row.get('floor_offset')
             if not isinstance(offset, int) or isinstance(offset, bool):
                 offset = 0
-            b = self._outside_door_floor(f, cells[0], face, offset)
-            cover_y = max(self._outside_door_floor(f, c, face, offset) for c in cells) + 3
+            try:
+                floors = [self._outside_door_floor(f, c, face, offset) for c in cells]
+            except ValueError as exc:
+                print(f'door {eid}: refused ({exc})')
+                continue
+            b = floors[0]
+            cover_y = max(floors) + 3
             hinges = ('left',) if leaves == 1 else ('left', 'right')
-            for cell, hinge in zip(cells, hinges):
-                leaf_b = self._outside_door_floor(f, cell, face, offset)
+            for cell, hinge, leaf_b in zip(cells, hinges, floors):
                 self._set_door_leaf(cell, face, block, hinge, leaf_b)
                 placed.add(cell)
                 f.door_cells.add(cell)
