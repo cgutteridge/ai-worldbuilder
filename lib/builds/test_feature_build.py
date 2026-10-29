@@ -2705,6 +2705,44 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertEqual(rewrite_bottom_slabs(stub.p), 0)
         self.assertIn('type=bottom', stub.p.cells[(1, 60, 1)])
 
+    def test_roof_block_y_odd_goes_up_even_unchanged(self):
+        self.assertEqual([F.roof_block_y(h) for h in range(12, 17)], [6, 7, 7, 8, 8])
+
+    def test_bottom_half_slab_surface_rises_steadily_h12_to_h16(self):
+        # #209: surfaces 7, 7.5, 8, 8.5, 9, never a sawtooth.
+        half = {(i, 0): 12 + i for i in range(5)}
+        states = F.pitched_roof_states(half, {c: 'brick' for c in half})
+        surf = []
+        for (x, z), h in sorted(half.items()):
+            y = F.roof_block_y(h)
+            surf.append(y + (0.5 if 'type=bottom' in states[(x, z)] else 1))
+        self.assertEqual(surf, [7, 7.5, 8, 8.5, 9])
+
+    def test_stairs_same_y_rule_uses_shifted_y(self):
+        # Odd-h stair neighbours share a block Y with each other, not with even-h ones.
+        self.assertEqual(F.roof_block_y(13), F.roof_block_y(14))
+        self.assertNotEqual(F.roof_block_y(12), F.roof_block_y(13))
+
+    def _roof_stub(self, below):
+        stub = mock.Mock()
+        stub.p = F.Plan('t')
+        stub.wall = 'bricks'
+        if below is not None:
+            stub.p.set(1, 59, 1, below)
+        stub.live.block.return_value = 'minecraft:air'
+        stub._is_solid = lambda x, y, z: F.Build._is_solid(stub, x, y, z)
+        return stub
+
+    def test_set_roof_puts_wall_under_slab_over_air(self):
+        stub = self._roof_stub(None)
+        F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(stub.p.cells[(1, 59, 1)], 'minecraft:bricks')
+
+    def test_set_roof_keeps_existing_solid_under_slab(self):
+        stub = self._roof_stub('stone')
+        F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(stub.p.cells[(1, 59, 1)], 'minecraft:stone')
+
     def test_ridge_unchanged_full_block_even(self):
         half = {(0, 0): 10, (1, 0): 12, (2, 0): 12, (3, 0): 10}
         mats = {c: 'brick' for c in half}

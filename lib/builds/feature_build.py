@@ -630,6 +630,22 @@ def _roof_slab(mat: str, typ: str) -> str:
     return f'{mat}_slab[type={typ},waterlogged=false]'
 
 
+def roof_block_y(half_height: int) -> int:
+    """Block Y where a roof membrane cell of ``half_height`` sits.
+
+    Even ``h`` is a full block / stair at ``h // 2``. Odd ``h`` is a bottom-half
+    slab one block up, ``(h + 1) // 2``: its surface (y + 0.5) then lies half a
+    block above the full block for ``h - 1`` at ``y - 1``, so slope surfaces
+    rise steadily (7, 7.5, 8, 8.5 ...) instead of sawtoothing (#209). Every
+    half-height to Y mapping goes through here so stairs (same-Y shape rule,
+    #169) and slabs agree.
+
+    @param half_height: membrane top in half-blocks
+    @returns: block Y
+    """
+    return (half_height + 1) // 2
+
+
 _ROOF_FACE_ORDER = ('north', 'east', 'south', 'west')
 
 
@@ -674,7 +690,8 @@ def pitched_roof_states(
     """Choose stair / slab / full block states for a pitched-roof heightfield.
 
     ``half_heights`` is the membrane top in half-blocks (``2 * y`` for a full
-    block or bottom-slab course at ``y``, ``2 * y + 1`` for a top slab). Heights
+    block at ``y``, odd values a bottom-half slab one block up; see
+    :func:`roof_block_y`). Heights
     are regularised first (N4 steps at most 2 within a zone). A rise of 2
     half-steps toward a neighbour is a stair facing upslope; hip eaves with only a diagonal rise
     also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
@@ -689,7 +706,7 @@ def pitched_roof_states(
     @param materials: ``{(x, z): material prefix}`` (must cover every column)
     @param warnings: optional list that receives fallback messages
     @param levels: optional semantic zone levels preserving intentional plateau steps
-    @returns: ``{(x, z): block state}`` (place at ``y = half_height // 2`` after
+    @returns: ``{(x, z): block state}`` (place at ``roof_block_y(half_height)`` after
         regularisation)
     """
     from roof_lint import stair_shape_from_neighbours
@@ -762,11 +779,11 @@ def pitched_roof_states(
         f = fam(mat)
         if (x, z) in facings:
             facing = facings[(x, z)]
-            y = h // 2
+            y = roof_block_y(h)
             adjacent: dict[str, tuple[str, str] | None] = {}
             for face, (dx, dz) in _ROOF_DELTA.items():
                 npos = (x + dx, z + dz)
-                if (npos not in facings or half_heights[npos] // 2 != y
+                if (npos not in facings or roof_block_y(half_heights[npos]) != y
                         or 'stairs' not in fam(materials[npos])):
                     adjacent[face] = None
                 else:
@@ -1326,13 +1343,16 @@ class Build:
         self.p.set(x, y, z, s)
 
     def _set_roof(self, x, y, z, s):
-        """Set a roof-membrane cell; bottom slabs are exempted from the apply rewrite.
+        """Set a roof-membrane cell; bottom-half slabs are exempted from the apply rewrite and get a wall block under them when the cell below is air.
 
         @param x: block x
         @param y: block y
         @param z: block z
         @param s: roof block state
         """
+        if is_bottom_slab(s) and not self._is_solid(x, y - 1, z):
+            # a bottom-half slab never floats: wall under it when the cell below is air
+            self.p.set(x, y - 1, z, self.wall)
         self.p.set(x, y, z, s)
         if is_bottom_slab(s):
             self.p.keep_slab_cells.add((x, y, z))
@@ -1537,15 +1557,15 @@ class Build:
                     eaves[(wx, wz)] = eave_y
                     if half_grid is not None:
                         h = int(half_grid[z, x])
-                        roof[(wx, wz)] = eave_y + h // 2
                         half_h[(wx, wz)] = 2 * eave_y + h
+                        roof[(wx, wz)] = roof_block_y(half_h[(wx, wz)])
                     else:
                         roof[(wx, wz)] = eave_y
                     gy[(wx, wz)] = int(ground[z, x])
                     zl[(wx, wz)] = int(round(float(zone[z, x])))
             if pitched:
                 half_h = regularise_roof_half_heights(half_h, zl)
-                roof = {c: h // 2 for c, h in half_h.items()}
+                roof = {c: roof_block_y(h) for c, h in half_h.items()}
             # neighbourhood ground for expose() outside the mass
             for z in range(depth):
                 for x in range(width):
@@ -2415,7 +2435,7 @@ class Build:
             half_heights, materials, warnings=self._roof_warnings,
         )
         for (x, z), st in states.items():
-            y = half_heights[(x, z)] // 2
+            y = roof_block_y(half_heights[(x, z)])
             if (x, z) in self.owner:
                 for yy in range(eave, y):
                     self.set(x, yy, z, self.wall)
