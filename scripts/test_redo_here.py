@@ -1,6 +1,7 @@
 """Unit tests for scripts/redo_here.py (no Minecraft, no world writes)."""
 from __future__ import annotations
 
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,9 +10,25 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-sys.path.insert(0, str(ROOT / 'shims'))
+import script_env
+script_env.ensure_import_paths()
 
 import redo_here as rh  # noqa: E402
+
+
+class TestWorldActivation(unittest.TestCase):
+    def test_fresh_process_import_then_cli_with_disposable_world(self):
+        code = """
+import redo_here
+from unittest import mock
+from unit_test_world import unit_test_world
+with unit_test_world(), mock.patch.object(redo_here, 'activate_world_from_args'):
+    redo_here.main(['--world', 'unit-test', '--at', '1,2', '--json'])
+"""
+        result = subprocess.run([sys.executable, '-c', code], cwd=ROOT / 'scripts',
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('"primary": null', result.stdout)
 
 
 class TestScriptFor(unittest.TestCase):

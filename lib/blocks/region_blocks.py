@@ -9,6 +9,7 @@ Owner-authorised exception to ADR 004 / GLOSSARY "avoid parsing region files"
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 import math
 import struct
 import zlib
@@ -17,6 +18,10 @@ from typing import Iterable
 
 from block_store import BlockStoreError, Pos, canonical_state
 from nbt_read import read_named_root
+
+MAX_REGION_FILES = 2
+MAX_REGION_CHUNKS = 256
+
 
 class RegionBlocks:
     """BlockStore that parses ``r.X.Z.mca`` under a region directory (read-only).
@@ -30,8 +35,8 @@ class RegionBlocks:
 
     def __init__(self, region: Path | str) -> None:
         self.region = Path(region)
-        self._files: dict[Path, bytes] = {}
-        self._chunks: dict[tuple[int, int], dict | None] = {}
+        self._files: OrderedDict[Path, bytes] = OrderedDict()
+        self._chunks: OrderedDict[tuple[int, int], dict | None] = OrderedDict()
 
     @classmethod
     def from_world_config(cls) -> 'RegionBlocks':
@@ -78,6 +83,9 @@ class RegionBlocks:
     def _file_bytes(self, path: Path) -> bytes:
         if path not in self._files:
             self._files[path] = path.read_bytes() if path.is_file() else b''
+        self._files.move_to_end(path)
+        if len(self._files) > MAX_REGION_FILES:
+            self._files.popitem(last=False)
         return self._files[path]
 
     def _chunk(self, cx: int, cz: int) -> dict | None:
@@ -89,6 +97,7 @@ class RegionBlocks:
         """
         key = (cx, cz)
         if key in self._chunks:
+            self._chunks.move_to_end(key)
             return self._chunks[key]
         rx, rz = cx >> 5, cz >> 5
         path = self.region / f'r.{rx}.{rz}.mca'
@@ -102,6 +111,8 @@ class RegionBlocks:
                     f'RegionBlocks failed to parse chunk {cx},{cz} in {path}: {exc}'
                 ) from exc
         self._chunks[key] = secs
+        if len(self._chunks) > MAX_REGION_CHUNKS:
+            self._chunks.popitem(last=False)
         return secs
 
     def _parse_chunk(self, data: bytes, cx: int, cz: int) -> dict | None:

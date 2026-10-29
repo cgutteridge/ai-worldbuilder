@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Identify what a player-standing redo would touch at a column.
 
-  .venv/bin/python scripts/redo_here.py --at 6240,-5664
-  .venv/bin/python scripts/redo_here.py --at 6240,-5664 --y 55 --json
+  python3 scripts/redo_here.py --world <name> --at 6240,-5664
+  python3 scripts/redo_here.py --world <name> --at 6240,-5664 --y 55 --json
 
 Prints the 128² cell, any feature build covering the column (and its script), and
 whether trees/decor masks exist for that cell. Used by the redo skill.
@@ -15,14 +15,12 @@ import re
 import sys
 from pathlib import Path
 
-from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E402
+from script_env import ROOT, SCRIPTS, TOOL_ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
-from cell_features import is_feature_build  # noqa: E402
 from coverage import cell_of, touched_by_build  # noqa: E402
 from ground_layer import RETIRED_GROUND_PASSES  # noqa: E402
 from pass_mask import mask_path  # noqa: E402
 
-SCRIPTS = ROOT / 'scripts'
 _NAME_RE = re.compile(r"""^NAME\s*=\s*['"]([^'"]+)['"]""", re.M)
 
 
@@ -54,6 +52,7 @@ def features_covering(x: int, z: int) -> list[str]:
     @param z: block z
     @returns: sorted feature names
     """
+    from cell_features import is_feature_build
     return sorted(
         name for name, cols in touched_by_build().items()
         if (x, z) in cols
@@ -124,7 +123,7 @@ def describe(x: int, z: int, y: int | None = None) -> dict:
         script = script_for(name)
         features.append({
             'name': name,
-            'script': str(script.relative_to(ROOT)) if script else None,
+            'script': str(script.relative_to(TOOL_ROOT)) if script else None,
         })
     return {
         'at': [x, z],

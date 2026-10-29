@@ -354,6 +354,7 @@ class LiveApplyCase(unittest.TestCase):
             mock.patch.object(site_kit, 'fresh_planning_world',
                               lambda region=None, strict=False: View(self.blocks)),
             mock.patch.object(site_kit, 'live_blocks', lambda: self.blocks),
+            mock.patch.object(site_kit, 'disk_blocks', lambda: self.blocks),
             mock.patch.object(site_kit, '_bring_player', lambda *a, **k: None),
             mock.patch.object(site_kit, 'ensure_region_matches_open_world', lambda region=None: None),
             mock.patch.object(cell_registry, 'default_ghosts', lambda: self.ghosts),

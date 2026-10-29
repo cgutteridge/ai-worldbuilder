@@ -713,6 +713,19 @@ def live_blocks():
     return LiveBlocks.from_world_config()
 
 
+def disk_blocks():
+    """Save and settle the active world, then return its read-only region store.
+
+    Uses the live identity gate and flusher; save failures abort the dry run.
+
+    @returns: ``region_blocks.RegionBlocks``
+    """
+    from region_blocks import RegionBlocks
+    live = live_blocks()
+    live.flush()
+    return RegionBlocks(live.region)
+
+
 class McpWriter:
     """``apply`` callable for :class:`cell_journal.CellRegistry`: writes ``Writes.cells`` over MCP.
 

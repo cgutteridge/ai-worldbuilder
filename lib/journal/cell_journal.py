@@ -70,6 +70,8 @@ CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the ol
 AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
 DEFAULT_RING = 2
 SAMPLE = 10
+# Large ghost plans must not multiply retained memory across cells.
+MAX_CACHED_BLOB_BLOCKS = 262144
 
 
 # --- errors (all loud; nothing is swallowed) -----------------------------------------------------
@@ -822,7 +824,8 @@ class CellRegistry:
         except (OSError, ValueError, TypeError, AttributeError, LookupError) as exc:
             raise JournalError(f'plan blob {key} unreadable: {exc}') from exc
         self._blob_cache[key] = got
-        while len(self._blob_cache) > 16:
+        while (len(self._blob_cache) > 16
+               or sum(map(len, self._blob_cache.values())) > MAX_CACHED_BLOB_BLOCKS):
             self._blob_cache.popitem(last=False)
         return got
 
@@ -860,6 +863,8 @@ class CellRegistry:
                     if top is not None and pos[1] > top:
                         del owners[pos]
         if cacheable:
+            # Ownership is reconstructed independently per cell; retain only the latest.
+            self._owner_cache.clear()
             self._owner_cache[cell] = owners
         return owners
 

@@ -22,7 +22,7 @@ Cell journal (ADR 004): clean applies land journal entries; undos/clears clear m
 ## 0. Locate
 
 1. `player_list_online` → player `x,y,z` (floor to blocks).
-2. `.venv/bin/python scripts/redo_here.py --at <x>,<z> --y <y> --json`
+2. `python3 scripts/redo_here.py --world <world> --at <x>,<z> --y <y> --json`
 3. Read `cell`, `primary`, `features`, `masks`.
 
 Done when the JSON is in hand.
@@ -36,7 +36,7 @@ Always put the player above the target, looking straight down — before the fir
 3. Move with the required-why CLI (not raw `entity_teleport`). `--why` names the target, e.g. hovering over the feature or cell for the redo. Face a point on the ground at the same `x,z` (look straight down). Spectator or creative:
 
    ```bash
-   .venv/bin/python scripts/mc_player.py move \
+   python3 scripts/mc_player.py move \
      --why "Hovering over oakdene_court so you can see the redo" \
      --pos x,y,z --facing x,y,z --gamemode spectator
    ```
@@ -66,8 +66,8 @@ Done when they are hovering and looking down at the target.
    Aerial sheet: run `google_aerial.py sheet` / `google_window.py` and `Read` the PNG under `instance/google-aerial/`. Not seeing the sheet is not a reason to skip greeblies; stop and fix the download.
 
    If designer ≠ builder: stop after the table + hand-off artefact; builder continues from the next step.
-7. **Readiness check, then clear the old build** (`rules/build-workflow.md` step 3: journal clean, ground and door-front levels match lidar, dry run on the current world). Do not undo before it passes. **Clear the old build first.** If the feature has a landed journal entry (it was built before), `SITE_OWNER=<owner> .venv/bin/python scripts/element_undo.py --world <world> <name> --apply` (via `site_lock.py run`/the claimed lock) *before* applying. A plain re-apply only writes the new plan's cells, so old roof, stair and edit blocks outside it survive. Skip only when `redo_here` shows no landed entry for the plan.
-8. Dry run (shell + `details`), then `SITE_OWNER=<owner> .venv/bin/python scripts/<script> --apply` (or `feature_build.py site/builds/<name>.json --apply`). Readback 0.
+7. **Readiness check, then clear the old build** (`rules/build-workflow.md` step 3: journal clean, ground and door-front levels match lidar, dry run on the current world). Do not undo before it passes. **Clear the old build first.** If the feature has a landed journal entry (it was built before), `SITE_OWNER=<owner> python3 scripts/element_undo.py --world <world> <name> --apply` (via `site_lock.py run`/the claimed lock) *before* applying. A plain re-apply only writes the new plan's cells, so old roof, stair and edit blocks outside it survive. Skip only when `redo_here` shows no landed entry for the plan.
+8. Dry run (shell + `details`), then `SITE_OWNER=<owner> python3 scripts/<script> --apply` (or `feature_build.py site/builds/<name>.json --apply`). Readback 0.
 9. **Hover** again if the player moved during apply.
 10. Release lock. Cue `party-cheer`.
 
