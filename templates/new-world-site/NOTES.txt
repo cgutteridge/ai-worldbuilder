@@ -4,7 +4,7 @@ Replace PLACE with the real place name. Accuracy only — no fictional districts
 START HERE
 - World AGENTS.md + parent ai-worldbuilder AGENTS.md
 - python3 scripts/cell_registry.py next  (from tool repo; this world active)
-- registry/ (journal + issues.json) — world progress (tool work → ai-worldbuilder tasks/)
+- registry/ (journal + issues.json + issues-closed.json) — world progress (tool work → ai-worldbuilder tasks/)
 - Craft/process rules: ai-worldbuilder rules/ (process, craftsmanship, foliage,
   handoff-layered-passes, rules-context, cleanup). Stubs under site/ point there.
 

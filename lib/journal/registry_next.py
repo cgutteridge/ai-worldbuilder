@@ -1,7 +1,7 @@
 """Deterministic ``next`` work picker for the cell registry (ticket #31).
 
 Read-only and idempotent: the next undone registry item (ISSUES.txt / I-nnn no
-longer steers this; snags live in ``registry/issues.json`` via ``scripts/issues.py``
+longer steers this; snags live in ``registry/issues.json`` / ``registry/issues-closed.json`` via ``scripts/issues.py``
 and never block a cell — ticket #121).
 
 Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
