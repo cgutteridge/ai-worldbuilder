@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 201,
+  "nextTaskId": 202,
   "tasks": [
     {
       "id": 178,
@@ -56,6 +56,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Raised 2026-10-29 from a dry run of decor_layer on southampton-build 48,-45: 156 of 159 mapped hedge columns were refused as 'on carriageway', but only 8 neighbouring columns were tarmac; 71 hedge columns stand on live brick/paving and 78 on grass within 2 blocks of paving or brick. Owner decision: the rule should be carriageway only. decor_layer.on_carriageway refuses a barrier column only when its own live ground is tarmac, marking or kerb; the 5x5 near-paving margin and the paving/brick kinds go. Applies to every barrier source. Reason string stays 'on carriageway'. Replaces the #144 brick-path refusal for hedges. Tests in lib/layers/test_decor_layer.py."
+    },
+    {
+      "id": 201,
+      "title": "Decor uses lidar as a placement and size hint, never as the trigger",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-29 from owner direction after the 48,-45 dry run (201 of 209 unresolved decor items were lone lidar lumps). Rule: a photo, POI, OSM or designer row says there is a feature (statue, wall, hedge, bench, table, anything); decor then consults lidar for placement and size hints. A lump seen only in lidar is ignored: no plan item, not even an unresolved one. decor_plan.lidar_objects stops emitting unlabelled components; a lidar component no longer vetoes OSM/designer furniture unless a photo/aerial label on it names an incompatible kind (e.g. vehicle). Barrier items (map, garden, designer, border) take height from lidar when most columns stand 1-3 above terrain (tree/roof columns excluded); furniture rows carry lidar_height and lidar_cells as hints. Tests in lib/layers/test_decor_plan.py."
     }
   ]
 }
