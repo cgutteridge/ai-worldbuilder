@@ -121,6 +121,16 @@ class TestFreeStandingHedges(unittest.TestCase):
                 canopy=set(), designer_items=designer)
         self.assertEqual([i['kind'] for i in plan['items']], ['iron_bars'])
 
+    def test_lidar_confirmed_hedge_leaves_no_unresolved_lidar_object(self):
+        strip = [(5, z) for z in range(2, 9)]
+        rgb = {q: self.SHADE for q in strip}
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(),
+                canopy=set(), lidar_hm=self.hm(strip))
+        self.assertEqual([i['id'] for i in plan['items']], ['hedge-free-5-2'])
+        self.assertEqual(dp.unresolved_items(plan), [])
+
     def test_build_decor_plan_includes_free_hedges_but_not_over_map_hedges(self):
         strip = [(5, z) for z in range(2, 9)]
         rgb = {q: self.SHADE for q in strip}

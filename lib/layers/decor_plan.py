@@ -40,6 +40,7 @@ CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MIN_BORDER_CELLS = 4
 MAX_FREE_HEDGE_WIDTH = 3
 HEDGE_RAISE = (1, 3)
+MIN_RAISED_SHARE = 0.5
 
 
 def _item_id(prefix: str, *parts: Any) -> str:
@@ -146,7 +147,7 @@ def aerial_free_hedges(
     Shade columns outside footprints, canopy and ``taken`` barrier columns are
     grouped; only elongated groups (at least ``min_cells`` long, mean width at
     most ``max_width``) count, so a shaded lawn patch is not a hedge. When a
-    lidar heightmap is given, at least half the strip must stand 1-3 blocks
+    lidar heightmap is given, at least ``MIN_RAISED_SHARE`` of the strip must stand 1-3 blocks
     above bare terrain (medium confidence); without lidar the item is low.
 
     @param footprint: building footprint columns
@@ -170,7 +171,7 @@ def aerial_free_hedges(
         length = max(max(xs) - min(xs), max(zs) - min(zs)) + 1
         if length < min_cells or len(group) / length > max_width:
             continue
-        if use_lidar and _raised_fraction(lidar_hm, group) < 0.5:
+        if use_lidar and _raised_fraction(lidar_hm, group) < MIN_RAISED_SHARE:
             continue
         cells = sorted(group)
         out.append(_barrier_item(
@@ -514,7 +515,9 @@ def build_decor_plan(
     items = [item for item in items
              if not (item.get('role') == 'furniture'
                      and tuple(item.get('cell') or ()) in object_columns)]
-    items.extend(object_items)
+    # A raised column already planned as a barrier is that barrier, not an unknown object.
+    items.extend(o for o in object_items
+                 if not all(tuple(c) in seen_barrier for c in o['lidar_cells']))
     for i, obs in enumerate(photo_observations):
         if obs.get('cell') and tuple(obs['cell']) in object_columns:
             continue
