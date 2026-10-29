@@ -1666,6 +1666,30 @@
       "title": "Industrial chimneys are built as hollow round stacks on big roofs, sized from photos and spec, with lidar as a rough check",
       "status": "done",
       "notes": "Raised 2026-10-28 from the thin-chimneys issue (I-034, snag S-048, building w66696201); independent review applied. Cause class: Capability. ROOF_DETAIL_KINDS (lib/builds/feature_build.py about line 159) has no chimney kind, so a chimney is a 1x1 'vent'. In w66696201's spec the stacks are 4 'vent' rows (1x2x1 at y77, x6385-6397, z-5556..-5550), described as white cylindrical fume-extract stacks, lidar spike 68-70 m on a 65 m deck (about 3-5 m tall); the notes say the aerial leans about (-1,-6) against lidar. Not verified: that S-048 means those four stacks (the snag has only a picture); no street photo is cited. Owner direction 2026-10-28: industrial chimneys, round cylinders on top of big buildings, vertical or with sides that taper; hollow and open to the sky, so lidar is weak on them: trust lidar less. Waits for #193 (same function _place_detail; no iron_bars in roof details). Deliver: (1) a 'chimney' roof detail kind: centre, base diameter, top diameter (taper), height, round or square, optional rim or band; built as stepped rings (no true cylinder), hollow, open top, only on solid roof (#171 check); (2) rules and designer brief: size from photos and the spec, lidar as a rough check only; (3) the dry run prints planned height against lidar as a warning, not an error; (4) tests in lib/builds/test_feature_build.py: vertical, tapered and square; (5) update rules/feature-builds.md, rules/building-review.md and .claude/skills/redo/SKILL.md (step 6 lists the greeblies). Check: the dry run of w66696201 shows each stack at its specified height and taper; after rebuild a block scan shows a hollow stack of the planned height. Fixes I-034; log the fix with a check line for S-048; reword I-034's cause (the problem is height and form, not a missing roof kind)."
+    },
+    {
+      "id": 198,
+      "title": "Decor places free-standing hedges the aerial shows (I-035)",
+      "status": "done",
+      "notes": "Raised 2026-10-29 from world issue I-035 (southampton-build): decor hedges come only from the vector map, garden plots and building-border strips, so free-standing aerial hedges never enter the plan. Add decor_plan.aerial_free_hedges: dark-green (shade) columns that are not footprint, canopy or already barriers, grouped into thin elongated strips (>= MIN_BORDER_CELLS long, <= 3 wide); when a lidar heightmap is given, require surface 1-3 above terrain. Resolved hedge items, source aerial, medium confidence; non-strip shade is lawn shade, not a candidate. Wire into build_decor_plan after border hedges. Tests in lib/layers/test_decor_plan.py."
+    },
+    {
+      "id": 199,
+      "title": "Aerial free-standing hedge detector is off by default (#198 follow-up)",
+      "status": "done",
+      "notes": "Raised 2026-10-29 from a dry run of decor_layer on southampton-build 48,-45. aerial_free_hedges proposed 19 columns, all on carriageway or against buildings (coach and tree shadow), none placeable, and missed the real hedges, which OSM already maps (159 columns) and which are one column wide and flat in lidar. build_decor_plan gains free_hedges=False; the detector runs only when asked. Real cause of lost map hedges beside the bus loop is the layer calling them 'on carriageway' (separate issue). Tests in lib/layers/test_decor_plan.py."
+    },
+    {
+      "id": 200,
+      "title": "Decor barriers are refused only on carriageway, not on paving, brick or near them",
+      "status": "done",
+      "notes": "Raised 2026-10-29 from a dry run of decor_layer on southampton-build 48,-45: 156 of 159 mapped hedge columns were refused as 'on carriageway', but only 8 neighbouring columns were tarmac; 71 hedge columns stand on live brick/paving and 78 on grass within 2 blocks of paving or brick. Owner decision: the rule should be carriageway only. decor_layer.on_carriageway refuses a barrier column only when its own live ground is tarmac, marking or kerb; the 5x5 near-paving margin and the paving/brick kinds go. Applies to every barrier source. Reason string stays 'on carriageway'. Replaces the #144 brick-path refusal for hedges. Tests in lib/layers/test_decor_layer.py."
+    },
+    {
+      "id": 201,
+      "title": "Decor uses lidar as a placement and size hint, never as the trigger",
+      "status": "done",
+      "notes": "Raised 2026-10-29 from owner direction after the 48,-45 dry run (201 of 209 unresolved decor items were lone lidar lumps). Rule: a photo, POI, OSM or designer row says there is a feature (statue, wall, hedge, bench, table, anything); decor then consults lidar for placement and size hints. A lump seen only in lidar is ignored: no plan item, not even an unresolved one. decor_plan.lidar_objects stops emitting unlabelled components; a lidar component no longer vetoes OSM/designer furniture unless a photo/aerial label on it names an incompatible kind (e.g. vehicle). Barrier items (map, garden, designer, border) take height from lidar when most columns stand 1-3 above terrain (tree/roof columns excluded); furniture rows carry lidar_height and lidar_cells as hints. Tests in lib/layers/test_decor_plan.py."
     }
   ]
 }
