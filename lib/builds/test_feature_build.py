@@ -1519,6 +1519,16 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         from roof_lint import stair_shape_mismatches
         self.assertEqual(stair_shape_mismatches(plan.cells), [])
 
+    def test_zoned_storey_floors_stop_below_eave(self):
+        for kind, eave in (('pitched', 45), ('pitched', 46), ('flat', 45), ('flat', 46)):
+            with self.subTest(kind=kind, eave=eave):
+                plan = self._build(kind, [eave], self.ridge_zone_data, material='brick')
+                floors = [pos for pos, state in plan.cells.items()
+                          if state == 'minecraft:smooth_stone'
+                          and (pos[0], pos[2]) in self.cells]
+                self.assertTrue(any(y == 43 for x, y, z in floors), 'lower storey lost its floor')
+                self.assertEqual([pos for pos in floors if pos[1] >= eave], [])
+
     def test_pitched_zones_preserve_distinct_flat_plateau_levels(self):
         builder = F.Build(
             self._spec('pitched', [45, 50]), footprints={'A': self.cells},
@@ -1541,7 +1551,7 @@ class PitchedZonesRidgeTest(unittest.TestCase):
     def test_zoned_shell_backs_horizontal_gap_beside_stair(self):
         # Synthetic version of West's reported opening: an east-facing stair
         # at (6165,60,-5631), air in the taller south column at the same Y,
-        # and an existing full floor at Y59. That floor cannot close a
+        # and a former full floor at Y59. That floor could not close a
         # horizontal slit through the stair's partly open south upper edge.
         cells = {(x, z) for x in range(6163, 6168) for z in range(-5633, -5628)}
         rows = [
@@ -1558,12 +1568,13 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         feature.b = 41
         feature.zone_ground = {c: 41 for c in cells}
         feature.zone_level = {c: 49 for c in cells}
+        feature.zone_eave = {c: 49 for c in cells}
         feature.zone_roof_half = halfs
         feature.zone_roof = {c: h // 2 for c, h in halfs.items()}
         builder.shell_zoned(0, feature)
         self.assertIn('facing=east', builder.p.cells[(6165, 60, -5631)])
         self.assertIn('shape=straight', builder.p.cells[(6165, 60, -5631)])
-        self.assertEqual(builder.p.cells[(6165, 59, -5630)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(6165, 59, -5630)], 'minecraft:air')
         self.assertEqual(builder.p.cells[(6165, 60, -5630)], 'minecraft:bricks')
         self.assertIn('brick_stairs', builder.p.cells[(6165, 61, -5630)])
 
@@ -1911,6 +1922,7 @@ class PitchedMaterialOwnershipTest(unittest.TestCase):
         f.zone_roof = {c: h // 2 for c, h in heights.items()}
         f.zone_ground = {c: 40 for c in heights}
         f.zone_level = levels
+        f.zone_eave = levels
         f.roof_material_level = F.roof_material_levels(f.roof, levels)
         builder.shell_zoned(0, f)
         return {
