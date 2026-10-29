@@ -516,6 +516,20 @@ class TestGhosts(Base):
         self.assertEqual(self.blocks.read(P(0, 0, 0, 58)), GREY)
         self.assertEqual(self.reg.owned([P(0, 0, 0, 60)]), {P(0, 0, 0, 60): ('ghost_0_0_ground', GREY)})
 
+    def test_undo_feature_built_before_ghost_restores_ghost_height_not_a_pit(self):
+        # Feature built while the cell had no ghost: the ghost plan later skips the feature's
+        # columns (they were owned), so undo would fall to the prior (air) and dig a pit.
+        ghost = {P(0, 0, 0, 58): GREY, P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY,
+                 P(0, 0, 5, 60): GREY}
+        reg = self.registry(ghosts=lambda cell, layer: dict(ghost))
+        self.reg = reg
+        reg.change(Build('house', 'feature', {P(0, 0, 0, 60): GLASS, P(0, 0, 0, 61): GLASS}), self.apply)
+        reg.change(reg._ghost_build((0, 0), 'ground'), self.apply)         # skips the house's column
+        self.assertEqual(reg.cell((0, 0)).ground, 'ghost')
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 61)), AIR)
+
     def test_real_feature_does_not_queue_ghost_feature_strips(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
         rec = self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(0, 0, 0, 62): GLASS})
