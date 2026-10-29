@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 203,
+  "nextTaskId": 204,
   "tasks": [
     {
       "id": 178,
@@ -29,6 +29,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Raised 2026-10-29 during `redo decor` in southampton-build. Cause class: Defect. (1) scripts/redo_here.py imports cell_features at module level (line 20), which imports shims/portals.py, which loads the world provider before activate_world_from_args runs, so `redo_here.py --world <name> ...` always dies with 'no world selected'. Fix: bind the world before those imports (or import lazily inside main), same for any other script that imports portals-dependent lib modules at top level (grep for scripts calling add_world_arg after such imports). (2) With the world bound, worlds/southampton-build/providers/uos-portals/portals.py line 34 does `from osgb import in_bounds, load_offsets, to_mc` and lib/geo/osgb.py has no in_bounds: provider and tool have drifted. Fix in the provider or restore the function, then check the other world providers for the same import. (3) The redo skill (.claude/skills/redo/SKILL.md) calls `.venv/bin/python`, which does not exist in this checkout (python3 works); align the skill with AGENTS.md, which says python3. DELIVERABLE: `python3 scripts/redo_here.py --world southampton-build --at 6266,-5695 --y 56 --json` prints the cell, primary, features and masks JSON; a test under scripts/test_redo_here.py covers the world-bound import order; skill text uses python3. Workaround used meanwhile: call mask_undo.py and decor_layer.py directly with --cell."
+    },
+    {
+      "id": 203,
+      "title": "cell_registry reconcile blows up to ~7.5 GB: bound the LiveBlocks cache and add a region-file read path",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-29. `python3 scripts/cell_registry.py --world southampton-build reconcile` (dry run) ran 25+ min with a 7.5 GB physical footprint (vmmap; ps RSS showed only ~700 MB because the rest was compressed) and had to be killed. Cause class: Defect (suspected from reading the code; NOT yet measured, so confirm with tracemalloc or a capped run first). Dry run goes run_reconcile -> open_registry(blocks=site_kit.live_blocks()) -> LiveBlocks (lib/blocks/block_store.py), which reads over MCP block_scan_region. LiveBlocks._scan_box writes a self._cache entry for EVERY position in each scanned tile (air and unrequested blocks included, tuple key + str), and _cache is only cleared on flush(), so one reconcile over every journalled cell accumulates the whole scanned volume. (A) CACHE: cache only the positions callers asked for (or store tiles compactly, e.g. per-section arrays / palette indices), and evict between cells: CellRegistry.reconcile reads each cell independently via _classify/_bad, so a per-cell clear (or an LRU cap) is safe; keep the flush()/mark_written stale-read guard intact. Check other long loops that call read_many across many cells (ensure, _upgrade_mismatched, _ghost_needs) for the same growth. (B) REGION FILES: lib/blocks/region_blocks.py already has a read-only RegionBlocks(BlockStore) over .mca files, authorised for planning and dry-run reads after server save (see its docstring: ADR 004 exception, 2026-10-26). Make the reconcile DRY RUN read through RegionBlocks (after one server_save_all_worlds via the existing flusher/settle) instead of MCP, since it is far faster; keep `--fix` and all post-write readback on LiveBlocks/MCP (RegionBlocks is never a restore or write path and must stay strictly read-only). Likely shape: a site_kit helper (e.g. disk_blocks() beside live_blocks()) that saves, then returns RegionBlocks.from_world_config(); run_reconcile uses it when not fix. Check RegionBlocks itself is not unbounded: it holds _files (whole .mca bytes) and _chunks dicts until flush(), so cap or clear those per cell too. Mind semantic differences: RegionBlocks returns None for a missing chunk and minecraft:air for a missing section, which _classify maps to 'missing' vs air; confirm drift output is identical between the two stores on a small cell set. DELIVERABLE: dry-run reconcile on southampton-build finishes in minutes with peak footprint well under 1 GB (state the before/after numbers), and drift findings match the MCP path on a sample of cells; tests in lib/blocks/test_block_store.py (cache bounded across many tiles; no entries for unrequested positions) and scripts/test_cell_registry.py or lib/journal/test_cell_journal.py (dry run uses the disk store, --fix still uses MCP); ship via a task/* branch and ship_branch.py merge."
     }
   ]
 }
