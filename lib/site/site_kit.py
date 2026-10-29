@@ -1170,7 +1170,11 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
         if not positions:
             continue
         expected_all = load_before_structure_blocks(structure_meta, m=m, save_root=save_root)
+        # Air in before_<plan> where undo writes ghost ground is deliberate (journal undo fills the
+        # ghost height rather than digging a pit under a feature built before its ghost); the
+        # guard is for the other direction, ground the erase would lose.
         expected = {p: expected_all.get(p, 'minecraft:air') for p in positions if p in erase}
+        expected = {p: s for p, s in expected.items() if not (s == 'minecraft:air' and erase[p] != s)}
         if not expected:
             continue
         rep = diff_against_before(expected, erase)

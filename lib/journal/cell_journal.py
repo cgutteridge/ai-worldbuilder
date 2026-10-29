@@ -1271,6 +1271,19 @@ class CellRegistry:
                     erase[p] = self._blob(src.prior).get(p, AIR)
                 else:
                     erase[p] = AIR                      # legacy begin: no prior blob
+        # A feature built before its cell's ghost left those columns outside the ghost plan, so
+        # nothing owns them and the prior is air: undo would dig a pit under the footprint.
+        # Fall back to the ghost (lidar height) the cell is meant to have.
+        ghost_plan: dict[Cell, Mapping[Pos, str]] = {}
+        for p, state in erase.items():
+            if state != AIR or p in under:
+                continue
+            cell = self._cell_of(p)
+            if cell not in ghost_plan:
+                want = self.ghosts(cell, 'ground') if self.ghosts is not None and self._derive(cell).ground == 'ghost' else None
+                ghost_plan[cell] = want or {}
+            if ghost_plan[cell].get(p, AIR) != AIR:
+                erase[p] = ghost_plan[cell][p]
         names = sorted({e.plan for e in targets})
         first = targets[-1]
         record = {
