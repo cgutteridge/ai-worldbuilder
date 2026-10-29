@@ -125,8 +125,8 @@ def rewrite_bottom_slabs(plan: 'Plan') -> int:
 
     Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; ``McpWriter``
     then places each bottom-half slab with ``block_set_state``, slow). Top/double slabs are unchanged. Cells in
-    ``plan.keep_slab_cells`` (pitched-roof low steps, #207) keep their bottom
-    slab; ``McpWriter`` places those with ``block_set_state`` after the fills.
+    ``plan.keep_slab_cells`` (pitched-roof odd-half-height steps, #207) keep their
+    bottom-half slab; ``McpWriter`` places those with ``block_set_state`` after the fills.
 
     @param plan: plan to mutate
     @returns: number of cells rewritten
@@ -767,15 +767,17 @@ class McpWriter:
 
     @staticmethod
     def _check_slab(pos, res) -> None:
-        """Fail loudly when a ``block_set_state`` slab placement did not succeed.
+        """Fail loudly when a ``block_set_state`` slab placement reports failure.
+
+        ``Client.call`` already raises on ``isError``; this catches a success-shaped
+        result whose text starts with ``error`` / ``failed``.
 
         @param pos: slab cell
         @param res: raw MCP tool result
-        @raises RuntimeError: on an error result or error-looking text
+        @raises RuntimeError: with the slab position when the text reports failure
         """
         text = '\n'.join(x.get('text', '') for x in (res or {}).get('content', []))
-        low = text.lower()
-        if (res or {}).get('isError') or 'error' in low or 'fail' in low:
+        if text.lstrip().lower().startswith(('error', 'failed')):
             raise RuntimeError(f'bottom-half slab at {pos} not placed: {text[:200]}')
 
     def __call__(self, writes) -> None:
@@ -801,34 +803,36 @@ class McpWriter:
         if restore is None:
             from mc_player import tell_player
             tell_player(why, m=m)
-        boxes = plan.boxes()
-        for i in range(0, len(boxes), 8000):
-            chunk = boxes[i:i + 8000]
-            res = m.text('block_fill_batch', {'dimension': D, 'fills': [
-                {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
-            self.fill_results.append(res)
-            print('fill:', res.replace('\n', '; ')[:300])
-        # block_fill leaves bottom-slab cells as air: any bottom slab that survived the
-        # apply rewrite (roof low steps, #207) is placed one by one
-        for pos, st in sorted(plan.cells.items()):
-            if is_bottom_slab(st):
-                res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
-                                                 'block': _block_arg(st)})
-                self._check_slab(pos, res)
-        signs = writes.signs or (plan.signs if plan is payload else ())
-        entities = writes.entities or (plan.entities if plan is payload else ())
-        for pos, lines, col, glow in signs:
-            nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
-                   f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
-                   ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
-            m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
-        for kind, pos, snbt in entities:
-            args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
-            if snbt:
-                args['nbt'] = snbt
-            self.entities.append(m.text('entity_summon', args))
-        if restore:
-            restore()
+        try:
+            boxes = plan.boxes()
+            for i in range(0, len(boxes), 8000):
+                chunk = boxes[i:i + 8000]
+                res = m.text('block_fill_batch', {'dimension': D, 'fills': [
+                    {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
+                self.fill_results.append(res)
+                print('fill:', res.replace('\n', '; ')[:300])
+            # block_fill leaves bottom-slab cells as air: any bottom-half slab that survived the
+            # apply rewrite (pitched-roof steps, #207) is placed one by one
+            for pos, st in sorted(plan.cells.items()):
+                if is_bottom_slab(st):
+                    res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
+                                                     'block': _block_arg(st)})
+                    self._check_slab(pos, res)
+            signs = writes.signs or (plan.signs if plan is payload else ())
+            entities = writes.entities or (plan.entities if plan is payload else ())
+            for pos, lines, col, glow in signs:
+                nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
+                       f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
+                       ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
+                m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
+            for kind, pos, snbt in entities:
+                args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
+                if snbt:
+                    args['nbt'] = snbt
+                self.entities.append(m.text('entity_summon', args))
+        finally:
+            if restore:
+                restore()
 
 
 def live_session(*, ghosts='default', ring=None, root=None):

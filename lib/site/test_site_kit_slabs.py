@@ -105,10 +105,23 @@ class TestMcpWriterSlabs(unittest.TestCase):
             'id': 'minecraft:brick_slab',
             'properties': {'type': 'bottom', 'waterlogged': 'false'}})
 
-    def test_failed_slab_placement_raises(self):
-        err = lambda n, a: {'isError': True, 'content': [{'type': 'text', 'text': 'bad state'}]}
-        with self.assertRaises(RuntimeError):
+    def test_failed_slab_placement_raises_with_position(self):
+        err = lambda n, a: {'content': [{'type': 'text', 'text': 'Error: bad state'}]}
+        with self.assertRaises(RuntimeError) as cm:
             self._run(self._writes(), err)
+        self.assertIn('(1, 60, 1)', str(cm.exception))
+
+    def test_player_restored_when_slab_placement_fails(self):
+        from unittest import mock
+        from site_kit import McpWriter
+        m = mock.Mock()
+        m.text.return_value = 'ok'
+        m.call.return_value = {'content': [{'type': 'text', 'text': 'Failed: nope'}]}
+        restore = mock.Mock()
+        with mock.patch('site_kit._bring_player', return_value=restore):
+            with self.assertRaises(RuntimeError):
+                McpWriter(m)(self._writes())
+        restore.assert_called_once()
 
 
 if __name__ == '__main__':

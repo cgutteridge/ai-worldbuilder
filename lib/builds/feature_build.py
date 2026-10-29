@@ -697,9 +697,10 @@ def pitched_roof_states(
     also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
     (vanilla neighbour rule via ``roof_lint.stair_shape_from_neighbours``), not
     from height differences on the diagonal. Flat / ridge cells use a full
-    block (even) or bottom slab (odd: a low step, surface half a block under
-    the full block at the same Y; a top slab there would match a full block
-    and read as a solid step, I-019 / #207). Missing stair/slab variants fall back to
+    block (even) or bottom-half slab (odd; see :func:`roof_block_y`: the slab
+    sits one block above the full block of ``h - 1``, so surfaces rise by half
+    a block per step; a top slab there would match a full block, I-019 / #207).
+    Missing stair/slab variants fall back to
     the family's full block and append a warning.
 
     @param half_heights: ``{(x, z): half_height}``
@@ -1343,7 +1344,10 @@ class Build:
         self.p.set(x, y, z, s)
 
     def _set_roof(self, x, y, z, s):
-        """Set a roof-membrane cell; bottom-half slabs are exempted from the apply rewrite and get a wall block under them when the cell below is air.
+        """Set a roof-membrane cell.
+
+        Bottom-half slabs are exempted from the apply rewrite and get a wall
+        block under them when the cell below is air (#209).
 
         @param x: block x
         @param y: block y
