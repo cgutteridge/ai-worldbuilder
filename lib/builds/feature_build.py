@@ -1470,8 +1470,8 @@ class Build:
         """Square footprints and assign lidar roof zones for zoned labels.
 
         Expands ``f.cells`` to the readable mask, fills ``zone_roof`` /
-        ``zone_ground`` / ``zone_level``, refreshes ``owner``, and records the
-        pad line for dry-run print.
+        ``zone_eave`` / ``zone_ground`` / ``zone_level``, refreshes ``owner``,
+        and records the pad line for dry-run print.
         """
         zones_spec = self.spec.get('zones') or {}
         if not zones_spec:
@@ -1510,6 +1510,7 @@ class Build:
                 if pitched else None
             )
             roof: dict = {}
+            eaves: dict = {}
             half_h: dict = {}
             gy: dict = {}
             zl: dict = {}
@@ -1519,6 +1520,7 @@ class Build:
                         continue
                     wx, wz = x0 + x, z0 + z
                     eave_y = metres_aod_to_y(float(zone[z, x]))
+                    eaves[(wx, wz)] = eave_y
                     if half_grid is not None:
                         h = int(half_grid[z, x])
                         roof[(wx, wz)] = eave_y + h // 2
@@ -1537,6 +1539,7 @@ class Build:
                     gy.setdefault((wx, wz), int(ground[z, x]))
             f.cells = new_cells
             f.zone_roof = roof
+            f.zone_eave = eaves
             f.zone_roof_half = half_h if pitched else None
             f.zone_ground = gy
             f.zone_level = zl
@@ -1633,10 +1636,10 @@ class Build:
         ``pitched_roof_states``) rising from the eave toward a lidar ridge.
         Optional ``f.roof['edge']`` places a parapet (default: none).
         Interior floor slabs follow the facade storey rhythm from ``f.b``
-        (median ground).
+        (median ground), strictly below each column's eave.
 
         @param k: feature index (ownership / wall rivalry)
-        @param f: feature with ``zone_roof`` / ``zone_ground`` filled
+        @param f: feature with ``zone_roof`` / ``zone_eave`` / ``zone_ground`` filled
         """
         del k  # ownership already baked into f.cells; kept for call-site parity
         roof = f.zone_roof
@@ -1686,7 +1689,7 @@ class Build:
             for y in range(g + 1, ry):
                 if y > expose:
                     self.set(x, y, z, self.wall)
-                elif (y - datum) % STOREY_H == 0 and y > g:
+                elif (y - datum) % STOREY_H == 0 and y < f.zone_eave[(x, z)]:
                     self.set(x, y, z, self.floor_mat)
                 else:
                     self.set(x, y, z, 'air')
