@@ -113,21 +113,42 @@ def aerial_building_border_hedges(
     return out
 
 
-def _raised_fraction(hm: Mapping[str, Any], cells: Iterable[tuple[int, int]]) -> float:
-    """Share of ``cells`` whose DSM stands 1-3 blocks above the DTM (tree and roof columns never count)."""
+def _lidar_raises(hm: Mapping[str, Any], cells: Iterable[tuple[int, int]]) -> list[int]:
+    """DSM minus DTM (blocks) for each of ``cells`` inside the grid; tree and roof columns are skipped."""
     from lidar_heightmap import TREE, TREE_OVER_ROOF, ROOF
 
-    cells = list(cells)
-    lo, hi = HEDGE_RAISE
-    n = 0
+    out: list[int] = []
     for x, z in cells:
         i, j = x - int(hm['x0']), z - int(hm['z0'])
         if 0 <= i < hm['h'].shape[0] and 0 <= j < hm['h'].shape[1]:
             if hm['kind'][i, j] in (TREE, TREE_OVER_ROOF, ROOF):
                 continue
-            if lo <= hm['h'][i, j] - hm['terrain'][i, j] <= hi:
-                n += 1
-    return n / len(cells)
+            out.append(int(hm['h'][i, j] - hm['terrain'][i, j]))
+    return out
+
+
+def _raised_fraction(hm: Mapping[str, Any], cells: Iterable[tuple[int, int]]) -> float:
+    """Share of ``cells`` whose DSM stands 1-3 blocks above the DTM (tree and roof columns never count)."""
+    cells = list(cells)
+    lo, hi = HEDGE_RAISE
+    return sum(lo <= r <= hi for r in _lidar_raises(hm, cells)) / len(cells)
+
+
+def lidar_barrier_height(hm: Mapping[str, Any] | None, cells: Iterable[tuple[int, int]]) -> int | None:
+    """Barrier height hinted by lidar, or ``None`` when lidar gives no clear reading.
+
+    At least ``MIN_RAISED_SHARE`` of the columns must stand 1-3 blocks above bare terrain
+    (tree and roof columns excluded); the hint is the median of those raises. Lidar only
+    sizes a barrier something else already named; it never makes one.
+    """
+    cells = list(cells)
+    if not hm or 'terrain' not in hm or not cells:
+        return None
+    lo, hi = HEDGE_RAISE
+    raises = sorted(r for r in _lidar_raises(hm, cells) if lo <= r <= hi)
+    if len(raises) / len(cells) < MIN_RAISED_SHARE:
+        return None
+    return raises[len(raises) // 2]
 
 
 def aerial_free_hedges(
@@ -271,20 +292,13 @@ def _footprint_columns(cell: tuple[int, int]) -> set[tuple[int, int]]:
     }
 
 
-def lidar_objects(hm, footprint, canopy, observations, *, root=None):
-    """Group DSM−DTM columns and resolve only photo/aerial furniture labels.
-
-    Labels use the existing observation schema: ``kind``, ``cell: [x,z]``,
-    optional ``source`` (photo_read or aerial), evidence_ids and note. A label
-    must lie on the object. Unknown, conflicting and transient labels never
-    authorize placement. Returns plan items plus all detected object columns.
-    """
+def _lidar_components(hm, footprint, canopy) -> list[list[tuple[int, int]]]:
+    """Connected DSM-above-DTM columns outside footprints, canopy, trees and roofs."""
     from garden_sources import components
-    import street_furniture as sf
     from lidar_heightmap import TREE, TREE_OVER_ROOF, ROOF
 
     if not hm or 'terrain' not in hm:
-        return [], set()
+        return []
     columns = set()
     for i in range(hm['h'].shape[0]):
         for j in range(hm['h'].shape[1]):
@@ -293,9 +307,29 @@ def lidar_objects(hm, footprint, canopy, observations, *, root=None):
                 continue
             if hm['terrain'][i, j] > 0 and hm['h'][i, j] > hm['terrain'][i, j]:
                 columns.add(q)
+    return sorted(components(columns), key=min)
+
+
+def lidar_objects(hm, footprint, canopy, observations, *, root=None):
+    """Plan items for lidar objects that a photo or aerial label names; lone lumps are ignored.
+
+    Lidar is a guide, never a trigger: a DSM-above-DTM group with no label on it adds
+    nothing, not even an unresolved row. Labels use the existing observation schema:
+    ``kind``, ``cell: [x,z]``, optional ``source`` (photo_read or aerial), evidence_ids and
+    note. A label must lie on the object. Conflicting, unknown and transient labels never
+    authorize placement (unresolved), and a labelled object vetoes map/designer points on it.
+    Returns plan items plus the columns of the labelled objects.
+    """
+    import street_furniture as sf
+
     out = []
-    for group in sorted(components(columns), key=min):
+    columns: set[tuple[int, int]] = set()
+    for group in _lidar_components(hm, footprint, canopy):
+        group = set(group)
         labels = [o for o in observations if o.get('cell') and tuple(o['cell']) in group]
+        if not labels:
+            continue
+        columns |= group
         valid = [o for o in labels if o.get('kind') in sf.RECIPES
                  and o.get('source', 'photo_read') in ('photo_read', 'aerial')
                  and not o.get('unresolved_reason')]
@@ -322,6 +356,30 @@ def lidar_objects(hm, footprint, canopy, observations, *, root=None):
                 'lidar object needs an unambiguous photo/aerial permanent furniture label')
         out.append(item)
     return out, columns
+
+
+def _lidar_hints(items, hm, footprint, canopy) -> None:
+    """Add lidar size hints, in place, to items something else already named.
+
+    Barriers take a height from :func:`lidar_barrier_height`; furniture standing on a lidar
+    object carries ``lidar_height`` and ``lidar_cells`` for the placer.
+    """
+    if not hm or 'terrain' not in hm:
+        return
+    by_cell = {q: g for g in _lidar_components(hm, footprint, canopy) for q in g}
+    for item in items:
+        if item.get('role') == 'barrier':
+            hint = lidar_barrier_height(hm, (tuple(c) for c in item.get('cells') or []))
+            if hint is not None:
+                item['height'] = hint
+                item['height_source'] = 'lidar'
+        elif item.get('role') == 'furniture' and item.get('cell') and 'lidar_cells' not in item:
+            group = by_cell.get(tuple(item['cell']))
+            if group:
+                item['lidar_cells'] = [list(q) for q in sorted(group)]
+                item['lidar_height'] = max(
+                    int(hm['h'][a - hm['x0'], b - hm['z0']] - hm['terrain'][a - hm['x0'], b - hm['z0']])
+                    for a, b in group)
 
 
 def build_decor_plan(
@@ -518,6 +576,7 @@ def build_decor_plan(
     items = [item for item in items
              if not (item.get('role') == 'furniture'
                      and tuple(item.get('cell') or ()) in object_columns)]
+    _lidar_hints(items, lidar_hm, footprint, canopy)
     # A raised column already planned as a barrier is that barrier, not an unknown object.
     items.extend(o for o in object_items
                  if not all(tuple(c) in seen_barrier for c in o['lidar_cells']))
