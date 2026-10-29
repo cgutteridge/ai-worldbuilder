@@ -152,6 +152,104 @@ class TestFreeStandingHedges(unittest.TestCase):
         self.assertIn((5, 8), dp.resolved_barriers(plan))
 
 
+class TestLidarIsOnlyAHint(unittest.TestCase):
+    """Lidar sizes and places what OSM/photo/designer name; a lone lump is ignored."""
+
+    def hm(self, raised):
+        import numpy as np
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((16, 16), 64),
+              'h': np.full((16, 16), 64), 'kind': np.zeros((16, 16))}
+        for (x, z), d in raised.items():
+            hm['h'][x, z] = 64 + d
+        return hm
+
+    def plan(self, raised, **kw):
+        kw.setdefault('map_barriers', {})
+        return dp.build_decor_plan(
+            (0, 0), garden={}, rgb={}, footprint=set(), canopy=set(),
+            lidar_hm=self.hm(raised), **kw)
+
+    def test_lone_lidar_lump_adds_nothing_to_the_plan(self):
+        plan = self.plan({(4, 4): 1, (4, 5): 1, (10, 10): 2})
+        self.assertEqual(plan['items'], [])
+        self.assertEqual(dp.unresolved_items(plan), [])
+
+    def test_map_furniture_on_a_lump_is_kept_with_a_lidar_hint(self):
+        plan = self.plan({(4, 4): 1, (4, 5): 1}, map_furniture=[(4, 4, 'bench')])
+        rows = dp.resolved_furniture(plan)
+        self.assertEqual([(r['x'], r['z'], r['kind']) for r in rows], [(4, 4, 'bench')])
+        item = next(i for i in plan['items'] if i['role'] == 'furniture')
+        self.assertEqual(item['lidar_height'], 1)
+        self.assertEqual(sorted(tuple(c) for c in item['lidar_cells']), [(4, 4), (4, 5)])
+
+    def test_furniture_off_any_lump_has_no_hint(self):
+        plan = self.plan({(10, 10): 1}, map_furniture=[(4, 4, 'bench')])
+        item = next(i for i in plan['items'] if i['role'] == 'furniture')
+        self.assertNotIn('lidar_height', item)
+        self.assertEqual(len(dp.resolved_furniture(plan)), 1)
+
+    def test_a_vehicle_label_still_vetoes_map_furniture_on_that_lump(self):
+        plan = self.plan({(4, 4): 1, (4, 5): 1}, map_furniture=[(4, 5, 'bench')],
+                         photo_observations=[{'kind': 'vehicle', 'cell': [4, 4]}])
+        self.assertEqual(dp.resolved_furniture(plan), [])
+
+    def test_barrier_height_follows_lidar_when_the_columns_are_raised(self):
+        cols = {(5, z): 2 for z in range(2, 7)}
+        plan = self.plan(cols, map_barriers={'wall': set(cols)})
+        wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
+        self.assertEqual(wall['height'], 2)
+        self.assertEqual(dp.resolved_barriers(plan)[(5, 3)][2], 2)
+
+    def test_barrier_keeps_default_height_when_lidar_shows_nothing_raised(self):
+        cells = {(5, z) for z in range(2, 7)}
+        plan = self.plan({}, map_barriers={'wall': cells})
+        wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
+        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+
+    def test_explicit_garden_height_beats_lidar(self):
+        cols = {(5, z): 1 for z in range(2, 7)}
+        plan = dp.build_decor_plan(
+            (0, 0), map_barriers={}, rgb={}, footprint=set(), canopy=set(),
+            lidar_hm=self.hm(cols),
+            garden={q: ('brick_wall', 'brick_wall', 3) for q in cols})
+        wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
+        self.assertEqual(wall['height'], 3)
+
+    def test_structure_and_off_grid_columns_do_not_size_a_barrier(self):
+        from lidar_heightmap import STRUCTURE
+        cols = {(5, z): 2 for z in range(2, 7)}
+        hm = self.hm(cols)
+        for q in cols:
+            hm['kind'][q] = STRUCTURE
+        self.assertIsNone(dp.lidar_barrier_height(hm, cols))
+        self.assertIsNone(dp.lidar_barrier_height(
+            self.hm(cols), list(cols) + [(40, z) for z in range(10)]))
+
+    def test_labelled_compatible_object_carries_lidar_hint_and_is_not_doubled(self):
+        plan = self.plan({(4, 4): 1, (4, 5): 1}, map_furniture=[(4, 5, 'bench')],
+                         photo_observations=[{'kind': 'bench', 'cell': [4, 4]}])
+        objs = [i for i in plan['items'] if i['role'] == 'furniture']
+        self.assertEqual(len(objs), 1)
+        self.assertEqual(objs[0]['lidar_height'], 1)
+        self.assertEqual(len(objs[0]['lidar_cells']), 2)
+
+    def test_tall_or_tree_columns_do_not_size_a_barrier(self):
+        from lidar_heightmap import TREE
+        cols = {(5, z): 2 for z in range(2, 7)}
+        hm = self.hm(cols)
+        for q in cols:
+            hm['kind'][q] = TREE
+        plan = dp.build_decor_plan(
+            (0, 0), map_barriers={'wall': set(cols)}, garden={}, rgb={},
+            footprint=set(), canopy=set(), lidar_hm=hm)
+        wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
+        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+        taller = {q: 9 for q in cols}
+        plan = self.plan(taller, map_barriers={'wall': set(cols)})
+        wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
+        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+
+
 class TestBuildDecorPlan(unittest.TestCase):
     """Full plan merges map, garden, aerial borders, designer; lists unresolved."""
 
@@ -283,7 +381,9 @@ class TestLidarFurniture(unittest.TestCase):
             {'kind': 'bench', 'cell': [4, 4]},
             {'kind': 'vehicle', 'cell': [4, 5]},
         ]):
-            self.assertEqual(dp.resolved_furniture(self.plan(observations)), [])
+            plan = self.plan(observations)
+            self.assertEqual(dp.resolved_furniture(plan), [])
+            self.assertEqual(len(dp.unresolved_items(plan)), 1 if observations else 0)
 
     def test_vehicle_label_overrides_generic_map_furniture(self):
         plan = self.plan([{'kind': 'vehicle', 'cell': [4, 4]}],
@@ -291,8 +391,10 @@ class TestLidarFurniture(unittest.TestCase):
         self.assertEqual(dp.resolved_furniture(plan), [])
 
     def test_footprints_and_tree_canopy_excluded(self):
-        plan = self.plan([], footprint={(4, 4), (4, 5)}, canopy={(10, 10)})
-        self.assertEqual(plan['items'], [])
+        # Labels on excluded columns do not turn them into lidar objects.
+        plan = self.plan([{'kind': 'bench', 'cell': [4, 4]}, {'kind': 'bench', 'cell': [10, 10]}],
+                         footprint={(4, 4), (4, 5)}, canopy={(10, 10)})
+        self.assertEqual([i for i in plan['items'] if str(i['id']).startswith('lidar-object')], [])
 
     def test_aerial_label_resolves_and_other_sources_do_not(self):
         for source, count in [('aerial', 1), ('vector_map', 0)]:
