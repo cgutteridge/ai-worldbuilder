@@ -123,8 +123,8 @@ def full_block_for_bottom_slab(state: str) -> str | None:
 def rewrite_bottom_slabs(plan: 'Plan') -> int:
     """Replace bottom/default slabs with full blocks so ``block_fill`` can place them.
 
-    Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; expect readback
-    mismatches). Top/double slabs are unchanged. Cells in
+    Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; ``McpWriter``
+    then places each bottom-half slab with ``block_set_state``, slow). Top/double slabs are unchanged. Cells in
     ``plan.keep_slab_cells`` (pitched-roof low steps, #207) keep their bottom
     slab; ``McpWriter`` places those with ``block_set_state`` after the fills.
 
@@ -134,7 +134,7 @@ def rewrite_bottom_slabs(plan: 'Plan') -> int:
     if getattr(plan, 'keep_bottom_slabs', False):
         return 0
     n = 0
-    keep = getattr(plan, 'keep_slab_cells', ())
+    keep = plan.keep_slab_cells
     for pos, st in list(plan.cells.items()):
         if pos in keep:
             continue
@@ -171,6 +171,7 @@ class Plan:
                 'they grow on random tick (not idempotent) — use static log+leaves or clear only',
             )
         self.cells[(x, y, z)] = st
+        self.keep_slab_cells.discard((x, y, z))  # a later write replaces the kept slab
 
     def fill(self, a, b, s):
         """Fill an axis-aligned box with one block state.
@@ -188,6 +189,7 @@ class Plan:
             for y in range(y0, y1 + 1):
                 for z in range(z0, z1 + 1):
                     self.cells[(x, y, z)] = st
+                    self.keep_slab_cells.discard((x, y, z))
 
     def get(self, x, y, z):
         return self.cells.get((x, y, z))
@@ -763,6 +765,19 @@ class McpWriter:
         self.fill_results: list = []
         self.entities: list = []
 
+    @staticmethod
+    def _check_slab(pos, res) -> None:
+        """Fail loudly when a ``block_set_state`` slab placement did not succeed.
+
+        @param pos: slab cell
+        @param res: raw MCP tool result
+        @raises RuntimeError: on an error result or error-looking text
+        """
+        text = '\n'.join(x.get('text', '') for x in (res or {}).get('content', []))
+        low = text.lower()
+        if (res or {}).get('isError') or 'error' in low or 'fail' in low:
+            raise RuntimeError(f'bottom-half slab at {pos} not placed: {text[:200]}')
+
     def __call__(self, writes) -> None:
         from mc_paced import Paced, xyz
         m = self.m = self.m or Paced()
@@ -797,8 +812,9 @@ class McpWriter:
         # apply rewrite (roof low steps, #207) is placed one by one
         for pos, st in sorted(plan.cells.items()):
             if is_bottom_slab(st):
-                m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
-                                           'block': _block_arg(st)})
+                res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
+                                                 'block': _block_arg(st)})
+                self._check_slab(pos, res)
         signs = writes.signs or (plan.signs if plan is payload else ())
         entities = writes.entities or (plan.entities if plan is payload else ())
         for pos, lines, col, glow in signs:
@@ -1057,15 +1073,16 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
             raise SystemExit(f'{len(hits)} protected cells would change; see {plan.name}-protect-hits.json')
     # block_fill often cannot place bottom slabs (cell stays air → mass readback mismatch).
     bottom_n = sum(1 for p, st in plan.cells.items()
-                   if is_bottom_slab(st) and p not in getattr(plan, 'keep_slab_cells', ()))
+                   if is_bottom_slab(st) and p not in plan.keep_slab_cells)
     if bottom_n:
         if getattr(plan, 'keep_bottom_slabs', False):
-            print(f'{plan.name}: warning: {bottom_n} bottom slabs kept (keep_bottom_slabs); expect mismatches')
+            print(f'{plan.name}: {bottom_n} bottom-half slabs kept (keep_bottom_slabs); '
+                  'placed one by one over MCP (about 1.1 s each)')
         else:
             rewritten = rewrite_bottom_slabs(plan)
             print(
-                f'{plan.name}: rewrote {rewritten} bottom slabs → full blocks '
-                '(block_fill cannot place bottom slabs; set plan.keep_bottom_slabs to skip)'
+                f'{plan.name}: rewrote {rewritten} bottom-half slabs → full blocks '
+                '(block_fill cannot place them; set plan.keep_bottom_slabs to place them one by one)'
             )
     boxes = plan.boxes()
     if empty:

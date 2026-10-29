@@ -10,6 +10,7 @@ and being moved to the background mid-run.
 | Feature/house `--apply` (`feature_build.py <spec> --apply`) | about 2 min end to end | Approximate, reported at R-015. The journalled block write alone is 6-36 s (median ~13 s) per plan; the rest is prep, preview and readback |
 | First vector-map footprint load (`osm_footprints`, first guard/frontage query in a dry run or apply) | 1-2 min | Approximate, reported at R-015; not re-timed (building the index object is lazy: 0.4 s) |
 | First lidar fetch for a new world (`lidar_extremes --fetch`; DTM + DSM tiles) | about 1 min per tile per product (45-73 MB each); 4 tiles x 2 products took about 7.5 min and 495 MB | Measured from file times in `worlds/ventnor-build/downloads/defra-lidar/` (Ventnor, 2026-10-28, 18:50:21 first catalogue lookup to 18:57:41 last tile). Sea-edge tiles are smaller (42-46 MB) and quicker. Ran before the progress output existed, so start is the first catalogue lookup, not an exact timer |
+| Bottom-half slabs kept in an apply (`McpWriter`, pitched-roof low steps) | one `block_set_state` per slab at about 1.1 s; 500 slabs about 9 min | Approximate, from the paced MCP interval (#209); not re-timed on a live apply |
 | `site_lock.py run` | adds nothing | Wraps any of the above; use it for live commands |
 
 Dry runs without live reads are seconds. Figures are for the bake-off world on the
