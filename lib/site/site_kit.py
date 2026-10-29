@@ -124,7 +124,9 @@ def rewrite_bottom_slabs(plan: 'Plan') -> int:
     """Replace bottom/default slabs with full blocks so ``block_fill`` can place them.
 
     Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; expect readback
-    mismatches). Top/double slabs are unchanged.
+    mismatches). Top/double slabs are unchanged. Cells in
+    ``plan.keep_slab_cells`` (pitched-roof low steps, #207) keep their bottom
+    slab; ``McpWriter`` places those with ``block_set_state`` after the fills.
 
     @param plan: plan to mutate
     @returns: number of cells rewritten
@@ -132,7 +134,10 @@ def rewrite_bottom_slabs(plan: 'Plan') -> int:
     if getattr(plan, 'keep_bottom_slabs', False):
         return 0
     n = 0
+    keep = getattr(plan, 'keep_slab_cells', ())
     for pos, st in list(plan.cells.items()):
+        if pos in keep:
+            continue
         twin = full_block_for_bottom_slab(st)
         if twin is None or twin == st:
             continue
@@ -147,6 +152,7 @@ class Plan:
         self.cells = {}
         self.signs = []      # (pos, [4 lines], colour, glowing)
         self.entities = []   # (entity_type, (x,y,z), snbt or None)
+        self.keep_slab_cells = set()  # bottom slabs exempt from rewrite_bottom_slabs (roof steps)
 
     # --- primitives -------------------------------------------------------
     def set(self, x, y, z, s):
@@ -726,6 +732,21 @@ def disk_blocks():
     return RegionBlocks(live.region)
 
 
+def _block_arg(state: str) -> dict:
+    """``block_set_state`` ``block`` argument from a block state string.
+
+    @param state: e.g. ``minecraft:brick_slab[type=bottom,waterlogged=false]``
+    @returns: ``{'id': ..., 'properties': {...}}``
+    """
+    st = full(state)
+    props = {}
+    if '[' in st:
+        for kv in st[st.index('[') + 1:st.rindex(']')].split(','):
+            k, _, v = kv.partition('=')
+            props[k.strip()] = v.strip()
+    return {'id': bid(st), 'properties': props}
+
+
 class McpWriter:
     """``apply`` callable for :class:`cell_journal.CellRegistry`: writes ``Writes.cells`` over MCP.
 
@@ -772,6 +793,12 @@ class McpWriter:
                 {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
             self.fill_results.append(res)
             print('fill:', res.replace('\n', '; ')[:300])
+        # block_fill leaves bottom-slab cells as air: any bottom slab that survived the
+        # apply rewrite (roof low steps, #207) is placed one by one
+        for pos, st in sorted(plan.cells.items()):
+            if is_bottom_slab(st):
+                m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
+                                           'block': _block_arg(st)})
         signs = writes.signs or (plan.signs if plan is payload else ())
         entities = writes.entities or (plan.entities if plan is payload else ())
         for pos, lines, col, glow in signs:
@@ -1029,7 +1056,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
             (OUT / f'{plan.name}-protect-hits.json').write_text(json.dumps(hits, indent=1))
             raise SystemExit(f'{len(hits)} protected cells would change; see {plan.name}-protect-hits.json')
     # block_fill often cannot place bottom slabs (cell stays air → mass readback mismatch).
-    bottom_n = sum(1 for st in plan.cells.values() if is_bottom_slab(st))
+    bottom_n = sum(1 for p, st in plan.cells.items()
+                   if is_bottom_slab(st) and p not in getattr(plan, 'keep_slab_cells', ()))
     if bottom_n:
         if getattr(plan, 'keep_bottom_slabs', False):
             print(f'{plan.name}: warning: {bottom_n} bottom slabs kept (keep_bottom_slabs); expect mismatches')

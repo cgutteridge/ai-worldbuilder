@@ -2678,7 +2678,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self._assert_shapes_match_neighbours(half, states)
 
     def test_slab_beside_stair_does_not_force_corner(self):
-        # Odd half-height neighbour is a top slab, not a stair → shape stays straight.
+        # Odd half-height neighbour is a bottom slab, not a stair → shape stays straight.
         half = {(0, 0): 10, (1, 0): 11, (0, 1): 12}
         mats = {c: 'brick' for c in half}
         states = F.pitched_roof_states(half, mats)
@@ -2686,6 +2686,47 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertIn('shape=straight', states[(0, 0)])
         self.assertIn('_slab', states[(1, 0)])
         self._assert_shapes_match_neighbours(half, states)
+
+    def test_stair_run_ending_in_low_step_gives_bottom_slab(self):
+        # #207: odd half-height is a low step; surface half a block below a full block.
+        half = {(0, 0): 10, (1, 0): 12, (2, 0): 13}
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertEqual(states[(2, 0)], 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertIn('brick_stairs', states[(0, 0)])
+
+    def test_set_roof_marks_bottom_slabs_and_survives_apply_rewrite(self):
+        from site_kit import Plan, rewrite_bottom_slabs
+        stub = mock.Mock()
+        stub.p = Plan('t')
+        F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        F.Build._set_roof(stub, 2, 60, 1, 'bricks')
+        self.assertEqual(stub.p.keep_slab_cells, {(1, 60, 1)})
+        self.assertEqual(rewrite_bottom_slabs(stub.p), 0)
+        self.assertIn('type=bottom', stub.p.cells[(1, 60, 1)])
+
+    def test_ridge_unchanged_full_block_even(self):
+        half = {(0, 0): 10, (1, 0): 12, (2, 0): 12, (3, 0): 10}
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertEqual(states[(1, 0)], 'bricks')
+        self.assertEqual(states[(2, 0)], 'bricks')
+
+    def test_valley_low_step_is_bottom_slab_never_top(self):
+        half = {(0, 0): 12, (1, 0): 11, (2, 0): 12}
+        mats = {c: 'brick' for c in half}
+        states = F.pitched_roof_states(half, mats)
+        self.assertEqual(states[(1, 0)], 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertFalse(any('type=top' in st for st in states.values()))
+
+    def test_slab_family_fallback_still_full_block(self):
+        half = {(0, 0): 10, (1, 0): 11}
+        warns: list[str] = []
+        with mock.patch.object(F, 'block_family_variants',
+                               return_value={'full': 'stone', 'stairs': 'stone_stairs'}):
+            states = F.pitched_roof_states(half, {c: 'stone' for c in half}, warns)
+        self.assertEqual(states[(1, 0)], 'stone')
+        self.assertTrue(any('no slab' in w for w in warns))
 
     def test_full_block_beside_stair_does_not_force_corner(self):
         # Ridge full block upslope of a stair — not a stair neighbour, shape stays straight.

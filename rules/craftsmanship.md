@@ -172,7 +172,7 @@ rule-file copy.
   ✗ Single-layer stair skin with sky visible through gaps
   ✗ Floating or unflanked glass
   ✗ Glass (or any block) set on a bottom slab: the slab leaves a half-block gap and it floats. Put a full block under it (Oakdene lantern)
-  ✗ Relying on ``block_fill`` to place bottom slabs as a roof membrane — fills often leave those cells air. Prefer full blocks for membranes; ``site_kit.apply`` rewrites bottom slabs to full blocks unless ``plan.keep_bottom_slabs``
+  ✗ Relying on ``block_fill`` to place bottom-half slabs as a roof membrane — fills often leave those cells air. Prefer full blocks for membranes. ``site_kit.apply`` rewrites bottom-half slabs to full blocks unless the cell is in ``plan.keep_slab_cells`` (roof cells set through ``Build._set_roof`` are, and ``McpWriter`` places them one at a time after the fills) or ``plan.keep_bottom_slabs`` is set
   ✗ Chimney sitting on top of the roof without cutting through
   ✗ Sapling blocks anywhere (rules/foliage.md)
 

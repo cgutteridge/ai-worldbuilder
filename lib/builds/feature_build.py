@@ -134,7 +134,7 @@ import facade_plan as facade_plan_mod  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
     Plan, apply, bid, fresh_planning_world, guard_door_frames, guard_roof_jogs,
-    nearest_preview_colour, preview,
+    is_bottom_slab, nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
 
@@ -680,7 +680,9 @@ def pitched_roof_states(
     also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
     (vanilla neighbour rule via ``roof_lint.stair_shape_from_neighbours``), not
     from height differences on the diagonal. Flat / ridge cells use a full
-    block (even) or top slab (odd). Missing stair/slab variants fall back to
+    block (even) or bottom slab (odd: a low step, surface half a block under
+    the full block at the same Y; a top slab there would match a full block
+    and read as a solid step, I-019 / #207). Missing stair/slab variants fall back to
     the family's full block and append a warning.
 
     @param half_heights: ``{(x, z): half_height}``
@@ -778,7 +780,7 @@ def pitched_roof_states(
 
         if h % 2 == 1:
             if 'slab' in f:
-                out[(x, z)] = _roof_slab(mat, 'top')
+                out[(x, z)] = _roof_slab(mat, 'bottom')
             else:
                 out[(x, z)] = fallback(mat, 'slab')
         else:
@@ -1323,6 +1325,18 @@ class Build:
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
 
+    def _set_roof(self, x, y, z, s):
+        """Set a roof-membrane cell; bottom slabs are exempted from the apply rewrite.
+
+        @param x: block x
+        @param y: block y
+        @param z: block z
+        @param s: roof block state
+        """
+        self.p.set(x, y, z, s)
+        if is_bottom_slab(s):
+            self.p.keep_slab_cells.add((x, y, z))
+
     def _is_solid(self, x: int, y: int, z: int) -> bool:
         """True when the finished plan (or live world) has a non-air block here.
 
@@ -1694,7 +1708,7 @@ class Build:
                 else:
                     self.set(x, y, z, 'air')
             if pitched_states is not None:
-                self.set(x, ry, z, pitched_states[(x, z)])
+                self._set_roof(x, ry, z, pitched_states[(x, z)])
             else:
                 self.set(x, ry, z, block_family_variants(rm)['full'])
             if wants_edge(x, z, ry):
@@ -2405,7 +2419,7 @@ class Build:
             if (x, z) in self.owner:
                 for yy in range(eave, y):
                     self.set(x, yy, z, self.wall)
-            self.set(x, y, z, st)
+            self._set_roof(x, y, z, st)
 
     def roof(self):
         todo = []
