@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 200,
+  "nextTaskId": 201,
   "tasks": [
     {
       "id": 178,
@@ -47,6 +47,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Raised 2026-10-29 from a dry run of decor_layer on southampton-build 48,-45. aerial_free_hedges proposed 19 columns, all on carriageway or against buildings (coach and tree shadow), none placeable, and missed the real hedges, which OSM already maps (159 columns) and which are one column wide and flat in lidar. build_decor_plan gains free_hedges=False; the detector runs only when asked. Real cause of lost map hedges beside the bus loop is the layer calling them 'on carriageway' (separate issue). Tests in lib/layers/test_decor_plan.py."
+    },
+    {
+      "id": 200,
+      "title": "Decor barriers are refused only on carriageway, not on paving, brick or near them",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-29 from a dry run of decor_layer on southampton-build 48,-45: 156 of 159 mapped hedge columns were refused as 'on carriageway', but only 8 neighbouring columns were tarmac; 71 hedge columns stand on live brick/paving and 78 on grass within 2 blocks of paving or brick. Owner decision: the rule should be carriageway only. decor_layer.on_carriageway refuses a barrier column only when its own live ground is tarmac, marking or kerb; the 5x5 near-paving margin and the paving/brick kinds go. Applies to every barrier source. Reason string stays 'on carriageway'. Replaces the #144 brick-path refusal for hedges. Tests in lib/layers/test_decor_layer.py."
     }
   ]
 }
