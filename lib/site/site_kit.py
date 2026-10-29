@@ -1153,7 +1153,7 @@ def load_before_structure_blocks(structure_meta, m=None, save_root=None):
     return absolute_blocks(rel, origin)
 
 
-def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
+def verify_erase_matches_before(footprints, erase, m, *, save_root=None, ghost_filled=frozenset()):
     """Fail closed when the undo erase plan disagrees with before_<plan> (#123).
 
     Compared against the journalled erase values *before* any block write, so a
@@ -1164,17 +1164,18 @@ def verify_erase_matches_before(footprints, erase, m, *, save_root=None):
     @param erase: ``{pos: state}`` the undo ticket will write
     @param m: paced client (for FakePaced structure maps)
     @param save_root: optional save directory override
+    @param ghost_filled: erase positions journal undo deliberately restored to ghost ground
+        (``before_<plan>`` has air there); exempt from the comparison
     @raises SystemExit: any footprint position in ``erase`` differs from the structure
     """
     for plan_name, structure_meta, positions in footprints:
         if not positions:
             continue
         expected_all = load_before_structure_blocks(structure_meta, m=m, save_root=save_root)
-        # Air in before_<plan> where undo writes ghost ground is deliberate (journal undo fills the
-        # ghost height rather than digging a pit under a feature built before its ghost); the
-        # guard is for the other direction, ground the erase would lose.
-        expected = {p: expected_all.get(p, 'minecraft:air') for p in positions if p in erase}
-        expected = {p: s for p, s in expected.items() if not (s == 'minecraft:air' and erase[p] != s)}
+        # Air in before_<plan> where undo wrote ghost ground is deliberate (feature built before
+        # its ghost); the guard is for any other disagreement, e.g. ground the erase would lose.
+        expected = {p: expected_all.get(p, 'minecraft:air') for p in positions
+                    if p in erase and p not in ghost_filled}
         if not expected:
             continue
         rep = diff_against_before(expected, erase)
@@ -1271,7 +1272,8 @@ def undo(target, *, strict=True, meta=None):
     except (InFlight, Refused) as exc:
         raise _journal_refusal(f'undo {label}', exc) from exc
     try:
-        verify_erase_matches_before(footprints, ticket.writes.cells, m)
+        verify_erase_matches_before(footprints, ticket.writes.cells, m,
+                                    ghost_filled=ticket.writes.ghost_filled)
     except SystemExit:
         ticket.abandon(reason='erase plan differs from before_<plan> structure (#123)')
         raise

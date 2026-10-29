@@ -530,6 +530,86 @@ class TestGhosts(Base):
         self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)
         self.assertEqual(self.blocks.read(P(0, 0, 0, 61)), AIR)
 
+    def _house_before_ghost(self, ghost, state_before=None, **kw):
+        """Feature over unghosted columns, then the cell's ghost; returns the registry."""
+        reg = self.registry(ghosts=lambda cell, layer: dict(ghost), **kw)
+        self.reg = reg
+        if state_before:
+            self.blocks.write(P(0, 0, 0, 59), state_before)
+            self.blocks.flush()
+        reg.change(Build('house', 'feature', {P(0, 0, 0, 60): GLASS, P(0, 0, 0, 59): GLASS}), self.apply)
+        reg.change(reg._ghost_build((0, 0), 'ground'), self.apply)
+        return reg
+
+    def test_undo_ghost_fill_records_filled_positions_and_ignores_air_above(self):
+        ghost = {P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY, P(0, 0, 5, 60): GREY}
+        reg = self._house_before_ghost(ghost)
+        reg.change(Undo('house'), self.apply)
+        w = self.applied[-1]
+        self.assertEqual(w.ghost_filled, {P(0, 0, 0, 59), P(0, 0, 0, 60)})
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 61)), AIR)
+
+    def test_undo_ghost_fill_treats_cave_air_prior_as_air(self):
+        ghost = {P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY, P(0, 0, 5, 60): GREY}
+        reg = self._house_before_ghost(ghost, state_before='minecraft:cave_air')
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 59)), GREY)
+
+    def test_undo_ghost_fill_keeps_non_air_prior(self):
+        ghost = {P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY, P(0, 0, 5, 60): GREY}
+        reg = self._house_before_ghost(ghost, state_before=DIRT)
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 59)), DIRT)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)
+
+    def test_undo_ghost_fill_legacy_begin_without_prior(self):
+        ghost = {P(0, 0, 0, 59): GREY, P(0, 0, 0, 60): GREY, P(0, 0, 5, 60): GREY}
+        self._house_before_ghost(ghost)
+        path = self.root / 'registry' / 'journal.jsonl'
+        lines = self.lines()
+        for l in lines:
+            l.pop('prior', None)
+        path.write_text(''.join(json.dumps(l, separators=(',', ':')) + '\n' for l in lines))
+        fresh = self.registry(ghosts=lambda cell, layer: dict(ghost))
+        fresh.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)
+
+    def test_undo_without_ghost_planner_result_stays_air(self):
+        reg = self.registry(ghosts=lambda cell, layer: None)
+        self.reg = reg
+        reg.change(Build('ghost_0_0_ground', 'ghost-ground', {P(0, 0, 5, 60): GREY}, cell=(0, 0)), self.apply)
+        reg.change(Build('house', 'feature', {P(0, 0, 0, 60): GLASS}), self.apply)
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), AIR)
+        self.assertEqual(self.applied[-1].ghost_filled, frozenset())
+
+    def test_undo_in_real_ground_cell_does_not_ghost_fill(self):
+        ghost = {P(0, 0, 0, 60): GREY}
+        reg = self.registry(ghosts=lambda cell, layer: dict(ghost))
+        self.reg = reg
+        self.build('ground_0_0', 'ground', {P(0, 0, 5, 60): STONE}, cell=(0, 0))
+        self.build('house', 'feature', {P(0, 0, 0, 60): GLASS})
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), AIR)
+
+    def test_undo_feature_spanning_two_cells_fills_only_the_ghosted_one(self):
+        ghost = {P(0, 0, 0, 60): GREY, P(0, 0, 5, 60): GREY}
+        reg = self.registry(ghosts=lambda cell, layer: dict(ghost) if cell == (0, 0) else None)
+        self.reg = reg
+        reg.change(Build('house', 'feature', {P(0, 0, 0, 60): GLASS, P(1, 0, 0, 60): GLASS}), self.apply)
+        reg.change(reg._ghost_build((0, 0), 'ground'), self.apply)
+        reg.change(Undo('house'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), GREY)
+        self.assertEqual(self.blocks.read(P(1, 0, 0, 60)), AIR)
+
+    def test_undoing_a_ghost_plan_erases_it(self):
+        ghost = {P(0, 0, 0, 60): GREY}
+        reg = self.registry(ghosts=lambda cell, layer: dict(ghost))
+        self.reg = reg
+        reg.change(Build('ghost_0_0_ground', 'ghost-ground', dict(ghost), cell=(0, 0)), self.apply)
+        reg.change(Undo('ghost_0_0_ground'), self.apply)
+        self.assertEqual(self.blocks.read(P(0, 0, 0, 60)), AIR)
+
     def test_real_feature_does_not_queue_ghost_feature_strips(self):
         self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
         rec = self.build('house', 'feature', {P(0, 0, 0, 61): GLASS, P(0, 0, 0, 62): GLASS})
