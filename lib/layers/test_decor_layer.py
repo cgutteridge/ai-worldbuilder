@@ -194,32 +194,24 @@ class TestPlaceFurniture(unittest.TestCase):
 
 
 class TestOnCarriageway(unittest.TestCase):
-    """Barriers must not sit on roads or brick paths (#144)."""
+    """Barriers are refused only on the carriageway: tarmac, marking and kerb."""
 
-    def test_brick_path_column_is_carriageway(self):
-        """Live brick paving (garden path) is refused like tarmac/paving."""
-        with mock.patch.object(dl, 'column_ground_kind', side_effect=lambda w, x, z: 'brick'):
-            self.assertTrue(dl.on_carriageway(mock.Mock(), 10, 20))
+    def carriageway(self, kinds, at=(10, 20)):
+        with mock.patch.object(dl, 'column_ground_kind',
+                               side_effect=lambda _w, x, z: kinds.get((x, z))):
+            return dl.on_carriageway(mock.Mock(), *at)
 
-    def test_grass_away_from_road_is_not_carriageway(self):
-        kinds = {(10, 20): 'grass', (11, 20): 'grass', (9, 20): 'grass',
-                 (10, 21): 'grass', (10, 19): 'grass'}
+    def test_tarmac_marking_and_kerb_are_carriageway(self):
+        for kind in ('tarmac', 'mark', 'kerb'):
+            self.assertTrue(self.carriageway({(10, 20): kind}), kind)
 
-        def kind(_w, x, z):
-            return kinds.get((x, z))
+    def test_paving_brick_and_other_soft_ground_are_not_carriageway(self):
+        for kind in ('paving', 'brick', 'grass', 'gravel', 'dirt', None):
+            self.assertFalse(self.carriageway({(10, 20): kind}), kind)
 
-        with mock.patch.object(dl, 'column_ground_kind', side_effect=kind):
-            self.assertFalse(dl.on_carriageway(mock.Mock(), 10, 20))
-
-    def test_near_brick_path_is_carriageway(self):
-        """Within two blocks of brick paving counts, same as paving/tarmac."""
-        kinds = {(10, 20): 'grass', (12, 20): 'brick'}
-
-        def kind(_w, x, z):
-            return kinds.get((x, z))
-
-        with mock.patch.object(dl, 'column_ground_kind', side_effect=kind):
-            self.assertTrue(dl.on_carriageway(mock.Mock(), 10, 20))
+    def test_nearby_road_or_paving_does_not_count(self):
+        kinds = {(10, 20): 'grass', (11, 20): 'tarmac', (12, 20): 'brick', (10, 21): 'paving'}
+        self.assertFalse(self.carriageway(kinds))
 
 
 class TestEmptyDecorApply(unittest.TestCase):
