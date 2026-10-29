@@ -63,5 +63,66 @@ class TestBottomSlabs(unittest.TestCase):
         )
 
 
+    def test_later_set_or_fill_prunes_keep_slab_cell(self):
+        p = Plan('t')
+        p.set(1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        p.keep_slab_cells.add((1, 60, 1))
+        p.set(1, 60, 1, 'stone')
+        self.assertNotIn((1, 60, 1), p.keep_slab_cells)
+        p.keep_slab_cells.add((2, 60, 1))
+        p.fill((2, 60, 1), (2, 60, 1), 'stone')
+        self.assertEqual(p.keep_slab_cells, set())
+
+
+class TestMcpWriterSlabs(unittest.TestCase):
+    SLAB = 'minecraft:brick_slab[type=bottom,waterlogged=false]'
+
+    def _run(self, writes, results=None):
+        from unittest import mock
+        from site_kit import McpWriter
+        m = mock.Mock()
+        m.text.return_value = 'ok'
+        m.call.side_effect = results or (lambda n, a: {'content': [{'type': 'text', 'text': 'done'}]})
+        with mock.patch('site_kit._bring_player', return_value=None), \
+                mock.patch('mc_player.tell_player'):
+            McpWriter(m)(writes)
+        return m
+
+    def _writes(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            intent=None, kind='build', plan='t', pass_='build', signs=(), entities=(),
+            cells={(1, 60, 1): self.SLAB, (2, 60, 1): 'minecraft:bricks'})
+
+    def test_replay_places_slab_after_fills_with_arguments(self):
+        m = self._run(self._writes())
+        names = [c.args[0] for c in m.call.call_args_list]
+        self.assertEqual(names, ['block_set_state'])
+        self.assertEqual(m.text.call_args_list[0].args[0], 'block_fill_batch')
+        args = m.call.call_args_list[0].args[1]
+        self.assertEqual(args['position'], {'x': 1, 'y': 60, 'z': 1})
+        self.assertEqual(args['block'], {
+            'id': 'minecraft:brick_slab',
+            'properties': {'type': 'bottom', 'waterlogged': 'false'}})
+
+    def test_failed_slab_placement_raises_with_position(self):
+        err = lambda n, a: {'content': [{'type': 'text', 'text': 'Error: bad state'}]}
+        with self.assertRaises(RuntimeError) as cm:
+            self._run(self._writes(), err)
+        self.assertIn('(1, 60, 1)', str(cm.exception))
+
+    def test_player_restored_when_slab_placement_fails(self):
+        from unittest import mock
+        from site_kit import McpWriter
+        m = mock.Mock()
+        m.text.return_value = 'ok'
+        m.call.return_value = {'content': [{'type': 'text', 'text': 'Failed: nope'}]}
+        restore = mock.Mock()
+        with mock.patch('site_kit._bring_player', return_value=restore):
+            with self.assertRaises(RuntimeError):
+                McpWriter(m)(self._writes())
+        restore.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()

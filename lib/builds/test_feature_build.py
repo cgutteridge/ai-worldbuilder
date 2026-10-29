@@ -1513,8 +1513,8 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         feature = builder.features[0]
         self.assertLess(feature.zone_roof_half[(14, 22)], 106)
         for (x, z), h in feature.zone_roof_half.items():
-            self.assertEqual(feature.zone_roof[(x, z)], h // 2)
-            state = plan.cells[(x, h // 2, z)]
+            self.assertEqual(feature.zone_roof[(x, z)], F.roof_block_y(h))
+            state = plan.cells[(x, F.roof_block_y(h), z)]
             self.assertTrue('brick_stairs' in state or 'brick_slab' in state or state.endswith(':bricks'))
         from roof_lint import stair_shape_mismatches
         self.assertEqual(stair_shape_mismatches(plan.cells), [])
@@ -1570,7 +1570,7 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         feature.zone_level = {c: 49 for c in cells}
         feature.zone_eave = {c: 49 for c in cells}
         feature.zone_roof_half = halfs
-        feature.zone_roof = {c: h // 2 for c, h in halfs.items()}
+        feature.zone_roof = {c: F.roof_block_y(h) for c, h in halfs.items()}
         builder.shell_zoned(0, feature)
         self.assertIn('facing=east', builder.p.cells[(6165, 60, -5631)])
         self.assertIn('shape=straight', builder.p.cells[(6165, 60, -5631)])
@@ -1919,14 +1919,14 @@ class PitchedMaterialOwnershipTest(unittest.TestCase):
         f = builder.features[0]
         f.b = 40
         f.zone_roof_half = heights
-        f.zone_roof = {c: h // 2 for c, h in heights.items()}
+        f.zone_roof = {c: F.roof_block_y(h) for c, h in heights.items()}
         f.zone_ground = {c: 40 for c in heights}
         f.zone_level = levels
         f.zone_eave = levels
         f.roof_material_level = F.roof_material_levels(f.roof, levels)
         builder.shell_zoned(0, f)
         return {
-            c: builder.p.cells[(c[0], h // 2, c[1])]
+            c: builder.p.cells[(c[0], F.roof_block_y(h), c[1])]
             for c, h in heights.items()
         }, f.roof_material_level
 
@@ -1947,6 +1947,27 @@ class PitchedMaterialOwnershipTest(unittest.TestCase):
                                               'minecraft:bricks', 'minecraft:brick_slab[')),
                             (c, state))
         self.assertEqual(levels[(0, 0)], 45, 'evidence zones are not rewritten')
+
+    def test_odd_h_column_gets_bottom_half_slab_at_roof_block_y_with_wall_below(self):
+        heights = {(x, z): h for z in range(3)
+                   for x, h in enumerate([90, 92, 94, 96, 97, 96, 94, 92, 90])}
+        levels = {c: 47 for c in heights}
+        spec = self._spec()
+        builder = F.Build(spec, footprints={'A': set(heights)}, world=_StoneWorld())
+        f = builder.features[0]
+        f.b = 40
+        f.zone_roof_half = heights
+        f.zone_roof = {c: F.roof_block_y(h) for c, h in heights.items()}
+        f.zone_ground = {c: 40 for c in heights}
+        f.zone_level = levels
+        f.zone_eave = levels
+        f.roof_material_level = F.roof_material_levels(f.roof, levels)
+        builder.shell_zoned(0, f)
+        y = F.roof_block_y(97)
+        self.assertEqual(y, 49)
+        self.assertEqual(builder.p.cells[(4, y, 1)], 'minecraft:brick_slab[type=bottom,waterlogged=false]')
+        self.assertIn((4, y, 1), builder.p.keep_slab_cells)
+        self.assertNotIn(builder.p.cells[(4, y - 1, 1)], ('minecraft:air', None))
 
     def test_narrow_lower_deck_and_independent_pitch_keep_their_material(self):
         heights = {(x, z): h for z in range(3)
@@ -2556,11 +2577,11 @@ class PitchedRoofStatesTest(unittest.TestCase):
     """Seam: pitched_roof_states — gable, hip, valley; shape from same-Y neighbours (#149, #169)."""
 
     def _place_membrane(self, half, states):
-        """Write pitched membrane into MemoryBlocks at ``y = half // 2``."""
+        """Write pitched membrane into MemoryBlocks at ``y = roof_block_y(half)``."""
         from block_store import MemoryBlocks
         store = MemoryBlocks(default='air')
         for (x, z), st in states.items():
-            store.write((x, half[(x, z)] // 2, z), st)
+            store.write((x, F.roof_block_y(half[(x, z)]), z), st)
         store.flush()
         return store
 
@@ -2569,7 +2590,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         from roof_lint import stair_shape_mismatches
         adjusted = F.regularise_roof_half_heights(half)
         store = self._place_membrane(adjusted, states)
-        positions = [(x, adjusted[(x, z)] // 2, z) for x, z in states]
+        positions = [(x, F.roof_block_y(adjusted[(x, z)]), z) for x, z in states]
         self.assertEqual(stair_shape_mismatches(store.read_many(positions)), [])
 
     def test_gable_stairs_face_upslope_ridge_full(self):
@@ -2704,6 +2725,47 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertEqual(stub.p.keep_slab_cells, {(1, 60, 1)})
         self.assertEqual(rewrite_bottom_slabs(stub.p), 0)
         self.assertIn('type=bottom', stub.p.cells[(1, 60, 1)])
+
+    def test_roof_block_y_odd_goes_up_even_unchanged(self):
+        self.assertEqual([F.roof_block_y(h) for h in range(12, 17)], [6, 7, 7, 8, 8])
+
+    def test_odd_h_neighbouring_stairs_have_matching_shapes(self):
+        # Stairs at odd h (13, 14 share roof_block_y 7) must satisfy the same-Y shape rule.
+        half = {(0, 0): 13, (1, 0): 13, (2, 0): 15, (0, 1): 14, (1, 1): 15, (2, 1): 15,
+                (0, 2): 15, (1, 2): 17, (2, 2): 17}
+        states = F.pitched_roof_states(half, {c: 'brick' for c in half})
+        self.assertTrue(any('_stairs' in st for st in states.values()))
+        self._assert_shapes_match_neighbours(half, states)
+
+    def test_bottom_half_slab_surface_rises_steadily_h12_to_h16(self):
+        # #209: surfaces 7, 7.5, 8, 8.5, 9, never a sawtooth.
+        half = {(i, 0): 12 + i for i in range(5)}
+        states = F.pitched_roof_states(half, {c: 'brick' for c in half})
+        surf = []
+        for (x, z), h in sorted(half.items()):
+            y = F.roof_block_y(h)
+            surf.append(y + (0.5 if 'type=bottom' in states[(x, z)] else 1))
+        self.assertEqual(surf, [7, 7.5, 8, 8.5, 9])
+
+    def _roof_stub(self, below):
+        stub = mock.Mock()
+        stub.p = F.Plan('t')
+        stub.wall = 'bricks'
+        if below is not None:
+            stub.p.set(1, 59, 1, below)
+        stub.live.block.return_value = 'minecraft:air'
+        stub._is_solid = lambda x, y, z: F.Build._is_solid(stub, x, y, z)
+        return stub
+
+    def test_set_roof_puts_wall_under_slab_over_air(self):
+        stub = self._roof_stub(None)
+        F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(stub.p.cells[(1, 59, 1)], 'minecraft:bricks')
+
+    def test_set_roof_keeps_existing_solid_under_slab(self):
+        stub = self._roof_stub('stone')
+        F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(stub.p.cells[(1, 59, 1)], 'minecraft:stone')
 
     def test_ridge_unchanged_full_block_even(self):
         half = {(0, 0): 10, (1, 0): 12, (2, 0): 12, (3, 0): 10}
