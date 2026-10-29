@@ -54,6 +54,19 @@ class Base(unittest.TestCase):
         self.build(f'decor_{tx}_{tz}', 'decor', plan(tx, tz, 'minecraft:poppy', y=62, n=1), cell=(tx, tz))
 
 
+class CacheBoundsTest(Base):
+    def test_multi_cell_reconcile_bounds_decoded_plans_and_ownership(self):
+        for x in range(5):
+            self.build(f'cell_{x}', 'feature', plan(x, 0, STONE), cell=(x, 0))
+        reg = self.registry()
+        with mock.patch('cell_journal.MAX_CACHED_BLOB_BLOCKS', 4):
+            self.assertTrue(reg.reconcile().clean)
+            self.assertLessEqual(sum(map(len, reg._blob_cache.values())), 4)
+            self.assertLessEqual(len(reg._owner_cache), 1)
+            self.assertEqual(reg._blob(reg._entries[reg.entries(plan='cell_0')[0].seq].blob), plan(0, 0, STONE))
+
+
+
 class TestCrashSafety(Base):
     def test_begun_is_durable_before_blocks_change(self):
         seen = {}
