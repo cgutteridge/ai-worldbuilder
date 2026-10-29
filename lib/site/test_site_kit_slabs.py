@@ -45,6 +45,23 @@ class TestBottomSlabs(unittest.TestCase):
         self.assertEqual(rewrite_bottom_slabs(p), 0)
         self.assertIn('slab', p.cells[(1, 60, 1)])
 
+    def test_roof_slab_cells_survive_rewrite(self):
+        p = Plan('t')
+        p.set(1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        p.set(2, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
+        p.keep_slab_cells.add((1, 60, 1))
+        self.assertEqual(rewrite_bottom_slabs(p), 1)
+        self.assertIn('type=bottom', p.cells[(1, 60, 1)])
+        self.assertEqual(p.cells[(2, 60, 1)], 'minecraft:bricks')
+
+    def test_block_arg_splits_properties(self):
+        from site_kit import _block_arg
+        self.assertEqual(
+            _block_arg('brick_slab[type=bottom,waterlogged=false]'),
+            {'id': 'minecraft:brick_slab',
+             'properties': {'type': 'bottom', 'waterlogged': 'false'}},
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
