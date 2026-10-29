@@ -235,6 +235,36 @@ class ApplyProgress(_Tiny):
         self.assertIn('1,0', lines[1])
         self.assertIn('2/2', lines[1])
 
+    def test_apply_announces_ghost_count_once_before_first_cell(self):
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(self.registry(), [(0, 0), (1, 0)], apply=self.jw.apply)
+        lines = err.getvalue().splitlines()
+        notice = [ln for ln in lines if ln.startswith('ghosts:')]
+        self.assertEqual(len(notice), 1)
+        self.assertIn('generating 2 ghost cells', notice[0])
+        self.assertIn('will take a while', notice[0])
+        self.assertEqual(lines[0], notice[0])
+
+    def test_apply_notice_counts_only_cells_that_need_ghosts(self):
+        self.real_ground((0, 0))
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(self.registry(), [(0, 0), (1, 0)], apply=self.jw.apply)
+        self.assertIn('generating 1 ghost cell ', err.getvalue())
+
+    def test_no_notice_when_nothing_needed_or_dry_run(self):
+        reg = self.registry()
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(reg, [(0, 0), (1, 0)])                # dry run
+        self.assertNotIn('ghosts:', err.getvalue())
+        lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)   # already ghosted
+        self.assertNotIn('ghosts:', err.getvalue())
+
     def test_ensure_summary_counts_landed_and_skipped_builds(self):
         reg = self.registry()
         lg.ensure_cells(reg, [(0, 0)], apply=self.jw.apply)

@@ -40,7 +40,7 @@ from typing import Any
 import numpy as np
 
 import cellmath
-from cell_journal import ghost_name
+from cell_journal import announce_ghost_generation, ghost_name
 from script_env import make_parser  # noqa: E402
 
 DEFAULT_RING = 2
@@ -303,6 +303,9 @@ def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[st
     Unlike ``CellRegistry.ensure`` this also serves cells outside the frontier (an explicit
     ``--cell``, or the focus ring before any real work).
 
+    Before the first apply it prints a one-shot expectation notice (cell count, "a while"); dry
+    runs print none. Cells with no lidar are counted but skipped later.
+
     Prints one flushed progress line per cell on stderr, then a summary counting builds by
     journal status (``landed`` / ``mismatched`` / ``abandoned`` / ``skipped``). Stdout is left
     for the caller (CLI JSON).
@@ -317,6 +320,9 @@ def ensure_cells(reg, cells, *, apply=None, force: bool = False) -> list[dict[st
     n = len(targets)
     reports = []
     counts = {'landed': 0, 'mismatched': 0, 'abandoned': 0, 'skipped': 0}
+    if apply is not None:                       # dry runs generate nothing: stay silent
+        views = (reg.cell(c) for c in targets)
+        announce_ghost_generation(sum(1 for v in views if not v.in_flight and needs(v, force=force)))
     try:
         for i, cell in enumerate(targets, 1):
             set_in_flight_cell(cell)

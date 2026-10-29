@@ -1,6 +1,7 @@
 """CellRegistry at its interface: MemoryBlocks + a tmp world root (ADR 004). Cell size 16 keeps plans tiny."""
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
@@ -656,6 +657,29 @@ class TestGhosts(Base):
         self.assertEqual(self.blocks.read(P(-2, -2, 0, 60)), GREY)
         # a cell that already has ghost ground is not re-listed
         self.assertNotIn((2, 2), [c for c, _ in reg._ghost_needs()])
+
+    def test_ensure_announces_ghost_generation_once_across_rounds(self):
+        reg = self.registry(ghosts=self.planner)
+        reg.change(Build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0)), self.apply)
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            reg.ensure(self.apply)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn('generating 24 ghost cells', lines[0])
+        self.assertIn('will take a while', lines[0])
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            reg.ensure(self.apply)                                # nothing pending: silent
+        self.assertEqual(err.getvalue(), '')
+
+    def test_announce_ghost_generation_wording(self):
+        from cell_journal import announce_ghost_generation
+        for n, want in ((0, ''), (1, 'generating 1 ghost cell '), (2, 'generating 2 ghost cells ')):
+            err = io.StringIO()
+            with mock.patch('sys.stderr', err):
+                announce_ghost_generation(n)
+            self.assertIn(want, err.getvalue())
 
     def test_change_cascade_applies_follow_ups_and_ghost_never_covers_real_blocks(self):
         reg = self.registry(ghosts=self.planner)
