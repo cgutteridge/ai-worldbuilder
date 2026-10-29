@@ -1690,6 +1690,12 @@
       "title": "Decor uses lidar as a placement and size hint, never as the trigger",
       "status": "done",
       "notes": "Raised 2026-10-29 from owner direction after the 48,-45 dry run (201 of 209 unresolved decor items were lone lidar lumps). Rule: a photo, POI, OSM or designer row says there is a feature (statue, wall, hedge, bench, table, anything); decor then consults lidar for placement and size hints. A lump seen only in lidar is ignored: no plan item, not even an unresolved one. decor_plan.lidar_objects stops emitting unlabelled components; a lidar component no longer vetoes OSM/designer furniture unless a photo/aerial label on it names an incompatible kind (e.g. vehicle). Barrier items (map, garden, designer, border) take height from lidar when most columns stand 1-3 above terrain (tree/roof columns excluded); furniture rows carry lidar_height and lidar_cells as hints. Tests in lib/layers/test_decor_plan.py."
+    },
+    {
+      "id": 197,
+      "title": "feature_build --apply refuses a plan that already has a landed build unless told to overwrite",
+      "status": "done",
+      "notes": "Raised 2026-10-28 from an owner observation on west_w34391673. Cause class: Capability. site_kit.apply excludes the plan's own name from the clash check and writes only the new plan's cells, so a re-apply over a landed build leaves old blocks outside the new plan (old roof, stairs, edits). Redo skill now undoes first (e07e331); this is the tool-side guard. feature_build.run: when do_apply and the journal has a landed, not-undone feature entry for spec name, SystemExit pointing at element_undo.py; add --overwrite to opt out. Tests in lib/builds/test_feature_build.py."
     }
   ]
 }
