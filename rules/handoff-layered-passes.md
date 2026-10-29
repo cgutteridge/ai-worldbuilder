@@ -246,9 +246,12 @@ Old ground scripts are retired: backups/retired-ground-scripts-2026-10-14.tar.gz
 LIDAR OBJECTS IN DECOR (#173)
   - Ground uses bare terrain; decor reads composite DSM minus DTM and groups
     connected raised columns outside building footprints and tree canopy/kinds.
-  - Lidar height alone never identifies furniture. Unlabelled, conflicting,
-    unknown and vehicle objects remain unresolved and place no blocks. A vehicle
-    label also blocks generic map/designer furniture on that object.
+  - Lidar is a guide, never the trigger. A lump seen only in lidar adds nothing to
+    the plan (not even an unresolved row). Only a photo, POI, map or designer row
+    says a feature exists; lidar then gives placement and size hints.
+  - Conflicting, unknown and vehicle labels on a lump remain unresolved and place
+    no blocks. A vehicle label also blocks generic map/designer furniture on that
+    object; an unlabelled lump never does.
   - Classify an object after reading a street photo or aerial. Reuse the cell's
     reference/decor-furniture.json observations, for example:
       "observations": [{"kind":"waste_basket", "cell":[6200,-5550],
@@ -263,4 +266,9 @@ LIDAR OBJECTS IN DECOR (#173)
   - One classified object places one existing furniture recipe at the observed
     column on the actual ground, subject to the usual paving, ownership, mask
     and clearance guards. The plan retains lidar_cells and lidar_height for
-    inspection; DSM height does not raise the ground or become a vehicle mesh.
+    inspection, and map, designer and photo furniture standing on a lump carries
+    the same two hints; DSM height does not raise the ground or become a vehicle mesh.
+  - Barriers (map, designer, border) whose height is only the kind's default take
+    it from lidar when at least half their columns stand 1-3 blocks above bare
+    terrain (tree, roof and structure columns excluded): height_source 'lidar'.
+    An explicit height (garden convention) always wins.
