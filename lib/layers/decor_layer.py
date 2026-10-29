@@ -2,8 +2,8 @@
 """Layered decor pass for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 4), §2, §3.
 
 Decor builds from a decor plan (#150): aerial/photo/map/designer barriers and street
-furniture, each with shared provenance. Barriers sit anywhere but the carriageway; furniture sits on
-paving, never on a path-line column. Building-border hedges from the aerial may sit
+furniture, each with shared provenance. Barriers sit anywhere but the carriageway; furniture
+sits on paving, never on a path-line column. Building-border hedges from the aerial may sit
 against a footprint; other barriers and furniture stay clear of builds. Items the plan
 cannot resolve are listed, not silently skipped. Placed only where the live block is air
 (or a stem/flower, as in §10) and not owned by a neighbour or by another mask, clipped to
@@ -42,8 +42,7 @@ def plan_name(tx: int, tz: int) -> str:
 JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
 NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 # Ground kinds the barrier pass must not sit on (live surface, not only map way columns):
-# the carriageway. Paving and brick paths are fair ground for hedges and fences.
-_CARRIAGE_KINDS = frozenset({'tarmac', 'mark', 'kerb'})
+# the carriageway (as for furniture). Paving and brick paths are fair ground for hedges and fences.
 
 
 def column_ground_kind(world: World, x: int, z: int) -> str | None:
@@ -58,7 +57,7 @@ def column_ground_kind(world: World, x: int, z: int) -> str | None:
 
 def on_carriageway(world: World, x: int, z: int) -> bool:
     """True when a barrier column would sit on the carriageway (tarmac, marking, kerb)."""
-    return column_ground_kind(world, x, z) in _CARRIAGE_KINDS
+    return column_ground_kind(world, x, z) in sf.ROAD_KINDS
 
 
 def may_join_at(
