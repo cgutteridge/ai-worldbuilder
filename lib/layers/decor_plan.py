@@ -11,6 +11,7 @@ Sources (cheapest first; later still listed when they add something new):
   * vector map barriers and furniture points
   * garden plot barriers (convention / aerial hedge)
   * aerial dark-green rings immediately outside building footprints
+  * aerial dark-green thin strips standing free of buildings (lidar-confirmed when given)
   * designer ``reference/decor-furniture.json`` (and optional observations)
   * photo observations that name a kind but no coordinate → unresolved
 """
@@ -37,6 +38,8 @@ DEFAULT_BLOCK = {
 BARRIER_KINDS = frozenset(DEFAULT_BLOCK)
 CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MIN_BORDER_CELLS = 4
+MAX_FREE_HEDGE_WIDTH = 3
+HEDGE_RAISE = (1, 3)
 
 
 def _item_id(prefix: str, *parts: Any) -> str:
@@ -106,6 +109,77 @@ def aerial_building_border_hedges(
             root=root,
         )
         out.append(item)
+    return out
+
+
+def _raised_fraction(hm: Mapping[str, Any], cells: Iterable[tuple[int, int]]) -> float:
+    """Share of ``cells`` whose DSM stands 1-3 blocks above the DTM (tree and roof columns never count)."""
+    from lidar_heightmap import TREE, TREE_OVER_ROOF, ROOF
+
+    cells = list(cells)
+    lo, hi = HEDGE_RAISE
+    n = 0
+    for x, z in cells:
+        i, j = x - int(hm['x0']), z - int(hm['z0'])
+        if 0 <= i < hm['h'].shape[0] and 0 <= j < hm['h'].shape[1]:
+            if hm['kind'][i, j] in (TREE, TREE_OVER_ROOF, ROOF):
+                continue
+            if lo <= hm['h'][i, j] - hm['terrain'][i, j] <= hi:
+                n += 1
+    return n / len(cells)
+
+
+def aerial_free_hedges(
+    footprint: set[tuple[int, int]],
+    rgb: Mapping[tuple[int, int], Any],
+    canopy: set[tuple[int, int]] | None = None,
+    taken: set[tuple[int, int]] | None = None,
+    *,
+    lidar_hm: Mapping[str, Any] | None = None,
+    min_cells: int = MIN_BORDER_CELLS,
+    max_width: int = MAX_FREE_HEDGE_WIDTH,
+    evidence_ids: Sequence[str] = (),
+    root=None,
+) -> list[dict[str, Any]]:
+    """Hedge items from thin dark-green aerial strips standing free of buildings (I-035).
+
+    Shade columns outside footprints, canopy and ``taken`` barrier columns are
+    grouped; only elongated groups (at least ``min_cells`` long, mean width at
+    most ``max_width``) count, so a shaded lawn patch is not a hedge. When a
+    lidar heightmap is given, at least half the strip must stand 1-3 blocks
+    above bare terrain (medium confidence); without lidar the item is low.
+
+    @param footprint: building footprint columns
+    @param rgb: aerial colour samples ``{(x, z): rgb}``
+    @param canopy: tree-canopy columns to ignore
+    @param taken: columns already planned as barriers
+    @param lidar_hm: optional DSM/DTM heightmap confirming the strip is raised
+    @param evidence_ids: evidence ids attached to each item's provenance
+    @param root: world root for evidence id checks
+    @returns: resolved hedge barrier items
+    """
+    from ground_sources import aerial_class
+    from garden_sources import components
+
+    skip = (canopy or set()) | (taken or set()) | footprint
+    shade = {q for q, c in rgb.items() if q not in skip and aerial_class(c) == 'shade'}
+    use_lidar = bool(lidar_hm) and 'terrain' in lidar_hm
+    out: list[dict[str, Any]] = []
+    for group in sorted(components(shade), key=min):
+        xs, zs = [q[0] for q in group], [q[1] for q in group]
+        length = max(max(xs) - min(xs), max(zs) - min(zs)) + 1
+        if length < min_cells or len(group) / length > max_width:
+            continue
+        if use_lidar and _raised_fraction(lidar_hm, group) < 0.5:
+            continue
+        cells = sorted(group)
+        out.append(_barrier_item(
+            'hedge', cells,
+            source='aerial', confidence='medium' if use_lidar else 'low',
+            evidence_ids=evidence_ids, root=root,
+            note='aerial dark-green strip away from buildings',
+            item_id=_item_id('hedge-free', cells[0][0], cells[0][1]),
+        ))
     return out
 
 
@@ -424,6 +498,14 @@ def build_decor_plan(
             evidence_ids=evidence_ids, root=root,
             note=str(raw.get('note') or ''),
         ))
+
+    # Last of the barrier sources: designer and map rows outrank aerial inference.
+    for item in aerial_free_hedges(
+        footprint, rgb, canopy, seen_barrier, lidar_hm=lidar_hm,
+        evidence_ids=evidence_ids, root=root,
+    ):
+        seen_barrier.update(tuple(c) for c in item['cells'])
+        items.append(item)
 
     object_items, object_columns = lidar_objects(
         lidar_hm, footprint, canopy, photo_observations, root=root)
