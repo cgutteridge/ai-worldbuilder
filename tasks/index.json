@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 198,
+  "nextTaskId": 199,
   "tasks": [
     {
       "id": 178,
@@ -29,6 +29,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Raised 2026-10-28 from an owner observation on west_w34391673. Cause class: Capability. site_kit.apply excludes the plan's own name from the clash check and writes only the new plan's cells, so a re-apply over a landed build leaves old blocks outside the new plan (old roof, stairs, edits). Redo skill now undoes first (e07e331); this is the tool-side guard. feature_build.run: when do_apply and the journal has a landed, not-undone feature entry for spec name, SystemExit pointing at element_undo.py; add --overwrite to opt out. Tests in lib/builds/test_feature_build.py."
+    },
+    {
+      "id": 198,
+      "title": "Decor places free-standing hedges the aerial shows (I-035)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-29 from world issue I-035 (southampton-build): decor hedges come only from the vector map, garden plots and building-border strips, so free-standing aerial hedges never enter the plan. Add decor_plan.aerial_free_hedges: dark-green (shade) columns that are not footprint, canopy or already barriers, grouped into thin elongated strips (>= MIN_BORDER_CELLS long, <= 3 wide); when a lidar heightmap is given, require surface 1-3 above terrain. Resolved hedge items, source aerial, medium confidence; non-strip shade is lawn shade, not a candidate. Wire into build_decor_plan after border hedges. Tests in lib/layers/test_decor_plan.py."
     }
   ]
 }
