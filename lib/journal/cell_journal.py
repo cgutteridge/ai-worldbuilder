@@ -31,6 +31,7 @@ import gzip
 import hashlib
 import json
 import os
+import sys
 import time
 import zlib
 from collections import Counter, OrderedDict
@@ -434,6 +435,20 @@ def ghost_name(cell: Cell, layer: str) -> str:
     @returns: plan name
     """
     return f'ghost_{cell[0]}_{_token(cell[1])}_{layer}'
+
+
+def announce_ghost_generation(n: int) -> None:
+    """One non-interactive stderr notice before ghost ground is generated (never prompts).
+
+    Silent when ``n`` is 0. Timing is the ground-pass figure in ``rules/slow-commands.md``.
+
+    @param n: ghost cells about to be applied
+    """
+    if n <= 0:
+        return
+    noun = 'cell' if n == 1 else 'cells'
+    print(f'ghosts: generating {n} ghost {noun} (placeholder ground); this will take a while '
+          f'(ground passes alone run 25-55 s per cell).', file=sys.stderr, flush=True)
 
 
 def _encode_runs(cells: Mapping[Pos, str]) -> list[list]:
@@ -1498,10 +1513,14 @@ class CellRegistry:
         @raises Refused: follow-ups did not settle within ``rounds``
         """
         out: list[Receipt] = []
+        warned = False
         for _ in range(rounds):
             pending = self.follow_ups(cells)
             if not pending:
                 return out
+            if not warned:
+                announce_ghost_generation(len(pending))
+                warned = True
             for b in pending:
                 out.append(self.change(b, apply))
         if self.follow_ups(cells):
