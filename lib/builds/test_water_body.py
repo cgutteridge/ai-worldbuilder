@@ -43,7 +43,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['depth'], 1)
         self.assertEqual(spec['floor'], 'dirt')
         self.assertEqual(spec['modifies'], [])
-        self.assertEqual(spec['bank'], {'material': 'dirt', 'width': 1})
+        self.assertEqual(spec['bank'], {'material': 'dirt', 'width': 1, 'rise': 0})
         self.assertEqual(spec['edge'], {'material': 'cobblestone'})
         self.assertEqual(spec['provenance']['source'], 'vector_map')
         self.assertFalse(prov.is_unresolved(spec['provenance']))
@@ -222,6 +222,16 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(bank_only.get(9, 55, 20), 'minecraft:coarse_dirt')
         # outside the width-1 bank ring: untouched
         self.assertIsNone(bank_only.get(8, 55, 20))
+
+    def test_sunken_pond_clears_above_and_raises_bank(self):
+        plan = W.build(self.spec(clear_above=1, bank={'material': 'coarse_dirt', 'rise': 1}, edge=None))
+        self.assertEqual(plan.get(10, 55, 20), 'minecraft:water')
+        self.assertEqual(plan.get(10, 56, 20), 'minecraft:air')
+        self.assertEqual(plan.get(9, 56, 20), 'minecraft:coarse_dirt')
+        self.assertIsNone(plan.get(9, 55, 20))
+        for bad in ({'clear_above': -1}, {'bank': {'material': 'x', 'rise': -1}}):
+            with self.assertRaises(SystemExit):
+                self.spec(**bad)
 
     def test_summary_counts_water(self):
         plan = W.build(self.spec())
