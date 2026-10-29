@@ -398,5 +398,34 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         self.assertEqual([e.status for e in undo], ['landed'])
 
 
+class VerifyEraseMatchesBefore(unittest.TestCase):
+    """The #123 guard: ghost-filled positions are exempt, lost ground is not."""
+
+    AIR, GREY, STONE = 'minecraft:air', 'minecraft:gray_concrete', 'minecraft:stone'
+
+    def setUp(self):
+        import site_kit
+
+        class M:
+            structures = {'before_x': {(0, 59, 0): self.AIR, (1, 59, 0): self.STONE}}
+
+        self.kit, self.m = site_kit, M()
+        self.fp = [('x', {'name': 'before_x', 'from': (0, 59, 0)}, [(0, 59, 0), (1, 59, 0)])]
+
+    def test_ghost_fill_over_air_snapshot_passes(self):
+        erase = {(0, 59, 0): self.GREY, (1, 59, 0): self.STONE}
+        self.kit.verify_erase_matches_before(self.fp, erase, self.m, ghost_filled=frozenset({(0, 59, 0)}))
+
+    def test_non_ghost_non_air_over_air_snapshot_still_refused(self):
+        erase = {(0, 59, 0): self.GREY, (1, 59, 0): self.STONE}
+        with self.assertRaises(SystemExit):
+            self.kit.verify_erase_matches_before(self.fp, erase, self.m)
+
+    def test_lost_ground_still_refused(self):
+        erase = {(0, 59, 0): self.AIR, (1, 59, 0): self.AIR}
+        with self.assertRaises(SystemExit):
+            self.kit.verify_erase_matches_before(self.fp, erase, self.m, ghost_filled=frozenset({(0, 59, 0)}))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -195,6 +195,7 @@ class Writes:
     @param seq: journal seq of the ``begun`` entry (None for repair)
     @param signs: recorded sign text to rewrite after the blocks (empty for undo/repair of cells only)
     @param entities: recorded summons to rewrite after the blocks
+    @param ghost_filled: undo positions restored to ghost ground instead of the (air) prior
     """
 
     plan: str
@@ -205,6 +206,7 @@ class Writes:
     seq: int | None = None
     signs: tuple = ()
     entities: tuple = ()
+    ghost_filled: frozenset = frozenset()
 
 
 @dataclass(frozen=True, eq=False)
@@ -1275,15 +1277,20 @@ class CellRegistry:
         # nothing owns them and the prior is air: undo would dig a pit under the footprint.
         # Fall back to the ghost (lidar height) the cell is meant to have.
         ghost_plan: dict[Cell, Mapping[Pos, str]] = {}
-        for p, state in erase.items():
-            if state != AIR or p in under:
-                continue
-            cell = self._cell_of(p)
-            if cell not in ghost_plan:
-                want = self.ghosts(cell, 'ground') if self.ghosts is not None and self._derive(cell).ground == 'ghost' else None
-                ghost_plan[cell] = want or {}
-            if ghost_plan[cell].get(p, AIR) != AIR:
-                erase[p] = ghost_plan[cell][p]
+        ghost_filled: set[Pos] = set()
+        # Undoing a ghost plan itself must erase it, not rewrite it.
+        if not any(e.pass_ in GHOST_PASSES for e in targets):
+            for p, state in erase.items():
+                if block_id(state) not in AIR_IDS or p in under:
+                    continue
+                cell = self._cell_of(p)
+                if cell not in ghost_plan:
+                    want = self.ghosts(cell, 'ground') if self.ghosts is not None and self._derive(cell).ground == 'ghost' else None
+                    ghost_plan[cell] = {tuple(q): s for q, s in (want or {}).items()}
+                fill = ghost_plan[cell].get(p)
+                if fill is not None and block_id(fill) not in AIR_IDS:
+                    erase[p] = fill
+                    ghost_filled.add(p)
         names = sorted({e.plan for e in targets})
         first = targets[-1]
         record = {
@@ -1293,7 +1300,7 @@ class CellRegistry:
         }
         if u.meta:
             record['meta'] = dict(u.meta)
-        return _Prepared(record, Writes(record['plan'], first.pass_, erase, 'undo', u), bool(u.strict))
+        return _Prepared(record, Writes(record['plan'], first.pass_, erase, 'undo', u, ghost_filled=frozenset(ghost_filled)), bool(u.strict))
 
     def _begin(self, prep: _Prepared) -> Ticket:
         record = dict(prep.record, blob=self._store_blob(prep.writes.cells))
