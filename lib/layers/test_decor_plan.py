@@ -118,7 +118,7 @@ class TestFreeStandingHedges(unittest.TestCase):
         with mock.patch('ground_sources.aerial_class', return_value='shade'):
             plan = dp.build_decor_plan(
                 (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(),
-                canopy=set(), designer_items=designer)
+                canopy=set(), designer_items=designer, free_hedges=True)
         self.assertEqual([i['kind'] for i in plan['items']], ['iron_bars'])
 
     def test_lidar_confirmed_hedge_leaves_no_unresolved_lidar_object(self):
@@ -127,9 +127,17 @@ class TestFreeStandingHedges(unittest.TestCase):
         with mock.patch('ground_sources.aerial_class', return_value='shade'):
             plan = dp.build_decor_plan(
                 (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(),
-                canopy=set(), lidar_hm=self.hm(strip))
+                canopy=set(), lidar_hm=self.hm(strip), free_hedges=True)
         self.assertEqual([i['id'] for i in plan['items']], ['hedge-free-5-2'])
         self.assertEqual(dp.unresolved_items(plan), [])
+
+    def test_free_hedges_are_off_unless_asked(self):
+        strip = [(5, z) for z in range(2, 9)]
+        rgb = {q: self.SHADE for q in strip}
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(), canopy=set())
+        self.assertEqual(plan['items'], [])
 
     def test_build_decor_plan_includes_free_hedges_but_not_over_map_hedges(self):
         strip = [(5, z) for z in range(2, 9)]
@@ -137,7 +145,7 @@ class TestFreeStandingHedges(unittest.TestCase):
         with mock.patch('ground_sources.aerial_class', return_value='shade'):
             plan = dp.build_decor_plan(
                 (0, 0), map_barriers={'hedge': {(5, 2), (5, 3)}, 'wall': set(), 'fence': set()},
-                garden={}, rgb=rgb, footprint=set(), canopy=set())
+                garden={}, rgb=rgb, footprint=set(), canopy=set(), free_hedges=True)
         free = [i for i in plan['items'] if str(i['id']).startswith('hedge-free')]
         self.assertEqual(len(free), 1)
         self.assertEqual(sorted(tuple(c) for c in free[0]['cells']), strip[2:])

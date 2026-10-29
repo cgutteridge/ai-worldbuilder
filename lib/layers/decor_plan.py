@@ -336,6 +336,7 @@ def build_decor_plan(
     rgb: Mapping[tuple[int, int], Any] | None = None,
     canopy: set[tuple[int, int]] | None = None,
     footprint: set[tuple[int, int]] | None = None,
+    free_hedges: bool = False,
     evidence_ids: Sequence[str] = (),
     root=None,
 ) -> dict[str, Any]:
@@ -351,6 +352,8 @@ def build_decor_plan(
     @param rgb: optional aerial colours; fetched when omitted
     @param canopy: optional tree-canopy columns
     @param footprint: optional building columns; OSM index when omitted
+    @param free_hedges: also plan free-standing aerial hedges (off: on 48,-45 it found only
+        carriageway shadow and missed the hedges OSM maps)
     @param evidence_ids: default evidence ids for aerial-derived rows
     @param root: world root for provenance evidence checks
     @returns: ``{'cell': [tx, tz], 'items': [...]}``
@@ -501,10 +504,10 @@ def build_decor_plan(
         ))
 
     # Last of the barrier sources: designer and map rows outrank aerial inference.
-    for item in aerial_free_hedges(
+    for item in (aerial_free_hedges(
         footprint, rgb, canopy, seen_barrier, lidar_hm=lidar_hm,
         evidence_ids=evidence_ids, root=root,
-    ):
+    ) if free_hedges else ()):
         seen_barrier.update(tuple(c) for c in item['cells'])
         items.append(item)
 
