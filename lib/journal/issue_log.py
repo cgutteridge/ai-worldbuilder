@@ -1,4 +1,4 @@
-"""Issues and snags (``<world>/registry/issues.json``): evidence-backed cause tickets (task #120).
+"""Issues and snags (``registry/issues.json`` plus ``issues-closed.json``): evidence-backed cause tickets (task #120).
 
 An **issue** is one hypothesised cause with one fix. A **snag** is one observation (your words, a
 pic, a position, the elements it sits on) and exists only inside an issue; there is no loose snag.
@@ -20,6 +20,9 @@ States: ``open`` -> ``fix-landed`` -> ``confirmed``, plus ``wontfix``.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+import fcntl
+from functools import wraps
 import json
 import re
 import shutil
@@ -70,27 +73,150 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def load(root: Path | str) -> dict[str, Any]:
-    """Load the issue store (empty store when none exists yet).
+class _IssueStore(dict):
+    """An editable view plus its source records, used to refuse stale writes."""
+
+    def __init__(self, live: dict, closed: dict | None):
+        super().__init__(deepcopy(live))
+        self.original_live = live
+        self.original_closed = closed
+        self.closed_ids = {i['id'] for i in closed['issues']} if closed is not None else set()
+        if closed is not None:
+            self['issues'].extend(deepcopy(closed['issues']))
+
+
+def closed_path(root: Path | str) -> Path:
+    """Path of the closed issue archive (distinct from legacy site/archive text).
 
     @param root: world root
-    @returns: ``{'version', 'next_issue', 'next_snag', 'issues'}``
+    @returns: archive JSON path
     """
-    p = issues_path(root)
-    if not p.exists():
-        return {'version': 1, 'next_issue': 1, 'next_snag': 1, 'issues': []}
-    return json.loads(p.read_text(encoding='utf-8'))
+    return Path(root) / 'registry' / 'issues-closed.json'
+
+
+def _read_store(path: Path, *, live: bool) -> dict:
+    if path.exists():
+        return json.loads(path.read_text(encoding='utf-8'))
+    return ({'version': 1, 'next_issue': 1, 'next_snag': 1, 'issues': []}
+            if live else {'version': 1, 'issues': []})
+
+
+def load(root: Path | str, *, include_closed: bool = False) -> dict[str, Any]:
+    """Load live issues, optionally including archived records for lookup/editing.
+
+    Counters always come from the live file. Listing, digest and sync use only live issues.
+
+    @param root: world root
+    @param include_closed: include the archive (show, match and individual mutations)
+    @returns: editable issue store
+    """
+    live = _read_store(issues_path(root), live=True)
+    closed = _read_store(closed_path(root), live=False) if include_closed else None
+    return _IssueStore(live, closed)
+
+
+def _locked(operation):
+    """Serialize issue mutations across local sessions, including picture allocation."""
+    @wraps(operation)
+    def run(root, *args, **kwargs):
+        directory = Path(root) / 'registry'
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / '.issues.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return operation(root, *args, **kwargs)
+    return run
+
+
+def _image_moves(root: Path, issues: list[dict], *, closed: bool) -> list[tuple[Path, Path]]:
+    """Validate managed image paths and update records before moving any files."""
+    moves = []
+    directory = 'img-closed' if closed else 'img'
+    for issue in issues:
+        for snag in issue['snags']:
+            image = snag.get('image')
+            if not image:
+                continue
+            rel = Path(image)
+            if (len(rel.parts) != 3 or rel.parts[0] != 'issues'
+                    or rel.parts[1] not in ('img', 'img-closed') or rel.name in ('.', '..')):
+                raise IssueError(f"{snag['id']}: unsafe picture path {image!r}")
+            source = root / 'registry' / rel
+            target = root / 'registry' / 'issues' / directory / rel.name
+            base = (root / 'registry').resolve()
+            if (not source.parent.resolve().is_relative_to(base)
+                    or not target.parent.resolve().is_relative_to(base) or source.is_symlink()):
+                raise IssueError(f"{snag['id']}: picture escapes the registry ({image})")
+            if source.resolve() == target.resolve():
+                continue
+            if not source.is_file():
+                raise IssueError(f"{snag['id']}: picture missing ({image})")
+            if target.exists():
+                raise IssueError(f"{snag['id']}: picture destination already exists ({target})")
+            moves.append((source, target))
+            snag['image'] = f'issues/{directory}/{rel.name}'
+    return moves
 
 
 def save(root: Path | str, store: dict[str, Any]) -> None:
-    """Write the store atomically.
+    """Re-read both files, move pictures, then atomically replace each JSON file.
+
+    Mutating commands hold the issue lock across load/edit/save. A stale view is refused
+    if another writer bypassed the lock. Write the destination before removing the source:
+    interrupted transfers can leave duplicates (verify catches them), never a lost issue.
+    """
+    root = Path(root)
+    live = _read_store(issues_path(root), live=True)
+    closed = _read_store(closed_path(root), live=False)
+    if isinstance(store, _IssueStore):
+        if live != store.original_live or (store.original_closed is not None
+                                          and closed != store.original_closed):
+            raise IssueError('issue records changed while editing; reload and retry')
+    closed_ids = getattr(store, 'closed_ids', set())
+    archived = [i for i in store['issues'] if i['id'] in closed_ids
+                and i['status'] in ('confirmed', 'wontfix')]
+    active = [i for i in store['issues'] if i not in archived]
+    # Live-only sync/save preserves the archive untouched.
+    if not isinstance(store, _IssueStore) or store.original_closed is None:
+        archived = closed['issues']
+    if len({i['id'] for i in active + archived}) != len(active) + len(archived):
+        raise IssueError('duplicate issue id across live and closed stores; run verify')
+    snags = [s['id'] for i in active + archived for s in i['snags']]
+    if len(set(snags)) != len(snags):
+        raise IssueError('duplicate snag id across issue stores; run verify')
+    moves = _image_moves(root, active, closed=False) + _image_moves(root, archived, closed=True)
+    for source, target in moves:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source.replace(target)
+    final_closed = {'version': closed.get('version', 1), 'issues': archived}
+    final_live = {k: v for k, v in store.items() if k != 'issues'}
+    final_live['issues'] = active
+    issues_path(root).parent.mkdir(parents=True, exist_ok=True)
+    # Archive destinations first; keep old closed sources until the live destination is durable.
+    interim = {i['id']: i for i in closed['issues']}
+    interim.update({i['id']: i for i in archived})
+    if archived != closed['issues']:
+        write_json(closed_path(root), {'version': final_closed['version'], 'issues': list(interim.values())})
+    write_json(issues_path(root), final_live)
+    if closed_path(root).exists() and list(interim.values()) != archived:
+        write_json(closed_path(root), final_closed)
+
+
+@_locked
+def archive(root: Path | str) -> int:
+    """Move confirmed/wontfix issues and pictures to the registry archive.
+
+    Unlike site_archive.py, this archives structured issues, not legacy site/ISSUES.txt.
 
     @param root: world root
-    @param store: issue store
+    @returns: number of issues newly archived
     """
-    p = issues_path(root)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    write_json(p, store)
+    store = load(root, include_closed=True)
+    moving = {i['id'] for i in store['issues'] if i['status'] in ('confirmed', 'wontfix')
+              and i['id'] not in store.closed_ids}
+    if moving:
+        store.closed_ids.update(moving)
+        save(root, store)
+    return len(moving)
 
 
 # --- elements -----------------------------------------------------------------------------------
@@ -349,6 +475,8 @@ def _new_snag(store: dict[str, Any], *, source: str, words: str, elements: list[
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f'{sid}{src.suffix.lower() or ".png"}'
         if src.resolve() != dest.resolve():
+            if dest.exists():
+                raise IssueError(f'snag picture already exists: {dest}')
             shutil.copyfile(src, dest)
         rel = f'issues/img/{dest.name}'
     return {'id': sid, 'source': source, 'confidence': confidence, 'words': words.strip(),
@@ -360,6 +488,7 @@ def _new_snag(store: dict[str, Any], *, source: str, words: str, elements: list[
 
 # --- operations ---------------------------------------------------------------------------------
 
+@_locked
 def add_snag(root: Path | str, *, issue_id: str | None, new_title: str | None, **snag_kw: Any) -> tuple[dict, dict]:
     """File one snag: as new evidence on an existing issue, or as the first snag of a new one.
 
@@ -375,7 +504,7 @@ def add_snag(root: Path | str, *, issue_id: str | None, new_title: str | None, *
     """
     if bool(issue_id) == bool(new_title):
         raise IssueError('pass exactly one of an existing issue or a new issue title')
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id) if issue_id else None
     snag = _new_snag(store, root=root, **snag_kw)
     if issue:
@@ -397,6 +526,7 @@ def add_snag(root: Path | str, *, issue_id: str | None, new_title: str | None, *
     return issue, snag
 
 
+@_locked
 def diagnose(root: Path | str, issue_id: str, *, title: str | None = None, cause: str | None = None,
              stages: list[str] | None = None) -> dict[str, Any]:
     """Record a diagnosis: plain title, cause statement, and the stages where the cause lives.
@@ -408,7 +538,7 @@ def diagnose(root: Path | str, issue_id: str, *, title: str | None = None, cause
     @param stages: stage names, free text (optional)
     @returns: the issue
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     if title:
         issue['title'] = title.strip()
@@ -421,6 +551,7 @@ def diagnose(root: Path | str, issue_id: str, *, title: str | None = None, cause
     return issue
 
 
+@_locked
 def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, checks: dict[str, str],
             ticket: str = '', branch: str = '') -> dict[str, Any]:
     """Log fix work on an issue. Snags it covers go back to unjudged.
@@ -441,7 +572,7 @@ def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, ch
         raise IssueError('a fix needs a check line for each snag it covers (what should look different)')
     if not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', merged_at):
         raise IssueError('merged_at must look like 2026-10-26T14:20:00Z')
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     checks = {_norm('S', k): v for k, v in checks.items()}
     have = {s['id']: s for s in issue['snags']}
@@ -463,6 +594,7 @@ def log_fix(root: Path | str, issue_id: str, *, summary: str, merged_at: str, ch
     return fix
 
 
+@_locked
 def unfix(root: Path | str, issue_id: str, fix_id: str, *, reason: str) -> dict[str, Any]:
     """Withdraw a wrongly logged fix; keep the log entry.
 
@@ -478,7 +610,7 @@ def unfix(root: Path | str, issue_id: str, fix_id: str, *, reason: str) -> dict[
     """
     if not reason.strip():
         raise IssueError('unfix needs a reason')
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     want = _norm_fix(fix_id)
     fix = next((f for f in issue['fixes'] if f['id'] == want), None)
@@ -496,6 +628,7 @@ def unfix(root: Path | str, issue_id: str, fix_id: str, *, reason: str) -> dict[
     return fix
 
 
+@_locked
 def hold(root: Path | str, issue_id: str, *, until: str) -> dict[str, Any]:
     """Hold an issue until a system tracker ticket is archived.
 
@@ -509,7 +642,7 @@ def hold(root: Path | str, issue_id: str, *, until: str) -> dict[str, Any]:
     @raises IssueError: bad ticket
     """
     ticket = _norm_ticket(until)
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     issue['hold_until'] = ticket
     _touch(issue, 'held', f'until {ticket}')
@@ -551,6 +684,7 @@ def rebuild_report(root: Path | str, issue: dict[str, Any]) -> dict[str, Any] | 
             'ready': bool(rows) and not uncovered and all(st == 'redesigned' for _, st in rows)}
 
 
+@_locked
 def sync(root: Path | str, *, tool_root: Path | str | None = None) -> list[str]:
     """Promote ``open`` issues to ``fix-landed`` where the journal shows the elements redesigned.
 
@@ -585,7 +719,7 @@ def review_packet(root: Path | str, issue_id: str) -> dict[str, Any]:
     @returns: issue facts, the last fix, and for every snag: words, picture, position, elements, check
     @raises IssueError: when the issue has no active fix logged
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     fix = active_fix(issue)
     if fix is None:
@@ -601,6 +735,7 @@ def review_packet(root: Path | str, issue_id: str) -> dict[str, Any]:
             'rebuilds': rebuild_report(root, issue)['elements'], 'snags': snags}
 
 
+@_locked
 def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, all_fixed: bool = False,
             not_fixed: list[str] | None = None) -> dict[str, Any]:
     """Record the owner's judgement. Only here can an issue become ``confirmed``.
@@ -613,7 +748,7 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
     @returns: the issue
     @raises IssueError: on conflicting or incomplete verdicts
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     if issue['status'] != 'fix-landed' or not issue['fixes']:
         raise IssueError(f'{issue["id"]} is {issue["status"]}; a verdict needs a landed fix '
@@ -649,6 +784,7 @@ def verdict(root: Path | str, issue_id: str, *, fixed: list[str] | None = None, 
     return issue
 
 
+@_locked
 def set_wontfix(root: Path | str, issue_id: str, reason: str) -> dict[str, Any]:
     """Close an issue as not worth fixing (the owner's call).
 
@@ -659,7 +795,7 @@ def set_wontfix(root: Path | str, issue_id: str, reason: str) -> dict[str, Any]:
     """
     if not reason.strip():
         raise IssueError('wontfix needs a reason')
-    store = load(root)
+    store = load(root, include_closed=True)
     issue = find_issue(store, issue_id)
     issue['status'] = 'wontfix'
     _touch(issue, 'wontfix', reason.strip())
@@ -667,8 +803,11 @@ def set_wontfix(root: Path | str, issue_id: str, reason: str) -> dict[str, Any]:
     return issue
 
 
+@_locked
 def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title: str | None) -> dict[str, Any]:
     """Re-home a snag to another issue or to a new one (a split).
+
+    Across files, both participating records return to live; unmoved snags keep their issue.
 
     @param root: world root
     @param snag_id: snag
@@ -679,7 +818,7 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
     """
     if bool(to_issue) == bool(new_title):
         raise IssueError('pass exactly one of --to ISSUE or --new TITLE')
-    store = load(root)
+    store = load(root, include_closed=True)
     src, snag = find_snag(store, snag_id)
     if len(src['snags']) == 1:
         raise IssueError(f'{snag_id} is the only snag of {src["id"]}; merge or wontfix the issue instead')
@@ -693,6 +832,8 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
                 'history': []}
         store['next_issue'] += 1
         store['issues'].append(dest)
+    if (src['id'] in store.closed_ids) != (dest['id'] in store.closed_ids):
+        store.closed_ids.difference_update((src['id'], dest['id']))
     src['snags'].remove(snag)
     snag['resolution'] = None
     dest['snags'].append(snag)
@@ -713,18 +854,24 @@ def move_snag(root: Path | str, snag_id: str, *, to_issue: str | None, new_title
     return dest
 
 
+@_locked
 def merge_issues(root: Path | str, keep: str, absorb: str) -> dict[str, Any]:
     """Merge ``absorb`` into ``keep`` (same case). The absorbed issue is removed; its history is kept.
+
+    Across files, the merged issue is live, whichever identity the caller chooses to keep.
 
     @param root: world root
     @param keep: issue that stays
     @param absorb: issue folded into it
     @returns: the kept issue
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     a, b = find_issue(store, keep), find_issue(store, absorb)
     if a is b:
         raise IssueError('cannot merge an issue into itself')
+    # Across files, keep the caller's chosen identity but fold both into the live store.
+    if (a['id'] in store.closed_ids) != (b['id'] in store.closed_ids):
+        store.closed_ids.discard(a['id'])
     a['snags'] += b['snags']
     a['fixes'] += [{**f, 'id': f"F-{len(a['fixes']) + i + 1}", 'from': b['id']} for i, f in enumerate(b['fixes'])]
     a['history'] += [{**h, 'detail': f"[{b['id']}] {h['detail']}"} for h in b['history']]
@@ -754,7 +901,7 @@ def match(root: Path | str, *, words: str, elements: list[dict[str, Any]], limit
     @param limit: how many candidates
     @returns: ``[{'issue', 'title', 'cause', 'status', 'score', 'why', 'snags': [{'id','words','image'}], 'last_fix', 'confirmed'}]``
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     want = _tokens(words)
     out = []
     for it in store['issues']:
@@ -800,7 +947,8 @@ def digest(root: Path | str, *, tool_root: Path | str | None = None) -> str:
     """
     sync(root, tool_root=tool_root)
     its = load(root)['issues']
-    held = [i for i in its if is_held(i, tool_root=tool_root)]
+    held = [i for i in its if i['status'] in ('open', 'fix-landed')
+            and is_held(i, tool_root=tool_root)]
     held_ids = {i['id'] for i in held}
     n_open = sum(1 for i in its if i['status'] == 'open' and i['id'] not in held_ids)
     n_ready = sum(1 for i in its if i['status'] == 'fix-landed' and i['id'] not in held_ids)
@@ -814,13 +962,17 @@ def verify(root: Path | str) -> list[str]:
     @param root: world root
     @returns: messages
     """
-    store = load(root)
+    store = load(root, include_closed=True)
     out: list[str] = []
     seen_i, seen_s = set(), set()
+    if any(k in store.original_closed for k in ('next_issue', 'next_snag')):
+        out.append('closed store must not carry ID counters')
     for it in store['issues']:
         if it['id'] in seen_i:
             out.append(f"duplicate issue id {it['id']}")
         seen_i.add(it['id'])
+        if it['id'] in store.closed_ids and it['status'] not in ('confirmed', 'wontfix'):
+            out.append(f"{it['id']}: active issue in closed store")
         if it['status'] not in STATUSES:
             out.append(f"{it['id']}: bad status {it['status']!r}")
         if not it['snags']:
@@ -833,6 +985,9 @@ def verify(root: Path | str) -> list[str]:
                 out.append(f"{s['id']}: no element tagged")
             if s['source'] == 'user' and not s['image']:
                 out.append(f"{s['id']}: your snag has no picture")
+            directory = 'img-closed' if it['id'] in store.closed_ids else 'img'
+            if s['image'] and Path(s['image']).parent.as_posix() != f'issues/{directory}':
+                out.append(f"{s['id']}: picture outside {directory} ({s['image']})")
             if s['image'] and not (Path(root) / 'registry' / s['image']).exists():
                 out.append(f"{s['id']}: picture missing ({s['image']})")
             if s['resolution'] not in RESOLUTIONS:

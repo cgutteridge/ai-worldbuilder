@@ -3,7 +3,7 @@ name: snag
 description: File a snag (something wrong in the world) into an issue with a picture, element tag and a human-readable match against existing issues; and walk the owner through reviewing a landed fix, snag by snag. Use when the user says "snag:", reports something wrong while in-world, or when an issue is fix-landed and ready for review. Replaces human-confirm-fix.
 ---
 
-Snags live only inside issues (`worlds/<world>/registry/issues.json`, pics in `registry/issues/img/`). Issues never block a cell. All commands: `python3 scripts/issues.py --world <w> <cmd>` (see its docstring). Elements are `feature:<plan>` or `ground|trees|decor:<tx,tz>`.
+Snags live only inside issues (live: `registry/issues.json` and `registry/issues/img/`; archived: `registry/issues-closed.json` and `registry/issues/img-closed/`, under `worlds/<world>/`). Reopening an archived issue returns its record and pictures to live storage. Issues never block a cell. All commands: `python3 scripts/issues.py --world <w> <cmd>` (see its docstring). Elements are `feature:<plan>` or `ground|trees|decor:<tx,tz>`.
 
 ## A. Intake: `snag: <words>` (or an agent reporting)
 

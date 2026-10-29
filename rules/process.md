@@ -16,7 +16,8 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  site/COVERAGE.txt      radial focus + generated rollup (coverage.py write;
                         registry-native + optional parcel tables)
  config/coverage-areas.json    areas tracked by scripts/coverage.py
- registry/issues.json   snags / issues (scripts/issues.py; never block a cell)
+ registry/issues.json   live snags / issues (scripts/issues.py; never block a cell)
+ registry/issues-closed.json   archived confirmed/wontfix issues; pictures in issues/img-closed/
  site/REVIEWS.txt       review log
  site/BUILDS-INDEX.txt  generated list of kit builds (scripts/site_index.py)
  site/archive/          closed notes / older reviews

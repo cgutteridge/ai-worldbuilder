@@ -6,7 +6,7 @@ The only record is ``<world>/registry/journal.jsonl``, written by
 coverage / review facts). Everything here reads :meth:`CellRegistry.view` and friends; there are
 no setters. Open the active world's registry with :func:`open_registry`.
 
-Snags and issues live in ``registry/issues.json`` via ``scripts/issues.py`` (the ``snag`` skill);
+Snags and issues live in ``registry/issues.json`` / ``registry/issues-closed.json`` via ``scripts/issues.py`` (the ``snag`` skill);
 they never block a cell and never steer ``next`` (ticket #121). The old ``add-issue`` /
 ``issues`` CLI and ``site/ISSUES.txt`` I-nnn lines are retired.
 

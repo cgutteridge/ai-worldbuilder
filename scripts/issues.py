@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Issues and snags CLI for the active world (``<world>/registry/issues.json``, task #120).
+"""Issues and snags CLI for the active world (``registry/issues.json`` and ``issues-closed.json``).
 
 A snag is evidence inside an issue; there are no loose snags. Issues never block a cell.
+Archive moves structured closed issues and pictures; site_archive.py instead archives legacy site/ISSUES.txt.
 
   python3 scripts/issues.py --world W match  --words TEXT --element ground:48,-44 [--element ...]
   python3 scripts/issues.py --world W add    (--issue I-004 | --new TITLE) --words TEXT --element E ...
@@ -21,6 +22,7 @@ A snag is evidence inside an issue; there are no loose snags. Issues never block
   python3 scripts/issues.py --world W list [--status open|fix-landed|confirmed|wontfix] [--cell tx,tz]
   python3 scripts/issues.py --world W show I-004
   python3 scripts/issues.py --world W digest                     # one line for a run summary (includes held count)
+  python3 scripts/issues.py --world W archive                    # confirmed/wontfix issues and pictures
   python3 scripts/issues.py --world W verify
 """
 from __future__ import annotations
@@ -144,12 +146,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('issue')
     p.add_argument('--reason', required=True)
     p = sub.add_parser('list')
+    p.add_argument('--all', action='store_true', help='include archived issues')
     p.add_argument('--status', choices=L.STATUSES)
     p.add_argument('--cell')
     p = sub.add_parser('show')
     p.add_argument('issue')
     sub.add_parser('digest')
     sub.add_parser('verify')
+    sub.add_parser('archive', help='archive closed registry issues and pictures (not legacy site/ISSUES.txt)')
 
     args = ap.parse_args(argv)
     activate_world_from_args(args)
@@ -208,16 +212,18 @@ def main(argv: list[str] | None = None) -> int:
             print(_line(L.set_wontfix(root, args.issue, args.reason)))
         elif args.cmd == 'list':
             L.sync(root)
-            for it in L.load(root)['issues']:
+            for it in L.load(root, include_closed=args.all)['issues']:
                 if args.status and it['status'] != args.status:
                     continue
                 if args.cell and not any(e.get('cell') == _cell(args.cell) for s in it['snags'] for e in s['elements']):
                     continue
                 print(_line(it))
         elif args.cmd == 'show':
-            print(_show(L.find_issue(L.load(root), args.issue)))
+            print(_show(L.find_issue(L.load(root, include_closed=True), args.issue)))
         elif args.cmd == 'digest':
             print(L.digest(root))
+        elif args.cmd == 'archive':
+            print(f'archived {L.archive(root)} closed issues')
         elif args.cmd == 'verify':
             problems = L.verify(root)
             print('\n'.join(problems) if problems else 'issues: OK')

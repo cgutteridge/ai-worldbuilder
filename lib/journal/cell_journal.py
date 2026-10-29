@@ -1092,7 +1092,7 @@ class CellRegistry:
             left.append('marker up')
         left += [f'coverage warning {k}' for k in warns]
         # Historical journal issue/close notes are kept in ``notes`` but do not
-        # block DONE (#121); snags live in registry/issues.json via scripts/issues.py.
+        # block DONE (#121); snags live in registry/issues.json (closed: issues-closed.json) via scripts/issues.py.
         if hold:
             left.append(f'hold: {hold}')
         left += [f'in-flight: {f.plan}' for f in flight]
