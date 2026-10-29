@@ -15,7 +15,12 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   water_level    integer Y of the water surface block
   depth          water column height including the surface (default 1; >= 1)
   floor          bed material under the deepest water (default dirt)
-  bank           {"material": "<block>", "width"?: 1} shore ring (N8 × width)
+  clear_above    optional int >= 0 (default 0): air placed over the water columns
+                 from water_level + 1 up this many layers, so a pond sits below
+                 the surrounding paving instead of under a ground lid
+  bank           {"material": "<block>", "width"?: 1, "rise"?: 0} shore ring
+                 (N8 × width) at water_level + rise; rise lifts the coping to
+                 paving height around a sunken pond
   edge           optional {"material": "<block>"} shoreline rim on bank cells
                  that touch water; absent → bank material only
   provenance     shared schema from ``lib/site/provenance.py`` (#151):
@@ -83,7 +88,10 @@ def _validate_bank(path: str | Path | None, raw: Any) -> dict[str, Any]:
     width = int(raw.get('width', DEFAULT_BANK_WIDTH))
     if width < 1:
         _fail(path, 'bank.width must be >= 1')
-    return {'material': material, 'width': width}
+    rise = raw.get('rise', 0)
+    if not isinstance(rise, int) or isinstance(rise, bool) or rise < 0:
+        _fail(path, 'bank.rise must be an int >= 0')
+    return {'material': material, 'width': width, 'rise': rise}
 
 
 def _validate_edge(path: str | Path | None, raw: Any) -> dict[str, str] | None:
@@ -125,6 +133,9 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     if not isinstance(depth, int) or isinstance(depth, bool) or depth < 1:
         _fail(path, 'depth must be an int >= 1')
     floor = str(spec.get('floor', DEFAULT_FLOOR)).strip() or DEFAULT_FLOOR
+    clear_above = spec.get('clear_above', 0)
+    if not isinstance(clear_above, int) or isinstance(clear_above, bool) or clear_above < 0:
+        _fail(path, 'clear_above must be an int >= 0')
     bank = _validate_bank(path, spec['bank'])
     edge = _validate_edge(path, spec.get('edge'))
     provenance = _validate_provenance(path, spec['provenance'], root)
@@ -136,6 +147,7 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
         'water_level': level,
         'depth': depth,
         'floor': floor,
+        'clear_above': clear_above,
         'bank': bank,
         'edge': edge,
         'provenance': provenance,
@@ -344,11 +356,14 @@ def build(spec: Mapping[str, Any]) -> Plan:
         plan.set(x, bed_y, z, floor)
         for y in range(bed_y + 1, level + 1):
             plan.set(x, y, z, 'water')
+        for y in range(level + 1, level + int(spec.get('clear_above', 0)) + 1):
+            plan.set(x, y, z, 'air')
+    bank_y = level + int(bank_spec.get('rise', 0))
     for x, z in bank:
         if (x, z) in shore and edge_spec:
-            plan.set(x, level, z, edge_spec['material'])
+            plan.set(x, bank_y, z, edge_spec['material'])
         else:
-            plan.set(x, level, z, bank_spec['material'])
+            plan.set(x, bank_y, z, bank_spec['material'])
     return plan
 
 
