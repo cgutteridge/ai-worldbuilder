@@ -33,6 +33,8 @@ Pos = tuple[int, int, int]
 SCAN_VOLUME_CAP = 65536
 # When a read_many AABB would need more tiles than this, LiveBlocks scans per chunk instead.
 MAX_ENSURE_TILES = 64
+# Bound retained reads across long-running multi-cell callers.
+MAX_CACHE_BLOCKS = 65536
 # A scan is "tiny" when its inclusive AABB volume is at most this. Intentional
 # section scans from ``read()`` are 16³=4096; sparse per-chunk fallbacks can still
 # be small. Matches the sparse-fallback tests' notion of a tiny scan (≤16).
@@ -463,8 +465,8 @@ class LiveBlocks:
             file=sys.stderr,
         )
 
-    def _scan_box(self, lo: Pos, hi: Pos) -> None:
-        """Fetch one tile into the cache. Positions omitted from the response are ``None``."""
+    def _scan_box(self, lo: Pos, hi: Pos, requested: Iterable[Pos] | None = None) -> None:
+        """Fetch one tile; bulk reads retain only requested positions, single reads prefetch a section."""
         x0, y0, z0 = lo
         x1, y1, z1 = hi
         vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1)
@@ -480,12 +482,12 @@ class LiveBlocks:
         found = parse_block_scan_text(text)
         if len(found) > vol:
             raise BlockStoreError('block_scan_region returned more blocks than the tile volume')
-        for x in range(x0, x1 + 1):
-            for y in range(y0, y1 + 1):
-                for z in range(z0, z1 + 1):
-                    p = (x, y, z)
-                    # Listed → state (incl. air). Omitted → None (unloaded / filtered void).
-                    self._cache[p] = found.get(p)
+        positions = (requested if requested is not None else
+                     ((x, y, z) for x in range(x0, x1 + 1)
+                      for y in range(y0, y1 + 1) for z in range(z0, z1 + 1)))
+        for p in positions:
+            # Listed → state (incl. air). Omitted → None (unloaded / filtered void).
+            self._cache[p] = found.get(p)
 
     def _ensure_chunk_groups(self, missing: list[Pos]) -> None:
         """Scan each chunk's needed AABB (sparse far-apart fallback).
@@ -502,7 +504,8 @@ class LiveBlocks:
             nxs, nys, nzs = zip(*still)
             for lo, hi in scan_tiles(min(nxs), min(nys), min(nzs),
                                      max(nxs), max(nys), max(nzs)):
-                self._scan_box(lo, hi)
+                self._scan_box(lo, hi, [p for p in still
+                                       if all(lo[i] <= p[i] <= hi[i] for i in range(3))])
 
     def _ensure(self, positions: Iterable[Pos]) -> None:
         missing = [tuple(p) for p in positions if tuple(p) not in self._cache]
@@ -529,7 +532,8 @@ class LiveBlocks:
             nxs, nys, nzs = zip(*need)
             for slo, shi in scan_tiles(min(nxs), min(nys), min(nzs),
                                        max(nxs), max(nys), max(nzs)):
-                self._scan_box(slo, shi)
+                self._scan_box(slo, shi, [p for p in need
+                                           if all(slo[i] <= p[i] <= shi[i] for i in range(3))])
 
     def _section_box(self, pos: Pos) -> tuple[Pos, Pos]:
         """Inclusive AABB of the 16×16×16 section containing ``pos``.
@@ -553,6 +557,8 @@ class LiveBlocks:
         self._guard()
         p = tuple(pos)
         if p not in self._cache:
+            if len(self._cache) + SECTION_EDGE ** 3 > MAX_CACHE_BLOCKS:
+                self._cache.clear()
             lo, hi = self._section_box(p)
             self._scan_box(lo, hi)
         return self._cache[p]
@@ -562,8 +568,14 @@ class LiveBlocks:
         @raises StaleRead: after ``mark_written()`` until ``flush()``"""
         self._guard()
         pos_list = [tuple(p) for p in positions]
-        self._ensure(pos_list)
-        return {p: self._cache[p] for p in pos_list}
+        out = {}
+        for start in range(0, len(pos_list), MAX_CACHE_BLOCKS):
+            batch = pos_list[start:start + MAX_CACHE_BLOCKS]
+            if len(self._cache) + len(batch) > MAX_CACHE_BLOCKS:
+                self._cache.clear()
+            self._ensure(batch)
+            out.update((p, self._cache[p]) for p in batch)
+        return out
 
     def light(self, pos: Pos) -> int | None:
         """Block light at ``pos`` via MCP ``block_get_state`` (one call; not for bulk scans).

@@ -460,7 +460,7 @@ def run_reconcile(root: Path | None, cells: list[str], fix: bool) -> int:
         reg, writer = site_kit.live_session(root=root)
         drift = reg.reconcile(scope, fix=True, apply=writer)
     else:
-        reg = open_registry(root, blocks=site_kit.live_blocks())
+        reg = open_registry(root, blocks=site_kit.disk_blocks())
         drift = reg.reconcile(scope)
     print(format_drift(drift, fix=fix))
     if not drift.items:

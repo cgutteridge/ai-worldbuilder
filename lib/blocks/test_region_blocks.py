@@ -8,7 +8,7 @@ import unittest
 import zlib
 from pathlib import Path
 
-from region_blocks import RegionBlocks
+from region_blocks import MAX_REGION_CHUNKS, MAX_REGION_FILES, RegionBlocks
 
 # Minimal NBT writer for fixtures only (production nbt_read has no write path).
 _END, _BYTE, _SHORT, _INT, _LONG, _FLOAT, _DOUBLE, _BYTE_ARRAY, _STRING, _LIST, _COMPOUND, _INT_ARRAY, _LONG_ARRAY = range(13)
@@ -106,6 +106,21 @@ def _write_region(region: Path, cx: int, cz: int, sections: dict[int, list[str]]
 
 
 class RegionBlocksReadTest(unittest.TestCase):
+    def test_caches_are_bounded_and_evicted_regions_can_be_reread(self):
+        with tempfile.TemporaryDirectory() as td:
+            region = Path(td)
+            for i in range(MAX_REGION_FILES + 2):
+                _write_region(region, i * 32, 0, {4: ['stone']})
+            store = RegionBlocks(region)
+            for i in range(MAX_REGION_CHUNKS + 10):
+                store.read((i * 512, 70, 0))
+                self.assertLessEqual(len(store._files), MAX_REGION_FILES)
+                self.assertLessEqual(len(store._chunks), MAX_REGION_CHUNKS)
+            self.assertEqual(store.read((0, 70, 0)), 'minecraft:stone')
+            store.flush()
+            self.assertEqual(len(store._files), 0)
+            self.assertEqual(len(store._chunks), 0)
+
     def test_reads_uniform_section_from_mca(self):
         """#111: after a save, planning reads stone from the region file without MCP."""
         with tempfile.TemporaryDirectory() as td:

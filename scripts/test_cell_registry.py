@@ -170,6 +170,17 @@ class ReconcileCliTest(LiveApplyCase):
     def reconcile(self, *argv):
         return run('reconcile', *argv)
 
+    def test_dry_run_selects_disk_and_fix_uses_live_session(self):
+        with mock.patch.object(site_kit, 'disk_blocks', return_value=self.blocks) as disk, \
+             mock.patch.object(site_kit, 'live_blocks', return_value=self.blocks) as live:
+            self.assertEqual(self.reconcile()[0], 0)
+            disk.assert_called_once_with()
+            live.assert_not_called()
+            disk.reset_mock()
+            self.assertEqual(self.reconcile('--fix')[0], 0)
+            disk.assert_not_called()
+            live.assert_called()
+
     def test_clean_world_exits_zero(self):
         code, out = self.reconcile()
         self.assertEqual(code, 0)
@@ -233,6 +244,27 @@ class ReconcileCliTest(LiveApplyCase):
         text = ' '.join(out.getvalue().split())
         self.assertIn('site_recover = resolve an interrupted apply (land or roll back)', text)
         self.assertIn('reconcile = detect and repair drift forward', text)
+
+
+class DiskBlocksTest(unittest.TestCase):
+    def test_saves_before_opening_disk_store(self):
+        live = mock.Mock(region='/tmp/test-region')
+        events = mock.Mock()
+        events.attach_mock(live.flush, 'save')
+        with mock.patch.object(site_kit, 'live_blocks', return_value=live), \
+             mock.patch('region_blocks.RegionBlocks') as disk:
+            events.attach_mock(disk, 'open_disk')
+            self.assertIs(site_kit.disk_blocks(), disk.return_value)
+        self.assertEqual(events.mock_calls, [mock.call.save(), mock.call.open_disk(live.region)])
+
+    def test_failed_save_never_opens_disk_store(self):
+        live = mock.Mock()
+        live.flush.side_effect = RuntimeError('save failed')
+        with mock.patch.object(site_kit, 'live_blocks', return_value=live), \
+             mock.patch('region_blocks.RegionBlocks') as disk:
+            with self.assertRaisesRegex(RuntimeError, 'save failed'):
+                site_kit.disk_blocks()
+            disk.assert_not_called()
 
 
 if __name__ == '__main__':

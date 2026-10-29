@@ -223,6 +223,31 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
         self.mcp = FakeScanMcp(WORLD, loaded_chunks=loaded)
         self.store = make_store('live', WORLD, self.tmp, mcp=self.mcp, loaded_chunks=loaded)
 
+    def test_bulk_cache_keeps_only_requested_positions(self):
+        positions = [(0, 64, 0), (15, 79, 15)]
+        self.store.read_many(positions)
+        self.assertEqual(set(self.store._cache), set(positions))
+
+    def test_cache_is_bounded_across_many_bulk_reads(self):
+        from block_store import MAX_CACHE_BLOCKS
+        for start in range(0, MAX_CACHE_BLOCKS * 3, 4096):
+            positions = [(start + x, 64, z) for x in range(64) for z in range(64)]
+            got = self.store.read_many(positions)
+            self.assertEqual(len(got), len(positions))
+            self.assertLessEqual(len(self.store._cache), MAX_CACHE_BLOCKS)
+
+    def test_bulk_larger_than_cache_returns_all_requested_keys(self):
+        from block_store import MAX_CACHE_BLOCKS
+        positions = [(x, 64, 0) for x in range(MAX_CACHE_BLOCKS + 1)]
+        got = self.store.read_many(positions)
+        self.assertEqual(set(got), set(positions))
+        self.assertEqual(got[(0, 64, 0)], STONE)
+        self.assertIsNone(got[positions[-1]])
+        self.assertLessEqual(len(self.store._cache), MAX_CACHE_BLOCKS)
+        self.store.mark_written()
+        with self.assertRaises(StaleRead):
+            self.store.read(positions[-1])
+
     def test_air_in_loaded_chunk_is_air(self):
         self.assertEqual(self.store.read((2, 64, 2)), AIR)
 
