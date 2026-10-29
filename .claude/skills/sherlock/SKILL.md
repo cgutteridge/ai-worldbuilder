@@ -77,4 +77,4 @@ When `snag` is about to review an issue, check each snag still belongs: same cau
 
 ## Report shape
 
-Short: the digest line, then findings by issue (plain title first, ID small), each with the evidence, the proposed action, and what you could not establish. If the backlog is empty or all confirmed, say so and stop.
+Short: the digest line, then findings by issue (plain title first, ID small), each with the evidence, the proposed action, and what you could not establish. If the backlog is empty or all confirmed, say so and run Close the case so verification and automatic archiving still happen.

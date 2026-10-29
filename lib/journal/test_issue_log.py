@@ -518,6 +518,50 @@ class ArchiveTest(_Root):
         self.assertGreater(int(other['id'][2:]), int(iid[2:]))
         self.assertGreater(int(snag['id'][2:]), int(sid[2:]))
 
+    def test_move_between_archived_issues_keeps_source_closed_and_reopens_destination(self):
+        src, first = self.snag(title='Source')
+        _, moved = self.snag(issue_id=src['id'], words='different cause')
+        L.set_wontfix(self.root, src['id'], 'close')
+        dest, _ = self.closed(title='Destination')
+        L.archive(self.root)
+        L.move_snag(self.root, moved['id'], to_issue=dest, new_title=None)
+        closed = json.loads(L.closed_path(self.root).read_text())
+        self.assertEqual([i['id'] for i in closed['issues']], [src['id']])
+        self.assertEqual([s['id'] for s in closed['issues'][0]['snags']], [first['id']])
+        live_dest = L.find_issue(L.load(self.root), dest)
+        self.assertEqual(live_dest['status'], 'open')
+        self.assertIn(moved['id'], [s['id'] for s in live_dest['snags']])
+        self.assertEqual(L.verify(self.root), [])
+
+    def test_closed_to_closed_move_failure_preserves_original_source_snags(self):
+        from unittest import mock
+        for source in ('agent', 'user'):
+            with self.subTest(source=source):
+                src, _ = self.snag(title='Source')
+                _, moved = self.snag(issue_id=src['id'], words='different cause', source=source)
+                L.set_wontfix(self.root, src['id'], 'close')
+                dest, _ = self.closed(title='Destination')
+                L.archive(self.root)
+                original_closed = json.loads(L.closed_path(self.root).read_text())
+                _, archived_snag = L.find_snag(original_closed, moved['id'])
+                original_write = L.write_json
+                def fail_live(path, data):
+                    if path == L.issues_path(self.root):
+                        raise OSError('interrupted')
+                    original_write(path, data)
+                with mock.patch.object(L, 'write_json', side_effect=fail_live):
+                    with self.assertRaises(OSError):
+                        L.move_snag(self.root, moved['id'], to_issue=dest, new_title=None)
+                persisted = json.loads(L.closed_path(self.root).read_text())
+                persisted_src = L.find_issue(persisted, src['id'])
+                self.assertIn(moved['id'], [s['id'] for s in persisted_src['snags']])
+                self.assertEqual(persisted, original_closed)
+                image = archived_snag['image']
+                if image:
+                    self.assertFalse((self.root / 'registry' / image).exists())
+                    self.assertTrue((self.root / 'registry' / image.replace('/img-closed/', '/img/')).exists())
+                    self.assertIn(f"{moved['id']}: picture missing ({image})", L.verify(self.root))
+
     def test_verify_catches_cross_file_duplicates_and_missing_pictures(self):
         iid, sid = self.closed()
         original = L.load(self.root)

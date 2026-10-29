@@ -193,8 +193,9 @@ def save(root: Path | str, store: dict[str, Any]) -> None:
     issues_path(root).parent.mkdir(parents=True, exist_ok=True)
     # Archive destinations first; keep old closed sources until the live destination is durable.
     interim = {i['id']: i for i in closed['issues']}
-    interim.update({i['id']: i for i in archived})
-    if archived != closed['issues']:
+    for issue in archived:
+        interim.setdefault(issue['id'], issue)
+    if list(interim.values()) != closed['issues']:
         write_json(closed_path(root), {'version': final_closed['version'], 'issues': list(interim.values())})
     write_json(issues_path(root), final_live)
     if closed_path(root).exists() and list(interim.values()) != archived:
