@@ -5,6 +5,8 @@ import os
 import unittest
 from unittest import mock
 
+import numpy as np
+
 import decor_layer as dl
 import street_furniture as sf
 
@@ -191,6 +193,79 @@ class TestPlaceFurniture(unittest.TestCase):
         )
         for dy, block in sf.recipe('street_lamp'):
             self.assertEqual(found[(10, self.surface_y + dy, 20)], block)
+
+
+class TestLidarGroundVeto(unittest.TestCase):
+    """Decor uses live surfaces for placement, with lidar terrain as a veto."""
+
+    def setUp(self):
+        self.world = mock.Mock()
+        self.world.block = lambda x, y, z: (
+            'minecraft:light_gray_concrete' if y == 64 else 'minecraft:air')
+        self.hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), 64)}
+        self.hm['terrain'][10, 20] = 58  # Roof six blocks above terrain.
+        self.options = dict(way=set(), near1=set(), owned=set(), masked=set())
+
+    def test_furniture_refuses_roof_but_places_on_ground(self):
+        items = [{'x': x, 'z': 20, 'kind': 'bench'} for x in (10, 11)]
+        found, report, unplaced = dl.place_furniture(
+            (0, 0), items, self.world, lidar_hm=self.hm, **self.options)
+        self.assertEqual(set(found), {(11, 65, 20)})
+        self.assertEqual([r['x'] for r in report], [11])
+        self.assertEqual([(u['x'], u['provenance']['unresolved_reason']) for u in unplaced],
+                         [(10, 'above lidar ground')])
+
+    def test_barriers_refuse_roof_but_place_on_ground(self):
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge',
+                'cells': [[10, 20], [11, 20]], 'height': 2, 'allow_against_build': True}
+        found, report, unplaced = dl.place_barriers_from_plan(
+            (0, 0), [item], self.world, lidar_hm=self.hm,
+            **{**self.options, 'near1': {(10, 20), (11, 20)}})
+        self.assertEqual(set(found), {(11, 65, 20), (11, 66, 20)})
+        self.assertEqual([r['x'] for r in report], [11])
+        self.assertEqual([(u['cells'], u['provenance']['unresolved_reason']) for u in unplaced],
+                         [([[10, 20]], 'above lidar ground')])
+
+    def test_join_pieces_cannot_bridge_a_roof_column(self):
+        found = {(9, 65, 20): B, (11, 65, 20): B}
+
+        def can_place(pos, mat):
+            return dl.may_join_at(
+                pos, mat, cell=(0, 0), near1=set(), allow_near1_mats=set(),
+                owned=set(), masked=set(), world=self.world, lidar_hm=self.hm)
+
+        self.assertEqual(dl.join_pieces(found, lambda p: self.world.block(*p), can_place), {})
+        # At the two-block tolerance the join still sits on the live surface.
+        self.hm['terrain'][10, 20] = 62
+        self.assertEqual(dl.join_pieces(found, lambda p: self.world.block(*p), can_place),
+                         {(10, 65, 20): B})
+
+    def test_missing_terrain_does_not_veto_any_placer(self):
+        item = {'x': 10, 'z': 20, 'kind': 'bench'}
+        barrier = {'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 1}
+        for hm in (None, {'x0': 0, 'z0': 0},
+                   {**self.hm, 'terrain': np.zeros((128, 128), dtype=int)}):
+            with self.subTest(hm=hm):
+                furniture, _, unplaced = dl.place_furniture(
+                    (0, 0), [item], self.world, lidar_hm=hm, **self.options)
+                self.assertEqual(set(furniture), {(10, 65, 20)})
+                self.assertEqual(unplaced, [])
+                barriers, _, unplaced = dl.place_barriers_from_plan(
+                    (0, 0), [barrier], self.world, lidar_hm=hm, **self.options)
+                self.assertEqual(set(barriers), {(10, 65, 20)})
+                self.assertEqual(unplaced, [])
+                self.assertTrue(dl.may_join_at(
+                    (10, 65, 20), B, cell=(0, 0), near1=set(), allow_near1_mats=set(),
+                    owned=set(), masked=set(), world=self.world, lidar_hm=hm))
+
+    def test_terrain_is_a_veto_not_a_placement_height(self):
+        self.hm['terrain'][10, 20] = 62
+        self.hm['terrain'][11, 20] = 61
+        items = [{'x': x, 'z': 20, 'kind': 'bench'} for x in (10, 11)]
+        found, _, unplaced = dl.place_furniture(
+            (0, 0), items, self.world, lidar_hm=self.hm, **self.options)
+        self.assertEqual(set(found), {(10, 65, 20)})
+        self.assertEqual([u['x'] for u in unplaced], [11])
 
 
 class TestOnCarriageway(unittest.TestCase):

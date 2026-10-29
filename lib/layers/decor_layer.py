@@ -60,6 +60,18 @@ def on_carriageway(world: World, x: int, z: int) -> bool:
     return column_ground_kind(world, x, z) in sf.ROAD_KINDS
 
 
+def above_lidar_ground(x: int, y: int, z: int, lidar_hm: Mapping[str, Any] | None) -> bool:
+    """Veto a live surface over two blocks above DTM; missing terrain gives no veto."""
+    if lidar_hm is None or 'terrain' not in lidar_hm:
+        return False
+    terrain = lidar_hm['terrain']
+    i, j = x - int(lidar_hm['x0']), z - int(lidar_hm['z0'])
+    if not (0 <= i < terrain.shape[0] and 0 <= j < terrain.shape[1]):
+        return False
+    ground = int(terrain[i, j])
+    return ground > 0 and y - ground > 2
+
+
 def may_join_at(
     pos: tuple[int, int, int],
     mat: str,
@@ -70,6 +82,7 @@ def may_join_at(
     owned: set,
     masked: set,
     world: World,
+    lidar_hm: Mapping[str, Any] | None = None,
 ) -> bool:
     """True when ``join_pieces`` may place ``mat`` at ``pos``.
 
@@ -86,11 +99,18 @@ def may_join_at(
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
     @param world: live or planning world
+    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
     @returns: whether the join candidate is allowed
     """
     xz = (pos[0], pos[2])
     if xz in near1 and mat not in allow_near1_mats:
         return False
+    if lidar_hm is not None:
+        from surface_probe import surface_y
+
+        top = surface_y(world, *xz)
+        if top and above_lidar_ground(pos[0], top[0], pos[2], lidar_hm):
+            return False
     return (cell_contains(cell, pos[0], pos[2])
             and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
 
@@ -164,6 +184,7 @@ def place_furniture(
     near1: set,
     owned: set,
     masked: set,
+    lidar_hm: Mapping[str, Any] | None = None,
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place street-furniture recipes on any non-carriageway surface column.
 
@@ -178,6 +199,7 @@ def place_furniture(
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
+    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
     from surface_probe import surface_y
@@ -204,6 +226,9 @@ def place_furniture(
         top = surface_y(world, x, z)
         if not top:
             unplaced.append(dplan.mark_unplaced(item, 'no surface'))
+            continue
+        if above_lidar_ground(x, top[0], z, lidar_hm):
+            unplaced.append(dplan.mark_unplaced(item, 'above lidar ground'))
             continue
         stack = sf.recipe(kind)
         voxels: dict[tuple[int, int, int], str] = {}
@@ -237,6 +262,7 @@ def place_barriers_from_plan(
     near1: set,
     owned: set,
     masked: set,
+    lidar_hm: Mapping[str, Any] | None = None,
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place barrier plan items (hedges, walls, fences) anywhere but the carriageway.
 
@@ -251,6 +277,7 @@ def place_barriers_from_plan(
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
+    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
     @returns: (placements, placed report rows, unplaced items)
     """
     from surface_probe import surface_y
@@ -283,6 +310,12 @@ def place_barriers_from_plan(
                 ))
                 continue
             top = surface_y(world, *q)
+            if top and above_lidar_ground(q[0], top[0], q[1], lidar_hm):
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    'above lidar ground',
+                ))
+                continue
             if not top or q in way:
                 unplaced.append(dplan.mark_unplaced(
                     {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
@@ -348,13 +381,14 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
 
     from lidar_heightmap import reference_world
 
+    lidar_hm = reference_world().heightmap(cell)
     decor = dplan.build_decor_plan(
         cell,
         map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
         map_furniture=list(vmap.furniture),
         designer_items=sf.designer_items(cell),
         photo_observations=sf.designer_observations(cell),
-        lidar_hm=reference_world().heightmap(cell),
+        lidar_hm=lidar_hm,
         footprint={q for q in fp if cell_contains(cell, *q)},
     )
     unresolved = list(dplan.unresolved_items(decor))
@@ -365,6 +399,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     ]
     found, barrier_report, barrier_unplaced = place_barriers_from_plan(
         cell, barrier_items, world, way=way, near1=near1, owned=owned, masked=masked,
+        lidar_hm=lidar_hm,
     )
     present: dict[tuple[int, int, int], str] = {}
     # Re-scan for present standing pieces (join_pieces needs them).
@@ -386,6 +421,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     furniture_items = dplan.resolved_furniture(decor)
     furniture, furniture_report, furniture_unplaced = place_furniture(
         cell, furniture_items, world, way=way, near1=near1, owned=owned, masked=masked,
+        lidar_hm=lidar_hm,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
     found.update(furniture)
@@ -409,6 +445,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         return may_join_at(
             pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
             owned=owned, masked=masked, world=world,
+            lidar_hm=lidar_hm,
         )
 
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)
