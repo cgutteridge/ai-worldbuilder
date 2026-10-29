@@ -11,15 +11,6 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
-    },
-    {
-      "id": 205,
-      "title": "Zoned shells place no floors in the roof space",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "From sherlock, 2026-10-29. Covers Floors built inside the roof space (I-037, snag S-061, southampton-build). Cause: shell_zoned (lib/builds/feature_build.py, column loop 'for y in range(g + 1, ry)') places a storey floor at every (y - datum) % STOREY_H == 0 up to each column's roof level with no eave check; for pitched zones the roof level is eave plus ridge rise, so floors land in the roof space. DELIVERABLE: store the per-column eave (same metres_aod_to_y value as the zone loop) as f.zone_eave and place a storey floor only where y < eave (strict); unzoned shell and flat zones unchanged; unit tests beside the pitched-zone tests in lib/builds/test_feature_build.py (no floor above eave, lower storeys keep floors, flat zone unchanged). CHECK S-061: dry run of west_w34391673 (python3 scripts/feature_build.py --world southampton-build worlds/southampton-build/site/builds/west_w34391673.json) counts 0 floor blocks above the eave; in game West has no slab floor inside or showing through the roof. Not verified: which block S-061's visible slabs are (floor material or roof membrane). Blocked by #204 (same file). Log the fix on I-037 with issues.py fix."
     }
   ]
 }
