@@ -56,6 +56,94 @@ class TestBuildingBorderHedges(unittest.TestCase):
         self.assertIn('too short', items[0]['provenance']['unresolved_reason'])
 
 
+class TestFreeStandingHedges(unittest.TestCase):
+    """Dark-green strips away from buildings become hedges (I-035)."""
+
+    SHADE = (0.1, 0.4, 0.1)
+
+    def hedges(self, cols, *, canopy=(), footprint=(), taken=(), hm=None):
+        rgb = {q: self.SHADE for q in cols}
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            return dp.aerial_free_hedges(
+                set(footprint), rgb, set(canopy), set(taken), lidar_hm=hm,
+                evidence_ids=['aerial1'])
+
+    def hm(self, raised):
+        import numpy as np
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((20, 20), 64),
+              'h': np.full((20, 20), 64), 'kind': np.zeros((20, 20))}
+        for x, z in raised:
+            hm['h'][x, z] = 66
+        return hm
+
+    def test_thin_strip_is_a_resolved_aerial_hedge(self):
+        strip = [(5, z) for z in range(2, 9)]
+        items = self.hedges(strip)
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual((item['kind'], item['role']), ('hedge', 'barrier'))
+        self.assertEqual(sorted(tuple(c) for c in item['cells']), strip)
+        self.assertEqual(item['provenance']['source'], 'aerial')
+        self.assertFalse(prov.is_unresolved(item['provenance']))
+        self.assertFalse(item.get('allow_against_build'))
+
+    def test_short_or_wide_shade_is_not_a_hedge(self):
+        self.assertEqual(self.hedges([(5, z) for z in range(2, 5)]), [])
+        blob = [(x, z) for x in range(2, 8) for z in range(2, 8)]
+        self.assertEqual(self.hedges(blob), [])
+
+    def test_canopy_footprint_and_taken_columns_are_excluded(self):
+        strip = [(5, z) for z in range(2, 9)]
+        self.assertEqual(self.hedges(strip, canopy=strip), [])
+        self.assertEqual(self.hedges(strip, footprint=strip), [])
+        self.assertEqual(self.hedges(strip, taken=strip[:4]), [])
+
+    def test_lidar_must_show_the_strip_raised_one_to_three(self):
+        strip = [(5, z) for z in range(2, 9)]
+        self.assertEqual(len(self.hedges(strip, hm=self.hm(strip))), 1)
+        self.assertEqual(self.hedges(strip, hm=self.hm([])), [])
+
+    def test_tree_kind_columns_do_not_confirm_a_hedge(self):
+        from lidar_heightmap import TREE
+        strip = [(5, z) for z in range(2, 9)]
+        hm = self.hm(strip)
+        for x, z in strip:
+            hm['kind'][x, z] = TREE
+        self.assertEqual(self.hedges(strip, hm=hm), [])
+
+    def test_designer_strip_outranks_aerial_free_hedge(self):
+        strip = [(5, z) for z in range(2, 9)]
+        rgb = {q: self.SHADE for q in strip}
+        designer = [{'kind': 'iron_bars', 'cells': [list(c) for c in strip]}]
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(),
+                canopy=set(), designer_items=designer)
+        self.assertEqual([i['kind'] for i in plan['items']], ['iron_bars'])
+
+    def test_lidar_confirmed_hedge_leaves_no_unresolved_lidar_object(self):
+        strip = [(5, z) for z in range(2, 9)]
+        rgb = {q: self.SHADE for q in strip}
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={}, garden={}, rgb=rgb, footprint=set(),
+                canopy=set(), lidar_hm=self.hm(strip))
+        self.assertEqual([i['id'] for i in plan['items']], ['hedge-free-5-2'])
+        self.assertEqual(dp.unresolved_items(plan), [])
+
+    def test_build_decor_plan_includes_free_hedges_but_not_over_map_hedges(self):
+        strip = [(5, z) for z in range(2, 9)]
+        rgb = {q: self.SHADE for q in strip}
+        with mock.patch('ground_sources.aerial_class', return_value='shade'):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={'hedge': {(5, 2), (5, 3)}, 'wall': set(), 'fence': set()},
+                garden={}, rgb=rgb, footprint=set(), canopy=set())
+        free = [i for i in plan['items'] if str(i['id']).startswith('hedge-free')]
+        self.assertEqual(len(free), 1)
+        self.assertEqual(sorted(tuple(c) for c in free[0]['cells']), strip[2:])
+        self.assertIn((5, 8), dp.resolved_barriers(plan))
+
+
 class TestBuildDecorPlan(unittest.TestCase):
     """Full plan merges map, garden, aerial borders, designer; lists unresolved."""
 
