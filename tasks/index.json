@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 207,
+  "nextTaskId": 208,
   "tasks": [
     {
       "id": 178,
@@ -11,6 +11,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
+    },
+    {
+      "id": 207,
+      "title": "Pitched roof steps end in a bottom slab, not a solid block",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From issue I-019 (snags S-068 David Kiddle w146985470, S-069 West west_w34391673; Southampton world). Cause, read from code only: pitched_roof_states (lib/builds/feature_build.py ~668) emits a full block for an even half-height and a top slab for an odd one, never a bottom slab; AND lib/site/site_kit.py rewrite_bottom_slabs (~line 123, called ~1037) turns every bottom slab in plan.cells into a full block on apply because block_fill cannot place bottom slabs, unless plan.keep_bottom_slabs is set (rules/craftsmanship.md line 175). Not verified: which half-heights count as a 'low step' (a top slab at y has the same surface as a full block at y, so the odd case needs a decision), and whether keep_bottom_slabs places roof slabs reliably. Read #149 first (it claimed slabs correctly). Deliver: (1) spike: how bottom slabs reach the world (keep_bottom_slabs for roofs, or exempt roof slabs from the rewrite), result written in this note; (2) pitched_roof_states emits a bottom slab at the chosen low-step case, same material family, slab-family fallback as #189; only that one branch changes; (3) tests in lib/builds/test_feature_build.py and lib/site/test_site_kit_slabs.py: stair run ending in a low step gives a bottom slab, ridge unchanged, valley, slab beside a stair, roof survives apply rewrite. Files: lib/builds/feature_build.py, lib/site/site_kit.py, and their tests. Out of scope: stairs between equal-height neighbours (same-Y rule of #169); that part of I-019 stays open. Checks: python3 scripts/run_tests.py --only test_feature_build and --only test_site_kit_slabs pass; roof lint passes; S-068/S-069: after dry run plus readback rebuild of w146985470 and west_w34391673, block_scan_region over the roof shows bottom slabs at the low steps and no full block where the plan has a slab. Independent review 2026-10-29: revised."
     }
   ]
 }
