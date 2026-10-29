@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 204,
+  "nextTaskId": 205,
   "tasks": [
     {
       "id": 178,
@@ -11,6 +11,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
+    },
+    {
+      "id": 204,
+      "title": "Door floors follow lidar ground, and refuse when live ground disagrees",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Raised 2026-10-29 during the SUSU I-021 rebuild (southampton-build). Cause class: Defect. feature_build._outside_door_floor takes the door floor from the LIVE top-solid block outside the door. Around SUSU the live ground is stale or low: before undo it held old-build residue (smooth_stone at y44), after `element_undo susu_w33830305` it is ~y42 while lidar ground_y is 51-55 (piazza 55). Dry run therefore puts doors 42-A..D at y42-45 instead of piazza level. Lidar is the height truth (memory: lidar-height-truth); live surface is only for transitions. Fix: derive outside ground from lidar ground_y (DTM block Y) for the cell outside the door; keep floor_offset semantics; when live top-solid and lidar differ by more than a few blocks, refuse that entrance with a message naming the entrance id, live y and lidar y (no silent fallback). DELIVERABLE: `python3 scripts/feature_build.py --world southampton-build worlds/southampton-build/site/builds/susu_w33830305.json` dry run prints doors 42-A..D at about y51-55 with live ground at y42; unit test with live column y42 vs lidar 51 (door follows lidar or refuses per threshold); existing door tests pass. CURRENT WORLD STATE: SUSU is undone (journal entry 465), nothing rebuilt; pond_w141657072 spec (needs water_body clear_above, merged 1ecab1d) not yet applied. After this lands: re-run SUSU dry run, apply SUSU and the pond under scripts/site_lock.py. Hand-off: side-session-notes designer-handoff-susu-pond.md."
     }
   ]
 }
