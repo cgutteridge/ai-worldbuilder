@@ -158,9 +158,13 @@ for unattended runs. No new per-cell confirmation loop is proposed.
 ## Freshness and completion before queue optimization
 
 A validated preparation record must identify its map evidence, candidate-policy version,
-world frame and relevant plan/dismissal state. Ground/feature changes must invalidate
+world frame and relevant plan/dismissal state. Feature changes must invalidate
 layers that depended on the old layout, including the first landing of a new feature and
-cross-cell changes. Merely adding a plan must already prevent old completion from passing.
+cross-cell changes. Owner rule (2026-10-30), tracked as **#217**: redoing ground
+preserves trees and decor completion; generating or regenerating trees marks decor as
+needing a redo. Readiness freshness must respect these transitions rather than indirectly
+invalidating trees/decor whenever the ground journal entry changes. Preserve ownership,
+mask and clash safeguards when redoing ground. Merely adding a plan must already prevent old completion from passing.
 Undo/recovery and failed applies must not accidentally certify readiness or fresh layers.
 
 Use journal events for durable validation and invalidation facts; any index is rebuildable.
@@ -218,12 +222,17 @@ Proposed tool tickets are recorded in `tasks/index.json`; their ordering is:
 3. **#214: readiness invalidation and consistent completion.** Depends on #212. Test new
    groups after trees/decor, first feature builds, rebuilt features, cross-cell changes,
    map growth on done cells, changed content with preserved file timestamps, dismissals,
-   undo and recovery. Migrate legacy state conservatively; keep current scan until safe.
+   undo and recovery. Respect #217: ground redo preserves trees/decor; tree generation
+   invalidates decor. Migrate legacy state conservatively; keep current scan until safe.
 4. **#215: queue/orchestrator split.** Depends on #213 and #214. Test deterministic selection,
    holds/marker preference, blocked-cell exclusions, fully blocked/idle distinction, stop
    rules, and zero candidate-generator calls on unchanged validated done cells. Include
    candidate-call counts as a regression check; benchmark representative queue size before
    claiming a speed improvement. Remove the old scan only here.
+
+**#217** is an independently actionable rule change: ground redo preserves trees/decor
+completion, while trees generation invalidates decor. Verify the transitions after journal
+reload and across failed/recovered applies, retaining existing block-safety checks.
 
 Use synthetic provider data and temporary journals, not tests coupled to Southampton.
 Run focused checks per change and required ship-branch checks before merging. An eventual
