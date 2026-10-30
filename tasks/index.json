@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 216,
+  "nextTaskId": 217,
   "tasks": [
     {
       "id": 178,
@@ -54,6 +54,15 @@
         214
       ],
       "notes": "Read-only next consumes validated readiness and journal work, preserving marker/home ring order. Return needs-prep and accept explicit run-local exclusions so unattended runs skip blocked cells without permanent holds or loops. Distinguish blocked from complete; preserve stop rules. Remove per-done-cell candidate generation only after invalidation is proved; update orchestrator world flags and task kinds. Plan: docs/plans/split-next-new-cell-vs-overnight.md (investigated proposal; queued for planning, not implemented)."
+    },
+    {
+      "id": 216,
+      "title": "Aerial mosaic coverage is checked per cell: trees (and ground shade evidence) silently find nothing outside the one hard-coded mosaic",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Found 2026-10-30 building southampton-build cell 53,-43 (owner: 'aerial mosaic doesn't reach it sounds bad'). The only z19 mosaic is reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png (MOSAIC_TILE0 260101,175662 in lib/layers/plant_cell_canopy.py; path hard-coded as MOSAIC in lib/layers/trees_layer.py:41). Converted with world_frame from-wm its extent is about x 5808..6683, z -6016..-5206; cell 53,-43 spans x 6784..6911, about 100 blocks east of the edge. plant_cell_canopy.mosaic_px returns pixel coordinates off the image with no check, so the crown detector finds 0 crowns without a warning; the trees layer docstring still says the mosaic 'covers the whole cell'. The tree designer fell back to reading two older aerial sheets by eye (instance/google-aerial/at_6786_-5432_osm.png, at_6901_-5393_osm.png), which cover only the two ends of the Kitchener run, so trees in x 6828..6872 and z < -5470 are guesses. ground_layer.py also references the mosaic (shade evidence): check what it does outside coverage. Same class of silent evidence gap as I-041 (map clips at 11.7% queried). Likely affects every cell east of about x 6683. Deliver: (1) a coverage function for aerial mosaics (fraction of the cell inside any mosaic, like osm_footprints.clip_coverage); (2) trees (and ground, decor, anything reading mosaic_px) choose a mosaic by coverage instead of the single hard-coded file, support more than one mosaic, and refuse or warn loudly with the fraction when coverage is under 100% instead of detecting nothing; (3) add aerial coverage to the cell readiness policy in #212 and the named-cell prep in #213, next to map-clip coverage and the ghost baseline, with 'needs-prep: aerial coverage' as a report, never an implicit download. Fetching a new mosaic (aerial_mosaic.py --at X,Z --zoom 19 --size 3 --add, a tile download) stays a human-approved step: say source, filename and size first. Proof: unit tests with a fake mosaic that does not cover a cell (coverage < 1 reported, no silent empty detection) and one that does; trees dry run on 53,-43 names the coverage gap. No live-world test needed for the code. Related: docs/plans/split-next-new-cell-vs-overnight.md, #212, #213."
     }
   ]
 }
