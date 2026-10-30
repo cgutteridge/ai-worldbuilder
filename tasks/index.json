@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 212,
+  "nextTaskId": 216,
   "tasks": [
     {
       "id": 178,
@@ -11,6 +11,49 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
+    },
+    {
+      "id": 212,
+      "title": "Shared cell readiness policy and enforce it on direct real-build applies",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Add read-only named-cell checks and shared live-apply enforcement before begin/writes, including cross-cell scope. Preserve ground-first/features-first support and existing plan ids/dismissals. Establish regression baseline from local main ee26adc (decor cache fixes and group-id/completion fix already merged); do not replay or discard them. Plan: docs/plans/split-next-new-cell-vs-overnight.md (investigated proposal; queued for planning, not implemented)."
+    },
+    {
+      "id": 213,
+      "title": "Add idempotent named-cell preparation outside queue order",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        212
+      ],
+      "notes": "Report-only default; explicit apply reuses local extraction, candidate recording and cached-lidar focus ghost baseline under the site lock. Resume partly built cells without overwrites; skipped provider work remains blocked. No implicit downloads. Marker moves at build start. Plan: docs/plans/split-next-new-cell-vs-overnight.md (investigated proposal; queued for planning, not implemented)."
+    },
+    {
+      "id": 214,
+      "title": "Invalidate cell readiness and layer completion when evidence or feature layout changes",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [
+        212
+      ],
+      "notes": "Version journal readiness against evidence/policy/frame/plan inputs; invalidate trees/decor on newly added feature groups as well as rebuilds, including cross-cell scope. Align effective completion in status/verify/check/queue; treat legacy validation conservatively. Keep current done-cell candidate scan until replacement detects stale evidence, including map growth. Plan: docs/plans/split-next-new-cell-vs-overnight.md (investigated proposal; queued for planning, not implemented)."
+    },
+    {
+      "id": 215,
+      "title": "Split overnight queue selection from preparation with deterministic blocked-cell skipping",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        213,
+        214
+      ],
+      "notes": "Read-only next consumes validated readiness and journal work, preserving marker/home ring order. Return needs-prep and accept explicit run-local exclusions so unattended runs skip blocked cells without permanent holds or loops. Distinguish blocked from complete; preserve stop rules. Remove per-done-cell candidate generation only after invalidation is proved; update orchestrator world flags and task kinds. Plan: docs/plans/split-next-new-cell-vs-overnight.md (investigated proposal; queued for planning, not implemented)."
     }
   ]
 }
