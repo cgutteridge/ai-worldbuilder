@@ -82,6 +82,57 @@ def warm_decor_columns(world, cols) -> int:
     return len(ordered) * per_col
 
 
+class DecorColumnView:
+    """Read-only block view over a world: decor columns come from a local snapshot.
+
+    Reads at snapshotted positions never touch the live scan cache, so later reads
+    cannot evict (or be evicted by) one another. Other positions fall through to ``world``.
+    """
+
+    def __init__(self, world, blocks: dict[tuple[int, int, int], str | None]):
+        self.world = world
+        self.blocks = blocks
+
+    def block(self, x, y, z):
+        pos = (x, y, z)
+        if pos in self.blocks:
+            return self.blocks[pos]
+        return self.world.block(x, y, z)
+
+    def prefetch(self, positions) -> None:
+        warm = getattr(self.world, 'prefetch', None)
+        if warm is not None:
+            warm(positions)
+
+
+def snapshot_decor_columns(world, cols):
+    """Read the blocks decor planning needs once, one 16x16 chunk at a time.
+
+    One up-front warm of every decor column can exceed the live store's cache cap; the
+    store then clears itself on the next cold read and every later read is its own paced
+    section scan (a cell with a long fence hung for an hour). Here each chunk's columns
+    are warmed just before they are copied out, so each section is scanned about once
+    and the live cache never holds more than one chunk.
+
+    @param world: :class:`World` or any duck; returned unchanged without ``prefetch``
+    @param cols: iterable of ``(x, z)``
+    @returns: a world-like with ``block`` / ``prefetch`` serving the columns from memory
+    """
+    if getattr(world, 'prefetch', None) is None:
+        return world
+    ylo, yhi = PROBE_Y_RANGE
+    chunks: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for x, z in sorted(cols):
+        chunks.setdefault((x >> 4, z >> 4), []).append((x, z))
+    blocks: dict[tuple[int, int, int], str | None] = {}
+    for key in sorted(chunks):
+        world.prefetch((x, y, z) for x, z in chunks[key] for y in range(ylo, yhi + 1))  # <= 23 040
+        for x, z in chunks[key]:
+            for y in range(ylo, yhi + 1):
+                blocks[(x, y, z)] = world.block(x, y, z)
+    return DecorColumnView(world, blocks)
+
+
 def column_ground_kind(world: World, x: int, z: int) -> str | None:
     """Classified ground kind at the live surface of (x, z), or None if empty."""
     from surface_probe import surface_y
@@ -427,7 +478,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         footprint={q for q in fp if cell_contains(cell, *q)},
     )
     unresolved = list(dplan.unresolved_items(decor))
-    warm_decor_columns(world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))  # batch reads (#110)
+    world = snapshot_decor_columns(                                      # batch reads (#110)
+        world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
 
     barrier_items = [
         i for i in decor['items']

@@ -403,5 +403,94 @@ class TestPrefetchBatching(unittest.TestCase):
         self.assertEqual(w.warmed, set(placed))
 
 
+class CappedLive:
+    """LiveBlocks stand-in: flat grass at y=64, same cache cap and clear-on-overflow, counts section scans."""
+
+    CAP = 65536
+    EDGE = 16
+
+    def __init__(self):
+        self.cache: dict = {}
+        self.scans: dict = {}                  # section -> times scanned
+
+    def _scan(self, section, positions):
+        self.scans[section] = self.scans.get(section, 0) + 1
+        for p in positions:
+            self.cache[p] = 'minecraft:grass_block' if p[1] <= 64 else 'minecraft:air'
+
+    @staticmethod
+    def _section(p):
+        return (p[0] >> 4, p[1] >> 4, p[2] >> 4)
+
+    def prefetch(self, positions):             # LiveBlocks.read_many
+        batch = [tuple(p) for p in positions]
+        if len(self.cache) + len(batch) > self.CAP:
+            self.cache.clear()
+        by_section: dict = {}
+        for p in batch:
+            if p not in self.cache:
+                by_section.setdefault(self._section(p), []).append(p)
+        for sec, ps in by_section.items():
+            self._scan(sec, ps)
+
+    def block(self, x, y, z):                  # LiveBlocks.read
+        p = (x, y, z)
+        if p not in self.cache:
+            if len(self.cache) + self.EDGE ** 3 > self.CAP:
+                self.cache.clear()
+            sec = self._section(p)
+            self._scan(sec, [(sec[0] * 16 + a, sec[1] * 16 + b, sec[2] * 16 + c)
+                             for a in range(16) for b in range(16) for c in range(16)])
+        return self.cache[p]
+
+    @property
+    def total_scans(self):
+        return sum(self.scans.values())
+
+
+class TestChunkedSnapshot(unittest.TestCase):
+    """A long fence (more columns than the warm budget) must not thrash the live cache."""
+
+    def items(self):
+        cells = [[x, z] for z in (10, 40, 70, 100) for x in range(2, 126)]
+        return [{'role': 'barrier', 'kind': 'fence', 'block': 'spruce_fence', 'height': 2,
+                 'id': 'f1', 'cells': cells, 'provenance': {'source': 'map'}}]
+
+    def plan(self, w, items, view):
+        found, rep, un = dl.place_barriers_from_plan(
+            (0, 0), items, view, way=set(), near1=set(), owned=set(), masked=set())
+        return found, rep, un
+
+    def test_snapshot_bounds_cold_scans_and_keeps_placements(self):
+        items = self.items()
+        cols = dl.decor_columns(items, [])
+        self.assertGreater(len(cols), dl.WARM_BUDGET // 90)       # the old warm truncated here
+
+        old = CappedLive()                                       # before: one global warm
+        dl.warm_decor_columns(old, cols)
+        before = self.plan(old, items, old)
+
+        new = CappedLive()                                       # after: chunk-wise snapshot
+        view = dl.snapshot_decor_columns(new, cols)
+        after = self.plan(new, items, view)
+
+        self.assertEqual(len(after[0]), 4 * 124 * 2)
+        self.assertEqual(after, before)                          # same placements and reports
+        chunks = {(x >> 4, z >> 4) for x, z in cols}
+        self.assertLessEqual(max(new.scans.values()), 1)         # no section scanned twice
+        self.assertLessEqual(new.total_scans, len(chunks) * 7)   # y 31..120 spans 7 sections
+        self.assertGreater(old.total_scans, 2 * new.total_scans)  # before: 485 scans, after: 224
+
+    def test_view_falls_through_outside_snapshot(self):
+        w = CappedLive()
+        view = dl.snapshot_decor_columns(w, {(5, 5)})
+        self.assertEqual(view.block(5, 64, 5), 'minecraft:grass_block')
+        self.assertEqual(view.block(900, 70, 900), 'minecraft:air')   # not snapshotted: live read
+
+    def test_world_without_prefetch_is_returned_unchanged(self):
+        w = object()
+        self.assertIs(dl.snapshot_decor_columns(w, {(0, 0)}), w)
+
+
 if __name__ == '__main__':
     unittest.main()
