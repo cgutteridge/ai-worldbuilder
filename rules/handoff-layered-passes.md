@@ -98,6 +98,9 @@ Its crown may overhang into neighbouring cells, where the world block is AIR or 
 neighbour's trees mask (crowns merge). Overhang is recorded in the PLANTING cell's own trees mask
 (that mask may cross the cell edge) and never overwrites any other block: not a neighbour's trunk,
 roof, wall, ground, decor or feature. Trunks are always in-cell. One check does it: trees_layer.may_plant.
+Only the trunk-owning cell needs preparation and landed ground/features for this trees pass.
+Leaf-only crown overhang may enter an unprepared neighbouring cell. The journal still records
+all touched cells; ownership conflicts and in-flight applies in a neighbour remain protected.
 Undo of a trees mask removes its overhang too, but leaves a block that another mask also lists.
 Ground and decor still clip to the cell bounds (decor_layer, ground_layer); their masks never cross an edge.
 

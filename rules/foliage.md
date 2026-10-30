@@ -22,7 +22,8 @@ Rules
    Crowns rooted outside may overhang a feature.
  - Crowns on a cell edge: HANDOFF-LAYERED-PASSES §6 (overhang into neighbour air or
    neighbour leaves is kept, recorded in the planting cell's mask; nothing else is
-   overwritten).
+   overwritten). The trunk-owning cell must be prepared, with ground and features
+   landed. Leaf-only overhang does not require the neighbouring cell to be prepared.
 
 ------------------------------------------------------------------------
 One cell
