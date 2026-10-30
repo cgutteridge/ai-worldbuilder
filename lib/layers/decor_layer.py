@@ -25,8 +25,8 @@ from typing import Any
 
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds, is_air, neighbour_owned,  # noqa: E402
-                          load_masked_positions, warm_surface_probe)
+from ground_layer import (BLOCK_KIND, PROBE_Y_RANGE, bare, cell_contains, ignored_builds,  # noqa: E402
+                          is_air, neighbour_owned, load_masked_positions)
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import decor_plan as dplan  # noqa: E402
@@ -43,6 +43,43 @@ JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
 NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 # Ground kinds the barrier pass must not sit on (live surface, not only map way columns):
 # the carriageway (as for furniture). Paving and brick paths are fair ground for hedges and fences.
+
+
+WARM_RING = 1                    # columns around each decor column warmed (join candidates sit beside pieces)
+WARM_BUDGET = 60_000             # positions warmed at most; LiveBlocks drops its whole cache past 65 536
+
+
+def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
+    """Columns the decor plan can read: barrier cells and furniture spots, plus a ring."""
+    cols: set[tuple[int, int]] = set()
+    for item in decor_items:
+        if item.get('role') == 'barrier':
+            cols.update((int(c[0]), int(c[1])) for c in item.get('cells') or [])
+    cols.update((int(i['x']), int(i['z'])) for i in furniture_items)
+    r = WARM_RING
+    return {(x + a, z + b) for x, z in cols for a in range(-r, r + 1) for b in range(-r, r + 1)}
+
+
+def warm_decor_columns(world, cols) -> int:
+    """Prefetch the blocks ``surface_y`` and the placement checks read, for ``cols`` only.
+
+    A whole-cell probe (132 x 132 x 90) is far over the live store's cache cap, so it
+    evicted itself and every later read was its own paced MCP scan. Stops at
+    :data:`WARM_BUDGET` positions; reads beyond that still work, one section scan each.
+
+    @param world: :class:`World` or any duck; no-op without ``prefetch``
+    @param cols: iterable of ``(x, z)``
+    @returns: number of positions requested
+    """
+    warm = getattr(world, 'prefetch', None)
+    if warm is None:
+        return 0
+    ylo, yhi = PROBE_Y_RANGE
+    per_col = yhi - ylo + 1
+    ordered = sorted(cols)[:max(0, WARM_BUDGET // per_col)]
+    for i in range(0, len(ordered), 64):
+        warm((x, y, z) for x, z in ordered[i:i + 64] for y in range(ylo, yhi + 1))
+    return len(ordered) * per_col
 
 
 def column_ground_kind(world: World, x: int, z: int) -> str | None:
@@ -375,8 +412,6 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     near = fp | owned_cols
     near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
     vmap = OSMGround(cell)
-    warm_surface_probe(world, cell[0] * 128 - 2, cell[1] * 128 - 2,
-                       cell[0] * 128 + 129, cell[1] * 128 + 129)           # batch reads (#110)
     way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
 
     from lidar_heightmap import reference_world
@@ -392,6 +427,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         footprint={q for q in fp if cell_contains(cell, *q)},
     )
     unresolved = list(dplan.unresolved_items(decor))
+    warm_decor_columns(world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))  # batch reads (#110)
 
     barrier_items = [
         i for i in decor['items']
@@ -540,6 +576,9 @@ def apply_cell(cell: tuple[int, int]) -> int:
     unresolved = stats.pop('unresolved_items', [])
     unplaced = stats.pop('unplaced_items', [])
     decor = stats.pop('decor_plan', None)
+    warm = getattr(world, 'prefetch', None)
+    if warm is not None:
+        warm(placed)                                                       # mask air check, batched
     mask = build_mask('decor', cell, name, placed, lambda p: is_air(world.block(*p)))
     print(f'{name}: {len(placed)} blocks ({dict(stats)})')
     _print_plan_notes({
