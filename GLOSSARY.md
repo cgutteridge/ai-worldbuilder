@@ -79,7 +79,7 @@ _Avoid_: stage files as progress
 ## Blocks
 
 **Bottom-half slab / top-half slab**:
-A slab block whose half sits in the lower (`type=bottom`) or upper (`type=top`) half of its own voxel. "Bottom" and "top" mean position inside the one block, never the bottom or top of a pile or stack of blocks. A bottom-half slab has its surface half a block below the voxel's top, so it is the low step of a pitched roof; a top-half slab's surface equals a full block's. Block-state strings stay `type=bottom` / `type=top`. Older names in code (`rewrite_bottom_slabs`, `keep_bottom_slabs`) predate this term and are being renamed.
+A slab block whose half sits in the lower (`type=bottom`) or upper (`type=top`) half of its own voxel. "Bottom" and "top" mean position inside the one block, never the bottom or top of a pile or stack of blocks. A bottom-half slab has its surface half a block below the voxel's top, so it is the low step of a pitched roof; a top-half slab's surface equals a full block's. Block-state strings stay `type=bottom` / `type=top`.
 _Avoid_: bottom slab / top slab (read as a slab at the bottom or top of a stack), low slab, half block
 
 ## Issues and snags

@@ -7,7 +7,7 @@ and never block a cell — ticket #121).
 Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
 configured home cell (Chebyshev distance, then clockwise ring order from north), over the
 cell journal views (``CellRegistry.view()``).
-Order inside a cell: ground → features (by id) → needs-feature-plan when the
+Order inside a cell: ground → features (by id) → needs-clip-coverage → needs-feature-plan when the
 vector map still has unplanned footprints (#140) → trees → decor.
 
 The build task raises the marker; ``next`` does not.
@@ -99,23 +99,46 @@ def _needs_feature_plan_task(reg: CellRegistry, cid: str) -> dict[str, Any] | No
     }
 
 
-def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] | None) -> CellView | None:
+def needs_clip_coverage(reg: CellRegistry, cell: tuple[int, int]) -> dict[str, Any] | None:
+    """Undismissed incomplete query coverage, shared by next and verify.
+
+    @param reg: cell journal
+    @param cell: (tx, tz)
+    @returns: needs-clip-coverage task, or None when complete or dismissed
+    """
+    from cell_features import clip_coverage
+    if reg.clip_coverage_dismissed(cell):
+        return None
+    try:
+        fraction = clip_coverage(cell)
+    except RuntimeError as exc:
+        if 'no world selected' not in str(exc):
+            raise
+        return None
+    if fraction >= 1:
+        return None
+    return {'kind': 'needs-clip-coverage', 'cell': cell_id(*cell), 'clip_coverage': fraction}
+
+
+def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] | None,
+               clip_tasks: dict) -> CellView | None:
     """Choose the cell to work next (marker if not done, else nearest undone).
 
     @param views: every journal cell view
     @param marker: the marker cell, or None
+    @param clip_tasks: incomplete query coverage tasks keyed by cell
     @returns: cell view or None when everything is done
     """
     home = cellmath.home_cell()
     if marker is not None:
         v = views.get(marker)
-        if v is not None and not v.done and not v.hold and _undone_work_in_cell(v):
+        if v is not None and not v.hold and (_undone_work_in_cell(v) or marker in clip_tasks):
             return v
 
     # Nearest undone non-held: distance then clockwise ring from north.
     best: tuple[int, int, tuple[int, int]] | None = None
     for cell, v in views.items():
-        if v.done or v.hold or not _undone_work_in_cell(v):
+        if v.hold or not (_undone_work_in_cell(v) or cell in clip_tasks):
             continue
         dist = cellmath.ring_distance(cell, home)
         ring = cellmath.ring_cells(dist, home)
@@ -132,7 +155,9 @@ def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] |
 def next_task(registry: CellRegistry | None = None, *, root: Path | None = None) -> dict[str, Any] | None:
     """Return the next work item, or None when the journal is idle.
 
-    After ground, if the cell would move on to trees (or later) while vector-map
+    After ground, incomplete vector-map query coverage returns ``needs-clip-coverage``
+    until more clips are extracted or deliberately dismissed. This also surfaces on
+    otherwise complete cells. If the cell would move on to trees (or later) while vector-map
     footprints still lack a ``plan_feature``, returns ``needs-feature-plan``
     instead (#140). Run ``propose-features --cell … --record`` then call ``next``
     again.
@@ -142,17 +167,23 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None)
     @returns: task dict or None
     """
     reg = registry or view_registry(root)
-    v = _pick_cell(reg.view(), reg.marker_cell())
+    views = reg.view()
+    clip_tasks = {cell: task for cell, view in views.items()
+                  if view.ground == 'generated' and not view.hold
+                  and (task := needs_clip_coverage(reg, cell)) is not None}
+    v = _pick_cell(views, reg.marker_cell(), clip_tasks)
     if v is None:
         return None
     work = _undone_work_in_cell(v)
     if not work:
-        return None
+        return clip_tasks.get(v.cell)
     task = work[0]
     # Ground skipped building footprints; do not step to trees/decor until they are planned.
     if (task.get('kind') == 'layer'
             and task.get('layer') in ('trees', 'decor')
             and not any(f.status != 'built' for f in v.features)):
+        if v.cell in clip_tasks:
+            return clip_tasks[v.cell]
         blocked = _needs_feature_plan_task(reg, task['cell'])
         if blocked is not None:
             return blocked
@@ -179,4 +210,8 @@ def format_next(task: dict[str, Any] | None) -> str:
             f"({n} unplanned footprint{'s' if n != 1 else ''}; "
             f"run propose-features --cell {task['cell']} --record)"
         )
+    if task.get('kind') == 'needs-clip-coverage':
+        return (f"next: needs-clip-coverage in cell {task['cell']} "
+                f"({task['clip_coverage']:.1%} queried; extract clips for the rest, or "
+                f"dismiss-clip-coverage {task['cell']} --reason R)")
     return f"next: cell {task['cell']} {task['layer']}"

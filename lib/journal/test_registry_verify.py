@@ -58,6 +58,20 @@ class VerifyJournalTest(unittest.TestCase):
     def reg(self):
         return CR.view_registry(self.root)
 
+    def test_incomplete_clip_warning_and_persistent_dismissal(self):
+        self.jw.seed((48, -44), ground=True)
+        with mock.patch('cell_features.clip_coverage', return_value=0.125):
+            issues = V.check_clip_query_coverage(self.reg())
+            self.assertEqual(len(issues), 1)
+            self.assertEqual(issues[0]['severity'], 'warn')
+            self.assertEqual(issues[0]['clip_coverage'], 0.125)
+            self.assertIn('12.5%', issues[0]['message'])
+            with mock.patch.object(CR, 'activate_world_from_args'):
+                self.assertEqual(CR.main(['--world', 'unit-test', '--root', str(self.root),
+                                          'dismiss-clip-coverage', '48,-44',
+                                          '--reason', 'surveyed aerial']), 0)
+            self.assertEqual(V.check_clip_query_coverage(self.reg()), [])
+
     def test_built_feature_missing_spec_is_error(self):
         self.jw.seed((48, -44), ground=True, features=('q001_x',))
         (self.root / 'site' / 'builds').mkdir(parents=True)

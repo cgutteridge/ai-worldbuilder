@@ -2435,6 +2435,20 @@ class DetailsBuildTest(unittest.TestCase):
         self.assertEqual(builder.p.cells[(12, 57, 22)], 'minecraft:white_concrete')
         self.assertEqual(builder.p.cells[(13, 60, 22)], 'minecraft:air')
 
+    def test_roof_detail_solidifies_deepslate_family_slab_and_stair(self):
+        row = {'kind': 'vent', 'at': [12, 57, 21], 'size': [2, 1, 1], 'source': 'fixture'}
+        spec = self.spec({'A': [row]})
+        spec['roofs']['A']['material'] = 'deepslate_tile'
+        builder = F.Build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        builder.p.set(12, 56, 21, 'deepslate_tile_slab[type=bottom]')
+        builder.p.set(13, 56, 21, 'deepslate_tile_stairs[facing=north,half=bottom]')
+        builder.details()
+        for x in (12, 13):
+            self.assertEqual(builder.p.cells[(x, 56, 21)], 'minecraft:deepslate_tiles')
+        self.assertNotIn('minecraft:deepslate_tile', builder.p.cells.values())
+        valid_ids = set((F.TOOL_ROOT / 'config/minecraft-block-ids-26.2.txt').read_text().splitlines())
+        self.assertTrue(all(state.split('[', 1)[0] in valid_ids for state in builder.p.cells.values()))
+
     def test_chimney_rough_check_does_not_hide_corrupt_lidar(self):
         row = {'kind': 'chimney', 'at': [13, 57, 22], 'size': [3, 4, 3],
                'base_diameter': 3, 'top_diameter': 3, 'height': 4,
@@ -2699,7 +2713,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self._assert_shapes_match_neighbours(half, states)
 
     def test_slab_beside_stair_does_not_force_corner(self):
-        # Odd half-height neighbour is a bottom slab, not a stair → shape stays straight.
+        # Odd half-height neighbour is a bottom-half slab, not a stair → shape stays straight.
         half = {(0, 0): 10, (1, 0): 11, (0, 1): 12}
         mats = {c: 'brick' for c in half}
         states = F.pitched_roof_states(half, mats)
@@ -2708,7 +2722,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertIn('_slab', states[(1, 0)])
         self._assert_shapes_match_neighbours(half, states)
 
-    def test_stair_run_ending_in_low_step_gives_bottom_slab(self):
+    def test_stair_run_ending_in_low_step_gives_bottom_half_slab(self):
         # #207: odd half-height is a low step; surface half a block below a full block.
         half = {(0, 0): 10, (1, 0): 12, (2, 0): 13}
         mats = {c: 'brick' for c in half}
@@ -2716,14 +2730,14 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertEqual(states[(2, 0)], 'brick_slab[type=bottom,waterlogged=false]')
         self.assertIn('brick_stairs', states[(0, 0)])
 
-    def test_set_roof_marks_bottom_slabs_and_survives_apply_rewrite(self):
-        from site_kit import Plan, rewrite_bottom_slabs
+    def test_set_roof_marks_bottom_half_slabs_and_survives_apply_rewrite(self):
+        from site_kit import Plan, rewrite_bottom_half_slabs
         stub = mock.Mock()
         stub.p = Plan('t')
         F.Build._set_roof(stub, 1, 60, 1, 'brick_slab[type=bottom,waterlogged=false]')
         F.Build._set_roof(stub, 2, 60, 1, 'bricks')
         self.assertEqual(stub.p.keep_slab_cells, {(1, 60, 1)})
-        self.assertEqual(rewrite_bottom_slabs(stub.p), 0)
+        self.assertEqual(rewrite_bottom_half_slabs(stub.p), 0)
         self.assertIn('type=bottom', stub.p.cells[(1, 60, 1)])
 
     def test_roof_block_y_odd_goes_up_even_unchanged(self):
@@ -2774,7 +2788,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
         self.assertEqual(states[(1, 0)], 'bricks')
         self.assertEqual(states[(2, 0)], 'bricks')
 
-    def test_valley_low_step_is_bottom_slab_never_top(self):
+    def test_valley_low_step_is_bottom_half_slab_never_top(self):
         half = {(0, 0): 12, (1, 0): 11, (2, 0): 12}
         mats = {c: 'brick' for c in half}
         states = F.pitched_roof_states(half, mats)

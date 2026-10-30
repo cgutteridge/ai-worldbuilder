@@ -214,6 +214,29 @@ def check_uncovered_footprints(reg: CellRegistry) -> list[dict[str, Any]]:
     return out
 
 
+def check_clip_query_coverage(reg: CellRegistry) -> list[dict[str, Any]]:
+    """Warn when generated ground has incomplete, undismissed vector-map query coverage.
+
+    @param reg: cell journal
+    @returns: warning issues, one per cell with incomplete query coverage
+    """
+    from registry_next import needs_clip_coverage
+    out = []
+    for cell, view in sorted(reg.view().items()):
+        if view.ground != 'generated':
+            continue
+        task = needs_clip_coverage(reg, cell)
+        if task is not None:
+            cid, fraction = task['cell'], task['clip_coverage']
+            out.append(_issue(
+                f'clip-query-coverage:{cid}', SEVERITY_WARN,
+                f'cell {cid}: {fraction:.1%} queried by vector-map clips; '
+                f'extract missing clips or dismiss-clip-coverage {cid} --reason R',
+                clip_coverage=fraction,
+            ))
+    return out
+
+
 def run_verify(
     *,
     root: Path | None = None,
@@ -233,6 +256,7 @@ def run_verify(
     issues += check_feature_specs(reg, world)
     issues += check_uncovered_footprints(reg)
     issues += check_coverage_warnings(reg)
+    issues += check_clip_query_coverage(reg)
     issues += check_in_flight(reg)
     issues += check_decision_records(reg, world)
     issues += check_leftover_progress_files(world)

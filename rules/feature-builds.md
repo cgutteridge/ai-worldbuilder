@@ -72,7 +72,7 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`; `--apply` re
   Window frames are build-time (#131), not plan fields.
   `plan_doors` reads each placed entrance's `awning_like` and queues its cover
   until after shell, roof and detail placement. `awning` and `covered_area`
-  use roof-material bottom slabs at door top + 1, one block wider on each
+  use roof-material bottom-half slabs at door top + 1, one block wider on each
   side than the actual leaves, projecting outward over the step-out by `depth`
   blocks (default 1 when omitted or 0). `covered_area` uses the same geometry
   with a larger specified depth; it does not carve walls. `porch_roof` adds

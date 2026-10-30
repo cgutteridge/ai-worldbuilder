@@ -82,7 +82,7 @@ rule-file copy.
  Standard pitches (span S = wall width + overhang both sides; prefer odd S):
 
   Ratio   Angle (approx)   Surface pattern
-  1:2     ~22.5°           Bottom/top slab alternate (shallow)
+  1:2     ~22.5°           Bottom-half/top-half slab alternate (shallow)
   1:1     45°              Stairs ascending inward
   2:1     ~63°             Full block + stair per column (steep; rare here)
 
@@ -171,8 +171,8 @@ rule-file copy.
   ✗ Roof flush with walls (no overhang)
   ✗ Single-layer stair skin with sky visible through gaps
   ✗ Floating or unflanked glass
-  ✗ Glass (or any block) set on a bottom slab: the slab leaves a half-block gap and it floats. Put a full block under it (Oakdene lantern)
-  ✗ Relying on ``block_fill`` to place bottom-half slabs as a roof membrane — fills often leave those cells air. Prefer full blocks for membranes. ``site_kit.apply`` rewrites bottom-half slabs to full blocks unless the cell is in ``plan.keep_slab_cells`` (roof cells set through ``Build._set_roof`` are, and ``McpWriter`` places them one at a time after the fills) or ``plan.keep_bottom_slabs`` is set
+  ✗ Glass (or any block) set on a bottom-half slab: the slab leaves a half-block gap and it floats. Put a full block under it (Oakdene lantern)
+  ✗ Relying on ``block_fill`` to place bottom-half slabs as a roof membrane — fills often leave those cells air. Prefer full blocks for membranes. ``site_kit.apply`` rewrites bottom-half slabs to full blocks unless the cell is in ``plan.keep_slab_cells`` (roof cells set through ``Build._set_roof`` are, and ``McpWriter`` places them one at a time after the fills) or ``plan.keep_bottom_half_slabs`` is set
   ✗ Chimney sitting on top of the roof without cutting through
   ✗ Sapling blocks anywhere (rules/foliage.md)
 

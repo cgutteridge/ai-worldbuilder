@@ -82,14 +82,14 @@ _WOOD_SLAB = frozenset({
 })
 
 
-def is_bottom_slab(state: str) -> bool:
-    """True for bottom (or default) slabs — not top / double.
+def is_bottom_half_slab(state: str) -> bool:
+    """True for bottom-half slabs (including default states); false for top-half / double.
 
-    ``block_fill_batch`` often leaves bottom-slab cells unchanged (air stays
-    air). Top slabs are left alone.
+    ``block_fill_batch`` often leaves bottom-half slab cells unchanged (air stays
+    air). Top-half slabs are left alone.
 
     @param state: block state string
-    @returns: whether this is a bottom/default slab
+    @returns: whether this is a bottom-half slab
     """
     st = full(state)
     name = bid(st)
@@ -100,13 +100,13 @@ def is_bottom_slab(state: str) -> bool:
     return True
 
 
-def full_block_for_bottom_slab(state: str) -> str | None:
-    """Full-block twin for a bottom slab, or None if not a bottom slab.
+def full_block_for_bottom_half_slab(state: str) -> str | None:
+    """Full-block twin for a bottom-half slab, or None if not a bottom-half slab.
 
     @param state: block state string
     @returns: full block id, or None
     """
-    if not is_bottom_slab(state):
+    if not is_bottom_half_slab(state):
         return None
     name = bid(state)[len('minecraft:'):-len('_slab')]
     if name in _WOOD_SLAB:
@@ -120,25 +120,25 @@ def full_block_for_bottom_slab(state: str) -> str | None:
     return f'minecraft:{name}'
 
 
-def rewrite_bottom_slabs(plan: 'Plan') -> int:
-    """Replace bottom/default slabs with full blocks so ``block_fill`` can place them.
+def rewrite_bottom_half_slabs(plan: 'Plan') -> int:
+    """Replace bottom-half slabs with full blocks so ``block_fill`` can place them.
 
-    Skipped when ``plan.keep_bottom_slabs`` is truthy (rare; ``McpWriter``
-    then places each bottom-half slab with ``block_set_state``, slow). Top/double slabs are unchanged. Cells in
+    Skipped when ``plan.keep_bottom_half_slabs`` is truthy (rare; ``McpWriter``
+    then places each bottom-half slab with ``block_set_state``, slow). Top-half and double slabs are unchanged. Cells in
     ``plan.keep_slab_cells`` (pitched-roof odd-half-height steps, #207) keep their
     bottom-half slab; ``McpWriter`` places those with ``block_set_state`` after the fills.
 
     @param plan: plan to mutate
     @returns: number of cells rewritten
     """
-    if getattr(plan, 'keep_bottom_slabs', False):
+    if getattr(plan, 'keep_bottom_half_slabs', False):
         return 0
     n = 0
     keep = plan.keep_slab_cells
     for pos, st in list(plan.cells.items()):
         if pos in keep:
             continue
-        twin = full_block_for_bottom_slab(st)
+        twin = full_block_for_bottom_half_slab(st)
         if twin is None or twin == st:
             continue
         plan.cells[pos] = twin
@@ -152,7 +152,7 @@ class Plan:
         self.cells = {}
         self.signs = []      # (pos, [4 lines], colour, glowing)
         self.entities = []   # (entity_type, (x,y,z), snbt or None)
-        self.keep_slab_cells = set()  # bottom slabs exempt from rewrite_bottom_slabs (roof steps)
+        self.keep_slab_cells = set()  # bottom-half slabs exempt from rewrite_bottom_half_slabs (roof steps)
 
     # --- primitives -------------------------------------------------------
     def set(self, x, y, z, s):
@@ -811,10 +811,10 @@ class McpWriter:
                     {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
                 self.fill_results.append(res)
                 print('fill:', res.replace('\n', '; ')[:300])
-            # block_fill leaves bottom-slab cells as air: any bottom-half slab that survived the
+            # block_fill leaves bottom-half slab cells as air: any bottom-half slab that survived the
             # apply rewrite (pitched-roof steps, #207) is placed one by one
             for pos, st in sorted(plan.cells.items()):
-                if is_bottom_slab(st):
+                if is_bottom_half_slab(st):
                     res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
                                                      'block': _block_arg(st)})
                     self._check_slab(pos, res)
@@ -1075,18 +1075,18 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         if hits:
             (OUT / f'{plan.name}-protect-hits.json').write_text(json.dumps(hits, indent=1))
             raise SystemExit(f'{len(hits)} protected cells would change; see {plan.name}-protect-hits.json')
-    # block_fill often cannot place bottom slabs (cell stays air → mass readback mismatch).
+    # block_fill often cannot place bottom-half slabs (cell stays air → mass readback mismatch).
     bottom_n = sum(1 for p, st in plan.cells.items()
-                   if is_bottom_slab(st) and p not in plan.keep_slab_cells)
+                   if is_bottom_half_slab(st) and p not in plan.keep_slab_cells)
     if bottom_n:
-        if getattr(plan, 'keep_bottom_slabs', False):
-            print(f'{plan.name}: {bottom_n} bottom-half slabs kept (keep_bottom_slabs); '
+        if getattr(plan, 'keep_bottom_half_slabs', False):
+            print(f'{plan.name}: {bottom_n} bottom-half slabs kept (keep_bottom_half_slabs); '
                   'placed one by one over MCP (about 1.1 s each)')
         else:
-            rewritten = rewrite_bottom_slabs(plan)
+            rewritten = rewrite_bottom_half_slabs(plan)
             print(
                 f'{plan.name}: rewrote {rewritten} bottom-half slabs → full blocks '
-                '(block_fill cannot place them; set plan.keep_bottom_slabs to place them one by one)'
+                '(block_fill cannot place them; set plan.keep_bottom_half_slabs to place them one by one)'
             )
     boxes = plan.boxes()
     if empty:
