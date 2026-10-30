@@ -73,11 +73,46 @@ def unplanned_footprint_candidates(reg: CellRegistry, cid: str) -> list[dict[str
         return []
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     out: list[dict[str, Any]] = []
-    for item in items:
-        fid = CR.candidate_plan_id(item)
+    for item, fid in zip(items, CR.plan_ids_for_candidates(reg, cell, items)):
         if fid in skip:
             continue
         out.append({'id': fid, **item})
+    return out
+
+
+def describe_uncovered(candidates: list[dict[str, Any]]) -> str:
+    """Plain words for footprints no planned or built feature covers ('' when none).
+
+    @param candidates: from :func:`unplanned_footprint_candidates`
+    @returns: e.g. ``41 building footprints in 4 groups not covered by any planned or built feature (...)``
+    """
+    if not candidates:
+        return ''
+    refs = sorted({str(r) for c in candidates for r in c.get('refs') or ()})
+    shown = ', '.join(refs[:8]) + (f', ... {len(refs) - 8} more' if len(refs) > 8 else '')
+    return (f'{len(refs)} building footprint{"s" if len(refs) != 1 else ""} in '
+            f'{len(candidates)} group{"s" if len(candidates) != 1 else ""} not covered by any '
+            f'planned or built feature ({shown})')
+
+
+def _uncovered_done_cells(reg: CellRegistry, views: dict[tuple[int, int], CellView],
+                          skip: dict) -> dict[tuple[int, int], dict[str, Any]]:
+    """Cells the journal calls done that still hold uncovered building footprints.
+
+    The journal folds without the map, so ``done`` cannot see these; ``next`` does.
+
+    @param reg: cell journal
+    @param views: every journal cell view
+    @param skip: cells that already have a task (not re-checked)
+    @returns: needs-feature-plan task per such cell
+    """
+    out: dict[tuple[int, int], dict[str, Any]] = {}
+    for cell, v in views.items():
+        if cell in skip or not v.done or v.hold:
+            continue
+        task = _needs_feature_plan_task(reg, cell_id(*cell))
+        if task is not None:
+            out[cell] = task
     return out
 
 
@@ -171,6 +206,7 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None)
     clip_tasks = {cell: task for cell, view in views.items()
                   if view.ground == 'generated' and not view.hold
                   and (task := needs_clip_coverage(reg, cell)) is not None}
+    clip_tasks.update(_uncovered_done_cells(reg, views, clip_tasks))
     v = _pick_cell(views, reg.marker_cell(), clip_tasks)
     if v is None:
         return None
