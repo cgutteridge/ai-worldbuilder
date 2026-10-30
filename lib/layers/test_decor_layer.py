@@ -322,5 +322,86 @@ class TestEmptyDecorApply(unittest.TestCase):
         build_mask.assert_called_once()
 
 
+class FakeLive:
+    """Live-world stand-in: flat grass at y=64; a block() read outside prefetch is a paced MCP call."""
+
+    def __init__(self):
+        self.warmed: set = set()
+        self.prefetch_calls = 0
+        self.cold_reads = 0
+        self.reads = 0
+
+    def prefetch(self, positions):
+        self.prefetch_calls += 1
+        self.warmed.update(tuple(p) for p in positions)
+
+    def block(self, x, y, z):
+        self.reads += 1
+        if (x, y, z) not in self.warmed:
+            self.cold_reads += 1
+        return 'minecraft:grass_block' if y <= 64 else 'minecraft:air'
+
+
+class TestPrefetchBatching(unittest.TestCase):
+    """The live apply must batch its reads: a block() per position is ~1.1 s each."""
+
+    def barrier_items(self):
+        # ~200 barrier columns: two long hedges/fences in cell (0, 0) with a gap to join.
+        cells = [[x, 10] for x in range(5, 105)] + [[x, 12] for x in range(5, 105)]
+        return [{'role': 'barrier', 'kind': 'fence', 'block': 'spruce_fence', 'height': 1,
+                 'id': 'f1', 'cells': cells, 'provenance': {'source': 'map'}}]
+
+    def test_columns_cover_cells_furniture_and_ring(self):
+        cols = dl.decor_columns(self.barrier_items(), [{'x': 50, 'z': 50}])
+        self.assertIn((5, 10), cols)
+        self.assertIn((51, 49), cols)
+        self.assertIn((4, 11), cols)                      # ring beside the first piece
+        self.assertNotIn((50, 60), cols)
+
+    def test_plan_of_200_placements_makes_bounded_cold_reads(self):
+        from pass_mask import clip_to_cell
+        items = self.barrier_items()
+        w = FakeLive()
+        dl.warm_decor_columns(w, dl.decor_columns(items, []))
+        found, _rep, _un = dl.place_barriers_from_plan(
+            (0, 0), items, w, way=set(), near1=set(), owned=set(), masked=set())
+        self.assertEqual(len(found), 200)
+        joins = dl.join_pieces(found, lambda p: w.block(*p),
+                               lambda pos, mat='': dl.is_air(w.block(*pos)), {})
+        found.update(joins)
+        placed, _ = clip_to_cell(found, 0, 0)
+        w.prefetch(placed)                                # what apply_cell does before build_mask
+        self.assertTrue(all(dl.is_air(w.block(*p)) for p in placed))
+        self.assertGreater(w.reads, 1000)                 # many block() reads in total ...
+        self.assertLessEqual(w.cold_reads, 5)             # ... almost all served from prefetch
+        self.assertLessEqual(w.prefetch_calls, 20)
+
+    def test_warm_stays_under_budget(self):
+        w = FakeLive()
+        cols = {(x, z) for x in range(130) for z in range(130)}
+        n = dl.warm_decor_columns(w, cols)
+        self.assertLessEqual(n, dl.WARM_BUDGET)
+        self.assertEqual(len(w.warmed), n)
+
+    def test_world_without_prefetch_is_fine(self):
+        self.assertEqual(dl.warm_decor_columns(object(), {(0, 0)}), 0)
+
+    def test_apply_cell_prefetches_placements_for_mask(self):
+        plan = mock.Mock()
+        plan.name = 'x_decor'
+        w = FakeLive()
+        placed = {(1, 65, 1): 'spruce_fence', (2, 65, 1): 'spruce_fence'}
+        mask = {'pass': 'decor', 'cell': [0, 0], 'plan': plan.name, 'count': 2, 'sha256': 'x'}
+        with mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
+                mock.patch.object(dl, 'Plan', return_value=plan), \
+                mock.patch.object(dl, 'World', return_value=w), \
+                mock.patch.object(dl, 'plan_cell', return_value=(placed, {'blocks': 2})), \
+                mock.patch('site_kit.apply', return_value={'planned': 2, 'mismatches': 0}), \
+                mock.patch.object(dl, 'ignored_builds', return_value=()):
+            self.assertEqual(dl.apply_cell((0, 0)), 0)
+        self.assertEqual(w.cold_reads, 0)
+        self.assertEqual(w.warmed, set(placed))
+
+
 if __name__ == '__main__':
     unittest.main()
