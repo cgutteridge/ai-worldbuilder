@@ -134,7 +134,7 @@ def default_ghosts() -> Callable | None:
 
 
 def open_registry(root: Path | str | None = None, *, blocks=None, ghosts: Any = 'default',
-                  ring: int | None = None) -> CellRegistry:
+                  ring: int | None = None, build_policy='default') -> CellRegistry:
     """The active world's :class:`CellRegistry`.
 
     @param root: world root (default :func:`registry_root`)
@@ -148,7 +148,13 @@ def open_registry(root: Path | str | None = None, *, blocks=None, ghosts: Any = 
     if ring is None:
         import lidar_ghost
         ring = lidar_ghost.ring_from_env()
-    return CellRegistry(registry_root(root), blocks if blocks is not None else _NoReads(), ghosts, ring=ring)
+    reg = CellRegistry(registry_root(root), blocks if blocks is not None else _NoReads(), ghosts, ring=ring)
+    if build_policy == 'default':
+        from readiness_evidence import enforce_live
+        reg.build_policy = lambda build, touched: enforce_live(reg, build, touched)
+    else:
+        reg.build_policy = build_policy
+    return reg
 
 
 def view_registry(root: Path | str | None = None) -> CellRegistry:
@@ -287,7 +293,7 @@ def latest_cells(reg: CellRegistry | None = None, *, prefix: str = '', ghosts: b
     return out
 
 
-def _format_status(reg: CellRegistry, cid: str | None) -> str:
+def _format_status(reg: CellRegistry, cid: str | None, *, policy=None) -> str:
     lines = []
     cur = reg.marker_cell()
     lines.append(f'current_cell: {cell_id(*cur) if cur else "(none)"}')
@@ -302,10 +308,19 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
     lines.append(f'cell {cid}:')
     lines.append(f'  ground={v.ground} trees={v.trees} decor={v.decor} '
                  f'marker={"up" if v.marker else "none"} hold={v.hold!r}')
-    gap = _uncovered_note(reg, cid) if v.done else ''
-    lines.append(f'  empty={is_empty(v)} done={v.done and not gap}')
-    if gap:
-        lines.append(f'  not complete: {gap}')
+    if policy is None:
+        from readiness_evidence import policy_for
+        policy = policy_for(reg)
+    readiness = policy.check(v.cell)
+    lines.append(f"  empty={is_empty(v)} done={readiness['complete']} journal_done={v.done}")
+    for blocker in readiness['blockers']:
+        lines.append(f'  not complete: {blocker}')
+    if readiness.get('candidates'):
+        from registry_next import describe_uncovered
+        lines.append('  not complete: ' + describe_uncovered(readiness['candidates']))
+    for layer in ('trees', 'decor'):
+        if getattr(v, layer) and not readiness.get(f'{layer}_current'):
+            lines.append(f'  not complete: {layer} inputs stale or legacy unvalidated')
     lines.append(f'  left: {", ".join(v.left) if v.left else "(nothing)"}')
     for f in v.features:
         lines.append(f'  feature {f.id}: {f.status}')
@@ -321,15 +336,6 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
         label = 'coverage warning' if n.kind == 'coverage' else n.kind
         lines.append(f'  {label} {n.ref}: {n.body}')
     return '\n'.join(lines)
-
-
-def _uncovered_note(reg: CellRegistry, cid: str) -> str:
-    """Plain note when building footprints in the cell have no planned or built feature ('' if none)."""
-    try:
-        import registry_next as RN
-        return RN.describe_uncovered(RN.unplanned_footprint_candidates(reg, cid))
-    except (OSError, ValueError, KeyError, RuntimeError, SystemExit, ImportError):
-        return ''
 
 
 def candidate_plan_id(item: dict[str, Any]) -> str:
@@ -557,6 +563,17 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser('status', help='print registry summary or one cell')
     p.add_argument('--cell', default=None, help='tx,tz')
 
+    for command in ('check', 'prepare'):
+        p = sub.add_parser(command, help='read-only named-cell readiness' if command == 'check'
+                           else 'report local preparation; --apply repairs under the world lock')
+        p.add_argument('--cell', required=True, help='tx,tz; independent of queue order')
+        p.add_argument('--json', action='store_true')
+        if command == 'check':
+            p.add_argument('--operation', choices=('build', 'ground', 'feature', 'trees', 'decor'), default='build')
+        else:
+            p.add_argument('--apply', action='store_true')
+            p.add_argument('--owner', default=None, help='lock owner (default: prepare-<pid>)')
+
     p = sub.add_parser('above-ghost',
                        help='list cells with anything above ghost and count each kind (#135)')
     p.add_argument('--json', action='store_true', help='print JSON report')
@@ -599,7 +616,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--ref', required=True, help='note id, e.g. trees-over-roof:x0,z0,x1,z1')
     p.add_argument('--body', default='', help='text (the reason)')
 
-    sub.add_parser('next', help='print the next undone registry work item')
+    p = sub.add_parser('next', help='print the next undone registry work item')
+    p.add_argument('--exclude-cell', action='append', default=[], metavar='TX,TZ',
+                   help='run-local exclusion; repeat for each blocked cell')
 
     p = sub.add_parser('verify', help='registry integrity report (exit 1 on errors)')
     p.add_argument('--json', action='store_true', help='print JSON report')
@@ -616,13 +635,36 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == 'reconcile':
         try:
             return run_reconcile(args.root, args.cells, args.fix)
-        except (RegistryError, CellJournalError) as exc:
+        except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
             print(f'registry error: {exc}', file=sys.stderr)
             return 2
     root = registry_root(args.root)
     reg = view_registry(root)
 
     try:
+        if args.cmd in ('check', 'prepare'):
+            from cell_readiness import format_readiness
+            from readiness_evidence import policy_for
+            cell = parse_cell_id(args.cell)
+            if args.cmd == 'prepare' and args.apply and not os.environ.get('SITE_OWNER'):
+                import site_lock
+                owner = args.owner or f'prepare-{os.getpid()}'
+                command = [sys.executable, str(Path(__file__).resolve()), '--world', args.world]
+                if args.root:
+                    command += ['--root', str(args.root)]
+                command += ['prepare', '--cell', args.cell, '--apply']
+                if args.json:
+                    command.append('--json')
+                return site_lock.run(owner, f'prepare cell {args.cell}', command)
+            policy = policy_for(reg)
+            if args.cmd == 'check':
+                report = policy.check(cell, args.operation)
+            else:
+                from cell_preparation import prepare_cell
+                report = prepare_cell(reg, policy.evidence, cell, apply=args.apply)
+            print(json.dumps(report, indent=2, sort_keys=True) if args.json else format_readiness(report))
+            return 0 if report['ready'] else 1
+
         if args.cmd == 'status':
             print(_format_status(reg, args.cell))
             return 0
@@ -681,11 +723,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'dismiss-clip-coverage':
-            from registry_next import needs_clip_coverage
+            from cell_features import clip_coverage
             cell = parse_cell_id(args.cell)
-            if needs_clip_coverage(reg, cell) is None:
+            if clip_coverage(cell) >= 1:
                 raise RegistryError(f'no incomplete clip query coverage on {args.cell}')
-            note(reg, cell, 'clip_coverage-dismiss', args.reason)
+            from readiness_evidence import policy_for
+            facts = policy_for(reg).evidence.facts(cell)
+            note(reg, cell, 'clip_coverage-dismiss', args.reason,
+                 facts.get('map_revision', facts['revision']))
             print(f'dismissed clip query coverage on {args.cell}: {args.reason}')
             return 0
 
@@ -702,7 +747,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == 'next':
             from registry_next import format_next, next_task
-            task = next_task(reg, root=root)
+            task = next_task(reg, root=root, exclude={parse_cell_id(c) for c in args.exclude_cell})
             print(format_next(task))
             if task is not None:
                 print(json.dumps(task, indent=2, sort_keys=True))
@@ -716,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(RV.format_report(report))
             return RV.exit_code(report)
-    except (RegistryError, CellJournalError) as exc:
+    except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
         print(f'registry error: {exc}', file=sys.stderr)
         return 2
 

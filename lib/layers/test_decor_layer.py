@@ -304,7 +304,8 @@ class TestEmptyDecorApply(unittest.TestCase):
             apply_calls.append((p, kw))
             return {'planned': 0, 'mismatches': 0}
 
-        with mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
+        with mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
                 mock.patch('site_kit.Plan', return_value=plan), \
                 mock.patch('site_kit.World', return_value=world), \
                 mock.patch.object(dl, 'plan_cell', return_value=({}, {'blocks': 0})), \
@@ -392,7 +393,8 @@ class TestPrefetchBatching(unittest.TestCase):
         w = FakeLive()
         placed = {(1, 65, 1): 'spruce_fence', (2, 65, 1): 'spruce_fence'}
         mask = {'pass': 'decor', 'cell': [0, 0], 'plan': plan.name, 'count': 2, 'sha256': 'x'}
-        with mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
+        with mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
                 mock.patch.object(dl, 'Plan', return_value=plan), \
                 mock.patch.object(dl, 'World', return_value=w), \
                 mock.patch.object(dl, 'plan_cell', return_value=(placed, {'blocks': 2})), \

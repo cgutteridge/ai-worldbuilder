@@ -2886,6 +2886,9 @@ def run(
                 'the new plan, so old blocks outside it survive. Undo first: '
                 f'element_undo.py --world <world> {spec["name"]} --apply; '
                 'or pass --overwrite to apply over it anyway.')
+    if do_apply:
+        from readiness_evidence import require_feature_ready
+        require_feature_ready(spec['name'])
     plan = build(
         spec, footprints=footprints, world=world, osm_root=osm_root,
         zone_data=zone_data, aerial_rgb=aerial_rgb,

@@ -108,13 +108,23 @@ class DoneTest(Base):
 
     def test_next_cell_from_registry_not_queue(self):
         """Ticket #31: next_cell uses registry_next, not retired queue files."""
+        from cell_readiness import ReadinessPolicy
+        from journal_testkit import RegistryEvidence
+        evidence = RegistryEvidence()
+        evidence.candidates = lambda reg, cell: []
         self.registry_layers((48, -44))
         self.registry_layers((48, -45), trees=False, decor=False)
-        with mock.patch('pass_mask.trees_rule_current', return_value=True), \
+        with mock.patch('readiness_evidence.policy_for', lambda reg: ReadinessPolicy(reg, evidence)), \
+                mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
                 mock.patch.object(H, 'trees_over_roof_open', return_value=[]), \
                 mock.patch('cell_features.clip_coverage', return_value=1.0), \
                 mock.patch('cellmath.home_cell', return_value=(48, -44)):
+            policy = ReadinessPolicy(self.jw.reg, evidence)
+            policy.validate((48, -44))
+            policy.validate((48, -45))
+            self.jw.reg.build_policy = policy.enforce
+            self.jw.seed((48, -44), trees=True, decor=True)
             nxt = H.next_cell(max_ring=1)
         self.assertEqual(nxt[:2], (48, -45))
 

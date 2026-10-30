@@ -611,13 +611,15 @@ def apply_cell(cell: tuple[int, int]) -> int:
     """Live apply: lock first, re-plan from the live world, readback, then the mask.
 
     An empty placement set still journals a landed decor pass (and an empty mask) so
-    a cell with nothing to place can finish; regenerating ground clears it as usual.
+    a cell with nothing to place can finish; tree generation requires decor again; ground redo preserves completion.
     """
     import os
     from site_kit import apply
 
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
+    from readiness_evidence import require_ready
+    require_ready([cell], 'decor')
     tx, tz = cell
     name = plan_name(tx, tz)
     plan = Plan(name)

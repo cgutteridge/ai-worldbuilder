@@ -758,16 +758,14 @@ def kinds_image(cell: tuple[int, int], kind: dict, out: Path, scale: int = 4) ->
     """Kinds map beside the aerial crop of the same cell, for the review."""
     import numpy as np
     from PIL import Image
-    from ground_sources import MOSAIC, mosaic_px
+    from aerial_coverage import cell_image
 
     x0, z0, x1, z1 = cell_box(cell)
     img = np.full((128, 128, 3), 35, np.uint8)
     for (x, z), k in kind.items():
         img[z - z0, x - x0] = KIND_RGB[k]
     left = Image.fromarray(img).resize((128 * scale, 128 * scale), Image.NEAREST)
-    px = mosaic_px([(x0, z0), (x1 + 1, z1 + 1)])
-    (ax, ay), (bx, by) = px[(x0, z0)], px[(x1 + 1, z1 + 1)]
-    right = Image.open(MOSAIC).convert('RGB').crop((int(ax), int(ay), int(bx), int(by))).resize(left.size)
+    right = cell_image(cell).resize(left.size)
     sheet = Image.new('RGB', (left.width * 2 + 8, left.height), (0, 0, 0))
     sheet.paste(left, (0, 0))
     sheet.paste(right, (left.width + 8, 0))
@@ -829,6 +827,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
 
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
+    from readiness_evidence import require_ready
+    require_ready([cell], 'ground')
     tx, tz = cell
     name = plan_name(tx, tz)
     plan = Plan(name)
@@ -842,7 +842,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
         return 1
     print(f'{name}: {len(plan.cells)} cells planned, stats {dict(stats)}')
     rb = apply(plan, modifies=ignored, stage='ground-layer', cell=cell,
-               strict=True, meta={'note': 'first-principles ground (vector map + aerial); verify: patrol, visuals; trees and decor re-run after'})
+               strict=True, meta={'note': 'first-principles ground (vector map + aerial); verify: patrol, visuals; ground redo preserves trees/decor completion'})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 

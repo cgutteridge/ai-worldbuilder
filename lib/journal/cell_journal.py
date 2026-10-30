@@ -64,7 +64,7 @@ PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # plan_feature / plan_feature-dismiss: cell plan (#128). Undo clears the build only;
 # dismiss is a separate deliberate note with a reason.
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
-              'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss')
+              'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
@@ -286,6 +286,7 @@ class EntryView:
     meta: Mapping[str, Any]
     targets: tuple[int, ...] = ()
     mismatches: int = 0
+    finish_seq: int = 0
 
 
 @dataclass(frozen=True)
@@ -587,7 +588,7 @@ class CellRegistry:
     """
 
     def __init__(self, world_root: Path | str, blocks: BlockStore, ghosts: GhostPlanner | None = None,
-                 *, cell_size: int | None = None, ring: int = DEFAULT_RING) -> None:
+                 *, cell_size: int | None = None, ring: int = DEFAULT_RING, build_policy=None) -> None:
         self.root = Path(world_root)
         self.dir = self.root / 'registry'
         self.journal_path = self.dir / 'journal.jsonl'
@@ -596,6 +597,7 @@ class CellRegistry:
         self.ghosts = ghosts
         self.cell_size = cell_size
         self.ring = ring
+        self.build_policy = build_policy
         self._blob_cache: OrderedDict[str, dict[Pos, str]] = OrderedDict()
         self._reset_state()
 
@@ -616,6 +618,7 @@ class CellRegistry:
         self._derived: dict[Cell, CellView] = {}
         self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
         self._note_cache: dict | None = None
+        self._planning_revision: str | None = None
 
     def _cell_of(self, pos: Pos) -> Cell:
         return cellmath.cell_of(pos[0], pos[2], self.cell_size)
@@ -982,8 +985,27 @@ class CellRegistry:
             if scope is not None and not scope & set(e.cells):
                 continue
             out.append(EntryView(e.seq, e.kind, e.plan, e.pass_, e.cell, e.cells, e.status, e.undone, e.n,
-                                 e.owner, e.ts, dict(e.meta), e.targets, e.mismatches))
+                                 e.owner, e.ts, dict(e.meta), e.targets, e.mismatches, e.finish_seq))
         return tuple(out)
+
+    def planning_revision(self) -> str:
+        """Identity of durable geometry and planning assumptions for an unexecuted plan.
+
+        This is separate from completion: a ground redo changes future planning
+        inputs without invalidating already landed trees/decor. Begun, mismatched
+        and abandoned attempts, markers and validation/review notes are excluded.
+        """
+        self._sync()
+        if self._planning_revision is None:
+            geometry = [(e.seq, e.finish_seq, e.kind, e.plan, e.pass_, e.blob, e.cells,
+                         e.undone, e.targets) for e in self._entries.values()
+                        if e.status == 'landed' and e.pass_ in REAL_PASSES + GHOST_PASSES]
+            assumptions = [n for n in self._notes if n['kind'] in
+                           ('plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss',
+                            'coverage', 'coverage-dismiss')]
+            body = json.dumps([geometry, assumptions], sort_keys=True, separators=(',', ':')).encode()
+            self._planning_revision = hashlib.sha256(body).hexdigest()
+        return self._planning_revision
 
     def ticket(self, seq: int) -> 'Ticket':
         """Re-open the ticket of a ``begun`` entry (recovery: read back, then ``finish`` or ``abandon``).
@@ -1061,9 +1083,11 @@ class CellRegistry:
                 continue
             mine = e.cell == cell
             if e.pass_ == 'ground' and mine:
-                real, trees, decor, ghost_ground = True, False, False, False
+                real, ghost_ground = True, False
+            elif e.pass_ == 'feature':
+                trees = decor = False                  # first landings change layout too
             elif e.pass_ == 'trees' and mine:
-                trees = True
+                trees, decor = True, False
             elif e.pass_ == 'decor' and mine:
                 decor = True
             elif e.pass_ == 'ghost-ground' and mine:
@@ -1208,7 +1232,11 @@ class CellRegistry:
         else:
             primary = Counter(self._cell_of(p) for p in positions).most_common(1)[0][0]
         touched = self._cells_of(positions) | {primary}
+        previous = self._latest(b.plan)
+        if b.pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
+            touched.update(previous.cells)
         self._check_flight(touched)
+        policy_meta = self.build_policy(b, touched) if self.build_policy is not None else {}
         view = self._derive(primary)
         strip = bool(positions) and all(block_id(s) in CANCEL for s in positions.values())
         if b.pass_ in ('trees', 'decor') and view.ground != 'generated':
@@ -1240,8 +1268,8 @@ class CellRegistry:
         }
         if b.mask is not None:
             record['mask'] = b.mask
-        if b.meta:
-            record['meta'] = dict(b.meta)
+        if b.meta or policy_meta:
+            record['meta'] = {**(b.meta or {}), **(policy_meta or {})}
         signs, entities = _attachments(b)
         if signs:
             record['signs'] = _signs_json(signs)
@@ -1446,6 +1474,12 @@ class CellRegistry:
         """
         self._sync()
         return tuple(cell) in self._note_state()['clip_dismissed']
+
+    def notes(self, cell: Cell, *, kinds: Iterable[str] | None = None) -> tuple[dict, ...]:
+        """Copies of durable notes, including superseded validation and dismissal history."""
+        self._sync()
+        return tuple(dict(n) for n in self._notes if tuple(n['cell']) == tuple(cell)
+                     and (kinds is None or n['kind'] in kinds))
 
     def plan_dismissed_ids(self, cell: Cell) -> set[str]:
         """Feature ids deliberately dismissed from the cell plan (#128).

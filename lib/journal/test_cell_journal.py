@@ -177,7 +177,9 @@ class TestViews(Base):
     def test_feature_lifecycle_in_progress_then_built_and_reopen_clears_trees_decor(self):
         self.real_cell()
         self.build('house', 'feature', plan(0, 0, GLASS, y=70))
-        self.assertTrue(self.reg.cell((0, 0)).done)
+        self.assertFalse(self.reg.cell((0, 0)).trees or self.reg.cell((0, 0)).decor)
+        self.build('trees_0_0', 'trees', {}, cell=(0, 0))
+        self.build('decor_0_0', 'decor', {}, cell=(0, 0))
         # reopen: a begun apply (crash) leaves the feature in progress and clears trees + decor
         with self.assertRaises(RuntimeError):
             self.reg.change(Build('house', 'feature', plan(0, 0, GLASS, y=71)), lambda w: _raise())
@@ -186,12 +188,12 @@ class TestViews(Base):
         self.assertFalse(v.trees or v.decor or v.done)
         self.assertIn('feature house=in-progress', v.left)
 
-    def test_ground_rebuild_clears_trees_and_decor(self):
+    def test_ground_rebuild_keeps_trees_and_decor(self):
         self.real_cell()
         self.build('ground_0_0', 'ground', plan(0, 0, DIRT, y=60), cell=(0, 0))
         v = self.reg.cell((0, 0))
-        self.assertEqual((v.ground, v.trees, v.decor), ('generated', False, False))
-        self.assertEqual(v.left, ('trees', 'decor'))
+        self.assertEqual((v.ground, v.trees, v.decor), ('generated', True, True))
+        self.assertEqual(v.left, ())
 
     def test_non_strict_mismatch_is_journalled_and_blocks_flags(self):
         def drop_one(w):
@@ -285,6 +287,42 @@ class TestOwnership(Base):
 
 
 class TestRules(Base):
+    def test_feature_rebuild_invalidates_all_previous_and_current_cells(self):
+        self.real_cell(0, 0)
+        self.real_cell(1, 0)
+        self.build('bridge', 'feature', {P(0, 0, y=70): STONE, P(1, 0, y=70): STONE})
+        for tx in (0, 1):
+            self.build(f'trees_{tx}_0', 'trees', {}, cell=(tx, 0))
+            self.build(f'decor_{tx}_0', 'decor', {}, cell=(tx, 0))
+        self.build('bridge', 'feature', {P(0, 0, y=71): STONE}, cell=(0, 0))
+        for v in self.registry().view([(0, 0), (1, 0)]).values():
+            self.assertFalse(v.trees or v.decor)
+
+    def test_successful_trees_generation_invalidates_decor_only_when_landed(self):
+        for initial_trees in (False, True):
+            with self.subTest(initial_trees=initial_trees):
+                tx = int(initial_trees)
+                self.build(f'g{tx}', 'ground', plan(tx, 0, STONE, y=60), cell=(tx, 0))
+                if initial_trees:
+                    self.build(f't{tx}', 'trees', {}, cell=(tx, 0))
+                self.build(f'd{tx}', 'decor', {}, cell=(tx, 0))
+                ticket = self.reg.begin(Build(f't{tx}', 'trees', {}, cell=(tx, 0)))
+                self.assertTrue(self.registry().cell((tx, 0)).decor)
+                ticket.abandon('rolled back')
+                self.assertTrue(self.registry().cell((tx, 0)).decor)
+                # Recovery finishes the same durable entry, just as a successful apply does.
+                ticket = self.reg.begin(Build(f't{tx}', 'trees', {}, cell=(tx, 0)))
+                self.registry().ticket(ticket.seq).finish({})
+                v = self.registry().cell((tx, 0))
+                self.assertTrue(v.trees)
+                self.assertFalse(v.decor)
+
+    def test_ground_redo_preserves_landed_trees_and_decor_after_reload(self):
+        self.real_cell()
+        self.build('ground_0_0', 'ground', plan(0, 0, DIRT, y=60), cell=(0, 0))
+        v = self.registry().cell((0, 0))
+        self.assertEqual((v.ground, v.trees, v.decor, v.done), ('generated', True, True, True))
+
     def test_trees_and_decor_need_generated_ground(self):
         for p in ('trees', 'decor'):
             with self.assertRaises(Refused):
@@ -1054,7 +1092,15 @@ class TestCellPlan(Base):
         self.assertIn(('jubilee', 'planned'), [(f.id, f.status) for f in v.features])
         self.assertIn('feature jubilee=planned', v.left)
         self.assertFalse(v.done)
-        task = N.next_task(self.reg, root=self.root)
+        from cell_readiness import ReadinessPolicy
+        from journal_testkit import RegistryEvidence
+        evidence = RegistryEvidence()
+        evidence.facts = lambda c: {'revision': 'fixture', 'clip_coverage': 1.,
+                                    'aerial_coverage': 1., 'lidar_missing': []}
+        evidence.candidates = lambda reg, cell: []
+        policy = ReadinessPolicy(self.reg, evidence)
+        policy.validate((0, 0))
+        task = N.next_task(self.reg, root=self.root, policy=policy)
         self.assertEqual((task['kind'], task['feature'], task['status']),
                          ('feature', 'jubilee', 'planned'))
 

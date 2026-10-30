@@ -25,13 +25,9 @@ import numpy as np
 
 from ref_manifest import load_manifest
 import cellmath  # noqa: E402
-from world_frame import osgb_batch_to_wgs84  # noqa: E402
 
 from script_env import ROOT  # noqa: E402
-MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
 NO_DATA_LUM = 0.01                   # window mean below this is a blank mosaic pixel (pure black), not ground
-MOSAIC_TILE0 = (260101, 175662)      # z19 tile x,y of the mosaic's top-left corner
-ZOOM, TILE = 19, 256
 
 # vector-map surface=* → ground kind. 'paving' is split brick / light by the aerial.
 SURFACE_KIND = {
@@ -471,22 +467,6 @@ class OSMGround:
 
 
 # --- aerial ------------------------------------------------------------------------------
-def mosaic_px(pts: list[tuple[int, int]]) -> dict:
-    """Mosaic pixel (X, Y) of each MC column centre via world_frame batch CRS."""
-    from osgb import to_osgb
-    if not pts:
-        return {}
-    en = [to_osgb(x + 0.5, z + 0.5) for x, z in pts]
-    ll = osgb_batch_to_wgs84(en)
-    n = 2 ** ZOOM * TILE
-    res = {}
-    for p, (lat, lon) in zip(pts, ll):
-        res[p] = ((lon + 180) / 360 * n - MOSAIC_TILE0[0] * TILE,
-                  (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * n
-                  - MOSAIC_TILE0[1] * TILE)
-    return res
-
-
 class RegRGB(tuple):
     """A colour sampled from a registered user aerial (3D render / screenshot), not the z19 mosaic.
 
@@ -550,18 +530,10 @@ def aerial_rgb(cell: tuple[int, int], margin: int = MARGIN) -> dict:
 
     The mosaic gives a 5x5 pixel mean; registered columns are RegRGB (see ``aerial_class``).
     """
-    from PIL import Image
-    im = np.asarray(Image.open(MOSAIC).convert('RGB')).astype(float) / 255
+    from aerial_coverage import sample_rgb
     x0, z0, x1, z1 = cell_box(cell, margin)
     pts = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)]
-    out = {}
-    for p, (X, Y) in mosaic_px(pts).items():
-        X, Y = int(X), int(Y)
-        if 2 <= X < im.shape[1] - 2 and 2 <= Y < im.shape[0] - 2:
-            win = tuple(im[Y - 2:Y + 3, X - 2:X + 3].reshape(-1, 3).mean(0))
-            if sum(win) / 3 < NO_DATA_LUM:       # blank tile / outside coverage, not dark paving (I-042, I-057)
-                continue
-            out[p] = win
+    out = sample_rgb(cell, margin=margin)
     out.update(registered_rgb(pts))                      # sharper, truer colour wins where it exists
     return out
 

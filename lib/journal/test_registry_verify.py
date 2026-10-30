@@ -54,6 +54,16 @@ class VerifyJournalTest(unittest.TestCase):
         self.jw.__enter__()
         self.addCleanup(self.jw.__exit__)
         self.root = self.jw.root
+        from cell_readiness import ReadinessPolicy
+        from journal_testkit import RegistryEvidence
+        for patch in (
+            mock.patch('readiness_evidence.policy_for', lambda reg: ReadinessPolicy(reg, RegistryEvidence())),
+            mock.patch('cell_features.clip_coverage', return_value=1.0),
+            mock.patch('cell_registry.propose_feature_candidates', return_value=[]),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
 
     def reg(self):
         return CR.view_registry(self.root)
@@ -121,7 +131,7 @@ class VerifyJournalTest(unittest.TestCase):
             return_value=[_FOOTPRINT],
         ):
             report = V.run_verify(root=self.root, check_world=False)
-        self.assertTrue(any(i['id'] == 'uncovered-footprint:48,-44' for i in report['issues']))
+        self.assertTrue(any('eligible groups unaccounted for' in i['message'] for i in report['issues']))
         self.assertGreater(report['error_count'], 0)
         self.assertNotEqual(V.exit_code(report), 0)
 

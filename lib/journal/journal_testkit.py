@@ -96,6 +96,25 @@ class JournalWorld:
             self.reg.change(Note(tuple(cell), 'marker', 'up'))
 
 
+class RegistryEvidence:
+    """Synthetic readiness adapter for existing map-candidate/registry fixtures.
+
+    Test cases supply clip fractions and candidate groups via their existing doubles.
+    It never consults local provider caches or the selected world's evidence.
+    """
+
+    revision = 'synthetic-registry-evidence'
+
+    def facts(self, cell):
+        from cell_features import clip_coverage
+        return {'revision': self.revision, 'clip_coverage': clip_coverage(cell),
+                'aerial_coverage': 1., 'lidar_missing': []}
+
+    def candidates(self, reg, cell):
+        from registry_next import unplanned_footprint_candidates
+        return unplanned_footprint_candidates(reg, f'{cell[0]},{cell[1]}')
+
+
 # --- layer rebuild fixtures for undo tests (#133) -----------------------------------------------
 REBUILD_SHAPES = ('same', 'wider', 'narrower')
 _DEFAULT_REBUILD_BLOCKS = (
@@ -358,6 +377,9 @@ class LiveApplyCase(unittest.TestCase):
             mock.patch.object(site_kit, '_bring_player', lambda *a, **k: None),
             mock.patch.object(site_kit, 'ensure_region_matches_open_world', lambda region=None: None),
             mock.patch.object(cell_registry, 'default_ghosts', lambda: self.ghosts),
+            # Existing block-safety fixtures explicitly opt out of provider readiness.
+            # Readiness integration tests replace this with a synthetic guarded policy.
+            mock.patch('readiness_evidence.enforce_live', lambda reg, build, touched: {}),
             mock.patch('mc_paced.Paced', FakePaced),
             mock.patch('osm_footprints.guard', lambda cells: {'outside': {}, 'blind': []}),
             mock.patch('roof_lint.ridge_jogs', lambda cells: []),

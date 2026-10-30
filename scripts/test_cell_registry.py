@@ -36,6 +36,17 @@ class RegistryCliTest(unittest.TestCase):
         self.jw.__enter__()
         self.addCleanup(self.jw.__exit__)
         self.root = str(self.jw.root)
+        from cell_readiness import ReadinessPolicy
+        from journal_testkit import RegistryEvidence
+        evidence = RegistryEvidence()
+        evidence.candidates = lambda reg, cell: []
+        for patch in (
+            mock.patch('readiness_evidence.policy_for', lambda reg: ReadinessPolicy(reg, evidence)),
+            mock.patch('cell_features.clip_coverage', return_value=1.0),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
         self.jw.seed((48, -44), ground=True, features=('q001_x',))
 
     def view(self):

@@ -242,6 +242,7 @@ def run_verify(
     *,
     root: Path | None = None,
     check_world: bool = False,
+    policy=None,
 ) -> dict[str, Any]:
     """Run all verify checks and return a report.
 
@@ -255,9 +256,8 @@ def run_verify(
     issues += check_marker_invariant(reg)
     issues += check_done_invariants(reg)
     issues += check_feature_specs(reg, world)
-    issues += check_uncovered_footprints(reg)
     issues += check_coverage_warnings(reg)
-    issues += check_clip_query_coverage(reg)
+    issues += check_readiness(reg, policy=policy)
     issues += check_in_flight(reg)
     issues += check_decision_records(reg, world)
     issues += check_leftover_progress_files(world)
@@ -272,6 +272,28 @@ def run_verify(
         'warn_count': warns,
         'ok': errors == 0,
     }
+
+
+def check_readiness(reg, *, policy=None):
+    """Use the same effective readiness/completion as check, status and queue selection."""
+    if not reg.view():
+        return []
+    if policy is None:
+        from readiness_evidence import policy_for
+        policy = policy_for(reg)
+    out = []
+    for cell, view in sorted(reg.view().items()):
+        report = policy.check(cell)
+        for blocker in report['blockers']:
+            out.append(_issue(f'readiness:{cell_id(*cell)}:{len(out)}', SEVERITY_ERROR,
+                              f'cell {cell_id(*cell)} needs-prep: {blocker}'))
+        for layer in ('trees', 'decor'):
+            if getattr(view, layer) and not report.get(f'{layer}_current'):
+                out.append(_issue(f'layer-inputs:{cell_id(*cell)}:{layer}', SEVERITY_ERROR,
+                                  f'cell {cell_id(*cell)}: {layer} inputs stale or legacy unvalidated'))
+        for warning in report['warnings']:
+            out.append(_issue(f'readiness-warning:{cell_id(*cell)}:{len(out)}', SEVERITY_WARN, warning))
+    return out
 
 
 def check_world_presence(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:

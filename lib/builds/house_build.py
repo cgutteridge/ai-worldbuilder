@@ -466,6 +466,9 @@ if __name__ == '__main__':
     ap.add_argument('--apply', action='store_true')
     a = ap.parse_args()
     spec = load_spec(a.spec)
+    if a.apply:
+        from readiness_evidence import require_feature_ready
+        require_feature_ready(spec['name'])
     plan = build(spec)
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)

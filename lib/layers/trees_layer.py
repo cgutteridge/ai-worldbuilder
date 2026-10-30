@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Layered trees pass for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 3), §2, §3.
 
-Crowns are read from the z19 aerial (a 4x6 mosaic that covers the whole cell) by texture
+Crowns are read from local aerial mosaics with verified full-cell coverage by texture
 plus greenness, not colour alone: sunlit crowns here are the same hue as the lawn.
 Trees go only where the live block is air (or a grass stem / flower, as in §10), so the
 mask undo is exact. A crown voxel that is not air (roof, wall, a neighbour's block) is
@@ -34,11 +34,10 @@ from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, i
                           load_masked_positions, neighbour_owned, warm_surface_probe)
 from surface_probe import short_id, surface_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
-from plant_cell_canopy import MOSAIC_TILE0, RNG_SEED, bush_voxels, mosaic_px, tree_voxels  # noqa: E402
+from plant_cell_canopy import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
-MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
 LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
 # Surfaces an aerial-evidenced crown may stand on besides lawn and PAVED_SURFACES: the ground layer's path/plaza colours (granite, stone) and tarmac wool,
 # which are often wrong under a real tree (a brick plaza painted black); the evidence for the crown is the aerial sheet, not the ground block.
@@ -96,7 +95,7 @@ def _box(a: np.ndarray, k: int) -> np.ndarray:
     return sum(pad[i:i + h, j:j + w] for i in range(k) for j in range(k)) / (k * k)
 
 
-def canopy_pixels(img_path: Path = MOSAIC) -> np.ndarray:
+def canopy_pixels(img_path: Path) -> np.ndarray:
     """Boolean canopy mask over the mosaic: texture + greenness, then a morphological closing."""
     from PIL import Image
 
@@ -126,7 +125,7 @@ def canopy_pixels(img_path: Path = MOSAIC) -> np.ndarray:
     return _box(dil.astype(float), 9) > 0.999
 
 
-def cover_pixels(img_path: Path = MOSAIC) -> np.ndarray:
+def cover_pixels(img_path: Path) -> np.ndarray:
     """Boolean vegetation-cover mask: any saturated, not-bright, green-to-olive pixel (no texture test).
 
     Wider than canopy_pixels on purpose: shaded woodland is dark, olive or brownish (g < r) and smooth at
@@ -145,17 +144,7 @@ def cover_pixels(img_path: Path = MOSAIC) -> np.ndarray:
 
 def cover_grid(cell: tuple[int, int], mask: np.ndarray | None = None) -> np.ndarray:
     """128×128 [x - x0, z - z0] = fraction of cover pixels in a ~7-block window around the column."""
-    tx, tz = cell
-    x0, z0 = tx * CELL, tz * CELL
-    pix = mosaic_px([(x, z) for x in range(x0, x0 + 128) for z in range(z0, z0 + 128)])
-    mask = cover_pixels() if mask is None else mask
-    dens = _box(mask.astype(float), 35)
-    grid = np.zeros((128, 128))
-    for (x, z), (px, py) in pix.items():
-        ix, iy = int(px), int(py)
-        if 0 <= ix < dens.shape[1] and 0 <= iy < dens.shape[0]:
-            grid[x - x0, z - z0] = dens[iy, ix]
-    return grid
+    return _mosaic_grid(cell, cover_pixels, 35, mask)
 
 
 def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: int = 0) -> list[tuple[int, int, float]]:
@@ -185,17 +174,24 @@ def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: in
 
 def canopy_grid(cell: tuple[int, int]) -> np.ndarray:
     """128×128 array [x - x0, z - z0] = fraction of canopy pixels around that column."""
-    tx, tz = cell
-    x0, z0 = tx * CELL, tz * CELL
-    cols = [(x, z) for x in range(x0, x0 + 128) for z in range(z0, z0 + 128)]
-    pix = mosaic_px(cols)
-    mask = canopy_pixels()
-    dens = _box(mask.astype(float), 5)
-    grid = np.zeros((128, 128))
-    for (x, z), (px, py) in pix.items():
-        ix, iy = int(px), int(py)
-        if 0 <= ix < dens.shape[1] and 0 <= iy < dens.shape[0]:
-            grid[x - x0, z - z0] = dens[iy, ix]
+    return _mosaic_grid(cell, canopy_pixels, 5)
+
+
+def _mosaic_grid(cell, detector, window, mask=None):
+    from aerial_coverage import cell_columns, require_coverage, samples
+    sources = require_coverage(cell)
+    points = cell_columns(cell)
+    selected = samples(points, sources)
+    x0, z0, x1, z1 = cell_bounds(*cell)
+    grid = np.zeros((x1 - x0 + 1, z1 - z0 + 1))
+    for source in sources:
+        positions = {p: sample for p, sample in selected.items() if sample[0] == source}
+        if not positions:
+            continue
+        pixels = detector(source.path) if mask is None else mask
+        density = _box(pixels.astype(float), window)
+        for (x, z), (_source, px, py, _rgb) in positions.items():
+            grid[x - x0, z - z0] = density[int(py), int(px)]
     return grid
 
 
@@ -610,23 +606,16 @@ def review_image(cell: tuple[int, int], report: dict, out: Path) -> None:
 
     tx, tz = cell
     x0, z0 = tx * CELL, tz * CELL
-    pts = [(x0, z0), (x0 + 127, z0), (x0, z0 + 127), (x0 + 127, z0 + 127)]
-    px = mosaic_px(pts)
-    xs, ys = [v[0] for v in px.values()], [v[1] for v in px.values()]
-    X0, Y0, X1, Y1 = int(min(xs)) - 4, int(min(ys)) - 4, int(max(xs)) + 4, int(max(ys)) + 4
-    img = Image.open(MOSAIC).convert('RGB').crop((X0, Y0, X1, Y1))
+    from aerial_coverage import cell_image
     scale = 2
-    img = img.resize((img.width * scale, img.height * scale))
+    img = cell_image(cell).resize((CELL * scale, CELL * scale))
     d = ImageDraw.Draw(img)
-    cols = [(x, z) for x, z, *_ in report['trees']] + [(x, z) for x, z, *_ in report['skipped']]
-    pm = mosaic_px(cols) if cols else {}
-    ppb = (px[pts[1]][0] - px[pts[0]][0]) / 127
     for x, z, r, kind in report['trees']:
-        cx, cy = (pm[(x, z)][0] - X0) * scale, (pm[(x, z)][1] - Y0) * scale
-        rr = r * ppb * scale
+        cx, cy = (x - x0) * scale, (z - z0) * scale
+        rr = r * scale
         d.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), outline=(255, 0, 255) if kind == 'tree' else (0, 255, 255), width=3)
     for x, z, r, why in report['skipped']:
-        cx, cy = (pm[(x, z)][0] - X0) * scale, (pm[(x, z)][1] - Y0) * scale
+        cx, cy = (x - x0) * scale, (z - z0) * scale
         d.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), outline=(255, 0, 0), width=2)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out)
@@ -635,6 +624,8 @@ def review_image(cell: tuple[int, int], report: dict, out: Path) -> None:
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan, run the kit's guards, write the review image. Never writes the world."""
     from site_kit import apply, fresh_planning_world, preview
+    from aerial_coverage import require_coverage
+    require_coverage(cell)
 
     tx, tz = cell
     name = plan_name(tx, tz)
@@ -692,6 +683,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
 
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
+    from readiness_evidence import require_ready
+    require_ready([cell], 'trees')
     tx, tz = cell
     name = plan_name(tx, tz)
     plan = Plan(name)
@@ -715,7 +708,12 @@ def main() -> int:
     ap.add_argument('--apply', action='store_true', help='LIVE: needs SITE_OWNER + claimed lock')
     a = ap.parse_args()
     cell = tuple(int(v) for v in a.cell.split(','))
-    return apply_cell(cell) if a.apply else run(cell)
+    from aerial_coverage import CoverageError
+    try:
+        return apply_cell(cell) if a.apply else run(cell)
+    except CoverageError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == '__main__':

@@ -1,5 +1,10 @@
 # Split named-cell preparation from the overnight queue
 
+Implementation status (2026-10-30): #212–#217 now implement the shared policy,
+named-cell commands, freshness checks and queue split. See [the current command
+and behavior guide](../cell-readiness.md). The investigation and proposed wording
+below are retained as the historical design record.
+
 Investigated 2026-10-30. Implementation proposal for discussion, not an accepted ADR.
 This is tool engineering; cell repairs and issue updates belong in the world checkout.
 

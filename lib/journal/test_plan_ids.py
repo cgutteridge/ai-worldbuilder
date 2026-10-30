@@ -11,6 +11,8 @@ import cellmath
 import registry_next as N
 import registry_verify as V
 from cell_journal import Note
+from cell_readiness import ReadinessPolicy
+from journal_testkit import RegistryEvidence
 
 CELL = (48, -44)
 STREET = 'houses_kitchener_road'
@@ -39,6 +41,10 @@ class PlanIdTest(unittest.TestCase):
         clip.start()
         self.addCleanup(clip.stop)
         self.reg = self.jw.reg
+        self.policy = ReadinessPolicy(self.reg, RegistryEvidence())
+        patch = mock.patch('readiness_evidence.policy_for', lambda reg: ReadinessPolicy(reg, self.policy.evidence))
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def built_street(self):
         """The street plan built earlier, with a hand-off spec naming its two houses."""
@@ -98,7 +104,8 @@ class PlanIdTest(unittest.TestCase):
         self.assertTrue(self.reg.cell(CELL).done)            # the journal alone cannot see the map
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[GROUP_A, GROUP_B]):
             task = N.next_task(self.reg, root=self.root)
-            self.assertEqual((task['kind'], task['cell'], task['count']), ('needs-feature-plan', '48,-44', 2))
+            self.assertEqual((task['kind'], task['cell']), ('needs-prep', '48,-44'))
+            self.assertEqual(len(self.policy.check(CELL)['candidates']), 2)
             self.assertIn('5 building footprints in 2 groups', CR._format_status(self.reg, '48,-44'))
             self.assertIn('done=False', CR._format_status(self.reg, '48,-44'))
             issues = V.check_uncovered_footprints(self.reg)
@@ -106,11 +113,15 @@ class PlanIdTest(unittest.TestCase):
             self.assertIn('w10', issues[0]['message'])
             self.record([GROUP_A, GROUP_B])
             self.assertEqual(V.check_uncovered_footprints(self.reg), [])
+            self.policy.validate(CELL)
             self.assertEqual(N.next_task(self.reg, root=self.root)['kind'], 'feature')
 
     def test_fully_covered_cell_stays_done(self):
         self.built_street()
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[OLD]):
+            self.policy.validate(CELL)
+            self.reg.build_policy = self.policy.enforce
+            self.jw.seed(CELL, trees=True, decor=True)
             self.assertIsNone(N.next_task(self.reg, root=self.root))
             self.assertIn('done=True', CR._format_status(self.reg, '48,-44'))
             self.assertEqual(V.check_uncovered_footprints(self.reg), [])

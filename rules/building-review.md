@@ -54,6 +54,8 @@ One building per review. Skip any building that already has an open feature issu
    patches and membrane areas are defined by lidar cells of the feature's own part, so a colour cannot spill onto a neighbour and a
    rim cell cannot stand up as a pillar. Edge (coping) cells are never recoloured.
  - **Follow-up steps of a feature** (`--lower`, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
+   named follow-up plans set `plan.parent_feature` to their built base and list that parent in
+   `modifies`; `reset_to_base` supplies the parent linkage. Readiness still covers every touched cell.
    roof and facade greeblies live in the feature spec `details` table and rebuild with the
    building (not a separate `--greeblies` flag). See GREEBLIES in `rules/craftsmanship.md`.
    Re-run steps rather than patching by hand.
