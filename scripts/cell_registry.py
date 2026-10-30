@@ -302,7 +302,10 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
     lines.append(f'cell {cid}:')
     lines.append(f'  ground={v.ground} trees={v.trees} decor={v.decor} '
                  f'marker={"up" if v.marker else "none"} hold={v.hold!r}')
-    lines.append(f'  empty={is_empty(v)} done={v.done}')
+    gap = _uncovered_note(reg, cid) if v.done else ''
+    lines.append(f'  empty={is_empty(v)} done={v.done and not gap}')
+    if gap:
+        lines.append(f'  not complete: {gap}')
     lines.append(f'  left: {", ".join(v.left) if v.left else "(nothing)"}')
     for f in v.features:
         lines.append(f'  feature {f.id}: {f.status}')
@@ -318,6 +321,15 @@ def _format_status(reg: CellRegistry, cid: str | None) -> str:
         label = 'coverage warning' if n.kind == 'coverage' else n.kind
         lines.append(f'  {label} {n.ref}: {n.body}')
     return '\n'.join(lines)
+
+
+def _uncovered_note(reg: CellRegistry, cid: str) -> str:
+    """Plain note when building footprints in the cell have no planned or built feature ('' if none)."""
+    try:
+        import registry_next as RN
+        return RN.describe_uncovered(RN.unplanned_footprint_candidates(reg, cid))
+    except (OSError, ValueError, KeyError, RuntimeError, SystemExit, ImportError):
+        return ''
 
 
 def candidate_plan_id(item: dict[str, Any]) -> str:
@@ -343,6 +355,68 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
             return f'houses_{slug}'
         return 'houses_' + '_'.join(sorted(refs))
     return refs[0]
+
+
+def _norm_ref(ref: Any) -> str:
+    """Map ref in comparable form: ``w123`` (a bare ``123`` from a spec is a way id)."""
+    r = str(ref)
+    return r if r[:1] in ('w', 'r') else 'w' + r
+
+
+def planned_refs(root: Path | str, plan_id: str) -> set[str] | None:
+    """Map refs a feature's hand-off ``site/builds/<id>.json`` covers (houses: its ``ways``).
+
+    @param root: world root
+    @param plan_id: feature plan id
+    @returns: refs like ``w176658456``, or None when there is no readable spec to say
+    """
+    import json
+    try:
+        data = json.loads((Path(root) / 'site' / 'builds' / f'{plan_id}.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    ways = data.get('ways') if isinstance(data, dict) else None
+    return {_norm_ref(k) for k in ways} if isinstance(ways, dict) and ways else None
+
+
+def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
+                            items: list[dict[str, Any]]) -> list[str]:
+    """Plan id for each candidate, keeping distinct building groups of one street apart.
+
+    ``candidate_plan_id`` keys a house group by street, so two groups on one street
+    collide. Recorded ids keep their meaning: a street group takes the bare
+    ``houses_<street>`` id only when it is the sole group of that street in the batch and
+    the id is free. Otherwise it gets ``houses_<street>_<lowest ref>`` (stable while the
+    group's buildings are unchanged, so re-runs and dismissals hold). An already-planned
+    street id whose hand-off spec lists every ref of the candidate (or has no spec to
+    say) still means that plan, so the candidate stays covered by it.
+
+    @param reg: registry
+    @param cell: (tx, tz)
+    @param items: candidates from :func:`propose_feature_candidates`
+    @returns: plan ids, parallel to ``items``
+    """
+    bases = [candidate_plan_id(i) for i in items]
+    streets = [i.get('kind') == 'houses' and bool((i.get('street') or '').strip()) for i in items]
+    group_counts: dict[str, int] = {}
+    for base, is_street in zip(bases, streets):
+        if is_street:
+            group_counts[base] = group_counts.get(base, 0) + 1
+    known = {f.id for f in reg.cell(cell).features}
+    dismissed = reg.plan_dismissed_ids(cell)
+    out: list[str] = []
+    for item, base, is_street in zip(items, bases, streets):
+        if not is_street or base in dismissed:
+            out.append(base)
+            continue
+        refs = {_norm_ref(r) for r in item['refs'] if r}
+        if base in known:
+            covered = planned_refs(reg.root, base)
+            split = covered is not None and not refs <= covered
+        else:
+            split = group_counts[base] > 1
+        out.append(f'{base}_{min(refs)}' if split else base)
+    return out
 
 
 def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
@@ -376,8 +450,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     items = candidates if candidates is not None else propose_feature_candidates(cid)
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
-    for item in items:
-        fid = candidate_plan_id(item)
+    for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
         if fid in skip:
             continue
         note(reg, cell, 'plan_feature', str(item.get('label') or ''), fid)

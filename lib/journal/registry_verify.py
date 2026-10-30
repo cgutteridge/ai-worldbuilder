@@ -207,7 +207,8 @@ def check_uncovered_footprints(reg: CellRegistry) -> list[dict[str, Any]]:
         )
         out.append(_issue(
             f'uncovered-footprint:{cid}', SEVERITY_ERROR,
-            f'cell {cid} ground skipped building footprints with no planned or landed feature: {named}',
+            f'cell {cid} ground skipped building footprints with no planned or landed feature: {named}; '
+            f'{RN.describe_uncovered(candidates)}',
             buildings=buildings,
             features=ids,
         ))
