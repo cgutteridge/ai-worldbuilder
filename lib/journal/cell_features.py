@@ -53,7 +53,11 @@ LAYER_BUILD = re.compile(
 
 
 def clip_coverage(cell: tuple[int, int]) -> float:
-    """Fraction of this cell queried by vector-map extracts, independent of build coverage."""
+    """Fraction of this cell queried by vector-map extracts, independent of build coverage.
+
+    @param cell: (tx, tz)
+    @returns: queried fraction in [0, 1], zero when no clips exist
+    """
     from osm_footprints import clip_coverage as query_coverage
     try:
         return query_coverage(cell)

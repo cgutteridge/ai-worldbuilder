@@ -215,7 +215,11 @@ def check_uncovered_footprints(reg: CellRegistry) -> list[dict[str, Any]]:
 
 
 def check_clip_query_coverage(reg: CellRegistry) -> list[dict[str, Any]]:
-    """Warn when generated ground has incomplete, undismissed vector-map query coverage."""
+    """Warn when generated ground has incomplete, undismissed vector-map query coverage.
+
+    @param reg: cell journal
+    @returns: warning issues, one per cell with incomplete query coverage
+    """
     from registry_next import needs_clip_coverage
     out = []
     for cell, view in sorted(reg.view().items()):

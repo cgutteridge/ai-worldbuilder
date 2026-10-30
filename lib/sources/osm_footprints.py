@@ -160,7 +160,13 @@ def _query_bbox(src: Path) -> tuple[int, int, int, int] | None:
 
 def clip_coverage(cell: tuple[int, int], *, root: Path | None = None,
                   extents: list | None = None) -> float:
-    """Fraction of cell columns queried; read bounds without projecting feature data."""
+    """Fraction of cell columns queried; read bounds without projecting feature data.
+
+    @param cell: (tx, tz)
+    @param root: optional vector-map clip tree
+    @param extents: optional preloaded inclusive building-query bboxes
+    @returns: queried fraction in [0, 1]
+    """
     from cellmath import cell_bbox
     if extents is None:
         root = root if root is not None else _resolve_vector_map_clips()
@@ -247,7 +253,11 @@ class OSMIndex:
         return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, z0, x1, z1 in self.extents)
 
     def clip_coverage(self, cell: tuple[int, int]) -> float:
-        """Fraction of a cell's columns inside the union of queried clip bboxes."""
+        """Fraction of a cell's columns inside the union of queried clip bboxes.
+
+        @param cell: (tx, tz)
+        @returns: queried fraction in [0, 1]
+        """
         return clip_coverage(cell, extents=self.extents)
 
     def setback(self, i: int) -> float:

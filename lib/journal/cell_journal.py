@@ -1439,7 +1439,11 @@ class CellRegistry:
         return Receipt(seq, 'landed')
 
     def clip_coverage_dismissed(self, cell: Cell) -> bool:
-        """Whether incomplete query coverage was deliberately accepted for this cell."""
+        """Whether incomplete query coverage was deliberately accepted for this cell.
+
+        @param cell: (tx, tz)
+        @returns: True when a clip_coverage-dismiss note exists
+        """
         self._sync()
         return tuple(cell) in self._note_state()['clip_dismissed']
 

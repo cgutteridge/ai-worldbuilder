@@ -100,7 +100,12 @@ def _needs_feature_plan_task(reg: CellRegistry, cid: str) -> dict[str, Any] | No
 
 
 def needs_clip_coverage(reg: CellRegistry, cell: tuple[int, int]) -> dict[str, Any] | None:
-    """Undismissed incomplete query coverage, shared by next and verify."""
+    """Undismissed incomplete query coverage, shared by next and verify.
+
+    @param reg: cell journal
+    @param cell: (tx, tz)
+    @returns: needs-clip-coverage task, or None when complete or dismissed
+    """
     from cell_features import clip_coverage
     if reg.clip_coverage_dismissed(cell):
         return None
@@ -121,6 +126,7 @@ def _pick_cell(views: dict[tuple[int, int], CellView], marker: tuple[int, int] |
 
     @param views: every journal cell view
     @param marker: the marker cell, or None
+    @param clip_tasks: incomplete query coverage tasks keyed by cell
     @returns: cell view or None when everything is done
     """
     home = cellmath.home_cell()
