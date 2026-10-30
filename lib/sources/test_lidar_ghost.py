@@ -120,7 +120,7 @@ class _Tiny(unittest.TestCase):
 
     def registry(self, ring=lg.DEFAULT_RING):
         import cell_registry
-        return cell_registry.open_registry(blocks=self.jw.blocks, ghosts=lg.ghost_planner(self.heights), ring=ring)
+        return cell_registry.open_registry(blocks=self.jw.blocks, ghosts=lg.ghost_planner(self.heights), ring=ring, build_policy=None)
 
     def real_ground(self, cell):
         x0, z0, _x1, _z1 = cellmath.bounds(cell)

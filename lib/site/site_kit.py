@@ -148,6 +148,8 @@ def rewrite_bottom_half_slabs(plan: 'Plan') -> int:
 
 class Plan:
     def __init__(self, name):
+        from readiness_evidence import planning_revision
+        self.evidence_revision = planning_revision()
         self.name = name
         self.cells = {}
         self.signs = []      # (pos, [4 lines], colour, glowing)
@@ -991,6 +993,21 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
     _ensure_world_config()
     pass_ = stage_pass(stage)
+    if not dry:
+        ensure_region_matches_open_world()
+        # Fail before live prefetch, lint scans, backup or begin. The live registry
+        # repeats this under the lock immediately before it stages the build.
+        import cellmath
+        from readiness_evidence import enforce_live
+        readiness_view = cell_registry.view_registry()
+        touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
+        if cell is not None:
+            touched.add(tuple(cell))
+        try:
+            enforce_live(readiness_view, Build(plan.name, pass_, plan.cells, cell=cell,
+                                               payload=plan, meta=meta), touched)
+        except CellJournalError as exc:
+            raise _journal_refusal(plan.name, exc) from exc
     OUT.mkdir(parents=True, exist_ok=True)
     empty = not plan.cells
     # Empty trees/decor plans need an explicit cell (journalled "nothing to place", #127).
@@ -1005,7 +1022,6 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         w = fresh_planning_world()
     else:
         w = World()
-        ensure_region_matches_open_world()
         if not empty:
             warm = set(plan.cells)
             warm.update((x, y - 1, z) for x, y, z in plan.cells)

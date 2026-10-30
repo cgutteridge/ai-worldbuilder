@@ -78,13 +78,14 @@ class TestAerialNoData(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             png = Path(d) / 'm.png'
             Image.fromarray(im).save(png)
-            old_m, old_px = gs.MOSAIC, gs.mosaic_px
-            gs.MOSAIC = png
-            gs.mosaic_px = lambda pts: {p: (p[0], 20) for p in pts}
-            try:
-                out = gs.aerial_rgb((0, 0), margin=0)
-            finally:
-                gs.MOSAIC, gs.mosaic_px = old_m, old_px
+            from unittest import mock
+            import aerial_coverage as aerial
+            source = aerial.Mosaic(png, 19, 0, 0)
+            with mock.patch.object(aerial.Mosaic, 'pixels', lambda self, pts: {p: (p[0], 20) for p in pts}):
+                out = aerial.samples([(10, 0), (30, 0)], [source], radius=2)
+                with mock.patch.object(aerial, 'mosaics', return_value=[source]):
+                    with self.assertRaisesRegex(aerial.CoverageError, 'aerial coverage'):
+                        gs.aerial_rgb((0, 0), margin=0)
         self.assertNotIn((10, 0), out)
         self.assertIn((30, 0), out)
 

@@ -2284,7 +2284,8 @@ class ReapplyGuardTest(unittest.TestCase):
             path = Path(temp) / 'spec.json'
             path.write_text(json.dumps(self.SPEC))
             (F.ROOT / 'verification/site').mkdir(parents=True, exist_ok=True)
-            with mock.patch.object(F, 'landed_build_seqs', return_value=seqs), \
+            with mock.patch('readiness_evidence.require_feature_ready'), \
+                    mock.patch.object(F, 'landed_build_seqs', return_value=seqs), \
                     mock.patch.object(F, 'preview'), mock.patch.object(F, 'apply') as applied, \
                     redirect_stdout(io.StringIO()):
                 F.run(path, do_apply=True, footprints=self.CELLS, world=_StoneWorld(), **kw)

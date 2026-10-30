@@ -45,13 +45,9 @@ def parcels_in_cell(*_a, **_k):
 def columns_for_parcels(*_a, **_k):
     """Retired with the old ground tooling (ground_top_block); the parcel canopy pass no longer runs."""
     raise SystemExit('plant_cell_canopy parcel passes are retired; use trees_layer.py')
-from osgb import to_osgb  # noqa: E402
-from world_frame import osgb_batch_to_wgs84  # noqa: E402
 from site_kit import OUT, Plan, World, apply, fresh_planning_world, preview  # noqa: E402
 
 DEFAULT_AREA = 'highfield'
-MOSAIC = ROOT / 'reference/aerial/highfield-z19/mosaic-z19-18x17-260101-175662-eastext6.png'
-MOSAIC_TILE0 = (260101, 175662)  # z19 tile x,y of the mosaic's top-left corner
 ZOOM = 19
 TILE = 256
 HUE_LO, HUE_HI = 45 / 360, 110 / 360  # olive through green
@@ -107,25 +103,6 @@ def blobs_of(mask: set[tuple[int, int]]) -> list[list[tuple[int, int]]]:
     return out
 
 
-def mosaic_px(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tuple[float, float]]:
-    """Map MC column centres to mosaic pixel coordinates (one batch CRS transform).
-
-    @param pts: (x, z) columns
-    @returns: {(x, z): (px, py)}
-    """
-    if not pts:
-        return {}
-    en = [to_osgb(x + 0.5, z + 0.5) for x, z in pts]
-    ll = osgb_batch_to_wgs84(en)
-    n = 2 ** ZOOM * TILE
-    res = {}
-    for p, (lat, lon) in zip(pts, ll):
-        X = (lon + 180) / 360 * n - MOSAIC_TILE0[0] * TILE
-        Y = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * n - MOSAIC_TILE0[1] * TILE
-        res[p] = (X, Y)
-    return res
-
-
 def px_per_block(lat: float) -> float:
     """Mosaic pixels per Minecraft block (1 block ~ 1 m) at zoom 19.
 
@@ -146,12 +123,10 @@ def read_mask(cell: tuple[int, int]):
     @param cell: (tx, tz)
     @returns: (image, {(x,z): (px,py)}, mask set of (px,py))
     """
-    from PIL import Image
-
-    img = Image.open(MOSAIC).convert('RGB')
+    from aerial_coverage import cell_image
+    img = cell_image(cell)
     x0, z0, x1, z1 = cell_bounds(cell)
-    cols = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)]
-    pix = mosaic_px(cols)
+    pix = {(x, z): (x - x0, z - z0) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
     mask = set()
     for px, py in pix.values():
         ix, iy = int(px), int(py)

@@ -27,6 +27,7 @@ site_kit.apply() runs the same check on every plan (see guard()).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -106,10 +107,13 @@ def _projected(src: Path) -> Path:
     """Return a cached EPSG:27700 copy of one WGS84 GeoJSON clip."""
     CACHE.mkdir(parents=True, exist_ok=True)
     dst = CACHE / (src.parent.name + '__' + src.name)
-    if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
+    identity = dst.with_suffix('.source-sha256')
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()
+    if not dst.exists() or not identity.exists() or identity.read_text() != digest:
         dst.unlink(missing_ok=True)
         subprocess.run(['ogr2ogr', '-f', 'GeoJSON', '-t_srs', 'EPSG:27700', str(dst), str(src)],
                        check=True, capture_output=True)
+        identity.write_text(digest)
     return dst
 
 
@@ -184,10 +188,13 @@ def clip_coverage(cell: tuple[int, int], *, root: Path | None = None,
 class OSMIndex:
     """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, *, read_only: bool = False):
         root = root or _resolve_vector_map_clips()
         from world_frame import osgb_to_mc
         mc = lambda c: osgb_to_mc(c[0], c[1])
+        if read_only:
+            from world_frame import wgs84_to_osgb
+            mc = lambda c: osgb_to_mc(*wgs84_to_osgb(c[1], c[0]))
         self.buildings = []   # (rings[[(x,z)...]], props)
         self.streets = []     # (name, highway, [(x,z)...])
         self.street_props = []  # map properties of each self.streets entry (same order)
@@ -199,7 +206,7 @@ class OSMIndex:
             bbox = _query_bbox(src)
             if bbox is not None and bbox not in self.extents:
                 self.extents.append(bbox)
-            d = json.loads(_projected(src).read_text())
+            d = json.loads((src if read_only else _projected(src)).read_text())
             for f in d['features']:
                 g, p = f['geometry'], f['properties']
                 if not g:

@@ -554,7 +554,7 @@ def cmd_raise(tx: int, tz: int, dry: bool, *, ghost_ring: int | None = None,
         print(f'dry-run: would place {len(plan.cells)} cells')
         ensure_neighbour_ghosts((tx, tz), dry=True, ring=ghost_ring, skip=no_ghosts)
         return 0
-    apply(plan, dry=False, protect=_protect_not_air, stage=STAGE)
+    apply(plan, dry=False, protect=_protect_not_air, stage=STAGE, meta={'operation': 'marker'})
     write_current((tx, tz))
     ensure_neighbour_ghosts((tx, tz), dry=False, ring=ghost_ring, skip=no_ghosts)
     return 0
@@ -594,7 +594,7 @@ def cmd_clear(tx: int, tz: int, dry: bool, stray: bool = False, y: int | None = 
     if dry:
         print(f'dry-run: would clear {len(plan.cells)} cells')
         return 0
-    apply(plan, dry=False, modifies=(plan.name,), stage=STAGE)
+    apply(plan, dry=False, modifies=(plan.name,), stage=STAGE, meta={'operation': 'marker'})
     if cur == (tx, tz):
         write_current(None)
     return 0

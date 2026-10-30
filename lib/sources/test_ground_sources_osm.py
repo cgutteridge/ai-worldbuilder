@@ -16,6 +16,28 @@ def _write_cache(cache: Path, name: str, features: list) -> None:
 
 
 class LoadOsmCacheNamesTest(unittest.TestCase):
+    def test_projection_refreshes_same_timestamp_source_edits(self):
+        import os
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / 'clips' / 'fixture' / 'buildings.geojson'
+            source.parent.mkdir(parents=True)
+            source.write_text('{"type":"FeatureCollection","features":[],"revision":1}')
+            cache = root / 'cache'
+
+            def project(argv, **kwargs):
+                Path(argv[-2]).write_bytes(Path(argv[-1]).read_bytes())
+
+            with mock.patch.object(OF, 'CACHE', cache), \
+                    mock.patch.object(OF.subprocess, 'run', side_effect=project):
+                first = OF.cached_geojson_paths(source.parent.parent)[0]
+                stamp = source.stat()
+                source.write_text(source.read_text().replace('"revision":1', '"revision":2'))
+                os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                refreshed = OF.cached_geojson_paths(source.parent.parent)[0]
+                self.assertEqual(json.loads(refreshed.read_text())['revision'], 2)
+                self.assertEqual(first, refreshed)
+
     def test_underscore_cache_names_yield_roads_and_hedges(self):
         """A world with only ``dir__clip.geojson`` cache files still loads roads/hedges."""
         with tempfile.TemporaryDirectory() as td:
