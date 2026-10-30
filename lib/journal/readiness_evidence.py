@@ -19,7 +19,10 @@ from cell_readiness import ReadinessPolicy, content_id
 def file_identity(path):
     """Hash bytes, including changes whose timestamps were deliberately preserved."""
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1 << 20), b''):
+            digest.update(chunk)
+        return digest.hexdigest()
 
 
 class LocalEvidence:
@@ -154,13 +157,23 @@ def policy_for(registry):
         raise ValueError('readiness registry root does not match the selected world')
     from world_frame import load_frame
     load_frame(reload=True)
+    cellmath.reload_grid()
     return ReadinessPolicy(registry, LocalEvidence(registry.root), require_plan_identity=True)
 
 
-def planning_revision():
-    """Capture evidence for a new Plan; pure plans may exist before a world is selected."""
+def planning_inputs():
+    """Capture source and journal inputs for a new Plan before geometry is planned.
+
+    Pure plans may exist before a world is selected; a live apply still requires
+    both identities. Reload the canonical frame before stamping its source bytes.
+    """
     from active_world import WORLD_ROOT
-    return LocalEvidence(WORLD_ROOT).source_revision() if WORLD_ROOT is not None else None
+    if WORLD_ROOT is None:
+        return None, None
+    from cell_registry import view_registry
+    from world_frame import load_frame
+    load_frame(reload=True)
+    return LocalEvidence(WORLD_ROOT).source_revision(), view_registry().planning_revision()
 
 
 def enforce_live(registry, build, touched):

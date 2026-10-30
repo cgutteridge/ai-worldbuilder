@@ -618,6 +618,7 @@ class CellRegistry:
         self._derived: dict[Cell, CellView] = {}
         self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
         self._note_cache: dict | None = None
+        self._planning_revision: str | None = None
 
     def _cell_of(self, pos: Pos) -> Cell:
         return cellmath.cell_of(pos[0], pos[2], self.cell_size)
@@ -986,6 +987,25 @@ class CellRegistry:
             out.append(EntryView(e.seq, e.kind, e.plan, e.pass_, e.cell, e.cells, e.status, e.undone, e.n,
                                  e.owner, e.ts, dict(e.meta), e.targets, e.mismatches, e.finish_seq))
         return tuple(out)
+
+    def planning_revision(self) -> str:
+        """Identity of durable geometry and planning assumptions for an unexecuted plan.
+
+        This is separate from completion: a ground redo changes future planning
+        inputs without invalidating already landed trees/decor. Begun, mismatched
+        and abandoned attempts, markers and validation/review notes are excluded.
+        """
+        self._sync()
+        if self._planning_revision is None:
+            geometry = [(e.seq, e.finish_seq, e.kind, e.plan, e.pass_, e.blob, e.cells,
+                         e.undone, e.targets) for e in self._entries.values()
+                        if e.status == 'landed' and e.pass_ in REAL_PASSES + GHOST_PASSES]
+            assumptions = [n for n in self._notes if n['kind'] in
+                           ('plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss',
+                            'coverage', 'coverage-dismiss')]
+            body = json.dumps([geometry, assumptions], sort_keys=True, separators=(',', ':')).encode()
+            self._planning_revision = hashlib.sha256(body).hexdigest()
+        return self._planning_revision
 
     def ticket(self, seq: int) -> 'Ticket':
         """Re-open the ticket of a ``begun`` entry (recovery: read back, then ``finish`` or ``abandon``).

@@ -112,6 +112,7 @@ class ReadinessPolicy:
             actions.append('resolve interrupted/mismatched work with site_recover or reconcile')
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'evidence_revision': facts['revision'],
+                'journal_revision': self.reg.planning_revision(),
                 'validated': validated, 'operation': operation, 'ground': v.ground,
                 'candidates': candidates, 'next_actions': actions,
                 'trees_current': current['trees'], 'decor_current': current['decor'],
@@ -150,10 +151,25 @@ class ReadinessPolicy:
             return {}
         if build.pass_ == 'other':
             raise Refused('ordinary builds cannot bypass readiness with pass other')
+        primary = build.cell
+        if primary is None:
+            from collections import Counter
+            import cellmath
+            primary = Counter(cellmath.cell_of(x, z, self.reg.cell_size)
+                              for x, _y, z in build.cells).most_common(1)[0][0]
+        parent = ((build.meta or {}).get('parent_feature')
+                  or getattr(build.payload, 'parent_feature', None))
         reports = [self.check(c, build.pass_) for c in sorted(touched)]
         for report, cell in zip(reports, sorted(touched)):
-            if build.pass_ == 'feature' and build.plan not in {f.id for f in self.reg.cell(cell).features}:
-                report['blockers'].append(f'feature plan {build.plan} absent from cell plan')
+            if build.pass_ == 'feature' and cell == primary:
+                features = {f.id: f.status for f in self.reg.cell(cell).features}
+                if parent:
+                    if features.get(parent) != 'built':
+                        report['blockers'].append(f'parent feature {parent} must be built')
+                    if parent not in build.modifies:
+                        report['blockers'].append(f'parent feature {parent} must be listed in modifies')
+                elif build.plan not in features:
+                    report['blockers'].append(f'feature plan {build.plan} absent from cell plan')
             if report['blockers']:
                 raise Refused(f"needs-prep {report['cell']}: " + '; '.join(report['blockers']), report)
             expected = (build.meta or {}).get('evidence_revision') or getattr(build.payload, 'evidence_revision', None)
@@ -162,15 +178,16 @@ class ReadinessPolicy:
                               'or supply Build.meta evidence_revision from check source_revision')
             if expected and expected != report.get('source_revision', report['evidence_revision']):
                 raise Refused('stale plan: evidence changed since planning; re-plan against current inputs')
+            expected_journal = ((build.meta or {}).get('journal_revision')
+                                or getattr(build.payload, 'journal_revision', None))
+            if self.require_plan_identity and not expected_journal:
+                raise Refused('plan has no journal identity; construct Plan against current inputs '
+                              'or supply Build.meta journal_revision from check')
+            if expected_journal and expected_journal != report['journal_revision']:
+                raise Refused('stale plan: journal geometry or planning assumptions changed; re-plan')
         revisions = {r['cell']: r['revision'] for r in reports}
-        primary = build.cell
-        if primary is None:
-            from collections import Counter
-            import cellmath
-            primary = Counter(cellmath.cell_of(x, z, self.reg.cell_size)
-                              for x, _y, z in build.cells).most_common(1)[0][0]
         return {'readiness_revision': revisions[f'{primary[0]},{primary[1]}'],
-                'readiness_cells': revisions}
+                'readiness_cells': revisions, **({'parent_feature': parent} if parent else {})}
 
 
 def format_readiness(report):

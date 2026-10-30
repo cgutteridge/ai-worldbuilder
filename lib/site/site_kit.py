@@ -148,8 +148,9 @@ def rewrite_bottom_half_slabs(plan: 'Plan') -> int:
 
 class Plan:
     def __init__(self, name):
-        from readiness_evidence import planning_revision
-        self.evidence_revision = planning_revision()
+        from readiness_evidence import planning_inputs
+        self.evidence_revision, self.journal_revision = planning_inputs()
+        self.parent_feature = None  # explicit built parent for named follow-ups; also list it in modifies
         self.name = name
         self.cells = {}
         self.signs = []      # (pos, [4 lines], colour, glowing)
@@ -882,7 +883,8 @@ def reset_to_base(build, records):
     ``build`` in the cell journal (or air if that cell was not in the base). Never uses the
     merged ownership: an earlier step's air can cancel the roof there and leave holes
     (FEATURE FOLLOW-UP STEPS in rules/craftsmanship.md). Apply with
-    ``modifies=(build, *records)``.
+    ``modifies=(build, *records)``. The returned plan records ``parent_feature=build``
+    so readiness accounts for the existing feature while checking every touched cell.
 
     @param build: base feature name (e.g. ``highfield_susu_west``)
     @param records: iterable of follow-up record names (e.g. ``highfield_susu_west-lower``)
@@ -891,10 +893,11 @@ def reset_to_base(build, records):
     """
     import cell_registry
     reg = cell_registry.view_registry()
+    plan = Plan(f'{build}-reset')
+    plan.parent_feature = build
     base = reg.recorded(build)
     if base is None:
         raise SystemExit(f'reset_to_base: no recorded build {build!r} in the cell journal')
-    plan = Plan(f'{build}-reset')
     for name in records:
         for q in reg.recorded(name) or {}:
             plan.set(*q, base.get(q, 'minecraft:air'))
@@ -1003,9 +1006,13 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
         if cell is not None:
             touched.add(tuple(cell))
+        previous = next((e for e in reversed(readiness_view.entries(plan=plan.name))
+                         if e.kind == 'build' and not e.undone), None)
+        if pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
+            touched.update(previous.cells)
         try:
             enforce_live(readiness_view, Build(plan.name, pass_, plan.cells, cell=cell,
-                                               payload=plan, meta=meta), touched)
+                                               payload=plan, meta=meta, modifies=tuple(modifies)), touched)
         except CellJournalError as exc:
             raise _journal_refusal(plan.name, exc) from exc
     OUT.mkdir(parents=True, exist_ok=True)

@@ -36,12 +36,27 @@ edits require a fresh invocation/audit. Preparation refreshes after repairs, and
 each live apply creates a fresh snapshot under the world lock. This is conservative:
 an evidence change elsewhere in the world may also require revalidation.
 
-`site_kit.Plan` captures source identity when constructed. `site_kit.apply` checks it
-before live scans/backups and the live registry checks it again before `begin`.
+`site_kit.Plan` captures source and durable journal planning identities when constructed.
+`site_kit.apply` checks them before live scans/backups and the live registry checks
+them again before `begin`.
 Direct `live_session`/`open_registry` callers supplying a real `Build` must carry
-`meta={'evidence_revision': CHECK_SOURCE_REVISION}` from their planning inputs or
-pass the originating Plan as `payload`. A stale or absent identity is refused.
-Every touched cell is checked, including neighbouring cells of a feature.
+`meta={'evidence_revision': CHECK_SOURCE_REVISION, 'journal_revision': CHECK_JOURNAL_REVISION}`
+from their planning inputs or pass the originating Plan as `payload`. A stale or
+absent identity is refused.
+Every touched cell is checked, including neighbouring cells of a feature. The
+journal planning identity covers landed geometry and plan/dismissal assumptions;
+validation, marker and review notes, and abandoned attempts do not change it.
+This identity protects unexecuted plans and is separate from layer completion:
+a ground redo can stale an old unexecuted plan while preserving landed trees/decor.
+The journal snapshot is conservative across the registry: geometry work elsewhere
+may require replanning an unexecuted plan.
+
+Supported named follow-ups set `plan.parent_feature = 'base-feature'` (or the
+equivalent `Build.meta` field) and explicitly list that built parent in `modifies`.
+The parent is accounted for in the primary cell; readiness is checked in every
+touched cell. `reset_to_base` supplies the parent linkage automatically. A name
+suffix alone never bypasses feature accounting.
+
 Ghost baselines, undo/recovery, explicit marker operations and air-only cleanup
 operations have separate paths; generic `other` builds cannot bypass readiness.
 

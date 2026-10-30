@@ -86,7 +86,6 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(before, self.world.reg.journal_path.read_bytes())
         self.world.reg.build_policy = None
         self.world.seed((1, 0), ghost_ground=True)
-        self.world.reg.change(Note((1, 0), 'plan_feature', 'house', 'house'))
         policy.validate((1, 0))
         self.world.reg.build_policy = policy.enforce
         self.assertEqual(self.world.reg.change(Build('house', 'feature', cells, cell=(0, 0)),
@@ -189,6 +188,126 @@ class ReadinessTest(unittest.TestCase):
         self.world.reg.build_policy = policy.enforce
         with self.assertRaisesRegex(Refused, 'stale plan'):
             self.world.reg.begin(plan)
+
+    def test_plan_made_before_a_new_feature_lands_is_refused_after_revalidation(self):
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        report = policy.validate((0, 0))
+        old_trees = Build('trees', 'trees', {}, cell=(0, 0),
+                          meta={'evidence_revision': 'evidence-1',
+                                'journal_revision': report['journal_revision']})
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'new house', 'house'))
+        policy.validate((0, 0))
+        self.world.seed((0, 0), features=('house',))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaisesRegex(Refused, 'stale plan.*journal'):
+            self.world.reg.begin(old_trees)
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
+    def test_explicit_parent_followup_and_reset_keep_the_base_feature_accounting(self):
+        import site_kit
+        from cell_journal import CellRegistry
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True, features=('base',))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        q = (4, 61, 4)
+        self.world.reg.change(Build('base-lower', 'feature', {q: 'minecraft:air'}, cell=(0, 0),
+                                    modifies=('base',), meta={'parent_feature': 'base'}), self.world.apply)
+        policy.validate((0, 0))
+        reset = site_kit.reset_to_base('base', ('base-lower',))
+        reset.evidence_revision = 'evidence-1'  # synthetic provider identity
+        self.world.reg.change(Build(reset.name, 'feature', reset.cells, cell=(0, 0), payload=reset,
+                                    modifies=('base', 'base-lower')), self.world.apply)
+        fresh = CellRegistry(self.world.root, self.world.blocks)
+        self.assertEqual(self.world.blocks.read(q), 'minecraft:bricks')
+        self.assertEqual(fresh.entries(plan='base-reset')[-1].meta['parent_feature'], 'base')
+        self.assertTrue(all(f.status == 'built' for f in fresh.cell((0, 0)).features))
+
+    def test_parent_followup_still_requires_prepared_neighbors_before_begin(self):
+        from cell_journal import CellRegistry
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True, features=('base',))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        cells = {(4, 61, 4): 'minecraft:air', (129, 65, 1): 'minecraft:bricks'}
+        followup = Build('base-extension', 'feature', cells, cell=(0, 0), modifies=('base',),
+                         meta={'parent_feature': 'base'})
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaisesRegex(Refused, 'needs-prep 1,0'):
+            self.world.reg.begin(followup)
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.world.reg.build_policy = None
+        self.world.seed((1, 0), ghost_ground=True)
+        policy.validate((1, 0))
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(self.world.reg.change(followup, self.world.apply).status, 'landed')
+        fresh = CellRegistry(self.world.root, self.world.blocks)
+        entry = fresh.entries(plan='base-extension')[-1]
+        self.assertEqual(entry.cells, ((0, 0), (1, 0)))
+        self.assertEqual(entry.meta['parent_feature'], 'base')
+        self.assertEqual(fresh.planning_revision(), self.world.reg.planning_revision())
+
+    def test_parent_followup_requires_a_built_parent_and_explicit_modifies(self):
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'base', 'base'))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        cells = {(4, 61, 4): 'minecraft:bricks'}
+        with self.assertRaisesRegex(Refused, 'parent feature base must be built'):
+            self.world.reg.begin(Build('base-detail', 'feature', cells, cell=(0, 0),
+                                       modifies=('base',), meta={'parent_feature': 'base'}))
+        self.world.seed((0, 0), features=('base',))
+        with self.assertRaisesRegex(Refused, 'parent feature base must be listed in modifies'):
+            self.world.reg.begin(Build('base-detail', 'feature', cells, cell=(0, 0),
+                                       meta={'parent_feature': 'base'}))
+
+    def test_old_decor_plan_is_refused_after_successful_tree_generation(self):
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        report = policy.validate((0, 0))
+        decor = Build('decor', 'decor', {}, cell=(0, 0),
+                      meta={'evidence_revision': 'evidence-1', 'journal_revision': report['journal_revision']})
+        self.world.seed((0, 0), trees=True)
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaisesRegex(Refused, 'stale plan.*journal'):
+            self.world.reg.begin(decor)
+
+    def test_ground_redo_stales_unexecuted_plans_but_preserves_current_completion(self):
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        self.world.seed((0, 0), trees=True, decor=True)
+        report = policy.check((0, 0))
+        trees = Build('trees', 'trees', {}, cell=(0, 0),
+                      meta={'evidence_revision': 'evidence-1', 'journal_revision': report['journal_revision']})
+        self.assertTrue(report['complete'])
+        self.world.seed((0, 0), ground=True)
+        self.assertTrue(policy.check((0, 0))['complete'])
+        with self.assertRaisesRegex(Refused, 'stale plan.*journal'):
+            self.world.reg.begin(trees)
+
+    def test_planning_identity_ignores_abandoned_attempts_and_non_geometry_notes(self):
+        from cell_journal import CellRegistry, Note
+        self.world.seed((0, 0), ground=True)
+        before = self.world.reg.planning_revision()
+        ticket = self.world.reg.begin(Build('trees', 'trees', {}, cell=(0, 0)))
+        ticket.abandon('no blocks changed')
+        self.world.reg.change(Note((0, 0), 'marker', 'up'))
+        self.world.reg.change(Note((0, 0), 'review', 'looks good', 'review-1'))
+        self.assertEqual(before, self.world.reg.planning_revision())
+        self.assertEqual(before, CellRegistry(self.world.root, self.world.blocks).planning_revision())
 
     def test_failed_tree_redo_does_not_invalidate_decor_but_cannot_certify_completion(self):
         from cell_readiness import ReadinessPolicy
@@ -314,8 +433,12 @@ class ReadinessTest(unittest.TestCase):
         cells = {(5, 60, 5): 'minecraft:grass_block'}
         with self.assertRaisesRegex(Refused, 'no evidence identity'):
             self.world.reg.begin(Build('ground', 'ground', cells, cell=(0, 0)))
+        with self.assertRaisesRegex(Refused, 'no journal identity'):
+            self.world.reg.begin(Build('ground', 'ground', cells, cell=(0, 0),
+                                       meta={'evidence_revision': 'evidence-1'}))
         self.assertEqual(self.world.reg.change(Build('ground', 'ground', cells, cell=(0, 0),
-                                                    meta={'evidence_revision': 'evidence-1'}),
+                                                    meta={'evidence_revision': 'evidence-1',
+                                                          'journal_revision': policy.check((0, 0))['journal_revision']}),
                                               self.world.apply).status, 'landed')
 
 
@@ -323,6 +446,78 @@ from journal_testkit import FakePaced, LiveApplyCase
 
 
 class DirectApplyTest(LiveApplyCase):
+    def test_narrow_rebuild_refuses_an_unprepared_previous_neighbor_before_backup(self):
+        import readiness_evidence
+        import site_kit
+        from cell_journal import CellRegistry
+        from cell_readiness import ReadinessPolicy
+        from unittest import mock
+        evidence = Evidence()
+        reg = CellRegistry(self.t, self.blocks)
+        writer = lambda w: self.blocks.write_many(w.cells)
+        reg.change(Build('ground', 'ground', {(1, 60, 1): 'minecraft:grass_block'}, cell=(0, 0)), writer)
+        reg.change(Build('base', 'feature', {(1, 65, 1): 'minecraft:bricks',
+                                             (129, 65, 1): 'minecraft:bricks'}, cell=(0, 0)), writer)
+        ReadinessPolicy(reg, evidence).validate((0, 0))
+        plan = site_kit.Plan('base')
+        plan.evidence_revision = 'evidence-1'
+        plan.set(1, 65, 1, 'stone')
+        before = reg.journal_path.read_bytes()
+        guard = lambda reg, build, touched: ReadinessPolicy(reg, evidence, require_plan_identity=True).enforce(build, touched)
+        with mock.patch.object(readiness_evidence, 'enforce_live', guard):
+            with self.assertRaisesRegex(SystemExit, 'needs-prep 1,0'):
+                self.run_apply(plan, cell=(0, 0))
+        self.assertEqual(before, reg.journal_path.read_bytes())
+        self.assertNotIn('structure_save_from_world', FakePaced.calls)
+        self.assertNotIn('block_fill_batch', FakePaced.calls)
+
+    def test_live_apply_refuses_the_plan_snapshot_after_journal_geometry_changes(self):
+        import readiness_evidence
+        import site_kit
+        from cell_journal import CellRegistry
+        from cell_readiness import ReadinessPolicy
+        from unittest import mock
+        evidence = Evidence()
+        reg = CellRegistry(self.t, self.blocks)
+        reg.change(Build('ground', 'ground', {(1, 60, 1): 'minecraft:grass_block'}, cell=(0, 0)),
+                   lambda w: self.blocks.write_many(w.cells))
+        ReadinessPolicy(reg, evidence).validate((0, 0))
+        plan = site_kit.Plan('old-decor')
+        plan.evidence_revision = 'evidence-1'  # synthetic provider identity
+        reg.change(Build('trees', 'trees', {}, cell=(0, 0)))
+        before = reg.journal_path.read_bytes()
+        guard = lambda reg, build, touched: ReadinessPolicy(reg, evidence, require_plan_identity=True).enforce(build, touched)
+        with mock.patch.object(readiness_evidence, 'enforce_live', guard):
+            with self.assertRaisesRegex(SystemExit, 'stale plan.*journal'):
+                self.run_apply(plan, stage='decor', cell=(0, 0))
+        self.assertEqual(before, reg.journal_path.read_bytes())
+        self.assertNotIn('structure_save_from_world', FakePaced.calls)
+        self.assertNotIn('block_fill_batch', FakePaced.calls)
+
+    def test_reset_apply_preserves_parent_authorization_at_both_live_guards(self):
+        import readiness_evidence
+        import site_kit
+        from cell_journal import CellRegistry
+        from cell_readiness import ReadinessPolicy
+        from unittest import mock
+        evidence = Evidence()
+        reg = CellRegistry(self.t, self.blocks)
+        writer = lambda w: self.blocks.write_many(w.cells)
+        q = (1, 65, 1)
+        reg.change(Build('ground', 'ground', {(1, 60, 1): 'minecraft:grass_block'}, cell=(0, 0)), writer)
+        reg.change(Build('base', 'feature', {q: 'minecraft:bricks'}, cell=(0, 0)), writer)
+        reg.change(Build('base-lower', 'feature', {q: 'minecraft:stone'}, cell=(0, 0),
+                         modifies=('base',)), writer)
+        ReadinessPolicy(reg, evidence).validate((0, 0))
+        plan = site_kit.reset_to_base('base', ('base-lower',))
+        plan.evidence_revision = 'evidence-1'  # synthetic provider identity
+        guard = lambda reg, build, touched: ReadinessPolicy(reg, evidence, require_plan_identity=True).enforce(build, touched)
+        with mock.patch.object(readiness_evidence, 'enforce_live', guard):
+            receipt = self.run_apply(plan, modifies=('base', 'base-lower'), cell=(0, 0))
+        self.assertEqual(receipt['mismatches'], 0)
+        self.assertEqual(self.blocks.read(q), 'minecraft:bricks')
+        self.assertEqual(self.entries('base-reset')[-1].meta['parent_feature'], 'base')
+
     def test_direct_apply_and_live_session_both_enforce_before_begin_and_writes(self):
         import cell_registry
         import readiness_evidence
