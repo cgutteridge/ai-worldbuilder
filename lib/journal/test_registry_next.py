@@ -20,6 +20,9 @@ class NextTaskTest(unittest.TestCase):
         (self.root / 'site' / 'archive').mkdir(parents=True)
         cellmath.reload_grid({'cell': {'size': 128, 'home': [48, -44]}})
         self.addCleanup(cellmath.reload_grid)
+        clip = mock.patch('cell_features.clip_coverage', return_value=1.0)
+        clip.start()
+        self.addCleanup(clip.stop)
 
     def in_progress(self, fid, cell=(48, -44)):
         """A feature whose apply read back with mismatches (in-progress, not in flight)."""
@@ -70,6 +73,23 @@ class NextTaskTest(unittest.TestCase):
 
     def test_idle_when_empty(self):
         self.assertIsNone(N.next_task(self.jw.reg, root=self.root))
+
+    def test_partial_clip_blocks_trees_and_can_be_dismissed(self):
+        self.jw.seed((48, -44), ground=True)
+        with mock.patch('cell_features.clip_coverage', return_value=0.125), \
+                mock.patch('cell_registry.propose_feature_candidates', return_value=[]):
+            task = N.next_task(self.jw.reg, root=self.root)
+            self.assertEqual(task['kind'], 'needs-clip-coverage')
+            self.assertEqual(task['clip_coverage'], 0.125)
+            self.assertIn('12.5%', N.format_next(task))
+            self.jw.reg.change(Note((48, -44), 'clip_coverage-dismiss', 'checked against aerial'))
+            self.assertEqual(N.next_task(self.jw.reg, root=self.root)['layer'], 'trees')
+
+    def test_partial_clip_surfaces_on_otherwise_complete_cell(self):
+        self.jw.seed((48, -44), ground=True, trees=True, decor=True)
+        with mock.patch('cell_features.clip_coverage', return_value=0), \
+                mock.patch('cell_registry.propose_feature_candidates', return_value=[]):
+            self.assertEqual(N.next_task(self.jw.reg, root=self.root)['kind'], 'needs-clip-coverage')
 
     def test_unplanned_footprint_blocks_trees_after_ground(self):
         """#140: ground done + one footprint and no plan_feature → needs-feature-plan, not trees."""

@@ -132,6 +132,49 @@ def cached_geojson_paths(clips_root: Path | None = None) -> list[Path]:
     return sorted(CACHE.glob('*.geojson'))
 
 
+def _query_bbox(src: Path) -> tuple[int, int, int, int] | None:
+    """Read inclusive building-query bounds from filenames or legacy folder names.
+
+    Custom GDAL-layer queries (e.g. multipolygons filtered to campus boundaries)
+    do not establish that buildings were queried, even inside their bounding box.
+    """
+    if not re.search(r'(?:^|\+)buildings(?:\+|-|$)', src.stem):
+        return None
+    for name in (src.stem, src.parent.name):
+        match = re.search(r'(?:^|-)bbox-(-?\d+)-(-?\d+)-(-?\d+)-(-?\d+)$', name)
+        if match:
+            x0, z0, x1, z1 = map(int, match.groups())
+            if x0 <= x1 and z0 <= z1:
+                return x0, z0, x1, z1
+        match = re.search(r'(?:^|-)r(\d+)m-at-(-?\d+)-(-?\d+)$', name)
+        if match:
+            radius, x, z = map(int, match.groups())
+            return x - radius, z - radius, x + radius, z + radius
+        match = re.search(r'(?:^|-)cell-(-?\d+)-(-?\d+)$', name)
+        if match:
+            # osm_extract's cell preset writes fixed 128-block clips.
+            x, z = map(int, match.groups())
+            return x, z, x + 127, z + 127
+    return None  # Unknown provenance is blind, never inferred from returned buildings.
+
+
+def clip_coverage(cell: tuple[int, int], *, root: Path | None = None,
+                  extents: list | None = None) -> float:
+    """Fraction of cell columns queried; read bounds without projecting feature data."""
+    from cellmath import cell_bbox
+    if extents is None:
+        root = root if root is not None else _resolve_vector_map_clips()
+        extents = [bbox for src in root.glob('*/*.geojson')
+                   if (bbox := _query_bbox(src)) is not None]
+    x0, z0, x1, z1 = cell_bbox(*cell, *cell)
+    columns = set()
+    for bx0, bz0, bx1, bz1 in extents:
+        columns.update((x, z)
+                       for x in range(max(x0, bx0), min(x1, bx1) + 1)
+                       for z in range(max(z0, bz0), min(z1, bz1) + 1))
+    return len(columns) / ((x1 - x0 + 1) * (z1 - z0 + 1))
+
+
 class OSMIndex:
     """All buildings and named highways from the vector-map clip tree, in MC float coords."""
 
@@ -147,8 +190,10 @@ class OSMIndex:
         self.extents = []     # (x0, z0, x1, z1) per clip — where the map was actually checked
         seen = set()
         for src in sorted(root.glob('*/*.geojson')):
+            bbox = _query_bbox(src)
+            if bbox is not None and bbox not in self.extents:
+                self.extents.append(bbox)
             d = json.loads(_projected(src).read_text())
-            xs, zs = [], []
             for f in d['features']:
                 g, p = f['geometry'], f['properties']
                 if not g:
@@ -163,7 +208,6 @@ class OSMIndex:
                         rings = [[mc(c) for c in r] for r in poly]
                         if p.get('building'):
                             self.buildings.append((rings, p))
-                            xs += [x for x, _ in rings[0]]; zs += [z for _, z in rings[0]]
                         else:
                             self.areas.append((rings, p))
                 elif g['type'] == 'LineString' and p.get('highway'):
@@ -176,8 +220,6 @@ class OSMIndex:
                         merged = dict(p)
                         merged['entrance'] = tags['entrance']
                         self.entrances.append((x, z, merged))
-            if xs:
-                self.extents.append((min(xs), min(zs), max(xs), max(zs)))
         self._cells = None
 
     # --- footprint raster ---------------------------------------------------
@@ -203,6 +245,10 @@ class OSMIndex:
     def covered(self, x: int, z: int) -> bool:
         """True if (x, z) lies inside a vector-map clip we actually have (else the check is blind)."""
         return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, z0, x1, z1 in self.extents)
+
+    def clip_coverage(self, cell: tuple[int, int]) -> float:
+        """Fraction of a cell's columns inside the union of queried clip bboxes."""
+        return clip_coverage(cell, extents=self.extents)
 
     def setback(self, i: int) -> float:
         """Distance from building i's closest vertex to the nearest named street centreline."""

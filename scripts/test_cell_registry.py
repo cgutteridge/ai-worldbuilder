@@ -121,6 +121,15 @@ class RegistryCliTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 R.propose_feature_candidates('48,-44')
 
+    def test_propose_features_reports_query_coverage_even_without_candidates(self):
+        with mock.patch('cell_features.clip_coverage', return_value=0.125), \
+                mock.patch('cell_features.missing_features', return_value=[]):
+            code, output = run('--root', str(self.root), 'propose-features', '--cell', '48,-44')
+        self.assertEqual(code, 0)
+        report = json.loads(output)
+        self.assertEqual(report['clip_coverage'], 0.125)
+        self.assertEqual(report['kind'], 'clip-query-coverage')
+
     def test_cells_above_ghost_names_cells_and_counts_each_kind(self):
         """#135: one view of every cell with anything above ghost, for purge counting."""
         from cell_journal import Note

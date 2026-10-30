@@ -27,6 +27,7 @@ Per-cell view (folded, never stored)::
   python3 scripts/cell_registry.py hold set tx,tz --reason R
   python3 scripts/cell_registry.py hold clear tx,tz
   python3 scripts/cell_registry.py dismiss-coverage tx,tz --warning-id ID --reason R
+  python3 scripts/cell_registry.py dismiss-clip-coverage tx,tz --reason R
   python3 scripts/cell_registry.py dismiss-feature tx,tz --feature ID --reason R
   python3 scripts/cell_registry.py note tx,tz --kind review --ref REF --body TEXT
   python3 scripts/cell_registry.py next
@@ -510,6 +511,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--warning-id', required=True)
     p.add_argument('--reason', required=True)
 
+    p = sub.add_parser('dismiss-clip-coverage', help='accept incomplete vector-map query coverage')
+    p.add_argument('cell')
+    p.add_argument('--reason', required=True)
+
     p = sub.add_parser('dismiss-feature', help='dismiss a planned feature from the cell plan (#128)')
     p.add_argument('cell')
     p.add_argument('--feature', required=True, help='feature plan id')
@@ -570,6 +575,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'propose-features':
+            from cell_features import clip_coverage
+            fraction = clip_coverage(parse_cell_id(args.cell))
+            print(json.dumps({'cell': args.cell, 'clip_coverage': fraction,
+                              'kind': 'clip-query-coverage'}, sort_keys=True))
             items = propose_feature_candidates(args.cell)
             for item in items:
                 print(json.dumps(item, sort_keys=True, default=_json_default))
@@ -596,6 +605,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == 'dismiss-coverage':
             note(reg, parse_cell_id(args.cell), 'coverage-dismiss', args.reason, args.warning_id)
             print(f'dismissed {args.warning_id} on {args.cell}')
+            return 0
+
+        if args.cmd == 'dismiss-clip-coverage':
+            from registry_next import needs_clip_coverage
+            cell = parse_cell_id(args.cell)
+            if needs_clip_coverage(reg, cell) is None:
+                raise RegistryError(f'no incomplete clip query coverage on {args.cell}')
+            note(reg, cell, 'clip_coverage-dismiss', args.reason)
+            print(f'dismissed clip query coverage on {args.cell}: {args.reason}')
             return 0
 
         if args.cmd == 'dismiss-feature':

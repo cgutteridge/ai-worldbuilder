@@ -64,7 +64,7 @@ PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # plan_feature / plan_feature-dismiss: cell plan (#128). Undo clears the build only;
 # dismiss is a separate deliberate note with a reason.
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
-              'plan_feature', 'plan_feature-dismiss')
+              'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
@@ -1004,7 +1004,7 @@ class CellRegistry:
             return self._note_cache
         st: dict = {
             'marker': None, 'holds': {}, 'warn': {}, 'open': {}, 'cells': set(),
-            'plan': {}, 'plan_dismissed': {},
+            'plan': {}, 'plan_dismissed': {}, 'clip_dismissed': set(),
         }
         for n in self._notes:
             cell, kind, ref, body = tuple(n['cell']), n['kind'], n.get('ref', ''), n.get('body', '')
@@ -1023,6 +1023,8 @@ class CellRegistry:
                 st['warn'].setdefault(cell, {}).setdefault(ref, body)
             elif kind == 'coverage-dismiss':
                 st['warn'].get(cell, {}).pop(ref, None)
+            elif kind == 'clip_coverage-dismiss':
+                st['clip_dismissed'].add(cell)
             elif kind == 'plan_feature':
                 st['plan'].setdefault(cell, {})[ref] = body
                 st['plan_dismissed'].get(cell, {}).pop(ref, None)
@@ -1431,8 +1433,15 @@ class CellRegistry:
             open_ids = self._plan_feature_ids(cell)
             if n.ref not in open_ids:
                 raise Refused(f'no planned feature {n.ref!r} on cell {list(cell)}')
+        if n.kind == 'clip_coverage-dismiss' and not n.body.strip():
+            raise Refused('dismissing clip query coverage needs a reason')
         seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
         return Receipt(seq, 'landed')
+
+    def clip_coverage_dismissed(self, cell: Cell) -> bool:
+        """Whether incomplete query coverage was deliberately accepted for this cell."""
+        self._sync()
+        return tuple(cell) in self._note_state()['clip_dismissed']
 
     def plan_dismissed_ids(self, cell: Cell) -> set[str]:
         """Feature ids deliberately dismissed from the cell plan (#128).

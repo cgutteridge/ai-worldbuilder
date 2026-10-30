@@ -113,6 +113,7 @@ class DoneTest(Base):
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
                 mock.patch.object(H, 'trees_over_roof_open', return_value=[]), \
+                mock.patch('cell_features.clip_coverage', return_value=1.0), \
                 mock.patch('cellmath.home_cell', return_value=(48, -44)):
             nxt = H.next_cell(max_ring=1)
         self.assertEqual(nxt[:2], (48, -45))

@@ -52,6 +52,15 @@ LAYER_BUILD = re.compile(
     r'^highfield_grounds_|_grounds$|^ghost_')
 
 
+def clip_coverage(cell: tuple[int, int]) -> float:
+    """Fraction of this cell queried by vector-map extracts, independent of build coverage."""
+    from osm_footprints import clip_coverage as query_coverage
+    try:
+        return query_coverage(cell)
+    except FileNotFoundError:
+        return 0.0
+
+
 def is_feature_build(name: str) -> bool:
     """Whether a build name is a feature rather than a layer pass.
 

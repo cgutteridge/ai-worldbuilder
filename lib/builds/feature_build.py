@@ -134,7 +134,7 @@ import facade_plan as facade_plan_mod  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
     Plan, apply, bid, fresh_planning_world, guard_door_frames, guard_roof_jogs,
-    is_bottom_slab, nearest_preview_colour, preview,
+    is_bottom_half_slab, nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
 
@@ -699,7 +699,7 @@ def pitched_roof_states(
     from height differences on the diagonal. Flat / ridge cells use a full
     block (even) or bottom-half slab (odd; see :func:`roof_block_y`: the slab
     sits one block above the full block of ``h - 1``, so surfaces rise by half
-    a block per step; a top slab there would match a full block, I-019 / #207).
+    a block per step; a top-half slab there would match a full block, I-019 / #207).
     Missing stair/slab variants fall back to
     the family's full block and append a warning.
 
@@ -1354,11 +1354,11 @@ class Build:
         @param z: block z
         @param s: roof block state
         """
-        if is_bottom_slab(s) and not self._is_solid(x, y - 1, z):
+        if is_bottom_half_slab(s) and not self._is_solid(x, y - 1, z):
             # a bottom-half slab never floats: wall under it when the cell below is air
             self.p.set(x, y - 1, z, self.wall)
         self.p.set(x, y, z, s)
-        if is_bottom_slab(s):
+        if is_bottom_half_slab(s):
             self.p.keep_slab_cells.add((x, y, z))
 
     def _is_solid(self, x: int, y: int, z: int) -> bool:
@@ -2644,11 +2644,12 @@ class Build:
 
         @param at: detail min corner
         @param size: detail size
-        @param mat: full-block material for the pad
+        @param mat: roof material family or full-block material for the pad
         @param supported: roof-supported horizontal cells of this detail
         """
         ax, ay, az = at
         sx, _sy, sz = size
+        mat = block_family_variants(mat)['full']
         for dx in range(sx):
             for dz in range(sz):
                 x, z = ax + dx, az + dz
@@ -2683,7 +2684,7 @@ class Build:
                 self._detail_clip_lines.append(f'detail chimney {f.no} at ({ax},{ay},{az}) cells off roof={off}; not built')
                 return
             for x, z in base:
-                self._solidify_roof_under((x, ay, z), (1, 1, 1), block_family_variants(rm)['full'], {(x, z)})
+                self._solidify_roof_under((x, ay, z), (1, 1, 1), rm, {(x, z)})
             for y, ring, interior in layers:
                 material = row.get('material', 'white_concrete')
                 band = row.get('band') or {}
