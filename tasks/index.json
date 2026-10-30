@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 211,
+  "nextTaskId": 212,
   "tasks": [
     {
       "id": 178,
@@ -29,6 +29,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Found 2026-10-29 by the designer of the Hartley Library redo (w33830050, southampton-build); not verified in game. Cause class: Translation, same family as #189. In lib/builds/feature_build.py the detail path calls self._solidify_roof_under(at, size, rm, supported) at ~2744 with the raw roof material name rm, while the other caller (~2686) converts it with block_family_variants(rm)['full']. For a slab-family material (deepslate_tile) the pad under a detail standing on a roof stair or slab is therefore written as minecraft:deepslate_tile, which does not exist (the full block is deepslate_tiles), so that cell stays air and the detail hovers. The designer avoided it by putting the ducts only on full-block cells; moving a detail onto a stair or slab brings it back. Deliver: convert once inside _solidify_roof_under (or at the ~2744 call) via block_family_variants(mat)['full'], so both callers pass the same kind of name; the dry run's unknown-block-id warning (#189) must stay silent for it. Files: lib/builds/feature_build.py, lib/builds/test_feature_build.py. Proof: unit test with a deepslate_tile roof, a detail standing on a stair and on a slab cell: the pad cell holds minecraft:deepslate_tiles and no unknown id is planned; existing detail tests pass. No live-world test. Helps: any building with a slab-family roof and details on stepped roofs, all worlds."
+    },
+    {
+      "id": 211,
+      "title": "Clip query coverage: the feature finder cannot say which cells the vector-map clips never queried",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Fixes I-041 (S-071). Cause: OSMIndex.extents (lib/sources/osm_footprints.py:166-180) is the bounding box of buildings found in each clip, not the area queried, so it under- and over-states what was checked; clips with no buildings have none. From clip folder names (not computed) cell 53,-43 (6784..6911 x -5504..-5377) is only about 12% queried, so the finder lists 14 houses and misses the rest. Deliver: (1) a clip's area is the queried bbox (parse the folder-name formats bbox-x0--z0-x1--z1 and r<N>m-at-x--z with tests, or have shims/osm_extract.py write a sidecar with the query bbox); (2) clip_coverage(cell) = fraction of the cell's columns inside any queried area, named apart from the parcel build-coverage module (lib/journal/coverage.py) and the 'coverage' journal Note; (3) shown in propose-features output, and in next (a needs-clip-coverage item, like needs-feature-plan #140) and verify (warning) when below 100% of the cell box, dismissable like dismiss-coverage. Files: lib/sources/osm_footprints.py, lib/journal/cell_features.py, scripts/cell_registry.py, lib/journal/registry_next.py, shims/osm_extract.py if a sidecar is used, and tests. Changing covered() also changes no_osm parcels and the guard's blind list: check test_osm_footprints_guard.py, test_cell_sources.py and the coverage tests. Check S-071: unit fixtures (clip whose buildings span less than its bbox; building overhanging the bbox) report the bbox fraction; live, clip_coverage for 53,-43 reports about 12%. Follow-up, world data not a tool task: re-extract clips for 53,-43 and neighbours (python3 shims/osm_extract.py --world southampton-build --at X,Z --cell --place PLACE; needs the regional PBF, tell the owner filename/source/size before any download), then the owner judges S-071 against the aerial; houses may be unmapped in OSM. Related done: #118, #140, #156, #97. Reviewed 2026-10-30."
     }
   ]
 }
