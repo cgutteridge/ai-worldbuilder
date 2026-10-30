@@ -71,6 +71,96 @@ class ReadinessTest(unittest.TestCase):
         self.evidence.revision = 'evidence-2'
         self.assertIn('validation stale', policy.check((0, 0))['blockers'])
 
+    def test_tree_leaves_can_land_in_unprepared_neighbors_and_undo_exactly(self):
+        from cell_journal import Undo
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        report = policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        cells = {(127, 61, 20): 'minecraft:oak_log',
+                 (128, 65, 20): 'minecraft:oak_leaves[persistent=true]',
+                 (127, 65, -1): 'minecraft:oak_leaves[persistent=true]'}
+        build = Build('edge_trees', 'trees', cells, cell=(0, 0),
+                      meta={'evidence_revision': 'evidence-1',
+                            'journal_revision': report['journal_revision']})
+
+        receipt = self.world.reg.change(build, self.world.apply)
+
+        self.assertEqual(receipt.status, 'landed')
+        entry = self.world.reg.entries(plan='edge_trees')[-1]
+        self.assertEqual(set(entry.cells), {(0, 0), (1, 0), (0, -1)})
+        self.assertEqual(set(entry.meta['readiness_cells']), {'0,0'})
+        for neighbor in ((1, 0), (0, -1)):
+            self.assertFalse(policy.check(neighbor)['ready'])
+            self.assertFalse(self.world.reg.cell(neighbor).trees)
+        for p, state in cells.items():
+            self.assertEqual(self.world.blocks.read(p), state)
+        self.world.reg.change(Undo('edge_trees'), self.world.apply)
+        for p in cells:
+            self.assertEqual(self.world.blocks.read(p), 'minecraft:air')
+
+    def test_tree_overhang_still_requires_prepared_trunk_cell(self):
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        self.world.reg.build_policy = ReadinessPolicy(self.world.reg, self.evidence).enforce
+        before = self.world.reg.journal_path.read_bytes()
+
+        with self.assertRaisesRegex(Refused, 'needs-prep 0,0.*validation required'):
+            self.world.reg.begin(Build('edge_trees', 'trees',
+                                       {(128, 65, 20): 'minecraft:oak_leaves'}, cell=(0, 0)))
+
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
+    def test_tree_non_leaf_overhang_and_decor_keep_neighbor_readiness(self):
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+        for pass_, state in (('trees', 'minecraft:oak_log'), ('trees', 'minecraft:stone'),
+                             ('decor', 'minecraft:oak_leaves')):
+            with self.subTest(pass_=pass_, state=state):
+                with self.assertRaisesRegex(Refused, 'needs-prep 1,0'):
+                    self.world.reg.begin(Build('edge_build', pass_, {(128, 65, 20): state},
+                                               cell=(0, 0)))
+                self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
+    def test_tree_overhang_keeps_neighbor_ownership_protection(self):
+        from cell_journal import Clash
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        p = (128, 65, 20)
+        self.world.build('neighbor_wall', 'feature', {p: 'minecraft:bricks'}, cell=(1, 0))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+
+        with self.assertRaises(Clash):
+            self.world.reg.begin(Build('edge_trees', 'trees', {p: 'minecraft:oak_leaves'}, cell=(0, 0)))
+
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.assertEqual(self.world.blocks.read(p), 'minecraft:bricks')
+
+    def test_tree_overhang_keeps_neighbor_in_flight_exclusion(self):
+        from cell_journal import InFlight
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ground=True)
+        self.world.reg.begin(Build('neighbor_wall', 'feature',
+                                   {(129, 65, 20): 'minecraft:bricks'}, cell=(1, 0)))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+
+        with self.assertRaises(InFlight):
+            self.world.reg.begin(Build('edge_trees', 'trees',
+                                       {(128, 65, 20): 'minecraft:oak_leaves'}, cell=(0, 0)))
+
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
     def test_cross_cell_feature_requires_neighbor_preparation_and_accounting(self):
         from cell_journal import Note
         from cell_readiness import ReadinessPolicy

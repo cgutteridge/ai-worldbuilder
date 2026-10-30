@@ -137,7 +137,7 @@ class ReadinessPolicy:
         return self.check(cell)
 
     def enforce(self, build, touched):
-        """Build guard before journal begin, block reads or writes; applies to all touched cells."""
+        """Guard readiness before begin; tree leaf overhang needs only its owning cell ready."""
         if build.pass_ in GHOST_PASSES:
             return {}
         operation = (build.meta or {}).get('operation')
@@ -159,8 +159,17 @@ class ReadinessPolicy:
                               for x, _y, z in build.cells).most_common(1)[0][0]
         parent = ((build.meta or {}).get('parent_feature')
                   or getattr(build.payload, 'parent_feature', None))
-        reports = [self.check(c, build.pass_) for c in sorted(touched)]
-        for report, cell in zip(reports, sorted(touched)):
+        required = set(touched)
+        if build.pass_ == 'trees':
+            import cellmath
+            # Canopy overhang is owned by the trunk cell. Neighbour preparation
+            # must not stop leaves; other writes retain the normal readiness gate.
+            # The journal still tracks every touched cell for flight/ownership/undo.
+            required = {primary} | {cellmath.cell_of(x, z, self.reg.cell_size)
+                                    for (x, _y, z), state in build.cells.items()
+                                    if not block_id(state).endswith('_leaves')}
+        reports = [self.check(c, build.pass_) for c in sorted(required)]
+        for report, cell in zip(reports, sorted(required)):
             if build.pass_ == 'feature' and cell == primary:
                 features = {f.id: f.status for f in self.reg.cell(cell).features}
                 if parent:
