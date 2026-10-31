@@ -683,6 +683,22 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                 else:
                     self.assertEqual([p[1] for p in lower], [expected_y])
 
+    def test_door_finds_live_ground_on_low_lying_cell(self):
+        class LowWorld:
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= 27 else 'minecraft:air'
+
+        grids = {'A': {'x0': 9, 'z0': 19, 'ground_y': np.full((7, 9), 28)}}
+        spec = self.spec([_entrance_row()])
+        spec['floor_min'] = 28
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=LowWorld(), zone_data=grids)
+        lower = [p for p, state in plan.cells.items() if 'iron_door' in state and 'half=lower' in state]
+        self.assertEqual([p[1] for p in lower], [29])
+        # step_out also sees the live ground (27) below the door floor (28) and lays a stair
+        stairs = [p for p, state in plan.cells.items() if 'stone_stairs' in state and p[1] == 28]
+        self.assertTrue(stairs)
+
     def test_high_live_rim_does_not_put_unzoned_door_in_roof(self):
         class HighRimWorld:
             def block(self, x, y, z):

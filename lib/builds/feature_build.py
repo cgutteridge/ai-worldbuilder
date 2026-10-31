@@ -133,7 +133,7 @@ from chimney import chimney_layers, validate_chimney
 import facade_plan as facade_plan_mod  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
-    Plan, apply, bid, fresh_planning_world, guard_door_frames, guard_roof_jogs,
+    Plan, apply, bid, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs,
     is_bottom_half_slab, nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
@@ -1434,15 +1434,6 @@ class Build:
             positions = (p for p in positions if p not in overlay)
         warm(positions)
 
-    def surf(self, x, z):
-        for y in range(75, 30, -1):
-            n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
-            if n in ('minecraft:stone', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:granite'):
-                return y
-            if n in GROUND:
-                return None
-        return None
-
     def floor_y(self, f: Feature) -> int:
         """Median lidar bare-terrain floor under the footprint, with floor_min override.
 
@@ -1777,8 +1768,8 @@ class Build:
                 if self.p.cells.get(pos) == 'minecraft:air':
                     self.set(*pos, self.wall)
 
-    def top_solid(self, x, z):
-        for y in range(70, 40, -1):
+    def top_solid(self, x, z, near):
+        for y in ground_scan_range(near):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
             if n in GROUND and n != 'minecraft:stone_stairs':
                 return y
@@ -1788,12 +1779,12 @@ class Build:
         dx, dz = DIRS[d]
         facing = TOWARD[d]
         cols = [(st[0] + dx * k, st[1] + dz * k) for k in range(1, self.spec['step_max'] + 1)]
-        self._prefetch_live((x, y, z) for x, z in cols for y in range(70, 40, -1))
+        self._prefetch_live((x, y, z) for x, z in cols for y in ground_scan_range(b))
         for k in range(1, self.spec['step_max'] + 1):
             n = (st[0] + dx * k, st[1] + dz * k)
             if n in self.owner or n in self.foreign:
                 continue
-            g = self.top_solid(*n)
+            g = self.top_solid(*n, b)
             if g is None:
                 continue
             if self.spec['ledge_stair'] and g == b + 1 and k > 4:
@@ -1952,8 +1943,8 @@ class Build:
         if not math.isfinite(outside):
             raise ValueError(f'lidar ground unavailable at {st[0]},{st[1]}')
         outside = int(outside)
-        self._prefetch_live((st[0], y, st[1]) for y in range(70, 40, -1))
-        live_y = self.top_solid(*st)
+        self._prefetch_live((st[0], y, st[1]) for y in ground_scan_range(outside))
+        live_y = self.top_solid(*st, outside)
         if live_y is None or abs(live_y - outside) > 3:
             raise ValueError(
                 f'live y={live_y}, lidar y={outside} at {st[0]},{st[1]} '
@@ -2147,7 +2138,7 @@ class Build:
                         continue
                     self.set(x, roof_y, z, f"{material['slab']}[type=bottom]")
                     if kind == 'porch_roof' and outward == depth and lateral in (-1, width):
-                        ground_y = self.top_solid(x, z)
+                        ground_y = self.top_solid(x, z, roof_y)
                         if ground_y is not None:
                             for y in range(ground_y + 1, roof_y):
                                 self.set(x, y, z, self.wall)
