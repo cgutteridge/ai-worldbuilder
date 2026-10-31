@@ -146,6 +146,19 @@ def rewrite_bottom_half_slabs(plan: 'Plan') -> int:
     return n
 
 
+GROUND_SCAN_UP = 20
+GROUND_SCAN_DOWN = 30
+
+
+def ground_scan_range(near):
+    """Live Y values to scan for natural ground around a known height, top down.
+
+    @param near: a height the caller already knows (floor, door floor or lidar ground)
+    @returns: descending ``range`` of Y values
+    """
+    return range(near + GROUND_SCAN_UP, near - GROUND_SCAN_DOWN, -1)
+
+
 class Plan:
     def __init__(self, name):
         from readiness_evidence import planning_inputs

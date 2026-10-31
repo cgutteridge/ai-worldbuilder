@@ -29,7 +29,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
-from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+from site_kit import Plan, apply, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel')
 WALL, FLOOR = 'bricks', 'spruce_planks'
@@ -291,9 +291,9 @@ class Build:
         else:
             h.rear = None
 
-    def top_solid(self, x, z):
+    def top_solid(self, x, z, near):
         # natural ground only (ignores roof fringe slabs and earlier steps of this build)
-        for y in range(70, 40, -1):
+        for y in ground_scan_range(near):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
             if n in GROUND and n != 'minecraft:stone_stairs':
                 return y
@@ -309,7 +309,7 @@ class Build:
             n = (st[0] + dx * k, st[1] + dz * k)
             if n in self.owner or n in self.foreign:
                 continue
-            g = self.top_solid(*n)
+            g = self.top_solid(*n, b)
             if g is None:
                 continue
             if self.spec['ledge_stair'] and g == b + 1 and k > 4:
