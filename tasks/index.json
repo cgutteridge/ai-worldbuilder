@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 228,
+  "nextTaskId": 229,
   "tasks": [
     {
       "id": 178,
@@ -76,6 +76,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Split from #220 during refinement 2026-10-31: missing-provider diagnostics are independent of running-world discovery. Related completed #202 fixed world activation/import timing; do not reopen or duplicate that fix without a failing case.\nProblem: redo_here against a checkout without an expected world provider can still expose an import traceback. script_env.resolve_provider_package raises FileNotFoundError; world_provider.load_world_provider wraps missing package/module as ImportError, while run_world_provider already emits SystemExit. Trace the actual import path before choosing the catch boundary.\nAcceptance: redo_here and affected equivalent CLI paths return nonzero with a concise message naming the selected world, missing package/module and local-provider configuration to inspect. Keep Python-library exceptions useful; convert only the known missing-provider condition at the appropriate CLI boundary. Never blanket-catch ImportError/FileNotFoundError, hide exceptions raised inside an existing provider, silently select another world, install a provider or change system/world resolution order. Discovery in #220 must work without providers regardless.\nVerification: temporary synthetic world/package fixtures for missing package, missing module, a valid provider and an unrelated exception inside a provider that remains visible as a real bug. Extend existing provider/redo CLI tests without loading world-owned providers. No live server needed."
+    },
+    {
+      "id": 228,
+      "title": "Reapply refusal for a missing builder gives the right recovery advice",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Found by running scripts/reapply_feature.py --world southampton-build houses_kitchener_road_w176648814 (dry run). It refuses correctly: 'no available recorded builder; refusing undo (legacy/inferred builders need review)'. But the message then says 'Inspect site_recover status for an interrupted write, or reconcile for drift', and ends 'undo completed=False'. Neither fits: nothing was interrupted and nothing drifted; the cause is a missing builder record, and no undo was attempted. Give each refusal reason its own advice: no recorded builder -> say the feature has no replayable builder and point to redo (redesign) as the way forward; invalid or missing spec -> name the spec problem; only a failure after a successful undo mentions undone state, site_recover and reconcile. Drop 'undo completed=False' when no undo ran. Add a test per reason in test_reapply_feature. Related to #225 (provenance); small enough to ship apart from it."
     }
   ]
 }
