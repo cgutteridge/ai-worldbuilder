@@ -1434,15 +1434,6 @@ class Build:
             positions = (p for p in positions if p not in overlay)
         warm(positions)
 
-    def surf(self, x, z):
-        for y in range(75, 30, -1):
-            n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
-            if n in ('minecraft:stone', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:granite'):
-                return y
-            if n in GROUND:
-                return None
-        return None
-
     def floor_y(self, f: Feature) -> int:
         """Median lidar bare-terrain floor under the footprint, with floor_min override.
 

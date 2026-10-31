@@ -117,12 +117,6 @@ class Build:
             self.keep.add((x, y, z))
         self.set(x, y, z, st)
 
-    def ground_top(self, x, z):
-        y = 41
-        while (self.live.block(x, y + 1, z) or '').split('[')[0] in GROUND:
-            y += 1
-        return y
-
     def surf(self, x, z):
         for y in range(75, 30, -1):
             n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]

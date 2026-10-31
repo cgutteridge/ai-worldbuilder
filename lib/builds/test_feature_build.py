@@ -695,6 +695,9 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             plan = F.build(spec, footprints={'A': self.cells}, world=LowWorld(), zone_data=grids)
         lower = [p for p, state in plan.cells.items() if 'iron_door' in state and 'half=lower' in state]
         self.assertEqual([p[1] for p in lower], [29])
+        # step_out also sees the live ground (27) below the door floor (28) and lays a stair
+        stairs = [p for p, state in plan.cells.items() if 'stone_stairs' in state and p[1] == 28]
+        self.assertTrue(stairs)
 
     def test_high_live_rim_does_not_put_unzoned_door_in_roof(self):
         class HighRimWorld:
