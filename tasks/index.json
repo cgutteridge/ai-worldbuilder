@@ -13,15 +13,6 @@
       "notes": "Problem: migration to ~/Projects/minecraft-mcp was completed on 2026-10-28 (#177), but donor instances and launcher profiles remain. This is owner-machine maintenance, not a tool capability change. Elapsed days alone do not establish successful use or authorize deletion.\nScope: Southampton Refine/instance, Minecraft Magic/instance, launcher profiles southampton-refine and fabric-loader-26.2, and Minecraft Magic/README.md. Plan: docs/plans/shared-minecraft-instance.md.\nAcceptance: before removal, confirm successful standalone-instance use, inventory remaining saves, verify the recorded backups under ~/Projects/minecraft-save-backups/2026-10-28/, and obtain the owner's explicit decision on the scratch save New World (the plan requires this). Confirm Magic has no other save worth keeping. Retain backups and the relocated private sealed answers at ~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json; do not display their contents. Remove only the agreed donor folders/profiles and update the Magic README. Do not execute any of these actions as part of backlog refinement.\nVerification: read-only inventory before removal; afterward check the agreed profiles/paths and that the standalone instance still references its intended saves. No tool unit test needed."
     },
     {
-      "id": 219,
-      "title": "Correct redo instructions for world selection, ground preservation and slow applies",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Problem: .claude/skills/redo/SKILL.md omits required --world arguments in executable examples, applies feature design roles to generated layers, and tells ground redo to undo trees/decor. The last instruction contradicts the owner rule implemented in #217: ground redo preserves trees/decor completion and does not gain permission to overwrite their blocks.\nScope: docs only, on main. Update redo commands to pass --world <world> where the target CLI accepts/requires it; use site_lock.py --world <world> run for live work and describe background execution from the start. Restrict designer/builder roles to feature redesign. Ground redo must retain tree/decor masks and ownership protections; a clash stops with a useful explanation rather than silently clearing them. Trees redo may clear decor but must explicitly report that it remains undone unless requested again.\nAcceptance: feature, trees, decor and ground branches consistently identify the world, lock live work, check command failure and readback, and release the lock. No instruction can bypass #217 or hide a failed hover with a pipeline. Add the reported approximately 16-minute combined trees+decor apply to rules/slow-commands.md as an aggregate observation, not an invented duration for each layer. Keep manual instructions usable until #223/#224 land.\nVerification: compare documented arguments against the actual CLI parsers and review the ground/tree transitions against #217. No live apply or new unit tests for prose. Source: redo-session retro items 1, 4, 7; code review 2026-10-31.\nOwner decision 2026-10-31 (#221): overhead viewing belongs to redo; direct layer applies remain independent of player position. Document checked redo movement without proposing a universal apply guard."
-    },
-    {
       "id": 220,
       "title": "Identify the running save and its matching world checkout without loading providers",
       "status": "todo",
@@ -55,7 +46,6 @@
       "priority": "medium",
       "complexity": "xs",
       "blockedBy": [
-        219,
         223
       ],
       "notes": "Problem: once #223 exists, parallel manual recipes in .claude/skills/redo/SKILL.md would drift from executable behaviour.\nScope: docs only. After #219 and #223, trees/decor/ground branches become locate, inspect the wrapper dry run, then run its explicit --apply under the documented lock/background contract. Keep feature redesign separate and retain the meaning of redo versus reapply established by #225 when available; do not make #225 a prerequisite for layer docs.\nAcceptance: examples match the wrapper's actual parser; world selection, layer ordering, cleared-but-not-requested layers, ground preservation (#217), hover behaviour, nonzero exit and recovery messages are described once. No nested lock acquisition and no implication that background launch means completion. Remove superseded manual sequences rather than keeping two authoritative paths.\nVerification: review examples against #223 CLI help and its orchestration tests; no live apply or prose-only unit tests."
