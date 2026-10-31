@@ -1858,6 +1858,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Trees currently pass planning but the shared apply readiness gate refuses crowns touching an unprepared neighbour. Require preparation and landed ground/features for the trunk-owning cell; leaf-only overhang must not require neighbouring cells to be prepared. Keep touched-cell journal ownership, in-flight exclusion, collision protection and exact undo. Do not relax readiness for features, decor or cross-cell trunks. Add synthetic journal-boundary regression tests and update foliage/overhang rules. Scope excludes the separate proposal for trunk surfaces and one-block edge adjustments. Implement on a task branch in a worktree, test, review and ship.\nCompleted: implementation 74be860, merged on main in e9b41ee. The readiness gate exempts leaf-only neighbouring cells, while preserving owning-cell prerequisites, touched-cell tracking, ownership conflicts, in-flight exclusion and exact undo. Synthetic regressions, focused tests, full commit-hook suite, branch-tip suite and post-merge full suite passed; independent ship review APPROVE. Worktree and task branch removed by ship_branch."
+    },
+    {
+      "id": 221,
+      "title": "Decide whether hovering is a redo requirement or a general layer-apply guard",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Decision resolved by owner on 2026-10-31: 'Handle viewing in redo; keep apply independent'. Do not add a player-position, proximity or viewing-direction guard to direct trees/decor/ground apply commands. The original universal hover guard proposal is rejected; no implementation is claimed here. Checked movement and overhead viewing before/after player-standing redo belong to #223, with documentation in #219/#224. Observed cause: a failed move was hidden by a pipeline, so redo must propagate movement failures. Decision task complete; wrapper implementation remains todo."
     }
   ]
 }
