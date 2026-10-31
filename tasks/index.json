@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 229,
+  "nextTaskId": 232,
   "tasks": [
     {
       "id": 178,
@@ -85,6 +85,24 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Found by running scripts/reapply_feature.py --world southampton-build houses_kitchener_road_w176648814 (dry run). It refuses correctly: 'no available recorded builder; refusing undo (legacy/inferred builders need review)'. But the message then says 'Inspect site_recover status for an interrupted write, or reconcile for drift', and ends 'undo completed=False'. Neither fits: nothing was interrupted and nothing drifted; the cause is a missing builder record, and no undo was attempted. Give each refusal reason its own advice: no recorded builder -> say the feature has no replayable builder and point to redo (redesign) as the way forward; invalid or missing spec -> name the spec problem; only a failure after a successful undo mentions undone state, site_recover and reconcile. Drop 'undo completed=False' when no undo ran. Add a test per reason in test_reapply_feature. Related to #225 (provenance); small enough to ship apart from it."
+    },
+    {
+      "id": 229,
+      "title": "Measure where a layer apply spends its time and recommend fixes",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Investigation, not optimisation: change no behaviour. A trees+decor redo of one cell took ~16 min (trees ~13 min for 1308 fills / 9265 blocks, decor ~3 min for 612 fills / 2533 blocks); the process used under a minute of CPU early on, so the wait looks like MCP round trips, but this is inference, not measurement. Add stage timings (surface warm-up, planning, fills, readback, journal writes) to the layer apply output or report, run on one already-built cell under the lock via redo_layer, with enough runs to show variation (state how many). Deliverable: a short finding in rules/slow-commands.md with measured stage times, plus a ranked list of fixes with estimated savings (candidates, untested: merge adjacent boxes into larger fills, fewer and larger readback scans, avoid re-reading surface already probed). Do not start a fix here; file one task per fix that the numbers justify. Do not run while another apply holds the site lock. Related: #222 (counts reporting), #223 (redo_layer)."
+    },
+    {
+      "id": 231,
+      "title": "House build floor reference scans a fixed live Y range, failing on low ground",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Split from #230 during review. lib/builds/house_build.py surf() scans live Y 75..31 and floor_y() takes the median of those plot-ring surfaces, so on low-lying cells (ground ~y28, e.g. Portswood 53,-42) it finds nothing and fails, unlike feature_build.floor_y which uses lidar DTM. rules/terrace-builds.md says houses go through house_build, so this is the documented path. Fix: take the floor reference from lidar (as feature_build does) or pass a height hint into ground_scan_range. Test: a low-ground house_build fixture (ground y28). Also add a low-ground test for porch_roof support columns (top_solid(x, z, roof_y)) in feature_build."
     }
   ]
 }
