@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 219,
+  "nextTaskId": 226,
   "tasks": [
     {
       "id": 178,
@@ -20,6 +20,75 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Trees currently pass planning but the shared apply readiness gate refuses crowns touching an unprepared neighbour. Require preparation and landed ground/features for the trunk-owning cell; leaf-only overhang must not require neighbouring cells to be prepared. Keep touched-cell journal ownership, in-flight exclusion, collision protection and exact undo. Do not relax readiness for features, decor or cross-cell trunks. Add synthetic journal-boundary regression tests and update foliage/overhang rules. Scope excludes the separate proposal for trunk surfaces and one-block edge adjustments. Implement on a task branch in a worktree, test, review and ship."
+    },
+    {
+      "id": 219,
+      "title": "Redo skill: correct commands and background applies",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Docs only; commit straight to main. Every command in the redo skill carries --world <world> (mc_player.py, mask_undo.py, trees_layer.py, decor_layer.py, ground_layer.py), matching AGENTS.md. Build-roles section applies to feature redos only (trees/decor/ground plans are script-generated). Apply steps say run in the background. Add typical times for trees_layer --apply and decor_layer --apply to rules/slow-commands.md (a trees+decor apply took ~16 min). Source: retro of the 'redo trees and decor' session, items 1, 4, 7."
+    },
+    {
+      "id": 220,
+      "title": "Resolve the active world from the running server",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Add a which_world command printing the worlds/ checkout whose world.json save_path matches the running server's save; point to it from the AGENTS.md Start list and the redo skill's Locate step. redo_here.py (and other world-touching CLIs) fail with one clear line when a provider package is missing, instead of a FileNotFoundError traceback. Today the agent had to run redo_here.py against all four checkouts; three crashed on a missing providers/uos-portals."
+    },
+    {
+      "id": 221,
+      "title": "Layer apply refuses when the player is not hovering",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "trees_layer, decor_layer and ground_layer refuse --apply unless the player is within N blocks of the cell (above it, looking down); the error names the mc_player.py move command to fix it. Makes hover a checked precondition: in the retro session a hover call failed silently (output piped to tail) and the apply ran anyway. Optional ticket; drop if too speculative."
+    },
+    {
+      "id": 222,
+      "title": "Layer dry runs summarise, apply reports planned-vs-written",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Dry runs print counts by reason (e.g. 12 skipped: trunk blocked) with per-item detail written to a file. Apply reports the gap between planned and written blocks with the reason, so a clean readback cannot hide a short write (decor planned 2582 cells, wrote 2533, unexplained). Surface the hedge 'above lidar ground' warnings as a counted summary line. Covers trees, decor and ground layers."
+    },
+    {
+      "id": 223,
+      "title": "One command for a layer redo",
+      "status": "blocked",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        221,
+        222
+      ],
+      "notes": "scripts/redo_layer.py --world W --cell tx,tz --layers trees,decor: claim lock via site_lock, mask_undo for existing masks, dry run, apply (background-friendly), hover before and after, release lock, party-cheer cue. Fail closed on mask conflicts and readback mismatches. Tests colocated. Implement on a task branch."
+    },
+    {
+      "id": 224,
+      "title": "Redo skill calls the layer wrapper",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "xs",
+      "blockedBy": [
+        219,
+        223
+      ],
+      "notes": "Trees, decor and ground branches of the redo skill reduce to locate then run redo_layer.py; remove the repeated lock, hover and roles text from each branch. Docs only."
+    },
+    {
+      "id": 225,
+      "title": "Reapply a built feature from its recorded builder",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "'Reapply this feature' has no answer today: redo_here.py reports script null without saying how a feature was built, and feature_build.py resolves spec paths against the cwd, not --world (a world-relative path gave file-not-found, a repo-relative one reached validation). Report the builder (script or spec path) from the feature's journal entry in redo_here.py; resolve feature_build spec paths against the active world; add a reapply row to the redo skill: re-run the recorded builder with no redesign (and undo-first as for redo), and stop with a clear message when the spec no longer validates (the case found: houses_kitchener_road_w176648814 spec has no storeys although the journal says it was built). Decide and document in the skill what reapply means versus redo. Source: retro item 6."
     }
   ]
 }
