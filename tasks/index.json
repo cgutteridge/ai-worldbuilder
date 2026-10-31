@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 232,
+  "nextTaskId": 239,
   "tasks": [
     {
       "id": 178,
@@ -103,6 +103,69 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Split from #230 during review. lib/builds/house_build.py surf() scans live Y 75..31 and floor_y() takes the median of those plot-ring surfaces, so on low-lying cells (ground ~y28, e.g. Portswood 53,-42) it finds nothing and fails, unlike feature_build.floor_y which uses lidar DTM. rules/terrace-builds.md says houses go through house_build, so this is the documented path. Fix: take the floor reference from lidar (as feature_build does) or pass a height hint into ground_scan_range. Test: a low-ground house_build fixture (ground y28). Also add a low-ground test for porch_roof support columns (top_solid(x, z, roof_y)) in feature_build."
+    },
+    {
+      "id": 232,
+      "title": "Concurrent cell prepares keep invalidating each other's readiness validation",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT (design choice). Seen 2026-10-31 on Portswood Rec (53,-42) with neighbour sessions preparing 52,-42/52,-43: `prepare --apply` on one cell changed the readiness revision of neighbouring cells, so a separate prepare then apply was refused 'validation stale' four times; builders had to chain prepare && apply in one shell command. Revision = content_id([POLICY, facts revision, plan_identity]) in lib/journal/cell_readiness.py; I did not find which input changes (suspect vector-map extract rewrite or neighbour plan notes). Questions: should validation of cell A depend on neighbour state at all? Should apply refresh validation itself under the lock? Decide, then fix."
+    },
+    {
+      "id": 233,
+      "title": "prepare --apply records a duplicate plan_feature on every run (ambiguous legacy plan warning)",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT. On 53,-42 repeated `prepare --apply` added a second plan `houses_brickfield_road` for the same 6 houses already planned as houses_brickfield_road_w176633174, with warning 'ambiguous legacy plan ... no readable handoff spec'; a duplicate `houses_kitchener_road` (bare id from the 2026-10-29 build in row -43) also showed planned in 53,-42. I dismissed both with dismiss-feature. Decide whether prepare should skip groups already covered by a spec-backed plan, and how legacy bare ids should be matched."
+    },
+    {
+      "id": 234,
+      "title": "Feature builds across a cell edge silently invalidate a finished neighbour and may generate ghost cells",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT (policy). Applying houses_kitchener_road_w176634502 (footprint z -5382..-5343) reached 5 blocks into finished cell 53,-43 and marked its trees/decor stale (trees=False, decor=False). An earlier apply also generated a lidar ghost cell at 56,-40 (230k blocks, 'ghost-ground' journal seq 620) that the user did not ask for. Decide: warn/confirm before an apply touches a done neighbour; keep or drop frontier ghost generation on feature applies; whether edge fringe (roof overhang) should invalidate trees/decor at all."
+    },
+    {
+      "id": 235,
+      "title": "Front glazing is refused on angled frontages (window frame check rejects panes)",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT (design). Designers reported front glazing of 7-25% on Brickfield Road and Kitchener Road groups because angled frontage breaks into 1-2 cell steps with air corners and the window frame check rejects most panes; group mode also forces one roof material for a whole terrace (B168 brick roof and B174 grey roof come out wrong), and chimneys/bays are omitted. Decide how much to invest: relax the frame check for stepped faces, per-house roof material in group mode, chimneys."
+    },
+    {
+      "id": 236,
+      "title": "reapply_feature refuses legacy house builds with no recorded builder; house_build apply bypasses the guard",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT. houses_kitchener_road_w176658416 could not be reapplied (reapply_feature: no available recorded builder). At the owner's request I applied its old spec directly with house_build.py --apply under the lock (31905 positions, 0 mismatches), which bypasses the legacy-builder refusal and still leaves no recorded builder. Decide whether to backfill builder records for legacy spec-backed features (links #225, #228) so reapply works, and whether direct spec apply should be allowed for them."
+    },
+    {
+      "id": 237,
+      "title": "World provider osm_extract.py: ogr2ogr ran without OSM_CONFIG_FILE; duplicates lib/sources",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT. In worlds/southampton-build/providers/geofabrik-hampshire/osm_extract.py run_ogr2ogr passed no --config OSM_CONFIG_FILE, so GDAL 3.13's default schema (no `amenity` on points) failed the furniture preset and blocked `prepare --apply`. I patched it in the world checkout (osm_config(): world downloads/osmconf.ini else TOOL_ROOT/config/osmconf.ini); the patch is uncommitted and has no test, on top of the owner's existing uncommitted edits. The world provider duplicates the presets and run_ogr2ogr in lib/sources/geofabrik_provider.py; decide whether to delete the copy and call the tool one. Also: manifest hints from prepare (`ref_manifest.py add ...` for prepared-53--42 and prepared-54--42, 52,-42, 52,-43) were not run."
+    },
+    {
+      "id": 238,
+      "title": "Background cell sessions downloaded aerial tiles without authorization",
+      "status": "blocked",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "NEEDS USER INPUT (process). The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs."
     }
   ]
 }
