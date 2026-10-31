@@ -1849,6 +1849,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Owner rule 2026-10-30: redoing GROUND must not invalidate trees or decor. Generating/regenerating trees must mark decor as needing a redo. Change the journal-derived completion rules and align status/next/verify/readiness consumers; do not implement a second progress store. Preserve existing block ownership, masks, clash checks and recovery safeguards: preserving completion does not authorize overwriting trees/decor. Acceptance: after landed ground, trees and decor, a successful ground redo leaves trees/decor complete; a subsequent successful trees generation leaves trees complete and decor incomplete, requiring decor again. Cover initial trees generation after decor where valid, repeated tree generation, journal reload, and failed/abandoned/recovered applies so only durable successful outcomes drive the intended transitions. Coordinate #214 so readiness freshness does not indirectly reinstate ground-to-trees/decor invalidation. Plan: docs/plans/split-next-new-cell-vs-overnight.md. Task only; no implementation yet.\n2026-10-30: completed and locally merged in 2340f08 (implementation 88ac28d, review fixes 7b54da2). Durable journal transitions preserve landed trees/decor on ground redo, while successful trees generation/regeneration invalidates decor. Regressions cover initial/repeated trees, reload, failed/abandoned/recovered outcomes, effective completion and block-safety paths. Existing ownership/mask/clash/recovery safeguards remain; no second progress store. Full suite, commit hooks and post-merge checks passed; independent Standards/Spec reviews and fresh ship review approved. Current usage: docs/cell-readiness.md. No remote push."
+    },
+    {
+      "id": 218,
+      "title": "Allow tree canopy overhang into unprepared neighbouring cells",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Trees currently pass planning but the shared apply readiness gate refuses crowns touching an unprepared neighbour. Require preparation and landed ground/features for the trunk-owning cell; leaf-only overhang must not require neighbouring cells to be prepared. Keep touched-cell journal ownership, in-flight exclusion, collision protection and exact undo. Do not relax readiness for features, decor or cross-cell trunks. Add synthetic journal-boundary regression tests and update foliage/overhang rules. Scope excludes the separate proposal for trunk surfaces and one-block edge adjustments. Implement on a task branch in a worktree, test, review and ship.\nCompleted: implementation 74be860, merged on main in e9b41ee. The readiness gate exempts leaf-only neighbouring cells, while preserving owning-cell prerequisites, touched-cell tracking, ownership conflicts, in-flight exclusion and exact undo. Synthetic regressions, focused tests, full commit-hook suite, branch-tip suite and post-merge full suite passed; independent ship review APPROVE. Worktree and task branch removed by ship_branch."
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 226,
+  "nextTaskId": 227,
   "tasks": [
     {
       "id": 178,
@@ -11,15 +11,6 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner's machine only, after a few days of use from ~/Projects/minecraft-mcp: delete Southampton Refine/instance and Minecraft Magic/instance (the Refine one still holds the scratch save 'New World', backed up in ~/Projects/minecraft-save-backups/2026-10-28/, and bakeoff-sealed/truth.json); remove launcher profiles 'southampton-refine' and 'fabric-loader-26.2'; update Minecraft Magic/README.md to name the new instance. Plan: docs/plans/shared-minecraft-instance.md.\n2026-10-28: #177 completed; private key relocated. Still deferred by the required few days of standalone-instance use; donor folders/profiles and Magic README retirement remain pending. Do not delete early. Backups remain at the recorded location."
-    },
-    {
-      "id": 218,
-      "title": "Allow tree canopy overhang into unprepared neighbouring cells",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Trees currently pass planning but the shared apply readiness gate refuses crowns touching an unprepared neighbour. Require preparation and landed ground/features for the trunk-owning cell; leaf-only overhang must not require neighbouring cells to be prepared. Keep touched-cell journal ownership, in-flight exclusion, collision protection and exact undo. Do not relax readiness for features, decor or cross-cell trunks. Add synthetic journal-boundary regression tests and update foliage/overhang rules. Scope excludes the separate proposal for trunk surfaces and one-block edge adjustments. Implement on a task branch in a worktree, test, review and ship."
     },
     {
       "id": 219,
@@ -89,6 +80,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "'Reapply this feature' has no answer today: redo_here.py reports script null without saying how a feature was built, and feature_build.py resolves spec paths against the cwd, not --world (a world-relative path gave file-not-found, a repo-relative one reached validation). Report the builder (script or spec path) from the feature's journal entry in redo_here.py; resolve feature_build spec paths against the active world; add a reapply row to the redo skill: re-run the recorded builder with no redesign (and undo-first as for redo), and stop with a clear message when the spec no longer validates (the case found: houses_kitchener_road_w176648814 spec has no storeys although the journal says it was built). Decide and document in the skill what reapply means versus redo. Source: retro item 6."
+    },
+    {
+      "id": 226,
+      "title": "Allow evidence-backed tree rooting on hard surfaces and one-block edge shunts",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Accepted tree shunt plan: replace lawn-only/material allowlists with evidence-led rooting, following the revised decor approach. Concrete or other hard surface alone must not reject an evidenced tree; allow lawns, gravel, paved courtyards, plazas and pavements, including unresolved small planting pits. Trunks must not root in carriageway or water; apply that check to the trunk ground footprint, not the crown centre or canopy footprint. When an evidenced trunk falls on the edge of carriageway/water, allow at most one block of adjustment onto an immediately adjacent valid rooting position. Choose deterministically, keep the canopy aligned with the observed crown as closely as possible, and record the original position, adjusted position and reason. Never chain adjustments or move farther until a tree fits. If no valid position exists within one block, leave unplaced with a review reason. Canopies may overhang carriageway, water and neighbouring cells subject to existing collision, ownership and mask rules; #218 already permits leaf-only overhang into unprepared neighbours. Preserve feature-zone protection and trunk ownership within the planting cell; do not change ground merely to legalize a tree. Align foliage rules, planners/review images and reports; add synthetic tests for legal hard ground, successful one-block edge shunt, no legal neighbour, maximum distance, deterministic choice, blocked trunk and unaffected canopy overhang. Backlog only; not implemented."
     }
   ]
 }

@@ -43,7 +43,10 @@ Direct `live_session`/`open_registry` callers supplying a real `Build` must carr
 `meta={'evidence_revision': CHECK_SOURCE_REVISION, 'journal_revision': CHECK_JOURNAL_REVISION}`
 from their planning inputs or pass the originating Plan as `payload`. A stale or
 absent identity is refused.
-Every touched cell is checked, including neighbouring cells of a feature. The
+Every touched cell is checked, including neighbouring cells of a feature, except
+for leaf-only tree canopy overhang: that needs readiness only in the trunk-owning
+cell. All touched cells remain tracked for ownership, in-flight exclusion and undo.
+The
 journal planning identity covers landed geometry and plan/dismissal assumptions;
 validation, marker and review notes, and abandoned attempts do not change it.
 This identity protects unexecuted plans and is separate from layer completion:
