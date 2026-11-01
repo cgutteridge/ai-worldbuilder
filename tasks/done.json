@@ -1885,6 +1885,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Found building Portswood Rec (cell 53,-42, ground ~y28): feature_build refused every door with 'live y=None' because top_solid and the step_out/door-floor prefetch scanned only live Y 70..41 (same hardcoded range in house_build.top_solid). Fix: site_kit.ground_scan_range(near) = near+20 down to near-30; top_solid takes a known height (floor, lidar ground, or roof_y for porch columns). Removed unused surf (feature_build) and ground_top (house_build). Tests: test_door_finds_live_ground_on_low_lying_cell (door + step_out at ground y28). Branch task/230-low-ground-door-scan. Left open: house_build floor_y/surf on low ground (#231)."
+    },
+    {
+      "id": 239,
+      "title": "Shorten generic house chimneys and cap them with a flower pot",
+      "status": "done",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Owner request: generic house_build chimney brickwork ends at local ridge Y+1, flower_pot at ridge Y+2. Keep placement and lower supporting brickwork unchanged. Verify generated roof/chimney blocks with synthetic geometry; existing world builds require reapply separately. Implemented in be862b2; reviewed APPROVE and merged locally via ship_branch. Focused synthetic ridge tests and full precommit/branch/main suites passed. No live rebuild or remote push."
     }
   ]
 }
