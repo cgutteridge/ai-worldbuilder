@@ -198,6 +198,15 @@ def validate_glazing_rows(
             bad = [c for c in row['rhythm'] if c not in 'WB_']
             if bad:
                 raise FacadePlanError(f'{path} rhythm chars must be W/B/_ (got {bad!r})')
+        corners = row.get('corner_glazing', [])
+        if not isinstance(corners, list):
+            raise FacadePlanError(f'{path} corner_glazing must be a list')
+        for corner in corners:
+            if not isinstance(corner, dict) or not isinstance(corner.get('at'), list) or len(corner['at']) != 2 or not all(type(v) is int for v in corner['at']):
+                raise FacadePlanError(f'{path} corner_glazing needs at: [x,z]')
+            evidence = _validate_provenance(corner.get('provenance'), path)
+            if evidence['source'] not in ('photo_read', 'aerial') or prov.is_unresolved(evidence):
+                raise FacadePlanError(f'{path} corner glazing needs resolved photo/aerial provenance')
         if 'wall' in row and row['wall'] is not None and not isinstance(row['wall'], str):
             raise FacadePlanError(f'{path} wall must be a string')
 

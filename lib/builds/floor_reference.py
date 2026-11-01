@@ -37,3 +37,38 @@ def floor_reference(name, label, cells, floor_min=None, grid=None):
         raise SystemExit(f'{name} {label}: lidar DTM has no valid ground under footprint')
     y = int(statistics.median(values))
     return max(y, floor_min) if floor_min is not None else y
+
+
+def outside_ground(positions, grid=None):
+    """Sample known outside terrain in one batch; absent/nonfinite DTM stays unknown.
+
+    @param positions: exterior (x, z) columns
+    @param grid: optional prepared ground_y/x0/z0 grid
+    @returns: mapping from column to terrain block Y or None
+    """
+    positions = sorted(set(positions))
+    result = dict.fromkeys(positions)
+    if not positions:
+        return result
+    if grid is not None:
+        ground = np.asarray(grid['ground_y'])
+        for x, z in positions:
+            ix, iz = x - grid['x0'], z - grid['z0']
+            if 0 <= iz < ground.shape[0] and 0 <= ix < ground.shape[1]:
+                y = float(ground[iz, ix])
+                if math.isfinite(y):
+                    result[x, z] = int(y)
+        return result
+    import lidar_provider as lp
+    from world_frame import load_frame, mc_grid_to_en
+    lidar = lp.tile_client(download=False)
+    xs, zs = zip(*positions)
+    if lidar.missing('DTM', *lp.mc_box_en(min(xs), min(zs), max(xs), max(zs))):
+        return result
+    frame = load_frame()
+    east, north = mc_grid_to_en(np.array(xs), np.array(zs), frame)
+    heights = np.trunc(lidar.sample('DTM', east, north, True)) + frame.y_offset
+    for pos, height in zip(positions, heights):
+        if math.isfinite(float(height)):
+            result[pos] = int(height)
+    return result
