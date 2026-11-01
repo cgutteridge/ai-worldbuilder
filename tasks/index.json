@@ -96,15 +96,6 @@
       "notes": "Investigation, not optimisation: change no behaviour. A trees+decor redo of one cell took ~16 min (trees ~13 min for 1308 fills / 9265 blocks, decor ~3 min for 612 fills / 2533 blocks); the process used under a minute of CPU early on, so the wait looks like MCP round trips, but this is inference, not measurement. Add stage timings (surface warm-up, planning, fills, readback, journal writes) to the layer apply output or report, run on one already-built cell under the lock via redo_layer, with enough runs to show variation (state how many). Deliverable: a short finding in rules/slow-commands.md with measured stage times, plus a ranked list of fixes with estimated savings (candidates, untested: merge adjacent boxes into larger fills, fewer and larger readback scans, avoid re-reading surface already probed). Do not start a fix here; file one task per fix that the numbers justify. Do not run while another apply holds the site lock. Related: #222 (counts reporting), #223 (redo_layer)."
     },
     {
-      "id": 231,
-      "title": "House build floor reference scans a fixed live Y range, failing on low ground",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Split from #230 during review. lib/builds/house_build.py surf() scans live Y 75..31 and floor_y() takes the median of those plot-ring surfaces, so on low-lying cells (ground ~y28, e.g. Portswood 53,-42) it finds nothing and fails, unlike feature_build.floor_y which uses lidar DTM. rules/terrace-builds.md says houses go through house_build, so this is the documented path. Fix: take the floor reference from lidar (as feature_build does) or pass a height hint into ground_scan_range. Test: a low-ground house_build fixture (ground y28). Also add a low-ground test for porch_roof support columns (top_solid(x, z, roof_y)) in feature_build."
-    },
-    {
       "id": 232,
       "title": "Concurrent cell prepares keep invalidating each other's readiness validation",
       "status": "blocked",
@@ -134,7 +125,7 @@
     {
       "id": 235,
       "title": "Choose panes or solid glass for clean windows on stepped frontages",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],

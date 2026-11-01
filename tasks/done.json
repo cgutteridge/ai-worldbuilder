@@ -1894,6 +1894,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "Owner request: generic house_build chimney brickwork ends at local ridge Y+1, flower_pot at ridge Y+2. Keep placement and lower supporting brickwork unchanged. Verify generated roof/chimney blocks with synthetic geometry; existing world builds require reapply separately. Implemented in be862b2; reviewed APPROVE and merged locally via ship_branch. Focused synthetic ridge tests and full precommit/branch/main suites passed. No live rebuild or remote push."
+    },
+    {
+      "id": 231,
+      "title": "House build floor reference scans a fixed live Y range, failing on low ground",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Split from #230 during review. lib/builds/house_build.py surf() scans live Y 75..31 and floor_y() takes the median of those plot-ring surfaces, so on low-lying cells (ground ~y28, e.g. Portswood 53,-42) it finds nothing and fails, unlike feature_build.floor_y which uses lidar DTM. rules/terrace-builds.md says houses go through house_build, so this is the documented path. Fix: take the floor reference from lidar (as feature_build does) or pass a height hint into ground_scan_range. Test: a low-ground house_build fixture (ground y28). Also add a low-ground test for porch_roof support columns (top_solid(x, z, roof_y)) in feature_build.\nCompleted 2026-11-01: shared lidar floor reference with feature_build; low-ground, floor_min, invalid/missing DTM and low-ground porch-post coverage. Independently approved; merged locally via ship_branch (ea3b805)."
     }
   ]
 }
