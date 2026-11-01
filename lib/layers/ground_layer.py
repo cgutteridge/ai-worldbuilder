@@ -162,7 +162,7 @@ def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None
              for y in range(ylo, yhi + 1))
 
 
-def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set):
+def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None):
     """Columns this layer may surface, with their live surface (y, block).
 
     Returns (live: {(x,z): (y, short block)}, skipped: Counter of reasons).
@@ -183,20 +183,25 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
         for z in range(z0, z1 + 1):
             q = (x, z)
             top = probed[q]
+            reason = None
             if q in fp:
-                skipped['building footprint'] += 1
+                reason = 'building footprint'
             elif q in owned_cols:
-                skipped['structure build'] += 1
+                reason = 'structure build'
             elif q in bank:
-                skipped['water / bank'] += 1
+                reason = 'water / bank'
             elif q in vmap.bridge:
-                skipped['bridge / steps'] += 1
+                reason = 'bridge / steps'
             elif top is None:
-                skipped['empty column'] += 1
+                reason = 'empty column'
             elif any(s in top[1] for s in STRUCTURE_TOPS):
-                skipped[f'structure top {top[1]}'] += 1
+                reason = f'structure top {top[1]}'
             else:
                 live[q] = top
+            if reason:
+                skipped[reason] += 1
+                if details is not None:
+                    details.append({'x': x, 'z': z, 'reason': reason})
     return live, skipped
 
 
@@ -684,7 +689,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     x0, z0, x1, z1 = cell_box(cell, 2)
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols = {(x, z) for x, _y, z in neighbour_owned}
-    live, skipped = free_columns(cell, world, vmap, fp, owned_cols)
+    excluded = []
+    live, skipped = free_columns(cell, world, vmap, fp, owned_cols, excluded)
     kind, how = classify(cell, live, vmap, rgb, fp)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
@@ -710,6 +716,9 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'vector_map_features': getattr(vmap, 'n_features', 0),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
+    stats['excluded_columns'] = excluded
+    retained = []
+    stats['retained_positions'] = retained
     conflicts = []
     for q in sorted(live):
         x, z = q
@@ -734,15 +743,21 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         for y in range(gy + 1, SCAN_TOP + 1):             # above the surface: clear (§10)
             pos = (x, y, z)
             b = world.block(x, y, z)
-            if bare(b) in AIRS or is_marker_wool(b):          # hazard-tape ring stays
+            if bare(b) in AIRS:
+                continue
+            if is_marker_wool(b):          # hazard-tape ring stays
+                retained.append({'position': list(pos), 'reason': 'registry marker'})
                 continue
             if pos in neighbour_owned:
                 stats['kept_neighbour'] += 1
+                retained.append({'position': list(pos), 'reason': 'neighbour ownership'})
                 continue
             if pos in masked:
                 stats['kept_masked'] += 1
+                retained.append({'position': list(pos), 'reason': 'tree/decor mask'})
                 continue
             if bare(b) in STEM_OR_FLOWER and y == gy + 1 and mat == 'grass_block':
+                retained.append({'position': list(pos), 'reason': 'plant on lawn'})
                 continue                                  # a flower or grass stem may stand on lawn
             plan.set(x, y, z, 'air')
             stats['clear'] += 1
@@ -792,6 +807,11 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     masked = load_masked_positions()
     owned = neighbour_owned(cell, ignored_builds(cell))
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
+    from layer_reports import write_report
+    write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
+                        'planned_positions': len(plan.cells)})
+    stats.pop('excluded_columns', None)
+    stats.pop('retained_positions', None)
     changes = [p for p, b in plan.cells.items() if bare(world.block(*p)) != b]
     print(f'{name}: columns {stats["columns"]}  (levelled {stats["levelled"]})')
     print(f'  vector map: {stats["vector_map_features"]} features')
@@ -837,6 +857,11 @@ def apply_cell(cell: tuple[int, int]) -> int:
     ignored = ignored_builds(cell)
     owned = neighbour_owned(cell, ignored)
     stats, conflicts, kind, _skipped = plan_cell(cell, masked, owned, plan, world)
+    from layer_reports import write_report
+    write_report(name, {'stats': dict(stats), 'skipped': dict(_skipped), 'conflicts': conflicts,
+                        'planned_positions': len(plan.cells)})
+    stats.pop('excluded_columns', None)
+    stats.pop('retained_positions', None)
     if conflicts:
         print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
         return 1

@@ -1009,6 +1009,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
     _ensure_world_config()
     pass_ = stage_pass(stage)
+    input_cells = dict(plan.cells)
     if not dry:
         ensure_region_matches_open_world()
         # Fail before live prefetch, lint scans, backup or begin. The live registry
@@ -1124,6 +1125,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                 f'{plan.name}: rewrote {rewritten} bottom-half slabs → full blocks '
                 '(block_fill cannot place them; set plan.keep_bottom_half_slabs to place them one by one)'
             )
+    if input_cells.keys() - plan.cells.keys():
+        raise SystemExit(f'{plan.name}: guards dropped input positions without an exclusion reason; refusing before writes')
     boxes = plan.boxes()
     if empty:
         print(f'{plan.name}: 0 cells (empty {pass_} pass); no clashes')
@@ -1167,6 +1170,13 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write
     except (InFlight, Clash, Refused) as exc:
         raise _journal_refusal(plan.name, exc) from exc
+    from layer_reports import apply_counts
+    # Begin already read these positions; reuse its observations instead of probing
+    # an evicted live cache a second time just to produce diagnostics.
+    before = ticket.prewrite()
+    if dict(ticket.writes.cells) != plan.cells:
+        raise SystemExit(f'{plan.name}: journal writes differ from final guarded plan; nothing written; '
+                         f'entry {ticket.seq} left begun (python scripts/site_recover.py status)')
     writer = McpWriter(m)
     writer(ticket.writes)
     mark = getattr(blocks, 'mark_written', None)
@@ -1175,10 +1185,30 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     blocks.flush()                          # server_save_all_worlds, settle, fresh region reads
     actual = blocks.read_many(plan.cells)
     rep = _readback_report(plan, actual)
+    accounting_error = None
+    try:
+        rep['counts'] = apply_counts(plan.cells, ticket.writes.cells, before, actual)
+        rep['counts'].update({
+            'input_plan_positions': len(input_cells),
+            'guard_added_positions': len(plan.cells.keys() - input_cells.keys()),
+            'guard_rewritten_positions': sum(input_cells[p] != plan.cells[p] for p in input_cells),
+        })
+    except ValueError as exc:
+        accounting_error = str(exc)
+        rep['accounting_error'] = accounting_error
+    rep['count_semantics'] = (
+        'Counts are unique block positions. Already-correct positions (compared with observations made '
+        'at journal begin, with unknown states counted separately) remain journal writes. Fill results count transport requests/changed blocks and '
+        'are not an independent planned-position total. Readback verifies every final plan position.'
+    )
     rep.update({'fill_results': writer.fill_results, 'entities': writer.entities, 'journal_seq': ticket.seq})
     (OUT / f'{plan.name}-result.json').write_text(json.dumps(rep, indent=1))
+    print(f'  result report: {OUT / f"{plan.name}-result.json"}')
     print(json.dumps({k: v for k, v in rep.items() if k != 'mismatch_sample'}, indent=1)[:1500])
-    if rep['mismatches'] and (strict or mask is not None):
+    if accounting_error:
+        raise SystemExit(f'{plan.name}: {accounting_error}; entry {ticket.seq} left begun '
+                         '(python scripts/site_recover.py status)')
+    if rep['mismatches'] and (strict or mask is not None or pass_ in ('ground', 'trees', 'decor')):
         raise SystemExit(f'{plan.name}: readback has {rep["mismatches"]} mismatches; journal entry '
                          f"{ticket.seq} left 'begun' (python scripts/site_recover.py status)")
     if mask is not None:

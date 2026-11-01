@@ -390,6 +390,8 @@ def place_barriers_from_plan(
         for raw in cells:
             q = (int(raw[0]), int(raw[1]))
             if not cell_contains(cell, *q):
+                unplaced.append(dplan.mark_unplaced(
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"}, 'outside cell'))
                 continue
             if q in near1 and not allow:
                 unplaced.append(dplan.mark_unplaced(
@@ -423,13 +425,19 @@ def place_barriers_from_plan(
                 ))
                 continue
             col_ok = False
+            excluded = []
+            placed_positions = []
             for i in range(1, height + 1):
                 pos = (q[0], top[0] + i, q[1])
-                if not is_air(world.block(*pos)):
-                    continue
-                if pos in owned or pos in masked or pos in found:
+                reason = ('not air' if not is_air(world.block(*pos)) else
+                          'owned block' if pos in owned else
+                          'masked block' if pos in masked else
+                          'overlapping placement' if pos in found else None)
+                if reason:
+                    excluded.append({'position': list(pos), 'reason': reason})
                     continue
                 found[pos] = mat
+                placed_positions.append(list(pos))
                 col_ok = True
             if col_ok:
                 report.append({
@@ -437,10 +445,12 @@ def place_barriers_from_plan(
                     'source': (item.get('provenance') or {}).get('source', ''),
                     'plan_id': item.get('id'),
                     'allow_against_build': allow,
+                    'placed_positions': placed_positions, 'excluded_positions': excluded,
                 })
             else:
                 unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}",
+                     'excluded_positions': excluded},
                     'blocked by live or owned block',
                 ))
     return found, report, unplaced
@@ -512,9 +522,17 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         lidar_hm=lidar_hm,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
+    barrier_positions = len(found)
+    overlap_positions = len(found.keys() & furniture.keys())
     found.update(furniture)
 
     stats: Counter = Counter()
+    stats['candidate_items'] = len(decor['items'])
+    stats['accepted_barrier_columns'] = len(barrier_report)
+    stats['accepted_furniture_items'] = len(furniture_report)
+    stats['barrier_positions'] = barrier_positions
+    stats['furniture_positions'] = len(furniture)
+    stats['overlap_positions'] = overlap_positions
     stats['furniture'] = len(furniture_report)
     stats['furniture map'] = sum(1 for r in furniture_report if r['source'] == 'vector_map')
     stats['furniture designer'] = sum(
@@ -539,7 +557,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)
     found.update(joins)
     stats['joins'] = len(joins)
+    stats['positions_before_clip'] = len(found)
     clipped, dropped = clip_to_cell(found, *cell)
+    stats['clipped_positions'] = [{'position': list(p), 'reason': 'outside cell'} for p in found if p not in clipped]
     for p, b in clipped.items():
         plan.set(*p, b)
     stats['dropped_outside_cell'] = dropped
@@ -553,31 +573,15 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
 
 
 def _print_plan_notes(stats: dict) -> None:
-    """Print furniture, unresolved and unplaced rows from plan_cell stats."""
-    furniture_report = stats.get('furniture_report') or []
-    if furniture_report:
-        print('  street furniture:')
-        for row in furniture_report:
-            note = f" ({row['note']})" if row.get('note') else ''
-            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{note}")
-    barrier_report = stats.get('barrier_report') or []
-    if barrier_report:
-        print('  barriers:')
-        for row in barrier_report:
-            flag = ' against-build' if row.get('allow_against_build') else ''
-            print(f"    {row['kind']} at {row['x']},{row['z']} source={row['source']}{flag}")
-    unresolved = stats.get('unresolved_items') or []
-    if unresolved:
-        print(f'  unresolved ({len(unresolved)}):')
-        for item in unresolved:
-            reason = (item.get('provenance') or {}).get('unresolved_reason', '')
-            print(f"    {item.get('id')} {item.get('kind')}: {reason}")
-    unplaced = stats.get('unplaced_items') or []
-    if unplaced:
-        print(f'  unplaced ({len(unplaced)}):')
-        for item in unplaced:
-            reason = (item.get('provenance') or {}).get('unresolved_reason', '')
-            print(f"    {item.get('id')} {item.get('kind')}: {reason}")
+    """Print counted exclusion reasons; full rows live in the report artifact."""
+    from layer_reports import reason_summary
+    for key in ('unresolved_items', 'unplaced_items'):
+        items = stats.get(key) or []
+        reasons = [(i.get('provenance') or {}).get('unresolved_reason', 'unspecified') for i in items]
+        print(f'  {key}: {len(items)}; by reason: {reason_summary(reasons)}')
+    partial = [p for row in stats.get('barrier_report') or [] for p in row.get('excluded_positions') or []]
+    if partial:
+        print(f'  barrier position exclusions: {len(partial)}; by reason: {reason_summary(p["reason"] for p in partial)}')
 
 
 def run(cell: tuple[int, int]) -> int:
@@ -587,13 +591,16 @@ def run(cell: tuple[int, int]) -> int:
     name = plan_name(*cell)
     plan = Plan(name)
     placed, stats = plan_cell(cell, plan, fresh_planning_world())
+    from layer_reports import write_report
+    write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
     furniture_report = stats.pop('furniture_report', [])
     barrier_report = stats.pop('barrier_report', [])
     unresolved = stats.pop('unresolved_items', [])
     unplaced = stats.pop('unplaced_items', [])
     stats.pop('decor_plan', None)
+    stats.pop('clipped_positions', None)
     kinds = Counter(placed.values())
-    print(f'{name}: {dict(stats)}')
+    print(f'{name}: {dict(stats)}' + (' (empty decor plan)' if not placed else ''))
     print(f'  by block: {dict(kinds)}')
     _print_plan_notes({
         'furniture_report': furniture_report,
@@ -625,16 +632,19 @@ def apply_cell(cell: tuple[int, int]) -> int:
     plan = Plan(name)
     world = World()
     placed, stats = plan_cell(cell, plan, world)
+    from layer_reports import write_report
+    write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
     furniture_report = stats.pop('furniture_report', [])
     barrier_report = stats.pop('barrier_report', [])
     unresolved = stats.pop('unresolved_items', [])
     unplaced = stats.pop('unplaced_items', [])
     decor = stats.pop('decor_plan', None)
+    stats.pop('clipped_positions', None)
     warm = getattr(world, 'prefetch', None)
     if warm is not None:
         warm(placed)                                                       # mask air check, batched
     mask = build_mask('decor', cell, name, placed, lambda p: is_air(world.block(*p)))
-    print(f'{name}: {len(placed)} blocks ({dict(stats)})')
+    print(f'{name}: {len(placed)} blocks ({dict(stats)})' + (' (empty decor pass; journal completion retained)' if not placed else ''))
     _print_plan_notes({
         'furniture_report': furniture_report,
         'barrier_report': barrier_report,

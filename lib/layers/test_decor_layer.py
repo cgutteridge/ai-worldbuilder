@@ -496,3 +496,42 @@ class TestChunkedSnapshot(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReporting(unittest.TestCase):
+    def test_summary_is_bounded_but_full_hedge_exclusions_are_saved(self):
+        import io
+        import json
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from layer_reports import write_report
+        items = [{'id': f'hedge-{n}', 'kind': 'hedge',
+                  'provenance': {'unresolved_reason': 'above lidar ground'}} for n in range(40)]
+        stats = {'blocks': 0, 'unplaced_items': items}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(dl, 'plan_cell', return_value=({}, stats)), \
+                mock.patch('site_kit.fresh_planning_world'), \
+                mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(dl.run((0, 0)), 0)
+            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-report.json').read_text())
+            self.assertEqual(saved['stats']['unplaced_items'], items)
+        self.assertIn("'above lidar ground': 40", output.getvalue())
+        self.assertIn('full report:', output.getvalue())
+        self.assertIn('empty decor plan', output.getvalue())
+        self.assertNotIn('hedge-39', output.getvalue())
+        self.assertLess(len(output.getvalue().splitlines()), 10)
+
+    def test_partial_barrier_records_each_excluded_position_without_changing_placement(self):
+        world = mock.Mock()
+        world.block.return_value = 'minecraft:air'
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'height': 2, 'cells': [[10, 20]]}
+        with mock.patch('surface_probe.surface_y', return_value=(64, 'grass_block')), \
+                mock.patch.object(dl, 'on_carriageway', return_value=False):
+            found, report, unplaced = dl.place_barriers_from_plan(
+                (0, 0), [item], world, way=set(), near1=set(), owned={(10, 65, 20)}, masked={})
+        self.assertEqual(set(found), {(10, 66, 20)})
+        self.assertEqual(unplaced, [])
+        self.assertEqual(report[0]['placed_positions'], [[10, 66, 20]])
+        self.assertEqual(report[0]['excluded_positions'], [{'position': [10, 65, 20], 'reason': 'owned block'}])

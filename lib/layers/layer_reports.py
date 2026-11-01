@@ -1,0 +1,42 @@
+"""World-local diagnostic artifacts and comparable apply stage counts."""
+from __future__ import annotations
+
+from collections import Counter
+from pathlib import Path
+
+
+def write_report(name: str, report: dict, directory: Path | None = None) -> Path:
+    """Write all item/column details; the console can stay a bounded summary."""
+    from script_env import ROOT
+    from atomic_json import write_json
+    directory = Path(directory) if directory is not None else ROOT / 'verification/site'
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f'{name}-report.json'
+    write_json(path, report)
+    print(f'  full report: {path}')
+    return path
+
+
+def reason_summary(reasons) -> dict[str, int]:
+    """Count exclusions without truncating the artifact's item-level reasons."""
+    return dict(Counter(reasons).most_common())
+
+
+def apply_counts(plan: dict, writes: dict, before: dict, actual: dict) -> dict[str, int]:
+    """Account for final positions, not unlike candidate-item or request counts.
+
+    Already-correct positions are still journalled/written by this implementation.
+    A transport's number of fill calls is deliberately not a block count.
+    """
+    from block_store import same_state
+    if dict(plan) != dict(writes):
+        raise ValueError('journal writes differ from the final guarded plan')
+    if set(plan) - actual.keys():
+        raise ValueError('readback omitted final plan positions')
+    already = sum(same_state(st, before.get(p)) for p, st in plan.items())
+    unknown = sum(before.get(p) is None for p in plan)
+    return {'final_plan_positions': len(plan), 'journal_write_positions': len(writes),
+            'already_correct': already, 'unknown_before_positions': unknown,
+            'positions_requiring_change': len(plan) - already - unknown,
+            'readback_positions': sum(actual.get(p) is not None for p in plan),
+            'verified_positions': sum(same_state(st, actual.get(p)) for p, st in plan.items())}
