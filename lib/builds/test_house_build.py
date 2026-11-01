@@ -48,5 +48,36 @@ class DoorFrameTest(unittest.TestCase):
         self.assertEqual(b.with_jamb_walls(h, walls, 'N'), walls)
 
 
+class ChimneyTest(unittest.TestCase):
+    def test_chimney_has_brick_to_one_above_ridge_then_flower_pot(self):
+        # Odd square footprints exercise both top- and bottom-slab ridges.
+        for width, ridge in ((5, 37), (7, 38)):
+            with self.subTest(width=width):
+                group = {'nos': ['A'], 'mode': 'each', 'front': 'S'}
+                cells = {(x, z) for x in range(width) for z in range(width)}
+                house = H.House('A', cells, group)
+                house.b = 30
+                build = H.Build.__new__(H.Build)
+                build.groups = [group]
+                build.houses = [house]
+                build.owner = {c: 0 for c in cells}
+                build.foreign = set()
+                build.shared = set()
+                build.spec = {'roofs': {'A': 'brick'}}
+                blocks = {}
+                build.set = lambda x, y, z, block: blocks.__setitem__((x, y, z), block)
+
+                build.roof()
+
+                cx = cz = width // 2
+                self.assertEqual([p for p, block in blocks.items() if block == 'flower_pot'],
+                                 [(cx, ridge + 2, cz)])
+                for y in range(36, ridge + 2):
+                    self.assertEqual(blocks[cx, y, cz], H.WALL)
+                self.assertNotIn((cx, ridge + 3, cz), blocks)
+                adjacent_roof_y = 36 + (width // 2) // 2
+                self.assertTrue(blocks[cx + 1, adjacent_roof_y, cz].startswith('brick_slab['))
+
+
 if __name__ == '__main__':
     unittest.main()

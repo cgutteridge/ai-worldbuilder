@@ -404,8 +404,9 @@ class Build:
             self.set(x, y, z, f'{rm}_slab[type={t}]')
         for (x, z), b, g in chim:
             ridge = max(k[0][0] for (xx, zz), k in done.items() if abs(xx - x) <= 1 and abs(zz - z) <= 1)
-            for y in range(b + 6, ridge + 3):
+            for y in range(b + 6, ridge + 2):
                 self.set(x, y, z, WALL)
+            self.set(x, ridge + 2, z, 'flower_pot')
 
     def build(self):
         self.foreign = {c for c in self.idx.cells() if c not in self.owner}
