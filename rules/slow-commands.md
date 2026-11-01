@@ -14,6 +14,10 @@ and being moved to the background mid-run.
 | Bottom-half slabs kept in an apply (`McpWriter`, pitched-roof low steps) | one `block_set_state` per slab at about 1.1 s; 500 slabs about 9 min | Approximate, from the paced MCP interval (#209); not re-timed on a live apply |
 | `site_lock.py run` | adds nothing | Wraps any of the above; use it for live commands |
 
+Launch the whole `redo_layer.py --apply` command in the background; it owns
+one lock and keeps child commands synchronous. Keep its log and final exit
+status, and wait for completion before starting another live command.
+
 Dry runs without live reads are seconds. Figures are for the bake-off world on the
 author's machine; re-measure from the journal (`begin` to `finish` `ts`) rather than
 guessing if a pass matters.

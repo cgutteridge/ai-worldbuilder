@@ -13,15 +13,6 @@
       "notes": "Problem: migration to ~/Projects/minecraft-mcp was completed on 2026-10-28 (#177), but donor instances and launcher profiles remain. This is owner-machine maintenance, not a tool capability change. Elapsed days alone do not establish successful use or authorize deletion.\nScope: Southampton Refine/instance, Minecraft Magic/instance, launcher profiles southampton-refine and fabric-loader-26.2, and Minecraft Magic/README.md. Plan: docs/plans/shared-minecraft-instance.md.\nAcceptance: before removal, confirm successful standalone-instance use, inventory remaining saves, verify the recorded backups under ~/Projects/minecraft-save-backups/2026-10-28/, and obtain the owner's explicit decision on the scratch save New World (the plan requires this). Confirm Magic has no other save worth keeping. Retain backups and the relocated private sealed answers at ~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json; do not display their contents. Remove only the agreed donor folders/profiles and update the Magic README. Do not execute any of these actions as part of backlog refinement.\nVerification: read-only inventory before removal; afterward check the agreed profiles/paths and that the standalone instance still references its intended saves. No tool unit test needed."
     },
     {
-      "id": 224,
-      "title": "Replace manual layer redo recipes with the checked wrapper",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Problem: once #223 exists, parallel manual recipes in .claude/skills/redo/SKILL.md would drift from executable behaviour.\nScope: docs only. After #219 and #223, trees/decor/ground branches become locate, inspect the wrapper dry run, then run its explicit --apply under the documented lock/background contract. Keep feature redesign separate and retain the meaning of redo versus reapply established by #225 when available; do not make #225 a prerequisite for layer docs.\nAcceptance: examples match the wrapper's actual parser; world selection, layer ordering, cleared-but-not-requested layers, ground preservation (#217), hover behaviour, nonzero exit and recovery messages are described once. No nested lock acquisition and no implication that background launch means completion. Remove superseded manual sequences rather than keeping two authoritative paths.\nVerification: review examples against #223 CLI help and its orchestration tests; no live apply or prose-only unit tests."
-    },
-    {
       "id": 225,
       "title": "Record feature builder provenance and support an explicit reapply workflow",
       "status": "todo",
@@ -33,7 +24,7 @@
     {
       "id": 226,
       "title": "Allow evidence-backed tree rooting on hard surfaces and one-block edge shunts",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],

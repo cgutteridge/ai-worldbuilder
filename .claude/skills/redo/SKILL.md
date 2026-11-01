@@ -30,8 +30,8 @@ Done when the JSON is in hand.
 ## Checked execution (every branch)
 
 Prepare evidence and the feature hand-off before live work. Run each live
-command below (undo, apply or player move) through the lock wrapper, from the
-tool root:
+feature command below (undo, apply or player move) through the lock wrapper, from the
+tool root. Layer redos use §2 directly; its wrapper owns the sequence lock:
 
 ```bash
 python3 scripts/site_lock.py --world <world> run <owner> "redo <target>" -- <command>
@@ -39,9 +39,9 @@ python3 scripts/site_lock.py --world <world> run <owner> "redo <target>" -- <com
 
 Substitute the complete command from the chosen branch for `<command>`, including
 its own `--world <world>`. The wrapper supplies `SITE_OWNER` and releases the
-lock on success, failure or interrupt. If the lock is refused, stop. These manual
-steps acquire a lock per command; the future layer wrapper (#223) will hold one
-across the sequence.
+lock on success, failure or interrupt. If the lock is refused, stop. Manual feature
+steps acquire a lock per command. The layer wrapper holds one lock across its
+entire sequence; call it directly, without an outer site_lock run.
 
 Start undo/apply commands **in the background from the start**, retaining their
 logs and final exit status; see `rules/slow-commands.md`. Wait for each to finish
@@ -59,7 +59,7 @@ build result.
 
 Done when every step has a checked result and its lock has been released.
 
-## Hover (every branch)
+## Hover (feature redesign)
 
 Always put the player above the target, looking straight down — before the first apply, and again after the last apply if their position changed (e.g. `site_kit.apply` moved them for chunk load).
 
@@ -114,41 +114,59 @@ Done when they are hovering and looking down at the target.
 
 Done when readback is clean, the docstring has a greeblie list (or explicit none), greeblies are applied, they are hovering looking down, and the lock is released. Say what was rebuilt (name + script).
 
-## 2. Trees (`redo trees`)
+## 2. Layers (trees, decor, ground)
 
-Cell = `redo_here` `cell`. **Hover**, then use checked execution for the following steps:
+Use `cell` from Locate. Select only the requested layers: `trees`, `decor`,
+`ground`, or a comma-separated combination. Inspect the dry run first:
 
-1. If `masks.decor`: `python3 scripts/mask_undo.py --world <world> --cell tx,tz --pass decor --apply` (clear only).
-2. If `masks.trees`: `python3 scripts/mask_undo.py --world <world> --cell tx,tz --pass trees --apply`.
-3. `python3 scripts/trees_layer.py --world <world> --cell tx,tz` dry run, then the same command with `--apply`. Require exit 0 and readback 0 mismatches.
-4. Check **Hover** again, then command completion and lock release.
+```bash
+python3 scripts/redo_layer.py --world <world> --cell tx,tz --layers trees,decor
+```
 
-Done when trees readback is clean and the final overhead view is confirmed.
-Report that decor needs redo after tree generation; if its mask was undone,
-it stays cleared. Apply decor only when the user requested it too.
+Require `ok: true` and inspect `pending`, the proposed sequence. Dry run checks
+save identity, readiness and relevant masks; it leaves blocks and the player
+unchanged. This previews operations, not an assertion that a pre-undo geometry
+plan will equal the post-undo plan.
 
-## 3. Decor (`redo decor`)
+Run the same selection with `--apply`, in the background from the start:
 
-**Hover**, then use checked execution for the following steps:
+```bash
+python3 scripts/redo_layer.py --world <world> --cell tx,tz --layers trees,decor --apply
+```
 
-1. If `masks.decor`: `python3 scripts/mask_undo.py --world <world> --cell tx,tz --pass decor --apply`.
-2. `python3 scripts/decor_layer.py --world <world> --cell tx,tz` dry run, then the same command with `--apply`. Require exit 0 and readback 0 mismatches.
-3. Check **Hover** again, then command completion and lock release.
+The caller retains the log and final exit status. The wrapper runs its children
+synchronously with streamed output, holds one lock, stops remaining child
+processes before releasing it, and does not detach its own worker. Background
+launch is not completion; wait for the exit status and final JSON.
 
-Done when decor readback is clean and the final overhead view is confirmed.
+- Layers apply in `ground -> trees -> decor` order regardless of argument order.
+  Trees redo first undoes existing decor, then existing trees. Only requested
+  layers are reapplied: with `--layers trees`, decor stays undone/pending and is
+  reported in `left_undone`. Include decor only when requested.
+- Ground-only redo (`--layers ground`) retains trees/decor masks, ownership and
+  completion (#217). A protected-mask conflict stops the redo; resolve the ground
+  plan while preserving those layers.
+- The explicit `world.json` player_uuid must be online. Before any undo, the
+  wrapper checks the configured player's move to spectator hover looking down;
+  it verifies that view again after all requested applies. Missing/offline player
+  or failed movement/view stops with nonzero status. Direct layer CLIs retain
+  their own existing behavior; these viewing checks belong to redo.
+- After required undos, each layer is previewed and validated against that state,
+  then its live apply re-plans and performs the existing journal/readback checks.
+  It never silently retries, skips changed blocks, or rolls back the sequence.
 
-## 4. Ground (`redo ground`)
+On nonzero exit, read `failed`, `completed`, `left_undone`, and `pending` before
+reporting what remains. An unfinished journal write uses
+`python3 scripts/site_recover.py --world <world> status`; drift uses
+`python3 scripts/cell_registry.py --world <world> reconcile tx,tz`. Later stages
+stop after a conflict, mismatch, movement failure or interrupt. A successful
+apply followed by a failed final view is still a failed redo; report landed
+layers without claiming the view succeeded.
 
-Preserve trees and decor, including their masks, ownership and completion
-(owner rule #217). Ground redo does not grant permission to overwrite them.
-**Hover**, then use checked execution for the following steps:
-
-1. `python3 scripts/ground_layer.py --world <world> --cell tx,tz` dry run with the existing masks in place. If guards report a clash, stop and report the protected positions; leave trees/decor intact.
-2. Run the same command with `--apply`. Require exit 0 and readback 0 mismatches.
-3. Check **Hover** again, then command completion and lock release.
-
-Done when ground readback is clean, trees/decor remain protected with their
-completion unchanged, and the final overhead view is confirmed.
+Done when exit is zero, final JSON has `ok: true`, every requested stage
+succeeded, final hover was checked and the lock released. Report any cleared
+but omitted decor explicitly. The wrapper cues success only then; cue failure
+cannot turn a landed build into a failed apply.
 
 ## Build roles (feature redesign only)
 
