@@ -34,19 +34,19 @@ class RunTest(unittest.TestCase):
         self.assertFalse(self.lock.exists())
 
     def test_interrupt_releases(self):
-        with mock.patch('site_lock.subprocess.run', side_effect=KeyboardInterrupt):
+        with mock.patch('site_lock.subprocess.Popen', side_effect=KeyboardInterrupt):
             self.assertEqual(site_lock.run('me', 'task', ['x']), 130)
         self.assertFalse(self.lock.exists())
 
     def test_unexpected_error_releases_and_propagates(self):
-        with mock.patch('site_lock.subprocess.run', side_effect=FileNotFoundError('nope')):
+        with mock.patch('site_lock.subprocess.Popen', side_effect=FileNotFoundError('nope')):
             with self.assertRaises(FileNotFoundError):
                 site_lock.run('me', 'task', ['nope'])
         self.assertFalse(self.lock.exists())
 
     def test_refused_claim_runs_nothing_and_leaves_other_lock(self):
         site_lock.claim('other', 'theirs')
-        with mock.patch('site_lock.subprocess.run') as sp:
+        with mock.patch('site_lock.subprocess.Popen') as sp:
             with self.assertRaises(SystemExit):
                 site_lock.run('me', 'task', ['x'])
         sp.assert_not_called()
@@ -56,6 +56,83 @@ class RunTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             site_lock.run('me', 'task', [])
         self.assertFalse(self.lock.exists())
+
+    def test_termination_stops_child_before_releasing_lock(self):
+        import os
+        import signal
+        import subprocess
+        import time
+        import script_env
+        ready = self.lock.parent / 'ready'
+        observed = self.lock.parent / 'terminated'
+        child = ("import os,signal,time; from pathlib import Path; "
+                 f"signal.signal(signal.SIGTERM, lambda *args: (Path({str(observed)!r}).write_text(str(Path({str(self.lock)!r}).exists())), exit(0))); "
+                 f"Path({str(ready)!r}).write_text(str(os.getpid())); time.sleep(30)")
+        code = ("import sys; from pathlib import Path; "
+                f"sys.path.insert(0,{str(script_env.TOOL_ROOT / 'scripts')!r}); "
+                "import script_env; script_env.ensure_import_paths(); import site_lock; "
+                f"site_lock.LOCK=Path({str(self.lock)!r}); "
+                f"raise SystemExit(site_lock.run('me','test',[sys.executable,'-c',{child!r}]))")
+        process = subprocess.Popen([PY, '-c', code])
+        try:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertTrue(ready.exists(), 'child did not start')
+            process.terminate()
+            process.wait(timeout=5)
+            self.assertTrue(observed.exists(), 'child outlived lock owner')
+            self.assertEqual(observed.read_text(), 'True')
+            self.assertFalse(self.lock.exists())
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            if ready.exists():
+                try: os.kill(int(ready.read_text()), signal.SIGKILL)
+                except ProcessLookupError: pass
+
+    def test_killed_worker_stops_grandchild_before_releasing_lock(self):
+        import os
+        import signal
+        import subprocess
+        import time
+        import script_env
+        ready = self.lock.parent / 'grandchild-ready'
+        worker_pid = self.lock.parent / 'worker-pid'
+        observed = self.lock.parent / 'grandchild-terminated'
+        child = ("import os,signal,time; from pathlib import Path; "
+                 f"signal.signal(signal.SIGTERM, lambda *args: (Path({str(observed)!r}).write_text(str(Path({str(self.lock)!r}).exists())), exit(0))); "
+                 f"Path({str(ready)!r}).write_text(str(os.getpid())); time.sleep(30)")
+        worker = ("import os,subprocess,sys,time; from pathlib import Path; "
+                  f"Path({str(worker_pid)!r}).write_text(str(os.getpid())); "
+                  f"subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(30)")
+        code = ("import sys; from pathlib import Path; "
+                f"sys.path.insert(0,{str(script_env.TOOL_ROOT / 'scripts')!r}); "
+                "import script_env; script_env.ensure_import_paths(); import site_lock; "
+                f"site_lock.LOCK=Path({str(self.lock)!r}); "
+                f"raise SystemExit(site_lock.run('me','test',[sys.executable,'-c',{worker!r}]))")
+        process = subprocess.Popen([PY, '-c', code])
+        try:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertTrue(ready.exists(), 'grandchild did not start')
+            self.assertIsNone(process.poll(), 'lock owner must remain running')
+            os.kill(int(worker_pid.read_text()), signal.SIGKILL)
+            self.assertEqual(process.wait(timeout=10), 128 + signal.SIGKILL)
+            # The descendant records the lock at termination. PID existence is
+            # unsuitable here because an exited orphan can remain a zombie.
+            self.assertTrue(observed.exists(), 'grandchild outlived lock owner')
+            self.assertEqual(observed.read_text(), 'True')
+            self.assertFalse(self.lock.exists())
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            if worker_pid.exists():
+                try: os.killpg(int(worker_pid.read_text()), signal.SIGKILL)
+                except ProcessLookupError: pass
 
     def test_cli_requires_double_dash(self):
         with mock.patch.object(sys, 'argv', ['site_lock.py', 'run', 'me', 'task', 'x']):

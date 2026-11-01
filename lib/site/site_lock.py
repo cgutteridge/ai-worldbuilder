@@ -109,12 +109,38 @@ def run(owner, task, cmd):
         raise SystemExit(128 + signum)
 
     old = signal.signal(signal.SIGTERM, _term)
+    process = None
     try:
-        rc = subprocess.run(cmd, env={**os.environ, 'SITE_OWNER': owner}).returncode
+        # Own a process group so termination cannot leave a builder running after
+        # the lock was released. Layer commands inherit this group.
+        process = subprocess.Popen(cmd, env={**os.environ, 'SITE_OWNER': owner}, start_new_session=True)
+        rc = process.wait()
         return 128 - rc if rc < 0 else rc
     except KeyboardInterrupt:
         return 130
     finally:
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            # Waiting for the worker alone is insufficient: it may already have
+            # exited while its child CLI is still stopping. Give the entire group
+            # a bounded grace period, including on a normal worker exit.
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                process.poll()  # Reap the worker so it cannot keep the group alive.
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(.01)
+            # Stop any remaining descendants before making the lock available.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
         signal.signal(signal.SIGTERM, old)
         release(owner)
 
