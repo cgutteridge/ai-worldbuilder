@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import statistics
 import sys
 from pathlib import Path
 
@@ -117,32 +116,10 @@ class Build:
             self.keep.add((x, y, z))
         self.set(x, y, z, st)
 
-    def surf(self, x, z):
-        for y in range(75, 30, -1):
-            n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
-            if n in ('minecraft:stone', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:granite'):
-                return y
-            if n in GROUND:
-                return None  # road/pavement: not a house-plot reference
-        return None
-
     def floor_y(self, h):
-        # The old import building leaves gaps, so a scan from the bottom fails. Reference = untouched
-        # plot-edge columns 4-7 from the footprint (stone / grass / dirt tops, not paving).
-        ring = set()
-        for (x, z) in h.cells:
-            for dx in range(-7, 8):
-                for dz in range(-7, 8):
-                    c = (x + dx, z + dz)
-                    if max(abs(dx), abs(dz)) >= 4 and c not in self.by_no_all_cells:
-                        ring.add(c)
-        near = {(x + dx, z + dz) for (x, z) in h.cells for dx in range(-3, 4) for dz in range(-3, 4)}
-        ys = [self.surf(x, z) for x, z in ring - near]
-        ys = [y for y in ys if y]
-        print('ref surface n', len(ys), 'min', min(ys), 'max', max(ys))
-        y = int(statistics.median(ys))
-        # floor_min: flush with the front pavement so doors are walkable to the road without a 1-block hop (site_walk)
-        return max(y, self.spec['floor_min']) if self.spec['floor_min'] is not None else y
+        """Reference the footprint's lidar terrain, with the spec's floor_min override."""
+        from floor_reference import floor_reference
+        return floor_reference(self.name, h.no, h.cells, self.spec['floor_min'])
 
     def clear(self):
         cols = set()
@@ -410,7 +387,6 @@ class Build:
 
     def build(self):
         self.foreign = {c for c in self.idx.cells() if c not in self.owner}
-        self.by_no_all_cells = set(self.owner) | self.foreign
         # columns next to neighbouring buildings: their roof overhang is already there
         self.shared = {(x + dx, z + dz) for (x, z) in self.foreign for dx, dz in N8} - self.foreign - set(self.owner)
         for h in self.houses:

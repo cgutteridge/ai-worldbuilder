@@ -1440,27 +1440,8 @@ class Build:
         @param f: feature whose footprint samples the DTM
         @returns: median ground block Y, raised by floor_min when specified
         """
-        if f.no in self.zone_data:
-            grid = self.zone_data[f.no]
-            ground = np.asarray(grid['ground_y'], dtype=float)
-            x0, z0 = int(grid['x0']), int(grid['z0'])
-        else:
-            import lidar_provider as lp
-            from world_frame import load_frame, mc_grid_to_en
-            xs, zs = zip(*f.cells)
-            x0, z0, x1, z1 = min(xs), min(zs), max(xs), max(zs)
-            lidar = lp.tile_client(download=False)
-            if lidar.missing('DTM', *lp.mc_box_en(x0, z0, x1, z1)):
-                raise SystemExit(f'{self.name} {f.no}: lidar DTM cache missing for floor')
-            xx, zz = np.meshgrid(np.arange(x0, x1 + 1), np.arange(z0, z1 + 1))
-            frame = load_frame()
-            east, north = mc_grid_to_en(xx, zz, frame)
-            ground = np.trunc(lidar.sample('DTM', east, north, True)) + frame.y_offset
-        values = [float(ground[z - z0, x - x0]) for x, z in f.cells]
-        if not all(math.isfinite(y) for y in values):
-            raise SystemExit(f'{self.name} {f.no}: lidar DTM has no valid ground under footprint')
-        y = int(statistics.median(values))
-        return max(y, self.spec['floor_min']) if self.spec['floor_min'] is not None else y
+        from floor_reference import floor_reference
+        return floor_reference(self.name, f.no, f.cells, self.spec['floor_min'], self.zone_data.get(f.no))
 
     def _feature_has_zones(self, f: Feature) -> bool:
         """True when this label has a zones entry in the spec."""
