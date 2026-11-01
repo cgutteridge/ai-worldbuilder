@@ -69,21 +69,44 @@ Redo from aerial (user, 2026-10-16: the trees pass reads the z19 mosaic; aerial 
 Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crop PNGs
 (`google_window.py`; tiles downloaded, not browser HTML) and stored in reference/trees-google-crowns.json:
   {"tx,tz": {"evidence", "zones": [[x0,z0,x1,z1]], "crowns": [{"x","z","r","note"}]}}
-Inside a zone the detector's crowns are dropped and these replace them; outside, the detector is unchanged (use that for a woodland
-you cannot split into crowns). Aerial-read crowns may stand on paving, path colours, tarmac wool and slabs (trees_layer.GOOGLE_SURFACES;
-the ground block under a real tree is often wrong) and inside footprint-map courtyards; water, trunk blocked and the normal air-only
-rules still apply. Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
-  1 python3 shims/google_window.py crop --at X,Z --half 32x16 --ppb 13      one window per 64x32 blocks (a cell = 8); Read the PNG.
-                                                                              Read centre (px->block from the grid) and r (diameter/2).
-  2 write the crowns into reference/trees-google-crowns.json (zones = the part you read).
-  3 python3 scripts/trees_replan.py --cell tx,tz --out plan.json ; python3 shims/google_window.py plan --at X,Z --half 32x16 --plan plan.json
-    yellow circles must sit on the real crowns; add the ones you missed, move the ones that are off; red dashed = skipped (water, blocked...).
-  4 claim the lock; SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell tx,tz --pass trees [--skip-changed] [--apply]
-    (--skip-changed leaves masked positions that are already air or that a later build replaced; without it any such
-    position stops the undo and an aborted run goes through site_recover.py);
-    then trees_layer.py --cell tx,tz (dry) and --apply; patrol sweep floating 0; release the lock; add a journal note on the cell.
-Do NOT snap to lidar: it holds ~1/3 of the crowns and sits 3-4 blocks south of them (checked 2026-10-16). Skipped-by-water crowns mean the
-ground layer drew water under a wooded bank: a ground-step issue to settle against aerial.
+Inside a zone these crowns replace the detector; outside it the detector/dense-fill generation and
+lawn/feature-zone restrictions stay unchanged. Evidence-led rooting applies to aerial-sheet crowns,
+mapped tree/tree_row crowns, and explicitly listed extra crowns. Their hard surface alone is not a
+reason to reject them: gravel, paved courtyards, plazas and pavements can hide a small planting pit.
+Existing explicit courtyard/feature-zone exceptions remain; real ownership, masks and collisions still
+protect structures. Rooting does not replace the ground block to make a tree legal.
+
+Check the trunk ground footprint, not the crown centre or canopy footprint: mapped carriageway/water,
+live water and waterlogged ground reject a root. Missing surface or unknown water status leaves it
+unplaced with a review reason. Detector/dense crowns retain their material restrictions and never
+shunt; the common road/water safety check still applies to their trunks. Leaves may overhang roads,
+water and neighbouring cells under the existing air/ownership/mask rules, including unprepared neighbours.
+
+For an evidenced crown, test the accepted pre-shunt position first. Only a carriageway/water conflict
+permits one horizontal block of adjustment: test its four orthogonal neighbours, never diagonals,
+chained adjustments or a wider search. Each candidate repeats trunk, cell-boundary, feature-zone or
+explicit exception, collision and mask checks. Among valid adjacent candidates, choose the smallest
+squared distance to that retained crown's original observation, then stable (x,z) order. A blocked trunk
+on otherwise legal ground is not a reason to move. No legal adjacent candidate means unplaced with a reason.
+
+Existing lidar/crown snapping is a separate stage; keep its reports alongside rooting reports so the
+movements cannot conceal each other. Each retained crown carries its own observation even when several
+crowns snap to one peak. Plan/report JSON retains trees/skipped and adds rooting from/to/observed_crown,
+reason and candidate attempts; crown_snaps/mapped_snaps remain separate. The crown review image draws
+a yellow line for each root adjustment. Console summaries count adjustments and exclusion reasons;
+full per-item details are in the printed world-local verification report.
+
+Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
+  1 python3 shims/google_window.py --world <world> crop --at X,Z --half 32x16 --ppb 13
+    Read the cached gridded crop PNG; read centre and radius from the grid.
+  2 Write crowns into reference/trees-google-crowns.json (zones = the part read).
+  3 python3 scripts/trees_replan.py --world <world> --cell tx,tz --out plan.json
+    python3 shims/google_window.py --world <world> plan --at X,Z --half 32x16 --plan plan.json
+    Compare planned crowns and skipped reasons against the evidence; inspect both snap and root adjustments.
+  4 Use the checked redo workflow (.claude/skills/redo/SKILL.md): inspect
+    python3 scripts/redo_layer.py --world <world> --cell tx,tz --layers trees
+    then run the same selection with --apply in the background and check its final exit/result.
+    The wrapper owns its lock; trees-only redo leaves cleared decor pending. Include decor only if requested.
 
 Retired (do not use): build_cell_foliage.py, the "foliage last" cadence and the aerial
 canopy pass plant_cell_canopy.py with HAND_CROWNS (Q-064; its 48,-45 result was
