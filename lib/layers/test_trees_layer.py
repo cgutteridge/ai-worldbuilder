@@ -217,10 +217,10 @@ class TestExtraCrowns(unittest.TestCase):
         self.assertEqual(len(rep['trees']), 1)
         self.assertTrue(any('log' in b for b in placed.values()))
 
-    def test_extra_crown_still_needs_lawn(self):
+    def test_extra_crown_can_root_on_evidenced_hard_ground(self):
         placed, rep = self.run_plan(True, 'light_gray_concrete')
-        self.assertEqual(rep['trees'], [])
-        self.assertEqual(placed, {})
+        self.assertEqual(len(rep['trees']), 1)
+        self.assertTrue(placed)
 
 
 class TestGoogleCrowns(unittest.TestCase):
@@ -400,6 +400,190 @@ class TestMappedTreeCrowns(unittest.TestCase):
         local = {(i, j) for i, j, _r in inputs.crowns}
         self.assertIn((40, 40), local)
         self.assertIn((15, 15), local)
+
+
+class TestRetainedCrownOrigins(unittest.TestCase):
+    """Exercise source snapping/precedence through the production input loader and planner."""
+
+    def load_and_plan(self, aerial=(), mapped=()):
+        from site_kit import Plan
+        ndsm = np.zeros((128, 128))
+        ndsm[10, 10] = 9.0
+        osm = types.ModuleType('osm_footprints')
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        ground = types.SimpleNamespace(trees=list(mapped), tree_rows=[], road={(10, 10)})
+        with mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=([(0, 0, 127, 127)], list(aerial))), \
+                mock.patch.object(tl, 'cell_ndsm', return_value=ndsm), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch.dict(sys.modules, {'osm_footprints': osm}), \
+                mock.patch('cell_registry.view_registry',
+                           return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs((0, 0), osm_ground=ground)
+        class Ground:
+            def block(self, x, y, z):
+                return 'minecraft:grass_block' if y <= 60 else 'minecraft:air'
+        # Isolate rooting direction from canopy-overlap policy between colliding crowns.
+        with mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')), \
+                mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch.object(tl, 'voxels_for', side_effect=lambda x, z, gy, r: {(x, gy + 1, z): 'oak_log'}):
+            _, report = tl.plan_cell((0, 0), Plan('origins'), Ground(), inputs.after_undo({}))
+        return inputs, report
+
+    def test_colliding_aerial_snap_destinations_keep_opposite_observations(self):
+        inputs, report = self.load_and_plan(aerial=[(8, 10, 3.), (12, 10, 3.)])
+        self.assertEqual([c[:2] for c in inputs.crowns], [(10, 10), (10, 10)])
+        self.assertEqual(inputs.crown_origins, [(8, 10), (12, 10)])
+        self.assertEqual([r['observed_crown'] for r in report['rooting']], [[8, 10], [12, 10]])
+        self.assertEqual([r['to'] for r in report['rooting']], [[9, 10], [11, 10]])
+
+    def test_colliding_mapped_snap_destinations_keep_opposite_observations(self):
+        inputs, report = self.load_and_plan(mapped=[(8, 10), (12, 10)])
+        self.assertEqual(inputs.crown_origins, [(8, 10), (12, 10)])
+        self.assertEqual([r['to'] for r in report['rooting']], [[9, 10], [11, 10]])
+
+    def test_dropped_aerial_snap_cannot_change_retained_mapped_origin(self):
+        inputs, report = self.load_and_plan(aerial=[(8, 10, 3.)], mapped=[(12, 10)])
+        self.assertEqual(len(inputs.crown_snaps), 1)  # diagnostics still include the dropped observation
+        self.assertEqual(inputs.crowns, [(10, 10, tl.MAPPED_TREE_R)])
+        self.assertEqual(inputs.crown_origins, [(12, 10)])
+        self.assertEqual(report['rooting'][0]['observed_crown'], [12, 10])
+        self.assertEqual(report['rooting'][0]['to'], [11, 10])
+
+
+class TestEvidencedRooting(unittest.TestCase):
+    """Plan blocks and reasons: evidence permits hard ground, never road or water."""
+
+    def plan(self, roads=(), water=(), crown=(10, 10, 3.), owned=(), surface='blue_concrete',
+             masked=None, footprints=(), source='aerial', snaps=None, ground_block=None, crown_origins=None):
+        from site_kit import Plan
+        from dataclasses import replace
+        origin = (crown[0], crown[1])
+        inputs = tl.TreeInputs([crown], 0, {origin} if source == 'extra' else set(),
+                               {origin} if source == 'aerial' else set(), set(owned), None, masked or {}, set(footprints),
+                               crown_snaps=snaps, mapped={origin} if source == 'mapped' else set(),
+                               crown_origins=crown_origins)
+        inputs = replace(inputs, road=set(roads), water=set(water))
+        class Ground:
+            def block(self, x, y, z):
+                if y <= 60 and ground_block is not None:
+                    return ground_block(x, y, z)
+                return f'minecraft:{surface}' if y <= 60 else 'minecraft:air'
+        with mock.patch.object(tl, 'surface_y', return_value=(60, surface)), \
+                mock.patch.object(tl, 'warm_surface_probe'):
+            return tl.plan_cell((0, 0), Plan('rooting'), Ground(), inputs)
+
+    def test_evidenced_hard_ground_is_legal(self):
+        placed, report = self.plan()
+        self.assertTrue(any('log' in b for b in placed.values()))
+        self.assertEqual(report['skipped'], [])
+
+    def test_road_edge_shunts_one_orthogonal_block_deterministically(self):
+        placed, report = self.plan(roads={(10, 10)})
+        self.assertTrue(placed)
+        self.assertEqual(report['rooting'][0]['from'], [10, 10])
+        self.assertEqual(report['rooting'][0]['to'], [9, 10])
+        self.assertEqual(report, self.plan(roads={(10, 10)})[1])
+
+    def test_no_adjacent_legal_position_leaves_tree_unplaced(self):
+        cross = {(10, 10), (9, 10), (11, 10), (10, 9), (10, 11)}
+        placed, report = self.plan(water=cross)
+        self.assertFalse(placed)
+        self.assertIn('one-block', report['skipped'][0][-1])
+
+    def test_blocked_trunk_does_not_shunt_on_legal_ground(self):
+        placed, report = self.plan(owned={(10, 61, 10)})
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'trunk blocked')
+        self.assertIsNone(report['rooting'][0]['to'])
+
+    def test_one_block_adjustment_cannot_move_trunk_outside_its_cell(self):
+        roads = {(0, 10), (0, 9), (0, 11), (1, 10)}
+        placed, report = self.plan(roads=roads, crown=(0, 10, 3.))
+        self.assertFalse(placed)
+        self.assertIn('no legal one-block', report['skipped'][0][-1])
+
+    def test_live_water_rejects_even_without_map_water(self):
+        placed, report = self.plan(surface='water')
+        self.assertFalse(placed)
+        self.assertIn('water', report['skipped'][0][-1])
+
+    def test_each_explicit_source_can_root_on_hard_ground_but_detector_cannot(self):
+        for source in ('aerial', 'mapped', 'extra', 'detector'):
+            placed, report = self.plan(source=source)
+            self.assertEqual(bool(placed), source != 'detector')
+        # Detector/dense-fill retain their existing lawn and footprint policy.
+        placed, report = self.plan(source='detector', surface='grass_block', roads={(10, 10)})
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'carriageway')
+        self.assertEqual(len(report['rooting'][0]['attempts']), 1)
+        placed, report = self.plan(source='detector', surface='grass_block', footprints={(10, 10)})
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'feature zone')
+
+    def test_courtyard_exception_and_masked_trunk_are_preserved(self):
+        placed, _ = self.plan(footprints={(10, 10)})
+        self.assertTrue(placed)
+        placed, report = self.plan(masked={(10, 61, 10): 'decor 0,0'})
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'trunk blocked')
+        self.assertEqual(len(report['rooting'][0]['attempts']), 1)
+
+    def test_shunt_is_closest_to_observed_crown_after_separate_lidar_snap(self):
+        snaps = [{'from': (12, 10), 'to': (10, 10), 'shift': (-2, 0), 'status': 'moved'}]
+        _, report = self.plan(roads={(10, 10)}, snaps=snaps, crown_origins=[(12, 10)])
+        rooting = report['rooting'][0]
+        self.assertEqual(rooting['from'], [10, 10])
+        self.assertEqual(rooting['to'], [11, 10])
+        self.assertEqual(rooting['observed_crown'], [12, 10])
+        self.assertEqual(report['crown_snaps'], snaps)
+
+    def test_surface_or_unknown_water_status_is_a_review_reason_without_shunt(self):
+        for mode in ('missing', 'unknown'):
+            if mode == 'missing':
+                with mock.patch.object(tl, 'surface_y', return_value=None), mock.patch.object(tl, 'warm_surface_probe'):
+                    # Call directly so the fixture's surface mock does not replace this one.
+                    from site_kit import Plan
+                    inputs = tl.TreeInputs([(10, 10, 3.)], 0, set(), {(10, 10)}, set(), None, {}, set())
+                    placed, report = tl.plan_cell((0, 0), Plan('no_surface'), FakeWorld(), inputs)
+            else:
+                placed, report = self.plan(ground_block=lambda *args: None)
+            self.assertFalse(placed)
+            self.assertIn(report['skipped'][0][-1], ('no surface', 'unknown water status'))
+            self.assertEqual(len(report['rooting'][0]['attempts']), 1)
+
+    def test_road_water_under_canopy_do_not_reject_a_legal_trunk(self):
+        placed, report = self.plan(roads={(12, 10)}, water={(10, 12)})
+        self.assertTrue(placed)
+        self.assertEqual(report['rooting'][0]['from'], report['rooting'][0]['to'])
+        self.assertTrue(any('leaves' in b for p, b in placed.items() if (p[0], p[2]) in {(12, 10), (10, 12)}))
+
+    def test_all_trunk_footprint_columns_are_checked(self):
+        def voxels(x, z, gy, r):
+            return {(x, gy + 1, z): 'oak_log', (x + 1, gy + 1, z): 'oak_log', (x, gy + 2, z): 'oak_leaves'}
+        with mock.patch.object(tl, 'voxels_for', side_effect=voxels):
+            placed, report = self.plan(roads={(11, 10)})
+        self.assertTrue(placed)
+        self.assertEqual(report['rooting'][0]['reason'], 'carriageway')
+        self.assertEqual(report['rooting'][0]['to'], [9, 10])
+        self.assertTrue(all((p[0], p[2]) != (11, 10) for p, b in placed.items() if 'log' in b))
+
+    def test_every_shunt_candidate_obeys_ownership_and_mask_checks(self):
+        placed, report = self.plan(roads={(10, 10)}, owned={(9, 61, 10)}, masked={(10, 61, 9): 'decor 0,0'})
+        self.assertTrue(placed)
+        self.assertEqual(report['rooting'][0]['to'], [10, 11])
+        attempts = report['rooting'][0]['attempts']
+        self.assertEqual([a['reason'] for a in attempts], ['carriageway', 'trunk blocked', 'trunk blocked', 'accepted'])
+        self.assertTrue(all(abs(a['at'][0] - 10) + abs(a['at'][1] - 10) <= 1 for a in attempts))
+
+    def test_waterlogged_live_surface_is_not_a_legal_root(self):
+        placed, report = self.plan(ground_block=lambda *args: 'minecraft:smooth_stone_slab[waterlogged=true]')
+        self.assertFalse(placed)
+        self.assertIn('water', report['skipped'][0][-1])
 
 
 if __name__ == '__main__':

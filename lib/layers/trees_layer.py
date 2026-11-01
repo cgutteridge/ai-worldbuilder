@@ -16,7 +16,7 @@ Writes a trees mask (§3) only after a clean readback.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import argparse
 import json
@@ -39,13 +39,9 @@ from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
 LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
-# Surfaces an aerial-evidenced crown may stand on besides lawn and PAVED_SURFACES: the ground layer's path/plaza colours (granite, stone) and tarmac wool,
-# which are often wrong under a real tree (a brick plaza painted black); the evidence for the crown is the aerial sheet, not the ground block.
-AERIAL_SHEET_SURFACES = frozenset({'granite', 'stone', 'black_wool', 'gray_concrete', 'polished_diorite', 'smooth_stone_slab'})
 LAWN_SURFACES = frozenset({'grass_block', 'dirt', 'podzol', 'coarse_dirt', 'moss_block'})
-# Hard ground a tree can stand in: the real pavement has a soil pit under the trunk that the aerial
-# never shows (user, 2026-10-14); the trunk hides the paving block, so nothing is placed below it.
-# Tarmac, water, stairs/slabs and structure blocks stay out.
+# Detector/dense-fill material policy; explicit crowns instead use evidence-led rooting.
+# Rooting never changes the surface block.
 PAVED_SURFACES = frozenset({'light_gray_concrete', 'polished_granite', 'gravel'})
 # Hard-surface rule (2026-10-15 dense-tree redo): trunks stand on lawn only, never on paving, gravel or tarmac.
 TREES_ON_PAVING = False
@@ -228,7 +224,7 @@ def extra_crowns(cell: tuple[int, int], path: Path | None = None) -> list[tuple[
 
     Each entry is a tree read from other imagery (registered user aerial + LIDAR dome) where the mosaic shows no
     canopy. They are cell-local (dx, dz, r) like detected crowns and go through exactly the same planting rules
-    (lawn surface, trunk in cell, air only, mask); only the vector-map footprint 'feature zone' skip is waived, because
+    (evidenced rooting, trunk in cell, air only, mask); only the vector-map footprint 'feature zone' skip is waived, because
     these sit where a mapped roof way was found to be a tree (I-055).
     """
     path = path or EXTRA_CROWNS
@@ -263,7 +259,7 @@ def google_crowns(cell: tuple[int, int], path: Path | None = None):
     detector's crowns (mosaic detection, dense fill, extra crowns) are DROPPED and these replace them: the aerial sheet
     is the position source there (the z19 mosaic and the lidar both put crowns blocks off, and the lidar holds ~1/3 of them).
     Outside the zones the detector is unchanged. Aerial-sheet crowns go first (they win overlaps), are exempt from the
-    vector-map feature-zone skip (a courtyard tree is real) and may stand on PAVED_SURFACES (a plaza tree has a soil pit);
+    vector-map feature-zone skip (a courtyard tree is real) and may root on hard ground (a plaza tree has a soil pit);
     every other rule (trunk in cell, air only, mask) is the normal one. Positions are then snapped to nearby lidar
     nDSM peaks (see ``snap_google_crowns``).
 
@@ -487,6 +483,10 @@ class TreeInputs:
     mapped_rejections: list | None = None  # logged rejects for mapped points/rows
     mapped_snaps: list | None = None  # per-mapped-crown lidar snap report
 
+    road: set = field(default_factory=set)
+    water: set = field(default_factory=set)
+    crown_origins: list | None = None  # world (x, z), aligned with retained crowns before lidar snapping
+
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
         return replace(self, masked=dict(remaining_masks))
@@ -508,6 +508,7 @@ def planning_inputs(cell, osm_ground=None):
     extra = {(x0 + i, z0 + j) for i, j, _r in extra_crowns(cell)}
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]
+    crown_origins = [(x0 + i, z0 + j) for i, j, _r in crowns]
     aerial_sheet = set()
     crown_snaps = None
     from osm_footprints import OSMIndex
@@ -518,10 +519,13 @@ def planning_inputs(cell, osm_ground=None):
     g = google_crowns(cell)
     if g:
         zones, gc = g
+        google_origins = [(x0 + i, z0 + j) for i, j, _r in gc]
         if ndsm is not None:
             gc, crown_snaps = snap_google_crowns(gc, ndsm, fp_local)
-        crowns = gc + [c for c in crowns
-                       if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
+        retained = [(c, origin) for c, origin in zip(crowns, crown_origins)
+                    if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
+        crowns = gc + [c for c, _origin in retained]
+        crown_origins = google_origins + [origin for _c, origin in retained]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
     # Mapped natural=tree points + tree_row crown sequences (#157).
     if osm_ground is None:
@@ -536,17 +540,23 @@ def planning_inputs(cell, osm_ground=None):
     )
     mapped = {(x0 + i, z0 + j) for i, j, _r in mapped_crowns}
     # Mapped crowns win overlaps (surveyed position); skip detector crowns too close.
-    crowns = mapped_crowns + [
-        c for c in crowns
+    retained = [
+        (c, origin) for c, origin in zip(crowns, crown_origins)
         if not any((c[0] - mi) ** 2 + (c[1] - mj) ** 2 <= (mr * 0.75) ** 2
                    for mi, mj, mr in mapped_crowns)
     ]
+    crowns = mapped_crowns + [c for c, _origin in retained]
+    crown_origins = [(x0 + snap['from'][0], z0 + snap['from'][1]) for snap in mapped_snaps] + [
+        origin for _c, origin in retained]
     owned = neighbour_owned(cell, ignored_builds(cell))
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
-                      crown_snaps, mapped, mapped_rejections, mapped_snaps)
+                      crown_snaps, mapped, mapped_rejections, mapped_snaps,
+                      set(getattr(osm_ground, 'road', ())),
+                      set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
+                      crown_origins=crown_origins)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -565,32 +575,82 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
               'crown_snaps': inputs.crown_snaps,
               'mapped_rejections': inputs.mapped_rejections or [],
-              'mapped_snaps': inputs.mapped_snaps or []}
+              'mapped_snaps': inputs.mapped_snaps or [], 'rooting': []}
     warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
                        x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
-    # Surveyed / aerial-sheet crowns: courtyard and plaza trees are real (soil pit under paving).
-    evidenced = aerial_sheet | mapped
-    for i, j, r in crowns:
-        x, z = x0 + i, z0 + j
+    # Explicit aerial, surveyed and extra crowns are evidence; detector/dense fill
+    # retain their existing surface and feature-zone policy.
+    evidenced = aerial_sheet | mapped | extra
+
+    # Lidar snapping is a separate, already-completed stage. Use its original
+    # observed crown for distance ties, never expand the shunt search from it.
+    crown_origins = inputs.crown_origins
+    if crown_origins is not None and len(crown_origins) != len(crowns):
+        raise ValueError('crown_origins must align with crowns')
+
+    def candidate(x, z, r, observed):
+        if (x, 0, z) not in cell_xz:
+            return {}, 'trunk outside cell'
         surf = surface_y(world, x, z)
-        if (x, z) not in extra and (x, z) not in evidenced and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
-            report['skipped'].append((x, z, r, 'feature zone'))      # no tree-phase tree is rooted in a feature
-            continue
-        allowed = (LAWN_SURFACES | PAVED_SURFACES | AERIAL_SHEET_SURFACES if (x, z) in evidenced
-                   else LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES)
-        if not surf or surf[1] not in allowed:
-            report['skipped'].append((x, z, r, f'surface {surf[1] if surf else None}'))
-            continue
+        if not surf:
+            return {}, 'no surface'
+        if not observed and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
+            return {}, 'feature zone'
+        if not observed and surf[1] not in (LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES):
+            return {}, f'surface {surf[1]}'
         gy = surf[0]
         vox = voxels_for(x, z, gy, r)
+        trunk = [p for p, b in vox.items() if 'log' in b]
+        roots = {(p[0], p[2]) for p in trunk if p[1] == gy + 1} or {(x, z)}
+        from surface_probe import is_water
+        for q in sorted(roots):
+            top = surface_y(world, *q)
+            if not top:
+                return {}, 'no surface'
+            live = world.block(q[0], top[0], q[1])
+            if live is None:
+                return {}, 'unknown water status'
+            if (q[0], 0, q[1]) not in cell_xz:
+                return {}, 'trunk outside cell'
+            if q in inputs.water or is_water(live) or is_water(f'minecraft:{top[1]}') or 'waterlogged=true' in live:
+                return {}, 'water'
+            if q in inputs.road:
+                return {}, 'carriageway'
+            if observed and top[0] != gy:
+                return {}, 'uneven trunk ground'
         kept = {p: b for p, b in vox.items()
                 if may_plant(world.block(*p), b, masked.get(p)) and p not in owned and p not in placed}
-        trunk = [p for p, b in vox.items() if 'log' in b]
         if any(p not in kept or p not in cell_xz for p in trunk):
-            report['skipped'].append((x, z, r, 'trunk blocked'))
-            continue
+            return {}, 'trunk blocked'
         if len(kept) < KEEP_FRACTION * len(vox):
-            report['skipped'].append((x, z, r, f'{len(vox) - len(kept)} of {len(vox)} voxels blocked'))
+            return {}, f'{len(vox) - len(kept)} of {len(vox)} voxels blocked'
+        return kept, None
+
+    for index, (i, j, r) in enumerate(crowns):
+        origin = (x0 + i, z0 + j)
+        observed = origin in evidenced
+        x, z = origin
+        kept, reason = candidate(x, z, r, observed)
+        original_reason = reason
+        observed_centre = crown_origins[index] if crown_origins is not None else origin
+        attempts = [{'at': list(origin), 'reason': reason or 'accepted'}]
+        # One orthogonal adjustment for road/water edges only, never a search
+        # outward until a blocked tree fits. Coordinates provide a stable tie-break.
+        if observed and reason in ('carriageway', 'water'):
+            neighbours = ((x - 1, z), (x, z - 1), (x, z + 1), (x + 1, z))
+            for nx, nz in sorted(neighbours, key=lambda q: ((q[0] - observed_centre[0]) ** 2 + (q[1] - observed_centre[1]) ** 2, q)):
+                kept, reason = candidate(nx, nz, r, observed)
+                attempts.append({'at': [nx, nz], 'reason': reason or 'accepted'})
+                if kept:
+                    x, z = nx, nz
+                    break
+            if not kept:
+                reason = f'{original_reason}: no legal one-block rooting position'
+        report['rooting'].append({'from': list(origin), 'to': [x, z] if kept else None,
+                                  'reason': original_reason if (x, z) != origin else reason or 'original position',
+                                  'evidenced': observed, 'observed_crown': list(observed_centre), 'attempts': attempts})
+        if not kept:
+            report['skipped'].append((*origin, r, reason))
             continue
         placed.update(kept)
         report['trees'].append((x, z, r, 'bush' if r < MIN_CROWN_R + 0.2 else 'tree'))
@@ -617,6 +677,11 @@ def review_image(cell: tuple[int, int], report: dict, out: Path) -> None:
     for x, z, r, why in report['skipped']:
         cx, cy = (x - x0) * scale, (z - z0) * scale
         d.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), outline=(255, 0, 0), width=2)
+    for row in report.get('rooting', []):
+        if row['to'] and row['from'] != row['to']:
+            a, b = row['from'], row['to']
+            d.line(((a[0] - x0) * scale, (a[1] - z0) * scale,
+                    (b[0] - x0) * scale, (b[1] - z0) * scale), fill=(255, 255, 0), width=2)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out)
 
@@ -652,12 +717,15 @@ def run(cell: tuple[int, int]) -> int:
     from layer_reports import reason_summary, write_report
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
+    shunts = [r for r in rep['rooting'] if r['to'] and r['from'] != r['to']]
+    print(f"  root adjustments: {len(shunts)}; by reason: {reason_summary(r['reason'] for r in shunts)}")
     write_report(name, {**rep, 'placement_positions': len(placed)})
     img = ROOT / f'verification/site/{name}-crowns.png'
     review_image(cell, rep, img)
-    print(f'  review image: {img.relative_to(ROOT)}  (magenta tree, cyan bush, red skipped)')
+    print(f'  review image: {img.relative_to(ROOT)}  (magenta tree, cyan bush, red skipped, yellow root adjustment)')
     (ROOT / f'verification/site/{name}-plan.json').write_text(json.dumps(
-        {'trees': rep['trees'], 'skipped': rep['skipped'], 'blocks': len(placed)}, indent=1))
+        {'trees': rep['trees'], 'skipped': rep['skipped'], 'blocks': len(placed),
+         'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps']}, indent=1))
     preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
     apply(plan, dry=True, modifies=ignored_builds(cell))
     return 0
@@ -680,6 +748,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     from layer_reports import reason_summary, write_report
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
+    shunts = [r for r in rep['rooting'] if r['to'] and r['from'] != r['to']]
+    print(f"  root adjustments: {len(shunts)}; by reason: {reason_summary(r['reason'] for r in shunts)}")
     write_report(name, {**rep, 'placement_positions': len(placed)})
     if not placed:
         raise SystemExit('nothing to plant; check the dry run')
@@ -688,7 +758,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
                       lambda p: is_air(world.block(*p)) or 'leaves' in bare(world.block(*p)))   # leaf-on-leaf merge
     print(f'{name}: {len(placed)} blocks, {len(rep["trees"])} crowns')
     rb = apply(plan, modifies=ignored_builds(cell), stage='trees', cell=cell,
-               strict=True, meta={'crowns': len(rep['trees'])}, mask=mask)
+               strict=True, meta={'crowns': len(rep['trees']), 'rooting': rep['rooting']}, mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 
