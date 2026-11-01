@@ -49,6 +49,21 @@ folder exists), or make one in the game.
 
 Check everything (read-only): `python3 scripts/check_instance.py --world <name>`.
 
+Identify the open save before choosing a world: `python3 scripts/which_world.py --json`. It reports a unique matching checkout and resolved save
+path without selecting a world or importing world-owned providers. Keep explicit
+`--world <name>` on subsequent place commands.
+
+Identity limitation verified on 2026-11-01: bridge 1.1.0 `server_get_status`
+provides a MOTD but no save path. A name cannot distinguish saves in different
+instance roots. The existing `site_kit.mcp_reported_gameworld` combines bridge
+reachability with on-disk `session.lock` existence; stale files make that
+insufficient for discovery. `which_world` instead uses local `lsof` to tie the
+port 8765 listener PID to exactly one actually open `session.lock` descriptor,
+then matches full resolved save paths against `worlds/*/config/world.json`.
+It fails on unknown/ambiguous identity or malformed configs. This requires the
+Minecraft process to be visible locally: a remote process or Windows-hosted
+Minecraft outside WSL's process namespace cannot be identified this way.
+
 ## Rules
 
 - Do not put a save inside a world checkout or this repo, and do not symlink saves.

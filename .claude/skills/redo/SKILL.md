@@ -21,7 +21,7 @@ Cell journal (ADR 004): clean applies land journal entries; undos/clears clear m
 
 ## 0. Locate
 
-1. Establish the explicit world checkout from its `config/world.json` and the open save; keep that same `--world <world>` on every place command. If the match is unclear, resolve it before proceeding. `player_list_online` → player `x,y,z` (floor to blocks); confirm this is the configured player targeted by `mc_player.py`. If they are offline, stop this player-standing redo.
+1. Run `python3 scripts/which_world.py --json` to match the open save to its checkout (local `lsof` process visibility required). Proceed only with one verified match; use that same `--world <world>` on every place command. `player_list_online` → player `x,y,z` (floor to blocks); confirm this is the configured player targeted by `mc_player.py`. If they are offline, stop this player-standing redo.
 2. `python3 scripts/redo_here.py --world <world> --at <x>,<z> --y <y> --json`
 3. Read `cell`, `primary`, `features`, `masks`.
 
