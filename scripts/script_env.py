@@ -214,6 +214,18 @@ def add_world_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+_ORIGINAL_EXCEPTHOOK = sys.excepthook
+
+
+def provider_excepthook(exc_type, exc, traceback) -> None:
+    """Show only known missing-provider errors concisely at CLI boundaries."""
+    from world_provider import MissingProviderError
+    if isinstance(exc, MissingProviderError):
+        print(str(exc), file=sys.stderr)
+    else:
+        _ORIGINAL_EXCEPTHOOK(exc_type, exc, traceback)
+
+
 def activate_world_from_args(args: argparse.Namespace) -> Path:
     """Select ``args.world``, bind ``ROOT``, and clear dependent caches.
 
@@ -222,6 +234,7 @@ def activate_world_from_args(args: argparse.Namespace) -> Path:
     """
     from active_world import set_world
 
+    sys.excepthook = provider_excepthook
     root = set_world(args.world)
     bind_world()
     clear_world_caches()
@@ -254,6 +267,7 @@ def prepend_world_activation(argv: Sequence[str] | None = None) -> Path:
     from active_world import set_world
 
     name, rest = take_world_arg(argv)
+    sys.excepthook = provider_excepthook
     root = set_world(name)
     bind_world()
     clear_world_caches()
