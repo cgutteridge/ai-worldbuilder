@@ -485,6 +485,7 @@ class TreeInputs:
 
     road: set = field(default_factory=set)
     water: set = field(default_factory=set)
+    crown_origins: list | None = None  # world (x, z), aligned with retained crowns before lidar snapping
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -507,6 +508,7 @@ def planning_inputs(cell, osm_ground=None):
     extra = {(x0 + i, z0 + j) for i, j, _r in extra_crowns(cell)}
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]
+    crown_origins = [(x0 + i, z0 + j) for i, j, _r in crowns]
     aerial_sheet = set()
     crown_snaps = None
     from osm_footprints import OSMIndex
@@ -517,10 +519,13 @@ def planning_inputs(cell, osm_ground=None):
     g = google_crowns(cell)
     if g:
         zones, gc = g
+        google_origins = [(x0 + i, z0 + j) for i, j, _r in gc]
         if ndsm is not None:
             gc, crown_snaps = snap_google_crowns(gc, ndsm, fp_local)
-        crowns = gc + [c for c in crowns
-                       if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
+        retained = [(c, origin) for c, origin in zip(crowns, crown_origins)
+                    if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
+        crowns = gc + [c for c, _origin in retained]
+        crown_origins = google_origins + [origin for _c, origin in retained]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
     # Mapped natural=tree points + tree_row crown sequences (#157).
     if osm_ground is None:
@@ -535,11 +540,14 @@ def planning_inputs(cell, osm_ground=None):
     )
     mapped = {(x0 + i, z0 + j) for i, j, _r in mapped_crowns}
     # Mapped crowns win overlaps (surveyed position); skip detector crowns too close.
-    crowns = mapped_crowns + [
-        c for c in crowns
+    retained = [
+        (c, origin) for c, origin in zip(crowns, crown_origins)
         if not any((c[0] - mi) ** 2 + (c[1] - mj) ** 2 <= (mr * 0.75) ** 2
                    for mi, mj, mr in mapped_crowns)
     ]
+    crowns = mapped_crowns + [c for c, _origin in retained]
+    crown_origins = [(x0 + snap['from'][0], z0 + snap['from'][1]) for snap in mapped_snaps] + [
+        origin for _c, origin in retained]
     owned = neighbour_owned(cell, ignored_builds(cell))
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
@@ -547,7 +555,8 @@ def planning_inputs(cell, osm_ground=None):
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
                       set(getattr(osm_ground, 'road', ())),
-                      set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())))
+                      set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
+                      crown_origins=crown_origins)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -575,9 +584,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
 
     # Lidar snapping is a separate, already-completed stage. Use its original
     # observed crown for distance ties, never expand the shunt search from it.
-    observed_centres = {}
-    for snap in (inputs.crown_snaps or []) + (inputs.mapped_snaps or []):
-        observed_centres[x0 + snap['to'][0], z0 + snap['to'][1]] = (x0 + snap['from'][0], z0 + snap['from'][1])
+    crown_origins = inputs.crown_origins
+    if crown_origins is not None and len(crown_origins) != len(crowns):
+        raise ValueError('crown_origins must align with crowns')
 
     def candidate(x, z, r, observed):
         if (x, 0, z) not in cell_xz:
@@ -617,13 +626,13 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
             return {}, f'{len(vox) - len(kept)} of {len(vox)} voxels blocked'
         return kept, None
 
-    for i, j, r in crowns:
+    for index, (i, j, r) in enumerate(crowns):
         origin = (x0 + i, z0 + j)
         observed = origin in evidenced
         x, z = origin
         kept, reason = candidate(x, z, r, observed)
         original_reason = reason
-        observed_centre = observed_centres.get(origin, origin)
+        observed_centre = crown_origins[index] if crown_origins is not None else origin
         attempts = [{'at': list(origin), 'reason': reason or 'accepted'}]
         # One orthogonal adjustment for road/water edges only, never a search
         # outward until a blocked tree fits. Coordinates provide a stable tie-break.

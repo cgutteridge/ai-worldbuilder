@@ -402,17 +402,71 @@ class TestMappedTreeCrowns(unittest.TestCase):
         self.assertIn((15, 15), local)
 
 
+class TestRetainedCrownOrigins(unittest.TestCase):
+    """Exercise source snapping/precedence through the production input loader and planner."""
+
+    def load_and_plan(self, aerial=(), mapped=()):
+        from site_kit import Plan
+        ndsm = np.zeros((128, 128))
+        ndsm[10, 10] = 9.0
+        osm = types.ModuleType('osm_footprints')
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        ground = types.SimpleNamespace(trees=list(mapped), tree_rows=[], road={(10, 10)})
+        with mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=([(0, 0, 127, 127)], list(aerial))), \
+                mock.patch.object(tl, 'cell_ndsm', return_value=ndsm), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch.dict(sys.modules, {'osm_footprints': osm}), \
+                mock.patch('cell_registry.view_registry',
+                           return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs((0, 0), osm_ground=ground)
+        class Ground:
+            def block(self, x, y, z):
+                return 'minecraft:grass_block' if y <= 60 else 'minecraft:air'
+        # Isolate rooting direction from canopy-overlap policy between colliding crowns.
+        with mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')), \
+                mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch.object(tl, 'voxels_for', side_effect=lambda x, z, gy, r: {(x, gy + 1, z): 'oak_log'}):
+            _, report = tl.plan_cell((0, 0), Plan('origins'), Ground(), inputs.after_undo({}))
+        return inputs, report
+
+    def test_colliding_aerial_snap_destinations_keep_opposite_observations(self):
+        inputs, report = self.load_and_plan(aerial=[(8, 10, 3.), (12, 10, 3.)])
+        self.assertEqual([c[:2] for c in inputs.crowns], [(10, 10), (10, 10)])
+        self.assertEqual(inputs.crown_origins, [(8, 10), (12, 10)])
+        self.assertEqual([r['observed_crown'] for r in report['rooting']], [[8, 10], [12, 10]])
+        self.assertEqual([r['to'] for r in report['rooting']], [[9, 10], [11, 10]])
+
+    def test_colliding_mapped_snap_destinations_keep_opposite_observations(self):
+        inputs, report = self.load_and_plan(mapped=[(8, 10), (12, 10)])
+        self.assertEqual(inputs.crown_origins, [(8, 10), (12, 10)])
+        self.assertEqual([r['to'] for r in report['rooting']], [[9, 10], [11, 10]])
+
+    def test_dropped_aerial_snap_cannot_change_retained_mapped_origin(self):
+        inputs, report = self.load_and_plan(aerial=[(8, 10, 3.)], mapped=[(12, 10)])
+        self.assertEqual(len(inputs.crown_snaps), 1)  # diagnostics still include the dropped observation
+        self.assertEqual(inputs.crowns, [(10, 10, tl.MAPPED_TREE_R)])
+        self.assertEqual(inputs.crown_origins, [(12, 10)])
+        self.assertEqual(report['rooting'][0]['observed_crown'], [12, 10])
+        self.assertEqual(report['rooting'][0]['to'], [11, 10])
+
+
 class TestEvidencedRooting(unittest.TestCase):
     """Plan blocks and reasons: evidence permits hard ground, never road or water."""
 
     def plan(self, roads=(), water=(), crown=(10, 10, 3.), owned=(), surface='blue_concrete',
-             masked=None, footprints=(), source='aerial', snaps=None, ground_block=None):
+             masked=None, footprints=(), source='aerial', snaps=None, ground_block=None, crown_origins=None):
         from site_kit import Plan
         from dataclasses import replace
         origin = (crown[0], crown[1])
         inputs = tl.TreeInputs([crown], 0, {origin} if source == 'extra' else set(),
                                {origin} if source == 'aerial' else set(), set(owned), None, masked or {}, set(footprints),
-                               crown_snaps=snaps, mapped={origin} if source == 'mapped' else set())
+                               crown_snaps=snaps, mapped={origin} if source == 'mapped' else set(),
+                               crown_origins=crown_origins)
         inputs = replace(inputs, road=set(roads), water=set(water))
         class Ground:
             def block(self, x, y, z):
@@ -481,7 +535,7 @@ class TestEvidencedRooting(unittest.TestCase):
 
     def test_shunt_is_closest_to_observed_crown_after_separate_lidar_snap(self):
         snaps = [{'from': (12, 10), 'to': (10, 10), 'shift': (-2, 0), 'status': 'moved'}]
-        _, report = self.plan(roads={(10, 10)}, snaps=snaps)
+        _, report = self.plan(roads={(10, 10)}, snaps=snaps, crown_origins=[(12, 10)])
         rooting = report['rooting'][0]
         self.assertEqual(rooting['from'], [10, 10])
         self.assertEqual(rooting['to'], [11, 10])
