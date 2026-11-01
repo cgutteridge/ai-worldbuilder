@@ -109,12 +109,34 @@ def run(owner, task, cmd):
         raise SystemExit(128 + signum)
 
     old = signal.signal(signal.SIGTERM, _term)
+    process = None
+    completed = False
     try:
-        rc = subprocess.run(cmd, env={**os.environ, 'SITE_OWNER': owner}).returncode
+        # Own a process group so termination cannot leave a builder running after
+        # the lock was released. Layer commands inherit this group.
+        process = subprocess.Popen(cmd, env={**os.environ, 'SITE_OWNER': owner}, start_new_session=True)
+        rc = process.wait()
+        completed = True
         return 128 - rc if rc < 0 else rc
     except KeyboardInterrupt:
         return 130
     finally:
+        if process is not None and not completed:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            # The worker may have exited before its child CLI. Stop every member
+            # of the group before making the world lock available again.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
         signal.signal(signal.SIGTERM, old)
         release(owner)
 

@@ -70,3 +70,12 @@ def matching_world(save: Path, worlds: Path) -> dict[str, str]:
         raise DiscoveryError(f'{len(matches)} matching world checkouts for running save {save}; expected exactly one')
     return matches[0]
 
+
+
+def require_running_world() -> None:
+    """Refuse mutation when the selected save differs from the MCP process's save."""
+    from active_world import save_path
+    expected = save_path().resolve()
+    actual = running_save()
+    if actual != expected:
+        raise DiscoveryError(f'selected save {expected} differs from running save {actual}; use which_world.py')
