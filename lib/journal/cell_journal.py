@@ -422,6 +422,7 @@ class _Prepared:
     writes: Writes
     strict: bool
     prior: Mapping[Pos, str] | None = None
+    observed: Mapping[Pos, str | None] | None = None
 
 
 def _token(tz: int) -> str:
@@ -549,11 +550,23 @@ class Ticket:
     @param writes: what the caller must write
     """
 
-    def __init__(self, registry: 'CellRegistry', seq: int, writes: Writes, strict: bool) -> None:
+    def __init__(self, registry: 'CellRegistry', seq: int, writes: Writes, strict: bool,
+                 before: Mapping[Pos, str | None] | None = None) -> None:
         self.registry = registry
         self.seq = seq
         self.writes = writes
         self.strict = strict
+        self._before = before
+
+    def prewrite(self) -> dict[Pos, str | None]:
+        """Return the original begin's observed states without another block read.
+
+        @returns: an independent position/state map, preserving unknown (None); empty for empty builds
+        @raises Refused: the ticket has no original observations (undo or resumed entry)
+        """
+        if self._before is None:
+            raise Refused('this ticket has no pre-write snapshot')
+        return dict(self._before)
 
     def finish(self, readback: Mapping[Pos, str | None]) -> Receipt:
         """Compare ``readback`` with the plan and journal ``landed`` / ``mismatched``.
@@ -1276,7 +1289,7 @@ class CellRegistry:
         if entities:
             record['entities'] = _entities_json(entities)
         writes = Writes(b.plan, b.pass_, positions, 'build', b, signs=signs, entities=entities)
-        return _Prepared(record, writes, bool(b.strict or b.mask is not None), prior)
+        return _Prepared(record, writes, bool(b.strict or b.mask is not None), prior, actual)
 
     def _resolve_targets(self, target: str | tuple[Cell, str]) -> list[_Entry]:
         out = []
@@ -1357,7 +1370,8 @@ class CellRegistry:
         if prep.prior is not None:
             record['prior'] = self._store_blob(prep.prior)
         seq = self._append(record)
-        return Ticket(self, seq, replace(prep.writes, seq=seq), prep.strict)
+        return Ticket(self, seq, replace(prep.writes, seq=seq), prep.strict,
+                      prep.observed if record['kind'] == 'build' else None)
 
     def begin(self, intent: Build | Undo) -> Ticket:
         """Journal ``begun`` (fsynced) and return the ticket; no block has been written yet.

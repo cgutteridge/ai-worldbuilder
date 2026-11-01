@@ -418,6 +418,57 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class TestApplyReporting(unittest.TestCase):
+    def test_apply_prints_exclusion_counts_and_saves_all_details(self):
+        import io
+        import json
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from unittest import mock
+        from layer_reports import write_report
+
+        excluded = [{'x': x, 'z': 0, 'reason': reason}
+                    for reason in ('building footprint', 'water / bank', 'bridge / steps')
+                    for x in range(20)]
+        retained = [{'position': [x, 65, 0], 'reason': 'tree/decor mask'} for x in range(30)]
+        stats = Counter(columns=1, top=1)
+        stats['excluded_columns'] = excluded
+        stats['retained_positions'] = retained
+        skipped = Counter(item['reason'] for item in excluded)
+
+        def plan_cell(cell, masked, owned, plan, world):
+            plan.set(0, 64, 0, 'grass_block')
+            return stats, [], {(0, 0): 'grass'}, skipped
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
+                mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.object(gl, '_fresh_world') as fresh_world, \
+                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
+                mock.patch.object(gl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
+                mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
+                mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(gl.apply_cell((0, 0)), 0)
+            saved = json.loads((Path(tmp) / 'highfield_0_0_ground-report.json').read_text())
+
+        self.assertEqual(saved['stats']['excluded_columns'], excluded)
+        self.assertEqual(saved['stats']['retained_positions'], retained)
+        self.assertEqual(saved['skipped'], dict(skipped))
+        self.assertEqual(saved['planned_positions'], 1)
+        self.assertEqual(saved['conflicts'], [])
+        self.assertIn('skipped: building footprint 20, water / bank 20, bridge / steps 20', output.getvalue())
+        self.assertIn('full report:', output.getvalue())
+        self.assertNotIn('excluded_columns', output.getvalue())
+        self.assertNotIn('retained_positions', output.getvalue())
+        self.assertLess(len(output.getvalue().splitlines()), 10)
+        fresh_world.assert_called_once_with(strict=True)
+        apply.assert_called_once()
+        self.assertEqual(apply.call_args.args[0].cells, {(0, 64, 0): 'minecraft:grass_block'})
+
+
 class TestRegisteredAerial(unittest.TestCase):
     """Registered user aerials (Google 3D render) as a higher-priority colour source (I-042/I-057)."""
 

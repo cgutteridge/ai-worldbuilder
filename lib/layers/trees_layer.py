@@ -643,29 +643,16 @@ def run(cell: tuple[int, int]) -> int:
         print(f'  google-crown lidar snap: {n_moved}/{len(snaps)} moved '
               f'({100.0 * n_moved / len(snaps):.0f}%), radius {CROWN_SNAP_RADIUS}, '
               f'nDSM≥{CROWN_SNAP_MIN_NDSM_M:g} m')
-        for s in snaps:
-            fx, fz = x0 + s['from'][0], z0 + s['from'][1]
-            tx_, tz_ = x0 + s['to'][0], z0 + s['to'][1]
-            dx, dz = s['shift']
-            print(f'    ({fx},{fz})->({tx_},{tz_}) shift ({dx},{dz}) '
-                  f'nDSM {s["ndsm"]:.1f} m  {s["status"]}')
     mapped_snaps = rep.get('mapped_snaps') or []
     if mapped_snaps:
         x0, z0 = tx * CELL, tz * CELL
         n_moved = sum(1 for s in mapped_snaps if s['status'] == 'moved')
         print(f'  mapped-tree lidar snap: {n_moved}/{len(mapped_snaps)} moved; '
               f'young/unconfirmed kept as small crowns (#129)')
-        for s in mapped_snaps:
-            fx, fz = x0 + s['from'][0], z0 + s['from'][1]
-            tx_, tz_ = x0 + s['to'][0], z0 + s['to'][1]
-            reason = s.get('reason', s['status'])
-            print(f'    ({fx},{fz})->({tx_},{tz_}) shift {s["shift"]} '
-                  f'nDSM {s["ndsm"]:.1f} m  {s["status"]}'
-                  + (f'  ({reason})' if s.get('reason') else ''))
-    for rej in (rep.get('mapped_rejections') or [])[:25]:
-        print(f'  mapped rejected ({rej["x"]},{rej["z"]}): {rej["reason"]}')
-    for x, z, r, why in rep['skipped'][:25]:
-        print(f'  skipped ({x},{z}) r{r:.1f}: {why}')
+    from layer_reports import reason_summary, write_report
+    print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
+    print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
+    write_report(name, {**rep, 'placement_positions': len(placed)})
     img = ROOT / f'verification/site/{name}-crowns.png'
     review_image(cell, rep, img)
     print(f'  review image: {img.relative_to(ROOT)}  (magenta tree, cyan bush, red skipped)')
@@ -690,6 +677,10 @@ def apply_cell(cell: tuple[int, int]) -> int:
     plan = Plan(name)
     world = World()
     placed, rep = plan_cell(cell, plan, world)
+    from layer_reports import reason_summary, write_report
+    print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
+    print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
+    write_report(name, {**rep, 'placement_positions': len(placed)})
     if not placed:
         raise SystemExit('nothing to plant; check the dry run')
     # air-only is asserted now, from the same world the plan was read from, and again here
