@@ -856,12 +856,13 @@ def apply_cell(cell: tuple[int, int]) -> int:
     masked = load_masked_positions()
     ignored = ignored_builds(cell)
     owned = neighbour_owned(cell, ignored)
-    stats, conflicts, kind, _skipped = plan_cell(cell, masked, owned, plan, world)
+    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
     from layer_reports import write_report
-    write_report(name, {'stats': dict(stats), 'skipped': dict(_skipped), 'conflicts': conflicts,
+    write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
+    print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
     if conflicts:
         print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
         return 1
