@@ -40,10 +40,6 @@ FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}       # facing of a stair that rises toward the house
 
 
-def pane(axis):
-    return 'glass_pane[east=true,west=true]' if axis == 'x' else 'glass_pane[north=true,south=true]'
-
-
 def stair(mat, facing, half='bottom'):
     return f'{mat}_stairs[facing={facing},half={half}]'
 
@@ -305,30 +301,34 @@ class Build:
                 return
 
     def windows(self, k, h):
-        b = h.b
-        door = {getattr(h, 'door', None), getattr(h, 'rear', None)}
-        for c in h.walls:
-            exp = [d for d in 'NSEW' if self.exposed(c, d)]
-            if not exp:
-                continue
-            d = exp[0]
-            diag = len(exp) > 1
-            lat = [(0, 1), (0, -1)] if d in 'EW' else [(1, 0), (-1, 0)]
-            ok = True
-            for lx, lz in ([] if diag else lat):
-                n = (c[0] + lx, c[1] + lz)
-                if n not in h.walls or not self.exposed(n, d):
-                    ok = False
-            if not ok:
-                continue
-            if any(abs(c[0] - q[0]) + abs(c[1] - q[1]) < 3 for q in door if q):
-                continue
-            par = (c[0] + c[1]) if diag else (c[0] if d in 'NS' else c[1])
-            if par % (3 if diag else 2):
-                continue
-            axis = 'z' if d in 'EW' else 'x'
-            self.set(c[0], b + 2, c[1], pane(axis))
-            self.set(c[0], b + 5, c[1], pane(axis))
+        """Apply the shared bounded-opening policy to the house's pier rhythm."""
+        from floor_reference import outside_ground
+        from window_openings import Window, DIRECTIONS, choose_windows, report_lines
+        del k
+        door = {q for q in (getattr(h, 'door', None), getattr(h, 'rear', None)) if q}
+        candidates = []
+        for face in DIRECTIONS:
+            cols = [c for c in h.walls if self.exposed(c, face)]
+            edge = 1 if face in 'NS' else 0
+            stepped = len({c[edge] for c in cols}) > 1
+            for c in sorted(cols):
+                if any(abs(c[0] - q[0]) + abs(c[1] - q[1]) < 3 for q in door):
+                    continue
+                if (c[0] if face in 'NS' else c[1]) % 2:
+                    continue
+                for dy in (2, 5):
+                    candidates.append(Window((c[0], h.b + dy, c[1]), face, stepped))
+        positions = {(w.pos[0] + DIRECTIONS[w.face][0], w.pos[2] + DIRECTIONS[w.face][1])
+                     for w in candidates}
+        ground = outside_ground(positions)
+        def block(x, y, z):
+            return self.p.cells.get((x, y, z), 'minecraft:air')
+        writes, report = choose_windows(candidates, block=block, walls=h.walls,
+            exposed=self.exposed, outside_ground=ground)
+        for pos, state in writes.items():
+            self.set(*pos, state)
+        for line in report_lines(h.no, report):
+            print(line)
 
     def roof(self):
         done = {}
@@ -403,8 +403,9 @@ class Build:
             self.shell(k, h)
         for k, h in enumerate(self.houses):
             self.doors(k, h, set())
-            self.windows(k, h)
         self.roof()
+        for k, h in enumerate(self.houses):
+            self.windows(k, h)
         for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
             if 'slab' in v[0]:
                 del self.p.cells[q]
