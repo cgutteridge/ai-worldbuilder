@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 239,
+  "nextTaskId": 240,
   "tasks": [
     {
       "id": 178,
@@ -166,6 +166,15 @@
       "complexity": "xs",
       "blockedBy": [],
       "notes": "NEEDS USER INPUT (process). The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs."
+    },
+    {
+      "id": 239,
+      "title": "Shorten generic house chimneys and cap them with a flower pot",
+      "status": "doing",
+      "priority": "low",
+      "complexity": "xs",
+      "blockedBy": [],
+      "notes": "Owner request: generic house_build chimney brickwork ends at local ridge Y+1, flower_pot at ridge Y+2. Keep placement and lower supporting brickwork unchanged. Verify generated roof/chimney blocks with synthetic geometry; existing world builds require reapply separately."
     }
   ]
 }
