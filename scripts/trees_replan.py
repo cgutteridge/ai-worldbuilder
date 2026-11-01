@@ -65,7 +65,8 @@ def main(argv=None) -> int:
     for s in rep['skipped']:
         print('  skipped', s)
     if a.out:
-        json.dump({'trees': rep['trees'], 'skipped': rep['skipped']}, open(a.out, 'w'))
+        json.dump({'trees': rep['trees'], 'skipped': rep['skipped'], 'rooting': rep['rooting'],
+                   'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps']}, open(a.out, 'w'))
     return 0
 
 
