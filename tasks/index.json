@@ -15,7 +15,7 @@
     {
       "id": 222,
       "title": "Explain layer exclusions and reconcile plan, write and readback counts",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
