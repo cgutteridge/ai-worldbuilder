@@ -18,6 +18,16 @@ from types import ModuleType
 from script_env import resolve_provider_package
 
 
+class MissingProviderError(ImportError):
+    """An expected local provider package or module is absent, rather than broken."""
+
+
+def _missing(message: str) -> MissingProviderError:
+    from active_world import world_root
+    return MissingProviderError(
+        f"{message} (world {world_root().name!r}; inspect config/local-providers.json)")
+
+
 def world_provider_module_path(package: str, module_file: str) -> Path:
     """Resolve ``WORLD_ROOT/<package>/<module_file>``.
 
@@ -40,18 +50,12 @@ def load_world_provider(package: str, module_file: str, module_name: str) -> Mod
     try:
         path = world_provider_module_path(package, module_file)
     except FileNotFoundError as exc:
-        raise ImportError(
-            f"local provider package missing: {package!r} "
-            f"(active world; see config/local-providers.json)"
-        ) from exc
+        raise _missing(f"local provider package missing: {package!r}") from exc
     existing = sys.modules.get(module_name)
     if existing is not None and Path(getattr(existing, "__file__", "") or "").resolve() == path:
         return existing
     if not path.is_file():
-        raise ImportError(
-            f"local provider module missing: {path} "
-            f"(active world package {package!r}; see config/local-providers.json)"
-        )
+        raise _missing(f"local provider module missing: {path}")
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load local provider module: {path}")
@@ -69,14 +73,11 @@ def run_world_provider(package: str, module_file: str) -> None:
     """
     try:
         path = world_provider_module_path(package, module_file)
+        if not path.is_file():
+            raise _missing(f"local provider module missing: {path}")
     except FileNotFoundError as exc:
-        raise SystemExit(
-            f"local provider package missing: {package!r} (active world)"
-        ) from exc
-    if not path.is_file():
-        raise SystemExit(
-            f"local provider module missing: {path} "
-            f"(active world package {package!r})"
-        )
+        raise SystemExit(str(_missing(f"local provider package missing: {package!r}"))) from exc
+    except MissingProviderError as exc:
+        raise SystemExit(str(exc)) from exc
     sys.argv[0] = str(path)
     runpy.run_path(str(path), run_name="__main__")
