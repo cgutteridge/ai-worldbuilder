@@ -69,7 +69,7 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`; `--apply` re
   built); door floor y follows outside ground + `floor_offset` for the transition, capped below the roof so both leaves and lintel fit. Missing outside ground falls back to lidar floor. The live rim never sets shell height. The old
   per-portal `doors` map is refused. Face slots `roof_edge` / `detail` are
   reserved; real roof edge and greeblies stay on `roofs.edge` / `details`.
-  Window frames are build-time (#131), not plan fields.
+  Window frames are checked against completed openings at build time.
   `plan_doors` reads each placed entrance's `awning_like` and queues its cover
   until after shell, roof and detail placement. `awning` and `covered_area`
   use roof-material bottom-half slabs at door top + 1, one block wider on each
@@ -84,7 +84,15 @@ a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`; `--apply` re
   for every exposed face, and a row per evidenced storey: `{storey, glazed_h,
   pier, wall?, rhythm?}` (`rhythm` uses `W/B/_`). Copy an evidenced face only
   with a note naming the source. Dry run reports glazed share on every face
-  and marks missing rows `no evidence read`. The old top-level table is refused.
+  and marks missing rows `no evidence read`. It also counts panes, bounded solid glass
+  and omissions by reason (corner pier, incomplete frame, protected entrance, missing
+  outside ground or below-ground sill). Doors/glazing cannot terminate an opening.
+  Panes remain on coherent straight planes; stepped treads and potential extra pane
+  connections use solid glass within the existing shell. Sharp corners stay opaque
+  unless that glazing row lists `corner_glazing: [{at: [x,z], provenance: {...}}]`
+  with resolved `photo_read`/`aerial` provenance. This explicit exception uses solid
+  glass and never permits a missing sill/lintel or replacing door framing.
+  The old top-level table is refused.
 - optional `details` — per-label roof and facade greeblies from the aerial
   sheet and street photos (`rules/building-review.md`). Each row is
   `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:

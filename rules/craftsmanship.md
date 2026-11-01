@@ -45,7 +45,8 @@ rule-file copy.
 
  Windows (always):
   - Punch openings from a solid wall plane — never float glass in a gap.
-  - Every pane (or pane column) has opaque blocks left and right.
+  - Each complete glazing strip terminates in opaque jambs, with a sill and lintel.
+    Adjacent panes in one wall plane may share the opening; doors and glazing are not jambs.
   - Sill under (slab or upside-down stair); lintel/head above.
   - Prefer glass *panes* inset one step if the wall is ≥2 thick; if the
     wall is 1 thick, still keep solid flanks and a coherent surround.
@@ -59,7 +60,13 @@ rule-file copy.
     corners of a stepped diagonal wall (cells exposed two ways).
   - Stepped diagonal walls (stairs) take windows on the flat tread between two corners: one full GLASS BLOCK, flush, every
     few treads. Never glass panes on a diagonal (a thin slit at the corner), and never the straight-wall pairs there.
-    A stepped wing with no tread run long enough stays brick; say so in the note rather than forcing glass onto corners.
+    A stepped wing with no tread run long enough stays brick; report the omission rather than forcing glass onto corners.
+  - Both builders evaluate completed openings before writing glass. Keep coherent framed pane strips;
+    use bounded solid glass where stepped geometry or an inside floor would give panes extra arms.
+    Preserve opaque piers and entrance frames. Window voxels must be above known outside lidar ground;
+    absent/nonfinite ground means omit and report it. Dry runs count panes, solid glass and omission reasons.
+    Feature glazing rows may explicitly name corner_glazing [{at: [x,z], provenance: {...}}] only with
+    resolved photo_read/aerial provenance; these observed wraparound corners use solid glass.
   - A face you cannot see is inferred, not left blank: give every straight face the same rhythm as the one in the photo.
   - Balconies are open: white parapet at the face, plain back wall, no glass. Only the entrance face has them.
   - A blank flank at each run end is wasted: the corner cell already is the pier.
