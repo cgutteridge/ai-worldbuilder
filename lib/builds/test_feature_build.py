@@ -755,6 +755,22 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
             self.assertNotIn('bricks', plan.cells.get((13, y, 26), ''))
         self.assertIn('door T-A cover porch_roof depth 2', out)
 
+    def test_low_ground_porch_posts_reach_the_surface(self):
+        class LowWorld:
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= 28 else 'minecraft:air'
+
+        spec = self.spec([_entrance_row(awning_like={'kind': 'porch_roof', 'depth': 2})])
+        spec['floor_min'] = None
+        grids = {'A': {'x0': 9, 'z0': 19, 'ground_y': np.full((9, 9), 28)}}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=LowWorld(), zone_data=grids)
+        for x in (12, 14):
+            self.assertNotIn((x, 28, 26), plan.cells)
+            for y in (29, 30):
+                self.assertEqual(plan.cells[(x, y, 26)], 'minecraft:bricks')
+            self.assertEqual(plan.cells[(x, 31, 26)], 'minecraft:smooth_stone_slab[type=bottom]')
+
     def test_zero_cover_depth_defaults_to_one(self):
         plan, out = self.build_plan([
             _entrance_row(awning_like={'kind': 'awning', 'depth': 0}),

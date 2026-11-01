@@ -1,7 +1,12 @@
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
+from unittest import mock
+
+import numpy as np
 
 import house_build as H
 
@@ -23,6 +28,47 @@ class SpecTest(unittest.TestCase):
                     {**good, 'groups': [{'nos': ['A'], 'front': 'X'}]}):
             with self.assertRaises(SystemExit):
                 H.load_spec(self.write(bad))
+
+
+class FloorReferenceTest(unittest.TestCase):
+    def build(self, floor_min=None):
+        b = H.Build.__new__(H.Build)
+        b.name = 'low_house'
+        b.spec = {'floor_min': floor_min}
+        b.by_no_all_cells = {(0, 0)}
+        b.live = mock.Mock()
+        b.live.block.side_effect = lambda x, y, z: 'minecraft:stone' if y <= 28 else 'minecraft:air'
+        return b, H.House('A', {(0, 0)}, {'front': 'N'})
+
+    def floor(self, b, h, height=28):
+        from world_frame import load_frame
+        lidar = mock.Mock()
+        lidar.missing.return_value = []
+        lidar.sample.side_effect = lambda product, east, north, *args: np.full(
+            np.asarray(east).shape, height - load_frame().y_offset)
+        with mock.patch('lidar_provider.tile_client', return_value=lidar), redirect_stdout(io.StringIO()):
+            return b.floor_y(h)
+
+    def test_low_ground_floor_and_floor_min(self):
+        for floor_min, expected in ((None, 28), (30, 30), (25, 28)):
+            with self.subTest(floor_min=floor_min):
+                b, h = self.build(floor_min)
+                self.assertEqual(self.floor(b, h), expected)
+
+    def test_floor_uses_lidar_instead_of_live_buildings(self):
+        b, h = self.build()
+        b.live.block.side_effect = lambda x, y, z: 'minecraft:stone' if y <= 60 else 'minecraft:air'
+        self.assertEqual(self.floor(b, h), 28)
+        b.live.block.assert_not_called()
+
+    def test_missing_or_invalid_lidar_is_refused(self):
+        b, h = self.build()
+        with mock.patch('lidar_provider.tile_client') as client:
+            client.return_value.missing.return_value = ['missing DTM']
+            with self.assertRaisesRegex(SystemExit, 'low_house A: lidar DTM cache missing'):
+                b.floor_y(h)
+        with self.assertRaisesRegex(SystemExit, 'no valid ground under footprint'):
+            self.floor(b, h, height=float('nan'))
 
 
 class DoorFrameTest(unittest.TestCase):
