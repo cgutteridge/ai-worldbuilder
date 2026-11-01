@@ -13,18 +13,9 @@
       "notes": "Problem: migration to ~/Projects/minecraft-mcp was completed on 2026-10-28 (#177), but donor instances and launcher profiles remain. This is owner-machine maintenance, not a tool capability change. Elapsed days alone do not establish successful use or authorize deletion.\nScope: Southampton Refine/instance, Minecraft Magic/instance, launcher profiles southampton-refine and fabric-loader-26.2, and Minecraft Magic/README.md. Plan: docs/plans/shared-minecraft-instance.md.\nAcceptance: before removal, confirm successful standalone-instance use, inventory remaining saves, verify the recorded backups under ~/Projects/minecraft-save-backups/2026-10-28/, and obtain the owner's explicit decision on the scratch save New World (the plan requires this). Confirm Magic has no other save worth keeping. Retain backups and the relocated private sealed answers at ~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json; do not display their contents. Remove only the agreed donor folders/profiles and update the Magic README. Do not execute any of these actions as part of backlog refinement.\nVerification: read-only inventory before removal; afterward check the agreed profiles/paths and that the standalone instance still references its intended saves. No tool unit test needed."
     },
     {
-      "id": 222,
-      "title": "Explain layer exclusions and reconcile plan, write and readback counts",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Problem: layer output is uneven: trees already writes a plan JSON but truncates console skip details; decor prints per-item rows; ground already aggregates skip reasons. A reported decor count difference (2582 versus 2533) is an observation, not yet evidence of lost writes.\nScope: lib/layers/{trees_layer,decor_layer,ground_layer}.py and the existing site_kit apply/result path as needed. First trace which stages those counts measure. Distinguish candidate items, accepted placements, final guarded plan positions, positions already correct, journal write positions and positions verified. Existing readback covers plan.cells; a smaller write count can be legitimate. Never infer a short write merely by subtracting unlike counts.\nAcceptance: concise console counts by exclusion reason, including hedge above-lidar-ground warnings; full per-item reasons in an existing or extended world-local verification artifact, whose path is printed. Preserve existing review images/JSON consumers. Every count difference between planning, journal writes and readback is explained by the stage's semantics; unexplained loss or readback mismatch exits nonzero and cannot report success. Empty/no-change plans remain explicit and retain each layer's existing completion rules.\nVerification: synthetic cases for already-correct blocks, intentional exclusions, truncated console/full artifact, empty decor, a legitimate plan/write difference and a simulated missing write. Extend existing layer/site_kit tests using MemoryBlocks or mocks; no live apply. Keep planning-policy changes such as #226 out of this task."
-    },
-    {
       "id": 223,
       "title": "Run a checked layer redo with one lock and explicit partial-failure reporting",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
