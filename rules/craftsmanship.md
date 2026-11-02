@@ -131,7 +131,7 @@ rule-file copy.
  hip diagonal by hand with full blocks and die the slab courses into it.
 
  Clear leftover carpet/"stone roof" and undercroft where the real house
- replaces them (legacy Southampton lump notes in the active world site/).
+ replaces them (legacy lump notes in the active world site/).
 
 ------------------------------------------------------------------------
 3a. STREETS — RULES OF THUMB, NO SURVEY (user, Q-044, 12 Oct 2026)

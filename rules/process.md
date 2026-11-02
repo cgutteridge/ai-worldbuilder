@@ -61,7 +61,7 @@ BUILT plan in place to “fix” the world.
                      reject lattice/carpet roofs and jagged 1:1 footprint walls in
                      preview, not after apply.
                      Readback/walk/patrol = blocks match the PLAN; only the
-                     photo/footprint comparison shows they match SOUTHAMPTON.
+                     photo/footprint comparison shows they match THE REAL PLACE.
  Stop rule          a new build that needs a fix build for its own geometry
                      (blocked doors, wall in road) → revert + re-survey; never
                      stack _b/_c patches (I-009).
@@ -248,7 +248,7 @@ BUILT plan in place to “fix” the world.
              multi-block items (doors, beds).
  Footprint   plan matches surveyed / aerial outline within ~1–2 blocks after
              Minecraft squaring (footprint-map shape is a prior; craftsmanship:
-             rules/craftsmanship.md). Legacy Southampton lump notes live in the active world site/.
+             rules/craftsmanship.md). Legacy lump notes live in the active world site/.
  Frontage    house fronts on the footprint line (osm_footprints.py
              check = OK); doors face their own street; names = real addr:street.
  Height      lidar Y for massing; photos for storeys / relative eaves.

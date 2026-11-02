@@ -21,15 +21,39 @@ On Windows, run the tool in **WSL 2**; see [platform setup](docs/minecraft-insta
 
 Point conversion (WGS84 ↔ OSGB and other EPSG pairs) uses in-process **pyproj** via `scripts/world_frame.py`. For centimetre-level OS National Grid results, install PROJ data that includes the OSTN15 grid (common Homebrew and Linux PROJ data directories are detected; set `PROJ_DATA` for another installation) or set `PROJ_NETWORK=ON` so PROJ can download the grid. Without OSTN15, pyproj falls back to a Helmert shift (~metre accuracy). GDAL remains appropriate for bulk lidar/raster file work, not for individual point conversion.
 
-## Active world
+## Getting started
+
+Choose the path for your work:
+
+- **Develop the tool:** install the Python dependencies above, then run
+  `python3 scripts/run_tests.py`. Tests use disposable synthetic worlds; no
+  world checkout, evidence downloads or running Minecraft is required.
+- **Build a new place:** follow [Minecraft instance setup](docs/minecraft-instance-setup.md),
+  then the [new-world bootstrap](.claude/skills/new-world-build/SKILL.md) to create
+  your own world repository, geographic frame, blank save and evidence sources.
+- **Use a world repository you already have access to:** clone or move it under
+  `worlds/<name>/`, configure its `config/world.json` to reference your local save,
+  and follow [instance setup](docs/minecraft-instance-setup.md#pointing-a-world-at-a-save).
+
+World data is maintained separately from this tool. No existing world repository
+or populated Minecraft save is distributed with it. See [world checkouts](worlds/README.md)
+and the [active-world contract](docs/active-world-contract.md).
+
+## Select your world
+
+Replace `my-world` below with the directory name of your world checkout.
+Each CLI invocation requires its own `--world`; selection does not persist
+between commands. Python callers select the world within their process:
 
 ```bash
-python3 scripts/cell_registry.py --world southampton-build status
-python3 -c "from active_world import WORLD_ROOT, gameworld_id; print(WORLD_ROOT); print(gameworld_id())"
-python3 scripts/world_frame.py info
+python3 scripts/cell_registry.py --world my-world status
+python3 -c "from active_world import set_world, gameworld_id; print(set_world('my-world')); print(gameworld_id())"
+python3 scripts/world_frame.py --world my-world info
 ```
 
-Contract: `docs/active-world-contract.md`. First world checkout: `worlds/southampton-build`.
+For live work, first open the save in Minecraft and identify it with
+`python3 scripts/which_world.py`. This read-only check requires local process
+visibility; see [its limitations](docs/minecraft-instance-setup.md#pointing-a-world-at-a-save).
 
 ## Layout
 

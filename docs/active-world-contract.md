@@ -18,7 +18,7 @@ Scripts resolve place memory through `WORLD_ROOT`, never through “where the to
 Catalogue `package` paths resolve via `script_env.resolve_provider_package` /
 `cell_sources.provider_package_dir` against **both** `TOOL_ROOT` and `WORLD_ROOT`.
 
-## World (e.g. `worlds/southampton-build`)
+## World (e.g. `worlds/my-world`)
 
 World repos live under `worlds/<name>/` inside the worldbuilder checkout. That
 tree is `.gitignore`d; each subdirectory is its own git repo.

@@ -46,7 +46,7 @@ Never use web mercator (`EPSG:3857`, about 1.6× too big at 51°N), a feet-based
 
 ### 1b. Offsets: default 0, 0
 
-Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Check for rendering jitter (blocks or the hand shaking at large coordinates) only once the first ghost exists (section 2b): an empty bedrock floor shows nothing. If it jitters, fall back to the rounded offsets and redo the frame before anything real is built. Existing worlds keep their offsets (Southampton is 436248, 109608). The [live coordinate check](../../../docs/large-coordinate-check.md) passed near (442000, −115000) on Minecraft 26.2; multi-million coordinates still need the same per-world visual check.
+Set `offsets` easting and northing to **0 and 0**, so Minecraft x = easting and z = −northing (north is −Z) and the F3 screen shows the projected coordinates. Keep 0, 0 as long as every coordinate in the bbox stays well inside Minecraft's ±30,000,000 limit (world border default ±29,999,984); that holds for OSGB, ITM, UTM and the other recommended grids. Only if a CRS puts home near or past that limit, set the offsets to home's easting and northing rounded to the nearest 1000 m and say why. Check for rendering jitter (blocks or the hand shaking at large coordinates) only once the first ghost exists (section 2b): an empty bedrock floor shows nothing. If it jitters, fall back to the rounded offsets and redo the frame before anything real is built. Existing worlds keep their configured offsets. The [live coordinate check](../../../docs/large-coordinate-check.md) passed near (442000, −115000) on Minecraft 26.2; multi-million coordinates still need the same per-world visual check.
 
 ### 1c. Home cell
 
@@ -65,7 +65,7 @@ python3 scripts/check_instance.py --world <name>
 
    The template has no chunks; the game generates them on first open. The in-game name (`LevelName` in `level.dat`) is set to the folder name; the folder name is what the tools use.
 4. **Move spawn to home** (needs the game open on the world; if it is not open yet, say so and do it in section 2b once the user has opened it). The template's spawn is a leftover from another world, and with 0, 0 offsets (0, 0) is nowhere useful. With the world open, set the world spawn and put the player at the home point (MCP `level_set_spawn_point`, then teleport), so the first time the game opens it is at the right place.
-5. Not a copy of Southampton2023 unless legacy.
+5. Start from the blank template; use an existing populated save only for an explicitly requested legacy migration.
 6. If a newer Minecraft version is in use than the template's (`Version.Name` in `level.dat`): open the world once in the game to upgrade it, log out, then refresh `templates/empty-world/` (copy without `session.lock`, `players/`, `*.dat_old`, `*.mca`; keep the single bedrock layer at Y −64 in `world_gen_settings.dat`) and commit.
 
 Done when `world_frame.py info` prints the new place, offsets and home cell, and `check_instance.py` passes.

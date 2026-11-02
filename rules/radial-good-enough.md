@@ -12,8 +12,7 @@ Read before choosing, planning or signing off build work.
   still built on every side (see `rules/frontage-and-evidence.md`).
 
 ## Radial, no gaps
-- Rebuild all of an area, outward from the registry marker / world-frame origin
-  (Southampton highfield home cell 48,-44), finishing each Chebyshev ring before
+- Rebuild all of an area, outward from the configured home cell, finishing each Chebyshev ring before
   the next. One active cell at a time. Cell order: north centre of the ring, then
   clockwise (north is smaller tz).
 - Coverage + registry rollup: `rules/process.md` §2c. The record is

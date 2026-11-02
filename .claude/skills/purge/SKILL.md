@@ -51,7 +51,7 @@ Done when `grep -ril <element name or id>` over `scripts/`, `site/`, `verificati
 
 1. `cell_registry.py query` / `status` for the scope shows the elements not done, no feature builds, no passes. For **above-ghost**, `cell_registry.py above-ghost` reports `cells: 0` (ghost-only cells are omitted).
 2. `cell_registry.py reconcile <cells>` dry run is clean (every cell that was on the above-ghost list, or the element/cell/project scope).
-3. Compare the footprint with the apply-time `before_<plan>` structure (not only reconcile). Undo already fails closed on this (#123: `site_kit.verify_erase_matches_before`); still spot-check: live top / a few columns must match `southampton_refine:before_<plan>` (or the structure named in the build entry's meta), not a pit of air where substrate was. `block_scan_summary` / `view_capture` over the box should show only the ghost/ground base — no residue of the old build.
+3. Compare the footprint with the apply-time `before_<plan>` structure (not only reconcile). Undo already fails closed on this (#123: `site_kit.verify_erase_matches_before`); still spot-check: live top / a few columns must match the structure named in the build entry's metadata, not a pit of air where substrate was. `block_scan_summary` / `view_capture` over the box should show only the ghost/ground base — no residue of the old build.
 
 Residue or a pit vs `before_<plan>` means step 1 or 2 was incomplete (or a pre-#124 undo): prefer `cell_registry.py reconcile --fix` first; if the journal already matches a hollow world, `restore_structure_backup.py <plan>` then reconcile again. Do not design over residue.
 

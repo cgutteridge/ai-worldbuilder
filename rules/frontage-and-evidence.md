@@ -54,7 +54,7 @@ What to trust per question (storeys, roof, walls, ground): `rules/evidence-order
 
 ## 4. Check the result against the evidence, not against itself
 Readback, walk and patrol prove the blocks match the plan, not that the plan
-matches Southampton. Done needs:
+matches the real place. Done needs:
 - `osm_footprints.py check --build <name>` passes.
 - A client view from the reference photo's camera (manifest `bbox_mc`) beside
   the photo, and a top-down view beside the aerial sheet (`google_aerial.py`; the university aerial too where it
