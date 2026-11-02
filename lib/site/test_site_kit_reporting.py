@@ -121,3 +121,28 @@ class TestApplyReporting(LiveApplyCase):
         result = json.loads((self.t / 'out/incomplete_readback-result.json').read_text())
         self.assertIn('readback omitted', result['accounting_error'])
         self.assertEqual(self.entries('incomplete_readback')[0].status, 'begun')
+
+
+    def test_world_script_entry_point_records_provenance_on_actual_apply(self):
+        import sys
+        from active_world import world_root
+        path = world_root() / 'scripts/build_recorded.py'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("NAME = 'recorded'\n")
+        plan = Plan('recorded')
+        plan.set(0, 60, 0, 'stone')
+        main = sys.modules['__main__']
+        with mock.patch.object(main, 'NAME', 'recorded', create=True), \
+                mock.patch.object(main, '__file__', str(path)), redirect_stdout(io.StringIO()):
+            self.run_apply(plan)
+        self.assertEqual(self.entries('recorded')[0].meta['builder'],
+                         {'kind': 'script', 'path': 'scripts/build_recorded.py'})
+
+    def test_unsupported_entry_point_remains_without_builder(self):
+        import sys
+        main = sys.modules['__main__']
+        plan = Plan('unsupported')
+        plan.set(0, 60, 0, 'stone')
+        with mock.patch.object(main, 'NAME', 'different', create=True), redirect_stdout(io.StringIO()):
+            self.run_apply(plan)
+        self.assertNotIn('builder', self.entries('unsupported')[0].meta)
