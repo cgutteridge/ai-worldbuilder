@@ -4,6 +4,7 @@ description: >-
   Redesign from scratch at the player's feet: a built feature, or cell trees /
   decor / ground. Use when the user says redo, redo trees, redo decor, redo
   ground, start over, or rebuild from the evidence table while standing somewhere.
+  Reapply runs a recorded feature builder without redesign.
 ---
 
 Player-standing redesign. No confirmation pause. No snag review loop (they are already there). Claim the lock, apply, release.
@@ -14,6 +15,7 @@ Cell journal (ADR 004): clean applies land journal entries; undos/clears clear m
 
 | User says | Target |
 | --- | --- |
+| `reapply` | **Recorded builder** for the named feature; see §3 |
 | `redo` / start over / rebuild (no layer word) | **Feature** covering their `x,z` |
 | `redo trees` | **Trees** for the cell under their feet |
 | `redo decor` | **Decor** for that cell |
@@ -29,13 +31,15 @@ Done when the JSON is in hand.
 
 ## Checked execution (every branch)
 
-Prepare evidence and the feature hand-off before live work. Run each live
-feature command below (undo, apply or player move) through the lock wrapper, from the
-tool root. Layer redos use §2 directly; its wrapper owns the sequence lock:
+For feature redesign, prepare evidence and the feature hand-off before live work.
+Run each manual feature command below (undo, apply or player move) through the
+lock wrapper, from the tool root:
 
 ```bash
 python3 scripts/site_lock.py --world <world> run <owner> "redo <target>" -- <command>
 ```
+
+Layer redos (§2) and reapply (§3) own their sequence locks; call their wrappers directly.
 
 Substitute the complete command from the chosen branch for `<command>`, including
 its own `--world <world>`. The wrapper supplies `SITE_OWNER` and releases the
@@ -167,6 +171,39 @@ Done when exit is zero, final JSON has `ok: true`, every requested stage
 succeeded, final hover was checked and the lock released. Report any cleared
 but omitted decor explicitly. The wrapper cues success only then; cue failure
 cannot turn a landed build into a failed apply.
+
+## 3. Reapply (recorded feature builder)
+
+Use the named feature, or `primary` from Locate for a player-standing request.
+An ambiguous or absent primary needs a named feature before proceeding.
+Inspect `features[].builder` from `redo_here`: kind, path, source and availability.
+Only recorded provenance authorizes reapply; an inferred filename is not a record.
+Reapply reruns the current builder with current inputs without redesign. It is
+separate from the evidence-led feature redesign in §1 and does not promise exact
+historical replay. Player hover belongs to the player-standing redesign workflow,
+not this named reapply command.
+
+```bash
+python3 scripts/reapply_feature.py --world <world> <name>
+python3 scripts/reapply_feature.py --world <world> <name> --apply
+```
+
+Inspect the dry run, then background the entire live command while retaining its
+log and final status. Call directly: the wrapper holds one lock through builder
+validation, undo, apply and journal outcome verification. Relative spec paths
+belong to the selected world's checkout; absolute paths are supported. It never
+migrates an invalid spec, adds `--overwrite`, or executes journal command text.
+
+No recorded builder means use redo (redesign from evidence). Missing or invalid
+specs need their reported problem resolved before undo; preflight failures do not
+need interruption recovery. An undo failure stops rebuilding. After a successful
+undo, any failed build reports the potentially undone/partially rebuilt state:
+inspect `site_recover.py --world <world> status` for unfinished writes or the
+registry's `reconcile` command for drift. No automatic rollback or retry.
+
+Done when exit is zero and a live reapply has a new landed feature entry with
+zero mismatches and its lock released. Dry-run success only validates the current
+builder; it does not establish that a rebuild occurred.
 
 ## Build roles (feature redesign only)
 

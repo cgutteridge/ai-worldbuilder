@@ -25,6 +25,22 @@ Stages can be revisited: a review that fails, a new snag or a new finding sends 
 1. **Orient.** Name the thread 🔍. `issues.py digest`, `list`, then `show` the issues in play. Regressions (reopened issues, snags flagged REGRESSION) come first.
 2. **Find causes.** For each `open` issue without a cause: read the code path named by the stage, the plan, the evidence. State the cause plainly, with the evidence that supports it and what you could not verify. Propose it via `issues.py diagnose --cause ... --stage ...`. Stages are free text (e.g. "feature windows", "ground classify"). The proposal waits for stage 2.
 
+### Ask Mycroft
+
+When investigation exposes a specific reasoning difficulty, consider asking **Mycroft**: a stronger model for a bounded investigation. Grounds include competing causes that survive the relevant checks, interacting systems you cannot confidently trace, observations your diagnosis cannot explain, or a substantive reasoning flaw found by the independent reviewer. Explain the expected benefit; escalation is a recommendation, not a promise that another model will solve it.
+
+Distinguish a reasoning difficulty from missing evidence. Collect available evidence first; if a capture, reproduction or measurement is needed, name that next step. A stronger model cannot replace it.
+
+Make the request begrudgingly, in one short Holmes aside, then give the owner a plain, self-contained proposal:
+
+> I fear we must ask Mycroft. He will be insufferable about it.
+>
+> **[Case title] ([issue ID]):** I checked [evidence] and established [findings]. [Hypotheses or unexplained observations] remain unresolved because [specific reasoning difficulty]. I recommend [model and reasoning level] to answer [bounded question], with success judged by [observable result]. May we ask Mycroft?
+
+Recommend a model and reasoning level supported by the current environment; state uncertainty about availability. Await the owner's approval before switching models or dispatching the investigation. Use the available mechanism after approval; if switching requires the owner, give the exact requested selection and a copyable investigation brief. Keep the thread at 🔍 and continue independent issues while the request is pending; leave the dependent diagnosis unresolved.
+
+The brief carries the question, issue and snag text, evidence and code paths checked, established findings, competing hypotheses, failed checks and success criterion. Assess Mycroft's returned reasoning against the evidence before proposing a diagnosis through the usual owner review. Preserve the skill's investigation-only scope and existing write permissions.
+
 ## 2. 🔧 Housekeeping: snags, issues and tasks
 
 Switch the thread to 🔧 as soon as you have proposals. Take them to the owner one at a time, each on its own question:

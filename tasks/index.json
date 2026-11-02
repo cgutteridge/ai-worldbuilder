@@ -4,33 +4,6 @@
   "nextTaskId": 241,
   "tasks": [
     {
-      "id": 178,
-      "title": "Retire donor Minecraft instances after owner confirms migration",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Problem: migration to ~/Projects/minecraft-mcp was completed on 2026-10-28 (#177), but donor instances and launcher profiles remain. This is owner-machine maintenance, not a tool capability change. Elapsed days alone do not establish successful use or authorize deletion.\nScope: Southampton Refine/instance, Minecraft Magic/instance, launcher profiles southampton-refine and fabric-loader-26.2, and Minecraft Magic/README.md. Plan: docs/plans/shared-minecraft-instance.md.\nAcceptance: before removal, confirm successful standalone-instance use, inventory remaining saves, verify the recorded backups under ~/Projects/minecraft-save-backups/2026-10-28/, and obtain the owner's explicit decision on the scratch save New World (the plan requires this). Confirm Magic has no other save worth keeping. Retain backups and the relocated private sealed answers at ~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json; do not display their contents. Remove only the agreed donor folders/profiles and update the Magic README. Do not execute any of these actions as part of backlog refinement.\nVerification: read-only inventory before removal; afterward check the agreed profiles/paths and that the standalone instance still references its intended saves. No tool unit test needed."
-    },
-    {
-      "id": 225,
-      "title": "Record feature builder provenance and support an explicit reapply workflow",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Problem: redo_here.describe() only searches build_*.py for NAME; feature_build.run() reads the supplied path relative to cwd and calls apply without builder metadata. Therefore a journal entry cannot currently be assumed to contain a replayable builder. Missing storeys in an old spec is a validation failure to explain, not permission to reconstruct a design.\nScope: scripts/redo_here.py, lib/builds/feature_build.py, their existing tests, and the redo skill. Define reapply as rerunning the current recorded builder/spec without redesign; it is not guaranteed to reproduce historical blocks when inputs changed. Redo remains redesign from evidence. Exact historical replay is outside scope.\nAcceptance: future feature_build applies record structured builder kind and world-relative spec path (or explicit absolute path) in existing journal metadata. Inspect other feature builder entry points before promising universal provenance; record supported script builders explicitly and report unsupported/legacy builders as unknown. redo_here exposes builder kind/path, provenance source and availability, preserving its existing script field for callers. Any legacy filename discovery is labelled inferred and never represented as recorded provenance; do not automatically execute an inferred command or arbitrary journal command text.\nResolve relative CLI spec paths against the explicit world's root and preserve absolute paths; document this rule and remove cwd dependence. Before any undo, validate the builder/spec exists and the current spec validates; a missing or invalid builder stops without clearing the feature. For valid reapply, follow undo-first and lock/readback/recovery requirements; do not silently pass --overwrite or edit/migrate an invalid spec. If rebuilding after a successful undo fails, report the remaining undone state and recovery route.\nVerification: synthetic journal entries with recorded spec/script, legacy unknown/inferred builder, missing file, invalid spec and two cwd values resolving the same world-relative spec; absolute path compatibility; failure before undo leaves the build intact. Extend test_redo_here and test_feature_build; no world data or live apply."
-    },
-    {
-      "id": 228,
-      "title": "Reapply refusal for a missing builder gives the right recovery advice",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "Found by running scripts/reapply_feature.py --world southampton-build houses_kitchener_road_w176648814 (dry run). It refuses correctly: 'no available recorded builder; refusing undo (legacy/inferred builders need review)'. But the message then says 'Inspect site_recover status for an interrupted write, or reconcile for drift', and ends 'undo completed=False'. Neither fits: nothing was interrupted and nothing drifted; the cause is a missing builder record, and no undo was attempted. Give each refusal reason its own advice: no recorded builder -> say the feature has no replayable builder and point to redo (redesign) as the way forward; invalid or missing spec -> name the spec problem; only a failure after a successful undo mentions undone state, site_recover and reconcile. Drop 'undo completed=False' when no undo ran. Add a test per reason in test_reapply_feature. Related to #225 (provenance); small enough to ship apart from it."
-    },
-    {
       "id": 229,
       "title": "Measure where a layer apply spends its time and recommend fixes",
       "status": "todo",

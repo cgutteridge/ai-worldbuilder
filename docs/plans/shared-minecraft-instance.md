@@ -1,6 +1,6 @@
 # Standalone Minecraft instance; the tool only references its saves
 
-Status: migration implemented 2026-10-28; donor retirement remains deferred for a few days of use (task #178). The standalone instance is running. Keep the donor folders and old launcher profiles until that observation period has passed.
+Status: migration implemented 2026-10-28; donor retirement completed 2026-11-01 (task #178). The owner deleted both donor instance folders; the two obsolete launcher profiles were removed and the Magic README now points to the shared standalone instance. Migration backups are retained.
 
 ## Problem
 
@@ -46,10 +46,10 @@ The code changes (1 to 5 above) can land first and are safe with the current pat
 
 ## Open items
 
-- **`New World`** (31 MB scratch save in the Refine instance): back it up; delete only on the owner's say-so.
+- **`New World`**: owner deleted the donor instance containing this scratch save on 2026-11-01; `~/Projects/minecraft-save-backups/2026-10-28/New World.tar.gz` is retained.
 - **Sealed answers:** moved on 2026-10-28 to `~/.local/share/ai-worldbuilder/bakeoff-sealed/truth.json` (directory 0700, file 0600), without displaying contents. Task #177 is complete; keep this private file backed up. See `bakeoff/OVERVIEW.md`.
-- **Magic**: confirm `Minecraft Magic_` is its only save worth keeping.
+- **Magic**: migrated save remains at `~/Projects/minecraft-mcp/saves/Minecraft Magic_/`; no other saves remained in the donor before owner deletion.
 
 ## Rollback
 
-Step 0 backups, plus the old launcher profiles and donor folders staying until step 4. To undo: move the saves back, restore the old `save_path` values, switch the launcher profile back.
+Step 0 backups, plus the old launcher profiles and donor folders staying until step 4. The donor folders and profiles have now been retired. Any rollback requires recreating the old instance configuration and restoring saves from the retained backups; moving saves back alone is no longer sufficient.

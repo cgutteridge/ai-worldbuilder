@@ -64,6 +64,8 @@ It fails on unknown/ambiguous identity or malformed configs. This requires the
 Minecraft process to be visible locally: a remote process or Windows-hosted
 Minecraft outside WSL's process namespace cannot be identified this way.
 
+The checked layer redo and feature reapply wrappers use this discovery check before live work. Install `lsof` with the platform package manager if unavailable (macOS normally includes it).
+
 ## Rules
 
 - Do not put a save inside a world checkout or this repo, and do not symlink saves.

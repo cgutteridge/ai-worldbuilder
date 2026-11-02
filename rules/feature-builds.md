@@ -7,7 +7,26 @@ terraces). Roof and fabric rules: `rules/craftsmanship.md`. Houses stay on
 ## Live path
 
 Every non-house building feature apply uses **`scripts/feature_build.py`** with
-a JSON spec at `site/builds/<name>.json`. Dry run unless `--apply`; `--apply` refuses a plan that already has a landed build (`element_undo.py` it first, or `--overwrite`). Spec keys
+a JSON spec at `site/builds/<name>.json`. Relative spec arguments resolve against the explicit
+`--world` checkout, independent of cwd; absolute paths remain supported. Applies
+record builder kind/path in journal metadata. Reapply runs the current recorded
+builder with current inputs; it does not reproduce historical blocks exactly.
+`python3 scripts/reapply_feature.py --world <world> <name>` validates and dry-runs;
+`--apply` owns one lock through validation, undo and rebuilding. Before undo it
+checks current feature readiness and the recorded script identity. It requires a new
+landed feature entry with zero mismatches before reporting success. The caller
+backgrounds the whole live command and checks its final exit status.
+
+Provenance is supported for `feature_build` specs and world-owned `build_*.py`
+entry points declaring a literal matching `NAME` and applying through
+`site_kit.apply` as the feature pass. Script reapply assumes the same `--world`
+and dry-run/default, `--apply` CLI contract; arbitrary command text is never run.
+Other entry points remain unknown unless they explicitly supply builder metadata.
+Filename discovery is labelled inferred and cannot authorize reapply. Missing or
+invalid builders stop before undo; a failed rebuild after undo reports the
+remaining undone/partial state and recovery route.
+
+Dry run unless `--apply`; `--apply` refuses a plan that already has a landed build (`element_undo.py` it first, or `--overwrite`). Spec keys
 (full list in the `feature_build` module docstring):
 
 - `name` — plan / cells-record name
