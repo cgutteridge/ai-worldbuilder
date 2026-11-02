@@ -24,13 +24,16 @@ from pass_mask import mask_path  # noqa: E402
 _NAME_RE = re.compile(r"""^NAME\s*=\s*['"]([^'"]+)['"]""", re.M)
 
 
-def script_for(name: str, scripts_dir: Path = SCRIPTS) -> Path | None:
+def script_for(name: str, scripts_dir: Path | None = None) -> Path | None:
     """Path of the build script that sets ``NAME = name``, or None.
 
     @param name: build (plan) name in the cell journal
-    @param scripts_dir: scripts directory to search
+    @param scripts_dir: directory to search; default searches world then tool scripts
     @returns: path under scripts/, or None if not found
     """
+    if scripts_dir is None:
+        from active_world import world_root
+        return script_for(name, world_root() / 'scripts') or script_for(name, SCRIPTS)
     direct = scripts_dir / f'build_{name}.py'
     if direct.is_file():
         return direct
@@ -119,11 +122,15 @@ def describe(x: int, z: int, y: int | None = None) -> dict:
     cell = cell_of(x, z)
     names = features_covering(x, z)
     features = []
+    from cell_registry import view_registry
+    from builder_provenance import describe_builder
+    registry = view_registry()
     for name in names:
         script = script_for(name)
         features.append({
             'name': name,
-            'script': str(script.relative_to(TOOL_ROOT)) if script else None,
+            'script': str(script.relative_to(TOOL_ROOT)) if script and script.is_relative_to(TOOL_ROOT) else str(script) if script else None,
+            'builder': describe_builder(name, registry.entries(plan=name), script),
         })
     return {
         'at': [x, z],
@@ -162,7 +169,7 @@ def main(argv=None) -> int:
     for f in info['features']:
         mark = ' *' if f['name'] == info['primary'] else ''
         script = f['script'] or '(no script found)'
-        print(f"feature: {f['name']}{mark}  {script}")
+        print(f"feature: {f['name']}{mark}  {script}  builder={json.dumps(f['builder'])}")
     if info['primary'] is None and len(info['features']) > 1:
         print('primary: ambiguous — pass --y or stand inside the feature to redo')
         return 1

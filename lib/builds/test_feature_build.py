@@ -2884,3 +2884,32 @@ class PitchedRoofBuildShapesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BuilderPathTest(unittest.TestCase):
+    def test_world_relative_spec_and_recorded_builder_are_independent_of_cwd(self):
+        from active_world import world_root
+        root = world_root()
+        path = root / 'site/builds/relative.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(ReapplyGuardTest.SPEC))
+        # Existing public run seam: only preview/apply outputs are substituted.
+        import os
+        original = Path.cwd()
+        try:
+            with tempfile.TemporaryDirectory() as other, \
+                    mock.patch.object(F, 'preview'), mock.patch.object(F, 'apply') as applied, \
+                    mock.patch.object(F, 'build', return_value=mock.Mock(summary=lambda: {})), \
+                    redirect_stdout(io.StringIO()):
+                for dirname in ('first', 'second'):
+                    directory = Path(other) / dirname
+                    directory.mkdir()
+                    os.chdir(directory)
+                    F.run('site/builds/relative.json')
+                    self.assertEqual(applied.call_args.kwargs['meta']['builder'],
+                                     {'kind': 'spec', 'path': 'site/builds/relative.json'})
+                F.run(path.resolve())
+                self.assertEqual(applied.call_args.kwargs['meta']['builder'],
+                                 {'kind': 'spec', 'path': 'site/builds/relative.json'})
+        finally:
+            os.chdir(original)

@@ -1150,6 +1150,11 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
             m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
     cell = tuple(cell) if cell else primary_cell(plan.cells)
     record = {**(meta or {}), 'structure': structure}
+    if pass_ == 'feature' and 'builder' not in record:
+        from builder_provenance import script_builder
+        builder = script_builder(plan.name)
+        if builder:
+            record['builder'] = builder
 
     mask_ref = None
     if mask is not None:

@@ -155,3 +155,32 @@ class TestPrimaryFeature(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestRecordedBuilder(unittest.TestCase):
+    def test_recorded_spec_and_unknown_legacy_are_distinguished(self):
+        import json
+        from active_world import world_root
+        from builder_provenance import describe_builder
+        from journal_testkit import JournalWorld
+        path = world_root() / 'site/builds/demo.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'name': 'demo'}))
+        with JournalWorld() as jw:
+            jw.build('demo', 'feature', {(1, 60, 1): 'minecraft:stone'},
+                     meta={'builder': {'kind': 'spec', 'path': 'site/builds/demo.json'}})
+            with mock.patch.object(rh, 'features_covering', return_value=['demo']), \
+                    mock.patch.object(rh, 'primary_feature', return_value='demo'):
+                item = rh.describe(1, 1)['features'][0]
+            self.assertEqual(item['builder']['source'], 'recorded')
+            self.assertEqual(item['builder']['kind'], 'spec')
+            self.assertTrue(item['builder']['available'])
+            self.assertIn('script', item)  # legacy field remains available to callers
+            path.unlink()
+            self.assertFalse(describe_builder('demo', jw.reg.entries(plan='demo'))['available'])
+            jw.build('old', 'feature', {(2, 60, 1): 'minecraft:stone'})
+            self.assertEqual(describe_builder('old', jw.reg.entries(plan='old'))['source'], 'unknown')
+            inferred = world_root() / 'scripts/build_old.py'
+            inferred.parent.mkdir(parents=True, exist_ok=True)
+            inferred.write_text("NAME = 'old'\n")
+            self.assertEqual(describe_builder('old', jw.reg.entries(plan='old'), inferred)['source'], 'inferred')
