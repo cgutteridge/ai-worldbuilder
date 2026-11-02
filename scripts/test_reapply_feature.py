@@ -40,6 +40,68 @@ class TestReapply(unittest.TestCase):
             self.assertEqual(cmd, [reapply_feature.sys.executable, str(path.resolve())])
             self.assertFalse(jw.reg.entries(plan='demo')[0].undone)
 
+    def test_changed_or_unknown_script_identity_stops_before_undo(self):
+        for source in ("NAME = 'other'\n", "NAME = unknown\n", "pass\n",
+                       "NAME = 'demo'\nNAME = 'other'\n", "NAME = (\n"):
+            with self.subTest(source=source), JournalWorld() as jw:
+                path = jw.root / 'build_demo.py'
+                path.write_text(source)
+                cells = {(2, 60, 2): 'minecraft:stone'}
+                jw.build('demo', 'feature', cells,
+                         meta={'builder': {'kind': 'script', 'path': str(path)}})
+                before = jw.reg.journal_path.read_bytes()
+                err = io.StringIO()
+                with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                        mock.patch('site_lock.check'), \
+                        mock.patch('world_discovery.require_running_world'), \
+                        mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                        redirect_stderr(err):
+                    code = reapply_feature.main(['--world', 'unit-test', 'demo', '--apply', '--locked'])
+                self.assertEqual(code, 1)
+                process.assert_not_called()
+                self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+                self.assertEqual(jw.blocks.read_many(cells), cells)
+                self.assertIn('No undo attempted', err.getvalue())
+
+    def test_stale_preparation_for_either_builder_stops_before_undo(self):
+        from cell_readiness import ReadinessPolicy
+        for kind in ('spec', 'script'):
+            with self.subTest(kind=kind), JournalWorld() as jw:
+                path = jw.root / ('demo.json' if kind == 'spec' else 'build_demo.py')
+                path.write_text(json.dumps({
+                    'name': 'demo', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+                    'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+                    'groups': [{'nos': ['A'], 'front': 'N'}]})
+                    if kind == 'spec' else "NAME = 'demo'\n")
+                jw.seed((0, 0), ghost_ground=True)
+                cells = {(2, 60, 2): 'minecraft:stone'}
+                jw.build('demo', 'feature', cells,
+                         meta={'builder': {'kind': kind, 'path': str(path)}})
+                evidence = mock.Mock(spec=['facts', 'candidates'])
+                facts = {'revision': 'before', 'clip_coverage': 1.,
+                         'aerial_coverage': 1., 'lidar_missing': []}
+                evidence.facts.side_effect = lambda cell: dict(facts)
+                evidence.candidates.return_value = []
+                policy = ReadinessPolicy(jw.reg, evidence)
+                policy.validate((0, 0))
+                facts['revision'] = 'changed'
+                before = jw.reg.journal_path.read_bytes()
+                err = io.StringIO()
+                with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                        mock.patch('site_lock.check'), \
+                        mock.patch('world_discovery.require_running_world'), \
+                        mock.patch('readiness_evidence.policy_for', return_value=policy), \
+                        mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                        redirect_stderr(err):
+                    code = reapply_feature.main(['--world', 'unit-test', 'demo', '--apply', '--locked'])
+                self.assertEqual(code, 1)
+                self.assertEqual(process.call_count, 1)  # Builder dry run only.
+                self.assertNotIn('--apply', process.call_args.args[0])
+                self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+                self.assertEqual(jw.blocks.read_many(cells), cells)
+                self.assertIn('validation stale', err.getvalue())
+                self.assertIn('No undo attempted', err.getvalue())
+
 
 class TestReapplyOutcome(unittest.TestCase):
     """Command exit/output reflects the actual new journal outcome, not exit 0."""
@@ -76,6 +138,7 @@ class TestReapplyOutcome(unittest.TestCase):
                     with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
                             mock.patch('site_lock.check'), \
                             mock.patch('world_discovery.require_running_world'), \
+                            mock.patch('readiness_evidence.require_feature_ready'), \
                             mock.patch.object(reapply_feature.subprocess, 'run', side_effect=process), \
                             redirect_stderr(err):
                         code = reapply_feature.main(['--world', 'unit-test', 'outcome', '--apply', '--locked'])
@@ -142,6 +205,7 @@ class TestRefusalAdvice(unittest.TestCase):
                 mock.patch.object(reapply_feature, 'prepare', return_value=['python3', 'builder.py']), \
                 mock.patch('site_lock.check'), \
                 mock.patch('world_discovery.require_running_world'), \
+                mock.patch('readiness_evidence.require_feature_ready'), \
                 mock.patch.object(reapply_feature.subprocess, 'run', side_effect=[
                     None, reapply_feature.subprocess.CalledProcessError(1, ['undo'])]) as process, \
                 redirect_stderr(err):

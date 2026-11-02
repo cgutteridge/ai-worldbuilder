@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import subprocess
 import sys
@@ -33,6 +34,24 @@ def prepare(name: str, registry=None) -> list[str]:
         return [sys.executable, str(TOOL_ROOT / 'scripts/feature_build.py'), str(path)]
     if path.suffix != '.py':
         raise SystemExit(f'{name}: recorded script is not a Python file; refusing undo')
+    try:
+        source = ast.parse(path.read_text(), filename=str(path))
+    except (OSError, UnicodeError, SyntaxError) as exc:
+        raise SystemExit(f'{name}: invalid builder script {path}: {exc}; refusing undo') from exc
+    # Supported scripts declare one literal NAME at module scope. Never execute
+    # a builder to discover identity, or guess at dynamic/conditional identities.
+    declarations = [node for node in source.body if isinstance(node, (ast.Assign, ast.AnnAssign))
+                    and any(isinstance(target, ast.Name) and target.id == 'NAME'
+                            for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
+    writes = [node for node in ast.walk(source)
+              if isinstance(node, ast.Name) and node.id == 'NAME' and isinstance(node.ctx, ast.Store)]
+    if (len(declarations) != 1 or len(writes) != 1
+            or not isinstance(declarations[0].value, ast.Constant)
+            or not isinstance(declarations[0].value.value, str)):
+        raise SystemExit(f'{name}: recorded script {path} has no supported literal NAME; refusing undo')
+    script_name = declarations[0].value.value
+    if script_name != name:
+        raise SystemExit(f'{name}: recorded script names {script_name!r}; refusing undo')
     return [sys.executable, str(path)]
 
 
@@ -65,6 +84,8 @@ def main(argv=None) -> int:
         stage = 'builder validation'
         subprocess.run(cmd, cwd=TOOL_ROOT, check=True)
         if args.apply:
+            from readiness_evidence import require_feature_ready
+            require_feature_ready(args.feature)
             stage = 'undo'
             subprocess.run([sys.executable, str(TOOL_ROOT / 'scripts/element_undo.py'),
                             '--world', args.world, args.feature, '--apply'], cwd=TOOL_ROOT, check=True)
