@@ -4,7 +4,7 @@ There is one work tracker for tool engineering, and world work has its own.
 
 | Work | Where it is tracked |
 | --- | --- |
-| Tool engineering (scripts, libraries, skills, providers, process) | `tasks/index.json` (active: `todo`, `blocked`) and `tasks/done.json` (completed). Read and change them through the `task-index-manager` skill. |
+| Tool engineering (scripts, libraries, skills, providers, process) | `tasks/index.json` (active: `todo`, `blocked`, and `doing` if an orchestrator sets it; no skill here requires it) and `tasks/done.json` (completed). Read and change them through the `task-index-manager` skill. |
 | World work (cell registry, issues, place builds) | The active world's own repo under `worlds/` (ADR 002). Never add it to `tasks/`. |
 
 If it is unclear whether work is tool or world, ask (ADR 002).
@@ -33,7 +33,9 @@ node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 
 Run it on `main` only, because the pre-commit hook rejects tracker edits on `task/*` branches. Adding a task and editing titles, notes, priority or blockers is still done in `tasks/index.json` through the `task-index-manager` skill. This tracker has no triage tags, so `list --ready` lists every `todo` task with no `blockedBy`.
 
-The kit copy of `task-index-manager` has the same name as the personal one in `~/.claude/skills`; Claude Code prefers the personal skill until that is removed.
+The kit copy of `task-index-manager` has the same name as the personal one in `~/.claude/skills`; Claude Code may load the personal skill instead of the project one, so the CLI guidance here may not be what an agent sees until the personal skill is removed; check with `/skills`.
+
+The CLI's own tests live in the kit (`agent-kits/kits/local-tasks/tooling/tasks.test.mjs`), not in this repository, so `scripts/run_tests.py` does not exercise `scripts/tasks.mjs`. Change the script in the kit, not here. The first `close` may leave a stray comma line in `tasks/done.json`; it is valid JSON, so do not hand-fix it.
 
 ## `.scratch/`
 
