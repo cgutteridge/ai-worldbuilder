@@ -103,7 +103,7 @@ Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave
   3 python3 scripts/trees_replan.py --world <world> --cell tx,tz --out plan.json
     python3 shims/google_window.py --world <world> plan --at X,Z --half 32x16 --plan plan.json
     Compare planned crowns and skipped reasons against the evidence; inspect both snap and root adjustments.
-  4 Use the checked redo workflow (.claude/skills/redo/SKILL.md): inspect
+  4 Use the checked redo workflow (.agents/skills/redo/SKILL.md): inspect
     python3 scripts/redo_layer.py --world <world> --cell tx,tz --layers trees
     then run the same selection with --apply in the background and check its final exit/result.
     The wrapper owns its lock; trees-only redo leaves cleared decor pending. Include decor only if requested.

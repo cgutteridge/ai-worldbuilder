@@ -31,7 +31,7 @@ class ScanTest(unittest.TestCase):
     def test_signoff_is_banned_in_skills(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            skill = root / '.claude' / 'skills' / 'x'
+            skill = root / '.agents' / 'skills' / 'x'
             skill.mkdir(parents=True)
             (skill / 'SKILL.md').write_text('then run coverage signoff\n')
             hits = S.scan(root)

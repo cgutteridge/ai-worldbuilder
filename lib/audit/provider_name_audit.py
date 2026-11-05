@@ -41,7 +41,7 @@ SCAN_ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('scripts', ('.py',)),
     ('rules', ('.md',)),
     ('docs', ('.md',)),
-    ('.claude/skills', ('.md',)),
+    ('.agents/skills', ('.md',)),
     ('templates', ('.md', '.txt', '.json')),
 )
 

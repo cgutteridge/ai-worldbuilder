@@ -732,7 +732,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
 
     def test_docs_say_world_flag_every_command(self):
         skill = (
-            TOOL_ROOT / 'bakeoff' / 'skills' / 'model-bakeoff' / 'SKILL.md'
+            TOOL_ROOT / '.agents' / 'skills' / 'model-bakeoff' / 'SKILL.md'
         ).read_text(encoding='utf-8')
         protocol = (TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md').read_text(encoding='utf-8')
         for text, name in ((skill, 'SKILL.md'), (protocol, 'PROTOCOL.md')):
@@ -746,7 +746,7 @@ class TestBakeoffWorldGuard(unittest.TestCase):
     def test_docs_link_sitting_steps_instead_of_copying(self):
         """Operator docs must point at config.json sitting_steps, not duplicate them."""
         paths = [
-            TOOL_ROOT / '.claude' / 'skills' / 'model-bakeoff' / 'SKILL.md',
+            TOOL_ROOT / '.agents' / 'skills' / 'model-bakeoff' / 'SKILL.md',
             TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md',
             TOOL_ROOT / 'bakeoff' / 'README.md',
             TOOL_ROOT / 'bakeoff' / 'OVERVIEW.md',

@@ -29,7 +29,7 @@ BANNED_TERMS: tuple[str, ...] = (
 
 SCAN_DIRS: tuple[str, ...] = (
     'rules',
-    '.claude/skills',
+    '.agents/skills',
     'templates',
     'bakeoff',
 )

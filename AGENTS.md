@@ -41,7 +41,7 @@ Exactly one **active world** at a time (`active_world.py`; CLIs take required `-
 | Shared libraries | `lib/<category>/` (bare imports via `script_env`; see [`lib/README.md`](lib/README.md)) |
 | CLI entry points | `scripts/` (agent/hook commands; often thin wrappers over `lib/`; see [`scripts/README.md`](scripts/README.md)) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
-| Skills | `.claude/skills/` |
+| Skills | `.agents/skills/` (canonical); `.claude/skills/` holds generated pointer stubs for Claude Code. After adding or renaming a skill run `node scripts/check-skill-stubs.mjs --write` |
 | Model bake-offs (design/review tiers) | `bakeoff/` + `bakeoff/model_bakeoff.py` + skill `model-bakeoff` ([bakeoff/OVERVIEW.md](bakeoff/OVERVIEW.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](docs/specs/lidar-ghost-v2-and-dryrun-reset.md) |
 | Decision record | `scripts/decision_record.py` (`evidence add`, `phase add`): per-phase references available / consulted → `registry/decisions/`, `registry/evidence/`; `site_pages.py` renders element, evidence and cell pages on every write |

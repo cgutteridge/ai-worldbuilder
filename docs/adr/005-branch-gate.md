@@ -13,7 +13,7 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
 
 1. **Code on `task/*`.** Tool code and tests land on `task/<id>-…` branches (or
    an equivalent task branch). They go through the **ship-branch** gate
-   (`.claude/skills/ship-branch/SKILL.md`): tests, optional Sonnet review,
+   (`.agents/skills/ship-branch/SKILL.md`): tests, optional Sonnet review,
    blocker fixes (cap 3), then `python3 scripts/ship_branch.py merge <branch>`.
    The owner may opt out with `no review` / `skip review`, `leave on branch` /
    `don't merge`, or ticket field `review: skip`.
@@ -26,7 +26,7 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
    tracker/docs-only strays on request; it never merges or deletes code strays
    on its own.
 4. **Waves.** Parallel waves use the project override
-   (`.claude/skills/parallel-task-wave/SKILL.md`): workers stay code-only; the
+   (`.agents/skills/parallel-task-wave/SKILL.md`): workers stay code-only; the
    orchestrator runs ship-branch before each merge and alone archives the
    tracker after the branch is on `main`.
 5. **Pre-commit.** No hook change required for this ADR: tracker path edits on

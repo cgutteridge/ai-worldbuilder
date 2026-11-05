@@ -62,7 +62,7 @@ Shims that need a place (`tpo_fetch`, world providers via `world_provider`): sam
 Replace env prefix / “export WORLD_ROOT” with `--world <name>` in:
 
 - `AGENTS.md`, `docs/active-world-contract.md`, `worlds/README.md`
-- Bake-off: `bakeoff/README.md`, `bakeoff/PROTOCOL.md`, `bakeoff/skills/model-bakeoff/SKILL.md`, `bakeoff/config.json` sitting-step strings, `bakeoff/OVERVIEW.md` if it mentions the env
+- Bake-off: `bakeoff/README.md`, `bakeoff/PROTOCOL.md`, `.agents/skills/model-bakeoff/SKILL.md`, `bakeoff/config.json` sitting-step strings, `bakeoff/OVERVIEW.md` if it mentions the env
 - Legacy copy if still present: `model-bakeoffs/PROTOCOL.md` (or delete/redirect if already superseded by `bakeoff/`)
 - Historical audit prose that agents still read: `docs/audits/region-block-reads.md` (update “how to select world” lines only)
 - Round artefact docstrings that teach the old prefix (e.g. `bakeoff/rounds/R-015/r015_susu.py`); leave `tasks/done.json` history alone

@@ -29,7 +29,7 @@ Choose the path for your work:
   `python3 scripts/run_tests.py`. Tests use disposable synthetic worlds; no
   world checkout, evidence downloads or running Minecraft is required.
 - **Build a new place:** follow [Minecraft instance setup](docs/minecraft-instance-setup.md),
-  then the [new-world bootstrap](.claude/skills/new-world-build/SKILL.md) to create
+  then the [new-world bootstrap](.agents/skills/new-world-build/SKILL.md) to create
   your own world repository, geographic frame, blank save and evidence sources.
 - **Use a world repository you already have access to:** clone or move it under
   `worlds/<name>/`, configure its `config/world.json` to reference your local save,
@@ -62,5 +62,5 @@ visibility; see [its limitations](docs/minecraft-instance-setup.md#pointing-a-wo
 - `scripts/` — shared tooling (reads `WORLD_ROOT` for place files)
 - `config/system-providers.json` — nationwide+ feeds
 - `reference/TYPES.txt` — evidence types
-- `rules/`, `.claude/skills/`, `templates/` — shared craft and agent skills
+- `rules/`, `.agents/skills/`, `templates/` — shared craft and agent skills
 - `tasks/` — system tracker
