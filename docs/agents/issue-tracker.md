@@ -19,6 +19,22 @@ Read the task by id from `tasks/index.json` (or `tasks/done.json` if it is not i
 
 Tasks carry no triage label, only a status. Workers on `task/*` branches never edit the tracker; the orchestrator on `main` does (ADR 005).
 
+## Task CLI
+
+`scripts/tasks.mjs` (from the `local-tasks` kit; Node only, no dependencies) lists, shows and changes task status without hand-editing JSON:
+
+```sh
+node scripts/tasks.mjs list --ready
+node scripts/tasks.mjs show ID
+node scripts/tasks.mjs status ID doing
+node scripts/tasks.mjs status ID todo --reason "Short explanation"
+node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
+```
+
+Run it on `main` only, because the pre-commit hook rejects tracker edits on `task/*` branches. Adding a task and editing titles, notes, priority or blockers is still done in `tasks/index.json` through the `task-index-manager` skill. This tracker has no triage tags, so `list --ready` lists every `todo` task with no `blockedBy`.
+
+The kit copy of `task-index-manager` has the same name as the personal one in `~/.claude/skills`; Claude Code prefers the personal skill until that is removed.
+
 ## `.scratch/`
 
 `.scratch/` is not a tracker. It is empty. Early specs and tickets that lived there were removed in commit `12dff3b`, and the specification for that work is in `docs/specs/`. The only thing a skill may still create there is a wayfinding map, below, and only when a wayfinding effort is under way.
