@@ -10,7 +10,8 @@ tests, review, fix blockers (cap 3), then `python3 scripts/ship_branch.py merge 
 
 ## Test and run rules for workers
 
-Workers stay code-only and should use `python3 scripts/run_tests.py --only ...`
+The orchestrator copies these worker rules into each worker's brief, because the
+generic skill's brief does not include them. Workers stay code-only and should use `python3 scripts/run_tests.py --only ...`
 for tip checks when the path map is non-empty. Full suites are single-flight
 (fail-fast lock under the git common dir): a second overlapping full run exits
 2, and `ship_branch merge` refuses while the lock is busy; retry when free.

@@ -21,12 +21,14 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
    straight to `main` under the existing pre-commit checks. Do **not** invent
    `tracker/*` branches for system-tracker archive hops.
 3. **Sweep on start and done.** Agents run `python3 scripts/ship_branch.py sweep`
-   from Start (AGENTS.md) and from the project `done` skill, so unmerged
+   from Start and from the closing-a-thread rule (both in AGENTS.md; the project
+   `done` skill that first carried it was removed, see the note below), so unmerged
    branches and leftover worktrees stay visible. Sweep may merge
    tracker/docs-only strays on request; it never merges or deletes code strays
    on its own.
-4. **Waves.** Parallel waves use the project override
-   (`.agents/skills/parallel-task-wave/SKILL.md`): workers stay code-only; the
+4. **Waves.** Parallel waves use the project rules
+   (`docs/agents/parallel-task-wave.md`, with the generic skill
+   `.agents/skills/parallel-task-wave/SKILL.md`): workers stay code-only; the
    orchestrator runs ship-branch before each merge and alone archives the
    tracker after the branch is on `main`.
 5. **Pre-commit.** No hook change required for this ADR: tracker path edits on
@@ -43,3 +45,11 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
   sweep only reports them.
 - Bootstrap tickets that introduced the gate (#61–#65) used orchestrator manual
   pass + merge; later waves use the full ship-branch path.
+
+## Amendment (2026-11-05)
+
+The project `done` and `parallel-task-wave` override skills were replaced. The
+sweep-on-close rule now lives in AGENTS.md ("Closing a thread"), and the wave
+gate lives in `docs/agents/parallel-task-wave.md`, read by the generic
+`parallel-task-wave` skill installed from the `local-tasks` kit. The decision
+itself is unchanged.

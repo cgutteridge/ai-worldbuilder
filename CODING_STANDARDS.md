@@ -51,7 +51,9 @@ pre-commit hook. Mechanical rules belong in `.githooks/` /
   `tracker/*` branches.
 - Worker branches commit code and tests only. Tracker archive is an
   orchestrator hop after merge. Waves use `.agents/skills/parallel-task-wave/`
-  (project override): orchestrator runs ship-branch before each merge.
+  with the project rules in `docs/agents/parallel-task-wave.md`: the
+  orchestrator runs ship-branch before each merge.
 - The pre-commit hook enforces tracker ownership on `task/*`; review still
   catches “done” claims that never landed on `main`.
-- Start and project `done` run `ship_branch.py sweep` so strays stay visible.
+- Start and the AGENTS.md closing-a-thread rule run `ship_branch.py sweep` so
+  strays stay visible.
