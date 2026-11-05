@@ -98,6 +98,7 @@ class TipTestPlanPathPolicyTest(unittest.TestCase):
             [
                 'docs/a.md',
                 'tasks/index.json',
+                '.agents/skills/x/SKILL.md',
                 '.claude/skills/x/SKILL.md',
                 'rules/process.md',
             ],
@@ -302,6 +303,7 @@ class TipTestPlanMappingTest(unittest.TestCase):
                 'docs/plan.md',
                 'tasks/index.json',
                 'rules/process.md',
+                '.agents/skills/ship-branch/SKILL.md',
                 '.claude/skills/ship-branch/SKILL.md',
                 'providers/x/mod.py',
             ],

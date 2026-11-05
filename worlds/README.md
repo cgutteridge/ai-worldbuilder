@@ -8,7 +8,7 @@ ai-worldbuilder commit history. Clone or move a world repo into this folder,
 then pass `--world <dirname>` on place-touching commands (required; there is no silent default).
 
 No world checkout is bundled or required for tool development. To create your
-own, follow the [new-world bootstrap](../.claude/skills/new-world-build/SKILL.md)
+own, follow the [new-world bootstrap](../.agents/skills/new-world-build/SKILL.md)
 and [Minecraft instance setup](../docs/minecraft-instance-setup.md).
 
 For an existing world repository you can access, clone it into `worlds/<name>/`

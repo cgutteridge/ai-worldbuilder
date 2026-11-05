@@ -242,8 +242,8 @@ def is_ignored_for_test_mapping(rel_path: str) -> bool:
         'tasks/',
         'rules/',
         'skills/',
+        '.agents/skills/',
         '.claude/skills/',
-        'bakeoff/skills/',
         'providers/',
         'worlds/',
     ):
@@ -263,7 +263,7 @@ def is_tip_test_skip_path(rel_path: str) -> bool:
     if is_docs_only_path(rel_path):
         return True
     normalised = _norm_rel(rel_path)
-    for prefix in ('skills/', '.claude/skills/', 'bakeoff/skills/', 'rules/'):
+    for prefix in ('skills/', '.agents/skills/', '.claude/skills/', 'rules/'):
         if normalised == prefix.rstrip('/') or normalised.startswith(prefix):
             return True
     return False

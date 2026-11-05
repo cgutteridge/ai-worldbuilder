@@ -26,7 +26,7 @@ python3 bakeoff/model_bakeoff.py --world bakeoff score R-001 --overall pass --ax
 python3 bakeoff/model_bakeoff.py --world bakeoff usage R-001 --input 12000 --output 3000 --source cursor-ui
 ```
 
-Sitting sequence: [`sitting_steps` in config.json](config.json). Rules / pad fairness: [PROTOCOL.md](PROTOCOL.md), [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md). Skill: `bakeoff/skills/model-bakeoff` (Claude discovers via `.claude/skills/model-bakeoff` symlink).
+Sitting sequence: [`sitting_steps` in config.json](config.json). Rules / pad fairness: [PROTOCOL.md](PROTOCOL.md), [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md). Skill: `.agents/skills/model-bakeoff` (Claude discovers it through the stub in `.claude/skills/model-bakeoff`).
 
 Active tiers for now: **low** and **mid** only. High / non-bulk models are catalogued with `--no-bulk` and never scheduled.
 

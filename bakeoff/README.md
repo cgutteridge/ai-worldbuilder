@@ -14,7 +14,7 @@ Note: R-014 was parked / never started before the folder move on 2026-10-25 (no 
 |------|------|
 | `model_bakeoff.py` | CLI (`python3 bakeoff/model_bakeoff.py --world bakeoff …`; thin shim also at `scripts/model_bakeoff.py`) |
 | `feature_selection_check.py` | Paper-only feature-selection grader CLI |
-| `skills/model-bakeoff/` | Skill (`.claude/skills/model-bakeoff` symlinks here for discovery) |
+| `../.agents/skills/model-bakeoff/` | Skill (`.claude/skills/model-bakeoff` is a generated stub pointing to it) |
 | `catalogue.json` | Tools you use + models available when you have tokens (`low` / `mid` / `high`) |
 | `config.json` | Cell, pack, active tiers (`low`+`mid` only for now), interview axes, **`sitting_steps`** (canonical sitting sequence) |
 | `packs/v1/` | Frozen prompt brief |
