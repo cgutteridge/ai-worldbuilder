@@ -3,7 +3,7 @@ name: task-index-manager
 description: Manage coding tasks and bugs using tasks/index.json as the single source of truth, through the project's task CLI where there is one. Use when reading or writing tasks, todos, or bugs in a git repo, or when asked to list, update, add, or resolve work items.
 ---
 
-<!-- Installed from agent-kits local-tasks@0.1.0. Change it in the kit, not here. -->
+<!-- Installed from agent-kits local-tasks@0.2.0. Change it in the kit, not here. -->
 
 # Task Index Manager
 

@@ -17,6 +17,7 @@ Exactly one **active world** at a time (`active_world.py`; CLIs take required `-
 - Tests: colocated `lib/<category>/test_*.py` and `scripts/test_*.py` (also `bakeoff/`); run with `python3 scripts/run_tests.py` or `python3 scripts/run_tests.py --only <stem>`.
 - Once per clone: `python3 scripts/install_git_hooks.py` (blocks system-tracker edits on `task/*` branches; runs `scripts/run_tests.py`).
 - **Branch gate (ADR 005):** code goes on `task/*` branches and through the ship-branch skill / `ship_branch.py merge` unless the owner opts out. Tracker-only and docs-only edits commit straight to `main` under the pre-commit checks — no `tracker/*` branches.
+- **Closing a thread:** after the `done` skill's green bar and before `thread-cleanup`, run `python3 scripts/ship_branch.py sweep`. Treat reported code strays or leftover worktrees as gaps unless the owner accepted them. Tracker or docs-only strays may be merged with `--merge-docs-only` when that matches the owner's intent; never auto-merge code.
 
 ## Read when needed
 
