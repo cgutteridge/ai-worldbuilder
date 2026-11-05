@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Installed from agent-kits local-tasks@0.1.0. Change it in the kit, not here.
+// Installed from agent-kits local-tasks@0.2.0. Change it in the kit, not here.
 // Reads a local task tracker (tasks/index.json and tasks/done.json) and
 // updates implementation status without disturbing unrelated tracker bytes.
 //
