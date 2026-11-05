@@ -1,22 +1,27 @@
-# Issue tracker: Local Markdown
+# Issue tracker
 
-Issues and specs for this repo live as markdown files in `.scratch/`.
+There is one work tracker for tool engineering, and world work has its own.
 
-## Conventions
+| Work | Where it is tracked |
+| --- | --- |
+| Tool engineering (scripts, libraries, skills, providers, process) | `tasks/index.json` (active: `todo`, `blocked`) and `tasks/done.json` (completed). Read and change them through the `task-index-manager` skill. |
+| World work (cell registry, issues, place builds) | The active world's own repo under `worlds/` (ADR 002). Never add it to `tasks/`. |
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+If it is unclear whether work is tool or world, ask (ADR 002).
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+For tool work, add a task to `tasks/index.json` through the `task-index-manager` skill. Put a specification in `docs/specs/` or `docs/plans/` and link it from the task notes. Do not create ticket files.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Read the task by id from `tasks/index.json` (or `tasks/done.json` if it is not in the active index). The user will normally pass the id.
+
+Tasks carry no triage label, only a status. Workers on `task/*` branches never edit the tracker; the orchestrator on `main` does (ADR 005).
+
+## `.scratch/`
+
+`.scratch/` is not a tracker. It is empty. Early specs and tickets that lived there were removed in commit `12dff3b`, and the specification for that work is in `docs/specs/`. The only thing a skill may still create there is a wayfinding map, below, and only when a wayfinding effort is under way.
 
 ## Wayfinding operations
 
@@ -28,7 +33,3 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 - **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
 - **Claim**: set `Status: claimed` and save before any work.
 - **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
-
-## Note
-
-Chosen because this worldbuilder checkout has no git remote. System engineering work also continues to use the Matt-style **system tracker** (`tasks/index.json`); `.scratch/` holds specs and AFK tickets for the engineering skills.

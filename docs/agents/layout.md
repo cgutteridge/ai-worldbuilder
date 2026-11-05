@@ -1,0 +1,36 @@
+# Where things live
+
+Read this when you need to find where a tool, config or record is kept. `AGENTS.md` only routes here.
+
+| Topic | Home |
+| --- | --- |
+| Active world pointer | `active_world.py` |
+| World checkouts | `worlds/<name>/` (gitignored; own git repos) |
+| Minecraft instance + saves | standalone, outside this repo; `world.json` `save_path` references the save (read-only to the tool; only `scripts/new_blank_world.py` creates one); setup: [docs/minecraft-instance-setup.md](../minecraft-instance-setup.md), check: `scripts/check_instance.py` |
+| System tracker | `tasks/` |
+| System providers | `config/system-providers.json` + `providers/<id>/` (tool root) |
+| World providers | active world `config/local-providers.json` + `providers/<id>/` |
+| Provider CLIs | `shims/` (system + world-provider entry points); code under each `providers/` tree |
+| Evidence types | `reference/TYPES.txt` |
+| Place SOURCES | active world `reference/SOURCES.txt` (URLs / ToS / fetch how) |
+| Shared libraries | `lib/<category>/` (bare imports via `script_env`; see [`lib/README.md`](../../lib/README.md)) |
+| CLI entry points | `scripts/` (agent/hook commands; often thin wrappers over `lib/`; see [`scripts/README.md`](../../scripts/README.md)) |
+| Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |
+| Skills | `.agents/skills/` (canonical); `.claude/skills/` holds generated pointer stubs for Claude Code. After adding or renaming a skill run `node scripts/check-skill-stubs.mjs --write` |
+| Model bake-offs (design/review tiers) | `bakeoff/` + `bakeoff/model_bakeoff.py` + skill `model-bakeoff` ([bakeoff/OVERVIEW.md](../../bakeoff/OVERVIEW.md)); ghost baseline: regenerate with `lidar_ghost apply` (no restore, see ADR 004) |
+| Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](../specs/lidar-ghost-v2-and-dryrun-reset.md) |
+| Decision record | `scripts/decision_record.py` (`evidence add`, `phase add`): per-phase references available / consulted → `registry/decisions/`, `registry/evidence/`; `site_pages.py` renders element, evidence and cell pages on every write |
+| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / reconcile; mess in a cell → `reconcile [--fix]`; interrupted apply → `site_recover.py`; ADR 004) |
+| Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; erases the registry so the journal starts fresh; also clears leftover retired progress files) |
+| New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` (no registry scaffold: `registry/` is created by the first journal write) |
+
+## Provider roots (dual)
+
+Catalogue rows may set `package` (e.g. `providers/<id>`). Resolve it with
+`cell_sources.provider_package_dir(id)` / `script_env.resolve_provider_package`:
+
+- **system** → `ai-worldbuilder/providers/<id>/` (`home: system`)
+- **world** → `<active-world>/providers/<id>/` (`home: world`)
+
+Merged load via `cell_sources.load_place_sources()` annotates each row with `home`.
+See the active world’s `providers/README.md` for local modules.
