@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Copied from ras-skills tooling/standalone/check-skill-stubs.mjs. Keep in step with that file; do not edit here.
 // Checks, and optionally writes, "see here" stubs for agent skills.
 //
 // One folder holds the canonical skills; another holds stubs that point to
@@ -17,6 +16,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs"
 import { join, resolve } from "node:path"
@@ -140,6 +140,20 @@ export function checkStubs({ canonicalDir, root, stubDir }) {
   const problems = []
   const canonicalRoot = join(root, canonicalDir)
   const stubRoot = join(root, stubDir)
+  if (
+    existsSync(canonicalRoot) &&
+    existsSync(stubRoot) &&
+    realpathSync(canonicalRoot) === realpathSync(stubRoot)
+  ) {
+    // A symlinked folder would make every skill look like a full copy.
+    return {
+      canonical: 0,
+      problems: [
+        `${canonicalDir} and ${stubDir} are the same folder (one is a symlink to the other), so there are no stubs to check`,
+      ],
+      stubs: 0,
+    }
+  }
   const canonicalFolders = listSkillFolders(canonicalRoot)
   const stubFolders = listSkillFolders(stubRoot)
   let stubCount = 0
@@ -194,7 +208,12 @@ export function checkStubs({ canonicalDir, root, stubDir }) {
     }
     const stub = readSkill(stubRoot, folder, problems, stubDir)
     const target = stub?.body.match(deadPointer)
-    if (target) {
+    if (target && existsSync(join(root, target[0]))) {
+      // The canonical skill exists, so this stub is in the wrong folder.
+      problems.push(
+        `${stubDir}/${folder}/SKILL.md points to ${target[0]}, but a stub's folder must match its canonical skill's folder (rename it to ${stubDir}/${target[1]})`,
+      )
+    } else if (target) {
       problems.push(
         `${stubDir}/${folder}/SKILL.md points to ${target[0]}, which does not exist`,
       )
