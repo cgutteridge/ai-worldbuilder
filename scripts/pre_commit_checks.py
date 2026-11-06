@@ -150,12 +150,22 @@ def is_tracker_only_paths(paths: Iterable[str]) -> bool:
     return all(p in TRACKER_PATHS for p in staged)
 
 
+# Markdown that audits or tests inspect (provider-name and stale-term audits on
+# rules/, skill stub check on skills): never on the fast path.
+CHECKED_MARKDOWN_PREFIXES = ('rules/', '.agents/', '.claude/')
+
+
+def _is_checked_markdown(path: str) -> bool:
+    normalised = path.replace('\\', '/')
+    return normalised.startswith(CHECKED_MARKDOWN_PREFIXES)
+
+
 def is_administrative_only_paths(paths: Iterable[str]) -> bool:
     """Return True when staged paths are non-empty and all tracker or docs.
 
-    Uses the single allowlist in ``ship_branch.is_docs_only_path`` (``tasks/``,
-    ``docs/``, any ``.md``, a few root docs files) so the hook and the sweep
-    agree on what is administrative. Empty staging is not administrative.
+    Uses ``ship_branch.is_docs_only_path`` (``tasks/``, ``docs/``, any ``.md``,
+    a few root docs files) minus markdown under ``rules/``, ``.agents/`` and
+    ``.claude/``, which the provider-name audit and skill-stub tests cover. Empty staging is not administrative.
 
     @param paths: staged file paths relative to the repo root
     @returns: whether the commit may skip the provider audit and unit suite
@@ -165,7 +175,10 @@ def is_administrative_only_paths(paths: Iterable[str]) -> bool:
     staged = list(paths)
     if not staged:
         return False
-    return all(ship_branch.is_docs_only_path(p) for p in staged)
+    return all(
+        ship_branch.is_docs_only_path(p) and not _is_checked_markdown(p)
+        for p in staged
+    )
 
 
 def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:

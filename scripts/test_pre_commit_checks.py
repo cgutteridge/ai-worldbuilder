@@ -279,6 +279,13 @@ class TrackerOnlySkipTestsTest(unittest.TestCase):
             pcc.is_administrative_only_paths(['tasks/index.json', 'AGENTS.md'])
         )
         self.assertFalse(pcc.is_administrative_only_paths([]))
+        self.assertFalse(pcc.is_administrative_only_paths(['rules/x.md']))
+        self.assertFalse(
+            pcc.is_administrative_only_paths(['.agents/skills/x/SKILL.md'])
+        )
+        self.assertFalse(
+            pcc.is_administrative_only_paths(['.claude/skills/x/SKILL.md'])
+        )
         self.assertFalse(
             pcc.is_administrative_only_paths(['docs/x.md', 'scripts/foo.py'])
         )
