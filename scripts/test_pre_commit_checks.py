@@ -263,12 +263,86 @@ class TrackerOnlySkipTestsTest(unittest.TestCase):
                 return_value=['tasks/index.json', 'tasks/done.json'],
             ):
                 with mock.patch.object(
+                    pcc, 'invalid_tracker_files', return_value=[]
+                ), mock.patch.object(
                     pcc, 'run_provider_name_audit', return_value=0
                 ) as audit:
                     with mock.patch.object(pcc, 'run_unit_tests') as tests:
                         code = pcc.run_pre_commit(Path('/tmp/repo'))
         self.assertEqual(code, 0)
         audit.assert_not_called()
+        tests.assert_not_called()
+
+    def test_administrative_only_predicate(self) -> None:
+        self.assertTrue(pcc.is_administrative_only_paths(['docs/x.md']))
+        self.assertTrue(
+            pcc.is_administrative_only_paths(['tasks/index.json', 'AGENTS.md'])
+        )
+        self.assertFalse(pcc.is_administrative_only_paths([]))
+        self.assertFalse(pcc.is_administrative_only_paths(['rules/x.md']))
+        self.assertFalse(
+            pcc.is_administrative_only_paths(['.agents/skills/x/SKILL.md'])
+        )
+        self.assertFalse(
+            pcc.is_administrative_only_paths(['.claude/skills/x/SKILL.md'])
+        )
+        self.assertFalse(
+            pcc.is_administrative_only_paths(['docs/x.md', 'scripts/foo.py'])
+        )
+        self.assertFalse(pcc.is_administrative_only_paths(['config/world.json']))
+
+    def test_docs_only_staged_skips_suite(self) -> None:
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(
+                pcc, 'staged_paths', return_value=['docs/a.md', 'AGENTS.md']
+            ):
+                with mock.patch.object(pcc, 'run_provider_name_audit') as audit:
+                    with mock.patch.object(pcc, 'run_unit_tests') as tests:
+                        code = pcc.run_pre_commit(Path('/tmp/repo'))
+        self.assertEqual(code, 0)
+        audit.assert_not_called()
+        tests.assert_not_called()
+
+    def test_docs_plus_code_runs_suite(self) -> None:
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(
+                pcc, 'staged_paths', return_value=['docs/a.md', 'lib/x.py']
+            ):
+                with mock.patch.object(
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
+                    with mock.patch.object(
+                        pcc, 'run_unit_tests', return_value=0
+                    ) as tests:
+                        pcc.run_pre_commit(Path('/tmp/repo'))
+        audit.assert_called_once()
+        tests.assert_called_once()
+
+    def test_empty_staging_runs_suite(self) -> None:
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(pcc, 'staged_paths', return_value=[]):
+                with mock.patch.object(
+                    pcc, 'run_provider_name_audit', return_value=0
+                ) as audit:
+                    with mock.patch.object(
+                        pcc, 'run_unit_tests', return_value=0
+                    ) as tests:
+                        pcc.run_pre_commit(Path('/tmp/repo'))
+        audit.assert_called_once()
+        tests.assert_called_once()
+
+    def test_malformed_staged_tracker_json_fails_fast_path(self) -> None:
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+            with mock.patch.object(
+                pcc, 'staged_paths', return_value=['tasks/index.json']
+            ):
+                with mock.patch.object(
+                    pcc, 'invalid_tracker_files', return_value=['tasks/index.json']
+                ):
+                    with mock.patch.object(pcc, 'run_unit_tests') as tests:
+                        with mock.patch('builtins.print'):
+                            code = pcc.run_pre_commit(Path('/tmp/repo'))
+        self.assertEqual(code, 1)
         tests.assert_not_called()
 
     def test_tracker_plus_code_still_runs_suite(self) -> None:
