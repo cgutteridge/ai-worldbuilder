@@ -5,8 +5,11 @@ Mechanical checks only:
 
 - On ``task/*`` worker branches, refuse staged edits to the system tracker
   (``tasks/index.json``, ``tasks/done.json``).
-- When staged paths are only those tracker files, skip provider-name audit and
-  the unit suite (archive commits on ``main``; #82).
+- When staged paths are administrative-only (tracker files, ``docs/``, markdown,
+  the root docs files; the same allowlist as ``ship_branch.is_docs_only_path``),
+  skip provider-name audit and the unit suite, but validate that any staged
+  tracker file is well-formed JSON (#82, #241). Anything else is code and keeps
+  the full checks.
 - Provider-name audit (#28): no new line-level hits outside allowed homes.
 - Wave lock helpers for the parallel-task-wave orchestrator (one open wave).
 
@@ -145,6 +148,41 @@ def is_tracker_only_paths(paths: Iterable[str]) -> bool:
     if not staged:
         return False
     return all(p in TRACKER_PATHS for p in staged)
+
+
+def is_administrative_only_paths(paths: Iterable[str]) -> bool:
+    """Return True when staged paths are non-empty and all tracker or docs.
+
+    Uses the single allowlist in ``ship_branch.is_docs_only_path`` (``tasks/``,
+    ``docs/``, any ``.md``, a few root docs files) so the hook and the sweep
+    agree on what is administrative. Empty staging is not administrative.
+
+    @param paths: staged file paths relative to the repo root
+    @returns: whether the commit may skip the provider audit and unit suite
+    """
+    import ship_branch
+
+    staged = list(paths)
+    if not staged:
+        return False
+    return all(ship_branch.is_docs_only_path(p) for p in staged)
+
+
+def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
+    """Return staged tracker files whose staged content is not valid JSON.
+
+    @param repo_root: repository root
+    @param paths: staged file paths relative to the repo root
+    @returns: sorted tracker paths that fail to parse
+    """
+    bad: list[str] = []
+    for path in sorted(set(paths) & TRACKER_PATHS):
+        try:
+            text = _git(repo_root, 'show', f':{path}')
+            json.loads(text)
+        except (subprocess.CalledProcessError, ValueError):
+            bad.append(path)
+    return bad
 
 
 def acquire_wave_lock(
@@ -305,9 +343,10 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     """Run all pre-commit checks; print failures to stderr.
 
     Tracker ownership always runs. Provider-name audit and the unit suite are
-    skipped when ``skip_tests`` is True, or when staged paths are tracker-only
-    (:func:`is_tracker_only_paths`) so archive commits on ``main`` need no
-    ``--skip-tests``. Otherwise the disposable-world unit suite always runs
+    skipped when ``skip_tests`` is True, or when staged paths are administrative-only
+    (:func:`is_administrative_only_paths`: tracker, docs, markdown) so archive and
+    docs commits on ``main`` need no ``--skip-tests``; staged tracker files must
+    still parse as JSON. Otherwise the disposable-world unit suite always runs
     (no env gate).
 
     @param repo_root: repository root
@@ -325,7 +364,17 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
             file=sys.stderr,
         )
         return 1
-    if skip_tests or is_tracker_only_paths(paths):
+    if skip_tests:
+        return 0
+    if is_administrative_only_paths(paths):
+        bad = invalid_tracker_files(repo_root, paths)
+        if bad:
+            print(
+                'pre-commit: staged tracker file is not valid JSON:\n  '
+                + '\n  '.join(bad),
+                file=sys.stderr,
+            )
+            return 1
         return 0
     code = run_provider_name_audit(repo_root)
     if code != 0:
