@@ -34,6 +34,10 @@ class EntrancesFromBlocksTest(unittest.TestCase):
         self.assertEqual(a['approach'], [])
         self.assertEqual(a['connection']['cell'], [3, 4])
 
+    def test_adjacent_separate_door_is_kept(self):
+        b = {(10, 65, 10): DOOR, (11, 65, 10): DOOR.replace('south', 'north')}
+        self.assertEqual(len(ea.entrances_from_blocks(b)), 2)
+
     def test_no_door_blocks_is_empty_not_guessed(self):
         self.assertEqual(ea.entrances_from_blocks({(1, 64, 1): 'bricks'}), [])
 

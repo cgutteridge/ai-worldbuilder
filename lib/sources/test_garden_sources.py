@@ -208,6 +208,18 @@ class TestLandedApproach(unittest.TestCase):
                                      approaches=[self.approach()])
         self.assertEqual(out[0]['connection']['status'], 'built')
 
+    def test_rear_door_is_ignored_for_the_street_frontage(self):
+        import entrance_approach as ea
+        meta, plot, roles, house = _strip()
+        rear = ea.entrance_approach((3, 13), 'S', approach_cells=[(3, 14)])    # lower x, faces away
+        front = self.approach()
+        idx = mock.Mock()
+        idx.cells.return_value = {q: 1 for q in house}
+        out = gs.frontages_for_plots({q: 1 for q in plot}, {1: meta}, {(1, 'front'): roles['front']},
+                                     idx, approaches=[rear, front])
+        self.assertEqual(out[0]['door']['cell'], [4, 10])
+        self.assertEqual(out[0]['connection']['status'], 'built')
+
     def test_no_landed_door_stays_inferred(self):
         meta, plot, roles, house = _strip()
         f = gs.residential_frontage(meta, plot, roles, house, self.CONV)

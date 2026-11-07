@@ -536,15 +536,25 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
     roles = defaultdict(dict)
     for (i, role), cells in seg.items():
         roles[i][role] = cells
-    by_plot: dict = {}
+    cands: dict = {}
     for a in approaches or ():
-        if not a.get('door'):
+        if not a.get('door') or not a.get('connection'):
             continue
         dx, dz = a['door']['cell']
         for i, cells in house_cells.items():
             if any((dx + u, dz + v) in cells for u in (-1, 0, 1) for v in (-1, 0, 1)):
-                by_plot.setdefault(i, a)
+                cands.setdefault(i, []).append(a)
                 break
+    by_plot = {}
+    for i, found in cands.items():
+        front = roles[i].get('front') or ()
+        if not front:
+            continue
+
+        def gap(a):                    # the street-facing door: its connection is nearest the front boundary
+            cx, cz = a['connection']['cell']
+            return min(math.hypot(cx - x, cz - z) for x, z in front)
+        by_plot[i] = min(found, key=lambda a: (gap(a), a['door']['cell']))
     out = []
     for i in sorted(info):
         meta = info[i]

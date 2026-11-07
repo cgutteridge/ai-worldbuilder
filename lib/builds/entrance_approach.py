@@ -89,7 +89,9 @@ def entrances_from_blocks(blocks, footprint=()):
             continue
         lat = (1, 0) if face in 'NS' else (0, 1)
         for k in (1, -1):
-            used.add((cell[0] + lat[0] * k, cell[1] + lat[1] * k))   # the other leaf of a double door
+            other = (cell[0] + lat[0] * k, cell[1] + lat[1] * k)
+            if any(c == other and f == face and abs(yy - y) <= 1 for c, yy, f in doors):
+                used.add(other)                         # the other leaf of a double door, same facing
         dx, dz = DIRS[face]
         approach, base = [], None
         for k in range(1, MAX_APPROACH + 1):
