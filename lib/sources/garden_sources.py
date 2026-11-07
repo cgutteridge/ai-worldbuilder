@@ -88,6 +88,18 @@ def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
     return False
 
 
+NON_RESIDENTIAL_BUILDINGS = frozenset({
+    'retail', 'commercial', 'industrial', 'office', 'university', 'college', 'school', 'hospital',
+    'church', 'chapel', 'public', 'civic', 'government', 'supermarket', 'warehouse', 'hotel', 'kiosk',
+    'service', 'religious', 'train_station', 'transportation', 'sports_hall', 'stadium'})
+NON_RESIDENTIAL_KEYS = ('shop', 'amenity', 'office', 'tourism', 'craft')
+
+
+def nonresidential_building(props: dict) -> bool:
+    """True when map tags say a building is not a house (shop, office, campus, ...): no private frontage."""
+    return props.get('building') in NON_RESIDENTIAL_BUILDINGS or any(props.get(k) for k in NON_RESIDENTIAL_KEYS)
+
+
 OPENING_WIDTH = 2        # columns of front boundary left open at an entrance
 FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden
 
@@ -123,7 +135,9 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
            'door': None, 'connection': {'status': 'none', 'reason': ''}, 'surface': 'private_frontage'}
     front = list(role_cells.get('front') or ())
     foot = meta.get('foot')
-    if not street or not number:
+    if meta.get('nonresidential'):
+        out['reason'] = 'building is not residential (shop, office or campus tags)'
+    elif not street or not number:
         out['reason'] = 'property has no street and house number'
     elif not front or not foot:
         out['reason'] = 'no street-run frontage evidence'
@@ -165,10 +179,9 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
                              'reason': 'route crosses the house; the house is not altered to force access'}
     else:
         out['route'] = route
-        out['opening'] = sorted(q for q in front if max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1
-                                )[:OPENING_WIDTH + 1] if spec else []
-        if target not in out['opening'] and spec:
-            out['opening'].append(target)
+        near = sorted((q for q in front if q != target and max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1),
+                      key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))
+        out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1]) if spec else []
         out['connection'] = {
             'status': 'verified' if observed else 'inferred', 'endpoints': [list(start), list(target)],
             'reason': '' if observed else 'entrance inferred from the street foot, not a mapped door'}
@@ -248,7 +261,8 @@ def plots_for(box: tuple[int, int, int, int], margin: int = 60):
         num, st = _addr(p)
         s = idx.nearest_street(cx, cz)
         info[i] = {'street': st or (s[1] if s else ''), 'number': num or '', 'centre': (cx, cz),
-                   'foot': s[3] if s else None, 'map_ref': p.get('osm_id') or p.get('osm_way_id')}
+                   'foot': s[3] if s else None, 'map_ref': p.get('osm_id') or p.get('osm_way_id'),
+                   'nonresidential': nonresidential_building(p)}
     return owner, info, street, idx
 
 
