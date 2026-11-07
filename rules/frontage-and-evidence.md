@@ -39,6 +39,15 @@ builds a second one.
   under `reserved.conflicts` in the decor plan.
 - A route through the house is reported `blocked` with endpoints and pass; the house is
   not altered to force access.
+- Landed doors: `garden_sources.landed_approaches` reads the cell's landed, not undone feature
+  plans (read-only) and `entrance_approach.entrances_from_blocks` rebuilds door, steps and the
+  outward connection from the recorded blocks. The route then starts at the outer end of the feature's
+  own steps (`connection.status` `built`; the door position is `generated`, never `observed`). No
+  recorded door means no endpoint: the frontage falls back to a labelled `inferred` entrance.
+- Ground paves *guessed* ground on the route (observed lawn, gravel and paving stay) and the path
+  is exempt from denoise. Decor keeps the route and the feature's clearance columns free of
+  barriers and furniture (furniture dropped there appears in `unplaced`). Blocked connections go to
+  the ground stats as `frontage_blocked`. Trees are not moved or cleared by either pass.
 - Feature owns door, threshold and external steps (`house_build.entrance_approach` describes
   them read-only, rebuilt from current geometry); ground owns the onward route from its outer
   end; decor owns boundary and gate placement. Clearance is shared planning data, not

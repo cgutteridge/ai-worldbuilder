@@ -345,12 +345,16 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 
 # --- 2. what is on the ground ------------------------------------------------------------
 def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
-             fp: set | None = None, private_frontage: set | frozenset = frozenset()) -> tuple[dict, Counter]:
+             fp: set | None = None, private_frontage: set | frozenset = frozenset(),
+             frontage_route: set | frozenset = frozenset()) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
 
     ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
     identified house's own front garden: guessed lawn there stays lawn rather than becoming the
-    shopfront-forecourt paving, so private frontage reads apart from public pavement."""
+    shopfront-forecourt paving, so private frontage reads apart from public pavement.
+    ``frontage_route`` is the onward path from a house's entrance to the street: *guessed* ground on it
+    becomes paving (it joins the outer end of the feature's own steps); seen lawn, gravel or paving is
+    kept, since observed surface differences are retained."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -446,11 +450,17 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                     and any((q[0] + a, q[1] + b) in fp for a in range(-4, 5) for b in range(-4, 5)):
                 kind[q] = 'paving'
                 how['guessed lawn between road and building -> paving'] += 1
+    route_paved: set = set()
+    for q in frontage_route:
+        if q in soft_grass and kind.get(q) == 'grass' and q not in (fp or ()):
+            kind[q] = 'paving'
+            route_paved.add(q)
+            how['guessed ground on entrance route -> paving'] += 1
     barrier = vmap.hedge | vmap.wall | vmap.fence
     lawn_by_barrier = {q for q in kind if kind[q] == 'grass' and any(
         (q[0] + a, q[1] + b) in barrier for a in (-1, 0, 1) for b in (-1, 0, 1))}
     kind = denoise(kind, {q for q in kind if vmap.pri.get(q, 0) >= 40 and vmap.kind.get(q) == 'tarmac'}
-                   | lawn_by_barrier, how)          # a hedge needs its strip of lawn: not noise
+                   | lawn_by_barrier | route_paved, how)   # a one-wide entrance path is not noise          # a hedge needs its strip of lawn: not noise
     # road furniture: dashed centre line, kerb along the public-road edge (dropped at crossings)
     out = dict(kind)
     for q in free:
@@ -698,12 +708,15 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     owned_cols = {(x, z) for x, _y, z in neighbour_owned}
     excluded = []
     live, skipped = free_columns(cell, world, vmap, fp, owned_cols, excluded)
-    if 'private_frontage' in ev:
-        private = set(ev['private_frontage'])
+    if 'private_frontage' in ev or 'frontage_route' in ev:
+        frontages = ev.get('frontages') or []
     else:
         import garden_sources as gs
-        private = gs.private_frontage_columns(gs.frontages_for_cell(cell))
-    kind, how = classify(cell, live, vmap, rgb, fp, private)
+        frontages = gs.frontages_for_cell(cell)
+    import garden_sources as gs
+    private = set(ev['private_frontage']) if 'private_frontage' in ev else gs.private_frontage_columns(frontages)
+    route = set(ev['frontage_route']) if 'frontage_route' in ev else gs.frontage_route_columns(frontages)
+    kind, how = classify(cell, live, vmap, rgb, fp, private, route)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
@@ -728,6 +741,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'vector_map_features': getattr(vmap, 'n_features', 0),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
+    stats['frontage_blocked'] = gs.blocked_connections(frontages)
     stats['excluded_columns'] = excluded
     retained = []
     stats['retained_positions'] = retained
