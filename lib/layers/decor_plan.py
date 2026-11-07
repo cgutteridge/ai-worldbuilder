@@ -443,11 +443,13 @@ def build_decor_plan(
         map_barriers = {'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)}
     if not map_furniture and vmap is not None:
         map_furniture = list(vmap.furniture)
+    route: set[tuple[int, int]] = set()
     if garden is None:
         garden_report: dict[str, Any] = {}
         garden = gs.garden_barriers(cell, rgb=rgb, report=garden_report)
         if openings is None:
             openings = {tuple(q) for q in garden_report.get('openings', ())}
+            route = {tuple(q) for q in garden_report.get('route_reserved', ())}
         if frontages is None:
             frontages = garden_report.get('frontages', [])
     if rgb is None:
@@ -628,9 +630,10 @@ def build_decor_plan(
         )
         items.append(item)
 
-    reserved = reserve_openings(items, openings or ())
+    keep_clear = set(openings or ()) | set(route)
+    reserved = reserve_openings(items, keep_clear)
     return {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
-            'reserved': {'openings': sorted([int(x), int(z)] for x, z in (openings or ())),
+            'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),
                          'conflicts': reserved['conflicts']},
             'frontages': [compact_frontage(f) for f in frontages or ()]}
 

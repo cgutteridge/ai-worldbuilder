@@ -105,7 +105,8 @@ FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line cou
 
 
 def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
-                         *, door: tuple[int, int] | None = None, evidence_ids=()) -> dict:
+                         *, door: tuple[int, int] | None = None, approach: dict | None = None,
+                         evidence_ids=()) -> dict:
     """One shared description of a residential property's private frontage (#240).
 
     Ground reads ``extent`` (private frontage, not public pavement) and ``route``; decor reads
@@ -123,6 +124,9 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
     @param house_cells: footprint columns of this property's house
     @param conv: street convention or None
     @param door: observed door column, if known
+    @param approach: ``entrance_approach`` dict of a landed feature (door, steps, outward connection);
+        the route starts at its connection, so ground joins the outer end of the feature's steps and
+        never duplicates them. Its door is a built door (``generated`` position, not observed)
     @param evidence_ids: registry evidence ids backing the property
     @returns: dict with eligible, reason, extent, boundary, opening, route, door, connection, provenance
     """
@@ -157,6 +161,10 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
     spec = role_spec(conv, number, 'front')
     out['boundary'] = sorted(front) if spec else []
     observed = door is not None
+    built = approach is not None and approach.get('connection') is not None
+    if built:
+        door = tuple(approach['door']['cell'])
+        observed = approach['door']['origin'] == 'observed'
     if door is None and house:
         door = min(house, key=lambda q: (math.hypot(q[0] - fx, q[1] - fz), q))
     if door is None:
@@ -164,13 +172,19 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
         out['provenance'] = prov.provenance_record(
             source='vector_map', confidence='medium', evidence_ids=evidence_ids)
         return out
-    out['door'] = {'cell': list(door), 'origin': 'observed' if observed else 'inferred'}
+    out['door'] = {'cell': list(door),
+                   'origin': ('observed' if observed else 'generated') if built
+                   else ('observed' if observed else 'inferred')}
+    if built:
+        out['approach'] = approach
     ox, oz = -ax, -az                                     # outward: house -> street
     if abs(ox) >= abs(oz):
         step = (1 if ox > 0 else -1, 0)
     else:
         step = (0, 1 if oz > 0 else -1)
-    start = (door[0] + step[0], door[1] + step[1])
+    start = tuple(approach['connection']['cell']) if built else (door[0] + step[0], door[1] + step[1])
+    if built:
+        out['clearance'] = [list(c) for c in (approach.get('clearance') or {}).get('columns', ())]
     target = min(front, key=lambda q: (math.hypot(q[0] - start[0], q[1] - start[1]), q))
     route = [q for q in line4(start, target)]
     blocked = [q for q in route if q in house]
@@ -183,11 +197,14 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
                       key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))
         out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1]) if spec else []
         out['connection'] = {
-            'status': 'verified' if observed else 'inferred', 'endpoints': [list(start), list(target)],
-            'reason': '' if observed else 'entrance inferred from the street foot, not a mapped door'}
+            'status': 'verified' if observed else ('built' if built else 'inferred'),
+            'endpoints': [list(start), list(target)],
+            'reason': '' if observed else (
+                'joins a built door whose position was generated, not observed' if built
+                else 'entrance inferred from the street foot, not a mapped door')}
     out['provenance'] = prov.provenance_record(
-        source='vector_map' if observed else 'inference', confidence='medium' if observed else 'low',
-        evidence_ids=evidence_ids)
+        source='vector_map' if observed else 'inference',
+        confidence='medium' if (observed or built) else 'low', evidence_ids=evidence_ids)
     return out
 
 
@@ -197,7 +214,54 @@ def frontages_for_cell(cell: tuple[int, int]) -> list:
 
     box = cell_box(cell)
     owner, info, street, idx = plots_for(box)
-    return frontages_for_plots(owner, info, segments(owner, info, street, idx, box), idx)
+    try:
+        approaches = landed_approaches(cell)
+    except Exception:                                      # no journal (tests, fresh world): inferred doors
+        approaches = []
+    return frontages_for_plots(owner, info, segments(owner, info, street, idx, box), idx,
+                               approaches=approaches)
+
+
+def frontage_route_columns(frontages) -> set:
+    """Columns of eligible onward routes (ground surfaces guessed ground there as path)."""
+    return {tuple(q) for f in frontages if f.get('eligible') for q in f.get('route', ())}
+
+
+def reserved_route(frontages) -> set:
+    """Route plus feature-approach clearance columns decor must leave walkable and open overhead."""
+    out = set()
+    for f in frontages:
+        if f.get('eligible'):
+            out.update(tuple(q) for q in f.get('route', ()))
+            out.update(tuple(q) for q in f.get('clearance', ()))
+    return out
+
+
+def blocked_connections(frontages) -> list:
+    """Report rows for connections that could not be made (endpoints, responsible pass, reason)."""
+    return [{'frontage': f['id'], **f['connection']} for f in frontages
+            if (f.get('connection') or {}).get('status') == 'blocked']
+
+
+def landed_approaches(cell: tuple[int, int], registry=None) -> list:
+    """Entrance approaches reconstructed read-only from the cell's landed, not undone feature plans.
+
+    A plan with no recorded plan blocks, or no door block, yields nothing: its endpoint is unavailable
+    and the frontage falls back to a labelled inferred entrance. Never writes to the registry.
+    """
+    from entrance_approach import entrances_from_blocks
+
+    if registry is None:
+        from cell_registry import view_registry
+        registry = view_registry()
+    out = []
+    for e in registry.entries(cells=[tuple(cell)]):
+        if e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed' or e.undone:
+            continue
+        blocks = registry.recorded(e.plan)
+        if blocks:
+            out.extend(entrances_from_blocks(blocks))
+    return out
 
 
 def private_frontage_columns(frontages) -> set:
@@ -433,7 +497,11 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,
                     'cells': len(cells), 'source': src, 'hedge_share': round(share, 2),
                     'type': spec['type'] if spec else None})
-    frontages = frontages_for_plots(owner, info, seg, idx)
+    try:
+        approaches = landed_approaches(cell)
+    except Exception:
+        approaches = []
+    frontages = frontages_for_plots(owner, info, seg, idx, approaches=approaches)
     opening = reserved_openings(frontages)
     for q in opening:
         out.pop(q, None)                                  # entrance gap stays open in every garden boundary
@@ -441,10 +509,12 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         report['segments'] = rep
         report['frontages'] = frontages
         report['openings'] = sorted(opening)
+        report['route_reserved'] = sorted(reserved_route(frontages))
     return out
 
 
-def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | None = None) -> list:
+def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | None = None,
+                        approaches=()) -> list:
     """``residential_frontage`` for every plot, from the plots/segments ``garden_barriers`` already built.
 
     @param owner: ``{cell: plot id}`` from ``plots_for``
@@ -452,6 +522,8 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
     @param seg: ``{(plot id, role): [cells]}`` from ``segments``
     @param idx: ``OSMIndex``
     @param doors: optional ``{plot id: (x, z)}`` observed door columns
+    @param approaches: ``entrance_approach`` dicts of landed features; each joins the plot whose house
+        holds (or touches) its door
     @returns: list of frontage dicts, one per plot, ordered by id
     """
     fp = idx.cells()
@@ -464,12 +536,21 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
     roles = defaultdict(dict)
     for (i, role), cells in seg.items():
         roles[i][role] = cells
+    by_plot: dict = {}
+    for a in approaches or ():
+        if not a.get('door'):
+            continue
+        dx, dz = a['door']['cell']
+        for i, cells in house_cells.items():
+            if any((dx + u, dz + v) in cells for u in (-1, 0, 1) for v in (-1, 0, 1)):
+                by_plot.setdefault(i, a)
+                break
     out = []
     for i in sorted(info):
         meta = info[i]
         out.append(residential_frontage(
             meta, plot_cells[i], roles[i], house_cells[i], load_convention(meta['street']),
-            door=(doors or {}).get(i)))
+            door=(doors or {}).get(i), approach=by_plot.get(i)))
     return out
 
 

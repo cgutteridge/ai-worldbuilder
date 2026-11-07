@@ -179,6 +179,70 @@ class TestResidentialFrontage(unittest.TestCase):
         self.assertEqual(gs.private_frontage_columns([f]), {tuple(q) for q in f['extent']})
 
 
+class TestLandedApproach(unittest.TestCase):
+    """A landed feature's approach gives the route its start (#240)."""
+
+    CONV = {'front': {'type': 'fence'}}
+
+    def approach(self):
+        import entrance_approach as ea
+        return ea.entrance_approach((4, 10), 'N', approach_cells=[(4, 9), (4, 8)], base_y=64)
+
+    def test_route_starts_at_outer_end_of_feature_steps(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV, approach=self.approach())
+        self.assertEqual(f['door'], {'cell': [4, 10], 'origin': 'generated'})
+        self.assertEqual(f['connection']['status'], 'built')
+        self.assertEqual(f['connection']['endpoints'][0], [4, 7])
+        self.assertEqual(f['route'][0], (4, 7))
+        self.assertTrue({(4, 9), (4, 8)}.isdisjoint(f['route']))      # never duplicates feature steps
+        self.assertEqual({tuple(c) for c in f['clearance']}, {(4, 9), (4, 8), (4, 7)})
+        self.assertIn((4, 8), gs.reserved_route([f]))
+
+    def test_approach_attaches_to_the_plot_holding_the_door(self):
+        meta, plot, roles, house = _strip()
+        idx = mock.Mock()
+        idx.cells.return_value = {q: 1 for q in house}
+        owner = {q: 1 for q in plot}
+        out = gs.frontages_for_plots(owner, {1: meta}, {(1, 'front'): roles['front']}, idx,
+                                     approaches=[self.approach()])
+        self.assertEqual(out[0]['connection']['status'], 'built')
+
+    def test_no_landed_door_stays_inferred(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+        self.assertEqual(f['connection']['status'], 'inferred')
+
+    def test_landed_approaches_reads_only_landed_feature_builds(self):
+        door = 'spruce_door[facing=north,half=lower,hinge=left,open=false]'
+        E = lambda plan, **kw: mock.Mock(kind='build', pass_='feature', status='landed', undone=False,
+                                          plan=plan, **kw)
+        reg = mock.Mock()
+        reg.entries.return_value = [E('a'), E('b', undone=True) if False else mock.Mock(
+            kind='build', pass_='feature', status='landed', undone=True, plan='b'),
+            mock.Mock(kind='build', pass_='ground', status='landed', undone=False, plan='c')]
+        reg.recorded.side_effect = lambda plan: {(4, 65, 10): door} if plan == 'a' else {(9, 65, 9): door}
+        got = gs.landed_approaches((0, 0), registry=reg)
+        self.assertEqual([a['door']['cell'] for a in got], [[4, 10]])
+
+    def test_diagonal_cell_edge_route_stays_four_connected_and_clear_of_house(self):
+        meta, plot, roles, house = _strip()
+        meta['foot'] = (0, 0)                                   # street foot far to one side: diagonal route
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV, door=(3, 10))
+        route = f['route']
+        self.assertTrue(route and set(route).isdisjoint(house))
+        for a, b in zip(route, route[1:]):
+            self.assertEqual(abs(a[0] - b[0]) + abs(a[1] - b[1]), 1)
+
+    def test_blocked_connections_report(self):
+        meta, plot, roles, house = _strip()
+        blocker = {(4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4)}
+        f = gs.residential_frontage(meta, plot, roles, house | blocker, self.CONV, door=(4, 10))
+        (row,) = gs.blocked_connections([f])
+        self.assertEqual(row['pass'], 'ground')
+        self.assertEqual(gs.frontage_route_columns([f]), set())
+
+
 class TestTreeCanopyColumns(unittest.TestCase):
     """nDSM / lidar tree-kind mask as (x, z) columns."""
 

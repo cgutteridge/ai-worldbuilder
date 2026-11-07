@@ -129,6 +129,27 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertTrue(all(kept[q] == 'grass' for q in garden))
         self.assertEqual(how['guessed lawn kept: private residential frontage'], len(garden))
 
+    def test_entrance_route_paves_guessed_ground_but_keeps_seen_lawn(self):
+        """The onward route paves guessed (shaded) ground only; observed lawn stays (#240)."""
+        cell = (48, -44)
+        x0, z0 = 6144, -5632
+        osm = self.Osm({}, {})
+        area = [(x0 + i, z0 + j) for i in range(8) for j in range(8)]
+        live = {q: (50, 'stone') for q in area}
+        shade, lawn = (0.44, 0.39, 0.27), (0.64, 0.60, 0.54)
+        rgb = {(x0 + i, z0 + j): lawn for i in range(-4, 12) for j in range(-4, 12)}
+        patch = [(x0 + i, z0 + j) for i in range(2, 7) for j in range(2, 7)]    # shaded: lawn guessed, not seen
+        for q in patch:
+            rgb[q] = shade
+        shaded = [(x0 + 4, z0 + j) for j in range(2, 7)]
+        route = set(shaded) | {(x0 + 6, z0 + 1)}                   # one route column is seen lawn
+        kind, how = gl.classify(cell, live, osm, rgb, set(), frozenset(), route)
+        self.assertEqual(how['guessed ground on entrance route -> paving'], 5)
+        self.assertTrue(all(kind[q] == 'paving' for q in shaded))
+        self.assertEqual(kind[(x0 + 6, z0 + 1)], 'grass')          # seen lawn kept
+        plain, _ = gl.classify(cell, live, osm, rgb, set())
+        self.assertTrue(all(plain[q] == 'grass' for q in shaded))
+
     def test_registered_aerial_lawn_beats_mapped_plaza_but_mosaic_lawn_does_not(self):
         import ground_sources as gs
         cell = (47, -45)

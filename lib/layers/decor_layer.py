@@ -517,8 +517,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                     if bare(world.block(*pos)) == f'minecraft:{mat}':
                         present[pos] = mat
 
-    furniture_items = [i for i in dplan.resolved_furniture(decor)
-                       if (int(i['x']), int(i['z'])) not in reserved_gap]   # keep entrance openings clear
+    all_furniture = dplan.resolved_furniture(decor)
+    furniture_items = [i for i in all_furniture if (int(i['x']), int(i['z'])) not in reserved_gap]
+    gap_furniture = [dplan.mark_unplaced(i, 'entrance opening or route reserved')
+                     for i in all_furniture if (int(i['x']), int(i['z'])) in reserved_gap]
     furniture, furniture_report, furniture_unplaced = place_furniture(
         cell, furniture_items, world, way=way, near1=near1, owned=owned, masked=masked,
         lidar_hm=lidar_hm,
@@ -542,6 +544,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     )
     stats['barriers'] = len(barrier_report)
     stats['unresolved'] = len(unresolved)
+    furniture_unplaced = list(furniture_unplaced) + gap_furniture
     stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced)
 
     # Joins may enter near1 only for materials already placed with allow_against_build.
