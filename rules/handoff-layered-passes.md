@@ -275,3 +275,11 @@ LIDAR OBJECTS IN DECOR (#173)
     it from lidar when at least half their columns stand 1-3 blocks above bare
     terrain (tree, roof and structure columns excluded): height_source 'lidar'.
     An explicit height (garden convention) always wins.
+
+## Residential frontage handoff (#240)
+Ground and decor read the shared frontage description from `garden_sources`
+(`rules/frontage-and-evidence.md`). Ground keeps private frontage lawn and joins the
+route at the feature approach's outer end. Decor keeps `reserved.openings` clear of
+barriers, furniture and final joins, and reports `reserved.conflicts` and `frontages`
+in its plan. The feature pass is unchanged apart from the read-only
+`house_build.entrance_approach`.

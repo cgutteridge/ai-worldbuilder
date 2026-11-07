@@ -446,3 +446,31 @@ class TestPlaceRespectsBuildingBorder(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReserveOpenings(unittest.TestCase):
+    """Entrance gaps stay clear of inferred barriers; mapped boundaries are kept and reported (#240)."""
+
+    def _item(self, iid, source, cells):
+        return {'id': iid, 'role': 'barrier', 'kind': 'fence', 'cells': [list(c) for c in cells],
+                'provenance': {'source': source, 'confidence': 'medium', 'evidence_ids': [],
+                               'unresolved_reason': ''}}
+
+    def test_inferred_barrier_loses_opening_columns(self):
+        out = dp.reserve_openings([self._item('g', 'register_entry', [(0, 3), (1, 3), (2, 3)])], {(1, 3)})
+        self.assertEqual(out['items'][0]['cells'], [[0, 3], [2, 3]])
+        self.assertEqual(out['conflicts'][0]['cells'], [[1, 3]])
+
+    def test_emptied_item_is_dropped(self):
+        out = dp.reserve_openings([self._item('g', 'aerial', [(1, 3)])], {(1, 3)})
+        self.assertEqual(out['items'], [])
+
+    def test_mapped_boundary_kept_and_explained(self):
+        item = self._item('m', 'vector_map', [(0, 3), (1, 3)])
+        out = dp.reserve_openings([item], {(1, 3)})
+        self.assertEqual(out['items'], [item])
+        self.assertIn('explicit observation', out['conflicts'][0]['reason'])
+
+    def test_non_barrier_untouched(self):
+        item = {'id': 'f', 'role': 'furniture', 'cells': [[1, 3]]}
+        self.assertEqual(dp.reserve_openings([item], {(1, 3)})['items'], [item])

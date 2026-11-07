@@ -400,6 +400,8 @@ def build_decor_plan(
     canopy: set[tuple[int, int]] | None = None,
     footprint: set[tuple[int, int]] | None = None,
     free_hedges: bool = False,
+    openings: set[tuple[int, int]] | None = None,
+    frontages: Sequence[Mapping[str, Any]] | None = None,
     evidence_ids: Sequence[str] = (),
     root=None,
 ) -> dict[str, Any]:
@@ -417,9 +419,13 @@ def build_decor_plan(
     @param footprint: optional building columns; OSM index when omitted
     @param free_hedges: also plan free-standing aerial hedges (off: on 48,-45 it found only
         carriageway shadow and missed the hedges OSM maps)
+    @param openings: entrance-gap columns reserved in garden boundaries; read from the garden
+        report when ``garden`` is built here
+    @param frontages: shared residential frontage descriptions (``garden_sources``); echoed in
+        the plan as ``frontages`` (compact) for the report
     @param evidence_ids: default evidence ids for aerial-derived rows
     @param root: world root for provenance evidence checks
-    @returns: ``{'cell': [tx, tz], 'items': [...]}``
+    @returns: ``{'cell': [tx, tz], 'items': [...], 'reserved': {...}, 'frontages': [...]}``
     """
     from ground_sources import OSMGround, aerial_rgb
     import garden_sources as gs
@@ -438,7 +444,12 @@ def build_decor_plan(
     if not map_furniture and vmap is not None:
         map_furniture = list(vmap.furniture)
     if garden is None:
-        garden = gs.garden_barriers(cell, rgb=rgb)
+        garden_report: dict[str, Any] = {}
+        garden = gs.garden_barriers(cell, rgb=rgb, report=garden_report)
+        if openings is None:
+            openings = {tuple(q) for q in garden_report.get('openings', ())}
+        if frontages is None:
+            frontages = garden_report.get('frontages', [])
     if rgb is None:
         rgb = aerial_rgb(cell)
     if canopy is None:
@@ -617,7 +628,54 @@ def build_decor_plan(
         )
         items.append(item)
 
-    return {'cell': [int(cell[0]), int(cell[1])], 'items': items}
+    reserved = reserve_openings(items, openings or ())
+    return {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
+            'reserved': {'openings': sorted([int(x), int(z)] for x, z in (openings or ())),
+                         'conflicts': reserved['conflicts']},
+            'frontages': [compact_frontage(f) for f in frontages or ()]}
+
+
+def reserve_openings(items: Sequence[dict[str, Any]], openings) -> dict[str, Any]:
+    """Keep entrance gaps clear of every barrier source (#240).
+
+    Inferred, convention, designer and aerial barrier columns inside an opening are dropped (an
+    emptied item goes with them). A mapped (``vector_map``) boundary is explicit observation and
+    stays; the overlap is reported in ``conflicts`` instead of silently erased.
+
+    @param items: decor plan items
+    @param openings: reserved ``(x, z)`` columns
+    @returns: ``{'items': kept items, 'conflicts': [{item, cells, reason}]}``
+    """
+    gap = {tuple(q) for q in openings}
+    kept: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    for item in items:
+        cells = [tuple(c) for c in item.get('cells') or ()]
+        hit = [c for c in cells if c in gap]
+        if item.get('role') != 'barrier' or not hit:
+            kept.append(item)
+            continue
+        if (item.get('provenance') or {}).get('source') == 'vector_map':
+            conflicts.append({'item': item.get('id'), 'cells': [list(c) for c in hit],
+                              'reason': 'mapped boundary crosses a reserved entrance opening; '
+                                        'kept as explicit observation'})
+            kept.append(item)
+            continue
+        rest = [c for c in cells if c not in gap]
+        conflicts.append({'item': item.get('id'), 'cells': [list(c) for c in hit],
+                          'reason': 'entrance opening reserved; barrier columns dropped'})
+        if rest:
+            kept.append({**item, 'cells': [list(c) for c in rest]})
+    return {'items': kept, 'conflicts': conflicts}
+
+
+def compact_frontage(f: Mapping[str, Any]) -> dict[str, Any]:
+    """Report-sized view of a frontage description (no per-column lists)."""
+    return {'id': f.get('id'), 'scope': f.get('scope'), 'eligible': f.get('eligible'),
+            'reason': f.get('reason') or (f.get('provenance') or {}).get('unresolved_reason', ''),
+            'open_frontage': f.get('open_frontage'), 'door': f.get('door'),
+            'connection': f.get('connection'), 'opening': f.get('opening'),
+            'provenance': f.get('provenance')}
 
 
 def unresolved_items(plan: Mapping[str, Any]) -> list[Mapping[str, Any]]:

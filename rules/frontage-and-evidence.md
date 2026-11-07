@@ -22,6 +22,28 @@ Why whole houses: I-009, five façade builds put a brick shell on the pavement
 of Broadlands Road, about 6 blocks in front of the real houses. Readback, walk
 and patrol all passed. All five were reverted.
 
+## Residential frontage (shared description)
+`garden_sources.residential_frontage` gives ground and decor one description per
+property: private frontage `extent`, `boundary` segments, entrance `opening`, `route` to
+the door, and `connection` status with provenance. Ground and decor read it; neither
+builds a second one.
+- Evidence order: explicit property observation, then street-run evidence, then labelled
+  same-street inference. Inference needs an identified residential property (street and
+  number) plus a `front` segment. A missing convention alone never authorises a fence.
+- `front: none` (convention or per-house override) is an explicit open frontage and wins.
+- The door is `observed` (mapped) or `inferred` (nearest house column to the street foot).
+  An inferred door gives a plausible route, reported `inferred`, never `verified`.
+- Ground keeps guessed lawn as lawn inside private frontage (no forecourt paving there).
+- Decor drops inferred barrier columns and furniture inside the opening, and final
+  `join_pieces` may not close it. A mapped boundary across an opening is kept and listed
+  under `reserved.conflicts` in the decor plan.
+- A route through the house is reported `blocked` with endpoints and pass; the house is
+  not altered to force access.
+- Feature owns door, threshold and external steps (`house_build.entrance_approach` describes
+  them read-only, rebuilt from current geometry); ground owns the onward route from its outer
+  end; decor owns boundary and gate placement. Clearance is shared planning data, not
+  ownership of air.
+
 ## 1. Survey first
 - `python3 scripts/osm_footprints.py frontage --bbox x0,z0,x1,z1`: real
   `addr:street` + number, front-wall MC x,z, setback, surface profile to the road.

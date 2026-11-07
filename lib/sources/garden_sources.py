@@ -88,6 +88,115 @@ def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
     return False
 
 
+OPENING_WIDTH = 2        # columns of front boundary left open at an entrance
+FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden
+
+
+def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
+                         *, door: tuple[int, int] | None = None, evidence_ids=()) -> dict:
+    """One shared description of a residential property's private frontage (#240).
+
+    Ground reads ``extent`` (private frontage, not public pavement) and ``route``; decor reads
+    ``boundary`` roles and ``opening``. Pure: callers pass the plot, its role segments and house.
+
+    Eligibility (inference only): an identified residential property (street and number) with
+    street-run evidence (a ``front`` segment). A missing convention alone never authorises a fence;
+    ``front`` set to ``none`` in the convention (or an override) is an explicit open frontage.
+    Entrance: ``door`` is an observed door column; without it the nearest house column to the street
+    foot is used and labelled ``inferred`` (a plausible entrance, never a verified connection).
+
+    @param meta: ``{street, number, centre, foot, map_ref}`` plot info from ``plots_for``
+    @param plot_cells: columns of the plot outside footprints
+    @param role_cells: ``{role: [cells]}`` plot edge segments from ``segments``
+    @param house_cells: footprint columns of this property's house
+    @param conv: street convention or None
+    @param door: observed door column, if known
+    @param evidence_ids: registry evidence ids backing the property
+    @returns: dict with eligible, reason, extent, boundary, opening, route, door, connection, provenance
+    """
+    import provenance as prov
+
+    street, number = meta.get('street') or '', str(meta.get('number') or '')
+    out = {'id': f'frontage-{slug(street)}-{number}' if street and number else 'frontage-unidentified',
+           'scope': {'street': street, 'property': number}, 'eligible': False, 'reason': '',
+           'extent': [], 'boundary': [], 'open_frontage': False, 'opening': [], 'route': [],
+           'door': None, 'connection': {'status': 'none', 'reason': ''}, 'surface': 'private_frontage'}
+    front = list(role_cells.get('front') or ())
+    foot = meta.get('foot')
+    if not street or not number:
+        out['reason'] = 'property has no street and house number'
+    elif not front or not foot:
+        out['reason'] = 'no street-run frontage evidence'
+    if out['reason']:
+        out['provenance'] = prov.provenance_record(
+            source='inference', confidence='low', evidence_ids=evidence_ids, unresolved_reason=out['reason'])
+        return out
+    out['eligible'] = True
+    fx, fz = foot
+    ax, az = meta['centre'][0] - fx, meta['centre'][1] - fz
+    n = math.hypot(ax, az) or 1.0
+    ax, az = ax / n, az / n
+    house = set(house_cells)
+    out['extent'] = sorted(q for q in plot_cells
+                           if ((q[0] - fx) * ax + (q[1] - fz) * az) < n - FRONT_GARDEN_MARGIN)
+    out['open_frontage'] = role_vetoed(conv, number, 'front')
+    spec = role_spec(conv, number, 'front')
+    out['boundary'] = sorted(front) if spec else []
+    observed = door is not None
+    if door is None and house:
+        door = min(house, key=lambda q: (math.hypot(q[0] - fx, q[1] - fz), q))
+    if door is None:
+        out['connection'] = {'status': 'unavailable', 'reason': 'no house columns to place an entrance'}
+        out['provenance'] = prov.provenance_record(
+            source='vector_map', confidence='medium', evidence_ids=evidence_ids)
+        return out
+    out['door'] = {'cell': list(door), 'origin': 'observed' if observed else 'inferred'}
+    ox, oz = -ax, -az                                     # outward: house -> street
+    if abs(ox) >= abs(oz):
+        step = (1 if ox > 0 else -1, 0)
+    else:
+        step = (0, 1 if oz > 0 else -1)
+    start = (door[0] + step[0], door[1] + step[1])
+    target = min(front, key=lambda q: (math.hypot(q[0] - start[0], q[1] - start[1]), q))
+    route = [q for q in line4(start, target)]
+    blocked = [q for q in route if q in house]
+    if blocked:
+        out['connection'] = {'status': 'blocked', 'pass': 'ground', 'endpoints': [list(start), list(target)],
+                             'reason': 'route crosses the house; the house is not altered to force access'}
+    else:
+        out['route'] = route
+        out['opening'] = sorted(q for q in front if max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1
+                                )[:OPENING_WIDTH + 1] if spec else []
+        if target not in out['opening'] and spec:
+            out['opening'].append(target)
+        out['connection'] = {
+            'status': 'verified' if observed else 'inferred', 'endpoints': [list(start), list(target)],
+            'reason': '' if observed else 'entrance inferred from the street foot, not a mapped door'}
+    out['provenance'] = prov.provenance_record(
+        source='vector_map' if observed else 'inference', confidence='medium' if observed else 'low',
+        evidence_ids=evidence_ids)
+    return out
+
+
+def frontages_for_cell(cell: tuple[int, int]) -> list:
+    """Shared frontage descriptions for the plots touching ``cell`` (same plots/segments as the garden pass)."""
+    from ground_sources import cell_box
+
+    box = cell_box(cell)
+    owner, info, street, idx = plots_for(box)
+    return frontages_for_plots(owner, info, segments(owner, info, street, idx, box), idx)
+
+
+def private_frontage_columns(frontages) -> set:
+    """Columns of eligible private frontage (ground must not turn guessed lawn there to paving)."""
+    return {tuple(q) for f in frontages if f.get('eligible') for q in f.get('extent', ())}
+
+
+def reserved_openings(frontages) -> set:
+    """Columns reserved for entrance gaps in front boundaries (decor and final joins keep them clear)."""
+    return {tuple(q) for f in frontages for q in f.get('opening', ())}
+
+
 def tree_canopy_columns(cell: tuple[int, int], maps=None) -> set[tuple[int, int]]:
     """Columns whose lidar heightmap kind is tree / tree-over-roof (nDSM canopy mask).
 
@@ -310,8 +419,43 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,
                     'cells': len(cells), 'source': src, 'hedge_share': round(share, 2),
                     'type': spec['type'] if spec else None})
+    frontages = frontages_for_plots(owner, info, seg, idx)
+    opening = reserved_openings(frontages)
+    for q in opening:
+        out.pop(q, None)                                  # entrance gap stays open in every garden boundary
     if report is not None:
         report['segments'] = rep
+        report['frontages'] = frontages
+        report['openings'] = sorted(opening)
+    return out
+
+
+def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | None = None) -> list:
+    """``residential_frontage`` for every plot, from the plots/segments ``garden_barriers`` already built.
+
+    @param owner: ``{cell: plot id}`` from ``plots_for``
+    @param info: ``{plot id: meta}`` from ``plots_for``
+    @param seg: ``{(plot id, role): [cells]}`` from ``segments``
+    @param idx: ``OSMIndex``
+    @param doors: optional ``{plot id: (x, z)}`` observed door columns
+    @returns: list of frontage dicts, one per plot, ordered by id
+    """
+    fp = idx.cells()
+    plot_cells, house_cells = defaultdict(set), defaultdict(set)
+    for q, i in owner.items():
+        if q not in fp:
+            plot_cells[i].add(q)
+    for q, i in fp.items():
+        house_cells[i].add(q)
+    roles = defaultdict(dict)
+    for (i, role), cells in seg.items():
+        roles[i][role] = cells
+    out = []
+    for i in sorted(info):
+        meta = info[i]
+        out.append(residential_frontage(
+            meta, plot_cells[i], roles[i], house_cells[i], load_convention(meta['street']),
+            door=(doors or {}).get(i)))
     return out
 
 
