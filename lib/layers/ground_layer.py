@@ -345,8 +345,12 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 
 # --- 2. what is on the ground ------------------------------------------------------------
 def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
-             fp: set | None = None) -> tuple[dict, Counter]:
-    """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade."""
+             fp: set | None = None, private_frontage: set | frozenset = frozenset()) -> tuple[dict, Counter]:
+    """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
+
+    ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
+    identified house's own front garden: guessed lawn there stays lawn rather than becoming the
+    shopfront-forecourt paving, so private frontage reads apart from public pavement."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -435,6 +439,9 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     if fp:
         road = {q for q in vmap.kind if vmap.kind[q] == 'tarmac' and vmap.pri.get(q, 0) >= 40}
         for q in soft_grass:
+            if q in private_frontage:
+                how['guessed lawn kept: private residential frontage'] += 1
+                continue
             if kind.get(q) == 'grass' and any((q[0] + a, q[1] + b) in road for a in range(-8, 9) for b in range(-8, 9)) \
                     and any((q[0] + a, q[1] + b) in fp for a in range(-4, 5) for b in range(-4, 5)):
                 kind[q] = 'paving'
@@ -691,7 +698,12 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     owned_cols = {(x, z) for x, _y, z in neighbour_owned}
     excluded = []
     live, skipped = free_columns(cell, world, vmap, fp, owned_cols, excluded)
-    kind, how = classify(cell, live, vmap, rgb, fp)
+    if 'private_frontage' in ev:
+        private = set(ev['private_frontage'])
+    else:
+        import garden_sources as gs
+        private = gs.private_frontage_columns(gs.frontages_for_cell(cell))
+    kind, how = classify(cell, live, vmap, rgb, fp, private)
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.

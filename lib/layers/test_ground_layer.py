@@ -112,6 +112,23 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertEqual(kind[(x0 + 1, z0)], 'grass')
         self.assertEqual(kind[(x0 + 2, z0 + 2)], 'grass')                      # shade takes the lawn around it
 
+    def test_private_frontage_keeps_guessed_lawn_unpaved(self):
+        """Guessed lawn between a road and a house is paving, unless it is a house's private frontage (#240)."""
+        cell = (48, -44)
+        x0, z0 = 6144, -5632
+        road = {(x0 + i, z0): 'tarmac' for i in range(6)}
+        osm = self.Osm(dict(road), {q: 90 for q in road}, road=road)
+        fp = {(x0 + i, z0 + 5) for i in range(6)}
+        garden = [(x0 + i, z0 + j) for i in range(6) for j in (2, 3)]
+        live = {q: (50, 'stone') for q in garden}
+        shade = (0.44, 0.39, 0.27)
+        rgb = {q: shade for q in garden}
+        plain, _ = gl.classify(cell, live, osm, rgb, fp)
+        self.assertTrue(all(plain[q] == 'paving' for q in garden))
+        kept, how = gl.classify(cell, live, osm, rgb, fp, set(garden))
+        self.assertTrue(all(kept[q] == 'grass' for q in garden))
+        self.assertEqual(how['guessed lawn kept: private residential frontage'], len(garden))
+
     def test_registered_aerial_lawn_beats_mapped_plaza_but_mosaic_lawn_does_not(self):
         import ground_sources as gs
         cell = (47, -45)

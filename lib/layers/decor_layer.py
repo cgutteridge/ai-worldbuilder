@@ -491,6 +491,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     world = snapshot_decor_columns(                                      # batch reads (#110)
         world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
 
+    reserved_gap = {tuple(q) for q in (decor.get('reserved') or {}).get('openings', ())}
     barrier_items = [
         i for i in decor['items']
         if i.get('role') == 'barrier' and not prov.is_unresolved(i.get('provenance'))
@@ -516,7 +517,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                     if bare(world.block(*pos)) == f'minecraft:{mat}':
                         present[pos] = mat
 
-    furniture_items = dplan.resolved_furniture(decor)
+    furniture_items = [i for i in dplan.resolved_furniture(decor)
+                       if (int(i['x']), int(i['z'])) not in reserved_gap]   # keep entrance openings clear
     furniture, furniture_report, furniture_unplaced = place_furniture(
         cell, furniture_items, world, way=way, near1=near1, owned=owned, masked=masked,
         lidar_hm=lidar_hm,
@@ -548,6 +550,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     }
 
     def can_place(pos, mat=''):
+        if (pos[0], pos[2]) in reserved_gap:
+            return False                    # entrance opening: final joins must not close it
         return may_join_at(
             pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
             owned=owned, masked=masked, world=world,

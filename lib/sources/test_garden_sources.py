@@ -69,7 +69,9 @@ class TestDesignerVeto(unittest.TestCase):
         seg = {(1, 'side_back'): cells}
         conv = {'side_back': {'type': 'none'}}
 
-        with mock.patch.object(gs, 'plots_for', return_value=(owner, info, street, mock.Mock())), \
+        idx = mock.Mock()
+        idx.cells.return_value = {}
+        with mock.patch.object(gs, 'plots_for', return_value=(owner, info, street, idx)), \
                 mock.patch.object(gs, 'segments', return_value=seg), \
                 mock.patch.object(gs, 'load_convention', return_value=conv), \
                 mock.patch.object(gs, 'hedge_share', return_value=1.0), \
@@ -79,6 +81,102 @@ class TestDesignerVeto(unittest.TestCase):
                 mock.patch.object(gs, 'tree_canopy_columns', return_value=set()):
             out = gs.garden_barriers(cell, rgb=rgb)
         self.assertEqual(out, {})
+
+
+def _strip():
+    """Synthetic street along z=0..; plot behind it (z 3..14, x 0..9); house z 10..13, x 3..6."""
+    house = {(x, z) for x in range(3, 7) for z in range(10, 14)}
+    plot = {(x, z) for x in range(0, 10) for z in range(3, 15)} - house
+    front = [(x, 3) for x in range(0, 10)]
+    meta = {'street': 'Test Road', 'number': '7', 'centre': (4.5, 11.5), 'foot': (4, 0), 'map_ref': None}
+    return meta, plot, {'front': front}, house
+
+
+class TestResidentialFrontage(unittest.TestCase):
+    """Shared frontage description: extent, boundary, opening, connection, provenance (#240)."""
+
+    CONV = {'front': {'type': 'fence'}}
+
+    def test_inferred_entrance_opening_and_route(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+        self.assertTrue(f['eligible'])
+        self.assertEqual(f['door']['origin'], 'inferred')
+        self.assertEqual(f['connection']['status'], 'inferred')
+        self.assertNotEqual(f['connection']['status'], 'verified')
+        self.assertTrue(f['opening'])
+        self.assertTrue(set(f['opening']) <= set(roles['front']))
+        self.assertTrue(set(f['route']).isdisjoint(house))
+        self.assertEqual(f['provenance']['source'], 'inference')
+        self.assertTrue(f['extent'])
+        self.assertTrue(all(q[1] < 12 for q in f['extent']))     # front garden only, not the rear
+
+    def test_observed_door_is_verified(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV, door=(4, 10))
+        self.assertEqual(f['door'], {'cell': [4, 10], 'origin': 'observed'})
+        self.assertEqual(f['connection']['status'], 'verified')
+        self.assertEqual(f['provenance']['source'], 'vector_map')
+
+    def test_no_convention_means_no_boundary_or_opening(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, None)
+        self.assertTrue(f['eligible'])
+        self.assertEqual(f['boundary'], [])
+        self.assertEqual(f['opening'], [])
+
+    def test_per_house_none_is_open_frontage(self):
+        meta, plot, roles, house = _strip()
+        conv = {'front': {'type': 'fence'}, 'overrides': {'7': {'front': {'type': 'none'}}}}
+        f = gs.residential_frontage(meta, plot, roles, house, conv)
+        self.assertTrue(f['open_frontage'])
+        self.assertEqual(f['boundary'], [])
+        self.assertEqual(f['opening'], [])
+
+    def test_unidentified_property_not_eligible(self):
+        meta, plot, roles, house = _strip()
+        meta['number'] = ''
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+        self.assertFalse(f['eligible'])
+        self.assertIn('house number', f['reason'])
+        self.assertEqual(f['extent'], [])
+        self.assertEqual(gs.private_frontage_columns([f]), set())
+
+    def test_shop_or_campus_building_not_eligible(self):
+        for tags in ({'building': 'retail'}, {'building': 'yes', 'shop': 'bakery'}, {'building': 'university'}):
+            meta, plot, roles, house = _strip()
+            meta['nonresidential'] = gs.nonresidential_building(tags)
+            f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+            self.assertFalse(f['eligible'], tags)
+            self.assertIn('not residential', f['reason'])
+        self.assertFalse(gs.nonresidential_building({'building': 'house'}))
+
+    def test_opening_is_target_plus_nearest_neighbour(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+        self.assertEqual(len(f['opening']), gs.OPENING_WIDTH)
+        self.assertIn(f['route'][-1], [tuple(q) for q in f['opening']])
+
+    def test_no_street_evidence_not_eligible(self):
+        meta, plot, _roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, {}, house, self.CONV)
+        self.assertFalse(f['eligible'])
+        self.assertIn('frontage evidence', f['reason'])
+
+    def test_route_through_house_is_reported_blocked(self):
+        meta, plot, roles, house = _strip()
+        blocker = {(4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4)}
+        f = gs.residential_frontage(meta, plot, roles, house | blocker, self.CONV, door=(4, 10))
+        self.assertEqual(f['connection']['status'], 'blocked')
+        self.assertEqual(f['connection']['pass'], 'ground')
+        self.assertEqual(len(f['connection']['endpoints']), 2)
+        self.assertEqual(f['opening'], [])
+
+    def test_reserved_and_private_helpers(self):
+        meta, plot, roles, house = _strip()
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
+        self.assertEqual(gs.reserved_openings([f]), {tuple(q) for q in f['opening']})
+        self.assertEqual(gs.private_frontage_columns([f]), {tuple(q) for q in f['extent']})
 
 
 class TestTreeCanopyColumns(unittest.TestCase):
