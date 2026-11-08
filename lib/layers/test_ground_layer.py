@@ -33,6 +33,19 @@ class TestGroundLayer(unittest.TestCase):
         self.assertFalse(gl.cell_contains((48, -44), 6272, -5505))
 
 
+class TestShadesGrass(unittest.TestCase):
+    """#242: grass planned under an opaque trunk decays to dirt and fails readback."""
+
+    def test_opaque_blocks_shade_grass(self):
+        for b in ('minecraft:oak_log[axis=y]', 'minecraft:stone', 'minecraft:oak_planks'):
+            self.assertTrue(gl.shades_grass(b), b)
+
+    def test_clear_blocks_do_not(self):
+        for b in (None, 'minecraft:air', 'minecraft:oak_leaves[distance=1]', 'minecraft:short_grass',
+                  'minecraft:poppy', 'minecraft:glass', 'minecraft:oak_fence'):
+            self.assertFalse(gl.shades_grass(b), b)
+
+
 class TestGroundSources(unittest.TestCase):
     """Evidence rules: widths from tags, colour classes, speckle filter."""
 

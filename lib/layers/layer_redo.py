@@ -214,4 +214,9 @@ def main(argv=None) -> int:
         if previous is not None:
             signal.signal(signal.SIGTERM, previous)
     print(json.dumps(result, indent=2), flush=True)
+    if not result['ok'] and result.get('left_undone'):
+        stage = (result.get('failed') or {}).get('stage', 'interrupted')
+        print(f"WARNING: redo stopped at '{stage}'; left undone: {', '.join(result['left_undone'])}. "
+              f"Check `site_recover.py status` for an in-flight apply, then redo the left-undone layers.",
+              file=sys.stderr, flush=True)
     return 0 if result['ok'] else 130 if result.get('interrupted') else 1

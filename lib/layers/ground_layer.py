@@ -77,6 +77,20 @@ def plan_name(tx: int, tz: int, layer: str = 'ground') -> str:
     return f"highfield_{tx}_{'m' if tz < 0 else ''}{abs(tz)}_{layer}"
 
 
+def shades_grass(above: str | None) -> bool:
+    """True when the block directly above a grass top is opaque, so grass would decay to dirt (#242).
+
+    Air, plants, leaves, glass and other see-through blocks let grass live; logs, planks, stone and the like do not.
+    """
+    b = bare(above)
+    if not above or b in AIRS or b in STEM_OR_FLOWER or is_air(above):
+        return False
+    name = b.split(':')[-1]
+    clear = ('leaves', 'glass', 'fence', 'wall', 'door', 'slab', 'stairs', 'carpet', 'sign', 'torch', 'lantern',
+             'snow', 'vine', 'flower', 'sapling', 'fern', 'bush', 'water')
+    return not any(c in name for c in clear)
+
+
 def bare(block: str | None) -> str:
     """Block id without its [state] suffix."""
     return (block or 'minecraft:air').split('[')[0]
@@ -753,6 +767,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         k = kind[q]
         mat = MATERIAL[k]
         top = (x, gy, z)
+        cover = world.block(x, gy + 1, z)
+        if mat == 'grass_block' and shades_grass(cover):   # #242: grass dies under an opaque block
+            mat = 'dirt'
+            stats['dirt_under_opaque'] += 1
         if top in masked:
             conflicts.append((top, mat, masked[top]))
         else:
