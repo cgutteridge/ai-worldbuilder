@@ -71,6 +71,25 @@ class FloorReferenceTest(unittest.TestCase):
             self.floor(b, h, height=float('nan'))
 
 
+class StoopKeepTest(unittest.TestCase):
+    """#243: the stoop outside a door survives the clash filter even when keep_edits is false."""
+
+    def test_stoop_cells_are_kept_by_default(self):
+        b = H.Build.__new__(H.Build)
+        b.spec = {'keep_edits': False}
+        b.keep = set()
+        b.set = mock.Mock()
+        b.stoop_set(5, 38, 7, 'minecraft:air')
+        self.assertIn((5, 38, 7), b.keep)
+        b.set.assert_called_once_with(5, 38, 7, 'minecraft:air')
+
+    def test_door_code_uses_stoop_set(self):
+        import inspect
+        src = inspect.getsource(H.Build)
+        self.assertIn("self.stoop_set(st[0], y, st[1], 'air')", src)
+        self.assertIn("self.stoop_set(sx, y, sz, 'air')", src)
+
+
 class DoorFrameTest(unittest.TestCase):
     def build(self, walls, door_frame=True):
         b = H.Build.__new__(H.Build)
