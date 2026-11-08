@@ -292,22 +292,22 @@ class Build:
                 continue
             if self.spec['ledge_stair'] and g == b + 1 and k > 4:
                 # lowered ground ends at a 1-block ledge: stair rising away from the house onto it
-                self.kset(n[0], g, n[1], stair('stone', FACE[d]))
+                self.stoop_set(n[0], g, n[1], stair('stone', FACE[d]))
                 print('ledge stair at', n)
                 return
             if g > b + 1 or (g > b and k > 4):
                 return  # real slope/terrace: leave it
             if g > b:
-                self.kset(n[0], b, n[1], 'stone')
+                self.stoop_set(n[0], b, n[1], 'stone')
                 for y in range(b + 1, g + 1):
-                    self.kset(n[0], y, n[1], 'air')
+                    self.stoop_set(n[0], y, n[1], 'air')
                 continue
             if g < b:
-                self.kset(n[0], b, n[1], stair('stone', facing))
+                self.stoop_set(n[0], b, n[1], stair('stone', facing))
                 for y in range(g + 1, b):
-                    self.kset(n[0], y, n[1], 'stone')
+                    self.stoop_set(n[0], y, n[1], 'stone')
                 for y in range(b + 1, b + 4):
-                    self.kset(n[0], y, n[1], 'air')
+                    self.stoop_set(n[0], y, n[1], 'air')
                 print('step at', n, 'ground', g, 'floor', b)
                 return
 
