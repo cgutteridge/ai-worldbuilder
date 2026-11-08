@@ -83,6 +83,10 @@ class StoopKeepTest(unittest.TestCase):
         self.assertIn((5, 38, 7), b.keep)
         b.set.assert_called_once_with(5, 38, 7, 'minecraft:air')
 
+    def test_plan_receives_keep_set(self):
+        import inspect
+        self.assertIn('self.p.keep = set(self.keep)', inspect.getsource(H.Build))
+
     def test_door_code_uses_stoop_set(self):
         import inspect
         src = inspect.getsource(H.Build)
