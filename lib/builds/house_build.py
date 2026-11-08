@@ -107,6 +107,16 @@ class Build:
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
 
+    def stoop_set(self, x, y, z, st):
+        """Set a door stoop cell that always survives the earlier-build clash filter (#243).
+
+        The column outside a door must be level with the floor. Without keep, earlier ground at
+        floor+1 owns the cell, the plan drops the stoop's air, and the door ends up one block
+        below street level.
+        """
+        self.keep.add((x, y, z))
+        self.set(x, y, z, st)
+
     def kset(self, x, y, z, st):
         """Set a stoop/step cell; with keep_edits it survives the earlier-build clash filter."""
         if self.spec['keep_edits']:
@@ -221,9 +231,9 @@ class Build:
         for y, p in ((b + 1, 'lower'), (b + 2, 'upper')):
             self.set(c0[0], y, c0[1], f"spruce_door[facing={ {'S':'south','N':'north','W':'west','E':'east'}[f] },half={p},hinge=left,open=false]")
         st = (c0[0] + fx, c0[1] + fz)
-        self.set(st[0], b, st[1], 'smooth_stone')
+        self.stoop_set(st[0], b, st[1], 'smooth_stone')
         for y in range(b + 1, b + 4):
-            self.set(st[0], y, st[1], 'air')
+            self.stoop_set(st[0], y, st[1], 'air')
         self.step_out(st, f, b)
         # stair inward from the door, ascending away from the front
         ix, iz = -fx, -fz
@@ -252,9 +262,9 @@ class Build:
             for y, p in ((b + 1, 'lower'), (b + 2, 'upper')):
                 self.set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={p},hinge=right,open=false]')
             sx, sz = c1[0] + DIRS[r][0], c1[1] + DIRS[r][1]
-            self.set(sx, b, sz, 'smooth_stone')
+            self.stoop_set(sx, b, sz, 'smooth_stone')
             for y in range(b + 1, b + 4):
-                self.set(sx, y, sz, 'air')
+                self.stoop_set(sx, y, sz, 'air')
             self.step_out((sx, sz), r, b)
         else:
             h.rear = None
