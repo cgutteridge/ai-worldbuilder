@@ -53,6 +53,15 @@ builds a second one.
   end; decor owns boundary and gate placement. Clearance is shared planning data, not
   ownership of air.
 
+## Garden outbuildings (decor)
+Sheds and garages in a garden are decor (`lib/layers/outbuildings.py`, #251); attached garages inside a
+house footprint stay with the feature pass. Evidence, in order: a mapped footprint tagged in
+`coverage.OUTBUILDINGS` (high), a raw lidar nDSM blob 1.6-4.5 m high off buildings, canopy and green aerial
+(medium), a designer trace in `reference/decor-furniture.json` with kind `shed`/`garage`, `cells` and an
+evidence id (medium). Never from aerial colour alone, never a default scatter. One squared rectangle,
+ground from lidar, top clamped to the nDSM height. Refused, with an unplaced reason, on a route, clearance
+column, entrance opening, carriageway or across a plot line.
+
 ## 1. Survey first
 - `python3 scripts/osm_footprints.py frontage --bbox x0,z0,x1,z1`: real
   `addr:street` + number, front-wall MC x,z, setback, surface profile to the road.

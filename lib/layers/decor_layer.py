@@ -11,6 +11,8 @@ the cell. Then any wall or fence pieces of the same type that one extra block co
 (face to face, diagonal is disjoint) are joined, one block per join, repeating until none
 remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
 clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
+Garden outbuildings (sheds, garages) are decor plan items too (``outbuildings.py``, #251): mapped
+footprint, raw lidar blob or designer trace; each is placed whole or listed unplaced with a reason.
 
   python3 scripts/decor_layer.py --cell 48,-44            # dry run
   SITE_OWNER=<owner> python3 scripts/decor_layer.py --cell 48,-44 --apply
@@ -30,6 +32,7 @@ from ground_layer import (BLOCK_KIND, PROBE_Y_RANGE, bare, cell_contains, ignore
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import decor_plan as dplan  # noqa: E402
+import outbuildings as ob  # noqa: E402
 import provenance as prov  # noqa: E402
 import street_furniture as sf  # noqa: E402
 
@@ -54,6 +57,8 @@ def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
     cols: set[tuple[int, int]] = set()
     for item in decor_items:
         if item.get('role') == 'barrier':
+            cols.update((int(c[0]), int(c[1])) for c in item.get('cells') or [])
+        elif item.get('role') == ob.KIND:
             cols.update((int(c[0]), int(c[1])) for c in item.get('cells') or [])
     cols.update((int(i['x']), int(i['z'])) for i in furniture_items)
     r = WARM_RING
@@ -456,6 +461,97 @@ def place_barriers_from_plan(
     return found, report, unplaced
 
 
+def place_outbuildings(
+    cell: tuple[int, int],
+    items: Sequence[Mapping[str, Any]],
+    world: World,
+    *,
+    way: set,
+    houses: set,
+    keep_clear: set,
+    owned: set,
+    masked: set,
+    lidar_hm: Mapping[str, Any] | None = None,
+) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
+    """Place resolved ``outbuilding`` plan items whole, or list them unplaced with a reason (#251).
+
+    An outbuilding is all or nothing: a half-built shed is worse than none. Refused when its
+    rectangle leaves the cell, spans more than one plot, sits on a route, clearance column or
+    entrance opening (``keep_clear``), a mapped road/path/water column (``way``), a house footprint,
+    the carriageway, ground more than two blocks under the live surface (``above lidar ground``),
+    or any block that is not air or is owned / masked. Ground height is lidar terrain; without a
+    lidar ground the item is unplaced.
+
+    @param cell: (tx, tz)
+    @param items: ``outbuilding`` plan items
+    @param world: live or planning world
+    @param way: mapped road / path / water columns
+    @param houses: footprint columns of non-outbuilding buildings and neighbour-owned builds
+    @param keep_clear: route, clearance and entrance-opening columns
+    @param owned: neighbour-owned block positions
+    @param masked: positions owned by another pass mask
+    @param lidar_hm: lidar height map with ``terrain``
+    @returns: (placements, placed report rows, unplaced items)
+    """
+    from surface_probe import surface_y
+
+    found: dict[tuple[int, int, int], str] = {}
+    report: list[dict] = []
+    unplaced: list[dict] = []
+    for item in items:
+        if item.get('role') != ob.KIND or prov.is_unresolved(item.get('provenance')):
+            continue
+        cells = [(int(c[0]), int(c[1])) for c in item.get('cells') or []]
+
+        def refuse(reason, _item=item):
+            unplaced.append(dplan.mark_unplaced(_item, reason))
+
+        if not cells:
+            refuse('no cells')
+        elif not all(cell_contains(cell, *q) for q in cells):
+            refuse('crosses the cell edge')
+        elif len(item.get('plot_ids') or ()) > 1:
+            refuse('across a plot line')
+        elif any(q in keep_clear for q in cells):
+            refuse('on frontage route, clearance or entrance opening')
+        elif any(q in way for q in cells):
+            refuse('on path/road/water column')
+        elif any(q in houses for q in cells):
+            refuse('on a house footprint')
+        elif any(column_ground_kind(world, *q) in sf.ROAD_KINDS for q in cells):
+            refuse('on carriageway')
+        elif lidar_hm is None or 'terrain' not in lidar_hm:
+            refuse('no lidar ground')
+        else:
+            ground = {}
+            for q in cells:
+                i, j = q[0] - int(lidar_hm['x0']), q[1] - int(lidar_hm['z0'])
+                inside = 0 <= i < lidar_hm['terrain'].shape[0] and 0 <= j < lidar_hm['terrain'].shape[1]
+                ground[q] = int(lidar_hm['terrain'][i, j]) if inside else 0
+            if min(ground.values()) <= 0:
+                refuse('no lidar ground')
+                continue
+            if any((top := surface_y(world, *q)) and above_lidar_ground(q[0], top[0], q[1], lidar_hm)
+                   for q in cells):
+                refuse('above lidar ground')
+                continue
+            blocks = ob.voxels(item, ground)
+            bad = [p for p in blocks if not is_air(world.block(*p)) or p in owned or p in masked or p in found]
+            if bad:
+                refuse('blocked by live or owned block')
+                continue
+            found.update(blocks)
+            report.append({
+                'kind': ob.KIND, 'type': item['type'], 'plan_id': item.get('id'),
+                'source': (item.get('provenance') or {}).get('source', ''),
+                'confidence': (item.get('provenance') or {}).get('confidence', ''),
+                'cells': len(cells), 'size': item.get('size'), 'walls': item.get('walls'),
+                'roof': item.get('roof'), 'lidar_height': item.get('lidar_height'),
+                'door': item.get('door'), 'blocks': len(blocks),
+                'x': min(c[0] for c in cells), 'z': min(c[1] for c in cells)})
+    return found, report, unplaced
+
+
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     """Plan barriers and street furniture for one cell. Returns (placements, stats).
 
@@ -463,13 +559,15 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     resolved rows. Unresolved plan items and failed placements are listed in stats.
     """
     from ground_sources import OSMGround
+    from coverage import OUTBUILDINGS
     from osm_footprints import OSMIndex
     from surface_probe import surface_y
 
     owned = neighbour_owned(cell, ignored_builds(cell))
     owned_cols = {(x, z) for x, _y, z in owned}
     masked = load_masked_positions()
-    fp = set(OSMIndex().cells())
+    idx = OSMIndex()
+    fp = set(idx.cells())
     near = fp | owned_cols
     near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
     vmap = OSMGround(cell)
@@ -478,6 +576,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     from lidar_heightmap import reference_world
 
     lidar_hm = reference_world().heightmap(cell)
+    from ground_sources import cell_box
+
     decor = dplan.build_decor_plan(
         cell,
         map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
@@ -486,12 +586,21 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         photo_observations=sf.designer_observations(cell),
         lidar_hm=lidar_hm,
         footprint={q for q in fp if cell_contains(cell, *q)},
+        outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cell_box(cell)),
+        lidar_rise=ob.lidar_rise(cell),
+        building_columns=set(fp),
     )
     unresolved = list(dplan.unresolved_items(decor))
     world = snapshot_decor_columns(                                      # batch reads (#110)
         world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
 
     reserved_gap = {tuple(q) for q in (decor.get('reserved') or {}).get('openings', ())}
+    houses = {q for q, k in idx.cells().items()
+              if idx.buildings[k][1].get('building') not in OUTBUILDINGS} | owned_cols
+    outbuilding_found, outbuilding_report, outbuilding_unplaced = place_outbuildings(
+        cell, decor['items'], world, way=way, houses=houses, keep_clear=reserved_gap,
+        owned=owned, masked=masked, lidar_hm=lidar_hm)
+    masked = {**masked, **dict.fromkeys(outbuilding_found, 'outbuilding')}   # barriers and furniture fill only what is left
     barrier_items = [
         i for i in decor['items']
         if i.get('role') == 'barrier' and not prov.is_unresolved(i.get('provenance'))
@@ -529,6 +638,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     barrier_positions = len(found)
     overlap_positions = len(found.keys() & furniture.keys())
     found.update(furniture)
+    found.update(outbuilding_found)
 
     stats: Counter = Counter()
     stats['candidate_items'] = len(decor['items'])
@@ -544,8 +654,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     )
     stats['barriers'] = len(barrier_report)
     stats['unresolved'] = len(unresolved)
+    stats['outbuildings'] = len(outbuilding_report)
+    stats['outbuilding_blocks'] = len(outbuilding_found)
     furniture_unplaced = list(furniture_unplaced) + gap_furniture
-    stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced)
+    stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced) + len(outbuilding_unplaced)
 
     # Joins may enter near1 only for materials already placed with allow_against_build.
     allow_near1_mats = {
@@ -573,8 +685,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['blocks'] = len(clipped)
     stats['furniture_report'] = furniture_report  # list, not a Counter value; printed by run()
     stats['barrier_report'] = barrier_report
+    stats['outbuilding_report'] = outbuilding_report
     stats['unresolved_items'] = unresolved
-    stats['unplaced_items'] = barrier_unplaced + furniture_unplaced
+    stats['unplaced_items'] = barrier_unplaced + furniture_unplaced + outbuilding_unplaced
     stats['decor_plan'] = decor
     return clipped, stats
 
@@ -591,6 +704,29 @@ def _print_plan_notes(stats: dict) -> None:
         print(f'  barrier position exclusions: {len(partial)}; by reason: {reason_summary(p["reason"] for p in partial)}')
 
 
+def outbuilding_rows(report, unresolved, unplaced) -> list[dict]:
+    """One row per outbuilding candidate: id, type, source, confidence, columns, ``accepted`` or the reason."""
+    rows = [{'id': r['plan_id'], 'type': r['type'], 'source': r['source'], 'confidence': r['confidence'],
+             'cells': r['cells'], 'size': r['size'], 'height': (r['walls'] or 0) + 1, 'status': 'accepted'}
+            for r in report]
+    for i in list(unresolved) + list(unplaced):
+        if i.get('role') != ob.KIND:
+            continue
+        p = i.get('provenance') or {}
+        rows.append({'id': i.get('id'), 'type': i.get('type'), 'source': p.get('source', ''),
+                     'confidence': p.get('confidence', ''), 'cells': len(i.get('cells') or ()),
+                     'size': i.get('size'), 'height': i.get('height'),
+                     'status': 'unplaced: ' + p.get('unresolved_reason', '')})
+    return sorted(rows, key=lambda r: str(r['id']))
+
+
+def _print_outbuildings(rows) -> None:
+    """Print the outbuilding candidate table (source, accepted or the unplaced reason)."""
+    print(f'  outbuildings: {sum(r["status"] == "accepted" for r in rows)} accepted of {len(rows)} candidates')
+    for r in rows:
+        print(f'    {r["id"]}  {r["type"]}  {r["source"]}/{r["confidence"]}  {r["cells"]} columns  {r["status"]}')
+
+
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan and run the kit's guards. Never writes the world."""
     from site_kit import apply, fresh_planning_world, preview
@@ -602,6 +738,7 @@ def run(cell: tuple[int, int]) -> int:
     write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
     furniture_report = stats.pop('furniture_report', [])
     barrier_report = stats.pop('barrier_report', [])
+    outbuilding_report = stats.pop('outbuilding_report', [])
     unresolved = stats.pop('unresolved_items', [])
     unplaced = stats.pop('unplaced_items', [])
     stats.pop('decor_plan', None)
@@ -615,6 +752,7 @@ def run(cell: tuple[int, int]) -> int:
         'unresolved_items': unresolved,
         'unplaced_items': unplaced,
     })
+    _print_outbuildings(outbuilding_rows(outbuilding_report, unresolved, unplaced))
     if placed:
         preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
         apply(plan, dry=True, modifies=ignored_builds(cell))
@@ -643,6 +781,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
     furniture_report = stats.pop('furniture_report', [])
     barrier_report = stats.pop('barrier_report', [])
+    outbuilding_report = stats.pop('outbuilding_report', [])
     unresolved = stats.pop('unresolved_items', [])
     unplaced = stats.pop('unplaced_items', [])
     decor = stats.pop('decor_plan', None)
@@ -658,9 +797,11 @@ def apply_cell(cell: tuple[int, int]) -> int:
         'unresolved_items': unresolved,
         'unplaced_items': unplaced,
     })
+    _print_outbuildings(outbuilding_rows(outbuilding_report, unresolved, unplaced))
     meta = {
         'furniture': furniture_report,
         'barriers': barrier_report,
+        'outbuildings': outbuilding_report,
         'unresolved': [
             {'id': i.get('id'), 'kind': i.get('kind'),
              'reason': (i.get('provenance') or {}).get('unresolved_reason', '')}

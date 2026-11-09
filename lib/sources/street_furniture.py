@@ -116,6 +116,17 @@ def recipe(kind: str) -> list[tuple[int, str]]:
 
 
 BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence'})
+OUTBUILDING_KINDS = frozenset({'shed', 'garage'})   # designer traces: ``cells`` plus an evidence id (#251)
+
+
+def _int_cells(raw) -> list[list[int]]:
+    out = []
+    for c in raw:
+        try:
+            out.append([int(c[0]), int(c[1])])
+        except (TypeError, ValueError, IndexError):
+            continue
+    return out
 
 
 def _load_designer_entry(cell: tuple[int, int], path: Path | None = None) -> dict:
@@ -136,7 +147,8 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
 
     File shape: ``{"tx,tz": {"evidence": "...", "items": [
       {"x","z","kind","note"?},
-      {"kind":"hedge","cells":[[x,z],...],"note"?,"allow_against_build"?}
+      {"kind":"hedge","cells":[[x,z],...],"note"?,"allow_against_build"?},
+      {"kind":"shed"|"garage","cells":[[x,z],...],"evidence_ids":["<id>"],"note"?}
     ]}}``.
     Missing file or missing cell key → empty list.
 
@@ -159,6 +171,20 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
             except (KeyError, TypeError, ValueError):
                 continue
             item = {'x': x, 'z': z, 'kind': kind, 'source': 'designer'}
+            if raw.get('note'):
+                item['note'] = str(raw['note'])
+            if evidence:
+                item['evidence'] = evidence
+            out.append(item)
+            continue
+        if kind in OUTBUILDING_KINDS and raw.get('cells'):
+            cells = _int_cells(raw['cells'])
+            if not cells:
+                continue
+            item = {'kind': kind, 'cells': cells, 'source': 'designer'}
+            ids = raw.get('evidence_ids') or ([raw['evidence_id']] if raw.get('evidence_id') else [])
+            if ids:
+                item['evidence_ids'] = [str(i) for i in ids]
             if raw.get('note'):
                 item['note'] = str(raw['note'])
             if evidence:
