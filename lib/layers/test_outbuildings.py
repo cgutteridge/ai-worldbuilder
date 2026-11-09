@@ -392,8 +392,8 @@ class TestMassing(unittest.TestCase):
             levels = [top[(x, z)][0] for z in range(30, 34)]
             self.assertEqual(levels, [GROUND + 3, GROUND + 4, GROUND + 4, GROUND + 3], x)      # eave, up, up, eave
             self.assertEqual([top[(x, z)][1].split('[')[1] for z in range(30, 34)],
-                             ['facing=north,half=bottom]', 'facing=north,half=bottom]',
-                              'facing=south,half=bottom]', 'facing=south,half=bottom]'])
+                             ['facing=south,half=bottom]', 'facing=south,half=bottom]',     # uphill = toward the ridge
+                              'facing=north,half=bottom]', 'facing=north,half=bottom]'])
         self.assertEqual(found[(35, GROUND + 3, 31)], 'bricks')           # gable end steps up into the roof
         self.assertNotIn((35, GROUND + 4, 31), [p for p in found if found[p] == 'bricks'])
 
@@ -413,6 +413,19 @@ class TestMassing(unittest.TestCase):
         for facing, axis in (('west', 'x'), ('east', 'x'), ('north', 'z'), ('south', 'z')):
             sq = self.garage(4, 4, (31, 31), facing)
             self.assertEqual(ob.pitched_roof(sq, [tuple(c) for c in sq['cells']])['axis'], axis, facing)
+
+    def test_stairs_form_a_ridge_the_roof_lint_can_see(self):
+        """Stairs face uphill: if they faced downhill the ridge would be a valley (roof_lint finds no ridge)."""
+        import roof_lint
+        import site_kit
+        item = self.garage(6, 4, (30, 32), 'west')
+        found = ob.voxels(item, {tuple(c): GROUND for c in item['cells']})
+        top = roof_lint._tops({p: site_kit.full(b) for p, b in found.items()})
+        self.assertEqual(sorted(roof_lint._ridges(top, 'z')), list(range(30, 36)))     # a ridge on every row along x
+
+    def test_wide_footprints_stay_flat(self):
+        self.assertEqual(ob.massing('garage', sorted(rect(0, 0, 8, 6)), 5)['roof'], 'pitched')
+        self.assertEqual(ob.massing('garage', sorted(rect(0, 0, 8, 7)), 5)['roof'], 'flat')
 
     def test_eave_wall_drops_to_hold_the_ridge_but_keeps_the_door(self):
         wide = self.garage(8, 6, (30, 32), 'west', walls=3)                  # 6 across: ridge 3 above the eave layer

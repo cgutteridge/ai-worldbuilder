@@ -44,6 +44,7 @@ MAX_BLOB_COLUMNS = 120            # larger is a missed building, not a shed
 MIN_SHORT_SIDE = 2                # a 1-wide raised strip is a fence or wall line
 GREEN_SHARE_MAX = 0.8             # lawn + shade share of the blob's aerial colour; at or above = vegetation (0.5 left almost nothing: fun over perfect)
 GARAGE_MIN_COLUMNS = 14           # lidar blobs this large (about 3 x 5 m) read as a garage
+MAX_PITCH_ACROSS = 6              # wider footprints get a flat roof: a ridge would stand far above the lidar height
 MIN_FILL = 0.5                    # edge rows / columns thinner than this share are trimmed when squaring
 PLOT_MAJORITY = 0.5               # a footprint is "across a plot line" only when no plot holds this share of it
 LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs on its edge stay whole
@@ -169,7 +170,7 @@ def massing(kind: str, cells: Sequence[tuple[int, int]], ndsm: int | None) -> di
 
     ``walls + 1`` (the roof layer) is the default total for the kind, clamped to the nDSM height
     when lidar gives one (never below one wall block). Sheds and garages 2+ across get a
-    pitched (gable) roof (``pitched_roof``); a rectangle under 2 across is flat. The door needs two wall blocks.
+    pitched (gable) roof (``pitched_roof``); one under 2 across, or over ``MAX_PITCH_ACROSS``, is flat. The door needs two wall blocks.
 
     @returns: ``{'walls', 'total', 'roof', 'size': [dx, dz]}``
     """
@@ -179,7 +180,7 @@ def massing(kind: str, cells: Sequence[tuple[int, int]], ndsm: int | None) -> di
     if ndsm is not None:
         total = min(total, max(2, int(ndsm)))
     return {'walls': total - 1, 'total': total,
-            'roof': 'pitched' if min(dx, dz) >= 2 else 'flat', 'size': [dx, dz]}
+            'roof': 'pitched' if 2 <= min(dx, dz) <= MAX_PITCH_ACROSS else 'flat', 'size': [dx, dz]}
 
 
 def door_for(cells: Sequence[tuple[int, int]], targets: Iterable[tuple[int, int]], walls: int) -> dict[str, Any] | None:
@@ -386,7 +387,7 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
     """Blocks of one outbuilding, from its plan item and the ground Y of each of its columns.
 
     Perimeter walls stand from each column's own ground up to the roof above it; the roof is a
-    gable (``pitched_roof``): stairs facing down each slope, a full-block ridge on an odd width, so
+    gable (``pitched_roof``): stairs facing up each slope toward the ridge, a full-block ridge on an odd width, so
     the gable-end walls step up into a triangle. The door is two blocks in the perimeter on the
     facing side. The interior is left empty (no private interiors). A footprint too narrow to
     pitch (under 2 across) gets a flat bottom-slab roof.
@@ -411,8 +412,8 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
             if form == 'full':
                 block = ROOF_FULL[kind]
             else:
-                facing = (('north' if j < pitch['across'] / 2 else 'south') if pitch['axis'] == 'x'
-                          else ('west' if j < pitch['across'] / 2 else 'east'))
+                low = j < pitch['across'] / 2           # a stair's facing is its UPHILL side (tall back), toward the ridge
+                facing = ('south' if low else 'north') if pitch['axis'] == 'x' else ('east' if low else 'west')
                 block = f'{ROOF_STAIR[kind]}[facing={facing},half=bottom]'
         else:
             level, block = base + int(item['walls']) + 1, f'{ROOF_SLAB[kind]}[type=bottom]'
