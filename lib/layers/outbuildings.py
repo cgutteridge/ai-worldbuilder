@@ -51,7 +51,7 @@ LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs 
 DEFAULT_TOTAL = {'shed': 3, 'garage': 4}            # walls + one roof layer
 WALL_BLOCK = {'shed': 'spruce_planks', 'garage': 'bricks'}
 ROOF_SLAB = {'shed': 'spruce_slab', 'garage': 'stone_brick_slab'}
-ROOF_STAIR = {'shed': 'spruce_stairs', 'garage': 'stone_brick_stairs'}
+ROOF_FULL = {'shed': 'spruce_planks', 'garage': 'stone_bricks'}      # the full-block half step of a mono-pitch roof
 DOOR_BLOCK = {'shed': 'spruce_door', 'garage': 'iron_door'}
 FACINGS = {(0, -1): 'north', (0, 1): 'south', (-1, 0): 'west', (1, 0): 'east'}
 
@@ -350,13 +350,32 @@ def merge_sources(*groups: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def mono_slope(item: Mapping[str, Any], cells: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], int, int] | None:
+    """Slope of a mono-pitch roof: ``(downhill step, rows along it, rise in blocks)``, or ``None`` for flat.
+
+    The roof falls toward the door side (the door sits in the low wall); the rise (at most a block
+    for a garage) is spread over the rows in half-block steps. The high wall keeps the item's ``walls``;
+    the low wall drops by the rise but never below 2 (a door; the lintel is the roof layer above it).
+    """
+    if item.get('roof') != 'mono':
+        return None
+    step = {v: k for k, v in FACINGS.items()}[(item.get('door') or {}).get('facing', 'south')]
+    xs, zs = [c[0] for c in cells], [c[1] for c in cells]
+    rows = (max(xs) - min(xs) + 1) if step[0] else (max(zs) - min(zs) + 1)
+    rise = min((rows - 1) // 2, int(item['walls']) - 2)
+    return (step, rows, rise) if rise >= 1 else None
+
+
 def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> dict[tuple[int, int, int], str]:
     """Blocks of one outbuilding, from its plan item and the ground Y of each of its columns.
 
-    Walls stand on the perimeter from the column's own ground up to the shared top (ground of the
-    highest column + walls), a roof layer covers the footprint at the top. The door is two blocks
+    Walls stand on the perimeter from the column's own ground up to a shared top (ground of the
+    highest column + walls), a roof layer covers the footprint above them. The door is two blocks
     in the perimeter on the facing side. The interior is left empty (no private interiors).
-    Roof slabs and stairs are bottom-half only, so none floats as a top slab over air.
+    A flat roof is bottom slabs. A mono-pitch roof (``mono_slope``) falls toward the door in
+    half-block steps spread over the rows: bottom slab, then full block at the same level, then a slab one level up, and
+    so on, with the side walls following the roof. Roof slabs are bottom-half only, so none floats
+    as a top slab over air.
 
     @param item: ``outbuilding`` plan item with ``cells``, ``type``, ``walls``, ``roof``, ``door``
     @param ground: ``{(x, z): Y of the top ground block}`` for every cell of the item
@@ -367,19 +386,22 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
     xs, zs = [c[0] for c in cells], [c[1] for c in cells]
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
     base = max(ground[c] for c in cells)
-    roof_y = base + walls + 1
+    slope = mono_slope(item, cells)
     door = tuple(item['door']['cell']) if item.get('door') else None
     out: dict[tuple[int, int, int], str] = {}
     for x, z in cells:
-        edge = x in (x0, x1) or z in (z0, z1)
-        if edge:
-            for y in range(ground[(x, z)] + 1, base + walls + 1):
-                out[(x, y, z)] = WALL_BLOCK[kind]
-        if item['roof'] == 'mono':
-            face = (item.get('door') or {}).get('facing', 'south')
-            out[(x, roof_y, z)] = f'{ROOF_STAIR[kind]}[facing={face},half=bottom]'
+        if slope:
+            step, rows, rise = slope
+            low = {(1, 0): x1 - x, (-1, 0): x - x0, (0, 1): z1 - z, (0, -1): z - z0}[step]   # 0 = low (door) row
+            half_steps = (low * 2 * rise + (rows - 1) // 2) // (rows - 1)
+            level = base + walls - rise + 1 + half_steps // 2        # roof layer of this row
+            block = (f'{ROOF_SLAB[kind]}[type=bottom]' if half_steps % 2 == 0 else ROOF_FULL[kind])
         else:
-            out[(x, roof_y, z)] = f'{ROOF_SLAB[kind]}[type=bottom]'
+            level, block = base + walls + 1, f'{ROOF_SLAB[kind]}[type=bottom]'
+        if x in (x0, x1) or z in (z0, z1):
+            for y in range(ground[(x, z)] + 1, level):
+                out[(x, y, z)] = WALL_BLOCK[kind]
+        out[(x, level, z)] = block
     if door is not None and door in set(cells):
         y = ground[door] + 1
         facing = item['door']['facing']
