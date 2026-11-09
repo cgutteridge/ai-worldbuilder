@@ -476,7 +476,7 @@ def place_outbuildings(
     """Place resolved ``outbuilding`` plan items whole, or list them unplaced with a reason (#251).
 
     An outbuilding is all or nothing: a half-built shed is worse than none. Refused when its
-    rectangle leaves the cell, spans more than one plot, sits on a route, clearance column or
+    rectangle leaves the cell, spans plots (no plot holds half of it), sits on a route, clearance column or
     entrance opening (``keep_clear``), a mapped road/path/water column (``way``), a house footprint,
     the carriageway, ground more than two blocks under the live surface (``above lidar ground``),
     or any block that is not air or is owned / masked. Ground height is lidar terrain; without a
@@ -510,7 +510,7 @@ def place_outbuildings(
             refuse('no cells')
         elif not all(cell_contains(cell, *q) for q in cells):
             refuse('crosses the cell edge')
-        elif len(item.get('plot_ids') or ()) > 1:
+        elif len(item.get('plot_ids') or ()) > 1 and float(item.get('plot_share', 0)) < ob.PLOT_MAJORITY:
             refuse('across a plot line')
         elif any(q in keep_clear for q in cells):
             refuse('on frontage route, clearance or entrance opening')

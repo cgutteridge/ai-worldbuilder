@@ -209,13 +209,24 @@ class TestRefusals(unittest.TestCase):
         self.assertEqual(self.reasons(place(self.items, cell=(1, 0))[2]), ['crosses the cell edge'])
 
     def test_blob_across_a_plot_line_is_unplaced(self):
-        owner = {q: (1 if q[0] < 32 else 2) for q in self.cells}
+        owner = {q: (1 if q[0] < 31 else 2 if q[0] < 32 else 3) for q in self.cells}      # three plots, a third each
         plan = blob_plan(self.cells, plot_owner=owner)
         (item,) = only(plan)
-        self.assertEqual(item['plot_ids'], [1, 2])
+        self.assertEqual(item['plot_ids'], [1, 2, 3])
         found, _report, unplaced = place([item])
         self.assertEqual(found, {})
         self.assertEqual(self.reasons(unplaced), ['across a plot line'])
+
+    def test_footprint_mostly_in_one_plot_is_tolerated(self):
+        """Plot lines are Voronoi guesses: half or more in one plot builds, an even three-way split does not."""
+        ids = sorted(self.cells)
+        mostly = {q: (2 if q in ids[:4] else 1) for q in self.cells}       # 5 of 9 in plot 1
+        (item,) = only(blob_plan(self.cells, plot_owner=mostly))
+        self.assertEqual((item['plot_ids'], item['plot_share']), ([1, 2], 0.556))
+        self.assertTrue(place([item])[0])
+        three = {q: (i // 3) for i, q in enumerate(ids)}                   # 3 / 3 / 3
+        (item,) = only(blob_plan(self.cells, plot_owner=three))
+        self.assertEqual(self.reasons(place([item])[2]), ['across a plot line'])
 
     def test_blob_in_one_plot_is_fine(self):
         plan = blob_plan(self.cells, plot_owner={q: 7 for q in self.cells})

@@ -20,7 +20,8 @@ Massing is a squared rectangle from the evidence cells, walls 2 high (shed) or 3
 a one-block roof layer, planks or brick by kind, flat or mono-pitch roof, a door facing the house
 or route, the top clamped to the nDSM height. Ground height comes from lidar; the placer in
 ``decor_layer`` refuses (with an unplaced reason) a footprint on a route, clearance column,
-entrance opening, carriageway or across a plot line.
+entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells, so a footprint
+with ``PLOT_MAJORITY`` of its columns in one plot counts as inside it).
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ MIN_SHORT_SIDE = 2                # a 1-wide raised strip is a fence or wall lin
 GREEN_SHARE_MAX = 0.5             # lawn + shade share of the blob's aerial colour; at or above = vegetation
 GARAGE_MIN_COLUMNS = 14           # lidar blobs this large (about 3 x 5 m) read as a garage
 MIN_FILL = 0.5                    # edge rows / columns thinner than this share are trimmed when squaring
+PLOT_MAJORITY = 0.5               # a footprint is "across a plot line" only when no plot holds this share of it
 LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs on its edge stay whole
 
 DEFAULT_TOTAL = {'shed': 3, 'garage': 4}            # walls + one roof layer
@@ -218,14 +220,16 @@ def _item(kind: str, evidence: Sequence[tuple[int, int]], source: str, confidenc
           unresolved_reason: str = '', root=None) -> dict[str, Any]:
     cells = square_rectangle(evidence)
     mass = massing(kind, cells, ndsm)
-    owners = sorted({plot_owner[q] for q in cells if q in (plot_owner or {})})
+    owned = [plot_owner[q] for q in cells if q in (plot_owner or {})]
+    owners = sorted(set(owned))
+    plot_share = max((owned.count(o) for o in owners), default=0) / len(owned) if owned else 1.0
     if not unresolved_reason and min(mass['size']) < 2:
         unresolved_reason = 'too small to build once squared to a rectangle'
     item: dict[str, Any] = {
         'id': item_id, 'kind': KIND, 'role': KIND, 'type': kind,
         'cells': [list(c) for c in cells], 'evidence_cells': [list(c) for c in sorted(evidence)],
         'walls': mass['walls'], 'height': mass['total'], 'roof': mass['roof'], 'size': mass['size'],
-        'lidar_height': ndsm, 'plot_ids': owners,
+        'lidar_height': ndsm, 'plot_ids': owners, 'plot_share': round(plot_share, 3),
         'door': door_for(cells, targets, mass['walls']),
     }
     if note:

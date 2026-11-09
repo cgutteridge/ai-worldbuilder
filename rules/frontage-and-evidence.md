@@ -60,7 +60,9 @@ house footprint stay with the feature pass. Evidence, in order: a mapped footpri
 (medium), a designer trace in `reference/decor-furniture.json` with kind `shed`/`garage`, `cells` and an
 evidence id (medium). Never from aerial colour alone, never a default scatter. One squared rectangle,
 ground from lidar, top clamped to the nDSM height. Refused, with an unplaced reason, on a route, clearance
-column, entrance opening, carriageway or across a plot line.
+column, entrance opening, carriageway or across a plot line (a footprint with at least half its columns in one
+plot counts as inside it). To get a shed where lidar finds none, trace it: a `shed`/`garage` row with `cells` and
+`evidence_ids` in `reference/decor-furniture.json`.
 
 ## 1. Survey first
 - `python3 scripts/osm_footprints.py frontage --bbox x0,z0,x1,z1`: real
