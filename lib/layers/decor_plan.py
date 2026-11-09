@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+import outbuildings as ob
 import provenance as prov
 
 HEDGE_BLOCK = 'oak_leaves[persistent=true]'
@@ -402,6 +403,10 @@ def build_decor_plan(
     free_hedges: bool = False,
     openings: set[tuple[int, int]] | None = None,
     frontages: Sequence[Mapping[str, Any]] | None = None,
+    outbuilding_footprints: Sequence[Mapping[str, Any]] = (),
+    lidar_rise: Mapping[str, Any] | None = None,
+    plot_owner: Mapping[tuple[int, int], int] | None = None,
+    building_columns: set[tuple[int, int]] | None = None,
     evidence_ids: Sequence[str] = (),
     root=None,
 ) -> dict[str, Any]:
@@ -423,6 +428,11 @@ def build_decor_plan(
         report when ``garden`` is built here
     @param frontages: shared residential frontage descriptions (``garden_sources``); echoed in
         the plan as ``frontages`` (compact) for the report
+    @param outbuilding_footprints: mapped outbuildings (``outbuildings.mapped_outbuilding_footprints``)
+    @param lidar_rise: raw nDSM (``outbuildings.lidar_rise``); ``None`` plans no lidar outbuildings
+    @param plot_owner: ``{(x, z): plot id}``; read from the garden report when ``garden`` is built here
+    @param building_columns: every building column near the cell (outbuilding blobs keep one column
+        clear of them); ``footprint`` when omitted
     @param evidence_ids: default evidence ids for aerial-derived rows
     @param root: world root for provenance evidence checks
     @returns: ``{'cell': [tx, tz], 'items': [...], 'reserved': {...}, 'frontages': [...]}``
@@ -452,6 +462,8 @@ def build_decor_plan(
             route = {tuple(q) for q in garden_report.get('route_reserved', ())}
         if frontages is None:
             frontages = garden_report.get('frontages', [])
+        if plot_owner is None:
+            plot_owner = garden_report.get('plots')
     if rgb is None:
         rgb = aerial_rgb(cell)
     if canopy is None:
@@ -532,6 +544,8 @@ def build_decor_plan(
 
     for raw in designer_items:
         kind = raw.get('kind')
+        if kind in ob.DESIGNER_KINDS:
+            continue                                  # outbuilding traces: planned below, after lidar
         if kind not in sf.RECIPES:
             # Designer may propose barrier strips with cells.
             if kind in BARRIER_KINDS and raw.get('cells'):
@@ -599,6 +613,11 @@ def build_decor_plan(
     # A raised column already planned as a barrier is that barrier, not an unknown object.
     items.extend(o for o in object_items
                  if not all(tuple(c) in seen_barrier for c in o['lidar_cells']))
+    items.extend(_outbuilding_items(
+        cell, footprints=outbuilding_footprints, designer=designer_items, rise=lidar_rise,
+        building_columns=building_columns if building_columns is not None else footprint,
+        taken=object_columns, canopy=canopy, rgb=rgb, route=route,
+        plot_owner=plot_owner, evidence_ids=evidence_ids, root=root))
     for i, obs in enumerate(photo_observations):
         if obs.get('cell') and tuple(obs['cell']) in object_columns:
             continue
@@ -636,6 +655,39 @@ def build_decor_plan(
             'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),
                          'conflicts': reserved['conflicts']},
             'frontages': [compact_frontage(f) for f in frontages or ()]}
+
+
+def _outbuilding_items(
+    cell: tuple[int, int],
+    *,
+    footprints: Sequence[Mapping[str, Any]],
+    designer: Sequence[Mapping[str, Any]],
+    rise: Mapping[str, Any] | None,
+    building_columns: set[tuple[int, int]],
+    taken: set[tuple[int, int]],
+    canopy: set[tuple[int, int]],
+    rgb: Mapping[tuple[int, int], Any],
+    route: set[tuple[int, int]],
+    plot_owner: Mapping[tuple[int, int], int] | None,
+    evidence_ids: Sequence[str],
+    root=None,
+) -> list[dict[str, Any]]:
+    """Outbuilding plan items in evidence order: mapped, lidar blob, designer trace (#251)."""
+    from ground_sources import cell_box
+
+    mapped_cols = {tuple(c) for f in footprints for c in f['cells']}
+    houses = set(building_columns) - mapped_cols
+    targets = sorted(houses | set(route))
+    common = {'rise': rise, 'targets': targets, 'plot_owner': plot_owner}
+    ring = {(x + a, z + b) for x, z in building_columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    mapped = ob.mapped_items(footprints, evidence_ids=evidence_ids, root=root, **common)
+    lidar = ob.lidar_items(
+        rise, exclude=ring | taken, canopy=canopy, rgb=rgb, cell_box=cell_box(cell),
+        evidence_ids=evidence_ids, root=root, targets=targets, plot_owner=plot_owner)
+    traced = ob.designer_items(
+        [r for r in designer if r.get('kind') in ob.DESIGNER_KINDS],
+        default_evidence=evidence_ids, root=root, **common)
+    return ob.merge_sources(mapped, lidar, traced)
 
 
 def reserve_openings(items: Sequence[dict[str, Any]], openings) -> dict[str, Any]:

@@ -510,6 +510,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         report['frontages'] = frontages
         report['openings'] = sorted(opening)
         report['route_reserved'] = sorted(reserved_route(frontages))
+        report['plots'] = owner                           # {column: plot id}, for outbuilding plot-line checks
     return out
 
 
