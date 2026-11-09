@@ -98,6 +98,38 @@ class StoopKeepTest(unittest.TestCase):
         src = inspect.getsource(H.Build)
         self.assertIn("self.stoop_set(st[0], y, st[1], 'air')", src)
         self.assertIn("self.stoop_set(sx, y, sz, 'air')", src)
+        self.assertIn('self.door_level(', src)
+
+
+class RaisedDoorTest(unittest.TestCase):
+    """#243: a door whose outside ground stands one above the floor is raised, not the street lowered."""
+
+    def build(self, top):
+        b = H.Build.__new__(H.Build)
+        b.top_solid = lambda x, z, near: top
+        b.set = mock.Mock()
+        return b
+
+    def test_door_level(self):
+        self.assertEqual(self.build(31).door_level((0, 0), 30), 31)
+        self.assertEqual(self.build(30).door_level((0, 0), 30), 30)
+        self.assertEqual(self.build(29).door_level((0, 0), 30), 30)
+        self.assertEqual(self.build(None).door_level((0, 0), 30), 30)
+        self.assertEqual(self.build(32).door_level((0, 0), 30), 30)
+
+    def test_raise_inner_adds_stair_and_headroom(self):
+        b = self.build(31)
+        b.raise_inner((10, 10), 'S', 30, 31)
+        calls = {c.args[:3]: c.args[3] for c in b.set.call_args_list}
+        self.assertIn('stairs', calls[(10, 31, 9)])
+        self.assertIn('facing=south', calls[(10, 31, 9)])
+        self.assertEqual(calls[(10, 32, 9)], 'air')
+        self.assertEqual(calls[(10, 33, 9)], 'air')
+
+    def test_raise_inner_noop_when_not_raised(self):
+        b = self.build(30)
+        b.raise_inner((10, 10), 'S', 30, 30)
+        b.set.assert_not_called()
 
 
 class DoorFrameTest(unittest.TestCase):
