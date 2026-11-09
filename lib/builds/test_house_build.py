@@ -119,6 +119,7 @@ class RaisedDoorTest(unittest.TestCase):
 
     def test_raise_inner_adds_stair_and_headroom(self):
         b = self.build(31)
+        b.keep = set()
         b.raise_inner((10, 10), 'S', 30, 31)
         calls = {c.args[:3]: c.args[3] for c in b.set.call_args_list}
         self.assertIn('stairs', calls[(10, 31, 9)])
@@ -126,10 +127,19 @@ class RaisedDoorTest(unittest.TestCase):
         self.assertEqual(calls[(10, 32, 9)], 'air')
         self.assertEqual(calls[(10, 33, 9)], 'air')
 
-    def test_raise_inner_noop_when_not_raised(self):
+    def test_raise_inner_keeps_cell_clear_when_not_raised(self):
         b = self.build(30)
+        b.keep = set()
+        b.stoop_set = mock.Mock()
         b.raise_inner((10, 10), 'S', 30, 30)
-        b.set.assert_not_called()
+        cells = {c.args[:3] for c in b.stoop_set.call_args_list}
+        self.assertEqual(cells, {(10, 31, 9), (10, 32, 9), (10, 33, 9)})
+
+    def test_door_halves_are_kept(self):
+        import inspect
+        src = inspect.getsource(H.Build.doors)
+        self.assertNotIn("self.set(c0[0], y, c0[1], f\"spruce_door", src)
+        self.assertNotIn("self.set(c1[0], y, c1[1], f'spruce_door", src)
 
 
 class DoorFrameTest(unittest.TestCase):

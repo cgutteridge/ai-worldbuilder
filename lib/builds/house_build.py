@@ -231,7 +231,7 @@ class Build:
         st = (c0[0] + fx, c0[1] + fz)
         bd = self.door_level(st, b)
         for y, p in ((bd + 1, 'lower'), (bd + 2, 'upper')):
-            self.set(c0[0], y, c0[1], f"spruce_door[facing={ {'S':'south','N':'north','W':'west','E':'east'}[f] },half={p},hinge=left,open=false]")
+            self.stoop_set(c0[0], y, c0[1], f"spruce_door[facing={ {'S':'south','N':'north','W':'west','E':'east'}[f] },half={p},hinge=left,open=false]")
         self.stoop_set(st[0], bd, st[1], 'smooth_stone')
         for y in range(bd + 1, bd + 4):
             self.stoop_set(st[0], y, st[1], 'air')
@@ -264,7 +264,7 @@ class Build:
             sx, sz = c1[0] + DIRS[r][0], c1[1] + DIRS[r][1]
             bd = self.door_level((sx, sz), b)
             for y, p in ((bd + 1, 'lower'), (bd + 2, 'upper')):
-                self.set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={p},hinge=right,open=false]')
+                self.stoop_set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={p},hinge=right,open=false]')
             self.stoop_set(sx, bd, sz, 'smooth_stone')
             for y in range(bd + 1, bd + 4):
                 self.stoop_set(sx, y, sz, 'air')
@@ -282,14 +282,19 @@ class Build:
         return b + 1 if self.top_solid(st[0], st[1], b) == b + 1 else b
 
     def raise_inner(self, door, d, b, bd):
-        """Stair just inside a raised door so the one-block step from the floor is walkable, with headroom."""
-        if bd <= b:
-            return
+        """Keep the cell just inside a door clear (earlier paving would block it); raised doors get a stair up.
+
+        A door raised one block above the floor needs a stair inside so the step is walkable, with headroom.
+        """
         dx, dz = DIRS[d]
         x, z = door[0] - dx, door[1] - dz
-        self.set(x, b + 1, z, stair('spruce', {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}[d]))
-        for y in range(b + 2, b + 4):
-            self.set(x, y, z, 'air')
+        if bd > b:
+            self.stoop_set(x, b + 1, z, stair('spruce', {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}[d]))
+            lo = b + 2
+        else:
+            lo = b + 1
+        for y in range(lo, b + 4):
+            self.stoop_set(x, y, z, 'air')
 
     def top_solid(self, x, z, near):
         # natural ground only (ignores roof fringe slabs and earlier steps of this build)
