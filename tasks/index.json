@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 251,
+  "nextTaskId": 253,
   "tasks": [
     {
       "id": 229,
@@ -77,12 +77,12 @@
     },
     {
       "id": 244,
-      "title": "Sparse decor outside house fronts in cell 53,-43 (Kitchener and Sirdar roads)",
+      "title": "Sparse front boundaries in cell 53,-43 (Kitchener and Sirdar roads): walls, fences, hedges and gates",
       "status": "todo",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Owner review 2026-11-08 of 53,-43 (southampton-build): very little decor outside house fronts. Not measured yet. Related: #240 (shared frontage between ground and decor), snag S-073. Start by measuring decor per frontage against the aerial and street-run convention, then decide whether the cause is the decor layer or missing boundary evidence. Needs a live world to verify. Spun out of #243 (doors, closed)."
+      "notes": "Owner review 2026-11-08 of 53,-43 (southampton-build): very little decor outside house fronts. Not measured yet. Related: #240 (shared frontage between ground and decor), snag S-073. Start by measuring decor per frontage against the aerial and street-run convention, then decide whether the cause is the decor layer or missing boundary evidence. Needs a live world to verify. Spun out of #243 (doors, closed).\n\nDIAGNOSIS 2026-11-09 (read-only; decor report highfield_53_m43_decor-report.json + garden_sources.garden_barriers report).\nMeasure: 59 eligible fronts in the cell (Kitchener 31, Sirdar 28). 26 have no decor at all. 186 of 1,981 front-yard columns carry decor (~9%), all aerial-hedge fragments. Zero walls, fences or gates; zero furniture in the whole cell (furniture 0). Frontage `boundary` is empty on all 59. Sparse is true on both streets equally.\nAerial (reference/aerial/kitchener-z19 mosaic): fronts are not plain. Most have a low pale wall on the pavement line, side dividing walls or hedges, a paved drive or path gap, gravel/lawn with shrubs, some bins.\nWhere lost: (1) EVIDENCE, the main cause. A front boundary needs a `front` spec in site/gardens/<street>.json or an aerial hedge (hedge_share >= 0.6). kitchener_road.json has only rear/side vetoes, no `front`; sirdar_road.json does not exist. Aerial hedge fired on 12 of 59 front segments; low walls read pale, not green, so the detector cannot see them. (2) Aerial-hedge fronts never feed residential_frontage `boundary`/`opening` (role_spec only), so those hedges get no entrance gap from the opening logic (route columns are still reserved). (3) No source for private-yard furniture: only map furniture and reference/decor-furniture.json (no 53,-43 entry). (4) NOT the cause: layer drops inside fronts are 29 columns (22 against build, 5 above lidar, 2 blocked); route+clearance take 5-11 columns of 14-58 per yard.\nProposed fix: (a) world data, no code: add `front` (low wall, height 1) and `side_front` to kitchener_road.json and a new sirdar_road.json, citing a registered aerial evidence id; per-house `front: none` where the aerial shows an open drive. (b) code, garden_sources.residential_frontage / garden_barriers: pass the resolved front spec (convention or aerial hedge) into the frontage so `boundary` and `opening` are set for aerial hedges too; widen the opening to the drive width where the route meets a paved strip. Tests in lib/sources/test_garden_sources.py: aerial-hedge front gets an opening; convention front wall leaves the route open. (c) owner decision first: whether to add a front-yard furniture convention (bins beside the opening, planters), labelled inference.\nVerify: per-front table before/after (decor columns in extent, boundary length, opening present), decor dry run on 53,-43, then an in-world look along both roads.\n\nOWNER DECISION 2026-11-09: a front yard here should have walls, hedges, fences, bushes, ideally flowers, sheds, garages, ponds and gates. Every element still needs aerial or map evidence per property; nothing is scattered by default. Owning layer for each element: walls, fences, hedges, gates = decor (this task: front/side_front conventions, aerial hedge -> boundary and opening, gate block in the opening; gates are not built today, the opening is left as air). Bushes = trees (bush_voxels for small crowns; check whether front-yard shrubs show in the canopy mask or are lost). Flowers = ground foliage (foliage.py flower list; check whether guessed lawn in private frontage gets any). Sheds and garages = outbuildings: cell_features.py leaves them 'to their house plot' and coverage.py lists OUTBUILDINGS, but nothing appears to build them; this is a gap of its own. Ponds = only mapped natural=water polygons become water_body features; garden ponds from the aerial have no source. Split 2026-11-09 (owner agreed): this task keeps walls, fences, hedges and gates. Sheds and garages moved to #251; bushes, flowers and garden ponds moved to #252."
     },
     {
       "id": 245,
@@ -128,6 +128,16 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "In #243 I measured doors with throwaway scripts in the scratchpad (parse the 'door (x,z)' lines of builder logs, check the lower and upper half, a solid block under the door and two air cells in front). Make it a committed tool: read doors from landed feature plans (garden_sources.landed_approaches or entrance_approach.entrances_from_blocks) rather than logs, report missing, half-height, below-street and blocked doors per plan, exit non-zero on any. Tests on a synthetic world. Then run it over the plans I have not opened (houses_ripstone_gardens_*, houses_sherborne_road, houses_blenheim_gardens_*, houses_brickfield_road_*, houses_upper_shaftesbury_avenue_*) and file rebuild tasks for any that fail; rebuild with the builder the spec names (see its notes). Spun out of #243 (2026-11-09)."
+    },
+    
+    {
+      "id": 252,
+      "title": "Garden planting: front-yard bushes, flowers and garden ponds from aerial evidence",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner decision 2026-11-09 (from the front-decor task #244): gardens should have bushes, ideally flowers, and ponds. Check each before building: (1) bushes belong to trees (trees_layer.py makes bush_voxels for crowns below MIN_CROWN_R); measure whether front-yard shrubs seen on the aerial reach the canopy mask in 53,-43 or are lost. (2) flowers belong to ground foliage (foliage.py flower list); measure whether guessed lawn in private frontage gets any, and propose aerial-led flower beds if not. (3) ponds: only mapped natural=water polygons become water_body features (#163); garden ponds from the aerial have no source, so propose one (aerial water-colour patch inside a plot, labelled inference) or confirm none are visible. Keep the door route and frontage opening clear. Verify with per-plot counts before and after and an in-world look."
     }
   ]
 }
