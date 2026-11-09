@@ -365,8 +365,39 @@ class TestMassing(unittest.TestCase):
         found, _r, unplaced = place([item], lidar=hm)
         self.assertEqual(unplaced, [])
         self.assertEqual(found[(30, GROUND, 30)], 'bricks')        # wall runs down to the low ground
-        self.assertTrue(any(b.startswith('stone_brick_stairs[') for b in found.values()))
         self.assertTrue(all(y <= GROUND + 4 for _x, y, _z in found))
+
+    def test_mono_pitch_roof_really_slopes_toward_the_door(self):
+        """A garage roof falls half a block per row to the door side: no repeated same-height stair row."""
+        import types
+        import site_kit
+        cells = rect(30, 30, 5, 4)
+        item = only(blob_plan(cells, rise_value=3.6, footprint={(20, 31)}))[0]      # house west: door and low side west
+        self.assertEqual((item['roof'], item['door']['facing'], item['walls']), ('mono', 'west', 3))
+        found, _r, unplaced = place([item])
+        self.assertEqual(unplaced, [])
+        top = {}
+        for (x, y, z), b in found.items():
+            if b.endswith('[type=bottom]') or b == 'stone_bricks':
+                top[(x, z)] = (y, b)
+        for z in range(30, 34):
+            row = [top[(x, z)] for x in range(30, 35)]                 # west (low) to east (high)
+            self.assertEqual(row[0], (GROUND + 3, 'stone_brick_slab[type=bottom]'))        # low wall 2 + roof
+            self.assertEqual(row[-1], (GROUND + 4, 'stone_brick_slab[type=bottom]'))       # high wall 3 + roof
+            heights = [y * 2 + (1 if b == 'stone_bricks' else 0) for y, b in row]           # half-block heights
+            self.assertEqual(heights, sorted(heights))                                      # never falls back
+            self.assertEqual(len(set(heights)), 3)                                          # and does rise
+        walls_low = [y for (x, y, z), b in found.items() if (x, z) == (30, 30) and b == 'bricks']
+        self.assertEqual(max(walls_low), GROUND + 2)
+        plan = types.SimpleNamespace(cells={p: site_kit.full(b) for p, b in found.items()})
+        self.assertEqual(site_kit.door_frame_issues(plan, lambda x, y, z: None), [])
+
+    def test_mono_roof_needs_a_low_wall_that_still_takes_a_door(self):
+        item = {**only(blob_plan(rect(30, 30, 3, 3), rise_value=3.6, footprint={(20, 31)}))[0],
+                'type': 'garage', 'roof': 'mono', 'walls': 3}
+        self.assertEqual(ob.mono_slope(item, [tuple(c) for c in item['cells']])[1:], (3, 1))   # 3 rows, walls 3: rise 1
+        item['walls'] = 2
+        self.assertIsNone(ob.mono_slope(item, [tuple(c) for c in item['cells']]))      # low wall would drop under 2
 
     def test_door_faces_the_house_and_is_two_blocks_in_the_wall(self):
         cells = rect(30, 30, 3, 3)
