@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 246,
+  "nextTaskId": 251,
   "tasks": [
     {
       "id": 229,
@@ -92,6 +92,51 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Seen 2026-11-09 on every `scripts/redo_layer.py --apply` run after the layers had applied and verified (southampton-build, macOS): traceback ends at lib/site/site_lock.py run(), `os.killpg(process.pid, 0)` in the post-exit grace loop, `PermissionError: [Errno 1] Operation not permitted`. Only ProcessLookupError is caught, so on macOS (killpg on a group whose leader has exited can give EPERM, not ESRCH) the finally block aborts before the SIGKILL and `release(owner)`. Effects: the lock stays held by the redo-layer-<pid> owner (a later redo on another cell refuses with 'Held by redo-layer-N'), and the command exits 1 although the work succeeded. Workaround: `site_lock.py --world W release redo-layer-<pid>`. Also note `site_lock.py run ... -- redo_layer.py` cannot wrap redo_layer because it claims the lock itself ('Held by claude'). Fix: treat PermissionError like ProcessLookupError in both killpg calls, always reach release(owner) (nest in try/finally), and add a unit test with a mocked killpg raising PermissionError. Consider making redo_layer honour an existing SITE_OWNER instead of claiming a second lock."
+    },
+    {
+      "id": 246,
+      "title": "house_build.py should refuse a feature-path spec instead of building a broken house",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "On 2026-11-09 I rebuilt houses_kitchener_road_w176634502 with house_build.py; its notes say 'FEATURE PATH (scripts/feature_build.py) ... house_build cannot plan low ground' and its spec uses richer keys (storeys, wall, floor, facade_plan) and roof entries as {kind, material} dicts. house_build read the dict as a material, wrote invalid block names and dropped 502 roof positions (readback mismatches), after undoing the good build. Fix: in load_spec/main, refuse (exit non-zero before any undo or apply) when the spec has storeys/facade_plan keys, a roofs value that is not a string, or notes starting 'FEATURE PATH'; name the right builder in the message. Also make readback mismatches fail loudly in the summary line. Test: spec fixture with dict roofs raises. Spun out of #243 (2026-11-09)."
+    },
+    {
+      "id": 247,
+      "title": "element_undo should check cell readiness before undoing a plan that the rebuild will need",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Earlier in #243 I undid houses_sirdar_road_w177806445 and the rebuild was then refused because cell 53,-44 was not ready (needs-prep: validation stale, aerial coverage), leaving the plan undone until tiles were downloaded and cells prepared. Fix: `element_undo.py --apply` (or a wrapper used by rebuild flows) runs `cell_registry check` for every cell the plan touches and refuses, naming the needed `prepare` or aerial step, when any cell is not ready. A `--force` keeps the old behaviour. Test with a fake registry that reports not-ready. Spun out of #243 (2026-11-09)."
+    },
+    {
+      "id": 248,
+      "title": "Record which builder and spec produced each landed house plan so stale or wrong-builder plans can be found and reapplied",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "reapply_feature.py refuses plans with no recorded builder, and in #243 I could not tell which of the eight Kitchener/Sirdar plans were built by the old builder, which by feature_build and which by house_build; I found out from spec notes and by watching which houses kept old-style chimneys. Fix: record builder name (house_build, feature_build), builder git SHA and spec hash in the journal entry for each feature plan; add `site_recover.py`-style listing of landed plans whose builder SHA is older than a given commit or whose spec hash changed; let reapply_feature use the recorded builder. Needs a journal schema bump. Spec in docs/plans/. Spun out of #243 (2026-11-09)."
+    },
+    {
+      "id": 249,
+      "title": "Add a landed-door audit script (present, two-high, level with the ground outside) and use it to audit the remaining house plans",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "In #243 I measured doors with throwaway scripts in the scratchpad (parse the 'door (x,z)' lines of builder logs, check the lower and upper half, a solid block under the door and two air cells in front). Make it a committed tool: read doors from landed feature plans (garden_sources.landed_approaches or entrance_approach.entrances_from_blocks) rather than logs, report missing, half-height, below-street and blocked doors per plan, exit non-zero on any. Tests on a synthetic world. Then run it over the plans I have not opened (houses_ripstone_gardens_*, houses_sherborne_road, houses_blenheim_gardens_*, houses_brickfield_road_*, houses_upper_shaftesbury_avenue_*) and file rebuild tasks for any that fail; rebuild with the builder the spec names (see its notes). Spun out of #243 (2026-11-09)."
+    },
+    {
+      "id": 250,
+      "title": "Add the aerial mosaics downloaded for #243 to the reference manifest",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Two aerial mosaics were downloaded with owner authorisation and are on disk but not in worlds/southampton-build/reference/manifest.jsonl: reference/aerial/cell-54-43-z19/mosaic-z19-5x5-centre-260126-175674.png (2.9 MB) and reference/aerial/cell-53-44-z19/mosaic-z19-3x3-centre-260122-175671.png (768x768). Register both with source (cco-z19), tile coordinates, date and size via the manifest tooling so coverage checks and provenance are recorded. Spun out of #243 (2026-11-09)."
     }
   ]
 }
