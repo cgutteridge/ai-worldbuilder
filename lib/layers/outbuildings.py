@@ -69,7 +69,7 @@ def mapped_type(building_tag: str) -> str:
 
 
 def mapped_outbuilding_footprints(idx, cell_box: tuple[int, int, int, int]) -> list[dict[str, Any]]:
-    """Mapped outbuildings with a column inside ``cell_box``, from an ``OSMIndex``.
+    """Mapped outbuildings with a column inside ``cell_box`` (all their columns, even past its edge), from an ``OSMIndex``.
 
     @param idx: ``osm_footprints.OSMIndex``
     @param cell_box: inclusive ``x0, z0, x1, z1``
@@ -78,10 +78,14 @@ def mapped_outbuilding_footprints(idx, cell_box: tuple[int, int, int, int]) -> l
     from coverage import OUTBUILDINGS
 
     x0, z0, x1, z1 = cell_box
-    by_index: dict[int, list[tuple[int, int]]] = {}
+    whole: dict[int, list[tuple[int, int]]] = {}
+    touching: set[int] = set()
     for q, i in idx.cells().items():
-        if idx.buildings[i][1].get('building') in OUTBUILDINGS and x0 <= q[0] <= x1 and z0 <= q[1] <= z1:
-            by_index.setdefault(i, []).append(q)
+        if idx.buildings[i][1].get('building') in OUTBUILDINGS:
+            whole.setdefault(i, []).append(q)
+            if x0 <= q[0] <= x1 and z0 <= q[1] <= z1:
+                touching.add(i)
+    by_index = {i: whole[i] for i in touching}      # whole footprint: one that crosses the edge is refused, not halved
     out = []
     for i, cols in by_index.items():
         props = idx.buildings[i][1]
@@ -201,12 +205,12 @@ def door_for(cells: Sequence[tuple[int, int]], targets: Iterable[tuple[int, int]
     return None
 
 
-def blob_green_share(group: Iterable[tuple[int, int]], rgb: Mapping[tuple[int, int], Any]) -> float:
-    """Share of the blob's sampled aerial columns that read lawn or shade (0 with no samples)."""
+def blob_green_share(group: Iterable[tuple[int, int]], rgb: Mapping[tuple[int, int], Any]) -> float | None:
+    """Share of the blob's sampled aerial columns that read lawn or shade; ``None`` with no samples."""
     from ground_sources import aerial_class
 
     seen = [aerial_class(rgb[q]) for q in group if q in rgb]
-    return sum(c in ('lawn', 'shade') for c in seen) / len(seen) if seen else 0.0
+    return sum(c in ('lawn', 'shade') for c in seen) / len(seen) if seen else None
 
 
 def _item(kind: str, evidence: Sequence[tuple[int, int]], source: str, confidence: str, *,
@@ -281,7 +285,9 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
         dx, dz = max(xs) - min(xs) + 1, max(zs) - min(zs) + 1
         share = blob_green_share(group, rgb)
         reason = ''
-        if share >= GREEN_SHARE_MAX:
+        if share is None:
+            reason = 'no aerial colour under the lidar blob: cannot rule out vegetation'
+        elif share >= GREEN_SHARE_MAX:
             reason = f'lidar blob reads green on the aerial ({share:.0%} lawn/shade): vegetation, not an outbuilding'
         elif min(dx, dz) < MIN_SHORT_SIDE:
             reason = 'lidar blob is a 1-wide raised line (fence or wall), not an outbuilding'
@@ -294,7 +300,7 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
             kind, group, 'lidar', 'medium', item_id=_item_id('lidar', lo[0], lo[1]),
             ndsm=ndsm_height(rise, group), targets=targets, plot_owner=plot_owner,
             evidence_ids=evidence_ids, root=root, unresolved_reason=reason,
-            note=f'nDSM blob {len(group)} columns, aerial green share {share:.2f}'))
+            note=f'nDSM blob {len(group)} columns, aerial green share ' + ('n/a' if share is None else f'{share:.2f}')))
     return out
 
 

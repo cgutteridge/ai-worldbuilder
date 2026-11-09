@@ -243,6 +243,66 @@ class TestRefusals(unittest.TestCase):
         self.assertEqual(self.reasons(place(self.items, surface=GROUND + 4)[2]), ['above lidar ground'])
 
 
+class TestReviewFixes(unittest.TestCase):
+    def test_mapped_shed_across_the_cell_edge_keeps_its_whole_footprint_and_is_refused(self):
+        idx = mock.Mock()
+        idx.cells.return_value = {(x, z): 0 for x in range(125, 131) for z in (5, 6)}
+        idx.buildings = [([], {'building': 'shed', 'osm_id': 's'})]
+        (row,) = ob.mapped_outbuilding_footprints(idx, (0, 0, 127, 127))
+        self.assertEqual(len(row['cells']), 12)
+        plan = plan_for(footprints=[row])
+        _f, _r, unplaced = place(only(plan))
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['crosses the cell edge'])
+
+    def test_blob_with_no_aerial_colour_is_listed_not_accepted(self):
+        (item,) = only(plan_for(rise=rise_grid({q: 2.6 for q in rect(30, 30, 3, 3)}), rgb={}))
+        self.assertIn('no aerial', item['provenance']['unresolved_reason'])
+
+    def test_walls_never_float_over_a_lower_live_surface(self):
+        item = only(blob_plan(rect(30, 30, 3, 3)))[0]
+        _f, _r, unplaced = place([item], surface=GROUND - 2)
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['below lidar ground'])
+
+    def test_plan_cell_sets_footprint_override_keeps_roof_slabs_and_clears_the_interior(self):
+        """Unmapped outbuildings need ``outside_footprint_ok`` (osm_footprints.guard) and half-height roof slabs."""
+        import types
+        cells = rect(30, 30, 3, 3)
+        decor = blob_plan(cells, rise_value=2.6)
+        decor['items'].append({'kind': 'bench', 'role': 'furniture', 'cell': [31, 31], 'id': 'bench-31-31',
+                               'provenance': {'source': 'vector_map', 'confidence': 'high',
+                                              'evidence_ids': [], 'unresolved_reason': ''}})
+        idx = mock.Mock()
+        idx.cells.return_value = {}
+        idx.buildings = []
+        vmap = types.SimpleNamespace(road=set(), feat=set(), water=set(), water_line=set(), hedge=set(),
+                                     wall=set(), fence=set(), furniture=[])
+        plan = types.SimpleNamespace(cells={}, keep_slab_cells=set(),
+                                     set=lambda x, y, z, b: plan.cells.__setitem__((x, y, z), b))
+        world = mock.Mock()
+        world.block = lambda x, y, z: 'minecraft:air'
+        with mock.patch('decor_layer.neighbour_owned', return_value=set()), \
+                mock.patch('decor_layer.ignored_builds', return_value=()), \
+                mock.patch('decor_layer.load_masked_positions', return_value={}), \
+                mock.patch('decor_layer.snapshot_decor_columns', side_effect=lambda w, c: w), \
+                mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch('ground_sources.OSMGround', return_value=vmap), \
+                mock.patch('lidar_heightmap.reference_world') as ref, \
+                mock.patch('decor_layer.ob.lidar_rise', return_value=None), \
+                mock.patch('decor_layer.dplan.build_decor_plan', return_value=decor), \
+                mock.patch('surface_probe.surface_y', side_effect=lambda w, x, z: (GROUND, 'grass_block')), \
+                mock.patch('decor_layer.on_carriageway', return_value=False), \
+                mock.patch('decor_layer.column_ground_kind', return_value='grass'):
+            ref.return_value.heightmap.return_value = lidar_hm()
+            placed, stats = dl.plan_cell((0, 0), plan, world)
+        self.assertEqual(stats['outbuildings'], 1)
+        self.assertIn('outbuilding-lidar-30-30', plan.outside_footprint_ok)
+        slabs = {p for p, b in plan.cells.items() if 'slab' in b}
+        self.assertEqual(len(slabs), 9)
+        self.assertEqual(plan.keep_slab_cells, slabs)
+        self.assertFalse(any(p[:3:2] == (31, 31) and 'bench' in b for p, b in plan.cells.items()))
+        self.assertEqual([u['plan_id'] for u in stats['unplaced_items']], ['bench-31-31'])
+
+
 class TestMassing(unittest.TestCase):
     def test_shed_defaults_and_clamps_to_ndsm(self):
         cells = sorted(rect(0, 0, 3, 3))

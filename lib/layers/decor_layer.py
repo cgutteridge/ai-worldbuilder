@@ -531,9 +531,12 @@ def place_outbuildings(
             if min(ground.values()) <= 0:
                 refuse('no lidar ground')
                 continue
-            if any((top := surface_y(world, *q)) and above_lidar_ground(q[0], top[0], q[1], lidar_hm)
-                   for q in cells):
+            tops = {q: surface_y(world, *q) for q in cells}
+            if any(t and above_lidar_ground(q[0], t[0], q[1], lidar_hm) for q, t in tops.items()):
                 refuse('above lidar ground')
+                continue
+            if any(t and t[0] < ground[q] - 1 for q, t in tops.items()):
+                refuse('below lidar ground')
                 continue
             blocks = ob.voxels(item, ground)
             bad = [p for p in blocks if not is_air(world.block(*p)) or p in owned or p in masked or p in found]
@@ -548,6 +551,7 @@ def place_outbuildings(
                 'cells': len(cells), 'size': item.get('size'), 'walls': item.get('walls'),
                 'roof': item.get('roof'), 'lidar_height': item.get('lidar_height'),
                 'door': item.get('door'), 'blocks': len(blocks),
+                'footprint': [list(c) for c in cells],
                 'x': min(c[0] for c in cells), 'z': min(c[1] for c in cells)})
     return found, report, unplaced
 
@@ -600,6 +604,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     outbuilding_found, outbuilding_report, outbuilding_unplaced = place_outbuildings(
         cell, decor['items'], world, way=way, houses=houses, keep_clear=reserved_gap,
         owned=owned, masked=masked, lidar_hm=lidar_hm)
+    way = way | {tuple(c) for r in outbuilding_report for c in r['footprint']}   # interior too: nothing else goes under a roof
     masked = {**masked, **dict.fromkeys(outbuilding_found, 'outbuilding')}   # barriers and furniture fill only what is left
     barrier_items = [
         i for i in decor['items']
@@ -681,6 +686,12 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['clipped_positions'] = [{'position': list(p), 'reason': 'outside cell'} for p in found if p not in clipped]
     for p, b in clipped.items():
         plan.set(*p, b)
+    roof_slabs = {p for p in outbuilding_found if p in clipped and clipped[p].endswith('[type=bottom]')}
+    plan.keep_slab_cells |= roof_slabs                  # roof slabs stay half height (else rewritten to full blocks)
+    unmapped = [r for r in outbuilding_report if r['source'] != 'vector_map']
+    if unmapped:                                        # not on a mapped footprint: osm_footprints.guard needs a reason
+        plan.outside_footprint_ok = ('garden outbuildings from lidar blob / designer trace evidence: '
+                                     + ', '.join(str(r['plan_id']) for r in unmapped))
     stats['dropped_outside_cell'] = dropped
     stats['blocks'] = len(clipped)
     stats['furniture_report'] = furniture_report  # list, not a Counter value; printed by run()
