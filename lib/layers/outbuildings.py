@@ -9,7 +9,7 @@ colour alone:
   1. MAPPED    a footprint-map building tagged in ``coverage.OUTBUILDINGS`` -> confidence high.
   2. LIDAR     a raw nDSM blob (DSM - DTM 1.6-4.5 m, >= 6 connected columns) off building
                footprints plus a one-column ring, off lidar tree canopy and off other decor
-               objects, whose aerial colour is not green (lawn + shade < 0.5) -> medium.
+               objects, whose aerial colour is not green (lawn + shade < 0.8) -> medium.
                ``lidar_heightmap.Maps`` cannot serve this: it marks roof only on mapped footprints.
   3. DESIGNER  a trace in the world's ``reference/decor-furniture.json`` (kind ``shed`` /
                ``garage``, ``cells``, an evidence id) -> medium.
@@ -42,7 +42,7 @@ RISE_MIN, RISE_MAX = 1.6, 4.5     # nDSM band (metres above bare ground) of a ga
 MIN_BLOB_COLUMNS = 6              # smaller lumps are bins, cars and noise: ignored
 MAX_BLOB_COLUMNS = 120            # larger is a missed building, not a shed
 MIN_SHORT_SIDE = 2                # a 1-wide raised strip is a fence or wall line
-GREEN_SHARE_MAX = 0.5             # lawn + shade share of the blob's aerial colour; at or above = vegetation
+GREEN_SHARE_MAX = 0.8             # lawn + shade share of the blob's aerial colour; at or above = vegetation (0.5 left almost nothing: fun over perfect)
 GARAGE_MIN_COLUMNS = 14           # lidar blobs this large (about 3 x 5 m) read as a garage
 MIN_FILL = 0.5                    # edge rows / columns thinner than this share are trimmed when squaring
 PLOT_MAJORITY = 0.5               # a footprint is "across a plot line" only when no plot holds this share of it
