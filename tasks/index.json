@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 245,
+  "nextTaskId": 246,
   "tasks": [
     {
       "id": 229,
@@ -83,6 +83,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Owner review 2026-11-08 of 53,-43 (southampton-build): very little decor outside house fronts. Not measured yet. Related: #240 (shared frontage between ground and decor), snag S-073. Start by measuring decor per frontage against the aerial and street-run convention, then decide whether the cause is the decor layer or missing boundary evidence. Needs a live world to verify. Spun out of #243 (doors, closed)."
+    },
+    {
+      "id": 245,
+      "title": "site_lock.run crashes on macOS with PermissionError in its process-group cleanup and leaves the lock held (redo_layer.py)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Seen 2026-11-09 on every `scripts/redo_layer.py --apply` run after the layers had applied and verified (southampton-build, macOS): traceback ends at lib/site/site_lock.py run(), `os.killpg(process.pid, 0)` in the post-exit grace loop, `PermissionError: [Errno 1] Operation not permitted`. Only ProcessLookupError is caught, so on macOS (killpg on a group whose leader has exited can give EPERM, not ESRCH) the finally block aborts before the SIGKILL and `release(owner)`. Effects: the lock stays held by the redo-layer-<pid> owner (a later redo on another cell refuses with 'Held by redo-layer-N'), and the command exits 1 although the work succeeded. Workaround: `site_lock.py --world W release redo-layer-<pid>`. Also note `site_lock.py run ... -- redo_layer.py` cannot wrap redo_layer because it claims the lock itself ('Held by claude'). Fix: treat PermissionError like ProcessLookupError in both killpg calls, always reach release(owner) (nest in try/finally), and add a unit test with a mocked killpg raising PermissionError. Consider making redo_layer honour an existing SITE_OWNER instead of claiming a second lock."
     }
   ]
 }
