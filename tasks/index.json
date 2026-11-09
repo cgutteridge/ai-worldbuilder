@@ -7,10 +7,10 @@
       "id": 229,
       "title": "Measure where a layer apply spends its time and recommend fixes",
       "status": "todo",
-      "priority": "low",
+      "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Investigation, not optimisation: change no behaviour. A trees+decor redo of one cell took ~16 min (trees ~13 min for 1308 fills / 9265 blocks, decor ~3 min for 612 fills / 2533 blocks); the process used under a minute of CPU early on, so the wait looks like MCP round trips, but this is inference, not measurement. Add stage timings (surface warm-up, planning, fills, readback, journal writes) to the layer apply output or report, run on one already-built cell under the lock via redo_layer, with enough runs to show variation (state how many). Deliverable: a short finding in rules/slow-commands.md with measured stage times, plus a ranked list of fixes with estimated savings (candidates, untested: merge adjacent boxes into larger fills, fewer and larger readback scans, avoid re-reading surface already probed). Do not start a fix here; file one task per fix that the numbers justify. Do not run while another apply holds the site lock. Related: #222 (counts reporting), #223 (redo_layer)."
+      "notes": "Investigation, not optimisation: change no behaviour. A trees+decor redo of one cell took ~16 min (trees ~13 min for 1308 fills / 9265 blocks, decor ~3 min for 612 fills / 2533 blocks); the process used under a minute of CPU early on, so the wait looks like MCP round trips, but this is inference, not measurement. Add stage timings (surface warm-up, planning, fills, readback, journal writes) to the layer apply output or report, run on one already-built cell under the lock via redo_layer, with enough runs to show variation (state how many). Deliverable: a short finding in rules/slow-commands.md with measured stage times, plus a ranked list of fixes with estimated savings (candidates, untested: merge adjacent boxes into larger fills, fewer and larger readback scans, avoid re-reading surface already probed). Do not start a fix here; file one task per fix that the numbers justify. Do not run while another apply holds the site lock. Related: #222 (counts reporting), #223 (redo_layer). Also covers I-044 (decor apply silent 20+ min between the plan summary and the journal begun entry). Cause unverified: the silent step is not known; registry.begin guard reads are the prime suspect. Stage timings must include the pre-write steps in site_kit.apply (site_lock.check, structure backup, open_registry, registry.begin guard reads), plus the player hop and flush. The added start-and-elapsed print lines are the only behaviour change. Check line for the I-044 snag (S-076): run `site_lock.py --world southampton-build run python3 scripts/redo_layer.py --world southampton-build --layers decor --apply` on one built cell; the output shows a start line plus elapsed seconds for each of those steps, and the finding names the step, if any, that can take minutes."
     },
     {
       "id": 232,
@@ -129,7 +129,6 @@
       "blockedBy": [],
       "notes": "In #243 I measured doors with throwaway scripts in the scratchpad (parse the 'door (x,z)' lines of builder logs, check the lower and upper half, a solid block under the door and two air cells in front). Make it a committed tool: read doors from landed feature plans (garden_sources.landed_approaches or entrance_approach.entrances_from_blocks) rather than logs, report missing, half-height, below-street and blocked doors per plan, exit non-zero on any. Tests on a synthetic world. Then run it over the plans I have not opened (houses_ripstone_gardens_*, houses_sherborne_road, houses_blenheim_gardens_*, houses_brickfield_road_*, houses_upper_shaftesbury_avenue_*) and file rebuild tasks for any that fail; rebuild with the builder the spec names (see its notes). Spun out of #243 (2026-11-09)."
     },
-    
     {
       "id": 252,
       "title": "Garden planting: front-yard bushes, flowers and garden ponds from aerial evidence",
