@@ -392,6 +392,21 @@ class TestMassing(unittest.TestCase):
         plan = types.SimpleNamespace(cells={p: site_kit.full(b) for p, b in found.items()})
         self.assertEqual(site_kit.door_frame_issues(plan, lambda x, y, z: None), [])
 
+    def test_mono_roof_falls_toward_the_door_on_every_side(self):
+        cells = [(x, z) for x in range(30, 35) for z in range(30, 35)]
+        ground = {c: GROUND for c in cells}
+        doors = {'west': (30, 32), 'east': (34, 32), 'north': (32, 30), 'south': (32, 34)}
+        for facing, door in doors.items():
+            item = {'type': 'garage', 'cells': [list(c) for c in cells], 'walls': 3, 'roof': 'mono',
+                    'door': {'cell': list(door), 'facing': facing}}
+            top = {}
+            for (x, y, z), b in ob.voxels(item, ground).items():
+                if b.endswith('[type=bottom]') or b == 'stone_bricks':
+                    top[(x, z)] = y
+            self.assertEqual(top[door], GROUND + 3, facing)                      # low row at the door
+            opposite = (64 - door[0], 64 - door[1])                                # mirror through the centre (32, 32)
+            self.assertEqual(top[opposite], GROUND + 4, facing)                  # high row opposite
+
     def test_mono_roof_needs_a_low_wall_that_still_takes_a_door(self):
         item = {**only(blob_plan(rect(30, 30, 3, 3), rise_value=3.6, footprint={(20, 31)}))[0],
                 'type': 'garage', 'roof': 'mono', 'walls': 3}

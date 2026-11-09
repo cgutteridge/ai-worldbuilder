@@ -353,9 +353,9 @@ def merge_sources(*groups: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 def mono_slope(item: Mapping[str, Any], cells: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], int, int] | None:
     """Slope of a mono-pitch roof: ``(downhill step, rows along it, rise in blocks)``, or ``None`` for flat.
 
-    The roof falls toward the door side (the door sits in the low wall), one half block per row
-    spread over the rows, so a 4-row garage rises a block. The high wall keeps the item's ``walls``;
-    the low wall drops by the rise but never below 2 (a door and its lintel).
+    The roof falls toward the door side (the door sits in the low wall); the rise (at most a block
+    for a garage) is spread over the rows in half-block steps. The high wall keeps the item's ``walls``;
+    the low wall drops by the rise but never below 2 (a door; the lintel is the roof layer above it).
     """
     if item.get('roof') != 'mono':
         return None
@@ -372,8 +372,8 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
     Walls stand on the perimeter from the column's own ground up to a shared top (ground of the
     highest column + walls), a roof layer covers the footprint above them. The door is two blocks
     in the perimeter on the facing side. The interior is left empty (no private interiors).
-    A flat roof is bottom slabs. A mono-pitch roof (``mono_slope``) falls toward the door by half
-    a block per row: bottom slab, then full block at the same level, then a slab one level up, and
+    A flat roof is bottom slabs. A mono-pitch roof (``mono_slope``) falls toward the door in
+    half-block steps spread over the rows: bottom slab, then full block at the same level, then a slab one level up, and
     so on, with the side walls following the roof. Roof slabs are bottom-half only, so none floats
     as a top slab over air.
 
@@ -393,7 +393,7 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
         if slope:
             step, rows, rise = slope
             low = {(1, 0): x1 - x, (-1, 0): x - x0, (0, 1): z1 - z, (0, -1): z - z0}[step]   # 0 = low (door) row
-            half_steps = int(round(low * 2 * rise / (rows - 1)))
+            half_steps = (low * 2 * rise + (rows - 1) // 2) // (rows - 1)
             level = base + walls - rise + 1 + half_steps // 2        # roof layer of this row
             block = (f'{ROOF_SLAB[kind]}[type=bottom]' if half_steps % 2 == 0 else ROOF_FULL[kind])
         else:
