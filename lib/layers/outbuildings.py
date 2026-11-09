@@ -17,7 +17,7 @@ colour alone:
 No default scatter: nothing here invents an outbuilding without one of those three.
 
 Massing is a squared rectangle from the evidence cells, walls 2 high (shed) or 3 (garage) under
-a one-block roof layer, planks or brick by kind, flat or mono-pitch roof, a door facing the house
+a one-block roof layer, planks or brick by kind, pitched (gable) roof, a door facing the house
 or route, the top clamped to the nDSM height. Ground height comes from lidar; the placer in
 ``decor_layer`` refuses (with an unplaced reason) a footprint on a route, clearance column,
 entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells, so a footprint
@@ -44,6 +44,7 @@ MAX_BLOB_COLUMNS = 120            # larger is a missed building, not a shed
 MIN_SHORT_SIDE = 2                # a 1-wide raised strip is a fence or wall line
 GREEN_SHARE_MAX = 0.8             # lawn + shade share of the blob's aerial colour; at or above = vegetation (0.5 left almost nothing: fun over perfect)
 GARAGE_MIN_COLUMNS = 14           # lidar blobs this large (about 3 x 5 m) read as a garage
+MAX_PITCH_ACROSS = 6              # wider footprints get a flat roof: a ridge would stand far above the lidar height
 MIN_FILL = 0.5                    # edge rows / columns thinner than this share are trimmed when squaring
 PLOT_MAJORITY = 0.5               # a footprint is "across a plot line" only when no plot holds this share of it
 LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs on its edge stay whole
@@ -51,7 +52,8 @@ LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs 
 DEFAULT_TOTAL = {'shed': 3, 'garage': 4}            # walls + one roof layer
 WALL_BLOCK = {'shed': 'spruce_planks', 'garage': 'bricks'}
 ROOF_SLAB = {'shed': 'spruce_slab', 'garage': 'stone_brick_slab'}
-ROOF_FULL = {'shed': 'spruce_planks', 'garage': 'stone_bricks'}      # the full-block half step of a mono-pitch roof
+ROOF_STAIR = {'shed': 'spruce_stairs', 'garage': 'stone_brick_stairs'}
+ROOF_FULL = {'shed': 'spruce_planks', 'garage': 'stone_bricks'}      # flat ridge of an odd-width gable
 DOOR_BLOCK = {'shed': 'spruce_door', 'garage': 'iron_door'}
 FACINGS = {(0, -1): 'north', (0, 1): 'south', (-1, 0): 'west', (1, 0): 'east'}
 
@@ -167,8 +169,8 @@ def massing(kind: str, cells: Sequence[tuple[int, int]], ndsm: int | None) -> di
     """Wall height, roof form and total height for a rectangle of ``cells``.
 
     ``walls + 1`` (the roof layer) is the default total for the kind, clamped to the nDSM height
-    when lidar gives one (never below one wall block). Garages with a short side of 3+ get a
-    mono-pitch roof, everything else is flat. The door needs two wall blocks.
+    when lidar gives one (never below one wall block). Sheds and garages 2+ across get a
+    pitched (gable) roof (``pitched_roof``); one under 2 across, or over ``MAX_PITCH_ACROSS``, is flat. The door needs two wall blocks.
 
     @returns: ``{'walls', 'total', 'roof', 'size': [dx, dz]}``
     """
@@ -178,7 +180,7 @@ def massing(kind: str, cells: Sequence[tuple[int, int]], ndsm: int | None) -> di
     if ndsm is not None:
         total = min(total, max(2, int(ndsm)))
     return {'walls': total - 1, 'total': total,
-            'roof': 'mono' if kind == 'garage' and min(dx, dz) >= 3 else 'flat', 'size': [dx, dz]}
+            'roof': 'pitched' if 2 <= min(dx, dz) <= MAX_PITCH_ACROSS else 'flat', 'size': [dx, dz]}
 
 
 def door_for(cells: Sequence[tuple[int, int]], targets: Iterable[tuple[int, int]], walls: int) -> dict[str, Any] | None:
@@ -350,54 +352,71 @@ def merge_sources(*groups: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def mono_slope(item: Mapping[str, Any], cells: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], int, int] | None:
-    """Slope of a mono-pitch roof: ``(downhill step, rows along it, rise in blocks)``, or ``None`` for flat.
+def pitched_roof(item: Mapping[str, Any], cells: Sequence[tuple[int, int]]) -> dict[str, Any]:
+    """Gable (pitched) roof geometry of a rectangle: ridge axis, cross-axis length, eave wall height.
 
-    The roof falls toward the door side (the door sits in the low wall); the rise (at most a block
-    for a garage) is spread over the rows in half-block steps. The high wall keeps the item's ``walls``;
-    the low wall drops by the rise but never below 2 (a door; the lintel is the roof layer above it).
+    The ridge runs along the long side; a square follows the door's axis (door in a gable end), else x.
+    A roof ``s`` columns across has stair rows rising a block per row from each eave to the ridge: an
+    odd ``s`` ends in a flat full-block ridge, an even ``s`` in back-to-back stairs. Its top stands
+    about ``s // 2`` blocks above the eave layer, so the eave wall drops by ``s // 2 - 1`` (never
+    below 2 blocks, which a door needs) to keep the ridge near the item's height; the lidar-clamped
+    ``walls`` are never exceeded, though a ridge on a 2-high wall stands a block or two above lidar.
+
+    @returns: ``{'axis': 'x'|'z' (ridge direction), 'across': s, 'eave': eave wall blocks}``
     """
-    if item.get('roof') != 'mono':
-        return None
-    step = {v: k for k, v in FACINGS.items()}[(item.get('door') or {}).get('facing', 'south')]
     xs, zs = [c[0] for c in cells], [c[1] for c in cells]
-    rows = (max(xs) - min(xs) + 1) if step[0] else (max(zs) - min(zs) + 1)
-    rise = min((rows - 1) // 2, int(item['walls']) - 2)
-    return (step, rows, rise) if rise >= 1 else None
+    dx, dz = max(xs) - min(xs) + 1, max(zs) - min(zs) + 1
+    if dx != dz:
+        axis = 'x' if dx > dz else 'z'
+    else:
+        axis = 'z' if (item.get('door') or {}).get('facing') in ('north', 'south') else 'x'
+    across = dz if axis == 'x' else dx
+    walls = int(item['walls'])
+    return {'axis': axis, 'across': across, 'eave': max(min(2, walls), walls - (across // 2 - 1))}
+
+
+def roof_row(j: int, across: int) -> tuple[int, str]:
+    """``(levels above the eave layer, 'stairs' | 'full')`` for column ``j`` of ``across`` columns."""
+    d = min(j, across - 1 - j)
+    if across % 2 == 1 and j == (across - 1) // 2:
+        return max(d - 1, 0), 'full'                    # flat ridge, flush with the stair backs beside it
+    return d, 'stairs'
 
 
 def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> dict[tuple[int, int, int], str]:
     """Blocks of one outbuilding, from its plan item and the ground Y of each of its columns.
 
-    Walls stand on the perimeter from the column's own ground up to a shared top (ground of the
-    highest column + walls), a roof layer covers the footprint above them. The door is two blocks
-    in the perimeter on the facing side. The interior is left empty (no private interiors).
-    A flat roof is bottom slabs. A mono-pitch roof (``mono_slope``) falls toward the door in
-    half-block steps spread over the rows: bottom slab, then full block at the same level, then a slab one level up, and
-    so on, with the side walls following the roof. Roof slabs are bottom-half only, so none floats
-    as a top slab over air.
+    Perimeter walls stand from each column's own ground up to the roof above it; the roof is a
+    gable (``pitched_roof``): stairs facing up each slope toward the ridge, a full-block ridge on an odd width, so
+    the gable-end walls step up into a triangle. The door is two blocks in the perimeter on the
+    facing side. The interior is left empty (no private interiors). A footprint too narrow to
+    pitch (under 2 across) gets a flat bottom-slab roof.
 
     @param item: ``outbuilding`` plan item with ``cells``, ``type``, ``walls``, ``roof``, ``door``
     @param ground: ``{(x, z): Y of the top ground block}`` for every cell of the item
     @returns: ``{(x, y, z): block}``
     """
     cells = [tuple(c) for c in item['cells']]
-    kind, walls = item['type'], int(item['walls'])
+    kind = item['type']
     xs, zs = [c[0] for c in cells], [c[1] for c in cells]
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
     base = max(ground[c] for c in cells)
-    slope = mono_slope(item, cells)
+    pitch = pitched_roof(item, cells)
     door = tuple(item['door']['cell']) if item.get('door') else None
     out: dict[tuple[int, int, int], str] = {}
     for x, z in cells:
-        if slope:
-            step, rows, rise = slope
-            low = {(1, 0): x1 - x, (-1, 0): x - x0, (0, 1): z1 - z, (0, -1): z - z0}[step]   # 0 = low (door) row
-            half_steps = (low * 2 * rise + (rows - 1) // 2) // (rows - 1)
-            level = base + walls - rise + 1 + half_steps // 2        # roof layer of this row
-            block = (f'{ROOF_SLAB[kind]}[type=bottom]' if half_steps % 2 == 0 else ROOF_FULL[kind])
+        if item.get('roof') == 'pitched' and pitch['across'] >= 2:
+            j = (z - z0) if pitch['axis'] == 'x' else (x - x0)
+            up, form = roof_row(j, pitch['across'])
+            level = base + pitch['eave'] + 1 + up
+            if form == 'full':
+                block = ROOF_FULL[kind]
+            else:
+                low = j < pitch['across'] / 2           # a stair's facing is its UPHILL side (tall back), toward the ridge
+                facing = ('south' if low else 'north') if pitch['axis'] == 'x' else ('east' if low else 'west')
+                block = f'{ROOF_STAIR[kind]}[facing={facing},half=bottom]'
         else:
-            level, block = base + walls + 1, f'{ROOF_SLAB[kind]}[type=bottom]'
+            level, block = base + int(item['walls']) + 1, f'{ROOF_SLAB[kind]}[type=bottom]'
         if x in (x0, x1) or z in (z0, z1):
             for y in range(ground[(x, z)] + 1, level):
                 out[(x, y, z)] = WALL_BLOCK[kind]

@@ -307,9 +307,8 @@ class TestReviewFixes(unittest.TestCase):
             placed, stats = dl.plan_cell((0, 0), plan, world)
         self.assertEqual(stats['outbuildings'], 1)
         self.assertIn('outbuilding-lidar-30-30', plan.outside_footprint_ok)
-        slabs = {p for p, b in plan.cells.items() if 'slab' in b}
-        self.assertEqual(len(slabs), 9)
-        self.assertEqual(plan.keep_slab_cells, slabs)
+        self.assertEqual(sum('stairs' in b for b in plan.cells.values()), 6)         # a gable: two stair rows
+        self.assertEqual(plan.keep_slab_cells, set())
         self.assertFalse(any(p[:3:2] == (31, 31) and 'bench' in b for p, b in plan.cells.items()))
         self.assertEqual([u['plan_id'] for u in stats['unplaced_items']], ['bench-31-31'])
 
@@ -322,12 +321,13 @@ class TestMassing(unittest.TestCase):
         low = ob.massing('shed', cells, 2)
         self.assertEqual((low['walls'], low['total']), (1, 2))
 
-    def test_garage_is_taller_with_a_mono_pitch(self):
+    def test_garage_is_taller_and_pitched(self):
         cells = sorted(rect(0, 0, 5, 4))
         m = ob.massing('garage', cells, 5)
-        self.assertEqual((m['walls'], m['total'], m['roof'], m['size']), (3, 4, 'mono', [5, 4]))
+        self.assertEqual((m['walls'], m['total'], m['roof'], m['size']), (3, 4, 'pitched', [5, 4]))
         self.assertEqual(ob.massing('garage', cells, 3)['walls'], 2)         # clamped to lidar
-        self.assertEqual(ob.massing('garage', sorted(rect(0, 0, 5, 2)), 5)['roof'], 'flat')
+        self.assertEqual(ob.massing('shed', sorted(rect(0, 0, 3, 2)), None)['roof'], 'pitched')
+        self.assertEqual(ob.massing('shed', sorted(rect(0, 0, 3, 1)), None)['roof'], 'flat')
 
     def test_blob_size_and_height_come_from_the_evidence(self):
         plan = blob_plan(rect(30, 30, 5, 4), rise_value=3.2)      # 20 columns, 3.2 m: a garage, ndsm 4
@@ -351,9 +351,9 @@ class TestMassing(unittest.TestCase):
         ys = sorted({p[1] for p in found})
         self.assertEqual((ys[0], ys[-1]), (GROUND + 1, GROUND + item['height']))   # top clamped to nDSM
         roof = {p: b for p, b in found.items() if p[1] == GROUND + item['height']}
-        self.assertEqual(len(roof), 9)
-        self.assertTrue(all(b.endswith('[type=bottom]') for b in roof.values()))   # never a top slab over air
-        walls = {p for p, b in found.items() if b == 'spruce_planks'}
+        self.assertEqual(len(roof), 9)                                              # 3 across: stairs, ridge, stairs
+        self.assertEqual(sorted({b.split('[')[0] for b in roof.values()}), ['spruce_planks', 'spruce_stairs'])
+        walls = {p for p, b in found.items() if b == 'spruce_planks' and p[1] < GROUND + item['height']}
         self.assertEqual({(x, z) for x, _y, z in walls}, rect(30, 30, 3, 3) - {(31, 31)})   # hollow
         self.assertEqual(report[0]['blocks'], len(found))
 
@@ -365,54 +365,89 @@ class TestMassing(unittest.TestCase):
         found, _r, unplaced = place([item], lidar=hm)
         self.assertEqual(unplaced, [])
         self.assertEqual(found[(30, GROUND, 30)], 'bricks')        # wall runs down to the low ground
-        self.assertTrue(all(y <= GROUND + 4 for _x, y, _z in found))
+        self.assertTrue(all(y <= GROUND + 6 for _x, y, _z in found))
 
-    def test_mono_pitch_roof_really_slopes_toward_the_door(self):
-        """A garage roof falls half a block per row to the door side: no repeated same-height stair row."""
-        import types
-        import site_kit
-        cells = rect(30, 30, 5, 4)
-        item = only(blob_plan(cells, rise_value=3.6, footprint={(20, 31)}))[0]      # house west: door and low side west
-        self.assertEqual((item['roof'], item['door']['facing'], item['walls']), ('mono', 'west', 3))
-        found, _r, unplaced = place([item])
-        self.assertEqual(unplaced, [])
+    def garage(self, w, d, door, facing, walls=3, kind='garage'):
+        cells = [[x, z] for x in range(30, 30 + w) for z in range(30, 30 + d)]
+        return {'type': kind, 'cells': cells, 'walls': walls, 'roof': 'pitched',
+                'door': {'cell': list(door), 'facing': facing}}
+
+    @staticmethod
+    def tops(found):
         top = {}
         for (x, y, z), b in found.items():
-            if b.endswith('[type=bottom]') or b == 'stone_bricks':
+            if b.split('[')[0] in ('stone_brick_stairs', 'stone_bricks', 'spruce_stairs', 'spruce_planks') \
+                    and (x, z) not in top or top.get((x, z), (-1,))[0] < y:
                 top[(x, z)] = (y, b)
-        for z in range(30, 34):
-            row = [top[(x, z)] for x in range(30, 35)]                 # west (low) to east (high)
-            self.assertEqual(row[0], (GROUND + 3, 'stone_brick_slab[type=bottom]'))        # low wall 2 + roof
-            self.assertEqual(row[-1], (GROUND + 4, 'stone_brick_slab[type=bottom]'))       # high wall 3 + roof
-            heights = [y * 2 + (1 if b == 'stone_bricks' else 0) for y, b in row]           # half-block heights
-            self.assertEqual(heights, sorted(heights))                                      # never falls back
-            self.assertEqual(len(set(heights)), 3)                                          # and does rise
-        walls_low = [y for (x, y, z), b in found.items() if (x, z) == (30, 30) and b == 'bricks']
-        self.assertEqual(max(walls_low), GROUND + 2)
-        plan = types.SimpleNamespace(cells={p: site_kit.full(b) for p, b in found.items()})
-        self.assertEqual(site_kit.door_frame_issues(plan, lambda x, y, z: None), [])
+        return top
 
-    def test_mono_roof_falls_toward_the_door_on_every_side(self):
-        cells = [(x, z) for x in range(30, 35) for z in range(30, 35)]
-        ground = {c: GROUND for c in cells}
-        doors = {'west': (30, 32), 'east': (34, 32), 'north': (32, 30), 'south': (32, 34)}
-        for facing, door in doors.items():
-            item = {'type': 'garage', 'cells': [list(c) for c in cells], 'walls': 3, 'roof': 'mono',
-                    'door': {'cell': list(door), 'facing': facing}}
-            top = {}
-            for (x, y, z), b in ob.voxels(item, ground).items():
-                if b.endswith('[type=bottom]') or b == 'stone_bricks':
-                    top[(x, z)] = y
-            self.assertEqual(top[door], GROUND + 3, facing)                      # low row at the door
-            opposite = (64 - door[0], 64 - door[1])                                # mirror through the centre (32, 32)
-            self.assertEqual(top[opposite], GROUND + 4, facing)                  # high row opposite
+    def test_pitched_roof_rises_from_both_eaves_to_a_ridge(self):
+        """6 x 4: the ridge runs along x; across the 4 columns the stairs rise a block per row and meet back to back."""
+        item = self.garage(6, 4, (30, 32), 'west')
+        self.assertEqual(ob.pitched_roof(item, [tuple(c) for c in item['cells']]),
+                         {'axis': 'x', 'across': 4, 'eave': 2})
+        found = ob.voxels(item, {tuple(c): GROUND for c in item['cells']})
+        top = self.tops(found)
+        for x in range(30, 36):
+            levels = [top[(x, z)][0] for z in range(30, 34)]
+            self.assertEqual(levels, [GROUND + 3, GROUND + 4, GROUND + 4, GROUND + 3], x)      # eave, up, up, eave
+            self.assertEqual([top[(x, z)][1].split('[')[1] for z in range(30, 34)],
+                             ['facing=south,half=bottom]', 'facing=south,half=bottom]',     # uphill = toward the ridge
+                              'facing=north,half=bottom]', 'facing=north,half=bottom]'])
+        self.assertEqual(found[(35, GROUND + 3, 31)], 'bricks')           # gable end steps up into the roof
+        self.assertNotIn((35, GROUND + 4, 31), [p for p in found if found[p] == 'bricks'])
 
-    def test_mono_roof_needs_a_low_wall_that_still_takes_a_door(self):
-        item = {**only(blob_plan(rect(30, 30, 3, 3), rise_value=3.6, footprint={(20, 31)}))[0],
-                'type': 'garage', 'roof': 'mono', 'walls': 3}
-        self.assertEqual(ob.mono_slope(item, [tuple(c) for c in item['cells']])[1:], (3, 1))   # 3 rows, walls 3: rise 1
-        item['walls'] = 2
-        self.assertIsNone(ob.mono_slope(item, [tuple(c) for c in item['cells']]))      # low wall would drop under 2
+    def test_odd_width_gets_a_flat_full_block_ridge(self):
+        item = self.garage(6, 5, (30, 32), 'west')
+        top = self.tops(ob.voxels(item, {tuple(c): GROUND for c in item['cells']}))
+        levels = [top[(33, z)] for z in range(30, 35)]
+        self.assertEqual([y for y, _b in levels], [GROUND + 3, GROUND + 4, GROUND + 4, GROUND + 4, GROUND + 3])
+        self.assertEqual(levels[2][1], 'stone_bricks')                      # ridge: full block flush with the stair backs
+        self.assertTrue(all('stairs' in levels[i][1] for i in (0, 1, 3, 4)))
+
+    def test_ridge_axis_follows_the_long_side_or_the_door_on_a_square(self):
+        tall = self.garage(4, 6, (30, 32), 'west')
+        self.assertEqual(ob.pitched_roof(tall, [tuple(c) for c in tall['cells']])['axis'], 'z')
+        top = self.tops(ob.voxels(tall, {tuple(c): GROUND for c in tall['cells']}))
+        self.assertEqual([top[(x, 33)][0] for x in range(30, 34)], [GROUND + 3, GROUND + 4, GROUND + 4, GROUND + 3])
+        for facing, axis in (('west', 'x'), ('east', 'x'), ('north', 'z'), ('south', 'z')):
+            sq = self.garage(4, 4, (31, 31), facing)
+            self.assertEqual(ob.pitched_roof(sq, [tuple(c) for c in sq['cells']])['axis'], axis, facing)
+
+    def test_stairs_form_a_ridge_the_roof_lint_can_see(self):
+        """Stairs face uphill: if they faced downhill the ridge would be a valley (roof_lint finds no ridge)."""
+        import roof_lint
+        import site_kit
+        item = self.garage(6, 4, (30, 32), 'west')
+        found = ob.voxels(item, {tuple(c): GROUND for c in item['cells']})
+        top = roof_lint._tops({p: site_kit.full(b) for p, b in found.items()})
+        self.assertEqual(sorted(roof_lint._ridges(top, 'z')), list(range(30, 36)))     # a ridge on every row along x
+
+    def test_wide_footprints_stay_flat(self):
+        self.assertEqual(ob.massing('garage', sorted(rect(0, 0, 8, 6)), 5)['roof'], 'pitched')
+        self.assertEqual(ob.massing('garage', sorted(rect(0, 0, 8, 7)), 5)['roof'], 'flat')
+
+    def test_eave_wall_drops_to_hold_the_ridge_but_keeps_the_door(self):
+        wide = self.garage(8, 6, (30, 32), 'west', walls=3)                  # 6 across: ridge 3 above the eave layer
+        self.assertEqual(ob.pitched_roof(wide, [tuple(c) for c in wide['cells']])['eave'], 2)
+        shed = self.garage(3, 3, (30, 31), 'west', walls=2, kind='shed')
+        self.assertEqual(ob.pitched_roof(shed, [tuple(c) for c in shed['cells']])['eave'], 2)
+        low = self.garage(3, 3, (30, 31), 'west', walls=1, kind='shed')
+        self.assertEqual(ob.pitched_roof(low, [tuple(c) for c in low['cells']])['eave'], 1)
+
+    def test_pitched_roofs_are_framed_and_pass_the_roof_guards(self):
+        import types
+        import site_kit
+        for w, d, door, facing, walls, kind in (
+                (6, 4, (30, 32), 'west', 3, 'garage'),      # door in a gable end
+                (6, 4, (32, 30), 'north', 3, 'garage'),     # door under the eave
+                (3, 3, (30, 31), 'west', 2, 'shed'), (4, 3, (32, 33), 'south', 2, 'shed'),
+                (6, 5, (35, 32), 'east', 3, 'garage')):
+            item = self.garage(w, d, door, facing, walls, kind)
+            found = ob.voxels(item, {tuple(c): GROUND for c in item['cells']})
+            plan = types.SimpleNamespace(name='t', cells={p: site_kit.full(b) for p, b in found.items()})
+            self.assertEqual(site_kit.door_frame_issues(plan, lambda x, y, z: None), [], (w, d, facing))
+            site_kit.guard_roof_jogs(plan)                                          # raises SystemExit on a zig-zag
 
     def test_door_faces_the_house_and_is_two_blocks_in_the_wall(self):
         cells = rect(30, 30, 3, 3)
