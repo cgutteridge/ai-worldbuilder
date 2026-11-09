@@ -228,13 +228,15 @@ class Build:
             mid = sum(c[1] for c in cand) / len(cand)
             c0 = min(cand, key=lambda c: abs(c[1] - mid))
         h.door = c0
-        for y, p in ((b + 1, 'lower'), (b + 2, 'upper')):
-            self.set(c0[0], y, c0[1], f"spruce_door[facing={ {'S':'south','N':'north','W':'west','E':'east'}[f] },half={p},hinge=left,open=false]")
         st = (c0[0] + fx, c0[1] + fz)
-        self.stoop_set(st[0], b, st[1], 'smooth_stone')
-        for y in range(b + 1, b + 4):
+        bd = self.door_level(st, b)
+        for y, p in ((bd + 1, 'lower'), (bd + 2, 'upper')):
+            self.set(c0[0], y, c0[1], f"spruce_door[facing={ {'S':'south','N':'north','W':'west','E':'east'}[f] },half={p},hinge=left,open=false]")
+        self.stoop_set(st[0], bd, st[1], 'smooth_stone')
+        for y in range(bd + 1, bd + 4):
             self.stoop_set(st[0], y, st[1], 'air')
-        self.step_out(st, f, b)
+        self.step_out(st, f, bd)
+        self.raise_inner(c0, f, b, bd)
         # stair inward from the door, ascending away from the front
         ix, iz = -fx, -fz
         cells = [(c0[0] + ix * d, c0[1] + iz * d) for d in (2, 3, 4)]
@@ -259,15 +261,35 @@ class Build:
                 c1 = min(cc, key=lambda c: abs(c[1] - m))
             h.rear = c1
             rf = {'N': 'north', 'E': 'east', 'S': 'south', 'W': 'west'}[r]
-            for y, p in ((b + 1, 'lower'), (b + 2, 'upper')):
-                self.set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={p},hinge=right,open=false]')
             sx, sz = c1[0] + DIRS[r][0], c1[1] + DIRS[r][1]
-            self.stoop_set(sx, b, sz, 'smooth_stone')
-            for y in range(b + 1, b + 4):
+            bd = self.door_level((sx, sz), b)
+            for y, p in ((bd + 1, 'lower'), (bd + 2, 'upper')):
+                self.set(c1[0], y, c1[1], f'spruce_door[facing={rf},half={p},hinge=right,open=false]')
+            self.stoop_set(sx, bd, sz, 'smooth_stone')
+            for y in range(bd + 1, bd + 4):
                 self.stoop_set(sx, y, sz, 'air')
-            self.step_out((sx, sz), r, b)
+            self.step_out((sx, sz), r, bd)
+            self.raise_inner(c1, r, b, bd)
         else:
             h.rear = None
+
+    def door_level(self, st, b):
+        """Floor level the door sits at: one above the house floor when the ground outside it stands there (#243).
+
+        Raising the door (not lowering the street) keeps the lawn and pavement as they are; the
+        step up inside is made by raise_inner.
+        """
+        return b + 1 if self.top_solid(st[0], st[1], b) == b + 1 else b
+
+    def raise_inner(self, door, d, b, bd):
+        """Stair just inside a raised door so the one-block step from the floor is walkable, with headroom."""
+        if bd <= b:
+            return
+        dx, dz = DIRS[d]
+        x, z = door[0] - dx, door[1] - dz
+        self.set(x, b + 1, z, stair('spruce', {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}[d]))
+        for y in range(b + 2, b + 4):
+            self.set(x, y, z, 'air')
 
     def top_solid(self, x, z, near):
         # natural ground only (ignores roof fringe slabs and earlier steps of this build)
