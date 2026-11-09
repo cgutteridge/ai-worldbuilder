@@ -128,15 +128,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "In #243 I measured doors with throwaway scripts in the scratchpad (parse the 'door (x,z)' lines of builder logs, check the lower and upper half, a solid block under the door and two air cells in front). Make it a committed tool: read doors from landed feature plans (garden_sources.landed_approaches or entrance_approach.entrances_from_blocks) rather than logs, report missing, half-height, below-street and blocked doors per plan, exit non-zero on any. Tests on a synthetic world. Then run it over the plans I have not opened (houses_ripstone_gardens_*, houses_sherborne_road, houses_blenheim_gardens_*, houses_brickfield_road_*, houses_upper_shaftesbury_avenue_*) and file rebuild tasks for any that fail; rebuild with the builder the spec names (see its notes). Spun out of #243 (2026-11-09)."
-    },
-    {
-      "id": 250,
-      "title": "Add the aerial mosaics downloaded for #243 to the reference manifest",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Two aerial mosaics were downloaded with owner authorisation and are on disk but not in worlds/southampton-build/reference/manifest.jsonl: reference/aerial/cell-54-43-z19/mosaic-z19-5x5-centre-260126-175674.png (2.9 MB) and reference/aerial/cell-53-44-z19/mosaic-z19-3x3-centre-260122-175671.png (768x768). Register both with source (cco-z19), tile coordinates, date and size via the manifest tooling so coverage checks and provenance are recorded. Spun out of #243 (2026-11-09)."
     }
   ]
 }
