@@ -6,9 +6,14 @@ corrected the first draft: several issues already have merged fixes). Records ow
 should give the *vibe* of an area in Minecraft, not a 1:1 duplicate; classes now, refined with experience.
 Related rules: `rules/radial-good-enough.md`, `rules/frontage-and-evidence.md`, `rules/evidence-order.md`.
 
-Scope caveat: "anywhere in the UK" is the goal, but today's height evidence is England only (the lidar
-provider is DEFRA England, `config/system-providers.json`). Whether Scotland, Wales and Northern Ireland
-need another height source is unverified; the first trial outside England should check.
+Provider assumption (owner, 2026-11-10): other people using the toolkit install their own providers
+(lidar, aerial, vector map, street imagery). The toolkit therefore asks for a reference *type*, never a
+vendor (`docs/provider-name-audit.md`, #28), and nothing in this plan may assume a particular lidar vendor or country.
+Today the type seam covers the lidar `world` and `tiles` modules (`lib/sources/lidar_provider.py`, catalogue
+rows with `types: ["lidar"]`), but `lidar_ghost` and `lidar_query`, imported by ground, cell preparation and
+the registry, are shims hard-wired to the one system lidar package, and a locally installed lidar provider never beats the system row; task #262 closes both gaps. Whether a
+non-lidar fallback (coarser terrain data) is needed where no lidar exists is unverified; a trial in such an
+area should say what it used.
 
 ## 1. Principles
 
@@ -29,7 +34,7 @@ need another height source is unverified; the first trial outside England should
 | Tier | What | How it is built | Token cost |
 | --- | --- | --- | --- |
 | A. Landmark | A few named buildings per district (owner nominates) | Designed spec (`feature_build.py`), refined by snags | High, rare |
-| B. Typology | Houses, terraces, shops, sheds, warehouses | Rules from footprint, lidar height, OSM tags (`building`, `building:levels`, `roof:shape`) and the district profile; builds on `house_build.py` and `feature_build.py` with generated minimal specs, not a third builder | Low, per building |
+| B. Typology | Houses, terraces, shops, sheds, warehouses | Rules from footprint, lidar height, vector-map tags (`building`, `building:levels`, `roof:shape`) and the district profile; builds on `house_build.py` and `feature_build.py` with generated minimal specs, not a third builder | Low, per building |
 | C. Massing | Dense background, far areas | Block-plus-simple-roof from footprint and lidar | Lowest |
 | Linear | Roads, paths, rail, water edges | Corridor builders (section 5 for rail) | Low |
 | Cover | Land use: lawns, fields, woodland, parks, yards | Class table (#253) read by ground, trees and decor | Low |
@@ -89,7 +94,7 @@ Nothing here is proposed for wontfix. The earlier suggestion to wontfix the skyl
 
 #255 district vibe profile; #256 railway trial; #257 typology buildings trial; #258 industrial and commercial
 trial; #259 park and rural trial; #260 street furniture inference; #261 house interior air under older
-ground paving. The roof recipe draft was withdrawn: the code already follows the game's stair rule.
+ground paving; #262 provider-neutral lidar ghost and query. The roof recipe draft was withdrawn: the code already follows the game's stair rule.
 
 ## 5. Railways: real rails for long runs
 
