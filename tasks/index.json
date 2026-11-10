@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 253,
+  "nextTaskId": 255,
   "tasks": [
     {
       "id": 229,
@@ -131,12 +131,35 @@
     },
     {
       "id": 252,
-      "title": "Garden planting: front-yard bushes, flowers and garden ponds from aerial evidence",
+      "title": "Planting and garden water by land use (front gardens first)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        253
+      ],
+      "notes": "Owner decision 2026-11-09 (from the front-decor task #244): gardens should have bushes, ideally flowers, and ponds. Check each before building: (1) bushes belong to trees (trees_layer.py makes bush_voxels for crowns below MIN_CROWN_R); measure whether front-yard shrubs seen on the aerial reach the canopy mask in 53,-43 or are lost. (2) flowers belong to ground foliage (foliage.py flower list); measure whether guessed lawn in private frontage gets any, and propose aerial-led flower beds if not. (3) ponds: only mapped natural=water polygons become water_body features (#163); garden ponds from the aerial have no source, so propose one (aerial water-colour patch inside a plot, labelled inference) or confirm none are visible. Keep the door route and frontage opening clear. Verify with per-plot counts before and after and an in-world look. Owner direction 2026-11-10: generic UK-wide. Deliver the three measures above as rules keyed by the #253 class table (gardens first; parks, verges and fields use the same rule table), with no residential-only code paths; park trees stay with the trees layer. Files: lib/layers/trees_layer.py, lib/layers/foliage.py, the ground layer and the #253 table. Check: per-plot before/after counts and a synthetic test for a non-garden class. Ponds may be split into their own follow-up if this grows."
+    },
+    {
+      "id": 253,
+      "title": "Land-use class table and classifier for frontage, boundaries and access (any UK place, residential first)",
       "status": "todo",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Owner decision 2026-11-09 (from the front-decor task #244): gardens should have bushes, ideally flowers, and ponds. Check each before building: (1) bushes belong to trees (trees_layer.py makes bush_voxels for crowns below MIN_CROWN_R); measure whether front-yard shrubs seen on the aerial reach the canopy mask in 53,-43 or are lost. (2) flowers belong to ground foliage (foliage.py flower list); measure whether guessed lawn in private frontage gets any, and propose aerial-led flower beds if not. (3) ponds: only mapped natural=water polygons become water_body features (#163); garden ponds from the aerial have no source, so propose one (aerial water-colour patch inside a plot, labelled inference) or confirm none are visible. Keep the door route and frontage opening clear. Verify with per-plot counts before and after and an in-world look."
+      "notes": "Owner direction 2026-11-10: the tool must handle anywhere in the UK, generic over perfect. Today the shared frontage description (garden_sources.residential_frontage, #240) exists only for identified residential properties; industrial, commercial, park and rural parcels have no equivalent. Premise (read): lib/journal/coverage.py (UMBRELLA, OPEN_KEYS) already reads landuse, leisure and amenity tags and garden_sources has NON_RESIDENTIAL_KEYS. Unverified: whether osm_cell_extract delivers landuse polygons per cell (it reads leisure only). Deliver only the classifier and table, no consumers: (1) one land-use class per parcel or building from the OSM landuse, leisure, amenity and building tags already read (no new provider); classes residential, retail/commercial, industrial, farmland/rural, park/leisure, civic/campus, car park, other/unknown; a building inside two landuses takes the smallest polygon. (2) One small extensible data table of per-class defaults: boundary kind and height, private-surface default, entrance-opening rule, whether inference is allowed. Rural and other/unknown are 'no inference'. The class never paints surfaces (#158 keeps landuse unread by ground paint). Residential is the first row and expresses today's behaviour. Files: new classifier module, lib/journal/coverage.py, lib/sources/osm_cell_extract.py, rules/frontage-and-evidence.md. Check: a unit test per class plus unknown on disposable synthetic inputs, via python3 scripts/run_tests.py --only <stem>; no world data, no live apply. Wiring is #254."
+    },
+    {
+      "id": 254,
+      "title": "Wire frontage, ground and decor to the land-use class defaults",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        253,
+        240
+      ],
+      "notes": "Owner direction 2026-11-10: generic UK-wide. Consumes the #253 class table. Deliver: garden_sources, ground_layer, decor_plan and decor_layer read the class defaults where a property has no explicit evidence; residential behaviour unchanged and expressed as the residential row, not a second engine. Evidence ladder unchanged: observed, then street or area evidence, then labelled inference; an unknown class never invents fences; explicit open or none wins. Outbuildings: lib/layers/outbuildings.py is not gated to house plots in code (verified by independent review); add a synthetic non-house-strip test showing it still places, and report the house-centric limits that remain (door targets; Voronoi plots exist only around houses). Blocked by #240 because both rewrite the same frontage structure; #244 must not add residential-only boundary rules that this would replace. Files: lib/sources/garden_sources.py, lib/layers/ground_layer.py, decor_plan.py, decor_layer.py and their tests, plus an outbuildings test, rules/frontage-and-evidence.md. Check: synthetic strips per class plus unknown; residential regression in the existing tests; no world data; no live apply. Separate world review: rebuild one non-residential cell and judge coherent realism."
     }
   ]
 }
