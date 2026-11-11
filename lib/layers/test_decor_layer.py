@@ -93,6 +93,19 @@ class TestMayJoinAtNear1(unittest.TestCase):
             owned=set(), masked=set(), world=self.world,
         ))
 
+    def test_reserved_entrance_survives_final_join(self):
+        w = mock.Mock()
+        w.block = lambda x, y, z: 'minecraft:stone' if y == 64 else 'minecraft:air'
+        found = {(10, 65, 20): 'spruce_fence', (12, 65, 20): 'spruce_fence'}
+        def allowed(pos, mat, keep_clear):
+            return dl.may_join_at(pos, mat, cell=(0, 0), near1=set(), allow_near1_mats=set(),
+                                  owned=set(), masked=set(), world=w, keep_clear=keep_clear)
+        baseline = dl.join_pieces(found, lambda p: w.block(*p), lambda p, m: allowed(p, m, set()))
+        self.assertIn((11, 65, 20), baseline)
+        reserved = dl.join_pieces(found, lambda p: w.block(*p),
+                                  lambda p, m: allowed(p, m, {(11, 20)}))
+        self.assertNotIn((11, 65, 20), reserved)
+
     def test_join_pieces_respects_near1_ban(self):
         """Two wall stubs separated by a near1 gap must not be bridged."""
         live = {(0, 0, 0): 'minecraft:grass_block', (1, 0, 0): 'minecraft:grass_block',
@@ -535,3 +548,20 @@ class TestReporting(unittest.TestCase):
         self.assertEqual(unplaced, [])
         self.assertEqual(report[0]['placed_positions'], [[10, 66, 20]])
         self.assertEqual(report[0]['excluded_positions'], [{'position': [10, 65, 20], 'reason': 'owned block'}])
+
+
+class GardenPlacementProvenanceTest(unittest.TestCase):
+    def test_placed_report_retains_scope_reason_and_evidence(self):
+        item = {'id': 'front-7', 'role': 'barrier', 'kind': 'hedge', 'height': 2,
+                'cells': [[10, 20]], 'scope': {'street': 'Test Road', 'property': '7', 'layer': 'street'},
+                'reason': 'same-street convention',
+                'provenance': {'source': 'inference', 'confidence': 'medium',
+                               'evidence_ids': ['street-photo'], 'unresolved_reason': ''}}
+        world = mock.Mock()
+        world.block.side_effect = lambda x, y, z: 'minecraft:stone' if y <= 64 else 'minecraft:air'
+        with mock.patch('surface_probe.surface_y', return_value=(64, 'stone')):
+            _, rows, _ = dl.place_barriers_from_plan((0, 0), [item], world, way=set(),
+                                                    near1=set(), owned=set(), masked=set())
+        self.assertEqual(len(rows), 1)
+        for key in ('provenance', 'scope', 'reason'):
+            self.assertEqual(rows[0][key], item[key])

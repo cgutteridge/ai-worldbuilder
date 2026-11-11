@@ -15,6 +15,7 @@ cell is written, including air (so excavation is explicit). apply():
 Guard and readback reports land in verification/site/<name>-*.json.
 """
 import json, math, time
+from stage_timing import timed_stage
 from pathlib import Path
 
 import script_env  # noqa: E402
@@ -812,43 +813,46 @@ class McpWriter:
         why = f'Applying {label} ({pass_})'
         # fills into unloaded chunks silently do nothing: if the player is far from the build,
         # hop them (spectator) over it while filling, then put them back exactly
-        restore = _bring_player(
-            m, lo, hi,
-            why=f'{why}: moving you over the build so chunks load; I will put you back.',
-        )
+        with timed_stage('player hop'):
+            restore = _bring_player(
+                m, lo, hi,
+                why=f'{why}: moving you over the build so chunks load; I will put you back.',
+            )
         if restore is None:
             from mc_player import tell_player
             tell_player(why, m=m)
         try:
-            boxes = plan.boxes()
-            for i in range(0, len(boxes), 8000):
-                chunk = boxes[i:i + 8000]
-                res = m.text('block_fill_batch', {'dimension': D, 'fills': [
-                    {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
-                self.fill_results.append(res)
-                print('fill:', res.replace('\n', '; ')[:300])
-            # block_fill leaves bottom-half slab cells as air: any bottom-half slab that survived the
-            # apply rewrite (pitched-roof steps, #207) is placed one by one
-            for pos, st in sorted(plan.cells.items()):
-                if is_bottom_half_slab(st):
-                    res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
-                                                     'block': _block_arg(st)})
-                    self._check_slab(pos, res)
-            signs = writes.signs or (plan.signs if plan is payload else ())
-            entities = writes.entities or (plan.entities if plan is payload else ())
-            for pos, lines, col, glow in signs:
-                nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
-                       f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
-                       ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
-                m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
-            for kind, pos, snbt in entities:
-                args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
-                if snbt:
-                    args['nbt'] = snbt
-                self.entities.append(m.text('entity_summon', args))
+            with timed_stage('fills, slabs, signs and entities'):
+                boxes = plan.boxes()
+                for i in range(0, len(boxes), 8000):
+                    chunk = boxes[i:i + 8000]
+                    res = m.text('block_fill_batch', {'dimension': D, 'fills': [
+                        {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
+                    self.fill_results.append(res)
+                    print('fill:', res.replace('\n', '; ')[:300])
+                # block_fill leaves bottom-half slab cells as air: any bottom-half slab that survived the
+                # apply rewrite (pitched-roof steps, #207) is placed one by one
+                for pos, st in sorted(plan.cells.items()):
+                    if is_bottom_half_slab(st):
+                        res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
+                                                         'block': _block_arg(st)})
+                        self._check_slab(pos, res)
+                signs = writes.signs or (plan.signs if plan is payload else ())
+                entities = writes.entities or (plan.entities if plan is payload else ())
+                for pos, lines, col, glow in signs:
+                    nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
+                           f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
+                           ','.join(json.dumps(t) for t in lines) + f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}}}}')
+                    m.call('block_entity_set_nbt', {'dimension': D, 'position': xyz(pos), 'nbt': nbt})
+                for kind, pos, snbt in entities:
+                    args = {'dimension': D, 'entity_type': kind, 'position': xyz(pos)}
+                    if snbt:
+                        args['nbt'] = snbt
+                    self.entities.append(m.text('entity_summon', args))
         finally:
             if restore:
-                restore()
+                with timed_stage('player restore'):
+                    restore()
 
 
 def live_session(*, ghosts='default', ring=None, root=None):
@@ -1009,26 +1013,28 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
     _ensure_world_config()
     pass_ = stage_pass(stage)
+    timings = {}
     input_cells = dict(plan.cells)
     if not dry:
-        ensure_region_matches_open_world()
-        # Fail before live prefetch, lint scans, backup or begin. The live registry
-        # repeats this under the lock immediately before it stages the build.
-        import cellmath
-        from readiness_evidence import enforce_live
-        readiness_view = cell_registry.view_registry()
-        touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
-        if cell is not None:
-            touched.add(tuple(cell))
-        previous = next((e for e in reversed(readiness_view.entries(plan=plan.name))
-                         if e.kind == 'build' and not e.undone), None)
-        if pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
-            touched.update(previous.cells)
-        try:
-            enforce_live(readiness_view, Build(plan.name, pass_, plan.cells, cell=cell,
-                                               payload=plan, meta=meta, modifies=tuple(modifies)), touched)
-        except CellJournalError as exc:
-            raise _journal_refusal(plan.name, exc) from exc
+        with timed_stage('identity and readiness', timings):
+            ensure_region_matches_open_world()
+            # Fail before live prefetch, lint scans, backup or begin. The live registry
+            # repeats this under the lock immediately before it stages the build.
+            import cellmath
+            from readiness_evidence import enforce_live
+            readiness_view = cell_registry.view_registry()
+            touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
+            if cell is not None:
+                touched.add(tuple(cell))
+            previous = next((e for e in reversed(readiness_view.entries(plan=plan.name))
+                             if e.kind == 'build' and not e.undone), None)
+            if pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
+                touched.update(previous.cells)
+            try:
+                enforce_live(readiness_view, Build(plan.name, pass_, plan.cells, cell=cell,
+                                                   payload=plan, meta=meta, modifies=tuple(modifies)), touched)
+            except CellJournalError as exc:
+                raise _journal_refusal(plan.name, exc) from exc
     OUT.mkdir(parents=True, exist_ok=True)
     empty = not plan.cells
     # Empty trees/decor plans need an explicit cell (journalled "nothing to place", #127).
@@ -1055,7 +1061,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
                         for dy in (0, 1):
                             warm.add((x + dx, y + dy, z + dz))
                     warm.add((x, y + 2, z))
-            w.prefetch(warm)
+            with timed_stage('surface warm-up', timings):
+                w.prefetch(warm)
     # lint: posts (fences, walls, bars) over half-height blocks float by half a block
     floats = []
     for (x, y, z), st in plan.cells.items():
@@ -1135,19 +1142,22 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if dry:
         return
     import site_lock
-    site_lock.check()                       # single-builder rule: refuse without the world lock
+    with timed_stage('site_lock.check', timings):
+        site_lock.check()                       # single-builder rule: refuse without the world lock
     m = Paced()
     blocks = live_blocks()
-    registry = cell_registry.open_registry(blocks=blocks)
-    if empty:
-        structure = None
-    elif not registry.entries(plan=plan.name):
-        structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi)
-        print('backup:', res)
-    else:
-        # the first-time backup is the original state; recovery needs the state before THIS apply
-        structure, _res = _structure_backup(
-            m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
+    with timed_stage('open_registry', timings):
+        registry = cell_registry.open_registry(blocks=blocks)
+    with timed_stage('structure backup', timings):
+        if empty:
+            structure = None
+        elif not registry.entries(plan=plan.name):
+            structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi)
+            print('backup:', res)
+        else:
+            # the first-time backup is the original state; recovery needs the state before THIS apply
+            structure, _res = _structure_backup(
+                m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
     cell = tuple(cell) if cell else primary_cell(plan.cells)
     record = {**(meta or {}), 'structure': structure}
     if pass_ == 'feature' and 'builder' not in record:
@@ -1172,7 +1182,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     build = Build(plan.name, pass_, dict(plan.cells), modifies=tuple(sorted(set(modifies))), strict=bool(strict),
                   mask=mask_ref, cell=cell, payload=plan, meta=record)
     try:
-        ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write
+        with timed_stage('registry.begin guard reads and journal write', timings):
+            ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write
     except (InFlight, Clash, Refused) as exc:
         raise _journal_refusal(plan.name, exc) from exc
     from layer_reports import apply_counts
@@ -1183,12 +1194,15 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         raise SystemExit(f'{plan.name}: journal writes differ from final guarded plan; nothing written; '
                          f'entry {ticket.seq} left begun (python scripts/site_recover.py status)')
     writer = McpWriter(m)
-    writer(ticket.writes)
+    with timed_stage('writer total', timings):
+        writer(ticket.writes)
     mark = getattr(blocks, 'mark_written', None)
     if mark is not None:
         mark()                              # LiveBlocks: refuse reads until the flush
-    blocks.flush()                          # server_save_all_worlds, settle, fresh region reads
-    actual = blocks.read_many(plan.cells)
+    with timed_stage('flush', timings):
+        blocks.flush()                          # server_save_all_worlds, settle, fresh region reads
+    with timed_stage('readback', timings):
+        actual = blocks.read_many(plan.cells)
     rep = _readback_report(plan, actual)
     accounting_error = None
     try:
@@ -1206,6 +1220,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         'at journal begin, with unknown states counted separately) remain journal writes. Fill results count transport requests/changed blocks and '
         'are not an independent planned-position total. Readback verifies every final plan position.'
     )
+    rep['timings_seconds'] = timings
     rep.update({'fill_results': writer.fill_results, 'entities': writer.entities, 'journal_seq': ticket.seq})
     (OUT / f'{plan.name}-result.json').write_text(json.dumps(rep, indent=1))
     print(f'  result report: {OUT / f"{plan.name}-result.json"}')
@@ -1219,15 +1234,18 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     if mask is not None:
         import pass_mask
         pass_mask.write_mask(mask)          # publish only after a clean readback
-    receipt = ticket.finish(actual)
+    with timed_stage('journal finish', timings):
+        receipt = ticket.finish(actual)
     if receipt.status == 'landed':
         try:
-            followed = registry.ensure(writer)
+            with timed_stage('journal follow-ups', timings):
+                followed = registry.ensure(writer)
         except CellJournalError as exc:
             raise SystemExit(f'{plan.name}: landed, but the journal follow-ups (frontier ghosts) '
                              f'failed: {exc} (python scripts/site_recover.py status)') from exc
         if followed:
             print('journal follow-ups:', json.dumps([[r.seq, r.status, r.planned] for r in followed])[:800])
+    (OUT / f'{plan.name}-result.json').write_text(json.dumps(rep, indent=1))
     return rep
 
 

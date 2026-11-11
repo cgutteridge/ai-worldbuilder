@@ -48,6 +48,21 @@ class TestApplyReporting(LiveApplyCase):
         self.assertLessEqual(scanner.scans, 10)
         self.assertEqual(self.entries(plan.name)[0].status, 'landed')
 
+    def test_stage_report_includes_prewrite_flush_and_journal_timings(self):
+        plan = Plan('timed')
+        plan.set(0, 60, 0, 'stone')
+        out = io.StringIO()
+        with redirect_stdout(out):
+            report = self.run_apply(plan)
+        expected = {'identity and readiness', 'surface warm-up', 'site_lock.check',
+                    'structure backup', 'open_registry', 'registry.begin guard reads and journal write',
+                    'writer total', 'flush', 'readback', 'journal finish', 'journal follow-ups'}
+        self.assertTrue(expected <= report['timings_seconds'].keys())
+        disk = json.loads((self.t / 'out/timed-result.json').read_text())
+        self.assertEqual(disk['timings_seconds'], report['timings_seconds'])
+        self.assertLess(out.getvalue().index('timing start: registry.begin'),
+                        out.getvalue().index('timing start: writer total'))
+
     def test_already_correct_positions_remain_journalled_and_verified(self):
         plan = Plan('unchanged')
         plan.set(0, 60, 0, 'stone')
@@ -87,6 +102,15 @@ class TestApplyReporting(LiveApplyCase):
         result = json.loads((self.t / 'out/transport_loss-result.json').read_text())
         self.assertEqual(result['mismatches'], 1)
         self.assertEqual(self.entries('transport_loss')[0].status, 'begun')
+
+    def test_strict_house_mismatches_fail_with_count_and_leave_begun(self):
+        plan = Plan('house_roof')
+        plan.set(0, 60, 0, 'stone')
+        FakePaced.skip_fills = True
+        with redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(SystemExit, 'house_roof: readback has 1 mismatches'):
+                self.run_apply(plan, strict=True)
+        self.assertEqual(self.entries('house_roof')[0].status, 'begun')
 
     def test_empty_decor_still_lands_and_has_explicit_zero_counts(self):
         self.run_apply(self.ground_plan(), stage='ground', cell=(0, 0))

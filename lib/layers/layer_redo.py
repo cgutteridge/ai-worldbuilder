@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from script_env import TOOL_ROOT
+from stage_timing import timed_stage
 
 LAYERS = ('ground', 'trees', 'decor')
 
@@ -28,26 +29,31 @@ def redo(cell, layers, backend, *, live=False) -> dict:
              if (layer in layers or layer == 'decor' and 'trees' in layers) and backend.has_mask(layer)]
     steps = [f'undo {layer}' for layer in undos] + [f'apply {layer}' for layer in layers]
     result = {'ok': False, 'dry_run': not live, 'completed': [], 'pending': list(steps),
-              'left_undone': [], 'failed': None}
+              'left_undone': [], 'failed': None, 'timings_seconds': {}}
     stage = 'preflight'
     try:
-        backend.preflight(cell, layers, undos, live)
+        with timed_stage('preflight', result['timings_seconds']):
+            backend.preflight(cell, layers, undos, live)
         if not live:
             result['ok'] = True
             return result
         stage = 'hover before'
-        backend.hover(cell)
+        with timed_stage(stage, result['timings_seconds']):
+            backend.hover(cell)
         for layer in undos:
             stage = f'undo {layer}'
-            backend.undo(cell, layer)
+            with timed_stage(stage, result['timings_seconds']):
+                backend.undo(cell, layer)
             result['completed'].append(stage)
             result['pending'].remove(stage)
             result['left_undone'].append(layer)
         for layer in layers:
             stage = f'preview {layer}'
-            backend.preview(cell, layer)
+            with timed_stage(stage, result['timings_seconds']):
+                backend.preview(cell, layer)
             stage = f'apply {layer}'
-            backend.apply(cell, layer)
+            with timed_stage(stage, result['timings_seconds']):
+                backend.apply(cell, layer)
             result['completed'].append(stage)
             result['pending'].remove(stage)
             if layer in result['left_undone']:
@@ -55,7 +61,8 @@ def redo(cell, layers, backend, *, live=False) -> dict:
             if layer == 'trees' and 'decor' not in result['left_undone']:
                 result['left_undone'].append('decor')
         stage = 'hover after'
-        backend.hover(cell)
+        with timed_stage(stage, result['timings_seconds']):
+            backend.hover(cell)
         result['ok'] = True
         try:
             backend.cue()
@@ -196,7 +203,7 @@ def main(argv=None) -> int:
     if not layers or len(set(layers)) != len(layers) or set(layers) - set(LAYERS):
         ap.error('--layers needs unique names from ground,trees,decor')
     activate_world_from_args(args)
-    if args.apply and not args.locked:
+    if args.apply and not args.locked and not os.environ.get('SITE_OWNER'):
         import site_lock
         return site_lock.run(args.owner, f'redo layers {args.cell}', [
             sys.executable, str(TOOL_ROOT / 'scripts/redo_layer.py'), '--world', args.world,

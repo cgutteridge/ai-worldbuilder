@@ -29,6 +29,15 @@ class SpecTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 H.load_spec(self.write(bad))
 
+    def test_feature_specs_are_refused_with_correct_builder(self):
+        good = {'name': 'x', 'ways': {'1': 'A'}, 'roofs': {'A': 'brick'},
+                'groups': [{'nos': ['A'], 'front': 'S'}]}
+        for change in ({'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}}},
+                       {'roofs': []}, {'storeys': []}, {'facade_plan': {}},
+                       {'notes': 'FEATURE PATH (scripts/feature_build.py)'}):
+            with self.subTest(change=change), self.assertRaisesRegex(SystemExit, 'scripts/feature_build.py'):
+                H.load_spec(self.write({**good, **change}))
+
 
 class FloorReferenceTest(unittest.TestCase):
     def build(self, floor_min=None):

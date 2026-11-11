@@ -735,6 +735,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     """Live apply: lock first, re-plan from the live world, readback, then the mask."""
     import os
     from site_kit import apply
+    from stage_timing import timed_stage
 
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
@@ -744,7 +745,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     name = plan_name(tx, tz)
     plan = Plan(name)
     world = World()
-    placed, rep = plan_cell(cell, plan, world)
+    with timed_stage('layer planning (includes surface warm-up)'):
+        placed, rep = plan_cell(cell, plan, world)
     from layer_reports import reason_summary, write_report
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")

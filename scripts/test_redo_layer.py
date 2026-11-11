@@ -113,7 +113,7 @@ class TestRedoOutcomes(unittest.TestCase):
                 finally:
                     signal.signal(signal.SIGTERM, original)
             self.assertEqual(code, 130)
-            report = json.loads(out.getvalue())
+            report = json.loads(out.getvalue()[out.getvalue().index('{\n'):])
             self.assertEqual(report['failed']['stage'], 'apply trees')
             self.assertIn('decor', report['left_undone'])
 
@@ -161,6 +161,23 @@ class TestAdditionalRedoChecks(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
             activate.assert_not_called()
             lock.assert_not_called()
+
+    def test_existing_site_owner_is_checked_without_claiming_another_lock(self):
+        import os
+        from unittest import mock
+        import layer_redo
+        backend = mock.Mock()
+        backend.has_mask.return_value = False
+        with mock.patch.dict(os.environ, {'SITE_OWNER': 'outer-owner'}), \
+                mock.patch('script_env.activate_world_from_args'), \
+                mock.patch('site_lock.check') as check, \
+                mock.patch('site_lock.run') as lock, \
+                mock.patch.object(layer_redo, 'LayerCommands', return_value=backend):
+            self.assertEqual(layer_redo.main(['--world', 'unit-test', '--cell', '0,0',
+                                              '--layers', 'decor', '--apply']), 0)
+        check.assert_called_once_with()
+        lock.assert_not_called()
+        backend.apply.assert_called_once_with((0, 0), 'decor')
 
     def test_child_command_keeps_owner_and_streams_output(self):
         import os

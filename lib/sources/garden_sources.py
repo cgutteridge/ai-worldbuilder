@@ -106,7 +106,7 @@ FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line cou
 
 def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
                          *, door: tuple[int, int] | None = None, approach: dict | None = None,
-                         evidence_ids=()) -> dict:
+                         evidence_ids=(), boundary_cells=None) -> dict:
     """One shared description of a residential property's private frontage (#240).
 
     Ground reads ``extent`` (private frontage, not public pavement) and ``route``; decor reads
@@ -159,7 +159,8 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
                            if ((q[0] - fx) * ax + (q[1] - fz) * az) < n - FRONT_GARDEN_MARGIN)
     out['open_frontage'] = role_vetoed(conv, number, 'front')
     spec = role_spec(conv, number, 'front')
-    out['boundary'] = sorted(front) if spec else []
+    boundary = list(front if spec else (boundary_cells or ()))
+    out['boundary'] = sorted(boundary) if not out['open_frontage'] else []
     observed = door is not None
     built = approach is not None and approach.get('connection') is not None
     if built:
@@ -195,7 +196,7 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
         out['route'] = route
         near = sorted((q for q in front if q != target and max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1),
                       key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))
-        out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1]) if spec else []
+        out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1]) if out['boundary'] else []
         out['connection'] = {
             'status': 'verified' if observed else ('built' if built else 'inferred'),
             'endpoints': [list(start), list(target)],
@@ -243,7 +244,7 @@ def blocked_connections(frontages) -> list:
             if (f.get('connection') or {}).get('status') == 'blocked']
 
 
-def landed_approaches(cell: tuple[int, int], registry=None) -> list:
+def landed_approaches(cell: tuple[int, int], registry=None, footprint=None) -> list:
     """Entrance approaches reconstructed read-only from the cell's landed, not undone feature plans.
 
     A plan with no recorded plan blocks, or no door block, yields nothing: its endpoint is unavailable
@@ -254,13 +255,20 @@ def landed_approaches(cell: tuple[int, int], registry=None) -> list:
     if registry is None:
         from cell_registry import view_registry
         registry = view_registry()
+    if footprint is None:
+        from osm_footprints import OSMIndex
+        footprint = OSMIndex().cells()
     out = []
-    for e in registry.entries(cells=[tuple(cell)]):
+    seen = set()
+    for e in reversed(registry.entries(cells=[tuple(cell)])):
         if e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed' or e.undone:
             continue
+        if e.plan in seen:
+            continue
+        seen.add(e.plan)
         blocks = registry.recorded(e.plan)
         if blocks:
-            out.extend(entrances_from_blocks(blocks))
+            out.extend(entrances_from_blocks(blocks, footprint=footprint))
     return out
 
 
@@ -455,28 +463,34 @@ def hedge_share(cells: list, rgb: dict, canopy: set | None = None) -> float:
 
 
 def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict | None = None):
-    """{(x, z): (type, block, height)} fence/wall/hedge columns for one cell, plus a report.
+    """Garden barrier items carrying property/street scope, evidence and inference reasons.
 
-    ``rgb`` is the cell's aerial sampler output (ground_sources.aerial_rgb); fetched if omitted.
-    Aerial hedge promotion ignores nDSM tree-canopy columns and respects designer ``type: none``.
+    Geometry still comes from plots, segments and straightening. A boundary's source is
+    recorded when chosen, never guessed later from its material. Per-property observations
+    and explicit none vetoes win over aerial promotion. Missing conventions infer no fences.
     """
     from ground_sources import aerial_rgb, cell_box
+    import provenance as prov
 
     box = cell_box(cell)
     rgb = rgb if rgb is not None else aerial_rgb(cell)
     canopy = tree_canopy_columns(cell)
     owner, info, street, idx = plots_for(box)
     seg = segments(owner, info, street, idx, box)
-    out, rep = {}, []
+    items, rep, front_boundaries = [], [], {}
     for (i, role), cells in sorted(seg.items(), key=lambda kv: (info[kv[0][0]]['street'], kv[0][1])):
         meta = info[i]
-        conv = load_convention(meta['street'])
-        spec = role_spec(conv, meta['number'], role)
-        vetoed = role_vetoed(conv, meta['number'], role)
+        conv = load_convention(meta['street']) or {}
+        number = str(meta['number'])
+        override = (conv.get('overrides') or {}).get(number, {})
+        property_role = role in override
+        raw = (override if property_role else conv).get(role) or {}
+        spec = role_spec(conv, number, role)
+        vetoed = role_vetoed(conv, number, role)
         near = [q for q in cells if math.hypot(q[0] - meta['centre'][0], q[1] - meta['centre'][1]) <= 30]
-        share = hedge_share(near, rgb, canopy=canopy) if len(near) >= 4 else 0.0   # only the house's own garden
+        share = hedge_share(near, rgb, canopy=canopy) if len(near) >= 4 else 0.0
         src = 'convention' if spec else 'none'
-        if share >= HEDGE_SHARE and len(cells) >= 4 and not vetoed:
+        if share >= HEDGE_SHARE and len(cells) >= 4 and not vetoed and not property_role:
             spec, src = {'type': 'hedge', 'block': HEDGE_BLOCK, 'height': 2, 'depth': None}, 'aerial hedge'
         elif share >= HEDGE_SHARE and len(cells) >= 4 and vetoed:
             src = 'aerial hedge vetoed'
@@ -484,7 +498,6 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
             fx, fz = meta['foot'] or meta['centre']
             cells = [q for q in cells if math.hypot(q[0] - fx, q[1] - fz) <= spec['depth'] + 12]
         if spec:
-            # a boundary between two plots is one line: the lower plot id keeps it (if it builds one)
             def twin(q):
                 for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     j = owner.get((q[0] + a, q[1] + b))
@@ -492,30 +505,51 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                             role_spec(load_convention(info[j]['street']), info[j]['number'], role):
                         return True
                 return False
-            for q in straighten([q for q in cells if not twin(q)]):
-                out[q] = (spec['type'], spec['block'], spec['height'])
+            cols = straighten([q for q in cells if not twin(q)])
+            source = 'aerial' if src == 'aerial hedge' else ('register_entry' if property_role else 'inference')
+            layer = 'property' if property_role else ('aerial' if source == 'aerial' else 'street')
+            reason = ('aerial hedge strip outside tree canopy' if source == 'aerial' else
+                      'explicit per-property boundary' if property_role else
+                      'deterministic same-street inference from boundary convention')
+            supplied = (raw.get('provenance') or {}) if source != 'aerial' else {}
+            evidence_ids = supplied.get('evidence_ids', raw.get('evidence_ids',
+                            conv.get('evidence_ids', ())))
+            record = prov.provenance_record(
+                source=supplied.get('source', source) if property_role else source,
+                confidence=supplied.get('confidence', 'medium'),
+                evidence_ids=evidence_ids, unresolved_reason=supplied.get('unresolved_reason', ''))
+            items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': spec['type'],
+                          'block': spec['block'], 'height': spec['height'],
+                          'cells': [list(q) for q in cols], 'boundary_role': role,
+                          'scope': {'street': meta['street'], 'property': number, 'layer': layer},
+                          'reason': reason, 'provenance': record})
+            if role == 'front':
+                front_boundaries[i] = cols
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,
                     'cells': len(cells), 'source': src, 'hedge_share': round(share, 2),
                     'type': spec['type'] if spec else None})
-    try:
-        approaches = landed_approaches(cell)
-    except Exception:
-        approaches = []
-    frontages = frontages_for_plots(owner, info, seg, idx, approaches=approaches)
+    approaches = landed_approaches(cell, footprint=idx.cells())
+    frontages = frontages_for_plots(owner, info, seg, idx, approaches=approaches,
+                                   boundaries=front_boundaries)
     opening = reserved_openings(frontages)
-    for q in opening:
-        out.pop(q, None)                                  # entrance gap stays open in every garden boundary
+    keep_clear = opening | reserved_route(frontages)
+    # Reserve after straightening. All later sources and final joins use the same clearance.
+    for item in items:
+        if item['provenance']['source'] == 'vector_map':
+            continue  # Decor reports observed-boundary conflicts instead of erasing them.
+        item['cells'] = [q for q in item['cells'] if tuple(q) not in keep_clear]
+    items = [item for item in items if item['cells']]
     if report is not None:
         report['segments'] = rep
         report['frontages'] = frontages
         report['openings'] = sorted(opening)
         report['route_reserved'] = sorted(reserved_route(frontages))
-        report['plots'] = owner                           # {column: plot id}, for outbuilding plot-line checks
-    return out
+        report['plots'] = owner
+    return items
 
 
 def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | None = None,
-                        approaches=()) -> list:
+                        approaches=(), boundaries=None) -> list:
     """``residential_frontage`` for every plot, from the plots/segments ``garden_barriers`` already built.
 
     @param owner: ``{cell: plot id}`` from ``plots_for``
@@ -561,11 +595,13 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
         meta = info[i]
         out.append(residential_frontage(
             meta, plot_cells[i], roles[i], house_cells[i], load_convention(meta['street']),
-            door=(doors or {}).get(i), approach=by_plot.get(i)))
+            door=(doors or {}).get(i), approach=by_plot.get(i),
+            evidence_ids=(load_convention(meta['street']) or {}).get('evidence_ids', ()),
+            boundary_cells=(boundaries or {}).get(i)))
     return out
 
 
-def overlay(cell, barriers: dict, path: Path, rgb_cells=None) -> None:
+def overlay(cell, barriers: list, path: Path, rgb_cells=None) -> None:
     """Aerial crop of the cell with the barrier columns marked (fence cyan, wall red, hedge green)."""
     import numpy as np
     from PIL import Image
@@ -594,9 +630,11 @@ def overlay(cell, barriers: dict, path: Path, rgb_cells=None) -> None:
                 out[b, a] = im[Y, X]
     col = {'hedge': (40, 255, 40), 'brick_wall': (255, 40, 40), 'fence': (0, 220, 255),
            'iron_bars': (255, 0, 255)}
-    for (x, z), (t, _b, _h) in barriers.items():
-        a, b = (x - x0) * k, (z - z0) * k
-        out[b + 1:b + k - 1, a + 1:a + k - 1] = col.get(t, (255, 255, 0))
+    for item in barriers:
+        for x, z in item['cells']:
+            a, b = (x - x0) * k, (z - z0) * k
+            if 0 <= a < W and 0 <= b < H:
+                out[b + 1:b + k - 1, a + 1:a + k - 1] = col.get(item['kind'], (255, 255, 0))
     Image.fromarray(out).resize((W * 2, H * 2), Image.NEAREST).save(path)
 
 
@@ -611,7 +649,9 @@ def main() -> int:
     by = Counter((r['street'], r['role'], r['source'], r['type']) for r in rep['segments'])
     for k, n in sorted(by.items(), key=str):
         print(n, k)
-    print('barrier columns', len(b), dict(Counter(v[0] for v in b.values())))
+    print('barrier columns', sum(len(i['cells']) for i in b),
+          dict(Counter({kind: sum(len(i['cells']) for i in b if i['kind'] == kind)
+                        for kind in {i['kind'] for i in b}})))
     png = Path(a.png) if a.png else ROOT / f'verification/site/gardens_{cell[0]}_{cell[1]}.png'
     overlay(cell, b, png)
     print('overlay', png)

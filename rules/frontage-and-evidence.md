@@ -53,6 +53,21 @@ builds a second one.
   end; decor owns boundary and gate placement. Clearance is shared planning data, not
   ownership of air.
 
+Garden boundaries are plan items with their original `provenance`, `scope` (street,
+property and winning layer) and `reason`. A hedge material does not imply aerial evidence:
+a street convention is labelled inference, a property override retains its own evidence,
+and an aerial strip is labelled aerial. Decor's plan and placed-barrier report retain
+these fields. Existing convention JSON remains readable; evidence ids can be given at
+street or per-role/per-property level, with an optional shared `provenance` record.
+
+A detected front aerial hedge gets the same entrance opening as a convention boundary.
+The gap is reserved after straightening and through the final join gate, together with
+the onward route and feature clearance. Explicit `none` wins. Entrance reconstruction
+stops at mapped footprint columns, including neighbouring buildings; it cannot mistake
+a building's solid blocks for an external landing. Trees stay in place. Checking actual
+headroom, walking access and judging street appearance remain world review after a
+rebuild; the tool's synthetic tests do not confirm those observations.
+
 ## Garden outbuildings (decor)
 Sheds and garages in a garden are decor (`lib/layers/outbuildings.py`, #251); attached garages inside a
 house footprint stay with the feature pass. Evidence, in order: a mapped footprint tagged in

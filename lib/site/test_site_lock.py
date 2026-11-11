@@ -44,6 +44,24 @@ class RunTest(unittest.TestCase):
                 site_lock.run('me', 'task', ['nope'])
         self.assertFalse(self.lock.exists())
 
+    def test_permission_denied_cleanup_still_releases_and_preserves_exit_status(self):
+        for failed_signal in (0, site_lock.signal.SIGTERM, site_lock.signal.SIGKILL):
+            with self.subTest(signal=failed_signal):
+                def killpg(pid, sig):
+                    if sig == failed_signal:
+                        raise PermissionError('macOS process group exited')
+                    if sig == 0:
+                        raise ProcessLookupError()
+                with mock.patch('site_lock.os.killpg', side_effect=killpg):
+                    self.assertEqual(site_lock.run('me', 'task', [PY, '-c', 'raise SystemExit(7)']), 7)
+                self.assertFalse(self.lock.exists())
+
+    def test_unexpected_cleanup_error_still_releases(self):
+        with mock.patch('site_lock.os.killpg', side_effect=RuntimeError('cleanup failed')):
+            with self.assertRaisesRegex(RuntimeError, 'cleanup failed'):
+                site_lock.run('me', 'task', [PY, '-c', 'pass'])
+        self.assertFalse(self.lock.exists())
+
     def test_refused_claim_runs_nothing_and_leaves_other_lock(self):
         site_lock.claim('other', 'theirs')
         with mock.patch('site_lock.subprocess.Popen') as sp:
