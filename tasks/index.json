@@ -6,7 +6,7 @@
     {
       "id": 229,
       "title": "Measure where a layer apply spends its time and recommend fixes",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -69,7 +69,7 @@
     {
       "id": 240,
       "title": "Share residential frontage surfaces, boundaries and access between ground and decor",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
@@ -89,7 +89,7 @@
     {
       "id": 245,
       "title": "site_lock.run crashes on macOS with PermissionError in its process-group cleanup and leaves the lock held (redo_layer.py)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -98,7 +98,7 @@
     {
       "id": 246,
       "title": "house_build.py should refuse a feature-path spec instead of building a broken house",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -107,7 +107,7 @@
     {
       "id": 247,
       "title": "element_undo should check cell readiness before undoing a plan that the rebuild will need",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
