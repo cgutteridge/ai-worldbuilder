@@ -38,7 +38,7 @@ class RebuildFixtureCase(LiveApplyCase):
 
     def run_live(self, **kw):
         with mock.patch.object(site_lock, 'check', lambda owner=None: None):
-            return element_undo.run(**kw)
+            return element_undo.run(force=True, **kw)  # Synthetic fixture has no evidence/preparation.
 
     def land(self, name, pass_, cells, *, cell=None, modifies=()):
         """``setup_layer_rebuilds`` land callback over ``run_apply``."""

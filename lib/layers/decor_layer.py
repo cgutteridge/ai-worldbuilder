@@ -33,6 +33,7 @@ from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import decor_plan as dplan  # noqa: E402
 import outbuildings as ob  # noqa: E402
+from stage_timing import timed_stage
 import provenance as prov  # noqa: E402
 import street_furniture as sf  # noqa: E402
 
@@ -176,6 +177,7 @@ def may_join_at(
     masked: set,
     world: World,
     lidar_hm: Mapping[str, Any] | None = None,
+    keep_clear=frozenset(),
 ) -> bool:
     """True when ``join_pieces`` may place ``mat`` at ``pos``.
 
@@ -193,9 +195,12 @@ def may_join_at(
     @param masked: positions owned by another pass mask
     @param world: live or planning world
     @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
+    @param keep_clear: shared entrance openings, routes and approach clearance columns
     @returns: whether the join candidate is allowed
     """
     xz = (pos[0], pos[2])
+    if xz in keep_clear:
+        return False
     if xz in near1 and mat not in allow_near1_mats:
         return False
     if lidar_hm is not None:
@@ -448,6 +453,9 @@ def place_barriers_from_plan(
                 report.append({
                     'x': q[0], 'z': q[1], 'kind': kind, 'block': mat, 'height': height,
                     'source': (item.get('provenance') or {}).get('source', ''),
+                    'provenance': dict(item.get('provenance') or {}),
+                    'scope': dict(item.get('scope') or {}),
+                    'reason': item.get('reason', ''),
                     'plan_id': item.get('id'),
                     'allow_against_build': allow,
                     'placed_positions': placed_positions, 'excluded_positions': excluded,
@@ -595,8 +603,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         building_columns=set(fp),
     )
     unresolved = list(dplan.unresolved_items(decor))
-    world = snapshot_decor_columns(                                      # batch reads (#110)
-        world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
+    with timed_stage('decor surface warm-up'):
+        world = snapshot_decor_columns(                                      # batch reads (#110)
+            world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
 
     reserved_gap = {tuple(q) for q in (decor.get('reserved') or {}).get('openings', ())}
     houses = {q for q, k in idx.cells().items()
@@ -670,12 +679,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     }
 
     def can_place(pos, mat=''):
-        if (pos[0], pos[2]) in reserved_gap:
-            return False                    # entrance opening: final joins must not close it
         return may_join_at(
             pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
             owned=owned, masked=masked, world=world,
-            lidar_hm=lidar_hm,
+            lidar_hm=lidar_hm, keep_clear=reserved_gap,
         )
 
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)
@@ -787,7 +794,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     name = plan_name(tx, tz)
     plan = Plan(name)
     world = World()
-    placed, stats = plan_cell(cell, plan, world)
+    with timed_stage('layer planning (includes surface warm-up)'):
+        placed, stats = plan_cell(cell, plan, world)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
     furniture_report = stats.pop('furniture_report', [])

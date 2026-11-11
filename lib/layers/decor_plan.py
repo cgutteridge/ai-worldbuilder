@@ -396,7 +396,7 @@ def build_decor_plan(
     designer_items: Sequence[Mapping[str, Any]] = (),
     photo_observations: Sequence[Mapping[str, Any]] = (),
     lidar_hm: Mapping[str, Any] | None = None,
-    garden: Mapping[tuple[int, int], tuple[str, str, int]] | None = None,
+    garden: Sequence[Mapping[str, Any]] | None = None,
     rgb: Mapping[tuple[int, int], Any] | None = None,
     canopy: set[tuple[int, int]] | None = None,
     footprint: set[tuple[int, int]] | None = None,
@@ -418,7 +418,7 @@ def build_decor_plan(
     @param designer_items: rows from ``decor-furniture.json`` (may include ``evidence``)
     @param photo_observations: photo/aerial kind/note rows; cell coordinates label lidar objects
     @param lidar_hm: DSM/DTM heightmap; omitted means no lidar candidates
-    @param garden: optional garden barrier map; ``garden_barriers(cell)`` when omitted
+    @param garden: optional garden barrier items with provenance; ``garden_barriers(cell)`` when omitted
     @param rgb: optional aerial colours; fetched when omitted
     @param canopy: optional tree-canopy columns
     @param footprint: optional building columns; OSM index when omitted
@@ -486,25 +486,12 @@ def build_decor_plan(
                 item_id=_item_id(f'map-{kind}', min(group)[0], min(group)[1]),
             ))
 
-    by_garden: dict[tuple[str, str, int], list[tuple[int, int]]] = {}
-    for q, (typ, blk, h) in garden.items():
-        if q in seen_barrier:
+    for garden_item in garden:
+        cols = [tuple(q) for q in garden_item['cells'] if tuple(q) not in seen_barrier]
+        if not cols:
             continue
-        by_garden.setdefault((typ, blk, int(h)), []).append(q)
-    for (typ, blk, h), cols in sorted(by_garden.items()):
-        kind = typ if typ in BARRIER_KINDS else 'hedge'
-        # Garden aerial hedges already went through garden_sources; treat as aerial.
-        src = 'aerial' if kind == 'hedge' and blk == HEDGE_BLOCK else 'register_entry'
-        for group in gs.components(cols):
-            for q in group:
-                seen_barrier.add(q)
-            items.append(_barrier_item(
-                kind, group,
-                source=src, confidence='medium',
-                evidence_ids=evidence_ids, root=root,
-                block=blk, height=h,
-                item_id=_item_id(f'garden-{kind}', min(group)[0], min(group)[1]),
-            ))
+        seen_barrier.update(cols)
+        items.append({**garden_item, 'cells': [list(q) for q in cols]})
 
     border_items = aerial_building_border_hedges(
         footprint, rgb, canopy,
@@ -649,7 +636,8 @@ def build_decor_plan(
         )
         items.append(item)
 
-    keep_clear = set(openings or ()) | set(route)
+    keep_clear = (set(openings or ()) | set(route)
+                  | gs.reserved_openings(frontages or ()) | gs.reserved_route(frontages or ()))
     reserved = reserve_openings(items, keep_clear)
     return {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
             'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),

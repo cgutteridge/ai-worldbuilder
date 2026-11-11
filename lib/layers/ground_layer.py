@@ -170,10 +170,12 @@ def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None
     if warm is None:
         return
     ylo, yhi = PROBE_Y_RANGE
-    for xs in range(x0, x1 + 1, PROBE_STRIP):
-        xe = min(xs + PROBE_STRIP - 1, x1)
-        warm((x, y, z) for x in range(xs, xe + 1) for z in range(z0, z1 + 1)
-             for y in range(ylo, yhi + 1))
+    from stage_timing import timed_stage
+    with timed_stage('ground/tree surface warm-up'):
+        for xs in range(x0, x1 + 1, PROBE_STRIP):
+            xe = min(xs + PROBE_STRIP - 1, x1)
+            warm((x, y, z) for x in range(xs, xe + 1) for z in range(z0, z1 + 1)
+                 for y in range(ylo, yhi + 1))
 
 
 def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None):
@@ -888,6 +890,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     """
     import os
     from site_kit import apply
+    from stage_timing import timed_stage
 
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
@@ -900,7 +903,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     masked = load_masked_positions()
     ignored = ignored_builds(cell)
     owned = neighbour_owned(cell, ignored)
-    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
+    with timed_stage('layer planning (includes surface warm-up)'):
+        stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})

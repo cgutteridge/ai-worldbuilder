@@ -52,6 +52,12 @@ def load_spec(path):
     @returns: spec dict
     """
     spec = json.loads(Path(path).read_text())
+    roofs = spec.get('roofs', {})
+    if ('storeys' in spec or 'facade_plan' in spec
+            or str(spec.get('notes', '')).lstrip().startswith('FEATURE PATH')
+            or not isinstance(roofs, dict)
+            or any(not isinstance(material, str) for material in roofs.values())):
+        raise SystemExit(f'{path}: feature-path spec; use scripts/feature_build.py instead of house_build.py')
     for k in ('name', 'ways', 'roofs', 'groups'):
         if k not in spec:
             raise SystemExit(f'{path}: missing "{k}"')
@@ -484,4 +490,6 @@ if __name__ == '__main__':
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
-    apply(plan, dry=not a.apply, modifies=tuple(spec['modifies']))
+    result = apply(plan, dry=not a.apply, modifies=tuple(spec['modifies']), strict=True)
+    if result is not None:
+        print(f'readback: {result["planned"]} planned, {result["mismatches"]} mismatches')

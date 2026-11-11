@@ -85,6 +85,41 @@ def _journal_preview(target) -> tuple[list[str], int]:
     return names, len(positions)
 
 
+def require_rebuild_ready(target):
+    """Check every touched cell before undo can remove a rebuild's prerequisites."""
+    import cell_registry
+    import cellmath
+    import site_lock
+    from readiness_evidence import policy_for
+
+    site_lock.check()
+    registry = cell_registry.view_registry()
+    targets = ([(target[0], p) for p in passes_above_ghost(target[0])]
+               if isinstance(target, tuple) and target[1] is None else [target])
+    cells = set()
+    for part in targets:
+        names, _ = _journal_preview(part)
+        if isinstance(part, tuple):
+            cells.add(part[0])
+        for name in names:
+            for entry in registry.entries(plan=name):
+                if entry.kind == 'build' and not entry.undone and entry.status != 'begun':
+                    cells.update(entry.cells)
+            cells.update(cellmath.cell_of(x, z) for x, _y, z in (registry.recorded(name) or {}))
+    policy = policy_for(registry)
+    refused = []
+    for cell in sorted(cells):
+        report = policy.check(cell, 'build')
+        if not report['ready']:
+            label = f'{cell[0]},{cell[1]}'
+            refused.append(f"{label}: {'; '.join(report['blockers'])}; "
+                           f'run cell_registry.py --world <name> prepare --cell {label} '
+                           '(resolve listed aerial coverage/cache steps first)')
+    if refused:
+        raise SystemExit('undo refused before writes: needs-prep\n' + '\n'.join(refused)
+                         + '\nUse --force to undo without rebuild readiness.')
+
+
 def _apply_journal(target) -> int:
     """Live ``site_kit.undo`` after SITE_OWNER check.
 
@@ -152,7 +187,7 @@ def _run_one_pass(cell: tuple[int, int], pass_name: str, *, live: bool,
 
 
 def run_whole_cell(cell: tuple[int, int], *, live: bool = False,
-                   skip_changed: bool = False) -> int:
+                   skip_changed: bool = False, force: bool = False) -> int:
     """Undo every Element above ghost in ``cell``, in :data:`CELL_UNDO_ORDER`.
 
     Dry run lists the ordered passes and previews each without writing. ``--apply``
@@ -163,9 +198,12 @@ def run_whole_cell(cell: tuple[int, int], *, live: bool = False,
     @param cell: ``(tx, tz)``
     @param live: when True, write through the journal
     @param skip_changed: forwarded to mask_undo for trees/decor
+    @param force: skip rebuild readiness checks for deliberate destructive cleanup
     @returns: 0 when every present pass undid cleanly
     @raises SystemExit: nothing above ghost, or a pass refused mid-chain
     """
+    if live and not force:
+        require_rebuild_ready((tuple(cell), None))
     tx, tz = cell
     order = passes_above_ghost(cell)
     if not order:
@@ -197,7 +235,7 @@ def run_whole_cell(cell: tuple[int, int], *, live: bool = False,
 
 def run(*, plan: str | None = None, cell: tuple[int, int] | None = None,
         pass_name: str | None = None, live: bool = False,
-        skip_changed: bool = False) -> int:
+        skip_changed: bool = False, force: bool = False) -> int:
     """Plan (and with ``live`` apply) an element undo. Returns 0 on success.
 
     ``--cell`` alone undoes the whole cell (#134). Trees/decor with a mask on disk
@@ -211,14 +249,17 @@ def run(*, plan: str | None = None, cell: tuple[int, int] | None = None,
     @param pass_name: feature | ground | trees | decor, or None for whole cell
     @param live: when True, write through the journal (needs SITE_OWNER + lock)
     @param skip_changed: passed to mask_undo for trees/decor only
+    @param force: skip rebuild readiness checks for deliberate destructive cleanup
     @returns: 0 on success
     @raises SystemExit: nothing to undo, lock/owner missing, or apply failure
     """
     target = resolve_target(plan=plan, cell=cell, pass_name=pass_name)
     if isinstance(target, tuple) and target[1] is None:
-        return run_whole_cell(target[0], live=live, skip_changed=skip_changed)
+        return run_whole_cell(target[0], live=live, skip_changed=skip_changed, force=force)
 
     names, n = _journal_preview(target)
+    if live and not force:
+        require_rebuild_ready(target)
 
     if isinstance(target, tuple) and target[1] in MASK_PASSES:
         from pass_mask import mask_path
@@ -246,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
                     help='element to undo in --cell (omit for whole cell)')
     ap.add_argument('--apply', action='store_true',
                     help='LIVE: needs SITE_OWNER + claimed lock')
+    ap.add_argument('--force', action='store_true', help='undo even when rebuild inputs are not ready')
     ap.add_argument('--skip-changed', action='store_true',
                     help='trees/decor only: leave mask positions that no longer match')
     args = ap.parse_args(argv)
@@ -256,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f'--cell must be tx,tz, got {args.cell!r}')
         cell = (int(parts[0]), int(parts[1]))
     return run(plan=args.plan, cell=cell, pass_name=args.pass_name,
-               live=args.apply, skip_changed=args.skip_changed)
+               live=args.apply, skip_changed=args.skip_changed, force=args.force)
 
 
 if __name__ == '__main__':

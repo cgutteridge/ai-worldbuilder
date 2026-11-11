@@ -211,7 +211,10 @@ class TestLidarIsOnlyAHint(unittest.TestCase):
         plan = dp.build_decor_plan(
             (0, 0), map_barriers={}, rgb={}, footprint=set(), canopy=set(),
             lidar_hm=self.hm(cols),
-            garden={q: ('brick_wall', 'brick_wall', 3) for q in cols})
+            garden=[{'id': 'garden-wall', 'role': 'barrier', 'kind': 'brick_wall',
+                     'cells': [list(q) for q in cols], 'block': 'brick_wall', 'height': 3,
+                     'provenance': {'source': 'register_entry', 'confidence': 'high',
+                                    'evidence_ids': [], 'unresolved_reason': ''}}])
         wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
         self.assertEqual(wall['height'], 3)
 
@@ -277,9 +280,10 @@ class TestBuildDecorPlan(unittest.TestCase):
             {'kind': 'bench', 'note': 'plaza seating in photo',
              'unresolved_reason': 'photo shows seating but no MC coordinate'},
         ]
-        garden = {
-            (30, 30): ('hedge', 'oak_leaves[persistent=true]', 2),
-        }
+        garden = [{'id': 'garden-hedge', 'role': 'barrier', 'kind': 'hedge',
+                   'cells': [[30, 30]], 'block': 'oak_leaves[persistent=true]', 'height': 2,
+                   'provenance': {'source': 'inference', 'confidence': 'medium',
+                                  'evidence_ids': [], 'unresolved_reason': ''}}]
 
         with mock.patch('ground_sources.aerial_class', return_value='shade'):
             plan = dp.build_decor_plan(
@@ -474,3 +478,20 @@ class TestReserveOpenings(unittest.TestCase):
     def test_non_barrier_untouched(self):
         item = {'id': 'f', 'role': 'furniture', 'cells': [[1, 3]]}
         self.assertEqual(dp.reserve_openings([item], {(1, 3)})['items'], [item])
+
+
+class GardenProvenanceTransportTest(unittest.TestCase):
+    def test_identical_hedges_retain_separate_property_evidence_in_decor(self):
+        garden = []
+        for number, source, x in (('1', 'inference', 20), ('3', 'register_entry', 21)):
+            garden.append({'id': 'property-' + number, 'role': 'barrier', 'kind': 'hedge',
+                           'cells': [[x, 20]], 'block': 'oak_leaves[persistent=true]', 'height': 2,
+                           'scope': {'street': 'Test Road', 'property': number},
+                           'reason': 'street convention' if source == 'inference' else 'property observation',
+                           'provenance': {'source': source, 'confidence': 'medium',
+                                          'evidence_ids': ['evidence-' + number], 'unresolved_reason': ''}})
+        plan = dp.build_decor_plan((0, 0), map_barriers={}, garden=garden,
+                                   rgb={}, footprint=set(), canopy=set())
+        rows = [i for i in plan['items'] if i['id'].startswith('property-')]
+        self.assertEqual(rows, garden)
+        self.assertEqual([i['provenance']['source'] for i in rows], ['inference', 'register_entry'])

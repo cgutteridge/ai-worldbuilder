@@ -21,3 +21,75 @@ status, and wait for completion before starting another live command.
 Dry runs without live reads are seconds. Figures are for the bake-off world on the
 author's machine; re-measure from the journal (`begin` to `finish` `ts`) rather than
 guessing if a pass matters.
+
+
+## Decor stage measurements (#229, 2026-11-11)
+
+Two locked `redo_layer.py --world southampton-build --cell 53,-43 --layers decor --apply`
+runs on the already-built cell in `SouthamptonAI`, using the existing backup, undo,
+readiness and readback gates. Both planned 2,583 positions in 630 boxes. No optimisation
+was applied. These numbers describe decor in this cell, not trees or other worlds.
+Timers use `perf_counter` wall seconds and print a flushed start line before each stage,
+including failures. `*-result.json` retains apply timings; redo also reports orchestration
+stages. Nested stages are inclusive: do not add surface probing to planning, or player
+movement/fills to writer total.
+
+| Stage (seconds) | Run 1 | Run 2 |
+| --- | ---: | ---: |
+| layer planning (includes surface warm-up) | 184.027 | 180.585 |
+| decor surface warm-up | not separately timed | 140.235 |
+| identity and readiness | 5.769 | 5.246 |
+| surface warm-up | 3.356 | 3.174 |
+| site_lock.check | 0.001 | 0.001 |
+| open_registry | 0.000 | 0.000 |
+| structure backup | 0.323 | 0.350 |
+| registry.begin guard reads and journal write | 8.650 | 8.136 |
+| player hop | 0.014 | 0.004 |
+| fills, slabs, signs and entities | 1.142 | 1.143 |
+| writer total | 2.274 | 2.255 |
+| flush | 3.115 | 3.148 |
+| readback | 2.842 | 2.623 |
+| journal finish | 0.012 | 0.014 |
+| journal follow-ups | 0.001 | 0.003 |
+
+Run 2's complete redo took 305.382 seconds in its measured stages: preflight 5.749,
+hover before 4.506, undo 20.776, preview 50.471, apply 219.417, hover after 4.463.
+Both applies read back with **zero mismatches**, landed, restored the decor mask and
+released the lock. Apply journal entries: 865 and 869. Logs and result copies live in the
+world's `verification/timing-task-229-2026-11-11/` (world-owned, separate from this repo).
+The separate decor-snapshot timer was added for run 2, so its 140.235-second measurement
+has n=1; total planning has n=2 (184.027 and 180.585 seconds, a 3.442-second range).
+
+I-044/S-076: the suspected 20-minute pre-write stall was **not reproduced**. The slowest
+measured stage was planning, specifically live surface probing in run 2. Journal-begin
+guard reads plus its fsynced write took 8.650/8.136 seconds; structure backup took
+0.323/0.350 seconds, and lock/open-registry checks each took about a millisecond or less.
+These data do not prove which step caused the earlier incident. The new start/elapsed
+lines identify it if it recurs. No CPU profile or per-request trace was collected.
+
+Ranked follow-ups (estimates are untested scenarios, not measured savings):
+
+1. **Reduce decor surface-probe cost** (#263). It consumed 140.235/180.585 seconds
+   of planning in run 2. Test grouping nearby column scans under the existing volume
+   and memory bounds, and measuring scan counts/parse time. A 25–50% reduction in this
+   stage would save **35–70 seconds per apply**; the absolute ceiling is 140 seconds.
+   Keep snapshots fresh, preserve unknown/unloaded handling and compare identical
+   placements. The measurements identify the stage; the best grouping is unverified.
+2. **Avoid repeating source-only preparation in redo preview and apply** (#264).
+   Preview cost 50.471 seconds, including only 0.974 seconds of disk surface probing;
+   live planning outside surface probing cost 40.350 seconds. Reusing validated,
+   immutable source/plot preparation could save **20–40 seconds per redo** if half to
+   most of the overlapping work is reusable. Exact overlap is unmeasured. Re-check
+   source/journal identities and take fresh live block reads; never reuse stale live
+   state or bypass readiness. Investigate this narrower seam before removing preview.
+3. **Avoid repeated guard probing only if subsequent measurements justify it.** The
+   apply's extra warm-up is 3.174–3.356 seconds; begin is 8.136–8.650 seconds, including
+   readiness and journalling. Their combined absolute ceiling is about 12 seconds;
+   safe attainable savings are unknown. No fix task filed from these data.
+4. **Fewer readback scans / larger fill boxes are low priority here.** Readback is
+   about three seconds and the fills stage about one second. The 630 boxes already
+   travel in a batch, so they are not 630 paced round trips. Even eliminating those
+   stages entirely saves only about four seconds; no task filed for them.
+
+The timing task changes diagnostics only. Optimisations and any frontage/headroom
+world review are separate work.

@@ -80,7 +80,7 @@ class TestDesignerVeto(unittest.TestCase):
                 mock.patch('ground_sources.cell_box', return_value=(0, 0, 9, 9)), \
                 mock.patch.object(gs, 'tree_canopy_columns', return_value=set()):
             out = gs.garden_barriers(cell, rgb=rgb)
-        self.assertEqual(out, {})
+        self.assertEqual(out, [])
 
 
 def _strip():
@@ -234,7 +234,7 @@ class TestLandedApproach(unittest.TestCase):
             kind='build', pass_='feature', status='landed', undone=True, plan='b'),
             mock.Mock(kind='build', pass_='ground', status='landed', undone=False, plan='c')]
         reg.recorded.side_effect = lambda plan: {(4, 65, 10): door} if plan == 'a' else {(9, 65, 9): door}
-        got = gs.landed_approaches((0, 0), registry=reg)
+        got = gs.landed_approaches((0, 0), registry=reg, footprint={(4, 10)})
         self.assertEqual([a['door']['cell'] for a in got], [[4, 10]])
 
     def test_diagonal_cell_edge_route_stays_four_connected_and_clear_of_house(self):
@@ -253,6 +253,77 @@ class TestLandedApproach(unittest.TestCase):
         (row,) = gs.blocked_connections([f])
         self.assertEqual(row['pass'], 'ground')
         self.assertEqual(gs.frontage_route_columns([f]), set())
+
+
+class TestGardenItemProvenance(unittest.TestCase):
+    def garden(self, conv=None, share=1.0):
+        meta, plot, roles, house = _strip()
+        idx = mock.Mock()
+        idx.cells.return_value = {q: 1 for q in house}
+        report = {}
+        with mock.patch.object(gs, 'plots_for', return_value=({q: 1 for q in plot}, {1: meta}, {}, idx)), \
+                mock.patch.object(gs, 'segments', return_value={(1, 'front'): roles['front']}), \
+                mock.patch.object(gs, 'load_convention', return_value=conv), \
+                mock.patch.object(gs, 'hedge_share', return_value=share), \
+                mock.patch.object(gs, 'tree_canopy_columns', return_value=set()), \
+                mock.patch.object(gs, 'landed_approaches', return_value=[]):
+            return gs.garden_barriers((0, 0), rgb={}, report=report), report
+
+    def test_aerial_front_hedge_has_opening_after_straightening(self):
+        items, report = self.garden()
+        (frontage,) = report['frontages']
+        self.assertEqual(len(frontage['opening']), gs.OPENING_WIDTH)
+        cols = {tuple(c) for i in items for c in i['cells']}
+        self.assertTrue(cols.isdisjoint(gs.reserved_route([frontage])))
+        self.assertTrue(cols.isdisjoint(gs.reserved_openings([frontage])))
+        self.assertEqual(items[0]['provenance']['source'], 'aerial')
+        self.assertEqual(items[0]['scope']['property'], '7')
+
+    def test_same_material_keeps_distinct_street_and_property_provenance(self):
+        for override, expected in ((False, 'inference'), (True, 'register_entry')):
+            conv = {'front': {'type': 'hedge'}, 'evidence_ids': ['street-photo']}
+            if override:
+                conv['overrides'] = {'7': {'front': {'type': 'hedge', 'evidence_ids': ['property-photo']}}}
+            items, _ = self.garden(conv, share=0.0)
+            item = items[0]
+            self.assertEqual(item['provenance']['source'], expected)
+            self.assertEqual(item['provenance']['evidence_ids'], ['property-photo' if override else 'street-photo'])
+            self.assertEqual(item['scope']['layer'], 'property' if override else 'street')
+            self.assertTrue(item['reason'])
+
+    def test_street_observation_supports_labelled_inference_at_property(self):
+        conv = {'front': {'type': 'hedge', 'provenance': {
+            'source': 'photo_read', 'confidence': 'high', 'evidence_ids': ['street-photo']}}}
+        items, _ = self.garden(conv, share=0.0)
+        self.assertEqual(items[0]['provenance']['source'], 'inference')
+        self.assertEqual(items[0]['provenance']['evidence_ids'], ['street-photo'])
+        self.assertEqual(items[0]['scope']['layer'], 'street')
+
+    def test_property_override_and_none_win_over_aerial(self):
+        items, _ = self.garden({'front': {'type': 'hedge'},
+                      'overrides': {'7': {'front': {'type': 'fence'}}}})
+        self.assertEqual(items[0]['kind'], 'fence')
+        items, report = self.garden({'overrides': {'7': {'front': {'type': 'none'}}}})
+        self.assertEqual(items, [])
+        self.assertTrue(report['frontages'][0]['open_frontage'])
+
+    def test_missing_convention_and_no_aerial_authorize_no_boundary(self):
+        items, report = self.garden(share=0.0)
+        self.assertEqual(items, [])
+        self.assertEqual(report['frontages'][0]['opening'], [])
+
+    def test_landed_scan_stops_at_other_mapped_building_and_deduplicates(self):
+        from types import SimpleNamespace
+        blocks = {(4, 65, 10): 'spruce_door[facing=north,half=lower]',
+                  (4, 64, 9): 'smooth_stone', (4, 64, 8): 'bricks'}
+        entry = SimpleNamespace(kind='build', pass_='feature', status='landed', undone=False, plan='house')
+        registry = mock.Mock()
+        registry.entries.return_value = [entry, entry]
+        registry.recorded.return_value = blocks
+        (approach,) = gs.landed_approaches((0, 0), registry=registry, footprint={(4, 10), (4, 8)})
+        self.assertEqual(approach['approach'], [[4, 9]])
+        self.assertEqual(approach['connection']['cell'], [4, 8])
+        registry.recorded.assert_called_once_with('house')
 
 
 class TestTreeCanopyColumns(unittest.TestCase):
