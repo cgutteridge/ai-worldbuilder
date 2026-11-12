@@ -718,6 +718,9 @@ def compact_frontage(f: Mapping[str, Any]) -> dict[str, Any]:
             'reason': f.get('reason') or (f.get('provenance') or {}).get('unresolved_reason', ''),
             'open_frontage': f.get('open_frontage'), 'door': f.get('door'),
             'connection': f.get('connection'), 'opening': f.get('opening'),
+            'land_use': f.get('land_use'), 'private_surface': f.get('private_surface'),
+            'pavement_columns': len(f.get('pavement') or ()),
+            'forecourt_columns': len(f.get('forecourt') or ()),
             'provenance': f.get('provenance')}
 
 

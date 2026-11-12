@@ -27,6 +27,7 @@ UNKNOWN_REASONS = ('not_checked', 'unmapped', 'unlisted')
 BOUNDARY_ROLES = ('front', 'side_front', 'side_back', 'rear', 'perimeter')
 PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
+DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
 NO_INFERENCE = ('rural', 'natural', 'water', 'unknown')
 
 # Area keys in match order (the rest follow in this order too). ``*`` in the table matches any value.
@@ -97,6 +98,9 @@ def validate_table(doc: dict) -> dict:
             raise TableError(f'{cid}: private_surface {fr["private_surface"]!r} not in {PRIVATE_SURFACES}')
         if fr['opening'] not in OPENINGS:
             raise TableError(f'{cid}: opening {fr["opening"]!r} not in {OPENINGS}')
+        pav = fr.get('pavement', DEFAULT_PAVEMENT)
+        if isinstance(pav, bool) or not isinstance(pav, (int, float)) or not 0 < pav <= 8:
+            raise TableError(f'{cid}: pavement must be a width in blocks, above 0 and at most 8')
         if set(fr['boundary']) - set(BOUNDARY_ROLES):
             raise TableError(f'{cid}: unknown boundary role in {sorted(fr["boundary"])}')
         for role, spec in fr['boundary'].items():
@@ -243,3 +247,61 @@ def classify_column(hit: tuple | None, *, checked: bool) -> dict:
     if hit:
         return {'class': hit[0], 'reason': f'{hit[2]}_polygon', 'ref': hit[1]}
     return _unknown('unmapped' if checked else 'not_checked')
+
+
+def pavement_width(cls: str | None = None, row: dict | None = None) -> float:
+    """Public pavement width in blocks for a class (``frontage.pavement``; suburban residential 2.5).
+
+    @param cls: class id (ignored when ``row`` is given); None or unknown ids use the ``unknown`` row
+    @param row: optional table row (tests, synthetic tables)
+    @returns: width in blocks
+    """
+    row = row or defaults(cls or 'unknown')
+    return float(row['frontage'].get('pavement', DEFAULT_PAVEMENT))
+
+
+def is_open(spec) -> bool:
+    """True for a spec that says "no boundary here": ``None``, empty, or ``type`` none."""
+    return not spec or spec.get('type') in (None, 'none')
+
+
+def resolve(cls: str, key: str, *, role: str | None = None, property: dict | None = None,
+            street: dict | None = None, district: dict | None = None, row: dict | None = None) -> dict:
+    """The one precedence function for frontage defaults (#254): which layer speaks first.
+
+    Layers, strongest first: ``property`` (per-house override), ``street`` (convention),
+    ``district`` (profile, empty until #255), ``class`` (the table row). A layer speaks when it holds
+    the field: for a boundary role (``key='boundary'``, ``role`` given) the role key, otherwise ``key``
+    itself (``private_surface``, ``opening``, ``pavement``). ``none`` speaks: it is an explicit open
+    frontage and stops the search. Observed evidence (mapped barrier, aerial hedge) sits above all
+    four and is the caller's business. The class layer speaks for a boundary only when the class
+    allows inference and its row names a non-null spec, so a missing convention never authorises a
+    fence and ``unknown`` never invents one; scalar fields always have a class default.
+
+    @param cls: class id of the property
+    @param key: ``'boundary'`` or a scalar frontage field
+    @param role: boundary role (``front``, ``side_front``, ``side_back``, ``rear``, ``perimeter``)
+    @param property: per-house override dict (``overrides.<number>``) or None
+    @param street: street convention dict or None
+    @param district: district profile section for the class or None
+    @param row: table row to use instead of the class's own (synthetic tests)
+    @returns: ``{'value': spec or None, 'layer': 'property'|'street'|'district'|'class'|None,
+        'open': bool}``; ``open`` is an explicit none, ``layer`` None means nothing spoke
+    """
+    field = role if key == 'boundary' else key
+    for name, layer in (('property', property), ('street', street), ('district', district)):
+        if layer and field in layer:
+            value = layer[field]
+            if key == 'boundary' and is_open(value):
+                return {'value': None, 'layer': name, 'open': True}
+            return {'value': value, 'layer': name, 'open': False}
+    row = row or defaults(cls)
+    fr = row['frontage']
+    if key == 'boundary':
+        spec = fr['boundary'].get(role)
+        if cls not in CLASSES or cls == 'unknown' or not fr['inference'] or is_open(spec):
+            return {'value': None, 'layer': None, 'open': False}
+        return {'value': spec, 'layer': 'class', 'open': False}
+    if key in fr:
+        return {'value': fr[key], 'layer': 'class', 'open': False}
+    return {'value': None, 'layer': None, 'open': False}

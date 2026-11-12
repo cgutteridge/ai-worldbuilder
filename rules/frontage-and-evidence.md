@@ -36,10 +36,35 @@ water, transport, parking, unknown. Read it as follows.
   `unmapped`, or `unlisted` (a tag value the table does not know). No neighbour inheritance.
 - The class never paints surfaces and never authorises a fence: every boundary default is null.
   Rural, natural, water and unknown allow no inference. Parcels carry it as `meta.land_use`.
-  Nothing reads the table's frontage defaults until #254.
+  Frontage, ground and decor read the table's frontage row (#254), see below.
+
+## Frontage by class (#254)
+`garden_sources.frontage(meta, ..., row)` is the one description for every class
+(`residential_frontage` is the old name, kept as a wrapper). Residential is the residential row of
+`config/land-use-classes.json`; other classes read their own row: `requires` (a non-house class
+needs only a street-facing `front` or `perimeter` edge, no house number), `private_surface`
+(`grass` and `keep` leave guessed lawn, `paving` lets ground pave it), `opening` (`door_route`,
+`street_gate`, `none`) and `pavement` (public pavement width, suburban residential 2.5 blocks).
+Rural, natural, water and unknown allow no inference: never eligible, no fence, no opening; the
+`keep` ones still keep guessed lawn in their front extent. Non-house parcels name their edges to
+neighbours `perimeter`; `front` stays the street edge. `unknown` plots keep the residential edge roles,
+so street-convention side and rear fences still apply there (street evidence, not class inference).
+The street band is now road half-width plus the class pavement (2.5, was 3.0), so residential plot
+edges and `front` cells can shift by up to half a block.
+- Precedence per field is `land_use.resolve`: per-house override, street convention, district
+  profile (empty until #255), class default. `none` speaks and stops the search. A null class
+  default never authorises a fence; no class ships one. The winning layer is `scope.layer`
+  (`property`, `street`, `district`, `class`, or `aerial`) and the class is `scope.land_use`.
+- Observed evidence (mapped barrier, aerial hedge unless vetoed) still sits above all four.
+- Behaviour changes pinned by tests: a `building=yes` with a house number inside `landuse=retail`
+  is commercial; guessed lawn between road and building stays lawn in park, rural and natural land.
+- Ground splits public pavement from private forecourt: the strip outside the front boundary
+  (class pavement width) paves guessed lawn; paving behind the boundary, in the front extent, is
+  `forecourt` (andesite), another block. Seen lawn, gravel, brick and the aerial colour rules are
+  unchanged. The front boundary and entrance opening are decor's, as before.
 
 ## Residential frontage (shared description)
-`garden_sources.residential_frontage` gives ground and decor one description per
+`garden_sources.frontage` (formerly `residential_frontage`) gives ground and decor one description per
 property: private frontage `extent`, `boundary` segments, entrance `opening`, `route` to
 the door, and `connection` status with provenance. Ground and decor read it; neither
 builds a second one.
