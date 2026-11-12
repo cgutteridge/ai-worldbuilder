@@ -56,11 +56,12 @@ MATERIAL = {
     'grass': 'grass_block', 'tarmac': 'gray_concrete', 'paving': 'light_gray_concrete',
     'brick': 'polished_granite', 'gravel': 'gravel', 'dirt': 'coarse_dirt',
     'mark': 'white_concrete', 'kerb': 'smooth_stone',
+    'forecourt': 'andesite',                          # private forecourt, apart from public pavement (#254)
 }
 BLOCK_KIND = {'gray_concrete': 'tarmac', 'light_gray_concrete': 'paving', 'polished_granite': 'brick',
-              'grass_block': 'grass', 'gravel': 'gravel'}
+              'grass_block': 'grass', 'gravel': 'gravel', 'andesite': 'forecourt'}
 STITCH_DEPTH = 2        # columns from a seam that copy the finished neighbour's surface
-HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb')
+HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
 FILL_REACH = 12         # how far shade/canopy columns look for ground around them
 STRUCTURE_TOPS = ('stairs', 'slab', '_wall', '_fence', 'bars', 'planks', '_carpet')
 
@@ -362,7 +363,8 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 # --- 2. what is on the ground ------------------------------------------------------------
 def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
              fp: set | None = None, private_frontage: set | frozenset = frozenset(),
-             frontage_route: set | frozenset = frozenset()) -> tuple[dict, Counter]:
+             frontage_route: set | frozenset = frozenset(),
+             pavement: set | frozenset = frozenset()) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
 
     ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
@@ -370,7 +372,10 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     shopfront-forecourt paving, so private frontage reads apart from public pavement.
     ``frontage_route`` is the onward path from a house's entrance to the street: *guessed* ground on it
     becomes paving (it joins the outer end of the feature's own steps); seen lawn, gravel or paving is
-    kept, since observed surface differences are retained."""
+    kept, since observed surface differences are retained.
+    ``pavement`` (#254) is the public strip outside each front boundary (width per land-use class):
+    guessed lawn there is pavement. ``private_frontage`` also holds the front extent of classes that
+    keep their lawn (park, rural, natural), so guessed lawn there is never paved."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -459,6 +464,10 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     if fp:
         road = {q for q in vmap.kind if vmap.kind[q] == 'tarmac' and vmap.pri.get(q, 0) >= 40}
         for q in soft_grass:
+            if q in pavement and q not in private_frontage and kind.get(q) == 'grass':
+                kind[q] = 'paving'
+                how['guessed lawn on public pavement strip -> paving'] += 1
+                continue
             if q in private_frontage:
                 how['guessed lawn kept: private residential frontage'] += 1
                 continue
@@ -490,6 +499,18 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                     for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
                 out[q] = 'kerb'
     return out, how
+
+
+def split_forecourt(kind: dict, forecourt: set | frozenset, fp: set | None = None) -> Counter:
+    """Private forecourt reads apart from public pavement (#254): paving behind the front boundary becomes
+    ``forecourt`` (another block). Only paving: seen lawn, gravel, brick and the tarmac stay as the aerial
+    colour rules left them, and the surface class of the frontage profile is not evidence here."""
+    how: Counter = Counter()
+    for q in forecourt:
+        if kind.get(q) == 'paving' and q not in (fp or ()):
+            kind[q] = 'forecourt'
+            how['private forecourt surface (paving behind the front boundary)'] += 1
+    return how
 
 
 # --- 3. how high -------------------------------------------------------------------------
@@ -732,7 +753,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     import garden_sources as gs
     private = set(ev['private_frontage']) if 'private_frontage' in ev else gs.private_frontage_columns(frontages)
     route = set(ev['frontage_route']) if 'frontage_route' in ev else gs.frontage_route_columns(frontages)
-    kind, how = classify(cell, live, vmap, rgb, fp, private, route)
+    forecourt = set(ev['forecourt']) if 'forecourt' in ev else gs.forecourt_columns(frontages)
+    pavement = set(ev['pavement']) if 'pavement' in ev else gs.pavement_columns(frontages)
+    kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement)
+    how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
@@ -812,7 +836,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
 
 KIND_RGB = {'grass': (110, 180, 70), 'tarmac': (70, 70, 80), 'paving': (200, 200, 200),
             'brick': (190, 90, 60), 'gravel': (150, 140, 120), 'dirt': (120, 90, 60),
-            'mark': (255, 255, 255), 'kerb': (255, 220, 60)}
+            'mark': (255, 255, 255), 'kerb': (255, 220, 60), 'forecourt': (160, 160, 150)}
 
 
 def kinds_image(cell: tuple[int, int], kind: dict, out: Path, scale: int = 4) -> None:

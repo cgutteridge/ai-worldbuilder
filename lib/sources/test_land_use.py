@@ -220,3 +220,68 @@ class ParcelMeta(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestResolve(unittest.TestCase):
+    """One precedence function (#254): property > street > district > class; none speaks and stops."""
+
+    FENCE = {'type': 'fence', 'height': 2}
+
+    def row(self, cls='commercial', **frontage):
+        row = copy.deepcopy(L.defaults(cls))
+        row['frontage'].update(frontage)
+        return row
+
+    def with_front(self, cls='commercial'):
+        row = self.row(cls)
+        row['frontage']['boundary']['front'] = self.FENCE
+        return row
+
+    def test_layers_in_order_and_winner_is_named(self):
+        row = self.with_front()
+        prop, street, district = {'front': {'type': 'hedge'}}, {'front': {'type': 'brick_wall'}}, {'front': self.FENCE}
+        r = L.resolve('commercial', 'boundary', role='front', property=prop, street=street, district=district, row=row)
+        self.assertEqual((r['value']['type'], r['layer']), ('hedge', 'property'))
+        r = L.resolve('commercial', 'boundary', role='front', street=street, district=district, row=row)
+        self.assertEqual((r['value']['type'], r['layer']), ('brick_wall', 'street'))
+        r = L.resolve('commercial', 'boundary', role='front', district={'front': {'type': 'hedge'}}, row=row)
+        self.assertEqual((r['value']['type'], r['layer']), ('hedge', 'district'))
+        r = L.resolve('commercial', 'boundary', role='front', row=row)
+        self.assertEqual((r['value']['type'], r['layer']), ('fence', 'class'))
+
+    def test_none_is_explicit_and_stops_the_search(self):
+        row = self.with_front()
+        for layer in ('property', 'street', 'district'):
+            r = L.resolve('commercial', 'boundary', role='front', row=row, **{layer: {'front': {'type': 'none'}}})
+            self.assertEqual((r['value'], r['layer'], r['open']), (None, layer, True))
+        r = L.resolve('commercial', 'boundary', role='front', property={'front': None}, street={'front': self.FENCE}, row=row)
+        self.assertTrue(r['open'])                                  # null and empty speak too
+        self.assertEqual(r['layer'], 'property')
+
+    def test_silent_layers_and_null_class_default_infer_nothing(self):
+        r = L.resolve('residential', 'boundary', role='front', street={'side_back': self.FENCE})
+        self.assertEqual((r['value'], r['layer'], r['open']), (None, None, False))
+
+    def test_class_default_boundary_needs_inference_and_a_known_class(self):
+        for cls in ('unknown', 'rural', 'natural', 'water'):
+            row = self.with_front(cls)
+            r = L.resolve(cls, 'boundary', role='front', row=row)
+            self.assertEqual((r['value'], r['layer']), (None, None), cls)
+        self.assertEqual(L.resolve('banana', 'boundary', role='front', row=self.with_front())['layer'], None)
+
+    def test_scalar_fields_always_have_a_class_default(self):
+        self.assertEqual(L.resolve('park', 'private_surface')['value'], 'keep')
+        self.assertEqual(L.resolve('commercial', 'private_surface')['value'], 'paving')
+        self.assertEqual(L.resolve('commercial', 'opening')['value'], 'street_gate')
+        r = L.resolve('commercial', 'private_surface', street={'private_surface': 'grass'})
+        self.assertEqual((r['value'], r['layer']), ('grass', 'street'))
+
+    def test_pavement_width_is_a_class_value(self):
+        self.assertEqual(L.pavement_width('residential'), 2.5)
+        self.assertEqual(L.pavement_width(None), L.pavement_width('unknown'))
+        self.assertEqual(L.pavement_width(row=self.row('residential', pavement=3.5)), 3.5)
+        for bad in (0, -1, 9, 'x', True):
+            doc = {'classes': [copy.deepcopy(r) for r in L.load_table()['classes'].values()]}
+            doc['classes'][0]['frontage']['pavement'] = bad
+            with self.assertRaises(L.TableError, msg=bad):
+                L.validate_table(doc)

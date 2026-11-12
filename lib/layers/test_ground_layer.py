@@ -142,6 +142,57 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertTrue(all(kept[q] == 'grass' for q in garden))
         self.assertEqual(how['guessed lawn kept: private residential frontage'], len(garden))
 
+    def _strip(self):
+        cell = (48, -44)
+        x0, z0 = 6144, -5632
+        road = {(x0 + i, z0): 'tarmac' for i in range(6)}
+        osm = self.Osm(dict(road), {q: 90 for q in road}, road=road)
+        fp = {(x0 + i, z0 + 5) for i in range(6)}
+        garden = [(x0 + i, z0 + j) for i in range(6) for j in (2, 3)]
+        live = {q: (50, 'stone') for q in garden}
+        rgb = {q: (0.44, 0.39, 0.27) for q in garden}              # shade: lawn guessed, not seen
+        return cell, osm, fp, garden, live, rgb
+
+    def test_keep_class_frontage_never_becomes_paving_but_paving_class_does(self):
+        """Behaviour change (#254, owner-confirmed): guessed lawn stays lawn in park, rural and natural land."""
+        import garden_sources as gs
+        cell, osm, fp, garden, live, rgb = self._strip()
+
+        def front(cls):
+            return {'eligible': cls in ('park', 'commercial'), 'private_surface': 'keep' if cls != 'commercial' else 'paving',
+                    'extent': garden, 'surface_keep': garden if cls in ('rural', 'natural') else []}
+        for cls in ('park', 'rural', 'natural'):
+            kept = gs.private_frontage_columns([front(cls)])
+            kind, _ = gl.classify(cell, live, osm, rgb, fp, kept)
+            self.assertTrue(all(kind[q] == 'grass' for q in garden), cls)
+        kind, _ = gl.classify(cell, live, osm, rgb, fp, gs.private_frontage_columns([front('commercial')]))
+        self.assertTrue(all(kind[q] == 'paving' for q in garden))
+
+    def test_public_pavement_strip_paves_guessed_lawn(self):
+        cell = (48, -44)
+        x0, z0 = 6144, -5632
+        road = {(x0 + i, z0): 'tarmac' for i in range(12)}
+        osm = self.Osm(dict(road), {q: 90 for q in road}, road=road)
+        fp = {(x0 + i, z0 + 5) for i in range(12)}
+        strip = {(x0 + i, z0 + 2) for i in range(12)}
+        private = {(x0 + i, z0 + 3) for i in range(12)}
+        live = {q: (50, 'stone') for q in strip | private}
+        rgb = {q: (0.44, 0.39, 0.27) for q in live}                # shade: lawn guessed, not seen
+        kind, how = gl.classify(cell, live, osm, rgb, fp, frozenset(private), frozenset(), strip)
+        self.assertTrue(all(kind[q] == 'paving' for q in strip))
+        self.assertTrue(all(kind[q] == 'grass' for q in private))
+        self.assertEqual(how['guessed lawn on public pavement strip -> paving'], 12)
+
+    def test_forecourt_paving_reads_apart_from_public_pavement(self):
+        kind = {(0, 0): 'paving', (1, 0): 'paving', (2, 0): 'grass', (3, 0): 'gravel', (4, 0): 'tarmac', (5, 0): 'brick'}
+        how = gl.split_forecourt(kind, {(0, 0), (2, 0), (3, 0), (4, 0), (5, 0), (9, 9)}, fp={(5, 0)})
+        self.assertEqual(kind, {(0, 0): 'forecourt', (1, 0): 'paving', (2, 0): 'grass', (3, 0): 'gravel',
+                                (4, 0): 'tarmac', (5, 0): 'brick'})
+        self.assertEqual(sum(how.values()), 1)
+        self.assertNotEqual(gl.MATERIAL['forecourt'], gl.MATERIAL['paving'])
+        self.assertEqual(gl.BLOCK_KIND[gl.MATERIAL['forecourt']], 'forecourt')
+        self.assertIn('forecourt', gl.KIND_RGB)
+
     def test_entrance_route_paves_guessed_ground_but_keeps_seen_lawn(self):
         """The onward route paves guessed (shaded) ground only; observed lawn stays (#240)."""
         cell = (48, -44)

@@ -37,7 +37,8 @@
      "perimeter": null
     },
     "private_surface": "grass",
-    "opening": "door_route"
+    "opening": "door_route",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -90,7 +91,8 @@
      "perimeter": null
     },
     "private_surface": "paving",
-    "opening": "street_gate"
+    "opening": "street_gate",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -136,7 +138,8 @@
      "perimeter": null
     },
     "private_surface": "paving",
-    "opening": "street_gate"
+    "opening": "street_gate",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -201,7 +204,8 @@
      "perimeter": null
     },
     "private_surface": "paving",
-    "opening": "street_gate"
+    "opening": "street_gate",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -254,7 +258,8 @@
      "perimeter": null
     },
     "private_surface": "keep",
-    "opening": "none"
+    "opening": "none",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -295,7 +300,8 @@
      "perimeter": null
     },
     "private_surface": "keep",
-    "opening": "none"
+    "opening": "none",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -340,7 +346,8 @@
      "perimeter": null
     },
     "private_surface": "keep",
-    "opening": "none"
+    "opening": "none",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -376,7 +383,8 @@
      "perimeter": null
     },
     "private_surface": "keep",
-    "opening": "none"
+    "opening": "none",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -420,7 +428,8 @@
      "perimeter": null
     },
     "private_surface": "paving",
-    "opening": "street_gate"
+    "opening": "street_gate",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -452,7 +461,8 @@
      "perimeter": null
     },
     "private_surface": "paving",
-    "opening": "street_gate"
+    "opening": "street_gate",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null
@@ -482,7 +492,8 @@
      "perimeter": null
     },
     "private_surface": "keep",
-    "opening": "none"
+    "opening": "none",
+    "pavement": 2.5
    },
    "planting": null,
    "furniture": null

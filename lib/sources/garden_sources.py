@@ -33,13 +33,14 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
+import land_use  # noqa: E402
+
 GARDENS = ROOT / 'site' / 'gardens'
 HEDGE_BLOCK = 'oak_leaves[persistent=true]'
 DEFAULT_BLOCK = {'hedge': HEDGE_BLOCK, 'brick_wall': 'brick_wall', 'fence': 'spruce_fence',
                  'iron_bars': 'iron_bars'}
 DEFAULT_HEIGHT = {'hedge': 2, 'brick_wall': 1, 'fence': 2, 'iron_bars': 1}
 HEDGE_SHARE = 0.6        # share of a segment's columns that must read dark green to call it a hedge
-PAVEMENT = 3.0           # blocks of footway between kerb and front boundary
 SIDE_DEPTH = 40          # side boundaries only run this far behind the front line unless told
 
 
@@ -52,13 +53,30 @@ def load_convention(street: str) -> dict | None:
     return json.loads(p.read_text()) if p.exists() else None
 
 
-def role_spec(conv: dict | None, number: str, role: str) -> dict | None:
-    """Barrier spec for one role on one house: override, else street convention, else None."""
+def _layers(conv: dict | None, number: str) -> tuple[dict | None, dict | None]:
+    """(per-house override, street convention) layers for ``land_use.resolve``."""
     if not conv:
-        return None
-    over = (conv.get('overrides') or {}).get(str(number), {})
-    spec = over[role] if role in over else conv.get(role)
-    if not spec or spec.get('type') in (None, 'none'):
+        return None, None
+    return (conv.get('overrides') or {}).get(str(number)), conv
+
+
+def role_resolution(conv: dict | None, number: str, role: str, cls: str = 'residential',
+                    row: dict | None = None) -> dict:
+    """``land_use.resolve`` for one boundary role: per-house override, street, (district), class default."""
+    prop, street = _layers(conv, number)
+    return land_use.resolve(cls, 'boundary', role=role, property=prop, street=street, row=row)
+
+
+def role_spec(conv: dict | None, number: str, role: str, cls: str = 'residential',
+              row: dict | None = None) -> dict | None:
+    """Barrier spec for one role on one house: override, street convention, class default, else None.
+
+    The class default is null in every shipped row, so this is the old override-then-street answer
+    unless a class row (or ``row``) carries a boundary for ``role``.
+    """
+    res = role_resolution(conv, number, role, cls, row)
+    spec = res['value']
+    if not spec or res['open']:
         return None
     t = spec['type']
     return {'type': t, 'block': spec.get('block') or DEFAULT_BLOCK[t],
@@ -73,19 +91,10 @@ def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
 
     @param conv: street convention dict from ``load_convention``, or None
     @param number: house number string
-    @param role: ``front`` / ``side_front`` / ``side_back`` / ``rear``
+    @param role: ``front`` / ``side_front`` / ``side_back`` / ``rear`` / ``perimeter``
     @returns: whether aerial hedge promotion is forbidden for this role
     """
-    if not conv:
-        return False
-    over = (conv.get('overrides') or {}).get(str(number), {})
-    if role in over:
-        spec = over[role]
-        return not spec or spec.get('type') in (None, 'none')
-    if role in conv:
-        spec = conv[role]
-        return not spec or spec.get('type') in (None, 'none')
-    return False
+    return role_resolution(conv, number, role)['open']
 
 
 NON_RESIDENTIAL_BUILDINGS = frozenset({
@@ -104,13 +113,57 @@ OPENING_WIDTH = 2        # columns of front boundary left open at an entrance
 FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden
 
 
-def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
-                         *, door: tuple[int, int] | None = None, approach: dict | None = None,
-                         evidence_ids=(), boundary_cells=None) -> dict:
-    """One shared description of a residential property's private frontage (#240).
+def meta_class(meta: dict) -> str:
+    """Land-use class id of a plot: ``meta['land_use']`` (dict from the classifier, or an id), else the
+    legacy ``nonresidential`` flag (commercial), else residential (today's default for a house plot)."""
+    lu = meta.get('land_use')
+    if isinstance(lu, dict):
+        return lu.get('class') or 'unknown'
+    if lu:
+        return str(lu)
+    return 'commercial' if meta.get('nonresidential') else 'residential'
 
-    Ground reads ``extent`` (private frontage, not public pavement) and ``route``; decor reads
-    ``boundary`` roles and ``opening``. Pure: callers pass the plot, its role segments and house.
+
+def _front_extent(meta: dict, plot_cells) -> list:
+    """Plot columns of the front extent: more than FRONT_GARDEN_MARGIN from the house line, street side."""
+    foot, centre = meta.get('foot'), meta.get('centre')
+    if not foot or not centre:
+        return []
+    fx, fz = foot
+    ax, az = centre[0] - fx, centre[1] - fz
+    n = math.hypot(ax, az) or 1.0
+    ax, az = ax / n, az / n
+    return sorted(q for q in plot_cells if ((q[0] - fx) * ax + (q[1] - fz) * az) < n - FRONT_GARDEN_MARGIN)
+
+
+def _pavement_strip(meta: dict, front, width: float) -> list:
+    """Columns of public pavement: the strip just outside the front boundary, toward the street."""
+    fx, fz = meta['foot']
+    ax, az = meta['centre'][0] - fx, meta['centre'][1] - fz
+    ox, oz = -ax, -az
+    step = (1 if ox > 0 else -1, 0) if abs(ox) >= abs(oz) else (0, 1 if oz > 0 else -1)
+    out = {(q[0] + step[0] * k, q[1] + step[1] * k) for q in front for k in range(1, max(1, int(width)) + 1)}
+    return sorted(out - set(map(tuple, front)))
+
+
+def frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
+             *, door: tuple[int, int] | None = None, approach: dict | None = None,
+             evidence_ids=(), boundary_cells=None, row: dict | None = None) -> dict:
+    """One shared description of a property's private frontage, any land-use class (#240, #254).
+
+    The class comes from ``meta['land_use']`` (#253 classifier); ``row`` overrides the table row
+    (synthetic tests). Residential is the residential row: inference needs an identified property
+    and a ``front`` segment. Other classes read their own row: ``requires`` may name
+    ``perimeter_segment`` (a ``front`` or ``perimeter`` edge); ``private_surface`` says what guessed
+    ground in the front extent becomes (``grass`` and ``keep`` leave lawn, ``paving`` lets ground
+    pave it); ``opening`` says how the entrance gap is reserved (``door_route``, ``street_gate``,
+    ``none``). A class that allows no inference (rural, natural, water, unknown) is never eligible.
+    Per field, ``land_use.resolve`` picks the layer (per-house override, street, district, class);
+    its winner for the front boundary goes into ``scope['layer']``.
+
+    Ground reads ``extent`` (private frontage, not public pavement), ``pavement`` (the public strip
+    outside the front boundary), ``forecourt`` and ``route``; decor reads ``boundary`` roles and
+    ``opening``. Pure: callers pass the plot, its role segments and house.
 
     Eligibility (inference only): an identified residential property (street and number) with
     street-run evidence (a ``front`` segment). A missing convention alone never authorises a fence;
@@ -118,7 +171,7 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
     Entrance: ``door`` is an observed door column; without it the nearest house column to the street
     foot is used and labelled ``inferred`` (a plausible entrance, never a verified connection).
 
-    @param meta: ``{street, number, centre, foot, map_ref}`` plot info from ``plots_for``
+    @param meta: ``{street, number, centre, foot, map_ref, land_use}`` plot info from ``plots_for``
     @param plot_cells: columns of the plot outside footprints
     @param role_cells: ``{role: [cells]}`` plot edge segments from ``segments``
     @param house_cells: footprint columns of this property's house
@@ -128,22 +181,43 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
         the route starts at its connection, so ground joins the outer end of the feature's steps and
         never duplicates them. Its door is a built door (``generated`` position, not observed)
     @param evidence_ids: registry evidence ids backing the property
-    @returns: dict with eligible, reason, extent, boundary, opening, route, door, connection, provenance
+    @param row: table row replacing the class's own (tests)
+    @returns: dict with eligible, reason, extent, boundary, opening, route, door, connection, provenance,
+        land_use, private_surface, pavement, forecourt, surface_keep
     """
     import provenance as prov
 
     street, number = meta.get('street') or '', str(meta.get('number') or '')
+    cls = meta_class(meta)
+    row = row or land_use.defaults(cls)
+    fr = row['frontage']
+    prop, street_layer = _layers(conv, number)
+    surface = land_use.resolve(cls, 'private_surface', property=prop, street=street_layer, row=row)['value']
+    opening_kind = land_use.resolve(cls, 'opening', property=prop, street=street_layer, row=row)['value']
+    front_res = role_resolution(conv, number, 'front', cls, row)
     out = {'id': f'frontage-{slug(street)}-{number}' if street and number else 'frontage-unidentified',
-           'scope': {'street': street, 'property': number}, 'eligible': False, 'reason': '',
+           'scope': {'street': street, 'property': number, 'land_use': cls,
+                     'layer': front_res['layer'] or 'class'},
+           'eligible': False, 'reason': '', 'land_use': cls, 'private_surface': surface,
            'extent': [], 'boundary': [], 'open_frontage': False, 'opening': [], 'route': [],
+           'pavement': [], 'forecourt': [], 'surface_keep': [],
            'door': None, 'connection': {'status': 'none', 'reason': ''}, 'surface': 'private_frontage'}
     front = list(role_cells.get('front') or ())
     foot = meta.get('foot')
-    if meta.get('nonresidential'):
+    requires = fr['requires']
+    if meta.get('nonresidential') and not meta.get('land_use'):
         out['reason'] = 'building is not residential (shop, office or campus tags)'
-    elif not street or not number:
+    elif not fr['inference'] or cls == 'unknown':
+        out['reason'] = f'land-use class {cls} allows no frontage inference'
+        if surface == 'keep':
+            out['surface_keep'] = _front_extent(meta, plot_cells)   # guessed lawn stays as it is
+    elif 'identified_property' in requires and (not street or not number):
         out['reason'] = 'property has no street and house number'
-    elif not front or not foot:
+    elif 'front_segment' in requires and (not front or not foot):
+        out['reason'] = 'no street-run frontage evidence'
+    elif 'perimeter_segment' in requires and not (front or role_cells.get('perimeter')):
+        out['reason'] = 'no street-facing parcel edge'
+    elif not foot:
         out['reason'] = 'no street-run frontage evidence'
     if out['reason']:
         out['provenance'] = prov.provenance_record(
@@ -155,12 +229,30 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
     n = math.hypot(ax, az) or 1.0
     ax, az = ax / n, az / n
     house = set(house_cells)
-    out['extent'] = sorted(q for q in plot_cells
-                           if ((q[0] - fx) * ax + (q[1] - fz) * az) < n - FRONT_GARDEN_MARGIN)
-    out['open_frontage'] = role_vetoed(conv, number, 'front')
-    spec = role_spec(conv, number, 'front')
+    out['extent'] = _front_extent(meta, plot_cells)
+    if surface == 'keep':
+        out['surface_keep'] = list(out['extent'])
+    else:
+        out['forecourt'] = list(out['extent'])
+    out['pavement'] = _pavement_strip(meta, front, land_use.pavement_width(cls, row)) if front else []
+    out['open_frontage'] = front_res['open']
+    spec = role_spec(conv, number, 'front', cls, row)
+    if spec and front_res['layer'] == 'class':
+        out['scope']['layer'] = 'class'
     boundary = list(front if spec else (boundary_cells or ()))
     out['boundary'] = sorted(boundary) if not out['open_frontage'] else []
+    if opening_kind != 'door_route':
+        gate = []
+        if opening_kind == 'street_gate' and out['boundary'] and front:
+            target = min(front, key=lambda q: (math.hypot(q[0] - fx, q[1] - fz), q))
+            near = sorted((q for q in front if q != target and max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1),
+                          key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))
+            gate = sorted([target] + near[:OPENING_WIDTH - 1])
+        out['opening'] = gate
+        out['connection'] = {'status': 'none', 'reason': f'{opening_kind}: no door route for class {cls}'}
+        out['provenance'] = prov.provenance_record(
+            source='inference', confidence='low', evidence_ids=evidence_ids)
+        return out
     observed = door is not None
     built = approach is not None and approach.get('connection') is not None
     if built:
@@ -207,6 +299,11 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
         source='vector_map' if observed else 'inference',
         confidence='medium' if (observed or built) else 'low', evidence_ids=evidence_ids)
     return out
+
+
+def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None, **kw) -> dict:
+    """Old name of :func:`frontage`, kept for callers; a plot without a class is residential."""
+    return frontage(meta, plot_cells, role_cells, house_cells, conv, **kw)
 
 
 def frontages_for_cell(cell: tuple[int, int]) -> list:
@@ -273,8 +370,27 @@ def landed_approaches(cell: tuple[int, int], registry=None, footprint=None) -> l
 
 
 def private_frontage_columns(frontages) -> set:
-    """Columns of eligible private frontage (ground must not turn guessed lawn there to paving)."""
-    return {tuple(q) for f in frontages if f.get('eligible') for q in f.get('extent', ())}
+    """Columns where ground keeps guessed lawn instead of paving it (#254).
+
+    Eligible frontage whose class keeps lawn (``private_surface`` ``grass`` or ``keep``; a missing
+    value counts as ``grass``, the residential row), plus the front extent of classes that say
+    ``keep`` but allow no inference (park, rural, natural, water). ``paving`` classes are not
+    listed, so ground paves their guessed lawn.
+    """
+    out = {tuple(q) for f in frontages if f.get('eligible') and f.get('private_surface', 'grass') != 'paving'
+           for q in f.get('extent', ())}
+    out |= {tuple(q) for f in frontages for q in f.get('surface_keep', ())}
+    return out
+
+
+def forecourt_columns(frontages) -> set:
+    """Columns of private forecourt (eligible frontage extent) where seen paving gets its own surface."""
+    return {tuple(q) for f in frontages if f.get('eligible') for q in f.get('forecourt', ())}
+
+
+def pavement_columns(frontages) -> set:
+    """Columns of public pavement: the per-class strip just outside each eligible front boundary."""
+    return {tuple(q) for f in frontages if f.get('eligible') for q in f.get('pavement', ())}
 
 
 def reserved_openings(frontages) -> set:
@@ -309,16 +425,21 @@ def plots_for(box: tuple[int, int, int, int], margin: int = 60):
     from ground_sources import ROAD_CLASSES, line_cells, road_width
     from osm_footprints import OSMIndex, _addr, grow_plots
 
+    from coverage import area_classes, building_land_use
+
     x0, z0, x1, z1 = box
     idx = OSMIndex()
     fp = idx.cells()
+    classes = area_classes(idx, (x0 - margin, z0 - margin, x1 + margin, z1 + margin))
     seeds = {q: i for q, i in fp.items() if x0 - margin <= q[0] <= x1 + margin and z0 - margin <= q[1] <= z1 + margin}
-    # street = carriageway plus a pavement either side (the front boundary sits at its back edge)
+    # street = carriageway plus a pavement either side (the front boundary sits at its back edge).
+    # Plots grow before their class is known, so the band uses the widest class pavement in the table.
+    pavement = max(land_use.pavement_width(c) for c in land_use.CLASSES)
     street: dict = {}
     for (name, hw, pts), props in zip(idx.streets, idx.street_props):
         if hw in ROAD_CLASSES and any(x0 - margin <= x <= x1 + margin and z0 - margin <= z <= z1 + margin
                                       for x, z in pts):
-            for q in line_cells(pts, road_width(props) / 2 + PAVEMENT):
+            for q in line_cells(pts, road_width(props) / 2 + pavement):
                 street[q] = True
 
     def is_street(x, z):
@@ -334,7 +455,7 @@ def plots_for(box: tuple[int, int, int, int], margin: int = 60):
         s = idx.nearest_street(cx, cz)
         info[i] = {'street': st or (s[1] if s else ''), 'number': num or '', 'centre': (cx, cz),
                    'foot': s[3] if s else None, 'map_ref': p.get('osm_id') or p.get('osm_way_id'),
-                   'nonresidential': nonresidential_building(p)}
+                   'land_use': building_land_use(idx, rings, p, classes)}
     return owner, info, street, idx
 
 
@@ -358,7 +479,9 @@ def segments(owner: dict, info: dict, street: dict, idx, box) -> dict:
             if street.get(q):
                 role = 'front'
             elif q in owner:
-                if abs(dx * ax + dz * az) > math.sqrt(0.5):
+                if meta_class(meta) != 'residential':
+                    role = 'perimeter'                                # a non-house parcel has no front/side/rear
+                elif abs(dx * ax + dz * az) > math.sqrt(0.5):
                     role = 'rear'
                 else:       # side: in front of the house line (front garden) or behind it
                     role = 'side_front' if ((x - fx) * ax + (z - fz) * az) < n - 6 else 'side_back'
@@ -485,11 +608,13 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         override = (conv.get('overrides') or {}).get(number, {})
         property_role = role in override
         raw = (override if property_role else conv).get(role) or {}
-        spec = role_spec(conv, number, role)
-        vetoed = role_vetoed(conv, number, role)
+        cls = meta_class(meta)
+        res = role_resolution(conv, number, role, cls)
+        spec = role_spec(conv, number, role, cls)
+        vetoed = res['open']
         near = [q for q in cells if math.hypot(q[0] - meta['centre'][0], q[1] - meta['centre'][1]) <= 30]
         share = hedge_share(near, rgb, canopy=canopy) if len(near) >= 4 else 0.0
-        src = 'convention' if spec else 'none'
+        src = ('class default' if res['layer'] == 'class' else 'convention') if spec else 'none'
         if share >= HEDGE_SHARE and len(cells) >= 4 and not vetoed and not property_role:
             spec, src = {'type': 'hedge', 'block': HEDGE_BLOCK, 'height': 2, 'depth': None}, 'aerial hedge'
         elif share >= HEDGE_SHARE and len(cells) >= 4 and vetoed:
@@ -502,14 +627,17 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                 for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     j = owner.get((q[0] + a, q[1] + b))
                     if j is not None and j < i and role != 'front' and \
-                            role_spec(load_convention(info[j]['street']), info[j]['number'], role):
+                            role_spec(load_convention(info[j]['street']), info[j]['number'], role, meta_class(info[j])):
                         return True
                 return False
             cols = straighten([q for q in cells if not twin(q)])
             source = 'aerial' if src == 'aerial hedge' else ('register_entry' if property_role else 'inference')
-            layer = 'property' if property_role else ('aerial' if source == 'aerial' else 'street')
+            from_class = src == 'class default'
+            layer = ('property' if property_role else 'aerial' if source == 'aerial'
+                     else 'class' if from_class else 'street')
             reason = ('aerial hedge strip outside tree canopy' if source == 'aerial' else
                       'explicit per-property boundary' if property_role else
+                      f'land-use class {cls} default boundary' if from_class else
                       'deterministic same-street inference from boundary convention')
             supplied = (raw.get('provenance') or {}) if source != 'aerial' else {}
             evidence_ids = supplied.get('evidence_ids', raw.get('evidence_ids',
@@ -521,7 +649,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
             items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': spec['type'],
                           'block': spec['block'], 'height': spec['height'],
                           'cells': [list(q) for q in cols], 'boundary_role': role,
-                          'scope': {'street': meta['street'], 'property': number, 'layer': layer},
+                          'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},
                           'reason': reason, 'provenance': record})
             if role == 'front':
                 front_boundaries[i] = cols
@@ -593,7 +721,7 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
     out = []
     for i in sorted(info):
         meta = info[i]
-        out.append(residential_frontage(
+        out.append(frontage(
             meta, plot_cells[i], roles[i], house_cells[i], load_convention(meta['street']),
             door=(doors or {}).get(i), approach=by_plot.get(i),
             evidence_ids=(load_convention(meta['street']) or {}).get('evidence_ids', ()),

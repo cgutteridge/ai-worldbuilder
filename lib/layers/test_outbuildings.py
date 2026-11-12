@@ -489,3 +489,20 @@ class TestMassing(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestNonHouseStrip(unittest.TestCase):
+    """Outbuildings are not gated to house plots (#254): a yard with no house still places a shed."""
+
+    def test_blob_and_mapped_shed_in_a_plot_with_no_house_still_place(self):
+        yard = rect(30, 30, 3, 3)
+        owner = {q: 'yard' for q in rect(25, 25, 14, 12)}               # one plot, no footprint inside it
+        plan = blob_plan(yard, plot_owner=owner, footprint=set())
+        (item,) = only(plan)
+        self.assertEqual((item['plot_ids'], item['door']), (['yard'], None))   # no house or route: no door target
+        found, report, unplaced = place([item])
+        self.assertTrue(found)
+        self.assertEqual((len(report), unplaced), (1, []))
+        mapped = plan_for(footprints=[{'ref': '9', 'building': 'garage', 'cells': sorted(rect(20, 20, 3, 4))}],
+                          plot_owner={q: 'yard' for q in rect(18, 18, 8, 8)})
+        self.assertTrue(place(only(mapped))[0])

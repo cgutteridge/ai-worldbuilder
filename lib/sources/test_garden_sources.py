@@ -346,3 +346,196 @@ class TestTreeCanopyColumns(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _class_meta(cls, **kw):
+    meta, plot, roles, house = _strip()
+    meta['land_use'] = {'class': cls, 'reason': 'test', 'ref': None}
+    meta.update(kw)
+    return meta, plot, roles, house
+
+
+def _row(cls, **frontage):
+    import copy
+    import land_use as lu
+    row = copy.deepcopy(lu.defaults(cls))
+    row['frontage'].update(frontage)
+    return row
+
+
+class TestFrontageByClass(unittest.TestCase):
+    """One strip per land-use class plus unknown (#254): the class row decides, residential is one row."""
+
+    FENCE = {'type': 'fence', 'height': 2}
+
+    def test_residential_is_the_residential_row(self):
+        meta, plot, roles, house = _class_meta('residential')
+        a = gs.frontage(meta, plot, roles, house, {'front': {'type': 'fence'}})
+        meta2, *_ = _strip()
+        b = gs.residential_frontage(meta2, plot, roles, house, {'front': {'type': 'fence'}})
+        for k in ('eligible', 'extent', 'boundary', 'opening', 'route', 'door', 'connection'):
+            self.assertEqual(a[k], b[k], k)
+        self.assertEqual(a['scope']['layer'], 'street')
+        self.assertEqual(a['private_surface'], 'grass')
+
+    def test_house_classes_need_no_number_but_a_street_edge(self):
+        for cls in ('commercial', 'industrial', 'civic', 'transport', 'parking', 'park'):
+            meta, plot, roles, house = _class_meta(cls, number='')
+            f = gs.frontage(meta, plot, roles, house, None)
+            self.assertTrue(f['eligible'], cls)
+            self.assertEqual(f['land_use'], cls)
+            self.assertEqual(f['boundary'], [], cls)               # no class ships a fence
+            self.assertEqual(f['opening'], [], cls)
+            f = gs.frontage(meta, plot, {}, house, None)
+            self.assertFalse(f['eligible'], cls)
+            self.assertIn('street-facing', f['reason'])
+
+    def test_no_inference_classes_and_unknown_are_never_eligible(self):
+        for cls in ('rural', 'natural', 'water', 'unknown'):
+            meta, plot, roles, house = _class_meta(cls)
+            f = gs.frontage(meta, plot, roles, house, self.CONV_FENCE)
+            self.assertFalse(f['eligible'], cls)
+            self.assertIn('allows no frontage inference', f['reason'])
+            self.assertEqual((f['boundary'], f['opening'], f['route'], f['extent']), ([], [], [], []))
+
+    CONV_FENCE = {'front': {'type': 'fence'}}
+
+    def test_keep_classes_keep_guessed_lawn_paving_classes_do_not(self):
+        keep, pave = {}, {}
+        for cls in ('park', 'rural', 'natural', 'water', 'unknown', 'residential'):
+            meta, plot, roles, house = _class_meta(cls)
+            keep[cls] = gs.private_frontage_columns([gs.frontage(meta, plot, roles, house, None)])
+        for cls in ('commercial', 'industrial', 'civic', 'transport', 'parking'):
+            meta, plot, roles, house = _class_meta(cls)
+            pave[cls] = gs.private_frontage_columns([gs.frontage(meta, plot, roles, house, None)])
+        self.assertTrue(all(keep.values()), keep)
+        self.assertEqual(sum(len(v) for v in pave.values()), 0)
+
+    def test_class_default_fence_builds_labelled_class_and_street_gate_is_reserved(self):
+        row = _row('commercial', boundary={**_row('commercial')['frontage']['boundary'], 'front': self.FENCE})
+        meta, plot, roles, house = _class_meta('commercial')
+        f = gs.frontage(meta, plot, roles, house, None, row=row)
+        self.assertEqual(f['scope']['layer'], 'class')
+        self.assertEqual(f['boundary'], sorted(roles['front']))
+        self.assertEqual(len(f['opening']), gs.OPENING_WIDTH)
+        self.assertTrue(set(f['opening']) <= set(roles['front']))
+        self.assertEqual(f['route'], [])                           # a street gate is not a door route
+        self.assertEqual(gs.role_spec(None, '7', 'front', 'commercial', row)['type'], 'fence')
+
+    def test_same_fence_row_under_unknown_is_refused(self):
+        row = _row('unknown', boundary={**_row('unknown')['frontage']['boundary'], 'front': self.FENCE})
+        self.assertIsNone(gs.role_spec(None, '7', 'front', 'unknown', row))
+        meta, plot, roles, house = _class_meta('unknown')
+        f = gs.frontage(meta, plot, roles, house, None, row=row)
+        self.assertEqual(f['boundary'], [])
+        import land_use as lu
+        with self.assertRaises(lu.TableError):                      # and the table refuses to load it
+            import copy
+            doc = copy.deepcopy(lu.load_table())
+            doc = {'classes': list(doc['classes'].values())}
+            [r for r in doc['classes'] if r['id'] == 'unknown'][0]['frontage'] = row['frontage']
+            lu.validate_table(doc)
+
+    def test_explicit_none_beats_a_class_default(self):
+        row = _row('commercial', boundary={**_row('commercial')['frontage']['boundary'], 'front': self.FENCE})
+        meta, plot, roles, house = _class_meta('commercial')
+        f = gs.frontage(meta, plot, roles, house, {'front': {'type': 'none'}}, row=row)
+        self.assertTrue(f['open_frontage'])
+        self.assertEqual((f['boundary'], f['opening']), ([], []))
+        self.assertEqual(f['scope']['layer'], 'street')
+
+    def test_street_convention_beats_class_default_and_override_beats_both(self):
+        row = _row('civic', boundary={**_row('civic')['frontage']['boundary'], 'front': self.FENCE})
+        conv = {'front': {'type': 'brick_wall'}, 'overrides': {'7': {'front': {'type': 'hedge'}}}}
+        self.assertEqual(gs.role_spec(conv, '7', 'front', 'civic', row)['type'], 'hedge')
+        self.assertEqual(gs.role_spec(conv, '8', 'front', 'civic', row)['type'], 'brick_wall')
+        self.assertEqual(gs.role_spec({}, '8', 'front', 'civic', row)['type'], 'fence')
+
+    def test_pavement_strip_width_comes_from_the_class(self):
+        meta, plot, roles, house = _class_meta('residential')
+        f = gs.frontage(meta, plot, roles, house, None)
+        self.assertEqual(f['pavement'], sorted({(x, z) for x in range(10) for z in (1, 2)}))
+        self.assertEqual(gs.pavement_columns([f]), {tuple(q) for q in f['pavement']})
+        wide = _row('residential', pavement=4)
+        f = gs.frontage(meta, plot, roles, house, None, row=wide)
+        self.assertEqual({z for _x, z in f['pavement']}, {-1, 0, 1, 2})
+        self.assertTrue(set(f['pavement']).isdisjoint(plot))       # public strip is outside the plot
+        self.assertEqual(gs.forecourt_columns([f]), {tuple(q) for q in f['extent']})
+
+    def test_legacy_nonresidential_flag_still_blocks_frontage(self):
+        meta, plot, roles, house = _strip()
+        meta['nonresidential'] = True
+        f = gs.residential_frontage(meta, plot, roles, house, self.CONV_FENCE)
+        self.assertFalse(f['eligible'])
+
+
+class TestPlotsAreClassified(unittest.TestCase):
+    """plots_for gives each plot a land-use class; non-house plots get perimeter edges (#254)."""
+
+    @staticmethod
+    def _plots(tags, retail):
+        import land_use as lu  # noqa: F401
+        from test_land_use import index, sq
+        areas = [(sq(0, 0, 60, 60), {'landuse': 'retail'})] if retail else []
+        idx = index(areas=areas, buildings=[(sq(20, 20, 24, 24), tags)])
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx):
+            return gs.plots_for((0, 0, 60, 60), margin=10)
+
+    def test_house_number_inside_retail_land_becomes_commercial(self):
+        """Behaviour change (owner-confirmed 2026-11-12): a number alone no longer makes a house residential."""
+        tags = {'building': 'yes', 'addr:housenumber': '5', 'addr:street': 'High Street'}
+        _o, info, *_ = self._plots(tags, retail=True)
+        self.assertEqual({v['land_use']['class'] for v in info.values()}, {'commercial'})
+        _o, info, *_ = self._plots(tags, retail=False)
+        self.assertEqual({v['land_use']['class'] for v in info.values()}, {'residential'})
+        _o, info, *_ = self._plots(dict(tags, building='house'), retail=True)
+        self.assertEqual({v['land_use']['class'] for v in info.values()}, {'residential'})   # tag wins
+
+    def test_shop_tagged_building_is_commercial_and_unmapped_yes_is_unknown(self):
+        _o, info, *_ = self._plots({'building': 'yes', 'shop': 'bakery'}, retail=False)
+        self.assertEqual({v['land_use']['class'] for v in info.values()}, {'commercial'})
+        _o, info, *_ = self._plots({'building': 'yes'}, retail=False)
+        self.assertEqual({v['land_use']['class'] for v in info.values()}, {'unknown'})
+
+    def test_non_house_edges_to_neighbours_are_perimeter(self):
+        from test_land_use import index, sq
+        idx = index(buildings=[(sq(10, 20, 14, 24), {'building': 'house', 'addr:housenumber': '1'}),
+                               (sq(30, 20, 34, 24), {'building': 'retail'})])
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx):
+            owner, info, street, idx2 = gs.plots_for((0, 0, 60, 60), margin=10)
+        seg = gs.segments(owner, info, street, idx2, (0, 0, 60, 60))
+        retail = [i for i, v in info.items() if v['land_use']['class'] == 'commercial'][0]
+        house = [i for i, v in info.items() if v['land_use']['class'] == 'residential'][0]
+        self.assertIn((retail, 'perimeter'), seg)
+        self.assertEqual({r for (i, r) in seg if i == retail}, {'perimeter'})
+        self.assertNotIn((house, 'perimeter'), seg)
+
+
+class TestClassDefaultBoundaryIsLabelled(unittest.TestCase):
+    def test_garden_barriers_item_carries_class_layer_and_land_use(self):
+        cells = [(x, 3) for x in range(10)]
+        info = {1: {'street': 'Test Road', 'number': '', 'centre': (5.0, 12.0), 'foot': (5, 0), 'map_ref': None,
+                    'land_use': {'class': 'commercial', 'reason': 'building_tag', 'ref': None}}}
+        owner = {q: 1 for q in cells}
+        seg = {(1, 'front'): cells}
+        row = _row('commercial', boundary={**_row('commercial')['frontage']['boundary'],
+                                           'front': {'type': 'fence', 'height': 2}})
+        import land_use as lu
+        idx = mock.Mock()
+        idx.cells.return_value = {}
+        with mock.patch.object(gs, 'plots_for', return_value=(owner, info, {}, idx)), \
+                mock.patch.object(gs, 'segments', return_value=seg), \
+                mock.patch.object(gs, 'load_convention', return_value=None), \
+                mock.patch.object(gs, 'hedge_share', return_value=0.0), \
+                mock.patch.object(gs, 'straighten', side_effect=lambda c: c), \
+                mock.patch.object(lu, 'defaults', return_value=row), \
+                mock.patch('ground_sources.aerial_rgb', return_value={}), \
+                mock.patch('ground_sources.cell_box', return_value=(0, 0, 9, 9)), \
+                mock.patch.object(gs, 'tree_canopy_columns', return_value=set()):
+            out = gs.garden_barriers((0, 0), rgb={})
+        (item,) = out
+        self.assertEqual(item['scope']['layer'], 'class')
+        self.assertEqual(item['scope']['land_use'], 'commercial')
+        self.assertEqual(item['provenance']['source'], 'inference')
+        self.assertIn('commercial', item['reason'])
+        self.assertTrue(set(map(tuple, item['cells'])).isdisjoint(gs.reserved_openings([])))
