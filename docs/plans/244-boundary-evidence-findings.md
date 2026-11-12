@@ -8,7 +8,7 @@ Research only, 2026-11-12. No code, world data, or rebuild changed. Draft data: 
 |---|---|---|
 | `aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png` | registered z19 mosaic, ~5.3 px per block, viewed at 14-30 px per block | a pale line is a wall, a close-boarded fence or a rendered edge: material cannot be told apart from above; a thin timber fence can vanish; roofs lean 1-3 blocks |
 | `registry/issues/img/S-073-reference-kitchener-road.png` (owner screenshot, 67 Kitchener Rd, Aug 2025) | one ground-level frame at the west end (near Portswood Rec), looking east | **not in the manifest, so it has no evidence id yet** (task below). One frame: roughly 8 fronts, west end only. No Sirdar Road view exists. |
-| OSM footprints with `addr:*` and the `kitchener_road.json` vetoes | numbering and geometry only | the OSM road centreline sits about 3 blocks south of the painted centre line here; footprint outlines are fine |
+| Vector-map footprints with `addr:*` and the `kitchener_road.json` vetoes | numbering and geometry only | the vector-map road centreline sits about 3 blocks south of the painted centre line here; footprint outlines are fine |
 
 Nothing was downloaded. The two `reference/photos/streetview/` sets belong to cells 48,-43 and 53,-42, not these roads.
 
@@ -64,7 +64,7 @@ Eyeballed from 14 and 30 px per block crops, about plus or minus 1 block. Not a 
 | public pavement, kerb to front boundary | 2 to 2.5 blocks (about 1.5 to 2 on the south side near 41-45) | about 2 to 2.5 (kerb is clear in the north-side views, 1.5 on the south at 65/63) |
 | forecourt depth, boundary to house front wall | 3 to 5 on the north side (62-68), 5 to 9 on the south side east end (37-45) | about 3 to 6, deeper at 46-50 (6 to 8) |
 | carriageway kerb to kerb | about 11 blocks (the aerial includes parked cars and double markings) | about 11 |
-| centreline to house front (OSM, perpendicular) | 9.4 to 14.1, median 11.3 | 9.7 to 12.1, median 11.0 |
+| centreline to house front (vector map, perpendicular) | 9.4 to 14.1, median 11.3 | 9.7 to 12.1, median 11.0 |
 
 - `garden_sources.PAVEMENT = 3.0` blocks of footway between kerb and boundary is about 0.5 to 1 block too wide for both streets, so the front boundary lands slightly into the forecourt. Make it a per-class value in the class table (suburban residential 2.5).
 - Dominant forecourt surface: Kitchener fronts are gravel and paved with shrub planting; lawn is rare in front (a few at 46, 48, 63). Sirdar fronts are mostly paved, gravel or sand with cars; lawn is rare (about 67, 69, 81). That supports ground treating the forecourt as paving, gravel and planting beds rather than lawn, and it is why the guessed-lawn rule converts so little (237 columns).
