@@ -160,6 +160,24 @@ def ground_scan_range(near):
     return range(near + GROUND_SCAN_UP, near - GROUND_SCAN_DOWN, -1)
 
 
+def interior_ground_clears(plan, floors):
+    """Return floor+1 interior air cells allowed to cancel older real ground.
+
+    @param plan: generated plan, before earlier-owner pruning
+    @param floors: mapping of interior (x, z) columns to floor block Y
+    @returns: positions to include in the plan's keep set
+    """
+    from cell_registry import view_registry
+    registry = view_registry()
+    positions = {(x, y + 1, z) for (x, z), y in floors.items()
+                 if plan.cells.get((x, y + 1, z)) == 'minecraft:air'}
+    ground = {e.plan for e in registry.entries()
+              if e.kind == 'build' and e.pass_ == 'ground'
+              and e.status == 'landed' and not e.undone}
+    return {q for q, (owner, _) in registry.owned(
+        positions, exclude={plan.name}, real_only=True).items() if owner in ground}
+
+
 class Plan:
     def __init__(self, name):
         from readiness_evidence import planning_inputs

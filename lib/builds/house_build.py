@@ -458,6 +458,9 @@ class Build:
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
+        from site_kit import interior_ground_clears
+        self.keep.update(interior_ground_clears(
+            self.p, {c: h.b for h in self.houses for c in h.inner}))
         self.p.keep = set(self.keep)   # #243: stoop cells may overwrite earlier ground at apply, as in feature_build
         # roof-overhang slabs of a neighbouring earlier build that spill onto our corner are theirs: leave them
         from cell_registry import view_registry

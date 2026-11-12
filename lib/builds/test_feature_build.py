@@ -224,6 +224,24 @@ class BuildPlanTest(unittest.TestCase):
             'ledge_stair': False,
         }
 
+    def test_house_interior_air_cancels_ground_at_floor_plus_one(self):
+        from journal_testkit import JournalWorld
+        inside, higher, neighbour = (12, 51, 22), (12, 52, 22), (8, 51, 22)
+        with JournalWorld() as world:
+            world.build('old_ground', 'ground', {
+                q: 'minecraft:gray_concrete' for q in (inside, higher, neighbour)})
+            with redirect_stdout(io.StringIO()):
+                plan = F.build(self.spec(floor_y=50),
+                               footprints={'A': self.cells}, world=_StoneWorld())
+            self.assertEqual(plan.cells.get(inside), 'minecraft:air')
+            self.assertNotIn(higher, plan.cells)
+            self.assertNotIn(neighbour, plan.cells)
+            world.build(plan.name, 'feature', plan.cells, payload=plan)
+            self.assertEqual(world.blocks.read(inside), 'minecraft:air')
+            self.assertNotIn(inside, world.reg.owned([inside]))
+            self.assertEqual(world.reg.owned([higher])[higher][0], 'old_ground')
+            self.assertEqual(world.reg.owned([neighbour])[neighbour][0], 'old_ground')
+
     def test_dry_run_reports_unknown_planned_block_ids_and_source(self):
         spec = self.spec()
         spec['wall'] = 'made_up_wall'
