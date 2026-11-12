@@ -102,3 +102,7 @@ Plank tone reference (Minecraft Java, from memory; confirm in-world before relyi
 | pale | `birch_planks` | cream |
 
 Open checks: whether `decor_plan` places a plank barrier (barrier kinds and `JOINABLE` list only name brick_wall, iron_bars, spruce_fence), and whether the draft's Kitchener default should change from `fence` to a plank panel. Draft data not edited yet.
+
+### Owner decision, 2026-11-12: plank tone
+
+Keep oak as the default panel tone; dark, reddy and pale planks only where evidence shows a distinct tone.
