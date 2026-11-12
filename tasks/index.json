@@ -212,18 +212,6 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
-    },
-    
-    
-    
-    {
-      "id": 270,
-      "title": "Widen the entrance opening to the drive width where a paved strip meets the front boundary",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From #244 diagnosis (b), now with evidence: the aerial shows drives 3 to 4 blocks wide between houses (between 66 and 64, 45, 52, 50, 56 Kitchener Road; many on Sirdar Road) that a one-column-wide entrance opening would wall off. In garden_sources.residential_frontage / decor opening logic, widen the reserved opening to the width of the paved strip where the door route or an aerial paved strip meets the boundary, capped at 4 columns, labelled inference. Files: lib/sources/garden_sources.py, lib/layers/decor_plan.py, tests. Tests (synthetic): a route meeting a 3-wide paved strip reserves 3 columns; a single door reserves 1; a mapped boundary across it stays listed in reserved.conflicts; a neighbour's plot line is not crossed. Check: before and after opening column counts on 53,-43 in a decor dry run, no apply. Blocked by #254 because both rewrite the same frontage structure."
     }
   ]
 }
