@@ -479,7 +479,7 @@ def segments(owner: dict, info: dict, street: dict, idx, box) -> dict:
             if street.get(q):
                 role = 'front'
             elif q in owner:
-                if meta_class(meta) != 'residential':
+                if meta_class(meta) not in ('residential', 'unknown'):
                     role = 'perimeter'                                # a non-house parcel has no front/side/rear
                 elif abs(dx * ax + dz * az) > math.sqrt(0.5):
                     role = 'rear'

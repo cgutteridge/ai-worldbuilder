@@ -47,7 +47,10 @@ needs only a street-facing `front` or `perimeter` edge, no house number), `priva
 `street_gate`, `none`) and `pavement` (public pavement width, suburban residential 2.5 blocks).
 Rural, natural, water and unknown allow no inference: never eligible, no fence, no opening; the
 `keep` ones still keep guessed lawn in their front extent. Non-house parcels name their edges to
-neighbours `perimeter`; `front` stays the street edge.
+neighbours `perimeter`; `front` stays the street edge. `unknown` plots keep the residential edge roles,
+so street-convention side and rear fences still apply there (street evidence, not class inference).
+The street band is now road half-width plus the class pavement (2.5, was 3.0), so residential plot
+edges and `front` cells can shift by up to half a block.
 - Precedence per field is `land_use.resolve`: per-house override, street convention, district
   profile (empty until #255), class default. `none` speaks and stops the search. A null class
   default never authorises a fence; no class ships one. The winning layer is `scope.layer`

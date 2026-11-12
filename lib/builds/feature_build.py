@@ -142,7 +142,7 @@ STOREY_H = 3
 GROUND = (
     'minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite',
     'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block',
-    'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel',
+    'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite',
 )
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]

@@ -30,7 +30,7 @@ from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
 from site_kit import Plan, apply, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
-GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel')
+GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite')
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
