@@ -1,0 +1,193 @@
+{
+  "note": "DRAFT 2026-11-12 (#244 research). No Street View for Sirdar Road: run default hedge is aerial-led inference (8 of 15 fronts with a visible boundary read as dark hedge/shrub strips); 13 houses read open (forecourt parking).",
+  "evidence_ids": [
+    "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+  ],
+  "provenance": {
+    "source": "inference",
+    "confidence": "low",
+    "evidence_ids": [
+      "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+    ],
+    "unresolved_reason": "no street-level view of Sirdar Road; material is inference from the aerial and the Kitchener Street View"
+  },
+  "front": {
+    "type": "hedge",
+    "height": 1
+  },
+  "side_front": {
+    "type": "hedge",
+    "height": 1
+  },
+  "overrides": {
+    "46": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "48": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "50": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "60": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "64": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "66": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "68": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "71": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "73": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "75": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "77": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "87": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    },
+    "89": {
+      "front": {
+        "type": "none",
+        "provenance": {
+          "source": "aerial",
+          "confidence": "low",
+          "evidence_ids": [
+            "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png"
+          ],
+          "unresolved_reason": "parked vehicles on a paved/gravel forecourt, no boundary line visible; confirm with Street View"
+        }
+      }
+    }
+  }
+}
