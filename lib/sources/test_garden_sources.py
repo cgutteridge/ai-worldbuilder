@@ -92,6 +92,40 @@ def _strip():
     return meta, plot, {'front': front}, house
 
 
+class TestDriveOpening(unittest.TestCase):
+    """Opening widens to the aerial paved strip meeting the front boundary, capped at 4 (#270)."""
+
+    CONV = {'front': {'type': 'fence'}}
+
+    def _opening(self, xs, z_range=range(3, 9), extra=()):
+        meta, plot, roles, house = _strip()
+        paved = {(x, z) for x in xs for z in z_range} | set(extra)
+        f = gs.frontage(meta, plot, roles, house, self.CONV, paved=paved)
+        return f, sorted(q[0] for q in f['opening'])
+
+    def test_three_wide_strip_reserves_three(self):
+        f, xs = self._opening(range(3, 6))
+        self.assertEqual(xs, [3, 4, 5])
+        self.assertEqual(f['opening_provenance']['source'], 'inference')
+
+    def test_single_door_path_reserves_one(self):
+        self.assertEqual(self._opening([4])[1], [4])
+
+    def test_cap_is_four(self):
+        self.assertEqual(len(self._opening(range(1, 9))[1]), gs.MAX_OPENING_WIDTH)
+
+    def test_neighbours_plot_line_not_crossed(self):
+        f, xs = self._opening(range(3, 6), extra=[(10, 3), (11, 3), (-1, 3)])
+        self.assertTrue(set(xs) <= set(range(0, 10)))
+        self.assertEqual(xs, [3, 4, 5])
+
+    def test_no_aerial_keeps_default_width(self):
+        meta, plot, roles, house = _strip()
+        f = gs.frontage(meta, plot, roles, house, self.CONV)
+        self.assertEqual(len(f['opening']), gs.OPENING_WIDTH)
+        self.assertNotIn('opening_provenance', f)
+
+
 class TestResidentialFrontage(unittest.TestCase):
     """Shared frontage description: extent, boundary, opening, connection, provenance (#240)."""
 

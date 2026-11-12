@@ -460,6 +460,12 @@ class TestReserveOpenings(unittest.TestCase):
                 'provenance': {'source': source, 'confidence': 'medium', 'evidence_ids': [],
                                'unresolved_reason': ''}}
 
+    def test_mapped_boundary_across_widened_opening_is_listed(self):
+        out = dp.reserve_openings([self._item('m', 'vector_map', [(2, 3), (3, 3), (4, 3), (5, 3)])],
+                                  {(3, 3), (4, 3), (5, 3)})
+        self.assertEqual(out['conflicts'][0]['cells'], [[3, 3], [4, 3], [5, 3]])
+        self.assertEqual(len(out['items'][0]['cells']), 4)
+
     def test_inferred_barrier_loses_opening_columns(self):
         out = dp.reserve_openings([self._item('g', 'register_entry', [(0, 3), (1, 3), (2, 3)])], {(1, 3)})
         self.assertEqual(out['items'][0]['cells'], [[0, 3], [2, 3]])
