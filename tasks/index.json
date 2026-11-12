@@ -213,15 +213,7 @@
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
     },
-    {
-      "id": 267,
-      "title": "World data: front and side_front conventions for Kitchener Road and a new Sirdar Road",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "From #244 research (docs/plans/244-boundary-evidence-findings.md). Merge docs/plans/244-draft/kitchener_road.json into worlds/southampton-build/site/gardens/kitchener_road.json (keep the existing rear/side_back vetoes; ask the owner whether to drop the side_front: none vetoes on 33-51, 55, 59) and add docs/plans/244-draft/sirdar_road.json as site/gardens/sirdar_road.json. Evidence ids: the registered Kitchener aerial and the id from task 268. Per-house provenance stays inside each role spec (the code reads it there). Owner confirms before landing: Sirdar run default hedge and its 13 open houses are aerial inference with no street view. Tests (synthetic, in lib/sources/test_garden_sources.py): a per-house front none beats the run front; a run front applies to an unlisted house; side_front veto is respected; provenance and evidence ids reach the decor plan record; every evidence id in a convention resolves in the manifest. Check: read-only python3 scripts/garden_sources.py --cell 53,-43 report before and after: eligible fronts rise, boundary segments split fence/wall/hedge/none roughly 14/6/4/7 on Kitchener and 15 hedge/13 none on Sirdar; decor dry run, no apply, no rebuild (owner gate on #244). [Owner decision 2026-11-12] Drop the existing side_front: none vetoes on 33-51, 55, 59 (set by AI, not the owner); the new side_front fence default applies there. Keep the rear and side_back vetoes."
-    },
+    
     
     
     {
@@ -232,17 +224,6 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "From #244 diagnosis (b), now with evidence: the aerial shows drives 3 to 4 blocks wide between houses (between 66 and 64, 45, 52, 50, 56 Kitchener Road; many on Sirdar Road) that a one-column-wide entrance opening would wall off. In garden_sources.residential_frontage / decor opening logic, widen the reserved opening to the width of the paved strip where the door route or an aerial paved strip meets the boundary, capped at 4 columns, labelled inference. Files: lib/sources/garden_sources.py, lib/layers/decor_plan.py, tests. Tests (synthetic): a route meeting a 3-wide paved strip reserves 3 columns; a single door reserves 1; a mapped boundary across it stays listed in reserved.conflicts; a neighbour's plot line is not crossed. Check: before and after opening column counts on 53,-43 in a decor dry run, no apply. Blocked by #254 because both rewrite the same frontage structure."
-    },
-    {
-        "id": 271,
-        "title": "A street convention fence is silently dropped by the decor planner (plank panels and fence type)",
-        "status": "todo",
-        "priority": "medium",
-        "complexity": "s",
-        "blockedBy": [
-            
-        ],
-        "notes": "From #244 research review 2026-11-12 (dry run, no world). A street convention with type `fence` is silently dropped: garden_sources.garden_barriers sets item kind to spec['type'] ('fence'), but decor_plan.BARRIER_KINDS is hedge, brick_wall, iron_bars, spruce_fence, so decor_plan.resolved_barriers skips it with no unplaced reason (synthetic run: kind fence with block oak_planks or spruce_fence returns nothing; kind spruce_fence with block oak_planks returns the cells). Deliver: (1) make type `fence` valid, mapping to the spruce_fence kind (or a distinct plank-panel kind), with the block taken from the spec (default spruce_fence, plank panels as oak_planks by default) and never dropped silently: an unknown barrier kind is reported in unplaced with a reason; (2) check the live placer places the plank block and heights, and whether JOINABLE (decor_layer, brick_wall, iron_bars, spruce_fence) needs the plank kind for gates and corners; (3) a plank tone vocabulary (oak default; dark spruce/dark_oak, reddy jungle/acacia/mangrove, pale birch; see docs/plans/244-boundary-evidence-findings.md), confirmed in-world before use. Tests: lib/sources/test_garden_sources.py and lib/layers/test_decor_plan.py: a convention fence reaches resolved_barriers; unknown kind is reported; plank block and height preserved. Blocked by #254 because both rewrite the same frontage structure. Until then the Kitchener draft uses type spruce_fence with block oak_planks."
     }
   ]
 }
