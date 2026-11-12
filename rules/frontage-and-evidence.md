@@ -22,6 +22,22 @@ Why whole houses: I-009, five façade builds put a brick shell on the pavement
 of Broadlands Road, about 6 blocks in front of the real houses. Readback, walk
 and patrol all passed. All five were reverted.
 
+## Land-use class (#253)
+Each building and open column has one land-use class from `lib/sources/land_use.py` and the table
+`config/land-use-classes.json`: residential, commercial, industrial, civic, park, rural, natural,
+water, transport, parking, unknown. Read it as follows.
+- A building's own tags win. A building with none takes the smallest use polygon at its centroid,
+  else residential when it has a house number, else unknown. So a house number inside
+  `landuse=retail` classifies as commercial only when the building tag is `yes` or an outbuilding;
+  `building=house` stays residential.
+- Use polygons (what the land is for): smallest wins. Cover polygons (grass, flowerbed, natural
+  cover) set the class only where no use polygon covers the column.
+- Unknown carries a reason: `not_checked` (no clip that asked for landuse covers it, so fetch),
+  `unmapped`, or `unlisted` (a tag value the table does not know). No neighbour inheritance.
+- The class never paints surfaces and never authorises a fence: every boundary default is null.
+  Rural, natural, water and unknown allow no inference. Parcels carry it as `meta.land_use`.
+  Nothing reads the table's frontage defaults until #254.
+
 ## Residential frontage (shared description)
 `garden_sources.residential_frontage` gives ground and decor one description per
 property: private frontage `extent`, `boundary` segments, entrance `opening`, `route` to

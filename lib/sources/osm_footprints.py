@@ -136,13 +136,16 @@ def cached_geojson_paths(clips_root: Path | None = None) -> list[Path]:
     return sorted(CACHE.glob('*.geojson'))
 
 
-def _query_bbox(src: Path) -> tuple[int, int, int, int] | None:
-    """Read inclusive building-query bounds from filenames or legacy folder names.
+def _query_bbox(src: Path, layer: str = 'buildings') -> tuple[int, int, int, int] | None:
+    """Read inclusive query bounds for one layer preset from filenames or legacy folder names.
 
     Custom GDAL-layer queries (e.g. multipolygons filtered to campus boundaries)
-    do not establish that buildings were queried, even inside their bounding box.
+    do not establish that the layer was queried, even inside their bounding box.
+
+    @param src: clip path
+    @param layer: preset name that must appear in the clip name (``buildings``, ``landuse``)
     """
-    if not re.search(r'(?:^|\+)buildings(?:\+|-|$)', src.stem):
+    if not re.search(rf'(?:^|\+){re.escape(layer)}(?:\+|-|$)', src.stem):
         return None
     for name in (src.stem, src.parent.name):
         match = re.search(r'(?:^|-)bbox-(-?\d+)-(-?\d+)-(-?\d+)-(-?\d+)$', name)
@@ -201,11 +204,16 @@ class OSMIndex:
         self.areas = []       # (rings, props) of every non-building polygon (landuse/leisure/amenity/...)
         self.entrances = []   # (x, z, props) entrance=* Point features (#159)
         self.extents = []     # (x0, z0, x1, z1) per clip — where the map was actually checked
+        self.layer_extents = {'landuse': []}  # per-layer checked extents from clip names (#253)
         seen = set()
         for src in sorted(root.glob('*/*.geojson')):
             bbox = _query_bbox(src)
             if bbox is not None and bbox not in self.extents:
                 self.extents.append(bbox)
+            for layer, ext in self.layer_extents.items():
+                lb = _query_bbox(src, layer)
+                if lb is not None and lb not in ext:
+                    ext.append(lb)
             d = json.loads((src if read_only else _projected(src)).read_text())
             for f in d['features']:
                 g, p = f['geometry'], f['properties']
@@ -258,6 +266,13 @@ class OSMIndex:
     def covered(self, x: int, z: int) -> bool:
         """True if (x, z) lies inside a vector-map clip we actually have (else the check is blind)."""
         return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, z0, x1, z1 in self.extents)
+
+    def layer_covered(self, layer: str, x: int, z: int) -> bool:
+        """True if (x, z) lies in a clip whose name says ``layer`` was queried (else ``not_checked``).
+
+        @param layer: preset name tracked in ``layer_extents`` (``landuse``)
+        """
+        return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, z0, x1, z1 in self.layer_extents.get(layer, ()))
 
     def clip_coverage(self, cell: tuple[int, int]) -> float:
         """Fraction of a cell's columns inside the union of queried clip bboxes.

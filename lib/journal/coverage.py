@@ -60,6 +60,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 from osm_footprints import OSMIndex, _addr, _seg_dist, grow_plots, osm_tags  # noqa: E402
+import land_use  # noqa: E402
 
 from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
@@ -284,6 +285,76 @@ def area_label(t: dict, ref: str) -> str:
     return f'{t["name"]} ({tag})' if t.get('name') else f'{tag} {ref}'
 
 
+def polygon_centroid(rings) -> tuple[int, int]:
+    """Column of an outer ring's area centroid (vertex mean for a degenerate ring).
+
+    @param rings: polygon rings; the first is the outer ring
+    @returns: ``(x, z)`` integer column
+    """
+    ring = rings[0]
+    a = cx = cz = 0.0
+    for (x0, z0), (x1, z1) in zip(ring, ring[1:] + ring[:1]):
+        w = x0 * z1 - x1 * z0
+        a += w
+        cx += (x0 + x1) * w
+        cz += (z0 + z1) * w
+    if abs(a) < 1e-9:
+        return math.floor(sum(x for x, _ in ring) / len(ring)), math.floor(sum(z for _, z in ring) / len(ring))
+    return math.floor(cx / (3 * a)), math.floor(cz / (3 * a))
+
+
+def area_classes(idx: OSMIndex, bbox, report: Counter | None = None) -> dict:
+    """Land-use class of every column of ``bbox`` that a non-building polygon covers (#253).
+
+    Use polygons (what the land is for): the smallest wins. Cover polygons (grass, flowerbed,
+    natural cover) set the class only where no use polygon covers the column. A polygon whose tag
+    value the table does not know claims nothing; it is counted in ``report`` as ``key=value``.
+    Reads ``idx.areas`` (whole polygons, even with no vertex in ``bbox``), never ``load_osm``.
+
+    @param idx: OSMIndex
+    @param bbox: inclusive ``(x0, z0, x1, z1)`` grid
+    @param report: optional Counter that receives unlisted ``key=value`` counts
+    @returns: ``{(x, z): (class, ref, 'use' | 'cover')}``
+    """
+    merged = {}
+    for rings, p in idx.areas:
+        hit = land_use.area_class(osm_tags(p))
+        if hit is None:
+            continue
+        ref = osm_ref(p)
+        if hit['kind'] is None:
+            if report is not None:
+                report[hit['value']] += 1
+            continue
+        m = merged.setdefault(ref, [hit, set()])
+        m[1].update(scan_polygon(rings, bbox))
+    out = {}
+    cover = {}
+    for ref, (hit, cells) in sorted(merged.items(), key=lambda kv: (len(kv[1][1]), kv[0])):
+        target = out if hit['kind'] == 'use' else cover
+        for c in cells:
+            target.setdefault(c, (hit['class'], ref, hit['kind']))
+    for c, v in cover.items():
+        out.setdefault(c, v)
+    return out
+
+
+def building_land_use(idx: OSMIndex, rings, props: dict, classes: dict) -> dict:
+    """Class of one building: own tags, else smallest use polygon at its centroid, else house number.
+
+    @param idx: OSMIndex (for the checked extent)
+    @param rings: building polygon rings
+    @param props: building feature properties
+    @param classes: result of :func:`area_classes`
+    @returns: ``{'class', 'reason', 'ref'}``
+    """
+    cx, cz = polygon_centroid(rings)
+    hit = classes.get((cx, cz))
+    polygon = (hit[0], hit[1]) if hit and hit[2] == 'use' else None
+    return land_use.classify_building(osm_tags(props), polygon=polygon,
+                                      checked=idx.layer_covered('landuse', cx, cz), ref=osm_ref(props))
+
+
 # --- building the parcel map --------------------------------------------------------------
 class ParcelBuilder:
     """Assign every column of an area (+ MARGIN) to exactly one parcel.
@@ -309,6 +380,8 @@ class ParcelBuilder:
         self.outbuildings = {}
         self.seeds = {}
         self.umbrellas = []   # (label, set of columns)
+        self.land_use = {}    # parcel id -> {'class', 'reason', 'ref'} (meta.land_use, #253)
+        self.classes = None   # area_classes of the grid, built once in run()
 
     def in_grid(self, x: int, z: int) -> bool:
         """@returns: whether (x, z) lies in the working grid (area + margin)"""
@@ -332,6 +405,9 @@ class ParcelBuilder:
             pid = 'prop:' + osm_ref(p)
             self._register(pid, 'property', property_label(p), building=p.get('building'),
                            grows=grows_garden(p))
+            if pid not in self.land_use:
+                self.land_use[pid] = building_land_use(self.idx, self.idx.buildings[i][0], p,
+                                                       self.classes or {})
             if p.get('building') in OUTBUILDINGS:
                 self.outbuildings[(x, z)] = pid
                 continue
@@ -387,6 +463,9 @@ class ParcelBuilder:
                 pid = f'{kind}:{ref}@{tx},{tz}'
                 self.owner[(x, z)] = pid
                 self._register(pid, kind, label, map_ref=ref, cell=[tx, tz])
+                hit = self.classes.get((x, z))
+                if kind == 'open' and hit:
+                    self.land_use.setdefault(pid, land_use.classify_column(hit, checked=True))
 
     def gardens(self):
         """Grow home footprints over unassigned ground until REACH or a neighbour."""
@@ -473,11 +552,31 @@ class ParcelBuilder:
             info['meta'].update(neighbours=[o for o, _n in nb.most_common(4)], edge_of=sorted(edge),
                                 within=sorted(within))
 
+    def _parcel_land_use(self, pid: str, kind: str, cols):
+        """``meta.land_use`` of a parcel: roads and paths are not land use (None).
+
+        A gap takes the most common class its columns fall in; with none, ``unmapped`` or
+        ``not_checked``. ``no_osm`` is ``not_checked``. No neighbour inheritance.
+        """
+        if pid in self.land_use:
+            return self.land_use[pid]
+        if kind == 'no_osm':
+            return land_use.classify_column(None, checked=False)
+        if kind != 'gap':
+            return None
+        votes = Counter(self.classes[c] for c in cols if c in self.classes)
+        if votes:
+            hit = max(votes, key=lambda h: (votes[h], h))
+            return land_use.classify_column(hit, checked=True)
+        x, z = min(cols)
+        return land_use.classify_column(None, checked=self.idx.layer_covered('landuse', x, z))
+
     def run(self) -> dict:
         """Build the whole map.
 
         @returns: JSON-ready area record (see save_area)
         """
+        self.classes = area_classes(self.idx, self.grid)
         self.footprints()
         self.highways()
         self.areas()
@@ -499,6 +598,9 @@ class ParcelBuilder:
             meta = dict(info['meta'])
             if info['kind'] == 'property':
                 meta['clipped'] = any(x in (x0, x1) or z in (z0, z1) for x, z in cs)
+            lu = self._parcel_land_use(pid, info['kind'], cs)
+            if lu is not None:
+                meta['land_use'] = lu
             out.append({'id': pid, 'kind': info['kind'], 'label': info['label'], 'n': len(cs),
                         'bbox': [min(x for x, _ in cs), min(z for _, z in cs),
                                  max(x for x, _ in cs), max(z for _, z in cs)],

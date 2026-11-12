@@ -1,0 +1,491 @@
+{
+ "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
+ "classes": [
+  {
+   "id": "residential",
+   "match": {
+    "building": [
+     "house",
+     "semidetached_house",
+     "detached",
+     "terrace",
+     "residential",
+     "apartments",
+     "bungalow",
+     "dormitory",
+     "cabin",
+     "static_caravan"
+    ],
+    "use": {
+     "landuse": [
+      "residential"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "identified_property",
+     "front_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "grass",
+    "opening": "door_route"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "commercial",
+   "match": {
+    "building": [
+     "retail",
+     "commercial",
+     "office",
+     "supermarket",
+     "hotel",
+     "kiosk"
+    ],
+    "building_any_key": [
+     "shop",
+     "office",
+     "craft",
+     "tourism"
+    ],
+    "use": {
+     "landuse": [
+      "retail",
+      "commercial"
+     ],
+     "amenity": [
+      "marketplace",
+      "fuel"
+     ],
+     "shop": [
+      "*"
+     ],
+     "tourism": [
+      "*"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "paving",
+    "opening": "street_gate"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "industrial",
+   "match": {
+    "building": [
+     "industrial",
+     "warehouse",
+     "manufacture",
+     "service"
+    ],
+    "use": {
+     "landuse": [
+      "industrial",
+      "quarry",
+      "landfill",
+      "port",
+      "depot"
+     ],
+     "man_made": [
+      "works",
+      "wastewater_plant"
+     ],
+     "power": [
+      "plant",
+      "substation"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "paving",
+    "opening": "street_gate"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "civic",
+   "match": {
+    "building": [
+     "university",
+     "college",
+     "school",
+     "kindergarten",
+     "hospital",
+     "church",
+     "chapel",
+     "cathedral",
+     "religious",
+     "mosque",
+     "temple",
+     "synagogue",
+     "public",
+     "civic",
+     "government",
+     "fire_station"
+    ],
+    "use": {
+     "amenity": [
+      "university",
+      "school",
+      "college",
+      "kindergarten",
+      "hospital",
+      "clinic",
+      "place_of_worship",
+      "townhall",
+      "library",
+      "community_centre",
+      "fire_station",
+      "police",
+      "courthouse",
+      "grave_yard"
+     ],
+     "landuse": [
+      "education",
+      "religious",
+      "cemetery",
+      "institutional"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "paving",
+    "opening": "street_gate"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "park",
+   "match": {
+    "building": [
+     "sports_hall",
+     "stadium",
+     "pavilion",
+     "grandstand"
+    ],
+    "use": {
+     "leisure": [
+      "park",
+      "garden",
+      "pitch",
+      "playground",
+      "track",
+      "golf_course",
+      "sports_centre",
+      "stadium",
+      "common",
+      "dog_park"
+     ],
+     "landuse": [
+      "recreation_ground",
+      "village_green",
+      "allotments"
+     ]
+    },
+    "cover": {
+     "landuse": [
+      "grass",
+      "flowerbed"
+     ]
+    }
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "keep",
+    "opening": "none"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "rural",
+   "match": {
+    "building": [
+     "farm",
+     "farm_auxiliary",
+     "barn",
+     "cowshed",
+     "stable",
+     "sty"
+    ],
+    "use": {
+     "landuse": [
+      "farmland",
+      "farmyard",
+      "meadow",
+      "orchard",
+      "vineyard",
+      "plant_nursery",
+      "greenhouse_horticulture",
+      "animal_keeping"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": false,
+    "requires": [],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "keep",
+    "opening": "none"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "natural",
+   "match": {
+    "building": [],
+    "use": {
+     "leisure": [
+      "nature_reserve"
+     ]
+    },
+    "cover": {
+     "natural": [
+      "wood",
+      "scrub",
+      "heath",
+      "grassland",
+      "wetland",
+      "shrubbery",
+      "beach",
+      "sand",
+      "shingle",
+      "bare_rock",
+      "scree",
+      "mud"
+     ],
+     "landuse": [
+      "forest"
+     ]
+    }
+   },
+   "frontage": {
+    "inference": false,
+    "requires": [],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "keep",
+    "opening": "none"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "water",
+   "match": {
+    "building": [],
+    "use": {
+     "natural": [
+      "water",
+      "bay"
+     ],
+     "landuse": [
+      "reservoir",
+      "basin"
+     ],
+     "waterway": [
+      "riverbank",
+      "dock"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": false,
+    "requires": [],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "keep",
+    "opening": "none"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "transport",
+   "match": {
+    "building": [
+     "train_station",
+     "transportation",
+     "hangar"
+    ],
+    "use": {
+     "landuse": [
+      "railway"
+     ],
+     "amenity": [
+      "bus_station",
+      "ferry_terminal"
+     ],
+     "highway": [
+      "services",
+      "rest_area"
+     ],
+     "aeroway": [
+      "*"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "paving",
+    "opening": "street_gate"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "parking",
+   "match": {
+    "building": [
+     "parking"
+    ],
+    "use": {
+     "amenity": [
+      "parking",
+      "motorcycle_parking"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": true,
+    "requires": [
+     "perimeter_segment"
+    ],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "paving",
+    "opening": "street_gate"
+   },
+   "planting": null,
+   "furniture": null
+  },
+  {
+   "id": "unknown",
+   "match": {
+    "building": [],
+    "use": {
+     "landuse": [
+      "military",
+      "construction",
+      "brownfield",
+      "greenfield"
+     ]
+    },
+    "cover": {}
+   },
+   "frontage": {
+    "inference": false,
+    "requires": [],
+    "boundary": {
+     "front": null,
+     "side_front": null,
+     "side_back": null,
+     "rear": null,
+     "perimeter": null
+    },
+    "private_surface": "keep",
+    "opening": "none"
+   },
+   "planting": null,
+   "furniture": null
+  }
+ ]
+}
