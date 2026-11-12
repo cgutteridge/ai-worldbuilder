@@ -2,14 +2,14 @@
   "note": "Designer veto (decor 53,-42, 2026-10-31, evidence aerial-google-decor-53_-42-2026-10-31): these plots' grown boundaries run into Portswood Rec; the aerial shows open grass/playground there, not hedge. Vetoes aerial hedge promotion for these roles only; no fence/wall convention is set. DRAFT 2026-11-12 (#244 research): top-level front/side_front added; existing per-house vetoes kept except where noted in docs/plans/244-boundary-evidence-findings.md.",
   "evidence_ids": [
     "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png",
-    "owner-streetview-s073-67-kitchener-rd-2025-08"
+    "photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png"
   ],
   "provenance": {
     "source": "photo_read",
     "confidence": "medium",
     "evidence_ids": [
       "aerial-kitchener-z19-mosaic-z19-5x5-centre-260122-175674-png",
-      "owner-streetview-s073-67-kitchener-rd-2025-08"
+      "photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png"
     ],
     "unresolved_reason": "Run default: close-boarded timber fence panels ~1 m (owner Street View frame S-073, 67 Kitchener Rd, Aug 2025) and owner-confirmed as the modal boundary on 2026-11-12; plank block oak_planks by owner default, tone is not matched to the weathered grey. Kind is spruce_fence because the planner drops type fence (task 271). Per-house overrides below are aerial reads, low confidence."
   },

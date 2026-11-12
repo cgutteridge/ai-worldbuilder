@@ -82,7 +82,7 @@ Eyeballed from 14 and 30 px per block crops, about plus or minus 1 block. Not a 
 
 ## Draft data
 
-See the two JSON files in `docs/plans/244-draft/`. They carry `evidence_ids`, a run-level `provenance`, and per-house provenance inside each `front` spec (the code reads provenance from the role spec). `SV` id `owner-streetview-s073-67-kitchener-rd-2025-08` is a proposed id: it must be registered before the data task lands.
+See the two JSON files in `docs/plans/244-draft/`. They carry `evidence_ids`, a run-level `provenance`, and per-house provenance inside each `front` spec (the code reads provenance from the role spec). `SV` id `photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png` is a proposed id: it must be registered before the data task lands.
 
 ## Owner review, 2026-11-12
 
