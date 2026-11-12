@@ -33,6 +33,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
+import decor_plan  # noqa: E402
 import land_use  # noqa: E402
 
 GARDENS = ROOT / 'site' / 'gardens'
@@ -40,6 +41,7 @@ HEDGE_BLOCK = 'oak_leaves[persistent=true]'
 DEFAULT_BLOCK = {'hedge': HEDGE_BLOCK, 'brick_wall': 'brick_wall', 'fence': 'spruce_fence',
                  'iron_bars': 'iron_bars'}
 DEFAULT_HEIGHT = {'hedge': 2, 'brick_wall': 1, 'fence': 2, 'iron_bars': 1}
+PLANK_HEIGHT = 1         # close-boarded panel runs (a fence whose block is a plank) are one block high
 HEDGE_SHARE = 0.6        # share of a segment's columns that must read dark green to call it a hedge
 SIDE_DEPTH = 40          # side boundaries only run this far behind the front line unless told
 
@@ -79,8 +81,14 @@ def role_spec(conv: dict | None, number: str, role: str, cls: str = 'residential
     if not spec or res['open']:
         return None
     t = spec['type']
-    return {'type': t, 'block': spec.get('block') or DEFAULT_BLOCK[t],
-            'height': int(spec.get('height') or DEFAULT_HEIGHT[t]), 'depth': spec.get('depth')}
+    if t not in DEFAULT_BLOCK:                       # unknown type: keep it so the plan can report it
+        return {'type': t, 'block': spec.get('block') or '',
+                'height': int(spec.get('height') or 1), 'depth': spec.get('depth')}
+    block = spec.get('block') or DEFAULT_BLOCK[t]
+    plank = decor_plan.barrier_kind(t, block) == 'plank_fence'
+    return {'type': t, 'block': block,
+            'height': int(spec.get('height') or (PLANK_HEIGHT if plank else DEFAULT_HEIGHT[t])),
+            'depth': spec.get('depth')}
 
 
 def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
@@ -646,7 +654,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                 source=supplied.get('source', source) if property_role else source,
                 confidence=supplied.get('confidence', 'medium'),
                 evidence_ids=evidence_ids, unresolved_reason=supplied.get('unresolved_reason', ''))
-            items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': spec['type'],
+            items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': decor_plan.barrier_kind(spec['type'], spec['block']),
                           'block': spec['block'], 'height': spec['height'],
                           'cells': [list(q) for q in cols], 'boundary_role': role,
                           'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},

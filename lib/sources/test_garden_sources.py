@@ -302,7 +302,7 @@ class TestGardenItemProvenance(unittest.TestCase):
     def test_property_override_and_none_win_over_aerial(self):
         items, _ = self.garden({'front': {'type': 'hedge'},
                       'overrides': {'7': {'front': {'type': 'fence'}}}})
-        self.assertEqual(items[0]['kind'], 'fence')
+        self.assertEqual(items[0]['kind'], 'spruce_fence')
         items, report = self.garden({'overrides': {'7': {'front': {'type': 'none'}}}})
         self.assertEqual(items, [])
         self.assertTrue(report['frontages'][0]['open_frontage'])
@@ -539,3 +539,25 @@ class TestClassDefaultBoundaryIsLabelled(unittest.TestCase):
         self.assertEqual(item['provenance']['source'], 'inference')
         self.assertIn('commercial', item['reason'])
         self.assertTrue(set(map(tuple, item['cells'])).isdisjoint(gs.reserved_openings([])))
+
+
+class TestConventionFenceType(unittest.TestCase):
+    """#271: ``type: fence`` is a valid convention type; plank blocks make plank panels."""
+
+    def test_fence_with_plank_block_keeps_block_and_is_one_high(self):
+        spec = gs.role_spec({'front': {'type': 'fence', 'block': 'oak_planks'}}, '7', 'front')
+        self.assertEqual((spec['block'], spec['height']), ('oak_planks', 1))
+        self.assertEqual(gs.decor_plan.barrier_kind(spec['type'], spec['block']), 'plank_fence')
+
+    def test_fence_without_block_is_spruce_fence_two_high(self):
+        spec = gs.role_spec({'front': {'type': 'fence'}}, '7', 'front')
+        self.assertEqual((spec['block'], spec['height']), ('spruce_fence', 2))
+        self.assertEqual(gs.decor_plan.barrier_kind('fence', spec['block']), 'spruce_fence')
+
+    def test_explicit_height_wins_for_plank_panels(self):
+        spec = gs.role_spec({'front': {'type': 'fence', 'block': 'birch_planks', 'height': 2}}, '7', 'front')
+        self.assertEqual(spec['height'], 2)
+
+    def test_unknown_type_survives_role_spec(self):
+        spec = gs.role_spec({'front': {'type': 'picket'}}, '7', 'front')
+        self.assertEqual(spec['type'], 'picket')

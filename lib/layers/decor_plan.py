@@ -29,14 +29,38 @@ DEFAULT_HEIGHT = {
     'brick_wall': 1,
     'iron_bars': 1,
     'spruce_fence': 2,
+    'plank_fence': 1,
 }
 DEFAULT_BLOCK = {
     'hedge': HEDGE_BLOCK,
     'brick_wall': 'brick_wall',
     'iron_bars': 'iron_bars',
     'spruce_fence': 'spruce_fence',
+    'plank_fence': 'oak_planks',
 }
 BARRIER_KINDS = frozenset(DEFAULT_BLOCK)
+# Close-boarded timber panels: oak is the default tone; the others only where evidence shows a
+# distinct tone (docs/plans/244-boundary-evidence-findings.md). Block names are from memory and
+# not yet confirmed in-world.
+PLANK_TONES = {
+    'oak': ('oak_planks',),
+    'dark': ('spruce_planks', 'dark_oak_planks'),
+    'reddy': ('jungle_planks', 'acacia_planks', 'mangrove_planks'),
+    'pale': ('birch_planks',),
+}
+PLANK_BLOCKS = frozenset(b for blocks in PLANK_TONES.values() for b in blocks)
+
+
+def barrier_kind(type_: str, block: str | None = None) -> str:
+    """Barrier kind for a convention ``type``: ``fence`` with a plank block is a plank panel run.
+
+    ``fence`` with no block or a fence-post block stays ``spruce_fence``. Other types pass through
+    unchanged (an unknown one is reported unplaced by the plan, never dropped).
+    """
+    if type_ == 'fence':
+        return 'plank_fence' if (block or '').removeprefix('minecraft:') in PLANK_BLOCKS else 'spruce_fence'
+    return type_
+
 CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MIN_BORDER_CELLS = 4
 MAX_FREE_HEDGE_WIDTH = 3
@@ -487,6 +511,10 @@ def build_decor_plan(
             ))
 
     for garden_item in garden:
+        if garden_item.get('kind') not in BARRIER_KINDS:
+            items.append(mark_unplaced(
+                garden_item, f"unknown barrier kind {garden_item.get('kind')!r}"))
+            continue
         cols = [tuple(q) for q in garden_item['cells'] if tuple(q) not in seen_barrier]
         if not cols:
             continue
@@ -735,10 +763,12 @@ def unresolved_items(plan: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 def resolved_barriers(
     plan: Mapping[str, Any],
+    unplaced: list[dict[str, Any]] | None = None,
 ) -> dict[tuple[int, int], tuple[str, str, int]]:
     """Resolved barrier columns → ``(kind, block, height)`` for the decor layer.
 
     @param plan: decor plan
+    @param unplaced: optional list that receives resolved items of an unknown kind, with a reason
     @returns: column map ready for placement
     """
     out: dict[tuple[int, int], tuple[str, str, int]] = {}
@@ -747,6 +777,8 @@ def resolved_barriers(
             continue
         kind = item.get('kind')
         if kind not in BARRIER_KINDS:
+            if unplaced is not None:
+                unplaced.append(mark_unplaced(item, f'unknown barrier kind {kind!r}'))
             continue
         block = item.get('block') or DEFAULT_BLOCK[kind]
         height = int(item.get('height') or DEFAULT_HEIGHT[kind])
