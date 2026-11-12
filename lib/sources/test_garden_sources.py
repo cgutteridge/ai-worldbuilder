@@ -561,3 +561,99 @@ class TestConventionFenceType(unittest.TestCase):
     def test_unknown_type_survives_role_spec(self):
         spec = gs.role_spec({'front': {'type': 'picket'}}, '7', 'front')
         self.assertEqual(spec['type'], 'picket')
+
+
+class TestStreetRunConventions(unittest.TestCase):
+    """Run-level front/side_front defaults, per-house overrides and vetoes, evidence ids (#267)."""
+
+    FENCE = {'type': 'spruce_fence', 'block': 'oak_planks', 'height': 1}
+    PHOTO = {'source': 'photo_read', 'confidence': 'medium', 'evidence_ids': ['sv-1'],
+             'unresolved_reason': 'run default'}
+
+    def conv(self):
+        return {
+            'evidence_ids': ['aer-1', 'sv-1'],
+            'front': {**self.FENCE, 'provenance': self.PHOTO},
+            'side_front': {**self.FENCE, 'provenance': self.PHOTO},
+            'overrides': {
+                '42': {'front': {'type': 'none'}},
+                '33': {'rear': {'type': 'none'}, 'side_front': {'type': 'none'}},
+                '41': {'front': {'type': 'hedge', 'height': 1, 'provenance': {
+                    'source': 'aerial', 'confidence': 'low', 'evidence_ids': ['aer-1'],
+                    'unresolved_reason': 'shrub strip'}}},
+            },
+        }
+
+    def test_per_house_front_none_beats_the_run_front(self):
+        conv = self.conv()
+        self.assertIsNone(gs.role_spec(conv, '42', 'front'))
+        self.assertTrue(gs.role_vetoed(conv, '42', 'front'))
+        self.assertFalse(gs.role_vetoed(conv, '44', 'front'))
+
+    def test_run_front_applies_to_an_unlisted_house(self):
+        spec = gs.role_spec(self.conv(), '99', 'front')
+        self.assertEqual((spec['type'], spec['block'], spec['height']), ('spruce_fence', 'oak_planks', 1))
+        self.assertEqual(gs.role_spec(self.conv(), '99', 'side_front')['type'], 'spruce_fence')
+        self.assertEqual(gs.role_spec(self.conv(), '41', 'front')['type'], 'hedge')
+
+    def test_side_front_veto_is_respected_and_does_not_touch_other_roles(self):
+        conv = self.conv()
+        self.assertTrue(gs.role_vetoed(conv, '33', 'side_front'))
+        self.assertIsNone(gs.role_spec(conv, '33', 'side_front'))
+        self.assertIsNotNone(gs.role_spec(conv, '33', 'front'))
+        self.assertIsNotNone(gs.role_spec(conv, '35', 'side_front'))
+
+    def garden(self, conv):
+        return TestGardenItemProvenance.garden(self, conv, share=0.0)
+
+    def test_run_provenance_and_evidence_reach_the_barrier_record(self):
+        items, _ = self.garden(self.conv())
+        (item,) = items
+        self.assertEqual(item['kind'], 'spruce_fence')
+        self.assertEqual(item['block'], 'oak_planks')
+        self.assertEqual(item['scope']['layer'], 'street')
+        self.assertEqual(item['provenance']['evidence_ids'], ['sv-1'])
+        self.assertEqual(item['provenance']['unresolved_reason'], 'run default')
+        self.assertEqual(item['provenance']['confidence'], 'medium')
+
+    def test_per_house_provenance_and_evidence_reach_the_barrier_record(self):
+        conv = self.conv()
+        conv['overrides'] = {'7': conv['overrides']['41']}
+        items, _ = self.garden(conv)
+        (item,) = items
+        self.assertEqual(item['kind'], 'hedge')
+        self.assertEqual(item['scope']['layer'], 'property')
+        self.assertEqual(item['provenance']['source'], 'aerial')
+        self.assertEqual(item['provenance']['evidence_ids'], ['aer-1'])
+        self.assertEqual(item['provenance']['unresolved_reason'], 'shrub strip')
+
+    def test_house_front_none_builds_nothing_and_stays_open(self):
+        conv = self.conv()
+        conv['overrides'] = {'7': conv['overrides']['42']}
+        items, report = self.garden(conv)
+        self.assertEqual(items, [])
+        self.assertTrue(report['frontages'][0]['open_frontage'])
+
+    @staticmethod
+    def cited_ids(conv):
+        found = set(conv.get('evidence_ids', ()))
+        for role in ('front', 'side_front', 'side_back', 'rear'):
+            found |= set(((conv.get(role) or {}).get('provenance') or {}).get('evidence_ids', ()))
+        for over in (conv.get('overrides') or {}).values():
+            for spec in over.values():
+                found |= set(((spec or {}).get('provenance') or {}).get('evidence_ids', ()))
+        return found
+
+    def test_every_cited_evidence_id_resolves_in_a_manifest(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        import ref_manifest
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'manifest.jsonl'
+            path.write_text('\n'.join(json.dumps({'id': i}) for i in ('aer-1', 'sv-1')) + '\n')
+            known = {r['id'] for r in ref_manifest.load_manifest(path)}
+            self.assertEqual(self.cited_ids(self.conv()) - known, set())
+            bad = self.conv()
+            bad['overrides']['42']['front']['provenance'] = {'evidence_ids': ['missing-1']}
+            self.assertEqual(self.cited_ids(bad) - known, {'missing-1'})
