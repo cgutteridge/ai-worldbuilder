@@ -2104,5 +2104,15 @@
       "blockedBy": [],
       "notes": "From #244 research. registry/issues/img/S-073-reference-kitchener-road.png is the owner's Street View screenshot (Aug 2025) but is not in reference/manifest.jsonl, so conventions cannot cite it. Copy it under reference/photos/streetview/ (a kitchener-road folder), add a manifest row through scripts/ref_manifest.py with id owner-streetview-s073-67-kitchener-rd-2025-08, kind street photo, useful for boundary type, height and material, not_for private interior and any measurement of distance, notes: one frame, west end of Kitchener Road looking east. Tests: the existing manifest/reference tests pass; the id resolves. Check: ref_manifest listing shows the row; no download, image stays as supplied.\n\nClosed at 4a922f52e3b4bf33ec4087b5e2bc8644a2b70d83: Image copied to reference/photos/streetview/kitchener-road/ and added to the manifest via ref_manifest.py. The id is derived from the path, so it is photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png, not the id the task proposed; the Kitchener draft and findings doc now cite it. No download.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 269,
+      "title": "Aerial frontage profile report: pavement width and forecourt depth per frontage",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "From #244 research: the 2026-11-12 numbers were eyeballed (+-1 block). Add a read-only report (a mode of scripts/garden_sources.py or a small scripts/frontage_profile.py, not Kitchener-only) that for each frontage walks the perpendicular from the road edge (OSM road line, painted centre is about 3 blocks north of it on this road, so use the aerial kerb) to the house front using the registered aerial, and prints per street run the median and range of pavement width, forecourt depth and the dominant forecourt colour class (paving, gravel, lawn, planting). Reads aerial_coverage samples and footprints only. Tests (synthetic raster and road line, no world): a known pavement of 2 blocks and forecourt of 4 gives 2 and 4; a road at 27 degrees; a frontage with no house returns none. Check: run on 53,-43 and compare with the research numbers in docs/plans/244-boundary-evidence-findings.md (2 to 2.5 and 3 to 5). Feeds #254; no ground change.\n\nClosed at e586a842d4d3a6d5d6811411d48233c47a104dc9: scripts/frontage_profile.py --world W --cell C [--each], tests in test_frontage_profile. Run on 53,-43: pavement median Kitchener north 2.25 (1.0-3.5), south 2.0; Sirdar 1.0-1.5; agrees with the research 2 to 2.5. Forecourt median Kitchener north 6.5 (4.5-9.0), south 5.5 (0-9), Sirdar 4.5-6.5; deeper than the research 3 to 5 (north), so #254 should take depth from this report, not the eyeballed range. Surface class reads gravel almost everywhere; likely grey aerial pixels, so do not treat it as evidence of gravel yet.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

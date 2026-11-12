@@ -241,15 +241,7 @@
       "notes": "From #244 research (docs/plans/244-boundary-evidence-findings.md). Merge docs/plans/244-draft/kitchener_road.json into worlds/southampton-build/site/gardens/kitchener_road.json (keep the existing rear/side_back vetoes; ask the owner whether to drop the side_front: none vetoes on 33-51, 55, 59) and add docs/plans/244-draft/sirdar_road.json as site/gardens/sirdar_road.json. Evidence ids: the registered Kitchener aerial and the id from task 268. Per-house provenance stays inside each role spec (the code reads it there). Owner confirms before landing: Sirdar run default hedge and its 13 open houses are aerial inference with no street view. Tests (synthetic, in lib/sources/test_garden_sources.py): a per-house front none beats the run front; a run front applies to an unlisted house; side_front veto is respected; provenance and evidence ids reach the decor plan record; every evidence id in a convention resolves in the manifest. Check: read-only python3 scripts/garden_sources.py --cell 53,-43 report before and after: eligible fronts rise, boundary segments split fence/wall/hedge/none roughly 14/6/4/7 on Kitchener and 15 hedge/13 none on Sirdar; decor dry run, no apply, no rebuild (owner gate on #244). [Owner decision 2026-11-12] Drop the existing side_front: none vetoes on 33-51, 55, 59 (set by AI, not the owner); the new side_front fence default applies there. Keep the rear and side_back vetoes."
     },
     
-    {
-      "id": 269,
-      "title": "Aerial frontage profile report: pavement width and forecourt depth per frontage",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "From #244 research: the 2026-11-12 numbers were eyeballed (+-1 block). Add a read-only report (a mode of scripts/garden_sources.py or a small scripts/frontage_profile.py, not Kitchener-only) that for each frontage walks the perpendicular from the road edge (OSM road line, painted centre is about 3 blocks north of it on this road, so use the aerial kerb) to the house front using the registered aerial, and prints per street run the median and range of pavement width, forecourt depth and the dominant forecourt colour class (paving, gravel, lawn, planting). Reads aerial_coverage samples and footprints only. Tests (synthetic raster and road line, no world): a known pavement of 2 blocks and forecourt of 4 gives 2 and 4; a road at 27 degrees; a frontage with no house returns none. Check: run on 53,-43 and compare with the research numbers in docs/plans/244-boundary-evidence-findings.md (2 to 2.5 and 3 to 5). Feeds #254; no ground change."
-    },
+    
     {
       "id": 270,
       "title": "Widen the entrance opening to the drive width where a paved strip meets the front boundary",
