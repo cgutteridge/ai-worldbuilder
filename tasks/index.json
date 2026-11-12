@@ -237,18 +237,10 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "s",
-      "blockedBy": [268],
+      "blockedBy": [],
       "notes": "From #244 research (docs/plans/244-boundary-evidence-findings.md). Merge docs/plans/244-draft/kitchener_road.json into worlds/southampton-build/site/gardens/kitchener_road.json (keep the existing rear/side_back vetoes; ask the owner whether to drop the side_front: none vetoes on 33-51, 55, 59) and add docs/plans/244-draft/sirdar_road.json as site/gardens/sirdar_road.json. Evidence ids: the registered Kitchener aerial and the id from task 268. Per-house provenance stays inside each role spec (the code reads it there). Owner confirms before landing: Sirdar run default hedge and its 13 open houses are aerial inference with no street view. Tests (synthetic, in lib/sources/test_garden_sources.py): a per-house front none beats the run front; a run front applies to an unlisted house; side_front veto is respected; provenance and evidence ids reach the decor plan record; every evidence id in a convention resolves in the manifest. Check: read-only python3 scripts/garden_sources.py --cell 53,-43 report before and after: eligible fronts rise, boundary segments split fence/wall/hedge/none roughly 14/6/4/7 on Kitchener and 15 hedge/13 none on Sirdar; decor dry run, no apply, no rebuild (owner gate on #244)."
     },
-    {
-      "id": 268,
-      "title": "Register the S-073 Street View reference (67 Kitchener Rd) as evidence",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "From #244 research. registry/issues/img/S-073-reference-kitchener-road.png is the owner's Street View screenshot (Aug 2025) but is not in reference/manifest.jsonl, so conventions cannot cite it. Copy it under reference/photos/streetview/ (a kitchener-road folder), add a manifest row through scripts/ref_manifest.py with id owner-streetview-s073-67-kitchener-rd-2025-08, kind street photo, useful for boundary type, height and material, not_for private interior and any measurement of distance, notes: one frame, west end of Kitchener Road looking east. Tests: the existing manifest/reference tests pass; the id resolves. Check: ref_manifest listing shows the row; no download, image stays as supplied."
-    },
+    
     {
       "id": 269,
       "title": "Aerial frontage profile report: pavement width and forecourt depth per frontage",
