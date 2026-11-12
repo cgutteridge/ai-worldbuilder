@@ -117,7 +117,8 @@ def nonresidential_building(props: dict) -> bool:
     return props.get('building') in NON_RESIDENTIAL_BUILDINGS or any(props.get(k) for k in NON_RESIDENTIAL_KEYS)
 
 
-OPENING_WIDTH = 2        # columns of front boundary left open at an entrance
+OPENING_WIDTH = 2        # columns of front boundary left open at an entrance without drive evidence
+MAX_OPENING_WIDTH = 4    # cap on an opening widened to a paved strip (#270)
 FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden
 
 
@@ -156,7 +157,8 @@ def _pavement_strip(meta: dict, front, width: float) -> list:
 
 def frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict | None,
              *, door: tuple[int, int] | None = None, approach: dict | None = None,
-             evidence_ids=(), boundary_cells=None, row: dict | None = None) -> dict:
+             evidence_ids=(), boundary_cells=None, row: dict | None = None,
+             paved=None) -> dict:
     """One shared description of a property's private frontage, any land-use class (#240, #254).
 
     The class comes from ``meta['land_use']`` (#253 classifier); ``row`` overrides the table row
@@ -190,6 +192,9 @@ def frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict |
         never duplicates them. Its door is a built door (``generated`` position, not observed)
     @param evidence_ids: registry evidence ids backing the property
     @param row: table row replacing the class's own (tests)
+    @param paved: aerial-paved columns (None = no aerial read: the opening keeps ``OPENING_WIDTH``);
+        otherwise the opening is widened to the paved strip meeting the front boundary, capped at
+        ``MAX_OPENING_WIDTH`` and labelled inference in ``opening_provenance`` (#270)
     @returns: dict with eligible, reason, extent, boundary, opening, route, door, connection, provenance,
         land_use, private_surface, pavement, forecourt, surface_keep
     """
@@ -296,7 +301,16 @@ def frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict |
         out['route'] = route
         near = sorted((q for q in front if q != target and max(abs(q[0] - target[0]), abs(q[1] - target[1])) <= 1),
                       key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))
-        out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1]) if out['boundary'] else []
+        if not out['boundary']:
+            out['opening'] = []
+        elif paved is None:
+            out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1])
+        else:
+            out['opening'] = widen_opening(target, front, plot_cells, paved, route)
+            out['opening_provenance'] = prov.provenance_record(
+                source='inference', confidence='low', evidence_ids=evidence_ids,
+                unresolved_reason=f'opening widened to the aerial paved strip ({len(out["opening"])} columns,'
+                                  f' cap {MAX_OPENING_WIDTH}); inferred, not a surveyed drive')
         out['connection'] = {
             'status': 'verified' if observed else ('built' if built else 'inferred'),
             'endpoints': [list(start), list(target)],
@@ -326,6 +340,43 @@ def frontages_for_cell(cell: tuple[int, int]) -> list:
         approaches = []
     return frontages_for_plots(owner, info, segments(owner, info, street, idx, box), idx,
                                approaches=approaches)
+
+
+def paved_columns(rgb: dict | None) -> set:
+    """Columns whose aerial colour reads as hard paving (brick, light or dark neutral), not lawn or shade."""
+    if not rgb:
+        return set()
+    from ground_sources import aerial_class
+    return {tuple(q) for q, c in rgb.items() if aerial_class(c) in ('brick', 'light', 'dark')}
+
+
+def widen_opening(target, front, plot_cells, paved, route=(), cap: int = MAX_OPENING_WIDTH) -> list:
+    """Front-boundary columns of the paved strip that meets the boundary at ``target`` (#270).
+
+    A front column belongs to the strip when it, or the plot column just inside it, is paved
+    (aerial) or on the door route. The strip is the chain of such columns, each within one column
+    of the last, that contains ``target``; it is clipped to the ``cap`` columns nearest the target.
+    Only this plot's own front columns are used, so a neighbour's plot line is never crossed.
+    """
+    own = {tuple(q) for q in plot_cells}
+    hard = {tuple(q) for q in paved} | {tuple(q) for q in route}
+
+    edge = {tuple(q) for q in front}
+
+    def hit(q):      # the column itself, or the plot column just inside it (not sideways along the front)
+        return q in hard or any((q[0] + a, q[1] + b) in hard and (q[0] + a, q[1] + b) in own
+                                and (q[0] + a, q[1] + b) not in edge
+                                for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+    cand = {tuple(q) for q in front if hit(tuple(q))} | {tuple(target)}
+    chain, todo = {tuple(target)}, [tuple(target)]
+    while todo:
+        c = todo.pop()
+        for q in cand - chain:
+            if max(abs(q[0] - c[0]), abs(q[1] - c[1])) <= 1:
+                chain.add(q)
+                todo.append(q)
+    keep = sorted(chain, key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))[:cap]
+    return sorted(keep)
 
 
 def frontage_route_columns(frontages) -> set:
@@ -666,7 +717,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                     'type': spec['type'] if spec else None})
     approaches = landed_approaches(cell, footprint=idx.cells())
     frontages = frontages_for_plots(owner, info, seg, idx, approaches=approaches,
-                                   boundaries=front_boundaries)
+                                   boundaries=front_boundaries, paved=paved_columns(rgb) if rgb else None)
     opening = reserved_openings(frontages)
     keep_clear = opening | reserved_route(frontages)
     # Reserve after straightening. All later sources and final joins use the same clearance.
@@ -685,7 +736,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
 
 
 def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | None = None,
-                        approaches=(), boundaries=None) -> list:
+                        approaches=(), boundaries=None, paved=None) -> list:
     """``residential_frontage`` for every plot, from the plots/segments ``garden_barriers`` already built.
 
     @param owner: ``{cell: plot id}`` from ``plots_for``
@@ -733,7 +784,7 @@ def frontages_for_plots(owner: dict, info: dict, seg: dict, idx, doors: dict | N
             meta, plot_cells[i], roles[i], house_cells[i], load_convention(meta['street']),
             door=(doors or {}).get(i), approach=by_plot.get(i),
             evidence_ids=(load_convention(meta['street']) or {}).get('evidence_ids', ()),
-            boundary_cells=(boundaries or {}).get(i)))
+            boundary_cells=(boundaries or {}).get(i), paved=paved))
     return out
 
 
