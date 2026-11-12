@@ -134,7 +134,7 @@ import facade_plan as facade_plan_mod  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
     Plan, apply, bid, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs,
-    is_bottom_half_slab, nearest_preview_colour, preview,
+    interior_ground_clears, is_bottom_half_slab, nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
 
@@ -2441,6 +2441,8 @@ class Build:
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
         # Door opening clears (#143) and keep_edits stoops: survive both this filter and apply clash.
+        self.keep.update(interior_ground_clears(
+            self.p, {c: self._column_floor(f, c) for f in self.features for c in f.inner}))
         self.p.keep = set(self.keep)
         self._preserve_real_owners()
         # same refusals as the live apply, so the designer sees them before hand-off (#99)

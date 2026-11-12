@@ -237,3 +237,44 @@ class EntranceApproachTest(unittest.TestCase):
         a = H.entrance_approach(None, 'S')
         self.assertIsNone(a['connection'])
         self.assertIn('unavailable', a['reason'])
+
+
+class InteriorGroundTest(unittest.TestCase):
+    """Plan → journal: interior air clears ground without claiming neighbouring cells."""
+
+    def test_interior_air_cancels_ground_and_preserves_neighbours(self):
+        from journal_testkit import JournalWorld
+        cells = {(x, z) for x in range(10, 17) for z in range(20, 27)}
+        inside, neighbour, higher, feature = (13, 31, 23), (8, 31, 23), (13, 32, 23), (14, 31, 23)
+        index = mock.Mock()
+        index.cells.return_value = {c: 0 for c in cells}
+        index.buildings = [(None, {'osm_way_id': 99})]
+        with JournalWorld() as world:
+            ground = {q: 'minecraft:gray_concrete' for q in (inside, neighbour, higher)}
+            world.build('old_ground', 'ground', ground)
+            world.build('other_feature', 'feature', {feature: 'minecraft:stone'})
+            spec = {'name': 'new_house', 'ways': {'99': 'A'}, 'roofs': {'A': 'brick'},
+                    'groups': [{'nos': ['A'], 'front': 'N'}], 'floor_min': 30}
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'house.json'
+                path.write_text(json.dumps(spec))
+                spec = H.load_spec(path)
+            live = mock.Mock()
+            live.block.side_effect = lambda x, y, z: world.blocks.read((x, y, z))
+            with mock.patch.object(H.osm_footprints, 'OSMIndex', return_value=index), \
+                    mock.patch.object(H.osm_footprints, 'guard', return_value={'outside': {}}), \
+                    mock.patch.object(H, 'fresh_planning_world', return_value=live), \
+                    mock.patch('floor_reference.floor_reference', return_value=30), \
+                    redirect_stdout(io.StringIO()):
+                plan = H.build(spec)
+            self.assertEqual(plan.cells.get(inside), 'minecraft:air')
+            self.assertNotIn(neighbour, plan.cells)
+            self.assertNotIn(higher, plan.cells)
+            self.assertNotIn(feature, plan.cells)
+            world.build(plan.name, 'feature', plan.cells, payload=plan)
+            self.assertEqual(world.blocks.read(inside), 'minecraft:air')
+            self.assertNotIn(inside, world.reg.owned([inside]))
+            for q in (neighbour, higher):
+                self.assertEqual(world.blocks.read(q), 'minecraft:gray_concrete')
+                self.assertEqual(world.reg.owned([q])[q][0], 'old_ground')
+            self.assertEqual(world.reg.owned([feature])[feature][0], 'other_feature')
