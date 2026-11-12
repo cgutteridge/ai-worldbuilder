@@ -495,3 +495,48 @@ class GardenProvenanceTransportTest(unittest.TestCase):
         rows = [i for i in plan['items'] if i['id'].startswith('property-')]
         self.assertEqual(rows, garden)
         self.assertEqual([i['provenance']['source'] for i in rows], ['inference', 'register_entry'])
+
+
+class TestConventionFenceReachesPlacement(unittest.TestCase):
+    """#271: a convention fence is resolved, and an unknown barrier kind is reported."""
+
+    @staticmethod
+    def _garden(kind, block, height):
+        return [{'id': 'garden-0-front', 'role': 'barrier', 'kind': kind, 'block': block,
+                 'height': height, 'cells': [[5, 8], [6, 8]],
+                 'provenance': {'source': 'inference', 'confidence': 'medium',
+                                'evidence_ids': ['e'], 'unresolved_reason': ''}}]
+
+    def _plan(self, garden):
+        return dp.build_decor_plan((0, 0), map_barriers={}, garden=garden,
+                                   rgb={}, footprint=set(), canopy=set())
+
+    def test_plank_fence_resolves_with_block_and_height(self):
+        plan = self._plan(self._garden('plank_fence', 'oak_planks', 1))
+        self.assertEqual(dp.resolved_barriers(plan)[(5, 8)], ('plank_fence', 'oak_planks', 1))
+
+    def test_plank_fence_defaults_to_oak_one_high(self):
+        plan = {'items': [{'role': 'barrier', 'kind': 'plank_fence', 'cells': [[1, 1]]}]}
+        self.assertEqual(dp.resolved_barriers(plan)[(1, 1)], ('plank_fence', 'oak_planks', 1))
+
+    def test_unknown_kind_is_reported_unplaced_with_reason(self):
+        plan = self._plan(self._garden('picket', 'oak_planks', 1))
+        row = next(i for i in plan['items'] if i['id'] == 'garden-0-front')
+        self.assertIn('unknown barrier kind', row['provenance']['unresolved_reason'])
+        self.assertEqual(dp.resolved_barriers(plan), {})
+        self.assertIn(row, dp.unresolved_items(plan))
+
+    def test_resolved_barriers_reports_unknown_kind(self):
+        plan = {'items': [{'role': 'barrier', 'kind': 'picket', 'cells': [[1, 1]],
+                           'provenance': {'source': 'inference', 'confidence': 'medium',
+                                          'evidence_ids': ['e'], 'unresolved_reason': ''}}]}
+        lost: list = []
+        self.assertEqual(dp.resolved_barriers(plan, lost), {})
+        self.assertIn('unknown barrier kind', lost[0]['provenance']['unresolved_reason'])
+
+    def test_barrier_kind_and_tone_table(self):
+        self.assertEqual(dp.barrier_kind('fence', 'minecraft:spruce_planks'), 'plank_fence')
+        self.assertEqual(dp.barrier_kind('fence', None), 'spruce_fence')
+        self.assertEqual(dp.barrier_kind('picket'), 'picket')
+        self.assertEqual(dp.PLANK_TONES['oak'], ('oak_planks',))
+        self.assertIn('mangrove_planks', dp.PLANK_TONES['reddy'])

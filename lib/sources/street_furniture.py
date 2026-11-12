@@ -115,7 +115,7 @@ def recipe(kind: str) -> list[tuple[int, str]]:
     return list(RECIPES[kind])
 
 
-BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence'})
+BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence', 'plank_fence'})
 OUTBUILDING_KINDS = frozenset({'shed', 'garage'})   # designer traces: ``cells`` plus an evidence id (#251)
 
 
