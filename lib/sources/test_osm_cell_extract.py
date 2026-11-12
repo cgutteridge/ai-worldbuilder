@@ -17,6 +17,8 @@ REQUIRED_PRESETS = (
     'pedestrian',
     'natural',
     'leisure',
+    'landuse',
+    'landclass',
     'trees',
 )
 
@@ -59,6 +61,16 @@ class CellExtractJobList(unittest.TestCase):
         blob = ' '.join(j[1] for j in trees)
         self.assertIn("natural = 'tree'", blob)
         self.assertIn("natural = 'tree_row'", blob)
+
+    def test_landuse_and_landclass_presets_are_tool_owned(self):
+        """Installed into an empty provider, so a provider without landuse still gets it (#253)."""
+        presets: dict = {}
+        oce.install_cell_extract_layer_presets(presets)
+        self.assertIn("landuse IS NOT NULL", presets['landuse'][0][1])
+        where = presets['landclass'][0][1]
+        for tag in ('parking', 'university', 'grassland', 'wetland'):
+            self.assertIn(tag, where)
+        self.assertEqual(presets['landclass'][0][0], 'multipolygons')
 
     def test_does_not_fetch_kerb_or_crossing_nodes(self):
         """Kerb / crossing points stay out of the standard extract jobs."""

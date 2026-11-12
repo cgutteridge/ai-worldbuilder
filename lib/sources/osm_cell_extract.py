@@ -20,6 +20,28 @@ from street_furniture import install_furniture_layer_preset
 # Preset name → list of (gdal_layer, SQL WHERE, default model tags).
 # Installed into world ``LAYER_PRESETS`` by :func:`install_cell_extract_layer_presets`.
 _LANDSCAPE_PRESETS: dict[str, list[tuple[str, str, list[str]]]] = {
+    # Moved here from the world provider (#253) so a third-party provider cannot lack it.
+    'landuse': [
+        (
+            'multipolygons',
+            "landuse IS NOT NULL AND landuse <> ''",
+            ['landscape'],
+        ),
+    ],
+    # amenity and natural polygons the land-use classes read (#253); landuse and leisure have their own.
+    'landclass': [
+        (
+            'multipolygons',
+            (
+                "amenity IN ('parking','motorcycle_parking','marketplace','fuel','university','school',"
+                "'college','kindergarten','hospital','clinic','place_of_worship','townhall','library',"
+                "'community_centre','fire_station','police','courthouse','grave_yard','bus_station',"
+                "'ferry_terminal') OR natural IN ('heath','grassland','wetland','shrubbery','beach',"
+                "'sand','shingle','bare_rock','scree','mud','bay')"
+            ),
+            ['landscape'],
+        ),
+    ],
     'water': [
         (
             'multipolygons',
@@ -96,6 +118,7 @@ CELL_EXTRACT_LAYERS: tuple[str, ...] = (
     'pedestrian',
     'natural',
     'leisure',
+    'landclass',
     'trees',
 )
 
