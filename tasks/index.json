@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 273,
+  "nextTaskId": 274,
   "tasks": [
     
     {
@@ -212,6 +212,15 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
+    },
+    {
+      "id": 273,
+      "title": "Fence panel runs on diagonal boundaries: one facing per run and no gaps at steps",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [ ],
+      "notes": "From the 53,-43 checkpoint 2026-11-13 (shelf fences from #272 applied; owner: 'good start but not good enough'). A read-only map of the planned blocks near S-077 (6808,38,-5418) shows the Kitchener front boundaries run diagonally (about 1 z per 2 x), so each run is a staircase of single columns. Faults: (1) facing is chosen per column and alternates north/east along one run, so panels stand at right angles; (2) at each diagonal step neighbouring shelves touch only at a corner, so the run has holes (fences and walls join across a step, shelves do not); (3) runs look scattered across the forecourt. Deliver: choose ONE outward facing per run segment from the dominant axis of that run's outward direction (stable along the run, labelled when the fallback rule is used); add closing pieces at diagonal steps so a panel run is continuous (a shelf or solid plank in the step column, choice stated and tested, no placement on carriageway or owned columns); keep the shelf geometry notes and the back-board-on-inner-edge rule from #272; keep picket and slatted specs on normal fence blocks. Tests (synthetic, no world): a run at 27 degrees and at 45 degrees and an axis-aligned run each give a constant facing along the run and no gap between consecutive columns (corner-touching counts as a gap); the outward facing points away from the owning plot; closing pieces never land on road or owned columns. Check, read-only: a character map of planned barrier blocks for 53,-43 near x 6790-6840, z -5440..-5395 before and after, showing constant facing and continuous runs; no apply, no rebuild. The owner reviews in-world afterwards."
     }
   ]
 }
