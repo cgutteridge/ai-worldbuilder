@@ -756,7 +756,6 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     """
     face, basis = outward_facings(cols, plot_id, role, owner, centre)
     cells = {(int(q[0]), int(q[1])) for q in cols}
-    solid: set = set()
     run_face: dict = {}
     for run in _run_components(cells):
         votes = [DIRS[face[f'{q[0]},{q[1]}']] for q in run]
@@ -839,7 +838,7 @@ def _closer_facing(c, run_dir: str, cells, closers) -> str:
     def score(s):
         n = (c[0] + DIRS[s][0], c[1] + DIRS[s][1])
         return (0 if n not in cells else 1 if n in closers else 2)
-    side = max(sides, key=lambda s: (score(s), -sides.index(s)))
+    side = max(sides, key=lambda s: (score(s), -sides.index(s)))   # best score; first in the order wins ties
     return {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}[side]
 
 
