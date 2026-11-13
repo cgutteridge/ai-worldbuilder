@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 274,
+  "nextTaskId": 275,
   "tasks": [
     
     {
@@ -212,6 +212,15 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
+    },
+    {
+      "id": 274,
+      "title": "Thin closers for diagonal fence panel runs instead of solid plank cubes",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [ ],
+      "notes": "From the 53,-43 checkpoint 2026-11-13 after #273: runs are continuous and face one way, but the closers at diagonal steps are solid oak plank cubes that look chunky beside the thin shelves (largest one in the foreground of the west view from 6808,38,-5418). Owner: fix the closers. Deliver: thin closers. Preferred: a shelf in the step column turned onto the perpendicular axis (east or west facing for a north/south run, and the reverse) so its 3/16 back board continues the line of the neighbouring boards on the inner (owned) side, with the open front on the outward side; if geometry shows a perpendicular shelf cannot close the corner without a visible gap, use the thin fence block of the same wood for that one column and say so. State the choice and why from the shelf geometry (back board 3/16 flush with the edge opposite the facing, 2/16 lips top and bottom; see docs/plans/244-boundary-evidence-findings.md 'Shelf panels'). Closers must never land on road or owned-by-other columns, and entrance openings (#270) must stay open. Also re-check the few stretches where the planned run still mixes facings (near x 6799-6803, z -5418..-5416 on 53,-43) and fix them if the cause is the same run grouping. Tests: synthetic 27 and 45 degree runs and an axis-aligned run: no solid cube remains in a panel run unless the run has no outward evidence, every consecutive pair of columns is joined by a board edge (corner-touching still counts as a gap), facing constant per run. Check, read-only: the character map script (/private/tmp/claude-507/-Users-cjg-Projects-ai-worldbuilder/0e5bd3f8-1754-41d4-8289-b3fceedd6fc6/scratchpad/shelfmap.py) before and after, with a legend for the closer symbol. No apply, no rebuild; the owner reviews in-world afterwards."
     }
   ]
 }
