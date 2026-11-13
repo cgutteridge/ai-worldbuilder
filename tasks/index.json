@@ -212,15 +212,6 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
-    },
-    {
-      "id": 272,
-      "title": "Fence panels as wooden shelves facing outward instead of solid plank cubes",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [ ],
-      "notes": "Owner idea 2026-11-13 after the 53,-43 checkpoint: the plank_fence kind (#271) places full 1 m cubes that read as crates. Place wooden shelf blocks instead (oak_shelf by default; the shelf family exists in 12 wood types, pale_oak_shelf is near white). A shelf has a facing and does not fill the square. Facing must be the OUTWARD direction wherever a meaningful out exists: front boundary faces the street or public pavement, a side or rear boundary faces the neighbouring public or less private side; run direction alone is not enough. Where there is no meaningful out (two private gardens), fall back to a stated, tested rule (for example the side with the lower plot id) and label it. Work: derive the outward normal per barrier run from the frontage role and plot geometry already in garden_sources, carry it on the barrier item, make the placer write facing=<dir> block states, handle corners and entrance openings (drive gaps from #270), and keep the plank tone table (docs/plans/244-boundary-evidence-findings.md) as the block choice per tone (shelf variant per wood). Check in-world first on one stretch of Kitchener Road how a shelf reads from the street (open compartments versus a solid board, thickness) before committing to it; if it reads badly, record the finding and fall back to the thin oak fence block. Tests: lib/layers/test_decor_plan.py and test_decor_layer.py: outward facing on a straight front run, on a corner plot, and the fallback case; block state string matches the shelf facing syntax. No world data in the code change; the in-world check is a separate owner review."
     }
   ]
 }
