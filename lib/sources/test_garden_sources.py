@@ -472,6 +472,15 @@ class TestFrontCornerJoin(unittest.TestCase):
         b['provenance'] = {'source': 'vector_map'}
         gs.join_front_diagonals([a, b], set(), {}, set(), set())
         self.assertEqual(b['cells'], [[1, 1]])
+        gs.join_front_diagonals([a, b], set(), {(1, 0): 2}, set(), set())   # bridge owned by the map item's plot
+        self.assertEqual(b['cells'], [[1, 1]])
+
+    def test_unowned_column_is_not_treated_as_owned(self):
+        a = self._item(1, [(0, 0)])
+        b = {**self._item(2, [(1, 1)]), 'id': 'unparsed'}
+        gs.join_front_diagonals([a, b], set(), {}, set(), set())
+        self.assertEqual(len(a['cells']), 2)
+        self.assertEqual(b['cells'], [[1, 1]])
 
 
 if __name__ == '__main__':

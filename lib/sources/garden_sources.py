@@ -939,15 +939,18 @@ def join_front_diagonals(items: list, keep_clear, owner: dict, street, footprint
                 other = cover.get(p)
                 if other is None or other is it or other.get('scope') == it.get('scope'):
                     continue
+                if other['provenance']['source'] == 'vector_map':
+                    continue                                     # observed boundaries are never edited
                 bridges = [(q[0] + a, q[1]), (q[0], q[1] + b)]
                 if any(c in cover for c in bridges):
                     continue
                 free = [c for c in bridges if c not in blocked and c not in street]
                 if not free:
                     continue
-                own = [c for c in free if owner.get(c) in (_plot(it), _plot(other))]
+                mine = {_plot(it), _plot(other)} - {None}
+                own = [c for c in free if owner.get(c) is not None and owner.get(c) in mine]
                 c = (own or free)[0]
-                target = it if owner.get(c) == _plot(it) or not own else other
+                target = other if own and owner.get(c) == _plot(other) != _plot(it) else it
                 target['cells'].append([c[0], c[1]])
                 cover[c] = target
                 added += 1
