@@ -100,6 +100,7 @@ Plank tone reference (Minecraft Java, from memory; confirm in-world before relyi
 | dark | `spruce_planks`, `dark_oak_planks` | spruce is brown, dark oak near black-brown |
 | reddy | `jungle_planks`, `acacia_planks`, `mangrove_planks` | jungle pinkish tan, acacia orange, mangrove deep red |
 | pale | `birch_planks` | cream |
+| white / painted | `pale_oak_planks` | near white, much lighter than birch; only for painted or white-looking fences (owner, 2026-11-13) |
 
 Open checks: whether `decor_plan` places a plank barrier (barrier kinds and `JOINABLE` list only name brick_wall, iron_bars, spruce_fence), and whether the draft's Kitchener default should change from `fence` to a plank panel. Draft data not edited yet.
 
