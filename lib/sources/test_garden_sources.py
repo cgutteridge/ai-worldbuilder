@@ -748,3 +748,19 @@ class TestOutwardFacings(unittest.TestCase):
         self._plot(0, 9, 0, 9, 1, owner)
         face, _ = gs.outward_facings([(4, -1)], 1, 'front', owner, (4.5, 4.5))
         self.assertEqual(face['4,-1'], 'north')
+
+
+class TestFacingIsOutwardNotInward(unittest.TestCase):
+    def test_facing_points_to_the_unowned_side_never_into_the_plot(self):
+        owner = {(x, z): 1 for x in range(10) for z in range(10)}
+        dirs = gs.DIRS
+        runs = {'front': [(x, 0) for x in range(1, 9)],        # street north
+                'rear': [(x, 9) for x in range(1, 9)],         # open land south
+                'side_back': [(0, z) for z in range(1, 9)]}    # path west
+        for role, cols in runs.items():
+            face, _ = gs.outward_facings(cols, 1, role, owner, (4.5, 4.5))
+            for key, d in face.items():
+                x, z = map(int, key.split(','))
+                dx, dz = dirs[d]
+                self.assertNotEqual(owner.get((x + dx, z + dz)), 1, (role, key, d))   # across = outside
+                self.assertEqual(owner.get((x - dx, z - dz)), 1, (role, key, d))      # back = garden

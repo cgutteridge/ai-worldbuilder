@@ -580,3 +580,29 @@ class TestShelfBlock(unittest.TestCase):
         plan = dp.build_decor_plan((0, 0), map_barriers={}, garden=garden, rgb={}, footprint=set(), canopy=set())
         item = [i for i in plan['items'] if i['id'] == 'garden-0-front'][0]
         self.assertEqual(item['facing']['5,8'], 'north')
+
+
+class TestPanelVersusPicketKinds(unittest.TestCase):
+    """#272: only close-boarded panels (plank block) become shelves; other fences keep the fence block."""
+
+    @staticmethod
+    def _plan(kind, block):
+        item = {'id': 'g', 'role': 'barrier', 'kind': kind, 'block': block, 'height': 1,
+                'cells': [[5, 8]], 'facing': {'5,8': 'north'},
+                'provenance': {'source': 'inference', 'confidence': 'medium',
+                               'evidence_ids': ['e'], 'unresolved_reason': ''}}
+        return dp.build_decor_plan((0, 0), map_barriers={}, garden=[item], rgb={}, footprint=set(), canopy=set())
+
+    def test_convention_author_choice(self):
+        self.assertEqual(dp.barrier_kind('fence', 'oak_planks'), 'plank_fence')       # panel
+        self.assertEqual(dp.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
+        self.assertEqual(dp.barrier_kind('fence', None), 'spruce_fence')              # picket / slatted
+        self.assertEqual(dp.barrier_kind('fence', 'oak_fence'), 'spruce_fence')
+        self.assertEqual(dp.barrier_kind('fence', 'spruce_fence'), 'spruce_fence')
+
+    def test_panel_and_picket_resolve_independently(self):
+        panel = dp.resolved_barriers(self._plan('plank_fence', 'oak_planks'))[(5, 8)]
+        picket = dp.resolved_barriers(self._plan('spruce_fence', 'oak_fence'))[(5, 8)]
+        self.assertEqual(panel[:2], ('plank_fence', 'oak_planks'))
+        self.assertEqual(picket[:2], ('spruce_fence', 'oak_fence'))
+        self.assertEqual(dp.shelf_block(picket[1], 'north'), 'oak_fence')              # never a shelf

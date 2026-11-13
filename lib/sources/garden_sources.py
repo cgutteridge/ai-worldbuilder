@@ -651,6 +651,11 @@ PUBLIC_ROLES = ('front', 'side_front')
 def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict, dict]:
     """Outward direction of each boundary column, so a plank panel (shelf) can face the right way.
 
+    A shelf's back board sits flush on the edge opposite its facing, so ``out`` here means the board
+    lands on the inner edge of the boundary column and its open front looks to the street / neighbour.
+    Boundary columns are the plot's own outermost columns (``segments``), so the board stands about one
+    block inside the true plot line (see docs/plans/244-boundary-evidence-findings.md, #272).
+
     "Out" is the cardinal neighbour that is not this plot's own land. Preference, per column:
 
     1. ``public``: an unowned neighbour (street, pavement, path, verge). Front and side-front boundaries

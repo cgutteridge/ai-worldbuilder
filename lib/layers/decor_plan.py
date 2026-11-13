@@ -57,8 +57,14 @@ FACINGS = ('north', 'south', 'east', 'west')   # Minecraft: north is -z, south +
 def shelf_block(plank: str, facing: str | None) -> str:
     """Wooden shelf block state for a plank-style panel column, or the solid plank when no out is known.
 
-    A shelf has a ``facing`` (its front looks that way) and does not fill the square, so a panel run
-    stops reading as a row of crates. The shelf wood follows the plank tone (``oak_planks`` ->
+    A shelf has a ``facing`` (its open front looks that way) and does not fill the square, so a panel
+    run stops reading as a row of crates. Geometry (``template_shelf_body`` in the client assets, a
+    north-facing shelf; the other facings are rotations): a solid back board 3/16 thick, flush with
+    the block edge OPPOSITE the facing, plus a 2/16 lip at the top and bottom, 4/16 and 16/16 -- the
+    whole thing is 5/16 deep and the open compartments face the way it points. So ``facing=<out>`` puts
+    the board on the INNER (garden) edge of the boundary column and leaves 11/16 of the column empty
+    on the outward side. Facing inward would hide the board's back to the street and put the open
+    side in the garden. The shelf wood follows the plank tone (``oak_planks`` ->
     ``oak_shelf``, ``pale_oak_planks`` -> ``pale_oak_shelf``). With no outward direction on the item
     there is nothing to face, so the solid plank stays (labelled ``solid plank`` in the placement report).
 

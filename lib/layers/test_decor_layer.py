@@ -616,3 +616,20 @@ class ShelfFencePlacementTest(unittest.TestCase):
         found, rows, _ = self._place(item)
         self.assertEqual(set(found.values()), {dl.dplan.HEDGE_BLOCK})
         self.assertNotIn('facing', rows[0])
+
+
+class PicketKeepsFenceBlockTest(ShelfFencePlacementTest):
+    def test_picket_fence_places_the_plain_fence_block_even_with_a_facing(self):
+        item = {'id': 'f', 'role': 'barrier', 'kind': 'spruce_fence', 'block': 'oak_fence', 'height': 1,
+                'cells': [[10, 20]], 'facing': {'10,20': 'north'}}
+        found, rows, _ = self._place(item)
+        self.assertEqual(set(found.values()), {'oak_fence'})
+        self.assertNotIn('state', rows[0])
+
+    def test_panel_output_is_unchanged_by_a_picket_beside_it(self):
+        panel = self._item(facing={'10,20': 'north'}); panel['cells'] = [[10, 20]]
+        alone, _, _ = self._place(panel)
+        picket = {'id': 'f', 'role': 'barrier', 'kind': 'spruce_fence', 'block': 'oak_fence', 'height': 1,
+                  'cells': [[13, 20]]}
+        both = {**self._place(panel)[0], **self._place(picket)[0]}
+        self.assertEqual(both[(10, 65, 20)], alone[(10, 65, 20)])
