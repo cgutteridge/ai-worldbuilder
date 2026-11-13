@@ -644,6 +644,64 @@ def hedge_share(cells: list, rgb: dict, canopy: set | None = None) -> float:
     return (sum(1 for c in seen if c == 'shade') / len(seen)) if seen else 0.0
 
 
+DIRS = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}   # Minecraft: south is +z
+PUBLIC_ROLES = ('front', 'side_front')
+
+
+def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict, dict]:
+    """Outward direction of each boundary column, so a plank panel (shelf) can face the right way.
+
+    "Out" is the cardinal neighbour that is not this plot's own land. Preference, per column:
+
+    1. ``public``: an unowned neighbour (street, pavement, path, verge). Front and side-front boundaries
+       always have one where the plot meets the street.
+    2. ``neighbour``: a neighbour owned by another plot, used only when no public side exists.
+       Fallback rule, labelled ``fallback: private-private``: face away from the plot that owns the
+       fence (its better side shows to the neighbour). Deterministic, and independent of plot ids.
+    3. ``fallback: no outside neighbour``: every neighbour is this plot's own (a sliver); face away
+       from the plot centre.
+
+    Ties (corner columns with two public sides) take the side most aligned with centre -> column, then
+    the fixed order east, west, south, north. A column lying outside the plot (just beyond the line)
+    treats the direction away from its own-plot neighbour as out.
+
+    @param cols: boundary columns of one plot role
+    @param plot_id: id of the plot that owns the fence
+    @param role: boundary role (``front``, ``side_back``, ...); kept in the basis label
+    @param owner: ``{column: plot id}`` (houses included)
+    @param centre: plot centre ``(x, z)``
+    @returns: ``({'x,z': direction}, {'x,z': basis label})``
+    """
+    facing, basis = {}, {}
+    for q in cols:
+        q = (int(q[0]), int(q[1]))
+        own = owner.get(q) == plot_id
+        order = list(DIRS.items())
+        order.sort(key=lambda kv: -((kv[1][0] * (q[0] - centre[0])) + (kv[1][1] * (q[1] - centre[1]))))
+        cands = []                                         # (direction, owner of the square across)
+        for name, (a, b) in order:
+            n = (q[0] + a, q[1] + b)
+            if own:
+                if owner.get(n) != plot_id:
+                    cands.append((name, owner.get(n)))
+            elif owner.get((q[0] - a, q[1] - b)) == plot_id:   # the far side from our own land
+                cands.append((name, owner.get(n)))
+        if not cands:
+            cands = [(name, owner.get((q[0] + a, q[1] + b))) for name, (a, b) in order
+                     if owner.get((q[0] + a, q[1] + b)) != plot_id]
+        pub = [c for c in cands if c[1] is None]
+        if pub:
+            d = pub[0][0]
+            why = 'street' if role in PUBLIC_ROLES else 'public'
+        elif cands:
+            d, why = cands[0][0], 'fallback: private-private (faces away from fence owner)'
+        else:
+            d, why = order[0][0], 'fallback: no outside neighbour (faces away from plot centre)'
+        facing[f'{q[0]},{q[1]}'] = d
+        basis[f'{q[0]},{q[1]}'] = why
+    return facing, basis
+
+
 def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict | None = None):
     """Garden barrier items carrying property/street scope, evidence and inference reasons.
 
@@ -710,6 +768,9 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                           'cells': [list(q) for q in cols], 'boundary_role': role,
                           'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},
                           'reason': reason, 'provenance': record})
+            if items[-1]['kind'] == 'plank_fence':
+                items[-1]['facing'], items[-1]['facing_basis'] = outward_facings(
+                    cols, i, role, owner, meta['centre'])
             if role == 'front':
                 front_boundaries[i] = cols
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,

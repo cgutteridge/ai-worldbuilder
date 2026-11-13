@@ -565,3 +565,54 @@ class GardenPlacementProvenanceTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         for key in ('provenance', 'scope', 'reason'):
             self.assertEqual(rows[0][key], item[key])
+
+
+class ShelfFencePlacementTest(unittest.TestCase):
+    """#272: plank_fence columns are written as facing shelves; no facing keeps the solid plank."""
+
+    def _place(self, item, **kw):
+        world = mock.Mock()
+        world.block.side_effect = lambda x, y, z: 'minecraft:stone' if y <= 64 else 'minecraft:air'
+        with mock.patch('surface_probe.surface_y', return_value=(64, 'stone')), \
+                mock.patch.object(dl, 'on_carriageway', return_value=False):
+            return dl.place_barriers_from_plan((0, 0), [item], world, way=set(), near1=set(),
+                                               owned=set(), masked=set(), **kw)
+
+    @staticmethod
+    def _item(**extra):
+        return {'id': 'p', 'role': 'barrier', 'kind': 'plank_fence', 'block': 'oak_planks', 'height': 1,
+                'cells': [[10, 20], [11, 20], [12, 20]], **extra}
+
+    def test_front_run_writes_the_exact_shelf_state(self):
+        item = self._item(facing={'10,20': 'north', '11,20': 'north', '12,20': 'north'},
+                          facing_basis={'10,20': 'street', '11,20': 'street', '12,20': 'street'})
+        found, rows, _ = self._place(item)
+        self.assertEqual(set(found.values()), {'oak_shelf[facing=north]'})
+        self.assertEqual(rows[0]['facing'], 'north')
+        self.assertEqual(rows[0]['facing_basis'], 'street')
+
+    def test_corner_columns_keep_their_own_facing_and_tone(self):
+        item = self._item(block='pale_oak_planks',
+                          facing={'10,20': 'north', '11,20': 'north', '12,20': 'east'})
+        found, _, _ = self._place(item)
+        self.assertEqual(found[(10, 65, 20)], 'pale_oak_shelf[facing=north]')
+        self.assertEqual(found[(12, 65, 20)], 'pale_oak_shelf[facing=east]')
+
+    def test_opening_columns_are_simply_absent(self):
+        item = self._item(facing={'10,20': 'north', '12,20': 'north'})
+        item['cells'] = [[10, 20], [12, 20]]                       # entrance gap at 11 already removed
+        found, _, _ = self._place(item)
+        self.assertEqual({p[0] for p in found}, {10, 12})
+
+    def test_no_outward_evidence_falls_back_to_the_solid_plank_labelled(self):
+        found, rows, _ = self._place(self._item(facing={'10,20': 'north'}))
+        self.assertEqual(found[(10, 65, 20)], 'oak_shelf[facing=north]')
+        self.assertEqual(found[(11, 65, 20)], 'oak_planks')
+        self.assertIsNone(rows[1]['facing'])
+        self.assertIn('solid plank', rows[1]['facing_basis'])
+
+    def test_other_barrier_kinds_are_unchanged(self):
+        item = {'id': 'h', 'role': 'barrier', 'kind': 'hedge', 'height': 1, 'cells': [[10, 20]]}
+        found, rows, _ = self._place(item)
+        self.assertEqual(set(found.values()), {dl.dplan.HEDGE_BLOCK})
+        self.assertNotIn('facing', rows[0])

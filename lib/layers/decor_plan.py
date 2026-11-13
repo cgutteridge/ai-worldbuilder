@@ -47,8 +47,29 @@ PLANK_TONES = {
     'dark': ('spruce_planks', 'dark_oak_planks'),
     'reddy': ('jungle_planks', 'acacia_planks', 'mangrove_planks'),
     'pale': ('birch_planks',),
+    'white': ('pale_oak_planks',),   # painted / white-looking fences; near white, lighter than birch
 }
 PLANK_BLOCKS = frozenset(b for blocks in PLANK_TONES.values() for b in blocks)
+
+FACINGS = ('north', 'south', 'east', 'west')   # Minecraft: north is -z, south +z, east +x, west -x
+
+
+def shelf_block(plank: str, facing: str | None) -> str:
+    """Wooden shelf block state for a plank-style panel column, or the solid plank when no out is known.
+
+    A shelf has a ``facing`` (its front looks that way) and does not fill the square, so a panel run
+    stops reading as a row of crates. The shelf wood follows the plank tone (``oak_planks`` ->
+    ``oak_shelf``, ``pale_oak_planks`` -> ``pale_oak_shelf``). With no outward direction on the item
+    there is nothing to face, so the solid plank stays (labelled ``solid plank`` in the placement report).
+
+    @param plank: plank block id from the tone table (``minecraft:`` prefix allowed)
+    @param facing: ``north`` / ``south`` / ``east`` / ``west`` or None
+    @returns: block state string, e.g. ``oak_shelf[facing=north]``
+    """
+    name = plank.removeprefix('minecraft:')
+    if facing not in FACINGS or not name.endswith('_planks'):
+        return name
+    return f"{name.removesuffix('_planks')}_shelf[facing={facing}]"
 
 
 def barrier_kind(type_: str, block: str | None = None) -> str:
