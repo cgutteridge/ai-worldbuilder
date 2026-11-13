@@ -92,8 +92,17 @@ def _strip():
     return meta, plot, {'front': front}, house
 
 
+def _side_drive_plot():
+    """Plot x 0..11 z 3..14, front z=3; house x 0..3, z 8..12 hugs the west side; door route lands at x=3."""
+    house = {(x, z) for x in range(0, 4) for z in range(8, 13)}
+    plot = {(x, z) for x in range(0, 12) for z in range(3, 15)} - house
+    front = [(x, 3) for x in range(0, 12)]
+    meta = {'street': 'Test Road', 'number': '9', 'centre': (2.0, 10.0), 'foot': (4, 0), 'map_ref': None}
+    return meta, plot, {'front': front}, house
+
+
 class TestDriveOpening(unittest.TestCase):
-    """Opening widens to the aerial paved strip meeting the front boundary, capped at 4 (#270)."""
+    """Opening is the door column; it widens only for a drive-like strip with evidence (#270, #275)."""
 
     CONV = {'front': {'type': 'fence'}}
 
@@ -103,27 +112,56 @@ class TestDriveOpening(unittest.TestCase):
         f = gs.frontage(meta, plot, roles, house, self.CONV, paved=paved)
         return f, sorted(q[0] for q in f['opening'])
 
-    def test_three_wide_strip_reserves_three(self):
+    def test_fully_paved_forecourt_opens_only_the_door(self):
+        f, xs = self._opening(range(0, 10), z_range=range(3, 10))
+        self.assertEqual(len(xs), 1)
+        self.assertEqual(f['opening_evidence'], 'door_route')
+        self.assertIn('no drive evidence', f['opening_provenance']['unresolved_reason'])
+
+    def test_forecourt_strip_without_side_passage_does_not_widen(self):
         f, xs = self._opening(range(3, 6))
-        self.assertEqual(xs, [3, 4, 5])
-        self.assertEqual(f['opening_provenance']['source'], 'inference')
+        self.assertEqual(len(xs), 1)
+        self.assertEqual(f['opening_evidence'], 'door_route')
 
     def test_single_door_path_reserves_one(self):
         self.assertEqual(self._opening([4])[1], [4])
 
-    def test_cap_is_four(self):
-        self.assertEqual(len(self._opening(range(1, 9))[1]), gs.MAX_OPENING_WIDTH)
+    def _drive(self, xs, wide_forecourt=False):
+        meta, plot, roles, house = _side_drive_plot()
+        paved = {(x, z) for x in xs for z in range(3, 15)}
+        if wide_forecourt:
+            paved |= {(x, z) for x in range(0, 12) for z in range(3, 7)}
+        return gs.frontage(meta, plot, roles, house, self.CONV, paved=paved)
+
+    def test_strip_continuing_beside_the_house_opens_three(self):
+        f = self._drive([4, 5])
+        self.assertEqual(sorted(q[0] for q in f['opening']), [3, 4, 5])
+        self.assertEqual(f['opening_evidence'], 'side_passage')
+        self.assertEqual(f['opening_provenance']['source'], 'inference')
+        self.assertIn('past the side of the house', f['opening_provenance']['unresolved_reason'])
+
+    def test_paved_forecourt_with_a_drive_keeps_the_drive_cap(self):
+        f = self._drive([4, 5], wide_forecourt=True)
+        self.assertEqual(f['opening_evidence'], 'side_passage')
+        self.assertLessEqual(len(f['opening']), gs.MAX_OPENING_WIDTH)
+
+    def test_wide_paved_passage_is_not_a_drive(self):
+        f = self._drive(range(4, 12))
+        self.assertEqual(f['opening_evidence'], 'door_route')
+        self.assertEqual(len(f['opening']), 1)
 
     def test_neighbours_plot_line_not_crossed(self):
-        f, xs = self._opening(range(3, 6), extra=[(10, 3), (11, 3), (-1, 3)])
-        self.assertTrue(set(xs) <= set(range(0, 10)))
-        self.assertEqual(xs, [3, 4, 5])
+        meta, plot, roles, house = _side_drive_plot()
+        paved = {(x, z) for x in (4, 5, 6) for z in range(3, 15)} | {(12, 3), (13, 3), (-1, 3)}
+        f = gs.frontage(meta, plot, roles, house, self.CONV, paved=paved)
+        self.assertTrue({q[0] for q in f['opening']} <= set(range(0, 12)))
 
     def test_no_aerial_keeps_default_width(self):
         meta, plot, roles, house = _strip()
         f = gs.frontage(meta, plot, roles, house, self.CONV)
         self.assertEqual(len(f['opening']), gs.OPENING_WIDTH)
         self.assertNotIn('opening_provenance', f)
+        self.assertEqual(f['opening_evidence'], 'default_width')
 
 
 class TestResidentialFrontage(unittest.TestCase):
@@ -376,6 +414,73 @@ class TestTreeCanopyColumns(unittest.TestCase):
         maps.of.return_value = hm
         got = gs.tree_canopy_columns((1, -1), maps=maps)
         self.assertEqual(got, {(129, -126), (131, -128)})
+
+
+class TestFrontCornerJoin(unittest.TestCase):
+    """A diagonal run, and two plots' fronts meeting at a corner, leave no missing column (#275)."""
+
+    @staticmethod
+    def _connected(cells):
+        cells = {tuple(q) for q in cells}
+        left, todo = set(cells), [min(cells)]
+        left.discard(todo[0])
+        while todo:
+            q = todo.pop()
+            for n in ((q[0] + 1, q[1]), (q[0] - 1, q[1]), (q[0], q[1] + 1), (q[0], q[1] - 1)):
+                if n in left:
+                    left.discard(n)
+                    todo.append(n)
+        return not left
+
+    def test_diagonal_run_is_four_connected_between_end_points(self):
+        for end in ((9, 4), (9, 9), (4, 9), (9, -4)):
+            self.assertTrue(self._connected(gs.line4((0, 0), end)), end)
+
+    @staticmethod
+    def _item(plot, cells, kind='brick_wall'):
+        return {'id': f'garden-{plot}-front', 'boundary_role': 'front', 'kind': kind,
+                'cells': [list(q) for q in cells], 'scope': {'property': str(plot)},
+                'provenance': {'source': 'inference'}}
+
+    def test_neighbour_fronts_touching_at_a_corner_get_a_bridge(self):
+        a = self._item(1, [(0, 0), (1, 0), (2, 0)])
+        b = self._item(2, [(3, 1), (4, 1)])
+        owner = {(2, 1): 1}
+        added = gs.join_front_diagonals([a, b], set(), owner, set(), set())
+        self.assertEqual(added, 1)
+        self.assertTrue(self._connected(a['cells'] + b['cells']))
+        self.assertIn([2, 1], a['cells'])             # the bridge column belongs to the plot that owns it
+
+    def test_bridge_never_enters_street_house_or_opening(self):
+        a = self._item(1, [(0, 0)])
+        b = self._item(2, [(1, 1)])
+        self.assertEqual(gs.join_front_diagonals([a, b], {(1, 0)}, {}, {(0, 1)}, set()), 0)
+        self.assertEqual(len(a['cells']) + len(b['cells']), 2)
+
+    def test_plank_fence_bridge_is_a_cross_shelf_closer(self):
+        a = self._item(1, [(0, 0), (1, 0)], 'plank_fence')
+        a.update(facing={'0,0': 'south', '1,0': 'south'}, closers=[])
+        b = self._item(2, [(2, 1), (3, 1)], 'plank_fence')
+        b.update(facing={'2,1': 'south', '3,1': 'south'}, closers=[])
+        gs.join_front_diagonals([a, b], set(), {(2, 0): 1}, set(), set())
+        self.assertEqual(a['closers'], [[2, 0]])
+        self.assertIn('2,0', a['facing'])
+
+    def test_observed_map_item_cells_are_never_changed(self):
+        a = self._item(1, [(0, 0)])
+        b = self._item(2, [(1, 1)])
+        b['provenance'] = {'source': 'vector_map'}
+        gs.join_front_diagonals([a, b], set(), {}, set(), set())
+        self.assertEqual(b['cells'], [[1, 1]])
+        gs.join_front_diagonals([a, b], set(), {(1, 0): 2}, set(), set())   # bridge owned by the map item's plot
+        self.assertEqual(b['cells'], [[1, 1]])
+
+    def test_unowned_column_is_not_treated_as_owned(self):
+        a = self._item(1, [(0, 0)])
+        b = {**self._item(2, [(1, 1)]), 'id': 'unparsed'}
+        gs.join_front_diagonals([a, b], set(), {}, set(), set())
+        self.assertEqual(len(a['cells']), 2)
+        self.assertEqual(b['cells'], [[1, 1]])
 
 
 if __name__ == '__main__':
