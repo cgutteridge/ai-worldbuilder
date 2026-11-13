@@ -393,6 +393,8 @@ def place_barriers_from_plan(
         mat = item.get('block') or dplan.DEFAULT_BLOCK.get(kind or '', '')
         height = int(item.get('height') or dplan.DEFAULT_HEIGHT.get(kind or '', 1))
         allow = bool(item.get('allow_against_build'))
+        facings = item.get('facing') or {}              # '{x},{z}' -> outward direction (plank panels)
+        bases = item.get('facing_basis') or {}
         cells = item.get('cells') or []
         if not cells:
             unplaced.append(dplan.mark_unplaced(item, 'no cells'))
@@ -437,6 +439,8 @@ def place_barriers_from_plan(
             col_ok = False
             excluded = []
             placed_positions = []
+            facing = facings.get(f'{q[0]},{q[1]}') if kind == 'plank_fence' else None
+            state = dplan.shelf_block(mat, facing) if kind == 'plank_fence' else mat
             for i in range(1, height + 1):
                 pos = (q[0], top[0] + i, q[1])
                 reason = ('not air' if not is_air(world.block(*pos)) else
@@ -446,12 +450,15 @@ def place_barriers_from_plan(
                 if reason:
                     excluded.append({'position': list(pos), 'reason': reason})
                     continue
-                found[pos] = mat
+                found[pos] = state
                 placed_positions.append(list(pos))
                 col_ok = True
             if col_ok:
                 report.append({
                     'x': q[0], 'z': q[1], 'kind': kind, 'block': mat, 'height': height,
+                    **({'state': state, 'facing': facing,
+                        'facing_basis': bases.get(f'{q[0]},{q[1]}') or 'no outward evidence: solid plank'}
+                       if kind == 'plank_fence' else {}),
                     'source': (item.get('provenance') or {}).get('source', ''),
                     'provenance': dict(item.get('provenance') or {}),
                     'scope': dict(item.get('scope') or {}),
@@ -627,6 +634,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     # Re-scan for present standing pieces (join_pieces needs them).
     for item in barrier_items:
         mat = item.get('block') or dplan.DEFAULT_BLOCK.get(item.get('kind') or '', '')
+        if item.get('kind') == 'plank_fence':           # panels stand as shelves: same wood, other block id
+            mat = dplan.shelf_block(mat, 'north').split('[')[0] if item.get('facing') else mat
         for raw in item.get('cells') or []:
             q = (int(raw[0]), int(raw[1]))
             if not cell_contains(cell, *q):

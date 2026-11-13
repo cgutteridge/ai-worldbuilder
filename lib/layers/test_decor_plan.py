@@ -546,3 +546,37 @@ class TestConventionFenceReachesPlacement(unittest.TestCase):
         self.assertEqual(dp.barrier_kind('picket'), 'picket')
         self.assertEqual(dp.PLANK_TONES['oak'], ('oak_planks',))
         self.assertIn('mangrove_planks', dp.PLANK_TONES['reddy'])
+
+
+class TestShelfBlock(unittest.TestCase):
+    """#272: plank-style panels are wooden shelves facing out; no outward evidence keeps the solid plank."""
+
+    def test_shelf_state_syntax_and_wood_follow_the_tone(self):
+        self.assertEqual(dp.shelf_block('oak_planks', 'north'), 'oak_shelf[facing=north]')
+        self.assertEqual(dp.shelf_block('minecraft:pale_oak_planks', 'east'), 'pale_oak_shelf[facing=east]')
+        self.assertEqual(dp.shelf_block('dark_oak_planks', 'south'), 'dark_oak_shelf[facing=south]')
+        self.assertEqual(dp.shelf_block('birch_planks', 'west'), 'birch_shelf[facing=west]')
+
+    def test_every_tone_plank_has_a_shelf_variant(self):
+        shelves = {'oak', 'spruce', 'dark_oak', 'jungle', 'acacia', 'mangrove', 'birch', 'pale_oak'}
+        for blocks in dp.PLANK_TONES.values():
+            for b in blocks:
+                self.assertIn(b.removesuffix('_planks'), shelves)
+                self.assertIn('_shelf[facing=north]', dp.shelf_block(b, 'north'))
+
+    def test_no_outward_facing_keeps_the_solid_plank(self):
+        self.assertEqual(dp.shelf_block('oak_planks', None), 'oak_planks')
+        self.assertEqual(dp.shelf_block('oak_planks', 'up'), 'oak_planks')
+
+    def test_pale_oak_is_a_plank_tone(self):
+        self.assertEqual(dp.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
+
+    def test_facing_survives_planning(self):
+        garden = [{'id': 'garden-0-front', 'role': 'barrier', 'kind': 'plank_fence', 'block': 'oak_planks',
+                   'height': 1, 'cells': [[5, 8], [6, 8]], 'facing': {'5,8': 'north', '6,8': 'north'},
+                   'facing_basis': {'5,8': 'street', '6,8': 'street'},
+                   'provenance': {'source': 'inference', 'confidence': 'medium',
+                                  'evidence_ids': ['e'], 'unresolved_reason': ''}}]
+        plan = dp.build_decor_plan((0, 0), map_barriers={}, garden=garden, rgb={}, footprint=set(), canopy=set())
+        item = [i for i in plan['items'] if i['id'] == 'garden-0-front'][0]
+        self.assertEqual(item['facing']['5,8'], 'north')

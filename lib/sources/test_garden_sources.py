@@ -691,3 +691,60 @@ class TestStreetRunConventions(unittest.TestCase):
             bad = self.conv()
             bad['overrides']['42']['front']['provenance'] = {'evidence_ids': ['missing-1']}
             self.assertEqual(self.cited_ids(bad) - known, {'missing-1'})
+
+
+class TestOutwardFacings(unittest.TestCase):
+    """#272: plank panels face out (street / public side), with a labelled fallback."""
+
+    @staticmethod
+    def _plot(x0, x1, z0, z1, pid, owner):
+        for x in range(x0, x1 + 1):
+            for z in range(z0, z1 + 1):
+                owner[(x, z)] = pid
+
+    def test_straight_front_run_faces_the_street(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)          # street is z < 0 (north)
+        face, why = gs.outward_facings([(x, 0) for x in range(2, 8)], 1, 'front', owner, (4.5, 4.5))
+        self.assertEqual(set(face.values()), {'north'})
+        self.assertEqual(set(why.values()), {'street'})
+
+    def test_front_run_on_street_to_the_east_faces_east(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)
+        face, _ = gs.outward_facings([(9, z) for z in range(2, 8)], 1, 'front', owner, (4.5, 4.5))
+        self.assertEqual(set(face.values()), {'east'})
+
+    def test_corner_plot_faces_each_street_and_the_corner_picks_one_public_side(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)          # streets: north (z<0) and east (x>9)
+        front, _ = gs.outward_facings([(x, 0) for x in range(1, 8)], 1, 'front', owner, (4.5, 4.5))
+        side, why = gs.outward_facings([(9, z) for z in range(1, 8)], 1, 'side_front', owner, (4.5, 4.5))
+        self.assertEqual(set(front.values()), {'north'})
+        self.assertEqual(set(side.values()), {'east'})
+        self.assertEqual(set(why.values()), {'street'})
+        corner, _ = gs.outward_facings([(9, 0)], 1, 'front', owner, (4.5, 4.5))
+        self.assertIn(corner['9,0'], ('north', 'east'))       # both public; deterministic pick
+        again, _ = gs.outward_facings([(9, 0)], 1, 'front', owner, (4.5, 4.5))
+        self.assertEqual(corner, again)
+
+    def test_side_boundary_beside_a_public_path_faces_the_path(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)          # unowned alley to the west (x<0)
+        face, why = gs.outward_facings([(0, z) for z in range(2, 8)], 1, 'side_back', owner, (4.5, 4.5))
+        self.assertEqual(set(face.values()), {'west'})
+        self.assertEqual(set(why.values()), {'public'})
+
+    def test_private_private_fallback_faces_away_from_the_fence_owner_and_is_labelled(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)
+        self._plot(10, 19, 0, 9, 2, owner)        # neighbour on the east
+        face, why = gs.outward_facings([(9, z) for z in range(2, 8)], 1, 'side_back', owner, (4.5, 4.5))
+        self.assertEqual(set(face.values()), {'east'})
+        self.assertTrue(all(w.startswith('fallback: private-private') for w in why.values()))
+
+    def test_column_just_outside_the_plot_faces_away_from_it(self):
+        owner = {}
+        self._plot(0, 9, 0, 9, 1, owner)
+        face, _ = gs.outward_facings([(4, -1)], 1, 'front', owner, (4.5, 4.5))
+        self.assertEqual(face['4,-1'], 'north')

@@ -107,3 +107,7 @@ Open checks: whether `decor_plan` places a plank barrier (barrier kinds and `JOI
 ### Owner decision, 2026-11-12: plank tone
 
 Keep oak as the default panel tone; dark, reddy and pale planks only where evidence shows a distinct tone.
+
+### Shelf panels (#272)
+
+Plank-style fence columns are placed as wooden shelves, `<wood>_shelf[facing=<dir>]` (wood from the tone table; the server confirms all 12 shelf woods are in `minecraft:wooden_shelves`). Facing is the outward side: the unowned neighbour (street, pavement, path) wherever one exists, else the neighbouring plot, facing away from the plot that owns the fence (labelled `fallback: private-private`). A column with no outward evidence stays a solid plank (labelled). Whether a shelf reads well from the street is still the owner's in-world review.
