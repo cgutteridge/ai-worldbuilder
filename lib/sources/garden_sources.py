@@ -707,6 +707,119 @@ def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict
     return facing, basis
 
 
+def _run_components(cols) -> list[list]:
+    """8-connected groups of columns, each sorted, in a stable order."""
+    left, out = set(cols), []
+    for start in sorted(left):
+        if start not in left:
+            continue
+        comp, stack = [], [start]
+        left.discard(start)
+        while stack:
+            q = stack.pop()
+            comp.append(q)
+            for a in (-1, 0, 1):
+                for b in (-1, 0, 1):
+                    n = (q[0] + a, q[1] + b)
+                    if n in left:
+                        left.discard(n)
+                        stack.append(n)
+        out.append(sorted(comp))
+    return out
+
+
+def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
+    """One outward facing per panel run, and closing pieces so each run is continuous.
+
+    ``outward_facings`` answers per column, which on a diagonal boundary (about 1 z per 2 x) flips
+    between two axes along one run. Here a run is an 8-connected group of boundary columns. Its
+    facing is the dominant axis of the run's outward normal (principal direction of the columns,
+    sign from the summed per-column outward votes); a near tie between axes (about 45 degrees) goes
+    to the larger vote, then the fixed order east, west, south, north.
+
+    A shelf's back board lies on the column edge opposite its facing, so on a staircase the boards
+    of neighbouring rows are a block apart. The column of a step that lies on the inner side (opposite
+    the facing) becomes a solid plank, which ties the two board lines together. Where the run only
+    touches at a corner (8-connected), a solid plank is added in the inner candidate column (the other
+    candidate if that one is blocked, nothing if both are). Never added: street columns or columns
+    owned by another plot.
+
+    @param cols: boundary columns of one plot role
+    @param plot_id: plot that owns the fence
+    @param role: boundary role
+    @param owner: ``{column: plot id}``
+    @param street: columns of road, pavement and path (never closed over)
+    @param centre: plot centre ``(x, z)``
+    @returns: ``{'cells', 'facing', 'basis', 'solid'}``: cells include closers; ``solid`` lists the
+        solid plank columns (closers and converted step columns); ``facing`` has no entry for them
+    """
+    face, basis = outward_facings(cols, plot_id, role, owner, centre)
+    cells = {(int(q[0]), int(q[1])) for q in cols}
+    solid: set = set()
+    run_face: dict = {}
+    for run in _run_components(cells):
+        votes = [DIRS[face[f'{q[0]},{q[1]}']] for q in run]
+        vx, vz = sum(v[0] for v in votes), sum(v[1] for v in votes)
+        mx, mz = sum(q[0] for q in run) / len(run), sum(q[1] for q in run) / len(run)
+        sxx = sum((q[0] - mx) ** 2 for q in run)
+        szz = sum((q[1] - mz) ** 2 for q in run)
+        sxz = sum((q[0] - mx) * (q[1] - mz) for q in run)
+        if len(run) > 1 and (sxx + szz) > 0:
+            theta = 0.5 * math.atan2(2 * sxz, sxx - szz)          # principal direction
+            nx, nz = -math.sin(theta), math.cos(theta)
+        else:
+            nx, nz = float(vx), float(vz)
+        if nx * vx + nz * vz < 0:
+            nx, nz = -nx, -nz
+        n = math.hypot(nx, nz) or 1.0
+        nx, nz = nx / n, nz / n
+        if abs(abs(nx) - abs(nz)) < 0.15:                         # about 45 degrees: larger vote
+            axis_x = (abs(vx), 0) > (abs(vz), 1) if abs(vx) != abs(vz) else None
+            if axis_x is None:
+                first = min(votes, key=lambda v: ('east', 'west', 'south', 'north').index(
+                    next(k for k, d in DIRS.items() if d == v)))
+                axis_x = first[0] != 0
+        else:
+            axis_x = abs(nx) > abs(nz)
+        if axis_x:
+            d = 'east' if (nx if nx else vx) > 0 else 'west'
+        else:
+            d = 'south' if (nz if nz else vz) > 0 else 'north'
+        for q in run:
+            run_face[q] = d
+    for q in sorted(cells):
+        d = DIRS[run_face[q]]
+        for a, b in ((1, 0), (0, 1), (1, 1), (1, -1)):
+            p = (q[0] + a, q[1] + b)
+            if p not in cells or run_face[p] != run_face[q]:
+                continue
+            if a == 0 or b == 0:                                   # face to face
+                if (a * d[0] + b * d[1]) != 0:                     # step along the facing axis
+                    solid.add(q if (a * d[0] + b * d[1]) > 0 else p)   # the one opposite the facing
+                continue
+            for c in sorted(((q[0] + a, q[1]), (q[0], q[1] + b)),
+                            key=lambda c: (c[0] * d[0] + c[1] * d[1], c)):
+                if c in cells:
+                    break
+                if c in street or owner.get(c) not in (None, plot_id):
+                    continue
+                cells.add(c)
+                run_face[c] = run_face[q]
+                solid.add(c)
+                break
+    out_face, out_basis = {}, {}
+    for q in sorted(cells):
+        key = f'{q[0]},{q[1]}'
+        if q in solid:
+            out_basis[key] = 'closing piece at a diagonal step: solid plank'
+            continue
+        out_face[key] = run_face[q]
+        base = basis.get(key, '')
+        out_basis[key] = base if run_face[q] == face.get(key) else f'{base}; run facing'
+    return {'cells': sorted(cells), 'facing': out_face, 'basis': out_basis,
+            'solid': sorted(solid)}
+
+
 def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict | None = None):
     """Garden barrier items carrying property/street scope, evidence and inference reasons.
 
@@ -774,8 +887,10 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                           'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},
                           'reason': reason, 'provenance': record})
             if items[-1]['kind'] == 'plank_fence':
-                items[-1]['facing'], items[-1]['facing_basis'] = outward_facings(
-                    cols, i, role, owner, meta['centre'])
+                run = panel_runs(cols, i, role, owner, street, meta['centre'])
+                items[-1]['cells'] = [list(q) for q in run['cells']]
+                items[-1]['facing'], items[-1]['facing_basis'] = run['facing'], run['basis']
+                items[-1]['solid'] = [list(q) for q in run['solid']]
             if role == 'front':
                 front_boundaries[i] = cols
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,

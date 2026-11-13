@@ -764,3 +764,82 @@ class TestFacingIsOutwardNotInward(unittest.TestCase):
                 dx, dz = dirs[d]
                 self.assertNotEqual(owner.get((x + dx, z + dz)), 1, (role, key, d))   # across = outside
                 self.assertEqual(owner.get((x - dx, z - dz)), 1, (role, key, d))      # back = garden
+
+
+class TestPanelRuns(unittest.TestCase):
+    """#273: one facing per panel run, continuous run at diagonal steps, closers kept off road/owned."""
+
+    @staticmethod
+    def _setup(dx, dz, n=24):
+        """Plot below the boundary line (z grows with x by dz/dx); street above it. Boundary = line4."""
+        cols = gs.line4((0, 0), (dx * n, dz * n))
+        line = {}
+        for x, z in cols:
+            line[x] = min(line.get(x, z), z)
+        owner, street = {}, {}
+        for x in range(-2, dx * n + 3):
+            for z in range(-n * dz - 6, n * dz + 8):
+                edge = min((zz for xx, zz in cols if xx == x), default=None)
+                if edge is None:
+                    continue
+                if z >= edge:
+                    owner[(x, z)] = 1
+                elif z >= edge - 2:
+                    street[(x, z)] = True
+        return cols, owner, street
+
+    def _run(self, dx, dz):
+        cols, owner, street = self._setup(dx, dz)
+        centre = (dx * 12, dz * 12 + 20)
+        return cols, owner, street, gs.panel_runs(cols, 1, 'front', owner, street, centre)
+
+    def test_constant_facing_pointing_away_from_the_plot(self):
+        for dx, dz in ((2, 1), (1, 1), (3, 1), (1, 0)):
+            _, owner, _, r = self._run(dx, dz)
+            self.assertEqual(len(set(r['facing'].values())), 1, (dx, dz))
+            d = gs.DIRS[next(iter(r['facing'].values()))]
+            for key in r['facing']:
+                x, z = map(int, key.split(','))
+                self.assertEqual(owner.get((x - d[0], z - d[1])), 1, (dx, dz, key))   # back is the garden
+
+    def test_dominant_axis_of_the_outward_direction(self):
+        for dx, dz, want in ((2, 1, 'north'), (3, 1, 'north'), (1, 0, 'north')):
+            self.assertEqual(set(self._run(dx, dz)[3]['facing'].values()), {want}, (dx, dz))
+
+    def test_no_gap_between_consecutive_columns(self):
+        for dx, dz in ((2, 1), (1, 1), (3, 1), (1, 0)):
+            r = self._run(dx, dz)[3]
+            cells = set(map(tuple, r['cells']))
+            seen, stack = set(), [min(cells)]
+            while stack:                                # face-to-face connectivity only
+                q = stack.pop()
+                if q in seen:
+                    continue
+                seen.add(q)
+                stack += [(q[0] + a, q[1] + b) for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                          if (q[0] + a, q[1] + b) in cells]
+            self.assertEqual(seen, cells, (dx, dz))
+
+    def test_closers_never_on_street_or_other_owned_columns(self):
+        for dx, dz in ((2, 1), (1, 1)):
+            cols, owner, street, r = self._run(dx, dz)
+            owner[(0, -1)] = 2
+            r = gs.panel_runs(cols, 1, 'front', owner, street, (dx * 12, dz * 12 + 20))
+            for q in map(tuple, r['solid']):
+                self.assertNotIn(q, street)
+                self.assertIn(owner.get(q), (None, 1))
+            self.assertNotIn((0, -1), set(map(tuple, r['cells'])))
+
+    def test_corner_touching_run_gets_a_closer_off_the_street(self):
+        cols = [(x, x) for x in range(8)]                          # pure 45 degrees, 8-connected
+        owner = {(x, z): 1 for x in range(8) for z in range(8) if z >= x}
+        street = {(x, z): True for x in range(8) for z in range(8) if z < x}
+        r = gs.panel_runs(cols, 1, 'front', owner, street, (2.0, 6.0))
+        self.assertEqual(len(set(r['facing'].values())), 1)
+        for q in map(tuple, r['solid']):
+            self.assertNotIn(q, street)
+        self.assertEqual(len(r['solid']), 7)
+
+    def test_axis_aligned_run_needs_no_closers(self):
+        r = self._run(1, 0)[3]
+        self.assertEqual(r['solid'], [])
