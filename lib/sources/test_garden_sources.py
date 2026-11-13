@@ -796,15 +796,17 @@ class TestPanelRuns(unittest.TestCase):
     def test_constant_facing_pointing_away_from_the_plot(self):
         for dx, dz in ((2, 1), (1, 1), (3, 1), (1, 0)):
             _, owner, _, r = self._run(dx, dz)
-            self.assertEqual(len(set(r['facing'].values())), 1, (dx, dz))
-            d = gs.DIRS[next(iter(r['facing'].values()))]
-            for key in r['facing']:
+            faces = {k: f for k, f in r['facing'].items() if k not in r['cross']}   # cross closers excepted
+            self.assertEqual(len(set(faces.values())), 1, (dx, dz))
+            d = gs.DIRS[next(iter(faces.values()))]
+            for key in faces:
                 x, z = map(int, key.split(','))
                 self.assertEqual(owner.get((x - d[0], z - d[1])), 1, (dx, dz, key))   # back is the garden
 
     def test_dominant_axis_of_the_outward_direction(self):
         for dx, dz, want in ((2, 1, 'north'), (3, 1, 'north'), (1, 0, 'north')):
-            self.assertEqual(set(self._run(dx, dz)[3]['facing'].values()), {want}, (dx, dz))
+            r = self._run(dx, dz)[3]
+            self.assertEqual({f for k, f in r['facing'].items() if k not in r['cross']}, {want}, (dx, dz))
 
     def test_no_gap_between_consecutive_columns(self):
         for dx, dz in ((2, 1), (1, 1), (3, 1), (1, 0)):
@@ -820,26 +822,73 @@ class TestPanelRuns(unittest.TestCase):
                           if (q[0] + a, q[1] + b) in cells]
             self.assertEqual(seen, cells, (dx, dz))
 
+    @staticmethod
+    def _boards(r):
+        """Back-board rectangles in 16ths, ``[(x0, z0, x1, z1)]``, 3/16 flush with the edge opposite the facing."""
+        out = []
+        for key, f in r['facing'].items():
+            x, z = map(int, key.split(','))
+            x0, z0 = x * 16, z * 16
+            box = {'north': (x0, z0 + 13, x0 + 16, z0 + 16), 'south': (x0, z0, x0 + 16, z0 + 3),
+                   'west': (x0 + 13, z0, x0 + 16, z0 + 16), 'east': (x0, z0, x0 + 3, z0 + 16)}[f]
+            out.append(box)
+        return out
+
+    @staticmethod
+    def _joined(boxes):
+        """True when the boards form one piece (touching along an edge of positive length counts)."""
+        def touch(a, b):
+            ox = min(a[2], b[2]) - max(a[0], b[0])
+            oz = min(a[3], b[3]) - max(a[1], b[1])
+            return (ox >= 0 and oz > 0) or (oz >= 0 and ox > 0)
+        seen, stack = {0}, [0]
+        while stack:
+            i = stack.pop()
+            for j in range(len(boxes)):
+                if j not in seen and touch(boxes[i], boxes[j]):
+                    seen.add(j)
+                    stack.append(j)
+        return len(seen) == len(boxes)
+
     def test_closers_never_on_street_or_other_owned_columns(self):
         for dx, dz in ((2, 1), (1, 1)):
             cols, owner, street, r = self._run(dx, dz)
             owner[(0, -1)] = 2
             r = gs.panel_runs(cols, 1, 'front', owner, street, (dx * 12, dz * 12 + 20))
-            for q in map(tuple, r['solid']):
+            for q in map(tuple, r['closers']):
                 self.assertNotIn(q, street)
                 self.assertIn(owner.get(q), (None, 1))
             self.assertNotIn((0, -1), set(map(tuple, r['cells'])))
+
+    def test_closers_are_thin_cross_shelves_never_solid_planks(self):
+        for dx, dz in ((2, 1), (1, 1), (3, 1)):
+            r = self._run(dx, dz)[3]
+            self.assertTrue(r['closers'], (dx, dz))
+            run = set(r['facing'].values()) - set(r['cross'].values())
+            self.assertEqual(len(run), 1, (dx, dz))                   # one facing for the real shelves
+            d = gs.DIRS[next(iter(run))]
+            for key in map(lambda q: f'{q[0]},{q[1]}', r['closers']):
+                self.assertIn(key, r['facing'])                       # every cell carries a shelf facing
+                f = gs.DIRS[r['cross'][key]]
+                self.assertEqual(f[0] * d[0] + f[1] * d[1], 0, (dx, dz, key))   # perpendicular
+
+    def test_boards_join_into_one_unbroken_line(self):
+        for dx, dz in ((2, 1), (1, 1), (3, 1), (1, 0)):             # 27, 45 degrees, 18 degrees, flat
+            r = self._run(dx, dz)[3]
+            self.assertTrue(self._joined(self._boards(r)), (dx, dz))
 
     def test_corner_touching_run_gets_a_closer_off_the_street(self):
         cols = [(x, x) for x in range(8)]                          # pure 45 degrees, 8-connected
         owner = {(x, z): 1 for x in range(8) for z in range(8) if z >= x}
         street = {(x, z): True for x in range(8) for z in range(8) if z < x}
         r = gs.panel_runs(cols, 1, 'front', owner, street, (2.0, 6.0))
-        self.assertEqual(len(set(r['facing'].values())), 1)
-        for q in map(tuple, r['solid']):
+        run = set(r['facing'].values()) - set(r['cross'].values())
+        self.assertEqual(len(run), 1)
+        for q in map(tuple, r['closers']):
             self.assertNotIn(q, street)
-        self.assertEqual(len(r['solid']), 7)
+        self.assertEqual(len(r['closers']), 7)
+        self.assertTrue(self._joined(self._boards(r)))
 
     def test_axis_aligned_run_needs_no_closers(self):
         r = self._run(1, 0)[3]
-        self.assertEqual(r['solid'], [])
+        self.assertEqual(r['closers'], [])

@@ -739,10 +739,10 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
 
     A shelf's back board lies on the column edge opposite its facing, so on a staircase the boards
     of neighbouring rows are a block apart. The column of a step that lies on the inner side (opposite
-    the facing) becomes a solid plank, which ties the two board lines together. Where the run only
-    touches at a corner (8-connected), a solid plank is added in the inner candidate column (the other
-    candidate if that one is blocked, nothing if both are). Never added: street columns or columns
-    owned by another plot.
+    the facing) becomes a thin cross shelf (``_closer_facing``) whose board runs across the step and
+    ties the two board lines together. Where the run only touches at a corner (8-connected), such a
+    cross shelf is added in the inner candidate column (the other candidate if that one is blocked,
+    nothing if both are). Never added: street columns or columns owned by another plot.
 
     @param cols: boundary columns of one plot role
     @param plot_id: plot that owns the fence
@@ -750,12 +750,12 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     @param owner: ``{column: plot id}``
     @param street: columns of road, pavement and path (never closed over)
     @param centre: plot centre ``(x, z)``
-    @returns: ``{'cells', 'facing', 'basis', 'solid'}``: cells include closers; ``solid`` lists the
-        solid plank columns (closers and converted step columns); ``facing`` has no entry for them
+    @returns: ``{'cells', 'facing', 'basis', 'closers', 'cross'}``: cells include added closer columns;
+        ``closers`` lists the cross-shelf columns (added and converted step columns); ``cross`` maps
+        each to its facing (also in ``facing``)
     """
     face, basis = outward_facings(cols, plot_id, role, owner, centre)
     cells = {(int(q[0]), int(q[1])) for q in cols}
-    solid: set = set()
     run_face: dict = {}
     for run in _run_components(cells):
         votes = [DIRS[face[f'{q[0]},{q[1]}']] for q in run]
@@ -787,6 +787,7 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
             d = 'south' if (nz if nz else vz) > 0 else 'north'
         for q in run:
             run_face[q] = d
+    closers: set = set()                                           # columns turned into cross shelves
     for q in sorted(cells):
         d = DIRS[run_face[q]]
         for a, b in ((1, 0), (0, 1), (1, 1), (1, -1)):
@@ -795,7 +796,7 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
                 continue
             if a == 0 or b == 0:                                   # face to face
                 if (a * d[0] + b * d[1]) != 0:                     # step along the facing axis
-                    solid.add(q if (a * d[0] + b * d[1]) > 0 else p)   # the one opposite the facing
+                    closers.add(q if (a * d[0] + b * d[1]) > 0 else p)   # the one opposite the facing
                 continue
             for c in sorted(((q[0] + a, q[1]), (q[0], q[1] + b)),
                             key=lambda c: (c[0] * d[0] + c[1] * d[1], c)):
@@ -805,19 +806,40 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
                     continue
                 cells.add(c)
                 run_face[c] = run_face[q]
-                solid.add(c)
+                closers.add(c)
                 break
-    out_face, out_basis = {}, {}
+    out_face, out_basis, cross = {}, {}, {}
     for q in sorted(cells):
         key = f'{q[0]},{q[1]}'
-        if q in solid:
-            out_basis[key] = 'closing piece at a diagonal step: solid plank'
+        if q in closers:
+            f = _closer_facing(q, run_face[q], cells, closers)
+            out_face[key] = cross[key] = f
+            out_basis[key] = f'closing piece at a diagonal step: cross shelf facing {f}'
             continue
         out_face[key] = run_face[q]
         base = basis.get(key, '')
         out_basis[key] = base if run_face[q] == face.get(key) else f'{base}; run facing'
     return {'cells': sorted(cells), 'facing': out_face, 'basis': out_basis,
-            'solid': sorted(solid)}
+            'closers': sorted(closers), 'cross': cross}
+
+
+def _closer_facing(c, run_dir: str, cells, closers) -> str:
+    """Facing of the cross shelf that closes a step column ``c`` of a run facing ``run_dir``.
+
+    The run's boards lie on the inner edge of their columns. A staircase leaves the boards of the two
+    rows one block apart, so the closer's own board runs across the step, along the perpendicular
+    axis, on the edge that touches the next column of the run: its 3/16 board is flush with the edge
+    opposite its facing, so it faces away from that neighbour. The board then meets the neighbour's
+    board end on that edge and the previous row's board at the step. Neighbours that are ordinary
+    shelves are preferred to other closers; ties take the fixed order east, west, south, north.
+    """
+    d = DIRS[run_dir]
+    sides = [s for s in ('east', 'west', 'south', 'north') if DIRS[s][0] * d[0] + DIRS[s][1] * d[1] == 0]
+    def score(s):
+        n = (c[0] + DIRS[s][0], c[1] + DIRS[s][1])
+        return (0 if n not in cells else 1 if n in closers else 2)
+    side = max(sides, key=lambda s: (score(s), -sides.index(s)))   # best score; first in the order wins ties
+    return {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}[side]
 
 
 def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict | None = None):
@@ -890,7 +912,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                 run = panel_runs(cols, i, role, owner, street, meta['centre'])
                 items[-1]['cells'] = [list(q) for q in run['cells']]
                 items[-1]['facing'], items[-1]['facing_basis'] = run['facing'], run['basis']
-                items[-1]['solid'] = [list(q) for q in run['solid']]
+                items[-1]['closers'] = [list(q) for q in run['closers']]
             if role == 'front':
                 front_boundaries[i] = cols
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,

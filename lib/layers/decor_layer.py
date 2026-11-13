@@ -395,7 +395,6 @@ def place_barriers_from_plan(
         allow = bool(item.get('allow_against_build'))
         facings = item.get('facing') or {}              # '{x},{z}' -> outward direction (plank panels)
         bases = item.get('facing_basis') or {}
-        solid_keys = {f'{c[0]},{c[1]}' for c in item.get('solid') or ()}
         cells = item.get('cells') or []
         if not cells:
             unplaced.append(dplan.mark_unplaced(item, 'no cells'))
@@ -441,8 +440,6 @@ def place_barriers_from_plan(
             excluded = []
             placed_positions = []
             facing = facings.get(f'{q[0]},{q[1]}') if kind == 'plank_fence' else None
-            if kind == 'plank_fence' and f'{q[0]},{q[1]}' in solid_keys:
-                facing = None                                # closing piece: solid plank
             state = dplan.shelf_block(mat, facing) if kind == 'plank_fence' else mat
             for i in range(1, height + 1):
                 pos = (q[0], top[0] + i, q[1])
