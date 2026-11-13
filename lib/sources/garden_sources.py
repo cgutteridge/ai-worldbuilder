@@ -305,12 +305,17 @@ def frontage(meta: dict, plot_cells, role_cells: dict, house_cells, conv: dict |
             out['opening'] = []
         elif paved is None:
             out['opening'] = sorted([target] + near[:OPENING_WIDTH - 1])
+            out['opening_evidence'] = 'default_width'
         else:
-            out['opening'] = widen_opening(target, front, plot_cells, paved, route)
+            out['opening'], out['opening_evidence'] = widen_opening(
+                target, front, plot_cells, paved, route, house=house, inward=(ax, az))
             out['opening_provenance'] = prov.provenance_record(
                 source='inference', confidence='low', evidence_ids=evidence_ids,
-                unresolved_reason=f'opening widened to the aerial paved strip ({len(out["opening"])} columns,'
-                                  f' cap {MAX_OPENING_WIDTH}); inferred, not a surveyed drive')
+                unresolved_reason=(f'opening widened to the aerial paved strip ({len(out["opening"])} columns,'
+                                   f' cap {MAX_OPENING_WIDTH}): it continues past the side of the house;'
+                                   ' inferred, not a surveyed drive')
+                if out['opening_evidence'] == 'side_passage' else
+                'door route only: no drive evidence (paving up to the boundary is not a drive)')
         out['connection'] = {
             'status': 'verified' if observed else ('built' if built else 'inferred'),
             'endpoints': [list(start), list(target)],
@@ -350,16 +355,27 @@ def paved_columns(rgb: dict | None) -> set:
     return {tuple(q) for q, c in rgb.items() if aerial_class(c) in ('brick', 'light', 'dark')}
 
 
-def widen_opening(target, front, plot_cells, paved, route=(), cap: int = MAX_OPENING_WIDTH) -> list:
-    """Front-boundary columns of the paved strip that meets the boundary at ``target`` (#270).
+def widen_opening(target, front, plot_cells, paved, route=(), cap: int = MAX_OPENING_WIDTH,
+                  house=(), inward=None) -> tuple[list, str]:
+    """Front-boundary columns of a drive that meets the boundary at ``target`` (#270, #275).
 
     A front column belongs to the strip when it, or the plot column just inside it, is paved
     (aerial) or on the door route. The strip is the chain of such columns, each within one column
     of the last, that contains ``target``; it is clipped to the ``cap`` columns nearest the target.
     Only this plot's own front columns are used, so a neighbour's plot line is never crossed.
+
+    The strip only opens wider than the door when it is drive-like (#275). A forecourt paved up
+    to the pavement is not a drive, so without evidence the opening is the door column alone.
+    Evidence ``side_passage``: the paved ground connected to the strip runs past the house's front
+    face and hugs the house side, and is no wider than ``cap`` columns where it passes the house
+    (a drive between buildings, not a paved front garden). It needs ``house`` and ``inward``
+    (unit vector from the street towards the house).
+
+    @returns: ``(columns, evidence)``; evidence is ``side_passage`` or ``door_route`` (door only)
     """
     own = {tuple(q) for q in plot_cells}
     hard = {tuple(q) for q in paved} | {tuple(q) for q in route}
+    target = tuple(target)
 
     edge = {tuple(q) for q in front}
 
@@ -367,16 +383,70 @@ def widen_opening(target, front, plot_cells, paved, route=(), cap: int = MAX_OPE
         return q in hard or any((q[0] + a, q[1] + b) in hard and (q[0] + a, q[1] + b) in own
                                 and (q[0] + a, q[1] + b) not in edge
                                 for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)))
-    cand = {tuple(q) for q in front if hit(tuple(q))} | {tuple(target)}
-    chain, todo = {tuple(target)}, [tuple(target)]
+    cand = {tuple(q) for q in front if hit(tuple(q))} | {target}
+    chain, todo = {target}, [target]
     while todo:
         c = todo.pop()
         for q in cand - chain:
             if max(abs(q[0] - c[0]), abs(q[1] - c[1])) <= 1:
                 chain.add(q)
                 todo.append(q)
+    if not side_passage(chain, own, {tuple(q) for q in paved}, house, inward, target, cap):
+        return [target], 'door_route'
     keep = sorted(chain, key=lambda q: (math.hypot(q[0] - target[0], q[1] - target[1]), q))[:cap]
-    return sorted(keep)
+    return sorted(keep), 'side_passage'
+
+
+def side_passage(strip, own, paved, house, inward, origin, cap: int = MAX_OPENING_WIDTH) -> bool:
+    """True when paved ground connected to ``strip`` continues back past the side of the house (#275).
+
+    Depth is measured along ``inward`` from ``origin`` on the front line. Paved plot columns
+    (from the strip, bridging gaps of one column, never houses) count as passage when they lie more than a column
+    beyond the house's front face and touch the house side; the passage is a drive only when
+    the paving beside the house there is at most ``cap`` columns wide (one column of slack for a
+    diagonal edge), so a paved garden wrapping the house is not read as a drive.
+    """
+    if not house or inward is None:
+        return False
+    house = {tuple(q) for q in house}
+    ax, az = inward
+
+    def depth(q):
+        return (q[0] - origin[0]) * ax + (q[1] - origin[1]) * az
+    face = min(depth(q) for q in house)
+    ground = {q for q in paved if q in own and q not in house}
+    todo = list(strip)
+    reach = set(strip)
+    while todo:
+        c = todo.pop()
+        for a in (-2, -1, 0, 1, 2):          # two columns: aerial paving breaks (cars, shade) must not hide a drive
+            for b in (-2, -1, 0, 1, 2):
+                n = (c[0] + a, c[1] + b)
+                if n in ground and n not in reach:
+                    reach.add(n)
+                    todo.append(n)
+
+    def beside(q):
+        return any((q[0] + a, q[1] + b) in house for a in (-1, 0, 1) for b in (-1, 0, 1))
+    band = {q for q in reach if face + 1 <= depth(q) < face + 2.5}
+    left = set(band)
+    while left:
+        comp, todo = set(), [left.pop()]
+        comp.add(todo[0])
+        while todo:
+            c = todo.pop()
+            for a in (-1, 0, 1):
+                for b in (-1, 0, 1):
+                    n = (c[0] + a, c[1] + b)
+                    if n in left:
+                        left.discard(n)
+                        comp.add(n)
+                        todo.append(n)
+        if any(beside(q) for q in comp):
+            lat = [(q[0] - origin[0]) * -az + (q[1] - origin[1]) * ax for q in comp]
+            if max(lat) - min(lat) + 1 <= cap + 1:       # the passage, not a paved garden wrapping the house
+                return True
+    return False
 
 
 def frontage_route_columns(frontages) -> set:
@@ -842,6 +912,67 @@ def _closer_facing(c, run_dir: str, cells, closers) -> str:
     return {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}[side]
 
 
+def join_front_diagonals(items: list, keep_clear, owner: dict, street, footprint) -> int:
+    """Close corner-only joins between the front boundaries of two plots (#275).
+
+    Each plot's own run is 4-connected (``line4``, ``panel_runs``), but where two neighbouring
+    plots' front lines meet on a diagonal their end columns touch only at a corner, so the boundary
+    shows a gap. When two columns of different inferred front items touch diagonally and neither
+    orthogonal bridge column is covered, one bridge column is added: the one owned by one of the two
+    plots (not street, house or reserved opening), else the first free one. A plank fence takes it
+    as a cross shelf closer. Observed (map) items are never changed.
+
+    @returns: number of bridge columns added
+    """
+    front = [it for it in items if it.get('boundary_role') in PUBLIC_ROLES
+             and it['provenance']['source'] != 'vector_map']
+    cover: dict = {}
+    for it in items:
+        for q in it['cells']:
+            cover[tuple(q)] = it
+    blocked = set(keep_clear) | set(footprint)
+    added = 0
+    for it in front:
+        for q in sorted(tuple(c) for c in it['cells']):
+            for a, b in ((1, 1), (1, -1)):
+                p = (q[0] + a, q[1] + b)
+                other = cover.get(p)
+                if other is None or other is it or other.get('scope') == it.get('scope'):
+                    continue
+                bridges = [(q[0] + a, q[1]), (q[0], q[1] + b)]
+                if any(c in cover for c in bridges):
+                    continue
+                free = [c for c in bridges if c not in blocked and c not in street]
+                if not free:
+                    continue
+                own = [c for c in free if owner.get(c) in (_plot(it), _plot(other))]
+                c = (own or free)[0]
+                target = it if owner.get(c) == _plot(it) or not own else other
+                target['cells'].append([c[0], c[1]])
+                cover[c] = target
+                added += 1
+                if target['kind'] == 'plank_fence':
+                    near = [(k, v) for k, v in (target.get('facing') or {}).items()
+                            if k not in {f'{x},{z}' for x, z in map(tuple, target.get('closers', ()))}]
+                    run_dir = near[0][1] if near else 'south'
+                    cells = {tuple(x) for x in target['cells']}
+                    closers = {tuple(x) for x in target.get('closers', ())} | {c}
+                    f = _closer_facing(c, run_dir, cells, closers)
+                    target['closers'] = [list(x) for x in sorted(closers)]
+                    target['facing'][f'{c[0]},{c[1]}'] = f
+                    target.setdefault('facing_basis', {})[f'{c[0]},{c[1]}'] = (
+                        'closing piece at a corner join between two plots: cross shelf facing ' + f)
+    return added
+
+
+def _plot(item: dict):
+    """Plot id of a garden item (its id is ``garden-<plot id>-<role>``)."""
+    try:
+        return int(str(item['id']).split('-')[1])
+    except (IndexError, ValueError):
+        return None
+
+
 def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict | None = None):
     """Garden barrier items carrying property/street scope, evidence and inference reasons.
 
@@ -929,6 +1060,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
             continue  # Decor reports observed-boundary conflicts instead of erasing them.
         item['cells'] = [q for q in item['cells'] if tuple(q) not in keep_clear]
     items = [item for item in items if item['cells']]
+    join_front_diagonals(items, keep_clear, owner, street, idx.cells())
     if report is not None:
         report['segments'] = rep
         report['frontages'] = frontages
