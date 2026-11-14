@@ -162,6 +162,17 @@ class TestGroundDecisions(unittest.TestCase):
         kinds, _ = gl.classify(cell, live, osm, rgb, fp, guessed_out=guessed)
         self.assertTrue(guessed.isdisjoint(garden))     # converted to paving by the road/house rule
 
+    def test_guessed_out_preserves_mapped_grass_soft_grass_survivors(self):
+        lawn = {(x, z) for x in range(2, 20) for z in range(2, 12)}
+        osm = self.Osm({q: 'grass' for q in lawn}, {q: 10 for q in lawn})
+        live = {q: (50, 'grass_block') for q in lawn}
+        rgb = {q: (.84, .76, .69) for q in lawn}
+        guessed = set()
+        kinds, how = gl.classify((0, 0), live, osm, rgb, guessed_out=guessed)
+        self.assertEqual(how['aerial brick away from paths -> lawn'], len(lawn))
+        self.assertEqual(guessed, lawn)
+        self.assertTrue(all(kinds[q] == 'grass' for q in guessed))
+
     def _strip(self):
         cell = (48, -44)
         x0, z0 = 6144, -5632
@@ -605,21 +616,75 @@ class TestPlanting(unittest.TestCase):
         rule.assert_called_once_with('park', 'shrubs')
         self.assertEqual(row['shrubs'], len(self.lawn) // 12)
 
-    def ground_plan(self, world):
+    def ground_plan(self, world, *, vmap=None, rgb=None, masked=None, owned=()):
         from unittest import mock
         from types import SimpleNamespace
         from site_kit import Plan
         live = {q: (50, 'grass_block') for q in self.lawn}
-        ev = {'vmap': TestGroundDecisions.Osm(), 'rgb': {q: (.44, .39, .27) for q in self.lawn},
+        ev = {'vmap': vmap if vmap is not None else TestGroundDecisions.Osm(),
+              'rgb': rgb if rgb is not None else {q: (.44, .39, .27) for q in self.lawn},
               'private_frontage': self.lawn, 'frontages': [], 'plots': self.plots, 'segments': self.segments,
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': 50)}
         plan = Plan('ground-planting-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
                 mock.patch.object(gl, 'free_columns', return_value=(live, Counter())), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
-            stats, conflicts, _, _ = gl.plan_cell((0, 0), {}, set(), plan, world, evidence=ev)
+            stats, conflicts, _, _ = gl.plan_cell((0, 0), masked or {}, set(owned), plan, world, evidence=ev)
         self.assertEqual(conflicts, [])
         return plan, stats
+
+    def test_ground_planting_excludes_mapped_soft_grass(self):
+        vmap = TestGroundDecisions.Osm({q: 'grass' for q in self.lawn}, {q: 10 for q in self.lawn})
+        plan, stats = self.ground_plan(self.world, vmap=vmap,
+                                       rgb={q: (.84, .76, .69) for q in self.lawn})
+        self.assertEqual(stats['how: aerial brick away from paths -> lawn'], len(self.lawn))
+        self.assertEqual(stats['shrubs'], 0)
+        self.assertEqual(stats['planting'][0]['guessed_lawn'], 0)
+        self.assertFalse(any('leaves' in b for b in plan.cells.values()))
+
+    def test_ground_shrubs_leave_gap_from_retained_neighbour_shrub(self):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        pos = (1, 51, 11)
+        world = World(store=MemoryBlocks({**self.blocks, pos: 'oak_leaves[persistent=true]'}, default='air'))
+        plan, stats = self.ground_plan(world, owned={pos})
+        self.assertGreater(stats['shrubs'], 0)
+        self.assertNotIn(pos, plan.cells)
+        self.assertTrue(all(max(abs(item['position'][0] - pos[0]), abs(item['position'][2] - pos[2])) > 1
+                            for row in stats['planting'] for item in row['items']))
+
+    def test_ground_shrubs_leave_gap_from_unmapped_masked_fence(self):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        for y in (51, 54):
+            for material in ('spruce_fence', 'brick_wall', 'spruce_planks', 'iron_bars'):
+                with self.subTest(y=y, material=material):
+                    pos = (1, y, 11)
+                    world = World(store=MemoryBlocks({**self.blocks, pos: material}, default='air'))
+                    plan, stats = self.ground_plan(world, masked={pos: 'decor 0,0'})
+                    self.assertGreater(stats['shrubs'], 0)
+                    self.assertNotIn(pos, plan.cells)
+                    self.assertTrue(all(max(abs(item['position'][0] - pos[0]), abs(item['position'][2] - pos[2])) > 1
+                                        for row in stats['planting'] for item in row['items']))
+
+    def test_shrub_clearance_uses_planned_air_over_old_own_shrub(self):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        pos = (3, 51, 11)
+        self.world = World(store=MemoryBlocks({**self.blocks, pos: 'oak_leaves[persistent=true]'}, default='air'))
+        self.plan.set(*pos, 'air')
+        row = self.planting()[0]
+        self.assertEqual(row['shrubs'], len(self.lawn) // 6)
+        self.assertEqual(row['items'][0]['position'], [2, 51, 11])
+
+    def test_shrub_clearance_reads_planned_air_over_protected_fence(self):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        pos = (3, 51, 11)
+        self.world = World(store=MemoryBlocks({**self.blocks, pos: 'spruce_fence'}, default='air'))
+        self.plan.set(*pos, 'air')
+        row = self.planting(masked={pos: 'decor 0,0'})[0]
+        self.assertEqual(row['items'][0]['position'], [2, 51, 11])
 
     def test_ground_rerun_is_idempotent_and_redo_strips_shrubs(self):
         from block_store import MemoryBlocks

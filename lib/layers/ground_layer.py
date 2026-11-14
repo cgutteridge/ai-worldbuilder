@@ -742,15 +742,16 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
     """Plan labelled planting on guessed grass only; return per-plot counts and provenance.
 
     ``plots`` and ``segments`` are the existing garden-source geometry. Mask and ownership exclusions
-    apply to whole columns, and placement air checks read the ground plan over the input world.
+    apply to whole columns; retained shrubs and barriers also reserve their neighbours. Clearance
+    and placement air checks read the ground plan over the input world.
     """
     import land_use
     import provenance as prov
 
     owner, info, _street, idx = plots
     fp = idx.cells()
-    blocked = set(clear) | set(fp) | {(x, z) for x, _y, z in masked} | {(x, z) for x, _y, z in owned}
-    barrier_gap = {(x + a, z + b) for x, z in barriers for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    protected = set(masked) | set(owned)
+    blocked = set(clear) | set(fp) | {(x, z) for x, _y, z in protected}
     houses, boundaries, lawns = {}, {}, {}
     for q, i in fp.items():
         houses.setdefault(i, set()).add(q)
@@ -762,12 +763,29 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
             if q in guessed and plan.cells.get((q[0], ys[q], q[1])) == full('grass_block'):
                 lawns[owner[q]].append(q)
 
+    def block(p):
+        return plan.cells[p] if p in plan.cells else world.block(*p)
+
+    # Retained leaves and barriers also need a column's gap, including content just outside
+    # this cell. Read only protected positions near candidate lawn, after planned clearing.
+    nearby = {(x + a, z + b) for lawn in lawns.values() for x, z in lawn
+              for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    retained_barriers = set()
+    for p in protected:
+        x, _y, z = p
+        if (x, z) in nearby:
+            name = bare(block(p))
+            if name.endswith(('_leaves', '_wall', '_fence', '_fence_gate', '_planks')) or name == full('iron_bars'):
+                retained_barriers.add((x, z))
+    barrier_gap = {(x + a, z + b) for x, z in set(barriers) | retained_barriers
+                   for a in (-1, 0, 1) for b in (-1, 0, 1)}
+
     def distance(q, cols):
         return min(((q[0] - x) ** 2 + (q[1] - z) ** 2 for x, z in cols), default=math.inf)
 
     def air(p):
-        block = plan.cells[p] if p in plan.cells else world.block(*p)
-        return block is not None and bare(block) in AIRS
+        b = block(p)
+        return b is not None and bare(b) in AIRS
 
     shrub_gap = set()
     report = []
@@ -906,8 +924,9 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     plots = ev['plots'] if 'plots' in ev else gs.plots_for(cell_box(cell))
     owner, info, street, idx = plots
     segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cell_box(cell))
+    # soft_grass survivors can include low-priority mapped surfaces; planting must exclude them.
     stats['planting'] = plan_planting(
-        plan, world, guessed, ys, plots, segments,
+        plan, world, guessed.difference(vmap.kind), ys, plots, segments,
         clear=gs.reserved_route(frontages) | gs.reserved_openings(frontages),
         masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
