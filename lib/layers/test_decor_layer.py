@@ -426,7 +426,9 @@ class CappedLive:
 
     def __init__(self):
         self.cache: dict = {}
-        self.scans: dict = {}                  # section -> times scanned
+        self.scans: dict = {}                  # section (or box) -> times scanned
+        self.box_scans: list = []              # (lo, hi) of each prefetch scan
+        self.pos_scans: dict = {}              # position -> times fetched by prefetch
 
     def _scan(self, section, positions):
         self.scans[section] = self.scans.get(section, 0) + 1
@@ -437,16 +439,22 @@ class CappedLive:
     def _section(p):
         return (p[0] >> 4, p[1] >> 4, p[2] >> 4)
 
-    def prefetch(self, positions):             # LiveBlocks.read_many
+    def prefetch(self, positions):             # LiveBlocks.read_many: one scan per capped box
+        from block_store import scan_tiles
         batch = [tuple(p) for p in positions]
         if len(self.cache) + len(batch) > self.CAP:
             self.cache.clear()
-        by_section: dict = {}
-        for p in batch:
-            if p not in self.cache:
-                by_section.setdefault(self._section(p), []).append(p)
-        for sec, ps in by_section.items():
-            self._scan(sec, ps)
+        need = [p for p in batch if p not in self.cache]
+        if not need:
+            return
+        xs, ys, zs = zip(*need)
+        for lo, hi in scan_tiles(min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)):
+            self.box_scans.append((lo, hi))
+            self.scans[('box', len(self.box_scans))] = 1
+            for p in need:
+                if all(lo[i] <= p[i] <= hi[i] for i in range(3)):
+                    self.cache[p] = 'minecraft:grass_block' if p[1] <= 64 else 'minecraft:air'
+                    self.pos_scans[p] = self.pos_scans.get(p, 0) + 1
 
     def block(self, x, y, z):                  # LiveBlocks.read
         p = (x, y, z)
@@ -492,9 +500,38 @@ class TestChunkedSnapshot(unittest.TestCase):
         self.assertEqual(len(after[0]), 4 * 124 * 2)
         self.assertEqual(after, before)                          # same placements and reports
         chunks = {(x >> 4, z >> 4) for x, z in cols}
-        self.assertLessEqual(max(new.scans.values()), 1)         # no section scanned twice
+        self.assertLessEqual(max(new.scans.values()), 1)         # no section or box scanned twice
+        self.assertLessEqual(max(new.pos_scans.values()), 1)     # every position fetched once
         self.assertLessEqual(new.total_scans, len(chunks) * 7)   # y 31..120 spans 7 sections
-        self.assertGreater(old.total_scans, 2 * new.total_scans)  # before: 485 scans, after: 224
+        self.assertGreater(old.total_scans, 2 * new.total_scans)
+        self.assertLess(len(new.box_scans), len(chunks))         # fewer scans than one per chunk (#263)
+        for lo, hi in new.box_scans:
+            vol = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+            self.assertLessEqual(vol, 65536)                     # MCP volume cap
+
+    def test_groups_bound_volume_and_cover_every_column(self):
+        cols = {(x, z) for x in range(0, 132) for z in range(0, 132)}
+        groups = dl.snapshot_groups(cols, 90)
+        self.assertEqual(sorted(c for g in groups for c in g), sorted(cols))
+        for g in groups:
+            xs, zs = [c[0] for c in g], [c[1] for c in g]
+            self.assertLessEqual((max(xs) - min(xs) + 1) * (max(zs) - min(zs) + 1) * 90, 65536)
+        self.assertLessEqual(len(groups), 9 * 3 + 9)             # 81 chunks; was one scan each
+        self.assertLess(len(groups), 81 * 0.5)
+
+    def test_sparse_columns_do_not_share_a_big_empty_box(self):
+        groups = dl.snapshot_groups({(0, 0), (500, 500), (2000, 0)}, 90)
+        self.assertEqual(len(groups), 3)
+
+    def test_outbuilding_and_fence_columns_both_snapshotted(self):
+        w = CappedLive()
+        cols = {(x, 10) for x in range(2, 126)} | {(60, z) for z in range(20, 40)}
+        view = dl.snapshot_decor_columns(w, cols)
+        self.assertEqual(view.block(60, 64, 30), 'minecraft:grass_block')
+        before = w.total_scans
+        for x, z in cols:
+            view.block(x, 70, z)
+        self.assertEqual(w.total_scans, before)                  # all served from the snapshot
 
     def test_view_falls_through_outside_snapshot(self):
         w = CappedLive()
