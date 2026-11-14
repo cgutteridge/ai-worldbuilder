@@ -477,17 +477,36 @@ def note(reg: CellRegistry, cell: tuple[int, int], kind: str, body: str = '', re
     reg.change(Note(tuple(cell), kind, body, ref))
 
 
-DRIFT_ORDER = ('in-flight', 'missing', 'foreign', 'ghost-missing', 'ghost-stale')
+DRIFT_ORDER = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing', 'ghost-stale')
 DRIFT_NOTES = {
     'in-flight': 'an apply began and never finished (site_recover.py can also roll it back)',
     'missing': 'journal owns the block, the world has air / nothing',
     'foreign': 'journal owns the block, the world holds another block',
+    'mismatched': 'an apply finished mismatched and still blocks preflight for its cell',
     'ghost-missing': 'frontier cell lacks ghost ground / features',
     'ghost-stale': 'ghost features still inside a real feature footprint',
 }
 RECONCILE_HELP = ('compare the journal with the blocks; dry run unless --fix. '
                   'site_recover = resolve an interrupted apply (land or roll back); '
                   'reconcile = detect and repair drift forward')
+
+
+def mismatch_next_step(item, fix: bool) -> str:
+    """The sanctioned next command for a mismatched entry that reconcile did not clear.
+
+    @param item: a ``mismatched`` DriftItem
+    @param fix: the run was a ``--fix`` run
+    @returns: one line naming the command
+    """
+    plan = item.plans[0] if item.plans else '?'
+    cells = ' '.join(cell_id(*c) for c in item.cells)
+    if not fix:
+        return (f'clear with: reconcile {cell_id(*item.cell)} --fix (the entry also touches cell(s) {cells}; '
+                'name them all if positions differ there)')
+    from cell_readiness import reapply_command
+    reapply = reapply_command(plan, item.layer, item.owner or item.cell)
+    return (f'still mismatched after repair ({item.count} position(s) differ now; cells {cells}). Next: '
+            f'reconcile the other cell(s) above if they drifted, or re-apply the plan past its own mismatch: {reapply}')
 
 
 def format_drift(drift, *, fix: bool = False) -> str:
@@ -499,6 +518,7 @@ def format_drift(drift, *, fix: bool = False) -> str:
     """
     if not drift.items and not drift.upgraded:
         return 'reconcile: clean (the journal matches the blocks)'
+    cleared = [f'{plan} (seq {seq})' for plan, seq in drift.cleared]
     lines = []
     for kind in DRIFT_ORDER:
         items = drift.by_kind(kind)
@@ -512,9 +532,12 @@ def format_drift(drift, *, fix: bool = False) -> str:
                          f'{f"  seq {i.seq}" if i.seq else ""}{tag}')
             for pos, (want, got) in list(i.sample.items())[:3]:
                 lines.append(f'      {pos}: want {want}, got {got}')
+            if i.kind == 'mismatched':
+                lines.append('      ' + mismatch_next_step(i, fix))
     left = [i for i in drift.items if not i.fixed]
     if drift.upgraded:
-        lines.append(f'upgraded {drift.upgraded} mismatched entr{"y" if drift.upgraded == 1 else "ies"} to landed')
+        lines.append(f'upgraded {drift.upgraded} mismatched entr{"y" if drift.upgraded == 1 else "ies"} to landed: '
+                     + ', '.join(cleared) + ' (preflight no longer blocks on it)')
     if fix:
         lines.append(f'repaired {len(drift.items) - len(left)} of {len(drift.items)} finding(s)'
                      + ('; journalled signs/entities are re-written with the blocks' if drift.items else ''))

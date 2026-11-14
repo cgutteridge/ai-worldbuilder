@@ -98,15 +98,18 @@ class LayerCommands:
         from world_discovery import require_running_world
         from cell_registry import view_registry
         from readiness_evidence import policy_for
+        from cell_readiness import describe_blockers
         from pass_mask import mask_path, read_mask, plan_undo, shared_positions
         from site_kit import fresh_planning_world
         require_running_world()
         reg = view_registry()
         policy = policy_for(reg)
         for layer in layers:
-            check = policy.check(cell, layer)
+            # a layer redo replaces that layer's own mismatched apply, so it may pass it
+            own = {e.plan for e in reg.entries(cells=[cell]) if e.kind == 'build' and e.pass_ == layer}
+            check = policy.check(cell, layer, redoing=own)
             if not check['ready']:
-                raise ValueError('needs-prep: ' + '; '.join(check['blockers']))
+                raise ValueError('needs-prep: ' + describe_blockers(check))
         world = None
         for layer in ('trees', 'decor'):
             entries = [e for e in reg.entries(cells=[cell]) if e.kind == 'build' and e.pass_ == layer
