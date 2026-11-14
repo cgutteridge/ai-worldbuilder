@@ -168,15 +168,7 @@
     
     
     
-    {
-        "id": 281,
-        "title": "Warn when a planned barrier is skipped because it carries an unresolved reason",
-        "status": "todo",
-        "priority": "medium",
-        "complexity": "s",
-        "blockedBy": [],
-        "notes": "Found 2026-11-12: caveats written into a convention's `unresolved_reason` made every Kitchener boundary 'unresolved', so decor_plan.resolved_barriers silently skipped them and the rebuild showed no fences. The planner gave no signal. Fix: where decor_plan.resolved_barriers skips an item because prov.is_unresolved(item provenance), record it: append the item to the existing `unplaced` list (or the equivalent report list the function already fills) with reason 'barrier skipped: provenance carries an unresolved reason' and the reason text, and make the decor plan/redo report print one summary line 'N barrier runs skipped as unresolved' with the first few ids when N>0. No behaviour change to what is placed. Files: lib/layers/decor_plan.py, the decor report printer in lib/layers/decor_layer.py if needed, and tests in lib/layers/test_decor_plan.py (and test_decor_layer.py if the report is touched): an unresolved barrier is skipped and reported; a resolved one is placed and not reported; deliberate 'none' openings are not reported; counts match. Check: python3 scripts/run_tests.py --only test_decor_plan --only test_decor_layer. Another session (#264) is editing decor_layer.py: keep the decor_layer.py edit to the report line, or put the summary in decor_plan.py. Do not edit tasks/ from the branch."
-    },
+    
     {
       "id": 284,
       "title": "Every preflight blocker has a sanctioned command that clears it (stuck mismatched applies)",
