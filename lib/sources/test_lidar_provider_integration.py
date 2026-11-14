@@ -40,6 +40,19 @@ def mc_heights(client, x0, z0, x1, z1, **kwargs):
 
 
 class SyntheticLidar(unittest.TestCase):
+    def test_ghost_shim_import_needs_no_provider_and_resolves_to_shared_library(self):
+        code = f'''
+import sys
+sys.path.insert(0, {str(TOOL / 'shims')!r})
+import lidar_ghost
+from pathlib import Path
+assert Path(lidar_ghost.__file__) == Path({str(TOOL / 'lib/sources/lidar_ghost.py')!r})
+assert lidar_ghost.ghost_owners_for((0, 0)) == frozenset({{'ghost_0_0_ground'}})
+'''
+        result = subprocess.run([sys.executable, '-c', code], cwd=TOOL,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-6000:])
+
     def run_provider(self, provider_id, checks):
         """Install a temporary provider with the real system catalogue still present."""
         with tempfile.TemporaryDirectory() as tmp:

@@ -141,6 +141,21 @@ class _Tiny(unittest.TestCase):
 class GhostPlannerAndNeeds(_Tiny):
     """The registry's ghost planner wraps the lidar plan builder; needs come from the view."""
 
+    def test_no_provider_is_not_swallowed_as_uncached_lidar(self):
+        import lidar_provider as lp
+        with mock.patch.object(lp, 'load_place_sources', return_value={'providers': []}):
+            # Ownership/ring bookkeeping remains usable without a lidar provider.
+            self.assertEqual(lg.ghost_owners_for((0, 0)), frozenset({'ghost_0_0_ground'}))
+            with self.assertRaisesRegex(lp.NoLidarProviderError, 'install a lidar provider'):
+                lg.ghost_planner()((0, 0), 'ground')
+
+    def test_bad_provider_entrypoint_is_not_swallowed_as_uncached_lidar(self):
+        import lidar_provider as lp
+        broken = {'providers': [{'id': 'broken', 'types': ['lidar']}]}
+        with mock.patch.object(lp, 'load_place_sources', return_value=broken):
+            with self.assertRaisesRegex(ValueError, 'modules.tiles'):
+                lg.ghost_planner()((0, 0), 'ground')
+
     def test_planner_wraps_plan_builder(self):
         planner = lg.ghost_planner(self.heights)
         self.assertEqual(planner((0, 0), 'ground'), lg.plan_ghost_ground((0, 0), heights=self.heights(0, 0, 1, 1)).cells)

@@ -18,12 +18,16 @@ from cell_sources import load_place_sources, provider_package_dir  # noqa: E402
 _MODULE_CACHE: dict[str, ModuleType] = {}
 
 
+class NoLidarProviderError(RuntimeError):
+    """No catalogue row supplies lidar; distinct from an uncached tile LookupError."""
+
+
 def lidar_provider_row(data: dict | None = None) -> dict:
     """Return the first world lidar row, falling back to the system catalogue.
 
     @param data: optional place-sources dict
     @returns: provider row dict
-    @raises LookupError: when no provider lists type ``lidar``
+    @raises NoLidarProviderError: when no provider lists type ``lidar``
     """
     data = load_place_sources() if data is None else data
     rows = [row for row in data.get('providers') or [] if 'lidar' in (row.get('types') or [])]
@@ -32,13 +36,13 @@ def lidar_provider_row(data: dict | None = None) -> dict:
             return row
     if rows:
         return rows[0]
-    raise LookupError('no catalogue provider lists type "lidar"')
+    raise NoLidarProviderError('no catalogue provider lists type "lidar"; install a lidar provider')
 
 
 def _module_rel(role: str, row: dict) -> str:
     modules = row.get('modules') or {}
     if role not in modules:
-        raise LookupError(
+        raise ValueError(
             f'lidar provider {row.get("id")!r} has no modules.{role} entrypoint'
         )
     return str(modules[role])

@@ -40,7 +40,7 @@ class ResolveLidarRow(unittest.TestCase):
         self.assertEqual(row['modules']['world'], 'manage/world')
 
     def test_missing_lidar_provider_is_error(self):
-        with self.assertRaises(LookupError):
+        with self.assertRaises(lp.NoLidarProviderError):
             lp.lidar_provider_row({'providers': [{'id': 'x', 'types': ['aerial']}]})
 
     def test_world_lidar_beats_system_and_preserves_order_within_home(self):
@@ -55,8 +55,12 @@ class ResolveLidarRow(unittest.TestCase):
 
     def test_explicit_empty_catalogue_does_not_load_system(self):
         with mock.patch.object(lp, 'load_place_sources', side_effect=AssertionError):
-            with self.assertRaises(LookupError):
+            with self.assertRaises(lp.NoLidarProviderError):
                 lp.lidar_provider_row({})
+
+    def test_missing_entrypoint_is_configuration_error_not_missing_tiles(self):
+        with self.assertRaisesRegex(ValueError, 'modules.tiles'):
+            lp.load_lidar_module('tiles', {'providers': [{'id': 'broken', 'types': ['lidar']}]})
 
 
 class LiveCatalogue(unittest.TestCase):
