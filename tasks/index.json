@@ -173,7 +173,7 @@
     {
       "id": 285,
       "title": "Readiness flags a cell's ground stale when a feature landed after it",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
