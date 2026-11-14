@@ -13,6 +13,57 @@ from block_store import block_id
 
 
 POLICY_VERSION = 1
+CLI = 'python3 scripts/cell_registry.py --world <world>'
+
+
+def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None):
+    """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
+
+    Every blocker ``ReadinessPolicy.check`` raises is answered here, so a refusal never
+    leaves hand-editing blocks or the journal as the only way forward (task 284).
+
+    @param cell: ``(tx, tz)``
+    @param blocker: the blocker text
+    @param plan: owning plan, for a mismatched apply
+    @param layer: journal pass of that plan (feature, ground, trees, decor)
+    @param ref: note ref, for a coverage warning
+    @returns: command text
+    """
+    c = f'{cell[0]},{cell[1]}'
+    if blocker.startswith('recovery: mismatched apply'):
+        reapply = (f'python3 scripts/reapply_feature.py --world <world> {plan} --apply' if layer == 'feature'
+                   else f'python3 scripts/redo_layer.py --world <world> --cell {c} --layers {layer} --apply')
+        return (f'{CLI} reconcile {c} --fix (re-asserts the journal blocks and lands the entry); '
+                f'if it reports still mismatched, {reapply} (a redo is allowed past its own mismatch)')
+    if blocker == 'recovery: unfinished apply':
+        return f'python3 scripts/site_recover.py --world <world> recover {c} --apply'
+    if blocker.startswith('hold:'):
+        return f'{CLI} hold clear {c}'
+    if blocker.startswith('coverage warning '):
+        return f'{CLI} dismiss-coverage {c} --warning-id {ref} --reason "<why>"'
+    if blocker.startswith(('map query coverage', 'map coverage dismissal stale')):
+        return f'{CLI} dismiss-clip-coverage {c} --reason "<why>" (or fix the map extract, then prepare)'
+    if blocker.startswith('feature plans:'):
+        return f'{CLI} propose-features --cell {c} --record, then dismiss-feature {c} --feature <id> --reason "<why>" for any you reject'
+    if blocker.startswith(('validation', 'terrain:', 'candidate evidence error')):
+        return f'{CLI} prepare --cell {c} --apply'
+    if blocker.startswith(('aerial coverage', 'lidar cache')):
+        return 'owner supplies local data (state source, filename and size; authorization first), then prepare'
+    if blocker == 'generated ground required':
+        return f'python3 scripts/redo_layer.py --world <world> --cell {c} --layers ground --apply'
+    if blocker.startswith('planned features must land'):
+        return f'{CLI} next (builds the planned features of the cell)'
+    return f'{CLI} check --cell {c} (read the blocker; none of the known commands applies)'
+
+
+def describe_blockers(report):
+    """One refusal line: each blocker followed by the command that clears it.
+
+    @param report: a ``ReadinessPolicy.check`` report
+    @returns: ``'; '`` joined text
+    """
+    clear = report.get('clear_with', {})
+    return '; '.join(f'{b} [clear: {clear[b]}]' if b in clear else b for b in report['blockers'])
 
 
 def content_id(value) -> str:
@@ -28,11 +79,17 @@ class ReadinessPolicy:
         self.evidence = evidence
         self.require_plan_identity = require_plan_identity
 
-    def check(self, cell, operation='build', *, inspect_candidates=True, require_validation=True):
+    def check(self, cell, operation='build', *, inspect_candidates=True, require_validation=True,
+              redoing=()):
         """Read-only report, including cells never mentioned in the journal.
 
         ``build`` checks preparation prerequisites; ground and feature construction
         may run in either order. Trees/decor additionally require landed ground/features.
+
+        ``redoing`` names plans about to be re-applied: a plan's own mismatched apply does not
+        block its redo (the redo's undo and new readback replace it). A mismatched entry that
+        later landed entries have wholly superseded (it owns no position) blocks nothing.
+        Every blocker has its clearing command in ``clear_with``.
         """
         cell = tuple(cell)
         v = self.reg.cell(cell)
@@ -43,6 +100,8 @@ class ReadinessPolicy:
             return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                     'operation': operation, 'ground': v.ground, 'revision': None,
                     'blockers': [f'evidence error: {exc}'], 'warnings': [],
+                    'clear_with': {f'evidence error: {exc}': f'{CLI} check --cell {cell[0]},{cell[1]} '
+                                   '(fix the named input; no command applies)'},
                     'ready': False, 'complete': False, 'validated': False}
         revision = content_id([POLICY_VERSION, facts['revision'], self.plan_identity(cell)])
         validations = self.reg.notes(cell, kinds=('readiness',))
@@ -87,8 +146,9 @@ class ReadinessPolicy:
         for entry in self.reg.entries(cells=[cell]):
             if entry.kind == 'build' and not entry.undone:
                 latest[entry.plan] = entry
-        blockers += [f'recovery: mismatched apply {e.plan}' for e in latest.values()
-                     if e.status == 'mismatched']
+        stuck = [e for e in latest.values() if e.status == 'mismatched' and e.plan not in redoing
+                 and self.reg.owns_any(e.seq, first=cell)]
+        blockers += [f'recovery: mismatched apply {e.plan}' for e in stuck]
         blockers += [f'coverage warning {n.ref}: {n.body}' for n in v.notes if n.kind == 'coverage']
         if operation in ('trees', 'decor'):
             if v.ground != 'generated':
@@ -108,15 +168,23 @@ class ReadinessPolicy:
                            'and obtain authorization before downloading')
         if facts['lidar_missing']:
             actions.append('acquire the listed lidar files explicitly before prepare --apply')
-        if v.in_flight or any(e.status == 'mismatched' for e in latest.values()):
+        if v.in_flight or stuck:
             actions.append('resolve interrupted/mismatched work with site_recover or reconcile')
+        by_plan = {e.plan: e for e in stuck}
+        refs = {f'coverage warning {n.ref}: {n.body}': n.ref for n in v.notes if n.kind == 'coverage'}
+        clear_with = {}
+        for b in blockers:
+            e = by_plan.get(b.removeprefix('recovery: mismatched apply '))
+            clear_with[b] = clearing_command(cell, b, plan=e.plan if e else None,
+                                             layer=e.pass_ if e else None, ref=refs.get(b))
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision(),
                 'validated': validated, 'operation': operation, 'ground': v.ground,
                 'candidates': candidates, 'next_actions': actions,
                 'trees_current': current['trees'], 'decor_current': current['decor'],
-                'blockers': blockers, 'warnings': warnings, 'ready': not blockers,
+                'blockers': blockers, 'clear_with': clear_with, 'warnings': warnings,
+                'ready': not blockers,
                 'complete': validated and v.done and not blockers and current['trees'] and current['decor']}
 
     def plan_identity(self, cell):
@@ -168,7 +236,7 @@ class ReadinessPolicy:
             required = {primary} | {cellmath.cell_of(x, z, self.reg.cell_size)
                                     for (x, _y, z), state in build.cells.items()
                                     if not block_id(state).endswith('_leaves')}
-        reports = [self.check(c, build.pass_) for c in sorted(required)]
+        reports = [self.check(c, build.pass_, redoing=(build.plan,)) for c in sorted(required)]
         for report, cell in zip(reports, sorted(required)):
             if build.pass_ == 'feature' and cell == primary:
                 features = {f.id: f.status for f in self.reg.cell(cell).features}
@@ -180,7 +248,7 @@ class ReadinessPolicy:
                 elif build.plan not in features:
                     report['blockers'].append(f'feature plan {build.plan} absent from cell plan')
             if report['blockers']:
-                raise Refused(f"needs-prep {report['cell']}: " + '; '.join(report['blockers']), report)
+                raise Refused(f"needs-prep {report['cell']}: " + describe_blockers(report), report)
             expected = (build.meta or {}).get('evidence_revision') or getattr(build.payload, 'evidence_revision', None)
             if self.require_plan_identity and not expected:
                 raise Refused('plan has no evidence identity; construct Plan against current inputs '
@@ -208,6 +276,7 @@ def format_readiness(report):
             lines.append(f"  {key}: {report[key]:.1%}")
     for key in ('blockers', 'warnings', 'prepare_actions', 'next_actions'):
         lines += [f'  {key}: {item}' for item in report.get(key, [])]
+    lines += [f'  clear: {b} -> {cmd}' for b, cmd in report.get('clear_with', {}).items()]
     for item in report.get('lidar_missing', []):
         lines.append(f"  missing: {item.get('tile', '')} {item['filename']} "
                      f"(about {item['estimated_mb']} MB; explicit acquisition required)")

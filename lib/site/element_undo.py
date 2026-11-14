@@ -90,6 +90,7 @@ def require_rebuild_ready(target):
     import cell_registry
     import cellmath
     import site_lock
+    from cell_readiness import describe_blockers
     from readiness_evidence import policy_for
 
     site_lock.check()
@@ -97,8 +98,10 @@ def require_rebuild_ready(target):
     targets = ([(target[0], p) for p in passes_above_ghost(target[0])]
                if isinstance(target, tuple) and target[1] is None else [target])
     cells = set()
+    undoing = set()     # an undo removes its own mismatched apply, so that mismatch cannot block it
     for part in targets:
         names, _ = _journal_preview(part)
+        undoing.update(names)
         if isinstance(part, tuple):
             cells.add(part[0])
         for name in names:
@@ -109,10 +112,10 @@ def require_rebuild_ready(target):
     policy = policy_for(registry)
     refused = []
     for cell in sorted(cells):
-        report = policy.check(cell, 'build')
+        report = policy.check(cell, 'build', redoing=undoing)
         if not report['ready']:
             label = f'{cell[0]},{cell[1]}'
-            refused.append(f"{label}: {'; '.join(report['blockers'])}; "
+            refused.append(f"{label}: {describe_blockers(report)}; "
                            f'run cell_registry.py --world <name> prepare --cell {label} '
                            '(resolve listed aerial coverage/cache steps first)')
     if refused:

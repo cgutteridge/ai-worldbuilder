@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import cellmath
-from cell_readiness import ReadinessPolicy, content_id
+from cell_readiness import ReadinessPolicy, content_id, describe_blockers
 
 
 def file_identity(path):
@@ -183,17 +183,20 @@ def enforce_live(registry, build, touched):
     return policy_for(registry).enforce(build, touched)
 
 
-def require_ready(cells, operation):
-    """Fail before a layer/feature planner makes expensive live reads."""
+def require_ready(cells, operation, redoing=()):
+    """Fail before a layer/feature planner makes expensive live reads.
+
+    @param redoing: plans about to be re-applied; their own mismatched apply does not block them
+    """
     from cell_registry import view_registry
     import site_lock
     site_lock.check()
     reg = view_registry()
     policy = policy_for(reg)
     for cell in cells:
-        report = policy.check(cell, operation)
+        report = policy.check(cell, operation, redoing=redoing)
         if not report['ready']:
-            raise SystemExit(f"needs-prep {report['cell']}: " + '; '.join(report['blockers']))
+            raise SystemExit(f"needs-prep {report['cell']}: " + describe_blockers(report))
 
 
 def require_feature_ready(plan):
@@ -202,4 +205,4 @@ def require_feature_ready(plan):
     cells = [c for c, v in view_registry().view().items() if any(f.id == plan for f in v.features)]
     if not cells:
         raise SystemExit(f'needs-prep: feature {plan} has no cell plan; prepare its named cell first')
-    require_ready(cells, 'feature')
+    require_ready(cells, 'feature', redoing=(plan,))

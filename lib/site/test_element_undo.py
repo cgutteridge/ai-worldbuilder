@@ -30,7 +30,7 @@ class ElementUndoCase(LiveApplyCase):
     def setUp(self):
         super().setUp()
         policy = mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(
-            check=lambda *args: {'ready': True}))
+            check=lambda *args, **kw: {'ready': True}))
         policy.start()
         self.addCleanup(policy.stop)
         self.blocks.write((X0, 60, Z0), 'minecraft:dirt')
@@ -83,7 +83,7 @@ class TestFeatureUndo(ElementUndoCase):
         plan.set(X0 + 128, 60, Z0, 'minecraft:bricks')
         self.run_apply(plan)
         before = self.reg().entries()
-        check = mock.Mock(side_effect=lambda c, op: {'ready': c == CELL,
+        check = mock.Mock(side_effect=lambda c, op, **kw: {'ready': c == CELL,
                          'blockers': ['validation stale', 'aerial coverage: 0%']})
         with mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=check)):
             with self.assertRaisesRegex(SystemExit, 'undo refused before writes: needs-prep'):
@@ -91,6 +91,15 @@ class TestFeatureUndo(ElementUndoCase):
             self.assertEqual(self.reg().entries(), before)
             self.assertEqual({c.args[0] for c in check.call_args_list}, {CELL, (49, -44)})
             self.assertEqual(self.run_live(plan='edge_house', live=True, force=True), 0)
+
+    def test_undo_may_pass_the_mismatch_it_removes(self):
+        plan = site_kit.Plan('edge_house')
+        plan.set(X0, 60, Z0, 'minecraft:bricks')
+        self.run_apply(plan)
+        check = mock.Mock(return_value={'ready': True})
+        with mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=check)):
+            self.assertEqual(self.run_live(plan='edge_house', live=True), 0)
+        self.assertEqual({tuple(c.kwargs['redoing']) for c in check.call_args_list}, {('edge_house',)})
 
     def test_whole_cell_checks_feature_neighbour_before_first_pass(self):
         feature = site_kit.Plan('edge_house')
@@ -101,7 +110,7 @@ class TestFeatureUndo(ElementUndoCase):
         ground.set(X0 + 5, 59, Z0, 'grass_block')
         self.run_apply(ground, stage='ground', cell=CELL)
         before = self.reg().entries()
-        check = lambda c, op: {'ready': c == CELL, 'blockers': ['validation stale']}
+        check = lambda c, op, **kw: {'ready': c == CELL, 'blockers': ['validation stale']}
         with mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=check)):
             with self.assertRaisesRegex(SystemExit, '49,-44'):
                 self.run_live(cell=CELL, live=True)

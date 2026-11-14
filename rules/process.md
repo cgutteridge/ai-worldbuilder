@@ -301,6 +301,13 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
    `recover <tx,tz> --apply` (land if world matches plan, else roll back to the
    structure backup). Never with a fresh lock held by someone else.
  - Mess in a cell: `python3 scripts/cell_registry.py reconcile [tx,tz] [--fix]`.
+ - Preflight blockers (#284): every `needs-prep` blocker prints `[clear: <command>]`
+   (`check --cell` prints `clear:` lines). Run that command; never hand-edit blocks
+   or the journal. Mismatched apply: `reconcile <cell> --fix` first. If it says still
+   mismatched, re-apply the plan (`reapply_feature.py <plan> --apply`, or `redo_layer.py`
+   for a layer). A plan's redo or undo may pass its own mismatch; other plans stay
+   blocked until it lands. A mismatch wholly superseded by later landed plans blocks
+   nothing. Rule: docs/plans/284-preflight-blocker-commands.md.
  - Work comes from `cell_registry.py next` (issues, then layers/features). Finish the
    task, release the lock.
  - Offline work may run in parallel (design, photo markup, previews of

@@ -202,11 +202,35 @@ class TestAdditionalRedoChecks(unittest.TestCase):
             backend = LayerCommands('demo', (0, 0))
             with mock.patch('world_discovery.require_running_world'), \
                     mock.patch('cell_registry.view_registry', return_value=jw.reg), \
-                    mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=lambda *a: {'ready': True})), \
+                    mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=lambda *a, **k: {'ready': True})), \
                     mock.patch.object(backend, 'has_mask', return_value=False):
                 with self.assertRaisesRegex(ValueError, 'landed layer has no mask'):
                     backend.preflight((0, 0), ['trees'], [], True)
             self.assertEqual(jw.reg.entries(), before)
+
+    def test_layer_redo_passes_its_own_mismatch_and_names_commands_for_the_rest(self):
+        from unittest import mock
+        from cell_journal import Build
+        from cell_readiness import ReadinessPolicy
+        from layer_redo import LayerCommands
+        from test_cell_readiness import Evidence
+        with JournalWorld() as jw:
+            jw.seed((0, 0), ghost_ground=True, ground=True)
+            jw.reg.change(Build('seed_trees', 'trees', {(1, 61, 8): 'minecraft:oak_log'}, cell=(0, 0)),
+                          lambda w: None)                              # a mismatched trees apply
+            jw.reg.change(Build('west', 'feature', {(3, 61, 3): 'minecraft:stone'}, cell=(0, 0)),
+                          lambda w: None)                              # a mismatched feature apply
+            policy = ReadinessPolicy(jw.reg, Evidence())
+            backend = LayerCommands('demo', (0, 0))
+            with mock.patch('world_discovery.require_running_world'), \
+                    mock.patch('cell_registry.view_registry', return_value=jw.reg), \
+                    mock.patch('readiness_evidence.policy_for', return_value=policy):
+                with self.assertRaisesRegex(ValueError, r'mismatched apply west \[clear: .*reconcile 0,0 --fix'):
+                    backend.preflight((0, 0), ['trees'], [], True)
+                try:
+                    backend.preflight((0, 0), ['trees'], [], True)
+                except ValueError as exc:
+                    self.assertNotIn('mismatched apply seed_trees', str(exc))      # its own mismatch is passed
 
     def test_undo_mask_drift_is_preflight_failure_before_any_mutation(self):
         from types import SimpleNamespace
@@ -224,7 +248,7 @@ class TestAdditionalRedoChecks(unittest.TestCase):
             backend = LayerCommands('demo', (0, 0))
             with mock.patch('world_discovery.require_running_world'), \
                     mock.patch('cell_registry.view_registry', return_value=jw.reg), \
-                    mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=lambda *a: {'ready': True})), \
+                    mock.patch('readiness_evidence.policy_for', return_value=SimpleNamespace(check=lambda *a, **k: {'ready': True})), \
                     mock.patch.object(backend, 'has_mask', side_effect=lambda layer: layer == 'trees'), \
                     mock.patch('site_kit.fresh_planning_world', return_value=SimpleNamespace(block=lambda *p: jw.blocks.read(p))), \
                     mock.patch('pass_mask.read_mask', return_value=mask), \

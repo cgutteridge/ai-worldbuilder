@@ -65,7 +65,7 @@ PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # dismiss is a separate deliberate note with a reason.
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
               'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness')
-DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'ghost-missing')
+DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
 AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
@@ -340,6 +340,8 @@ class DriftItem:
     @param sample: up to 5 ``{"x,y,z": [expected, actual]}``
     @param plans: owner names involved
     @param fixed: re-committed or resolved by ``fix=True``
+    @param cells: every cell of the entry (``mismatched`` only: repair needs all of them in scope)
+    @param layer: journal pass of the entry (``mismatched`` only: names the re-apply command)
     """
 
     cell: Cell
@@ -349,14 +351,21 @@ class DriftItem:
     sample: Mapping[str, list] = field(default_factory=dict)
     plans: tuple[str, ...] = ()
     fixed: bool = False
+    cells: tuple[Cell, ...] = ()
+    layer: str = ''
 
 
 @dataclass(frozen=True)
 class Drift:
-    """Result of ``reconcile``: findings plus how many mismatched entries were upgraded to landed."""
+    """Result of ``reconcile``: findings plus the mismatched entries upgraded to landed.
+
+    @param upgraded: how many mismatched entries were upgraded
+    @param cleared: ``(plan, seq)`` of each upgraded entry (they no longer block preflight)
+    """
 
     items: tuple[DriftItem, ...] = ()
     upgraded: int = 0
+    cleared: tuple[tuple[str, int], ...] = ()
 
     def __iter__(self) -> Iterator[DriftItem]:
         return iter(self.items)
@@ -1685,8 +1694,12 @@ class CellRegistry:
                 items.append(DriftItem(cell, kind, seq, len(found), sample, tuple(plans), fixed))
             if repaired:
                 self._append({'op': 'repair', 'cell': list(cell), 'count': repaired})
+        cleared: list[tuple[str, int]] = []
         if fix:
-            upgraded = self._upgrade_mismatched(scope)
+            cleared = self._upgrade_mismatched(scope)
+            upgraded = len(cleared)
+        # 2b. entries still mismatched: they block preflight until landed, so each is its own finding
+        items += self._mismatched_items(scope)
         # 3. ghosts
         if self.ghosts is not None:
             for cell, layer in self._ghost_needs(scope):
@@ -1696,7 +1709,7 @@ class CellRegistry:
             need = {c for c, _l in self._ghost_needs(scope)}
             items = [replace(i, fixed=True) if (i.kind == 'ghost-missing' and i.cell not in need)
                      else i for i in items]
-        return Drift(tuple(items), upgraded)
+        return Drift(tuple(items), upgraded, tuple(cleared))
 
     def _bad(self, planned: Mapping[Pos, str]) -> dict[Pos, list]:
         actual = self.blocks.read_many(planned)
@@ -1708,18 +1721,62 @@ class CellRegistry:
             mark()
         self.blocks.flush()
 
-    def _upgrade_mismatched(self, scope: set[Cell] | None) -> int:
-        count = 0
+    def _mismatch_mine(self, seq: int, e: _Entry) -> dict[Pos, str]:
+        """Positions a mismatched entry still owns in the fold (superseded ones are not its to answer for)."""
+        mine: dict[Pos, str] = {}
+        for cell in e.cells:
+            mine.update({p: o.state for p, o in self._cell_owners(cell).items() if o.seq == seq})
+        return mine
+
+    def owned_count(self, seq: int) -> int:
+        """Positions the entry ``seq`` still owns after later landed entries (0: fully superseded).
+
+        @param seq: journal seq of a build entry
+        @returns: owned position count across all the entry's cells
+        """
+        self._sync()
+        e = self._entries.get(seq)
+        return len(self._mismatch_mine(seq, e)) if e is not None else 0
+
+    def owns_any(self, seq: int, first: Cell | None = None) -> bool:
+        """Whether the entry ``seq`` still owns any position; stops at the first cell where it does.
+
+        Cheaper than :meth:`owned_count` for a yes/no (each cell fold costs seconds on a big world).
+
+        @param seq: journal seq of a build entry
+        @param first: cell to fold first (the caller's cell, most likely to answer yes)
+        @returns: False when later landed entries wholly supersede it (or it is unknown)
+        """
+        self._sync()
+        e = self._entries.get(seq)
+        if e is None:
+            return False
+        cells = sorted(e.cells, key=lambda c: c != first)
+        return any(o.seq == seq for c in cells for o in self._cell_owners(c).values())
+
+    def _upgrade_mismatched(self, scope: set[Cell] | None) -> list[tuple[str, int]]:
+        cleared = []
         for seq, e in list(self._entries.items()):
             if e.status != 'mismatched' or e.undone or (scope is not None and not set(e.cells) & scope):
                 continue
-            mine = {}
-            for cell in e.cells:
-                mine.update({p: o.state for p, o in self._cell_owners(cell).items() if o.seq == seq})
-            if not self._bad(mine):
+            if not self._bad(self._mismatch_mine(seq, e)):
                 self._finish_line(seq, 'landed', 0)
-                count += 1
-        return count
+                cleared.append((e.plan, seq))
+        return cleared
+
+    def _mismatched_items(self, scope: set[Cell] | None) -> list[DriftItem]:
+        """One finding per live mismatched entry, with the owned positions that still differ."""
+        out = []
+        for seq, e in self._entries.items():
+            if e.kind != 'build' or e.status != 'mismatched' or e.undone:
+                continue
+            if scope is not None and not set(e.cells) & scope:
+                continue
+            bad = self._bad(self._mismatch_mine(seq, e))
+            sample = {f'{x},{y},{z}': v for (x, y, z), v in list(bad.items())[:5]}
+            out.append(DriftItem(min(e.cells) if e.cells else e.cell, 'mismatched', seq, len(bad), sample,
+                                 (e.plan,), False, tuple(sorted(e.cells)), e.pass_))
+        return out
 
     # ---- housekeeping ----------------------------------------------------------------------
     def reset(self) -> Path | None:

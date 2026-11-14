@@ -630,3 +630,101 @@ class DirectApplyTest(LiveApplyCase):
         self.assertNotIn('block_fill_batch', FakePaced.calls)
 
 
+class MismatchedApplyTest(unittest.TestCase):
+    """Task 284: a mismatched apply is cleared by a named command, never by hand-editing."""
+
+    HOUSE = {(1, 60, 1): 'minecraft:stone', (1, 60, 2): 'minecraft:stone'}
+
+    def setUp(self):
+        from cell_readiness import ReadinessPolicy
+        self.world = JournalWorld()
+        self.addCleanup(self.world.__exit__)
+        self.world.__enter__()
+        self.world.seed((0, 0), ghost_ground=True, features=('house',))   # the cell plan already holds it
+        self.policy = ReadinessPolicy(self.world.reg, Evidence())
+        self.policy.validate((0, 0))
+
+    def check(self, **kw):
+        return self.policy.check((0, 0), require_validation=False, **kw)
+
+    def mismatch(self, plan='house', cells=None):
+        receipt = self.world.reg.change(Build(plan, 'feature', cells or self.HOUSE, cell=(0, 0)),
+                                        lambda w: None)           # the writer wrote nothing
+        self.assertEqual(receipt.status, 'mismatched')
+        return receipt
+
+    def test_blocker_names_the_clearing_command(self):
+        from cell_readiness import format_readiness
+        self.mismatch()
+        report = self.check()
+        self.assertEqual(report['blockers'], ['recovery: mismatched apply house'])
+        command = report['clear_with']['recovery: mismatched apply house']
+        self.assertIn('cell_registry.py --world <world> reconcile 0,0 --fix', command)
+        self.assertIn('reapply_feature.py --world <world> house --apply', command)
+        self.assertIn('clear: recovery: mismatched apply house -> ', format_readiness(report))
+
+    def test_refusal_message_carries_the_command(self):
+        self.mismatch()
+        self.world.reg.build_policy = self.policy.enforce
+        with self.assertRaisesRegex(Refused, r'mismatched apply house \[clear: .*reconcile 0,0 --fix'):
+            self.world.reg.begin(Build('ground2', 'ground', {(5, 60, 5): 'minecraft:stone'}, cell=(0, 0)))
+
+    def test_every_blocker_has_a_clearing_command(self):
+        from cell_readiness import ReadinessPolicy
+        evidence = Evidence()
+        evidence.fraction, evidence.aerial = 0.5, 0.5
+        evidence.missing = [{'filename': 'a.tif', 'estimated_mb': 1, 'tile': 't'}]
+        evidence.items = [{'id': 'candidate'}]
+        report = ReadinessPolicy(self.world.reg, evidence).check((4, 4))
+        self.assertTrue(report['blockers'])
+        self.assertEqual(set(report['clear_with']), set(report['blockers']))
+        self.assertFalse([c for c in report['clear_with'].values() if 'none of the known' in c])
+
+    def test_a_plan_may_be_redone_past_its_own_mismatch_but_others_stay_blocked(self):
+        self.mismatch()
+        self.assertTrue(self.check(redoing=('house',))['ready'])
+        self.assertFalse(self.check(redoing=('other',))['ready'])
+        self.world.reg.build_policy = self.policy.enforce
+        with self.assertRaisesRegex(Refused, 'mismatched apply house'):
+            self.world.reg.begin(Build('ground2', 'ground', {(5, 60, 5): 'minecraft:stone'}, cell=(0, 0)))
+        receipt = self.world.reg.change(Build('house', 'feature', self.HOUSE, cell=(0, 0)), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')                 # the redo's own readback decides
+        self.assertTrue(self.check()['ready'])
+
+    def test_mismatch_fully_superseded_by_a_later_landed_plan_blocks_nothing(self):
+        self.mismatch()
+        self.world.reg.change(Build('patch', 'feature', self.HOUSE, modifies=('house',), cell=(0, 0)),
+                              self.world.apply)
+        self.assertEqual(self.world.reg.owned_count(self.world.reg.entries(plan='house')[-1].seq), 0)
+        self.assertTrue(self.check()['ready'])
+
+    def test_partly_superseded_mismatch_still_blocks(self):
+        self.mismatch()
+        self.world.reg.change(Build('patch', 'feature', {(1, 60, 1): 'minecraft:glass'},
+                                    modifies=('house',), cell=(0, 0)), self.world.apply)
+        self.assertIn('recovery: mismatched apply house', self.check()['blockers'])
+
+    def test_reconcile_fix_clears_it_and_says_so(self):
+        from cell_registry import format_drift
+        self.mismatch()
+        dry = self.world.reg.reconcile()
+        self.assertEqual([i.kind for i in dry.by_kind('mismatched')], ['mismatched'])
+        self.assertIn('clear with: reconcile 0,0 --fix', format_drift(dry))
+        drift = self.world.reg.reconcile(fix=True, apply=self.world.apply)
+        self.assertTrue(drift.clean)
+        self.assertEqual([plan for plan, _seq in drift.cleared], ['house'])
+        self.assertIn('house', format_drift(drift, fix=True))
+        self.assertIn('preflight no longer blocks', format_drift(drift, fix=True))
+        self.assertTrue(self.check()['ready'])
+
+    def test_reconcile_fix_that_cannot_hold_names_the_reapply_command(self):
+        from cell_registry import format_drift
+        self.mismatch()
+        drift = self.world.reg.reconcile(fix=True, apply=lambda w: None)      # the game undoes every write
+        self.assertFalse(drift.clean)
+        item = drift.by_kind('mismatched')[0]
+        self.assertEqual((item.plans, item.layer, item.count, item.fixed), (('house',), 'feature', 2, False))
+        out = format_drift(drift, fix=True)
+        self.assertIn('still mismatched after repair', out)
+        self.assertIn('reapply_feature.py --world <world> house --apply', out)
+        self.assertIn('recovery: mismatched apply house', self.check()['blockers'])
