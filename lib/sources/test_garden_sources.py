@@ -1080,14 +1080,21 @@ class TestPanelRuns(unittest.TestCase):
         import random
         rng = random.Random(276)
         cases = [[14, 14, 13, 14, 14, 15], [9, 9, 10, 9, 9, 9, 8, 8, 8, 9, 8, 8, 8, 7, 7, 7, 7, 6, 7]]
+        cases.append([8, 8, 9, 8, 7, 7, 7, 7, 8, 9, 8, 8, 8, 7])   # fitting once split this connected run
         for _ in range(60):
             n, base, slope = rng.randint(10, 28), rng.randint(5, 20), rng.choice((0, 0.25, 0.5, 0.5, 0.6))
-            cases.append([int(base + slope * x) + rng.choice((-1, 0, 0, 1)) for x in range(n)])
+            rows = []
+            for x in range(n):                                  # connected edge: at most 1 row between neighbours
+                want = int(base + slope * x) + rng.choice((-1, 0, 0, 1))
+                rows.append(want if not rows else max(rows[-1] - 1, min(rows[-1] + 1, want)))
+            cases.append(rows)
         for rows in cases:
             for flip in (False, True):
                 cols, owner, street = self._edge(rows, flip)
                 r = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20))
                 raw = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20), fit=False)
+                pieces = lambda run: len(gs._run_components(list(map(tuple, run['cells']))))
+                self.assertLessEqual(pieces(r), pieces(raw), (rows, flip))   # fitting never opens a gap
                 if gs.boards_joined(raw):                          # steep random jumps can defeat the old closers too
                     self.assertTrue(gs.boards_joined(r), (rows, flip))
                 for q in map(tuple, r['cells']):

@@ -813,11 +813,11 @@ def flatten_panel_run(cols, plot_id, owner: dict, avoid=(), clear=(), tol: int =
     neighbour's land) and never more than ``tol - 1`` columns inside it; a jog appears only once the
     line has drifted ``tol`` columns. Jog columns are placed where they stay on the plot's own land.
 
-    A stretch keeps its original cells when its inner side cannot be told from the owners, a fitted
-    column is not the plot's own (original cells excepted) or lies on ``avoid`` (house footprint), or
-    it is shorter than 3 columns or steeper than about 31 degrees. Columns where an original cell lies on ``clear`` (reserved
-    openings) get no fitted cell, so openings stay open. The corner points between stretches are kept so
-    stretches stay joined.
+    A stretch keeps its original cells when its inner side cannot be told from the owners, when a fitted
+    column is not the plot's own (original cells excepted) or lies on ``avoid`` (house footprint), or when
+    it is shorter than 3 columns or steeper than about 31 degrees. Columns where an original cell lies
+    on ``clear`` (reserved openings) get no fitted cell, so openings stay open. The corner points
+    between stretches are kept so stretches stay joined.
 
     @param cols: boundary columns of one plot role (4-connected runs from ``straighten``)
     @param plot_id: plot that owns the fence
@@ -922,15 +922,18 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), 
     @param avoid: columns the straightened line may not move onto (house footprints)
     @param clear: reserved opening columns; the straightened line leaves them open
     @param fit: straighten the run (``flatten_panel_run``); False for observed boundaries. A fitted run whose
-        boards do not form one piece (``boards_joined``) is discarded for the unfitted run
+        boards do not join (``boards_joined``) or that has more separate pieces than the unfitted run is discarded for it
     @returns: ``{'cells', 'facing', 'basis', 'closers', 'cross'}``: cells include added closer columns;
         ``closers`` lists the cross-shelf columns (added and converted step columns); ``cross`` maps
         each to its facing (also in ``facing``)
     """
     if fit:
+        plain = _panel_runs(cols, plot_id, role, owner, street, centre)
         fitted = _panel_runs(flatten_panel_run(cols, plot_id, owner, avoid, clear), plot_id, role, owner, street, centre)
-        if boards_joined(fitted) or not boards_joined(_panel_runs(cols, plot_id, role, owner, street, centre)):
-            return fitted
+        pieces = lambda run: len(_run_components([q for q in map(tuple, run['cells']) if q not in set(clear)]))
+        if pieces(fitted) <= pieces(plain) and (boards_joined(fitted) or not boards_joined(plain)):
+            return fitted                                          # never more pieces (gaps) than the unfitted run
+        return plain
     return _panel_runs(cols, plot_id, role, owner, street, centre)
 
 
