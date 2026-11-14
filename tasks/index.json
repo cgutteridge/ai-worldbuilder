@@ -208,7 +208,7 @@
     {
         "id": 282,
         "title": "Journal ownership scan: cache per-cell owners across the nine neighbour cells and excluded-plan calls",
-        "status": "todo",
+        "status": "doing",
         "priority": "medium",
         "complexity": "s",
         "blockedBy": [],
