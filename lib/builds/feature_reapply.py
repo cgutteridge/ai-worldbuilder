@@ -19,19 +19,30 @@ def prepare(name: str, registry=None) -> list[str]:
         registry = view_registry()
     builder = describe_builder(name, registry.entries(plan=name))
     if builder['source'] != 'recorded':
-        raise SystemExit(f'{name}: no replayable recorded builder; use redo (redesign from evidence). Nothing undone.')
+        raise SystemExit(f'{name}: no replayable recorded builder; see the unrecorded listing '
+                         'from scripts/builder_audit.py --world <world> (#248), or use redo '
+                         '(redesign from evidence). Nothing undone.')
     path = resolve_builder_path(builder['path'])
     if not builder['available']:
         raise SystemExit(f'{name}: recorded {builder["kind"]} missing: {path}; restore or correct the recorded builder before reapply. Nothing undone.')
     if builder['kind'] == 'spec':
-        from feature_build import load_spec
+        builder_name = builder.get('name') or 'feature_build'
+        if builder_name not in ('feature_build', 'house_build'):
+            raise SystemExit(f'{name}: recorded builder {builder_name!r} is unavailable or unsupported; refusing undo')
+        command = TOOL_ROOT / 'scripts' / f'{builder_name}.py'
+        if not command.is_file():
+            raise SystemExit(f'{name}: recorded builder missing: {command}; refusing undo')
+        if builder_name == 'house_build':
+            from house_build import load_spec
+        else:
+            from feature_build import load_spec
         try:
             spec = load_spec(path)
         except (OSError, ValueError, SystemExit) as exc:
             raise SystemExit(f'{name}: invalid builder spec {path}: {exc}; nothing undone') from exc
         if spec['name'] != name:
             raise SystemExit(f'{name}: recorded spec names {spec["name"]!r}; refusing undo')
-        return [sys.executable, str(TOOL_ROOT / 'scripts/feature_build.py'), str(path)]
+        return [sys.executable, str(command), str(path)]
     if path.suffix != '.py':
         raise SystemExit(f'{name}: recorded script is not a Python file; refusing undo')
     try:
