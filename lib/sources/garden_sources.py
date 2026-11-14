@@ -930,7 +930,8 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), 
     if fit:
         plain = _panel_runs(cols, plot_id, role, owner, street, centre)
         fitted = _panel_runs(flatten_panel_run(cols, plot_id, owner, avoid, clear), plot_id, role, owner, street, centre)
-        pieces = lambda run: len(_run_components([q for q in map(tuple, run['cells']) if q not in set(clear)]))
+        shut = set(clear)
+        pieces = lambda run: len(_run_components([q for q in map(tuple, run['cells']) if q not in shut]))
         if pieces(fitted) <= pieces(plain) and (boards_joined(fitted) or not boards_joined(plain)):
             return fitted                                          # never more pieces (gaps) than the unfitted run
         return plain
