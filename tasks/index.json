@@ -82,15 +82,7 @@
       "blockedBy": [],
       "notes": "reapply_feature.py refuses plans with no recorded builder, and in #243 I could not tell which of the eight Kitchener/Sirdar plans were built by the old builder, which by feature_build and which by house_build; I found out from spec notes and by watching which houses kept old-style chimneys. Fix: record builder name (house_build, feature_build), builder git SHA and spec hash in the journal entry for each feature plan; add `site_recover.py`-style listing of landed plans whose builder SHA is older than a given commit or whose spec hash changed; let reapply_feature use the recorded builder. Needs a journal schema bump. Spec in docs/plans/. Spun out of #243 (2026-11-09)."
     },
-    {
-      "id": 249,
-      "title": "Extend scripts/door_audit.py to audit landed house doors (present, two-high, level with the ground outside)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "In #243 I measured doors with throwaway scripts in the scratchpad (parse the 'door (x,z)' lines of builder logs, check the lower and upper half, a solid block under the door and two air cells in front). Make it a committed tool: read doors from landed feature plans (garden_sources.landed_approaches or entrance_approach.entrances_from_blocks) rather than logs, report missing, half-height, below-street and blocked doors per plan, exit non-zero on any. Tests on a synthetic world. Then run it over the plans I have not opened (houses_ripstone_gardens_*, houses_sherborne_road, houses_blenheim_gardens_*, houses_brickfield_road_*, houses_upper_shaftesbury_avenue_*) and file rebuild tasks for any that fail; rebuild with the builder the spec names (see its notes). Spun out of #243 (2026-11-09). REWORDED 2026-11-10: scripts/door_audit.py already exists (jamb and lintel on live blocks, no tests today); extend it with the landed-plan checks above and add tests, rather than writing a new tool. The rebuild half is world work and is not covered by this task. TIGHTENED 2026-11-14: take this myself or give it to a smaller model. Reuse scripts/door_audit.py's existing jamb/lintel checks; add a `--plans` mode that reads doors via garden_sources.landed_approaches (fall back to entrance_approach.entrances_from_blocks), reports per plan one line per failing door with a failure class from {missing, half_height, below_street, blocked}, and exits 1 when any fail. Tests: synthetic world with one good door and one door of each failure class. Read-only: no live world changes; running it over unopened plans is a separate step that only reports. TIGHTENED 2026-11-14: reuse scripts/door_audit.py's existing jamb/lintel checks; add a `--plans` mode that reads doors via garden_sources.landed_approaches (fall back to entrance_approach.entrances_from_blocks), reports one line per failing door with a failure class from {missing, half_height, below_street, blocked}, and exits 1 when any fail. Tests: a synthetic world with one good door and one door of each failure class. Read-only: no live world changes; running it over the unopened plans is a separate step that only reports."
-    },
+    
     {
       "id": 252,
       "title": "Planting and garden water by land use (front gardens first)",
