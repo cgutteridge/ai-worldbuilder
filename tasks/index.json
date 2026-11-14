@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 278,
+  "nextTaskId": 279,
   "tasks": [
     
     {
@@ -80,7 +80,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "reapply_feature.py refuses plans with no recorded builder, and in #243 I could not tell which of the eight Kitchener/Sirdar plans were built by the old builder, which by feature_build and which by house_build; I found out from spec notes and by watching which houses kept old-style chimneys. Fix: record builder name (house_build, feature_build), builder git SHA and spec hash in the journal entry for each feature plan; add `site_recover.py`-style listing of landed plans whose builder SHA is older than a given commit or whose spec hash changed; let reapply_feature use the recorded builder. Needs a journal schema bump. Spec in docs/plans/. Spun out of #243 (2026-11-09)."
+      "notes": "reapply_feature.py refuses plans with no recorded builder, and in #243 I could not tell which of the eight Kitchener/Sirdar plans were built by the old builder, which by feature_build and which by house_build; I found out from spec notes and by watching which houses kept old-style chimneys. Fix: record builder name (house_build, feature_build), builder git SHA and spec hash in the journal entry for each feature plan; add `site_recover.py`-style listing of landed plans whose builder SHA is older than a given commit or whose spec hash changed; let reapply_feature use the recorded builder. Needs a journal schema bump. Spec in docs/plans/. Spun out of #243 (2026-11-09). SPLIT 2026-11-14: this task is now recording and listing only. Record builder name, builder git sha and spec hash on the journal entry of each NEW feature plan (journal schema bump with a migration test that old entries without the fields still load), and add the read-only listing of landed plans whose builder sha is older than a given commit or whose spec hash changed; plans built earlier list as 'unrecorded', no backfill. The change to reapply_feature (use the recorded builder) moved to #278, blocked by this task."
     },
     
     {
@@ -196,6 +196,17 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply. TIGHTENED 2026-11-14 (for a smaller model). Blocked by #265, which adds the planting row schema, `land_use.planting_rule` and `classify(guessed_out=...)`; do not redo them, reuse them. Flowers use planting.flowers: per plot take the guessed-lawn grass_block columns (sorted by (x,z)) within 2 columns of the house wall or the front/side boundary, drop route/opening/footprint/tree-mask/decor-mask/shrub columns, choose n = round(share * len(all guessed-lawn columns of the plot)) of them with a seeded RNG keyed by (plot id, x, z) so the plan is deterministic, one of the plot's kinds (picked once per plot from rule kinds) per column. Place at gy+1 in the ground pass; a flower must never sit on a column holding a shrub from #265 (shrubs win). Tests as in the existing note plus: deterministic across two runs, plot kinds stable, never on a shrub column. Run: python3 scripts/run_tests.py --only test_ground_layer --only test_foliage --only test_land_use. No apply, no live changes, no tasks/ edits. TIGHTENED 2026-11-14 (for a smaller model). Blocked by #265, which adds the planting row schema, `land_use.planting_rule` and `classify(guessed_out=...)`; do not redo them, reuse them. Flowers use planting.flowers: per plot take the guessed-lawn grass_block columns (sorted by (x,z)) within 2 columns of the house wall or the front/side boundary, drop route/opening/footprint/tree-mask/decor-mask/shrub columns, choose n = round(share * len(all guessed-lawn columns of the plot)) of them with a seeded RNG keyed by (plot id, x, z) so the plan is deterministic, one kind per plot (picked once per plot from the rule's kinds). Place at gy+1 in the ground pass; a flower never sits on a shrub column from #265 (shrubs win). Tests as in the note above plus: deterministic across two runs, plot kinds stable, never on a shrub column. Run: python3 scripts/run_tests.py --only test_ground_layer --only test_foliage --only test_land_use. No apply, no live changes, no tasks/ edits."
+    },
+    {
+        "id": 278,
+        "title": "reapply_feature uses the builder recorded on the plan (follow-up to #248)",
+        "status": "todo",
+        "priority": "low",
+        "complexity": "s",
+        "blockedBy": [
+            248
+        ],
+        "notes": "Split from #248 (2026-11-14). Once #248 records builder name, builder sha and spec hash on feature plan entries, let scripts/reapply_feature.py read the recorded builder instead of refusing plans with no recorded builder or guessing from spec notes. Plans with no recorded builder keep today's refusal, with the message pointing at #248's 'unrecorded' listing. Tests: a plan with a recorded builder reapplies with that builder (dry run); an unrecorded plan still refuses; a recorded builder that no longer exists fails closed. No live apply in this task."
     }
   ]
 }
