@@ -994,6 +994,126 @@ class TestPanelRuns(unittest.TestCase):
         self.assertEqual(len(r['closers']), 7)
         self.assertTrue(self._joined(self._boards(r)))
 
+    # --- #276: straight runs, one closer per step -------------------------------------------------
+
+    @staticmethod
+    def _edge(rows, flip=False):
+        """Plot below a jagged pixel edge (``rows[x]`` = first owned row at column x, mirrored when ``flip``).
+
+        The run is the straightened edge, as in ``garden_barriers``; owner and street follow that run
+        (land from its row down, three rows of street above it).
+        """
+        rows = list(rows)[::-1] if flip else list(rows)
+        n = len(rows)
+        cols = gs.straighten([(x, rows[x]) for x in range(n)])
+        top = {}
+        for x, z in cols:
+            top[x] = min(top.get(x, z), z)
+        owner = {(x, z): 1 for x in range(n) for z in range(top[x], max(top.values()) + 4)}
+        street = {(x, z): True for x in range(n) for z in range(top[x] - 3, top[x])}
+        return cols, owner, street
+
+    def _steps(self, r):
+        """Row of each column of the run's real shelves, and the jog columns (rows differ between neighbours)."""
+        cells = set(map(tuple, r['cells']))
+        real = {q for q in cells if f'{q[0]},{q[1]}' not in r['cross']}
+        rows = {}
+        for x, z in real:
+            rows.setdefault(x, set()).add(z)
+        return cells, real, rows
+
+    def test_jagged_near_axis_edge_becomes_a_straight_run(self):
+        rows = [x // 2 for x in range(24)]                       # one-row step every 2 columns
+        for flip in (False, True):
+            cols, owner, street = self._edge(rows, flip)
+            r = gs.panel_runs(cols, 1, 'front', owner, street, (12, 30))
+            cells, real, byx = self._steps(r)
+            jogs = sum(1 for x in sorted(byx)[1:] if byx[x] != byx[x - 1] or len(byx[x]) > 1)
+            self.assertLessEqual(jogs, len(rows) // 4 + 1, flip)
+            self.assertLess(len(r['closers']), len(gs.straighten([(x, rows[x]) for x in range(24)])) // 2, flip)
+            self.assertTrue(self._joined(self._boards(r)), flip)
+            self.assertEqual(len({r['facing'][f'{q[0]},{q[1]}'] for q in real}), 1, flip)
+            for q in cells:
+                self.assertNotIn(q, street)
+                self.assertIn(owner.get(q), (None, 1))
+
+    def test_fitted_run_stays_within_one_column_of_the_boundary(self):
+        rows = [x // 2 for x in range(24)]
+        cols, owner, street = self._edge(rows)
+        r = gs.panel_runs(cols, 1, 'front', owner, street, (12, 30))
+        top = {}
+        for x, z in cols:
+            top[x] = min(top.get(x, z), z)
+        for x, z in map(tuple, r['cells']):
+            if f'{x},{z}' not in r['cross']:                      # jog columns hold closers down the step
+                self.assertTrue(0 <= z - top[x] <= 1, (x, z))      # inside, never on the street side
+
+    def test_pixel_noise_within_tolerance_does_not_step(self):
+        rows = [5 + (x % 2) for x in range(20)]                  # zigzag by one row every column
+        cols, owner, street = self._edge(rows)
+        r = gs.panel_runs(cols, 1, 'front', owner, street, (10, 20))
+        self.assertEqual({z for _, z in map(tuple, r['cells'])}, {6})
+        self.assertEqual(r['closers'], [])
+
+    def test_steps_once_the_line_drifts_two_columns(self):
+        rows = [x // 8 for x in range(32)]                       # gentle slope: 0,0..1..2..3
+        cols, owner, street = self._edge(rows)
+        r = gs.panel_runs(cols, 1, 'front', owner, street, (16, 20))
+        cells, real, byx = self._steps(r)
+        self.assertTrue(self._joined(self._boards(r)))
+        self.assertGreater(len({z for _, z in cells}), 1)         # it does step eventually
+        self.assertLessEqual(len(r['closers']), 3)
+
+    def test_one_closer_per_row_step(self):
+        for rows in ([x // 2 for x in range(20)], [x // 3 for x in range(20)], [x for x in range(12)]):
+            for flip in (False, True):
+                cols, owner, street = self._edge(rows, flip)
+                r = gs.panel_runs(cols, 1, 'front', owner, street, (10, 30))
+                line = sorted(set(map(tuple, r['cells'])))
+                steps = sum(abs(b - a) for a, b in zip(
+                    [min(z for x, z in line if x == c) for c in range(len(rows))],
+                    [min(z for x, z in line if x == c) for c in range(1, len(rows))]))
+                self.assertLessEqual(len(r['closers']), steps + 1, (rows[:4], flip))
+                self.assertTrue(self._joined(self._boards(r)), (rows[:4], flip))
+
+    def test_consecutive_columns_are_joined_by_a_board_edge(self):
+        for rows in ([x // 2 for x in range(20)], [x // 4 for x in range(24)]):
+            for flip in (False, True):
+                cols, owner, street = self._edge(rows, flip)
+                r = gs.panel_runs(cols, 1, 'front', owner, street, (10, 30))
+                boards = {}
+                for key, box in zip(r['facing'], self._boards(r)):
+                    boards[tuple(map(int, key.split(',')))] = box
+                for q in boards:
+                    for n in ((q[0] + 1, q[1]), (q[0], q[1] + 1)):
+                        if n in boards:
+                            self.assertTrue(self._joined([boards[q], boards[n]]) or
+                                            self._joined(self._boards(r)), (q, n))
+
+    def test_openings_stay_open_in_a_fitted_run(self):
+        rows = [x // 2 for x in range(24)]
+        cols, owner, street = self._edge(rows)
+        clear = {q for q in map(tuple, cols) if 8 <= q[0] <= 10}
+        fitted = gs.flatten_panel_run(cols, 1, owner, clear=clear)
+        shifted = {q for q in fitted if q[0] in (9,)}                # a column whose original cell is in an opening
+        self.assertEqual(shifted - set(cols), set())                 # gets no new cell (the jog may keep an original)
+        self.assertTrue({q for q in fitted if q[0] in (5, 13)})      # the rest of the run is still there
+
+    def test_house_footprint_is_never_fitted_onto(self):
+        rows = [x // 2 for x in range(24)]
+        cols, owner, street = self._edge(rows)
+        top = {}
+        for x, z in cols:
+            top[x] = min(top.get(x, z), z)
+        house = {(x, top[x] + 1) for x in range(6, 12)}           # a house one row inside the line
+        fitted = gs.flatten_panel_run(cols, 1, owner, avoid=house)
+        self.assertFalse((set(fitted) - set(cols)) & house)
+
+    def test_steep_and_45_degree_stretches_are_left_alone(self):
+        cols = gs.line4((0, 0), (8, 8))
+        owner = {(x, z): 1 for x in range(9) for z in range(9) if z >= x}
+        self.assertEqual(sorted(gs.flatten_panel_run(cols, 1, owner)), sorted(cols))
+
     def test_axis_aligned_run_needs_no_closers(self):
         r = self._run(1, 0)[3]
         self.assertEqual(r['closers'], [])

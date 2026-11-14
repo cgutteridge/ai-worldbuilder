@@ -798,7 +798,106 @@ def _run_components(cols) -> list[list]:
     return out
 
 
-def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
+PANEL_DRIFT = 2   # a panel run holds its row until the boundary has drifted this many columns (#276)
+
+
+def flatten_panel_run(cols, plot_id, owner: dict, avoid=(), clear=(), tol: int = PANEL_DRIFT) -> list:
+    """Straighten a panel run so it steps only when the boundary drifts ``tol`` or more columns.
+
+    The boundary of a plot follows a pixel-jagged edge, so ``straighten`` leaves a staircase with a
+    one-row step every couple of columns, and every step needs a sideways closer shelf. Here each
+    straight stretch (the corner points ``simplify`` finds) is refit: along its dominant axis ``u``
+    the outermost boundary column of each ``u`` is ``o(u)``; the run holds one row ``g`` for as long as
+    all those ``o`` lie within ``tol - 1`` of each other, with ``g`` the innermost of them, then jogs
+    to the next row. So the fence is never outside the boundary (never on the pavement or in a
+    neighbour's land) and never more than ``tol - 1`` columns inside it; a jog appears only once the
+    line has drifted ``tol`` columns. Jog columns are placed where they stay on the plot's own land.
+
+    Safety falls back to the original cells of a stretch: its inner side cannot be told from the
+    owners, a fitted column is not the plot's own (unless it is an original cell) or lies on ``avoid`` (house footprint), or the
+    stretch is shorter than 3 columns. Columns where an original cell lies on ``clear`` (reserved
+    openings) get no fitted cell, so openings stay open. The corner points between stretches are kept so
+    stretches stay joined.
+
+    @param cols: boundary columns of one plot role (4-connected runs from ``straighten``)
+    @param plot_id: plot that owns the fence
+    @param owner: ``{column: plot id}``
+    @param avoid: columns never fitted onto
+    @param clear: reserved opening columns
+    @param tol: drift in columns at which the run may step (2: at most 1 column inside the boundary)
+    @returns: the fitted columns, unordered, free of duplicates
+    """
+    avoid, clear = set(avoid), set(clear)
+    out: set = set()
+    for comp in _run_components({(int(q[0]), int(q[1])) for q in cols}):
+        if len(comp) < 4:
+            out.update(comp)
+            continue
+        path = walk(comp)
+        pts = simplify(path)
+        idx = [path.index(p) for p in pts]
+        for n, (i, j) in enumerate(zip(idx, idx[1:])):
+            seg = path[i:j + 1]
+            fitted = _fit_stretch(seg, plot_id, owner, avoid, clear, tol)
+            out.update(fitted if fitted is not None else seg)
+            if fitted is not None:                               # corner points between stretches stay, so they stay joined
+                out.update(q for q in (seg[0] if n > 0 else None, seg[-1] if j < idx[-1] else None) if q)
+    return sorted(out)
+
+
+def _fit_stretch(seg, plot_id, owner, avoid, clear, tol):
+    """Fitted columns for one straight stretch, or None to keep the original cells."""
+    xs = [q[0] for q in seg]
+    zs = [q[1] for q in seg]
+    ux = (max(xs) - min(xs)) >= (max(zs) - min(zs))
+    major = max(xs) - min(xs) if ux else max(zs) - min(zs)
+    minor = max(zs) - min(zs) if ux else max(xs) - min(xs)
+    if major < 2 or minor * 10 > major * 6:                      # short, or steeper than about 31 degrees
+        return None
+    pos = (lambda u, v: (u, v)) if ux else (lambda u, v: (v, u))
+    uv = [(q[0], q[1]) if ux else (q[1], q[0]) for q in seg]
+    own = lambda u, v: owner.get(pos(u, v)) == plot_id
+    plus = sum(own(u, v + 1) and not own(u, v - 1) for u, v in uv)
+    minus = sum(own(u, v - 1) and not own(u, v + 1) for u, v in uv)
+    if plus == minus:
+        return None
+    s = 1 if plus > minus else -1
+    outer: dict = {}
+    for u, v in uv:
+        outer[u] = min(outer.get(u, s * v), s * v)
+    us = sorted(outer)
+    if us != list(range(us[0], us[-1] + 1)):
+        return None
+    blocked = {u for u, v in uv if pos(u, v) in clear}
+    windows, cur = [], [us[0]]
+    for u in us[1:]:
+        vals = [outer[k] for k in cur] + [outer[u]]
+        if max(vals) - min(vals) <= tol - 1:
+            cur.append(u)
+        else:
+            windows.append(cur)
+            cur = [u]
+    windows.append(cur)
+    hold = [max(outer[u] for u in w) for w in windows]
+    cells: set = set()
+    for w, g in zip(windows, hold):
+        cells.update((u, g) for u in w if u not in blocked)
+    for k in range(len(windows) - 1):                            # vertical jog between two holds
+        g1, g2 = hold[k], hold[k + 1]
+        for u in (windows[k][-1], windows[k + 1][0]):
+            if min(g1, g2) >= outer[u]:                                 # in an opening column the later clearance removes it
+                cells.update((u, v) for v in range(min(g1, g2), max(g1, g2) + 1))
+                break
+        else:
+            return None
+    fitted = {pos(u, s * v) for u, v in cells}
+    keep = {(q[0], q[1]) for q in seg}                           # the straightened line may sit on the plot edge
+    if any(q in avoid or not (q in keep or own(*((q[0], q[1]) if ux else (q[1], q[0])))) for q in fitted):
+        return None
+    return fitted
+
+
+def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), clear=()) -> dict:
     """One outward facing per panel run, and closing pieces so each run is continuous.
 
     ``outward_facings`` answers per column, which on a diagonal boundary (about 1 z per 2 x) flips
@@ -820,10 +919,13 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     @param owner: ``{column: plot id}``
     @param street: columns of road, pavement and path (never closed over)
     @param centre: plot centre ``(x, z)``
+    @param avoid: columns the straightened line may not move onto (house footprints)
+    @param clear: reserved opening columns; the straightened line leaves them open
     @returns: ``{'cells', 'facing', 'basis', 'closers', 'cross'}``: cells include added closer columns;
         ``closers`` lists the cross-shelf columns (added and converted step columns); ``cross`` maps
         each to its facing (also in ``facing``)
     """
+    cols = flatten_panel_run(cols, plot_id, owner, avoid, clear)
     face, basis = outward_facings(cols, plot_id, role, owner, centre)
     cells = {(int(q[0]), int(q[1])) for q in cols}
     run_face: dict = {}
@@ -868,10 +970,11 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
                 if (a * d[0] + b * d[1]) != 0:                     # step along the facing axis
                     closers.add(q if (a * d[0] + b * d[1]) > 0 else p)   # the one opposite the facing
                 continue
-            for c in sorted(((q[0] + a, q[1]), (q[0], q[1] + b)),
-                            key=lambda c: (c[0] * d[0] + c[1] * d[1], c)):
-                if c in cells:
-                    break
+            bridges = sorted(((q[0] + a, q[1]), (q[0], q[1] + b)),
+                             key=lambda c: (c[0] * d[0] + c[1] * d[1], c))
+            if any(c in cells for c in bridges):                  # already joined face to face: no extra closer
+                continue
+            for c in bridges:
                 if c in street or owner.get(c) not in (None, plot_id):
                     continue
                 cells.add(c)
@@ -879,10 +982,30 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
                 closers.add(c)
                 break
     out_face, out_basis, cross = {}, {}, {}
+    closer_face: dict = {}
+    for q in sorted(closers):                                      # closers beside a neighbour decide first
+        d = DIRS[run_face[q]]
+        if any((q[0] + a, q[1] + b) in cells for a, b in ((d[1], d[0]), (-d[1], -d[0]))):
+            closer_face[q] = _closer_facing(q, run_face[q], cells, closers)
+    todo = [q for q in sorted(closers) if q not in closer_face]
+    while todo:                                                    # a jog of several rows shares one board edge
+        left = []
+        for q in todo:
+            d = DIRS[run_face[q]]
+            same = [closer_face[n] for n in ((q[0] + d[0], q[1] + d[1]), (q[0] - d[0], q[1] - d[1])) if n in closer_face]
+            if same:
+                closer_face[q] = same[0]
+            else:
+                left.append(q)
+        if len(left) == len(todo):
+            for q in left:
+                closer_face[q] = _closer_facing(q, run_face[q], cells, closers)
+            break
+        todo = left
     for q in sorted(cells):
         key = f'{q[0]},{q[1]}'
         if q in closers:
-            f = _closer_facing(q, run_face[q], cells, closers)
+            f = closer_face[q]
             out_face[key] = cross[key] = f
             out_basis[key] = f'closing piece at a diagonal step: cross shelf facing {f}'
             continue
@@ -991,7 +1114,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
     canopy = tree_canopy_columns(cell)
     owner, info, street, idx = plots_for(box)
     seg = segments(owner, info, street, idx, box)
-    items, rep, front_boundaries = [], [], {}
+    items, rep, front_boundaries, panels = [], [], {}, {}
     for (i, role), cells in sorted(seg.items(), key=lambda kv: (info[kv[0][0]]['street'], kv[0][1])):
         meta = info[i]
         conv = load_convention(meta['street']) or {}
@@ -1043,10 +1166,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                           'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},
                           'reason': reason, 'provenance': record})
             if items[-1]['kind'] == 'plank_fence':
-                run = panel_runs(cols, i, role, owner, street, meta['centre'])
-                items[-1]['cells'] = [list(q) for q in run['cells']]
-                items[-1]['facing'], items[-1]['facing_basis'] = run['facing'], run['basis']
-                items[-1]['closers'] = [list(q) for q in run['closers']]
+                panels[items[-1]['id']] = (cols, i, role, meta['centre'])   # run after openings are known
             if role == 'front':
                 front_boundaries[i] = cols
         rep.append({'street': meta['street'], 'number': meta['number'], 'role': role,
@@ -1057,6 +1177,13 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                                    boundaries=front_boundaries, paved=paved_columns(rgb) if rgb else None)
     opening = reserved_openings(frontages)
     keep_clear = opening | reserved_route(frontages)
+    for item in items:
+        if item['id'] in panels:
+            cols, i, role, centre = panels[item['id']]
+            run = panel_runs(cols, i, role, owner, street, centre, avoid=idx.cells(), clear=keep_clear)
+            item['cells'] = [list(q) for q in run['cells']]
+            item['facing'], item['facing_basis'] = run['facing'], run['basis']
+            item['closers'] = [list(q) for q in run['closers']]
     # Reserve after straightening. All later sources and final joins use the same clearance.
     for item in items:
         if item['provenance']['source'] == 'vector_map':
