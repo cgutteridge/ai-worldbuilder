@@ -142,6 +142,26 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertTrue(all(kept[q] == 'grass' for q in garden))
         self.assertEqual(how['guessed lawn kept: private residential frontage'], len(garden))
 
+    def test_guessed_out_contains_only_final_guessed_grass(self):
+        cell, osm, fp, garden, live, rgb = self._strip()
+        observed = {(6155 + x, -5620 + z) for x in range(6) for z in range(4)}
+        mapped = {(6165 + x, -5620 + z) for x in range(6) for z in range(4)}
+        live.update({q: (50, 'stone') for q in observed | mapped})
+        rgb.update({q: (0.64, 0.60, 0.54) for q in observed})
+        osm.kind.update({q: 'grass' for q in mapped})
+        osm.pri.update({q: 10 for q in mapped})
+        route = set()
+        guessed = set()
+        kinds, how = gl.classify(cell, live, osm, rgb, fp, set(garden), route, guessed_out=guessed)
+        self.assertEqual(guessed, {q for q in garden if kinds[q] == 'grass'})
+        self.assertTrue(guessed)
+        self.assertTrue(guessed.isdisjoint(route | observed | mapped))
+        self.assertEqual((kinds, how), gl.classify(cell, live, osm, rgb, fp, set(garden), route))
+
+        guessed = set()
+        kinds, _ = gl.classify(cell, live, osm, rgb, fp, guessed_out=guessed)
+        self.assertTrue(guessed.isdisjoint(garden))     # converted to paving by the road/house rule
+
     def _strip(self):
         cell = (48, -44)
         x0, z0 = 6144, -5632
@@ -207,10 +227,13 @@ class TestGroundDecisions(unittest.TestCase):
             rgb[q] = shade
         shaded = [(x0 + 4, z0 + j) for j in range(2, 7)]
         route = set(shaded) | {(x0 + 6, z0 + 1)}                   # one route column is seen lawn
-        kind, how = gl.classify(cell, live, osm, rgb, set(), frozenset(), route)
+        guessed = set()
+        kind, how = gl.classify(cell, live, osm, rgb, set(), frozenset(), route, guessed_out=guessed)
         self.assertEqual(how['guessed ground on entrance route -> paving'], 5)
         self.assertTrue(all(kind[q] == 'paving' for q in shaded))
         self.assertEqual(kind[(x0 + 6, z0 + 1)], 'grass')          # seen lawn kept
+        self.assertTrue(guessed.isdisjoint(route))
+        self.assertTrue(all(kind[q] == 'grass' for q in guessed))
         plain, _ = gl.classify(cell, live, osm, rgb, set())
         self.assertTrue(all(plain[q] == 'grass' for q in shaded))
 
@@ -491,6 +514,129 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertIn('ghost_48_m44_ground', ign)
         self.assertNotIn('ghost_48_m44_features', ign)
         self.assertNotIn('highfield_48_m45_trees', ign)
+
+
+class TestPlanting(unittest.TestCase):
+    """Ground planting uses synthetic plot geometry and an in-memory world only."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+        self.lawn = {(x, z) for x in range(2, 20) for z in range(2, 12)}
+        self.fp = {(x, 12): 1 for x in range(2, 20)}
+        self.idx = SimpleNamespace(cells=lambda: self.fp)
+        self.owner = {q: 1 for q in self.lawn}
+        self.info = {1: {'street': 'Test Road', 'number': '1', 'land_use': {'class': 'residential'}}}
+        self.plots = (self.owner, self.info, {}, self.idx)
+        self.segments = {(1, 'front'): [(x, 2) for x in range(2, 20)],
+                         (1, 'side_front'): [(2, z) for z in range(2, 12)]}
+        self.ys = {q: 50 for q in self.lawn}
+        self.blocks = {(x, 50, z): 'grass_block' for x, z in self.lawn}
+        self.world = World(store=MemoryBlocks(self.blocks, default='air'))
+        self.plan = Plan('planting-test')
+        for p, b in self.blocks.items():
+            self.plan.set(*p, b)
+
+    def planting(self, **kwargs):
+        return gl.plan_planting(self.plan, self.world, self.lawn, self.ys, self.plots, self.segments, **kwargs)
+
+    def test_shrub_density_order_height_and_provenance(self):
+        rows = self.planting()
+        row = rows[0]
+        self.assertEqual(row['shrubs'], len(self.lawn) // 6)
+        self.assertEqual(row['items'][0]['position'], [2, 51, 11])  # nearest wall, then boundary, then x,z
+        for n, item in enumerate(row['items'], 1):
+            x, y, z = item['position']
+            self.assertEqual(item['height'], 2 if n % 3 == 0 else 1)
+            self.assertEqual(item['label'], 'shrub inference (#265)')
+            self.assertEqual(item['provenance']['source'], 'inference')
+            self.assertEqual(item['provenance']['confidence'], 'low')
+            self.assertIn((x, z), self.lawn)
+            for dy in range(item['height']):
+                self.assertEqual(self.plan.cells[(x, y + dy, z)], 'minecraft:oak_leaves[persistent=true]')
+        positions = [i['position'] for i in row['items']]
+        for n, (x, _, z) in enumerate(positions):
+            self.assertTrue(all(max(abs(x - xx), abs(z - zz)) > 1 for xx, _, zz in positions[:n]))
+
+    def test_shrubs_exclude_observed_or_non_grass_columns(self):
+        observed = {(x, z) for x, z in self.lawn if x < 8}
+        guessed = self.lawn - observed
+        paved = {(x, z) for x, z in guessed if x < 12}
+        for x, z in paved:
+            self.plan.set(x, 50, z, 'light_gray_concrete')
+        rows = gl.plan_planting(self.plan, self.world, guessed, self.ys, self.plots, self.segments)
+        planted = {(x, z) for item in rows[0]['items'] for x, _, z in [item['position']]}
+        self.assertTrue(planted)
+        self.assertTrue(planted <= guessed - paved)
+
+    def test_shrubs_clear_routes_openings_footprints_masks_and_barriers(self):
+        clear = {(x, z) for x, z in self.lawn if x == 10} | {(2, 11)}
+        masked = {(4, 90, 11): 'trees 0,0', (6, 70, 11): 'decor 0,0'}
+        owned = {(8, 60, 11)}
+        self.fp[(12, 11)] = 1
+        barrier = {(14, 11)}
+        rows = self.planting(clear=clear, masked=masked, owned=owned, barriers=barrier)
+        planted = {(x, z) for item in rows[0]['items'] for x, _, z in [item['position']]}
+        self.assertTrue(planted)
+        self.assertTrue(planted.isdisjoint(clear | set(self.fp) | {(4, 11), (6, 11), (8, 11)}))
+        self.assertTrue(all(max(abs(x - 14), abs(z - 11)) > 1 for x, z in planted))
+
+    def test_shrubs_require_known_air_for_every_leaf(self):
+        from unittest import mock
+        with mock.patch.object(self.world, 'block', side_effect=lambda x, y, z: (
+                None if x < 8 else 'minecraft:stone' if x < 14 else 'minecraft:air')):
+            rows = self.planting()
+        self.assertTrue(rows[0]['items'])
+        self.assertTrue(all(item['position'][0] >= 14 for item in rows[0]['items']))
+
+    def test_null_classes_and_missing_class_infer_nothing(self):
+        for cls in ('park', 'rural', 'natural', 'water', 'unknown', None):
+            self.info[1]['land_use'] = cls
+            with self.subTest(cls=cls):
+                self.assertEqual(self.planting()[0]['shrubs'], 0)
+
+    def test_planting_uses_class_rule_without_residential_branch(self):
+        from unittest import mock
+        import land_use
+        self.info[1]['land_use'] = {'class': 'park'}
+        with mock.patch.object(land_use, 'planting_rule', return_value={'per_columns': 12}) as rule:
+            row = self.planting()[0]
+        rule.assert_called_once_with('park', 'shrubs')
+        self.assertEqual(row['shrubs'], len(self.lawn) // 12)
+
+    def ground_plan(self, world):
+        from unittest import mock
+        from types import SimpleNamespace
+        from site_kit import Plan
+        live = {q: (50, 'grass_block') for q in self.lawn}
+        ev = {'vmap': TestGroundDecisions.Osm(), 'rgb': {q: (.44, .39, .27) for q in self.lawn},
+              'private_frontage': self.lawn, 'frontages': [], 'plots': self.plots, 'segments': self.segments,
+              'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': 50)}
+        plan = Plan('ground-planting-test')
+        with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
+                mock.patch.object(gl, 'free_columns', return_value=(live, Counter())), \
+                mock.patch.object(gl, 'stitch_seams', return_value=0):
+            stats, conflicts, _, _ = gl.plan_cell((0, 0), {}, set(), plan, world, evidence=ev)
+        self.assertEqual(conflicts, [])
+        return plan, stats
+
+    def test_ground_rerun_is_idempotent_and_redo_strips_shrubs(self):
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+        from foliage import is_refine_foliage, strip_foliage_above_surface
+        first, stats = self.ground_plan(self.world)
+        self.assertGreater(stats['shrubs'], 0)
+        after = World(store=MemoryBlocks({**self.blocks, **first.cells}, default='air'))
+        second, again = self.ground_plan(after)
+        self.assertEqual(first.cells, second.cells)
+        self.assertEqual(stats['planting'], again['planting'])
+        strip = Plan('redo-strip-test')
+        strip_foliage_above_surface(strip, after, self.lawn)
+        leaves = {p for p, b in first.cells.items() if 'leaves' in b}
+        self.assertEqual(set(strip.cells), leaves)
+        self.assertTrue(all(b == 'minecraft:air' for b in strip.cells.values()))
+        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves))
 
 
 class TestWarmSurfaceProbe(unittest.TestCase):

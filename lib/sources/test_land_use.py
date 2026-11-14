@@ -195,6 +195,43 @@ class Table(unittest.TestCase):
         with self.assertRaisesRegex(L.TableError, 'no inference'):
             L.validate_table(self.doc)
 
+    def test_shipped_planting_rules_and_null_classes(self):
+        self.assertEqual(L.planting_rule('residential', 'shrubs'), {'per_columns': 6})
+        self.assertEqual(L.planting_rule('residential', 'flowers'),
+                         {'share': 0.08, 'kinds': ['poppy', 'dandelion']})
+        for cls in set(L.CLASSES) - {'residential'} | {'unlisted'}:
+            for kind in ('shrubs', 'flowers', 'pond'):
+                self.assertIsNone(L.planting_rule(cls, kind), (cls, kind))
+        self.assertIsNone(L.planting_rule('residential', 'pond'))
+
+    def test_bad_planting_schema_refused(self):
+        valid = copy.deepcopy(self.row('residential')['planting'])
+        invalid = [False, [], {}, dict(valid, unknown=None), dict(valid, pond={}),
+                   dict(valid, shrubs={}), dict(valid, shrubs={'per_columns': 6, 'extra': 1}),
+                   dict(valid, flowers={}), dict(valid, flowers={'share': .1, 'kinds': ['poppy'], 'extra': 1})]
+        invalid += [dict(valid, shrubs={'per_columns': n}) for n in (0, -1, True, 1.5, '6', None)]
+        invalid += [dict(valid, flowers={'share': n, 'kinds': ['poppy']})
+                    for n in (0, -.1, .21, True, '0.1', None, float('nan'))]
+        invalid += [dict(valid, flowers={'share': .08, 'kinds': kinds})
+                    for kinds in ([], ['poppy'] * 3, ['stone'], 'poppy', [None], [{}])]
+        for planting in invalid:
+            with self.subTest(planting=planting), self.assertRaises(L.TableError):
+                self.row('residential')['planting'] = planting
+                L.validate_table(self.doc)
+
+    def test_no_inference_classes_refuse_planting(self):
+        for cls in L.NO_INFERENCE:
+            doc = copy.deepcopy(self.doc)
+            next(r for r in doc['classes'] if r['id'] == cls)['planting'] = self.row('residential')['planting']
+            with self.subTest(cls=cls), self.assertRaisesRegex(L.TableError, 'no planting inference'):
+                L.validate_table(doc)
+
+    def test_planting_null_rules_and_limits(self):
+        for rule in ({'shrubs': None, 'flowers': None, 'pond': None},
+                     {'shrubs': {'per_columns': 1}, 'flowers': {'share': .2, 'kinds': ['fern']}, 'pond': None}):
+            self.row('residential')['planting'] = rule
+            self.assertEqual(L.validate_table(self.doc)['classes']['residential']['planting'], rule)
+
 
 class ParcelMeta(unittest.TestCase):
     def build(self, areas, buildings):

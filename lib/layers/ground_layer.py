@@ -364,7 +364,8 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
              fp: set | None = None, private_frontage: set | frozenset = frozenset(),
              frontage_route: set | frozenset = frozenset(),
-             pavement: set | frozenset = frozenset()) -> tuple[dict, Counter]:
+             pavement: set | frozenset = frozenset(),
+             guessed_out: set | None = None) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
 
     ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
@@ -375,7 +376,9 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     kept, since observed surface differences are retained.
     ``pavement`` (#254) is the public strip outside each front boundary (width per land-use class):
     guessed lawn there is pavement. ``private_frontage`` also holds the front extent of classes that
-    keep their lawn (park, rural, natural), so guessed lawn there is never paved."""
+    keep their lawn (park, rural, natural), so guessed lawn there is never paved.
+    ``guessed_out``, when supplied, receives only guessed-lawn columns still classified as grass
+    after all paving conversions and denoising. The return value is unchanged."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -498,6 +501,8 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                     (q[0] + a, q[1] + b) in vmap.kind and vmap.pri[(q[0] + a, q[1] + b)] in (60, 70)
                     for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
                 out[q] = 'kerb'
+    if guessed_out is not None:
+        guessed_out.update(q for q in soft_grass if out.get(q) == 'grass')
     return out, how
 
 
@@ -732,6 +737,72 @@ def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:
     return changed
 
 
+def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple, segments: dict,
+                  *, clear=(), masked=(), owned=(), barriers=()) -> list[dict]:
+    """Plan labelled planting on guessed grass only; return per-plot counts and provenance.
+
+    ``plots`` and ``segments`` are the existing garden-source geometry. Mask and ownership exclusions
+    apply to whole columns, and placement air checks read the ground plan over the input world.
+    """
+    import land_use
+    import provenance as prov
+
+    owner, info, _street, idx = plots
+    fp = idx.cells()
+    blocked = set(clear) | set(fp) | {(x, z) for x, _y, z in masked} | {(x, z) for x, _y, z in owned}
+    barrier_gap = {(x + a, z + b) for x, z in barriers for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    houses, boundaries, lawns = {}, {}, {}
+    for q, i in fp.items():
+        houses.setdefault(i, set()).add(q)
+    for (i, _role), cols in segments.items():
+        boundaries.setdefault(i, set()).update(cols)
+    for q in sorted(ys):
+        if q in owner:
+            lawns.setdefault(owner[q], [])
+            if q in guessed and plan.cells.get((q[0], ys[q], q[1])) == full('grass_block'):
+                lawns[owner[q]].append(q)
+
+    def distance(q, cols):
+        return min(((q[0] - x) ** 2 + (q[1] - z) ** 2 for x, z in cols), default=math.inf)
+
+    def air(p):
+        block = plan.cells[p] if p in plan.cells else world.block(*p)
+        return block is not None and bare(block) in AIRS
+
+    shrub_gap = set()
+    report = []
+    for i, lawn in sorted(lawns.items()):
+        meta = info[i]
+        lu = meta.get('land_use') or 'unknown'
+        cls = lu.get('class', 'unknown') if isinstance(lu, dict) else lu
+        row = {'plot': i, 'street': meta.get('street', ''), 'number': meta.get('number', ''),
+               'land_use': cls, 'guessed_lawn': len(lawn), 'shrubs': 0, 'items': []}
+        report.append(row)
+        rule = land_use.planting_rule(cls, 'shrubs')
+        if rule is None:
+            continue
+        target = len(lawn) // rule['per_columns']
+        candidates = sorted(lawn, key=lambda q: (distance(q, houses.get(i, ())),
+                                                 distance(q, boundaries.get(i, ())), q))
+        for x, z in candidates:
+            if row['shrubs'] >= target:
+                break
+            if (x, z) in blocked or (x, z) in barrier_gap or (x, z) in shrub_gap:
+                continue
+            height = 2 if (row['shrubs'] + 1) % 3 == 0 else 1
+            positions = [(x, ys[(x, z)] + dy, z) for dy in range(1, height + 1)]
+            if not all(air(p) for p in positions):
+                continue
+            for p in positions:
+                plan.set(*p, 'oak_leaves[persistent=true]')
+            row['shrubs'] += 1
+            row['items'].append({'position': list(positions[0]), 'height': height,
+                                 'label': 'shrub inference (#265)',
+                                 'provenance': prov.provenance_record(source='inference', confidence='low')})
+            shrub_gap.update((x + a, z + b) for a in (-1, 0, 1) for b in (-1, 0, 1))
+    return report
+
+
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
               evidence=None):
     """Plan the ground for one cell. Returns (stats, conflicts, kinds, skipped)."""
@@ -755,7 +826,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     route = set(ev['frontage_route']) if 'frontage_route' in ev else gs.frontage_route_columns(frontages)
     forecourt = set(ev['forecourt']) if 'forecourt' in ev else gs.forecourt_columns(frontages)
     pavement = set(ev['pavement']) if 'pavement' in ev else gs.pavement_columns(frontages)
-    kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement)
+    guessed = set()
+    kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement, guessed_out=guessed)
     how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
@@ -831,6 +903,14 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 continue                                  # a flower or grass stem may stand on lawn
             plan.set(x, y, z, 'air')
             stats['clear'] += 1
+    plots = ev['plots'] if 'plots' in ev else gs.plots_for(cell_box(cell))
+    owner, info, street, idx = plots
+    segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cell_box(cell))
+    stats['planting'] = plan_planting(
+        plan, world, guessed, ys, plots, segments,
+        clear=gs.reserved_route(frontages) | gs.reserved_openings(frontages),
+        masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
+    stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
     return stats, conflicts, kind, skipped
 
 
@@ -891,6 +971,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  top {stats["top"]}  raise {stats["raise"]}  clear {stats["clear"]}  '
           f'(kept: neighbour {stats["kept_neighbour"]}, masked {stats["kept_masked"]})')
     print(f'  planned cells {len(plan.cells)}  would change {len(changes)}')
+    print(f'  inferred shrubs: {stats["shrubs"]} (low confidence; see per-plot planting report)')
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')
     for pos, want, why in conflicts[:10]:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')
