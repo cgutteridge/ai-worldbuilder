@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 282,
+  "nextTaskId": 283,
   "tasks": [
     
     {
@@ -204,6 +204,15 @@
         "complexity": "s",
         "blockedBy": [],
         "notes": "Found 2026-11-12: caveats written into a convention's `unresolved_reason` made every Kitchener boundary 'unresolved', so decor_plan.resolved_barriers silently skipped them and the rebuild showed no fences. The planner gave no signal. Fix: where decor_plan.resolved_barriers skips an item because prov.is_unresolved(item provenance), record it: append the item to the existing `unplaced` list (or the equivalent report list the function already fills) with reason 'barrier skipped: provenance carries an unresolved reason' and the reason text, and make the decor plan/redo report print one summary line 'N barrier runs skipped as unresolved' with the first few ids when N>0. No behaviour change to what is placed. Files: lib/layers/decor_plan.py, the decor report printer in lib/layers/decor_layer.py if needed, and tests in lib/layers/test_decor_plan.py (and test_decor_layer.py if the report is touched): an unresolved barrier is skipped and reported; a resolved one is placed and not reported; deliberate 'none' openings are not reported; counts match. Check: python3 scripts/run_tests.py --only test_decor_plan --only test_decor_layer. Another session (#264) is editing decor_layer.py: keep the decor_layer.py edit to the report line, or put the summary in decor_plan.py. Do not edit tasks/ from the branch."
+    },
+    {
+        "id": 282,
+        "title": "Journal ownership scan: cache per-cell owners across the nine neighbour cells and excluded-plan calls",
+        "status": "todo",
+        "priority": "medium",
+        "complexity": "s",
+        "blockedBy": [],
+        "notes": "From #264's no-go profile (docs/plans/264-decor-source-reuse-no-go.md, 2026-11-14): on a decor preview of 53,-43, neighbour_owned -> cell_journal._cell_owners took ~19-21 s over 10 calls, the largest single block of decor source preparation, and it is paid by every layer that calls neighbour_owned (ground, trees, decor). Cause read from the code: lib/journal/cell_journal.py _cell_owners caches only when `not exclude and not skip` and keeps ONE cell (`_owner_cache.clear()` before storing), but ground_layer.neighbour_owned passes exclude=ignored_builds for the 3x3 neighbourhood, so every call is uncached and rebuilds the cell from the folded journal. Fix, profile first: (1) confirm with cProfile on a read-only preview (decor_layer.py --world southampton-build --cell 53,-43, no apply) that the 9 neighbour calls are uncached rebuilds; (2) key the cache by (cell, exclude, skip) and keep the last ~12 keys (bounded, LRU) so one neighbour_owned call and a repeat in the same process cost one rebuild per cell; (3) keep the existing invalidation: every place that drops _owner_cache after the folded state changes must drop the whole new cache too (find them with grep before editing); returned dicts must not be mutable by callers in a way that changes later reads (return the cached dict only if callers already treat it read-only, else return a copy and say so). Must stay identical in output: add a test that the cached result equals a fresh recompute for several (cell, exclude, skip) combinations on a synthetic journal, that a journal change (new build, undo, status change) invalidates, and that the cache never exceeds its bound. Done when: tests pass (python3 scripts/run_tests.py --only test_cell_journal, plus the full suite via ship_branch) and the same read-only preview shows the ownership scan time before and after (record both numbers in the close report); a saving under ~5 s means report it and still ship if the tests are green. Files: lib/journal/cell_journal.py and its tests only. No live apply, no world data in tests. Do not edit tasks/ from the branch."
     }
   ]
 }
