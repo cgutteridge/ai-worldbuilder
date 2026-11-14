@@ -121,6 +121,14 @@ neighbour-owned columns stay clear; shrubs leave a one-column gap from barriers 
 The ground report records each placement as `shrub inference (#265)`, source `inference`, confidence
 `low`. Existing foliage strip helpers remove the leaves on redo.
 
+Flowers (#266) reuse those rules and guessed columns. Beds use `grass_block` within two columns of
+the house wall or a front/side boundary; routes, openings, footprints, tree/decor mask columns and
+shrub columns are excluded. Shrubs are planned first. Each plot targets `round(share * guessed lawn)`
+flowers, capped by eligible space, with a seeded ranking keyed by plot id and `(x,z)`. A separate
+plot seed picks one of the rule's kinds for the whole plot. Flowers sit at ground Y + 1 and carry
+`flower inference (#266)`, source `inference`, confidence `low`, in the same per-plot ground report.
+The ground pass preserves a matching flower on rerun; the existing foliage strip removes it on redo.
+
 Shipped values. Residential is exactly today: inference allowed with the two conditions, every boundary
 null (a missing convention never authorises a fence), guessed lawn kept, door route. Commercial,
 industrial, civic, transport and parking: `private_surface: paving` (today's forecourt rule for every
