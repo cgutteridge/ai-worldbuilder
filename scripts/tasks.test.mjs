@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import assert from "node:assert/strict"
 import {
+  addTask,
   closeTask,
   defaultTrackerDir,
   editSpans,
@@ -384,6 +385,205 @@ describe("task reads and status changes", () => {
   })
 })
 
+describe("task addition", () => {
+  const fields = {
+    title: "New task",
+    priority: "medium",
+    complexity: "s",
+    notes: "Details",
+  }
+  async function fixture(tasks = [{ id: 1, title: "Existing", status: "todo" }]) {
+    const directory = await temporaryDirectory("task-add-")
+    await writeFile(
+      join(directory, "index.json"),
+      JSON.stringify({ _comment: "Keep active", nextTaskId: 100, tasks }, null, 2) + "\n",
+    )
+    await writeFile(
+      join(directory, "done.json"),
+      '{"_comment":"Keep done", "tasks":[{"id":9,"title":"Completed","status":"done"}]}\n',
+    )
+    return directory
+  }
+  const text = (directory, name = "index.json") => readFile(join(directory, name), "utf8")
+  const run = (directory, extra = ["--notes", "Details"]) => cli([
+    "--tracker-dir", directory, "add",
+    "--title", fields.title, "--priority", fields.priority,
+    "--complexity", fields.complexity, ...extra,
+  ], tmpdir())
+
+  it("assigns ids, advances nextTaskId, preserves field order and round-trips through show", async () => {
+    const directory = await fixture()
+    const done = await text(directory, "done.json")
+    const result = run(directory)
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, "100\n")
+    const shown = cli(["--tracker-dir", directory, "show", "100"], tmpdir())
+    assert.equal(shown.status, 0, shown.stderr)
+    const task = JSON.parse(shown.stdout)
+    assert.deepEqual(task, { id: 100, title: fields.title, status: "todo", priority: "medium", complexity: "s", blockedBy: [], notes: "Details" })
+    assert.deepEqual(Object.keys(task), ["id", "title", "status", "priority", "complexity", "blockedBy", "notes"])
+    assert.equal(run(directory).stdout, "101\n")
+    assert.equal(JSON.parse(await text(directory)).nextTaskId, 102)
+    assert.equal(await text(directory, "done.json"), done)
+    assert.deepEqual((await readdir(directory)).sort(), ["done.json", "index.json"])
+  })
+
+  it("changes only nextTaskId and the appended bytes, retaining comments, escapes and whitespace", async () => {
+    const directory = await fixture()
+    const source = '{\r\n "_comment":"Café 😀", "nextTaskId" : 100, "extra":-2.1e3,\r\n "tasks":[ {"id":1,"title":"Keep \\"quotes\\"","status":"todo", "unknown":[true,null]} ]\r\n}\r\n'
+    await writeFile(join(directory, "index.json"), source)
+    const result = run(directory)
+    assert.equal(result.status, 0, result.stderr)
+    const appended = ',\n    {\n      "id": 100,\n      "title": "New task",\n      "status": "todo",\n      "priority": "medium",\n      "complexity": "s",\n      "blockedBy": [],\n      "notes": "Details"\n    }'
+    const after = await text(directory)
+    assert.ok(after.includes(appended))
+    assert.equal(after.replace(appended, "").replace('"nextTaskId" : 101', '"nextTaskId" : 100'), source)
+  })
+
+  it("can append to an empty array and read notes from a file without trimming", async () => {
+    const directory = await fixture([])
+    const notes = 'Long notes\nwith "quotes" and Café 😀\n' + "detail".repeat(3000)
+    const path = join(directory, "notes.txt")
+    await writeFile(path, notes)
+    const result = run(directory, ["--notes-file", path])
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal((await showTask(directory, 100)).notes, notes)
+    assert.equal(JSON.parse(await text(directory)).nextTaskId, 101)
+  })
+
+  it("preserves the existing validator's title and notes length rules", async () => {
+    const directory = await fixture()
+    const title = "Title".repeat(2000)
+    const task = await addTask(directory, { ...fields, title, notes: "" })
+    assert.equal(task.title, title)
+    assert.equal(task.notes, "")
+    assert.deepEqual(await showTask(directory, task.id), task)
+  })
+
+  it("recognises completed blockers as resolved and retains active blockers", async () => {
+    const directory = await fixture()
+    const result = run(directory, ["--notes", "Details", "--blocked-by", "1,9"])
+    assert.equal(result.status, 0, result.stderr)
+    const task = await showTask(directory, 100)
+    assert.deepEqual(task.blockedBy, [1])
+    assert.equal(task.status, "todo")
+    assert.ok(!(await listReadyTasks(directory)).some((item) => item.id === 100))
+  })
+
+  it("makes tasks with only completed blockers ready and able to start", async () => {
+    const directory = await fixture([])
+    const task = await addTask(directory, { ...fields, blockedBy: [9] })
+    assert.deepEqual(task.blockedBy, [])
+    assert.deepEqual((await showTask(directory, task.id)).blockedBy, [])
+    assert.deepEqual((await listReadyTasks(directory)).map((item) => item.id), [task.id])
+    assert.equal((await setTaskStatus(directory, task.id, "doing")).status, "doing")
+    assert.equal((await showTask(directory, task.id)).status, "doing")
+  })
+
+  for (const value of ["", "0", "-1", "1.5", "1,,9", "99", "100", "999"]) {
+    it(`refuses invalid or unknown blockers ${JSON.stringify(value)} without writes`, async () => {
+      const directory = await fixture()
+      const before = await text(directory)
+      const done = await text(directory, "done.json")
+      const result = run(directory, ["--notes", "Details", "--blocked-by", value])
+      assert.equal(result.status, 2)
+      assert.equal(result.stdout, "")
+      assert.match(result.stderr, /positive whole number|Unknown blocker/)
+      assert.equal(await text(directory), before)
+      assert.equal(await text(directory, "done.json"), done)
+      assert.deepEqual((await readdir(directory)).sort(), ["done.json", "index.json"])
+    })
+  }
+
+  for (const extra of [
+    [],
+    ["--notes", "Details", "--notes-file", "some-file"],
+    ["--notes", "Details", "--title", ""],
+    ["--notes", "Details", "--priority", "critical"],
+    ["--notes", "Details", "--priority", "invalid"],
+    ["--notes", "Details", "--complexity", "xs"],
+    ["--notes", "Details", "--complexity", "invalid"],
+  ]) {
+    it(`refuses invalid addition arguments ${JSON.stringify(extra)} without writes`, async () => {
+      const directory = await fixture()
+      const before = await text(directory)
+      const result = run(directory, extra)
+      assert.equal(result.status, 2)
+      assert.equal(result.stdout, "")
+      assert.equal(await text(directory), before)
+    })
+  }
+
+  it("refuses an unreadable notes file without allocating an id", async () => {
+    const directory = await fixture()
+    const before = await text(directory)
+    const result = run(directory, ["--notes-file", join(directory, "missing.txt")])
+    assert.equal(result.status, 1)
+    assert.equal(result.stderr, "Could not read notes file.\n")
+    assert.equal(await text(directory), before)
+  })
+
+  it("refuses a stale counter or duplicate ids across trackers", async () => {
+    const directory = await fixture()
+    for (const id of [1, 100]) {
+      await writeFile(join(directory, "done.json"), JSON.stringify({ tasks: [{ id, title: "Done", status: "done" }] }))
+      const before = await text(directory)
+      const result = run(directory)
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /both tracker|nextTaskId/)
+      assert.equal(await text(directory), before)
+    }
+  })
+
+  it("uses atomic replacement and removes temporary files after an interrupted write", async () => {
+    const directory = await fixture()
+    const before = await text(directory)
+    const done = await text(directory, "done.json")
+    const original = io.rename
+    try {
+      io.rename = async () => { throw new Error("simulated rename failure") }
+      await rejectsWith(addTask(directory, fields), "Could not replace")
+    } finally {
+      io.rename = original
+    }
+    assert.equal(await text(directory), before)
+    assert.equal(await text(directory, "done.json"), done)
+    assert.deepEqual((await readdir(directory)).sort(), ["done.json", "index.json"])
+    assert.equal((await addTask(directory, fields)).id, 100)
+  })
+
+  it("serialises concurrent additions without allocating an id twice", async () => {
+    const directory = await fixture()
+    const results = await Promise.allSettled([addTask(directory, fields), addTask(directory, fields)])
+    assert.deepEqual(results.map((item) => item.status).sort(), ["fulfilled", "rejected"])
+    const active = JSON.parse(await text(directory))
+    assert.equal(active.nextTaskId, 101)
+    assert.deepEqual(active.tasks.map((item) => item.id), [1, 100])
+    assert.equal((await addTask(directory, fields)).id, 101)
+  })
+
+  it("refuses an existing lock or pending closure without changing tracker bytes", async () => {
+    const directory = await fixture()
+    const before = await text(directory)
+    const lock = join(directory, "index.json.lock")
+    await writeFile(lock, "another writer")
+    await rejectsWith(addTask(directory, fields), "is locked")
+    assert.equal(await readFile(lock, "utf8"), "another writer")
+    await rm(lock)
+    await writeFile(join(directory, "close-task.pending.json"), "pending")
+    await rejectsWith(addTask(directory, fields), "pending closure")
+    assert.equal(await text(directory), before)
+  })
+
+  it("refuses to exhaust the safe integer id range", async () => {
+    const directory = await fixture()
+    const before = (await text(directory)).replace('"nextTaskId": 100', `"nextTaskId": ${Number.MAX_SAFE_INTEGER}`)
+    await writeFile(join(directory, "index.json"), before)
+    await rejectsWith(addTask(directory, fields), "No safe next task id")
+    assert.equal(await text(directory), before)
+  })
+})
+
 describe("task closure", () => {
   // Simulated failures, as the source tests did by mocking node:fs/promises.
   const failure = { target: "", changeActive: false, removeIntent: false }
@@ -694,6 +894,9 @@ describe("command-line arguments", () => {
     [["list", "--ready=yes"], "option '--ready' does not take a value"],
     [["show"], "missing required argument 'id'"],
     [["show", "1", "2"], "too many arguments for 'show'"],
+    [["add"], "required option '--title' not specified"],
+    [["add", "--title", "New"], "required option '--priority' not specified"],
+    [["add", "--title", "New", "--priority", "low"], "required option '--complexity' not specified"],
     [["status", "1"], "missing required argument 'status'"],
     [["status", "1", "doing", "--bogus"], "unknown option '--bogus'"],
     [["status", "1", "todo", "--reason"], "option '--reason' argument missing"],
@@ -725,7 +928,7 @@ describe("command-line arguments", () => {
   })
 
   it("prints help for the program and each command", () => {
-    for (const args of [["-h"], ["help"], ["help", "close"], ["show", "--help"]]) {
+    for (const args of [["-h"], ["help"], ["help", "close"], ["help", "add"], ["show", "--help"]]) {
       const result = cli(args)
       assert.equal(result.status, 0)
       assert.ok(result.stdout.startsWith("Usage: tasks"))

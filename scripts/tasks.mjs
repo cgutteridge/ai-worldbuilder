@@ -9,6 +9,7 @@
 // Usage: node tasks.mjs [--tracker-dir DIR] <command>
 //   list --ready
 //   show <id>
+//   add --title T --priority low|medium|high --complexity s|m|l --notes TEXT
 //   status <id> <todo|doing> [--reason TEXT]
 //   close <id> --sha FULL_COMMIT_SHA --note TEXT
 // Default tracker directory: tasks/ under the git root of the current
@@ -313,6 +314,53 @@ export async function showTask(directory, id) {
   const done = completed.tasks.find((item) => item.id === id)
   if (!done) throw new TaskError(`Task ${id} was not found.`, 3)
   return done
+}
+
+/** Append an ordinary todo task, preserving all existing tracker bytes. */
+export async function addTask(directory, { title, priority, complexity, blockedBy = [], notes }) {
+  const snapshot = await readTrackerFile(directory, "index.json")
+  const nextId = snapshot.root.properties.get("nextTaskId")
+  const id = JSON.parse(snapshot.text.slice(nextId.start, nextId.end))
+  const task = { id, title, status: "todo", priority, complexity, blockedBy, notes }
+  if (
+    !isValidTask(task) ||
+    typeof notes !== "string" ||
+    !["low", "medium", "high"].includes(priority) ||
+    !["s", "m", "l"].includes(complexity)
+  )
+    throw new TaskError(
+      "Add requires a nonempty title, priority low|medium|high, complexity s|m|l, notes and positive blocker ids.",
+      2,
+    )
+  if (!isId(id + 1)) throw new TaskError("No safe next task id remains.")
+  const completed = await readTrackerFile(directory, "done.json")
+  const activeIds = new Set(snapshot.tasks.map((item) => item.id))
+  const known = new Set(activeIds)
+  for (const item of completed.tasks) {
+    if (known.has(item.id))
+      throw new TaskError("Task id occurs in both tracker files.")
+    if (item.id >= id)
+      throw new TaskError("nextTaskId must exceed completed task ids.")
+    known.add(item.id)
+  }
+  for (const blocker of blockedBy) {
+    if (!known.has(blocker))
+      throw new TaskError(`Unknown blocker id ${blocker}.`, 2)
+  }
+  task.blockedBy = blockedBy.filter((blocker) => activeIds.has(blocker))
+  const array = snapshot.root.properties.get("tasks")
+  const last = array.items.at(-1)
+  const position = last ? last.end : array.start + 1
+  const formatted = JSON.stringify(task, null, 2).replace(/^/gm, "    ")
+  const text = editSpans(snapshot.text, [
+    { span: nextId, text: String(id + 1) },
+    {
+      span: { start: position, end: position },
+      text: `${last ? "," : ""}\n${formatted}${last ? "" : "\n  "}`,
+    },
+  ])
+  await replaceTrackerFile(snapshot, text)
+  return task
 }
 
 export async function setTaskStatus(directory, id, status, reason) {
@@ -652,6 +700,15 @@ const commands = {
     values: [],
     required: [],
   },
+  add: {
+    usage:
+      "add --title T --priority low|medium|high --complexity s|m|l [--blocked-by ID,...] (--notes TEXT | --notes-file PATH)",
+    summary: "Append a todo task and print its allocated id (orchestrator on main only).",
+    positional: [],
+    flags: [],
+    values: ["--title", "--priority", "--complexity", "--blocked-by", "--notes", "--notes-file"],
+    required: ["--title", "--priority", "--complexity"],
+  },
   status: {
     usage: "status <id> <todo|doing> [--reason TEXT]",
     summary:
@@ -761,6 +818,11 @@ export function parseArguments(argv) {
   for (const option of command.required)
     if (options[option] === undefined)
       throw new UsageError(`required option '${option}' not specified`)
+  if (
+    name === "add" &&
+    (options["--notes"] !== undefined) === (options["--notes-file"] !== undefined)
+  )
+    throw new UsageError("specify exactly one of '--notes' or '--notes-file'")
   return {
     help: false,
     command: name,
@@ -784,6 +846,26 @@ async function run(request) {
     console.log(
       JSON.stringify(await showTask(directory, parseTaskId(id)), null, 2),
     )
+  } else if (request.command === "add") {
+    const options = request.options
+    let notes = options["--notes"]
+    if (options["--notes-file"] !== undefined) {
+      try {
+        notes = await fs.readFile(options["--notes-file"], "utf8")
+      } catch {
+        throw new TaskError("Could not read notes file.")
+      }
+    }
+    const task = await addTask(directory, {
+      title: options["--title"],
+      priority: options["--priority"],
+      complexity: options["--complexity"],
+      blockedBy: options["--blocked-by"] === undefined
+        ? []
+        : options["--blocked-by"].split(",").map(parseTaskId),
+      notes,
+    })
+    console.log(task.id)
   } else if (request.command === "status") {
     if (status !== "todo" && status !== "doing")
       throw new TaskError("Status must be todo or doing.", 2)
