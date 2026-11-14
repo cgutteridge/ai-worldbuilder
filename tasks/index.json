@@ -76,7 +76,7 @@
     {
       "id": 248,
       "title": "Record which builder and spec produced each landed house plan so stale or wrong-builder plans can be found and reapplied",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -173,7 +173,7 @@
     {
       "id": 264,
       "title": "Reuse validated source preparation between redo preview and live planning",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
