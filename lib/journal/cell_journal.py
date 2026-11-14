@@ -76,6 +76,7 @@ JOURNAL_SCHEMA = 2
 SAMPLE = 10
 # Large ghost plans must not multiply retained memory across cells.
 MAX_CACHED_BLOB_BLOCKS = 262144
+MAX_CACHED_OWNER_QUERIES = 12          # (cell, exclude, skip) ownership projections kept (LRU)
 
 
 # --- errors (all loud; nothing is swallowed) -----------------------------------------------------
@@ -634,7 +635,7 @@ class CellRegistry:
     def _touch(self) -> None:
         """Drop derived caches after the folded state changed."""
         self._derived: dict[Cell, CellView] = {}
-        self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
+        self._owner_cache: OrderedDict[tuple, dict[Pos, _Owner]] = OrderedDict()
         self._note_cache: dict | None = None
         self._planning_revision: str | None = None
 
@@ -870,9 +871,11 @@ class CellRegistry:
     # ---- ownership projection (private, rebuilt from the journal) --------------------------
     def _cell_owners(self, cell: Cell, *, exclude: frozenset[str] = frozenset(),
                      skip: frozenset[int] = frozenset()) -> dict[Pos, _Owner]:
-        cacheable = not exclude and not skip
-        if cacheable and cell in self._owner_cache:
-            return self._owner_cache[cell]
+        key = (cell, exclude, skip)
+        hit = self._owner_cache.get(key)
+        if hit is not None:
+            self._owner_cache.move_to_end(key)
+            return hit
         owners: dict[Pos, _Owner] = {}
         for seq in self._by_cell.get(cell, ()):
             e = self._entries[seq]
@@ -900,10 +903,11 @@ class CellRegistry:
                     top = tops.get((pos[0], pos[2]))
                     if top is not None and pos[1] > top:
                         del owners[pos]
-        if cacheable:
-            # Ownership is reconstructed independently per cell; retain only the latest.
-            self._owner_cache.clear()
-            self._owner_cache[cell] = owners
+        # Callers treat the result as read-only. Keyed by the full query, bounded LRU, and
+        # dropped wholesale by _touch() whenever the folded journal state changes.
+        self._owner_cache[key] = owners
+        while len(self._owner_cache) > MAX_CACHED_OWNER_QUERIES:
+            self._owner_cache.popitem(last=False)
         return owners
 
     def _owners_in(self, positions: Iterable[Pos], *, exclude: frozenset[str] = frozenset(),
