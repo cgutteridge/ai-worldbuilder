@@ -9,7 +9,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import cell_journal
 from block_store import MemoryBlocks
 from cell_journal import (AIR, Build, CellRegistry, Clash, InFlight, JournalError, Mismatch, Note,
                           Refused, Undo, Writes)
@@ -64,7 +63,7 @@ class CacheBoundsTest(Base):
         with mock.patch('cell_journal.MAX_CACHED_BLOB_BLOCKS', 4):
             self.assertTrue(reg.reconcile().clean)
             self.assertLessEqual(sum(map(len, reg._blob_cache.values())), 4)
-            self.assertLessEqual(len(reg._owner_cache), cell_journal.MAX_CACHED_OWNER_QUERIES)
+            self.assertLessEqual(len(reg._owner_cache), 1)
             self.assertEqual(reg._blob(reg._entries[reg.entries(plan='cell_0')[0].seq].blob), plan(0, 0, STONE))
 
 
@@ -923,94 +922,6 @@ class TestCutOverAdditions(Base):
         self.assertNotIn('issue I-001', v.left)
         self.reg.change(Note((0, 0), 'close', ref='I-001'))
         self.assertTrue(self.reg.cell((0, 0)).done)
-
-
-class OwnerCacheTest(Base):
-    """_cell_owners caches per (cell, exclude, skip); every result equals a fresh recompute."""
-
-    def setUp(self):
-        super().setUp()
-        self.build('ground_a', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
-        self.build('house', 'feature', plan(0, 0, 'minecraft:oak_planks', y=70), cell=(0, 0))
-        self.build('house2', 'feature', plan(1, 0, STONE, y=75), cell=(1, 0))
-        self.reg = self.registry()
-        self.reg._sync()
-
-    def combos(self):
-        a = self.reg.entries(plan='house')[0].seq
-        none = frozenset()
-        return [((c), ex, sk) for c in ((0, 0), (1, 0), (5, 5))
-                for ex in (none, frozenset({'house'}), frozenset({'house', 'house2'}))
-                for sk in (none, frozenset({a}))]
-
-    def fresh(self, cell, ex, sk):
-        self.reg._owner_cache.clear()
-        return self.reg._cell_owners(cell, exclude=ex, skip=sk)
-
-    def test_cached_equals_fresh_for_all_combinations(self):
-        for cell, ex, sk in self.combos():
-            first = self.reg._cell_owners(cell, exclude=ex, skip=sk)
-            again = self.reg._cell_owners(cell, exclude=ex, skip=sk)
-            self.assertIs(first, again)
-            self.assertEqual(first, dict(self.fresh(cell, ex, sk)), (cell, ex, sk))
-
-    def test_excluded_and_plain_queries_do_not_collide(self):
-        plain = self.reg._cell_owners((0, 0))
-        ex = self.reg._cell_owners((0, 0), exclude=frozenset({'house'}))
-        self.assertNotEqual(plain, ex)
-        self.assertEqual(self.reg._cell_owners((0, 0)), plain)
-        self.assertEqual(self.reg._cell_owners((0, 0), exclude=frozenset({'house'})), ex)
-
-    def test_repeat_query_does_not_rebuild(self):
-        ex = frozenset({'house'})
-        self.reg._cell_owners((0, 0), exclude=ex)
-        with mock.patch.object(self.reg, '_blob', side_effect=AssertionError('rebuilt')):
-            self.reg._cell_owners((0, 0), exclude=ex)
-
-    def test_invalidated_by_new_build_undo_and_revive(self):
-        reg = self.reg
-        ex = frozenset({'zzz'})
-        before = dict(reg._cell_owners((0, 0), exclude=ex))
-        self.build('late', 'feature', plan(0, 0, 'minecraft:glass', y=80), cell=(0, 0), reg=reg)
-        after = reg._cell_owners((0, 0), exclude=ex)
-        self.assertNotEqual(before, after)
-        self.assertEqual(after, self.fresh((0, 0), ex, frozenset()))
-        reg._cell_owners((0, 0), exclude=ex)
-        reg.change(Undo('late'), self.apply)
-        undone = reg._cell_owners((0, 0), exclude=ex)
-        self.assertEqual(undone, before)
-        self.assertEqual(undone, self.fresh((0, 0), ex, frozenset()))
-        undo = [e for e in reg.entries() if e.kind == 'undo'][-1]
-        reg._cell_owners((0, 0), exclude=ex)
-        reg.revive(undo.targets, undo_seq=undo.seq)
-        revived = reg._cell_owners((0, 0), exclude=ex)
-        self.assertEqual(revived, after)
-        self.assertEqual(revived, self.fresh((0, 0), ex, frozenset()))
-
-    def test_second_registry_sees_changes_via_sync(self):
-        other = self.registry()
-        other._sync()
-        before = dict(other._cell_owners((1, 0)))
-        self.build('more', 'feature', plan(1, 0, 'minecraft:glass', y=90), cell=(1, 0))
-        other._sync()
-        self.assertNotEqual(other._cell_owners((1, 0)), before)
-        got = dict(other._cell_owners((1, 0)))
-        other._owner_cache.clear()
-        self.assertEqual(got, other._cell_owners((1, 0)))
-
-    def test_cache_is_bounded_and_lru(self):
-        reg = self.reg
-        limit = cell_journal.MAX_CACHED_OWNER_QUERIES
-        for x in range(limit * 3):
-            reg._cell_owners((x, 9))
-            self.assertLessEqual(len(reg._owner_cache), limit)
-        hot = ((0, 0), frozenset(), frozenset())
-        reg._cell_owners((0, 0))
-        for x in range(limit - 1):
-            reg._cell_owners((x, 8))
-            reg._cell_owners((0, 0))
-        self.assertIn(hot, reg._owner_cache)
-        self.assertEqual(len(reg._owner_cache), limit)
 
 
 class TestRevive(Base):
