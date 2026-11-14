@@ -145,3 +145,13 @@ def mc_heights(*args: Any, **kwargs: Any):
     @returns: height dict from the provider helper
     """
     return load_lidar_module('tiles').mc_heights(*args, **kwargs)
+
+
+def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
+    """Sample cached provider heights for an inclusive Minecraft block box.
+
+    @returns: ``mc_heights`` dict (ground_y, feature/diff, dtm, dsm, top_y)
+    """
+    client = tile_client(download=False)
+    client.ensure(*mc_box_en(x0, z0, x1, z1))
+    return mc_heights(client, x0, z0, x1, z1)

@@ -78,6 +78,17 @@ class LiveCatalogue(unittest.TestCase):
 class LoadEntries(unittest.TestCase):
     """Entry modules load from the catalogue package path."""
 
+    def test_default_heights_ensures_cached_provider_tiles_before_sampling(self):
+        client = mock.Mock()
+        with mock.patch.object(lp, 'tile_client', return_value=client) as make, \
+             mock.patch.object(lp, 'mc_box_en', return_value=(1, 2, 3, 4)) as box, \
+             mock.patch.object(lp, 'mc_heights', return_value={'ground_y': 5}) as sample:
+            self.assertEqual(lp.default_heights(10, 20, 30, 40), {'ground_y': 5})
+        make.assert_called_once_with(download=False)
+        box.assert_called_once_with(10, 20, 30, 40)
+        client.ensure.assert_called_once_with(1, 2, 3, 4)
+        sample.assert_called_once_with(client, 10, 20, 30, 40)
+
     def test_composite_world_factory_uses_loaded_world_class(self):
         class FakeWorld:
             pass

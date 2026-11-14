@@ -72,6 +72,17 @@ class PlanFromMockHeights(unittest.TestCase):
         cellmath.CELL = self._cell
         lg.cellmath.CELL = self._cell
 
+    def test_default_sampler_uses_type_facing_provider(self):
+        import lidar_provider
+        heights = _flat_heights(5, 3, *cellmath.bounds((0, 0)))
+        with mock.patch.object(lidar_provider, 'tile_client') as client, \
+             mock.patch.object(lidar_provider, 'mc_box_en', return_value=(1, 2, 3, 4)), \
+             mock.patch.object(lidar_provider, 'mc_heights', return_value=heights):
+            plan = lg.plan_ghost_ground((0, 0))
+        client.assert_called_once_with(download=False)
+        client.return_value.ensure.assert_called_once_with(1, 2, 3, 4)
+        self.assertEqual(plan.cells[(0, 5, 0)], 'minecraft:black_concrete')
+
     def test_ground_fills_under_surface(self):
         cell = (0, 0)
         h = _flat_heights(5, 0, *cellmath.bounds(cell))
