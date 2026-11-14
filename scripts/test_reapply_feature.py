@@ -103,6 +103,134 @@ class TestReapply(unittest.TestCase):
                 self.assertIn('No undo attempted', err.getvalue())
 
 
+class TestRecordedBuilder(unittest.TestCase):
+    def spec(self, root, builder_name):
+        spec = {'name': 'demo', 'ways': {'1': 'A'},
+                'roofs': {'A': 'smooth_stone'},
+                'groups': [{'nos': ['A'], 'front': 'N'}],
+                'notes': 'Earlier builder: feature_build' if builder_name == 'house_build'
+                         else 'Earlier builder: house_build'}
+        if builder_name == 'feature_build':
+            spec['storeys'] = {'A': 1}
+            spec['roofs'] = {'A': {'kind': 'flat', 'material': 'smooth_stone'}}
+        path = (root / f'{builder_name}.json').resolve()
+        path.write_text(json.dumps(spec))
+        return path
+
+    def meta(self, path, builder_name):
+        from builder_provenance import provenance
+        with mock.patch('builder_provenance.tool_sha', return_value='1' * 40):
+            return provenance(builder_name, path)
+
+    def test_dry_run_uses_recorded_builder_for_each_spec_schema(self):
+        for builder_name in ('house_build', 'feature_build'):
+            with self.subTest(builder=builder_name), JournalWorld() as jw, \
+                    mock.patch('active_world.world_root', side_effect=lambda: jw.root):
+                path = self.spec(jw.root, builder_name)
+                meta = self.meta(path, builder_name)
+                self.assertEqual(meta['spec_path'], path.name)
+                if builder_name == 'feature_build':
+                    meta['builder'] = {'kind': 'spec', 'path': str(path)}
+                cells = {(1, 60, 1): 'minecraft:stone'}
+                jw.build('demo', 'feature', cells, meta=meta)
+                before = jw.reg.journal_path.read_bytes()
+                with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                        mock.patch.object(reapply_feature.subprocess, 'run') as process:
+                    code = reapply_feature.main(['--world', 'unit-test', 'demo'])
+                self.assertEqual(code, 0)
+                process.assert_called_once_with(
+                    [reapply_feature.sys.executable,
+                     str(reapply_feature.TOOL_ROOT / 'scripts' / f'{builder_name}.py'),
+                     str(path), '--world', 'unit-test'],
+                    cwd=reapply_feature.TOOL_ROOT, check=True)
+                self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+                self.assertEqual(jw.blocks.read_many(cells), cells)
+
+    def test_unrecorded_plan_refuses_despite_a_plausible_spec(self):
+        with JournalWorld() as jw:
+            path = self.spec(jw.root, 'house_build')
+            jw.build('demo', 'feature', {(1, 60, 1): 'minecraft:stone'},
+                     meta={'spec_path': str(path)})
+            before = jw.reg.journal_path.read_bytes()
+            err = io.StringIO()
+            with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                    mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                    redirect_stderr(err):
+                code = reapply_feature.main(['--world', 'unit-test', 'demo'])
+            self.assertEqual(code, 1)
+            process.assert_not_called()
+            self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+            self.assertIn('unrecorded', err.getvalue())
+            self.assertIn('builder_audit.py --world', err.getvalue())
+            self.assertIn('No undo attempted', err.getvalue())
+
+    def test_unavailable_recorded_builder_refuses_without_fallback(self):
+        for missing in ('name', 'launcher'):
+            with self.subTest(missing=missing), JournalWorld() as jw:
+                path = self.spec(jw.root, 'feature_build')
+                builder_name = 'retired_builder' if missing == 'name' else 'feature_build'
+                meta = self.meta(path, builder_name)
+                meta['builder'] = {'kind': 'spec', 'path': str(path)}
+                jw.build('demo', 'feature', {(1, 60, 1): 'minecraft:stone'}, meta=meta)
+                before = jw.reg.journal_path.read_bytes()
+                err = io.StringIO()
+                tool_root = reapply_feature.TOOL_ROOT if missing == 'name' else jw.root / 'missing-tool'
+                with mock.patch.object(reapply_feature, 'TOOL_ROOT', tool_root), \
+                        mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                        mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                        redirect_stderr(err):
+                    code = reapply_feature.main(['--world', 'unit-test', 'demo'])
+                self.assertEqual(code, 1)
+                process.assert_not_called()
+                self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+                self.assertIn('recorded builder', err.getvalue())
+                self.assertIn(builder_name, err.getvalue())
+                self.assertIn('No undo attempted', err.getvalue())
+
+    def test_latest_landed_builder_wins(self):
+        with JournalWorld() as jw:
+            for builder_name in ('house_build', 'feature_build'):
+                path = self.spec(jw.root, builder_name)
+                jw.build('demo', 'feature', {(1, 60, 1): 'minecraft:stone'},
+                         meta=self.meta(path, builder_name))
+            cmd = reapply_feature.prepare('demo', registry=jw.reg)
+            self.assertEqual(cmd, [reapply_feature.sys.executable,
+                                   str(reapply_feature.TOOL_ROOT / 'scripts/feature_build.py'),
+                                   str(path)])
+
+    def test_latest_unrecorded_plan_does_not_reuse_an_older_builder(self):
+        with JournalWorld() as jw:
+            path = self.spec(jw.root, 'house_build')
+            cells = {(1, 60, 1): 'minecraft:stone'}
+            jw.build('demo', 'feature', cells, meta=self.meta(path, 'house_build'))
+            jw.build('demo', 'feature', cells)
+            with self.assertRaisesRegex(SystemExit, 'no replayable recorded builder'):
+                reapply_feature.prepare('demo', registry=jw.reg)
+
+    def test_recorded_house_builder_validates_spec_before_execution(self):
+        for invalid in ('json', 'identity', 'schema'):
+            with self.subTest(invalid=invalid), JournalWorld() as jw:
+                path = self.spec(jw.root, 'house_build')
+                jw.build('demo', 'feature', {(1, 60, 1): 'minecraft:stone'},
+                         meta=self.meta(path, 'house_build'))
+                if invalid == 'json':
+                    path.write_text('{bad json')
+                else:
+                    spec = json.loads(path.read_text())
+                    spec.update({'name': 'other'} if invalid == 'identity' else {'storeys': {'A': 1}})
+                    path.write_text(json.dumps(spec))
+                before = jw.reg.journal_path.read_bytes()
+                err = io.StringIO()
+                with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                        mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                        redirect_stderr(err):
+                    code = reapply_feature.main(['--world', 'unit-test', 'demo'])
+                self.assertEqual(code, 1)
+                process.assert_not_called()
+                self.assertEqual(jw.reg.journal_path.read_bytes(), before)
+                self.assertIn('No undo attempted', err.getvalue())
+
+
 class TestReapplyOutcome(unittest.TestCase):
     """Command exit/output reflects the actual new journal outcome, not exit 0."""
 
