@@ -503,9 +503,8 @@ def mismatch_next_step(item, fix: bool) -> str:
     if not fix:
         return (f'clear with: reconcile {cell_id(*item.cell)} --fix (the entry also touches cell(s) {cells}; '
                 'name them all if positions differ there)')
-    reapply = (f'python3 scripts/reapply_feature.py --world <world> {plan} --apply' if item.layer == 'feature'
-               else f'python3 scripts/redo_layer.py --world <world> --cell {cell_id(*item.cell)} '
-                    f'--layers {item.layer} --apply')
+    from cell_readiness import reapply_command
+    reapply = reapply_command(plan, item.layer, item.owner or item.cell)
     return (f'still mismatched after repair ({item.count} position(s) differ now; cells {cells}). Next: '
             f'reconcile the other cell(s) above if they drifted, or re-apply the plan past its own mismatch: {reapply}')
 

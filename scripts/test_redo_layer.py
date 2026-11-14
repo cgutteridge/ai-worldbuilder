@@ -227,10 +227,21 @@ class TestAdditionalRedoChecks(unittest.TestCase):
                     mock.patch('readiness_evidence.policy_for', return_value=policy):
                 with self.assertRaisesRegex(ValueError, r'mismatched apply west \[clear: .*reconcile 0,0 --fix'):
                     backend.preflight((0, 0), ['trees'], [], True)
-                try:
+                with self.assertRaises(ValueError) as caught:
                     backend.preflight((0, 0), ['trees'], [], True)
-                except ValueError as exc:
-                    self.assertNotIn('mismatched apply seed_trees', str(exc))      # its own mismatch is passed
+                self.assertNotIn('mismatched apply seed_trees', str(caught.exception))   # its own mismatch is passed
+
+    def test_each_layer_apply_may_pass_its_own_mismatch(self):
+        import importlib
+        import os
+        from unittest import mock
+        for layer in ('ground', 'trees', 'decor'):
+            module = importlib.import_module(f'{layer}_layer')
+            with mock.patch.dict(os.environ, {'SITE_OWNER': 'test'}), \
+                    mock.patch('readiness_evidence.require_ready', side_effect=SystemExit('stop')) as ready:
+                with self.assertRaises(SystemExit):
+                    module.apply_cell((3, -4))
+            self.assertEqual(ready.call_args.kwargs['redoing'], (module.plan_name(3, -4),), layer)
 
     def test_undo_mask_drift_is_preflight_failure_before_any_mutation(self):
         from types import SimpleNamespace

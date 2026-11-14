@@ -740,9 +740,9 @@ def apply_cell(cell: tuple[int, int]) -> int:
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
     from readiness_evidence import require_ready
-    require_ready([cell], 'trees')
     tx, tz = cell
     name = plan_name(tx, tz)
+    require_ready([cell], 'trees', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name)
     world = World()
     with timed_stage('layer planning (includes surface warm-up)'):

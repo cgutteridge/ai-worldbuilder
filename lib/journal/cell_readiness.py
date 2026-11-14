@@ -16,7 +16,19 @@ POLICY_VERSION = 1
 CLI = 'python3 scripts/cell_registry.py --world <world>'
 
 
-def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None):
+def reapply_command(plan, layer, cell):
+    """The command that re-applies ``plan`` (a ``layer`` entry whose own cell is ``cell``).
+
+    @returns: reapply_feature for a feature, redo_layer for ground/trees/decor, else undo and rebuild
+    """
+    if layer == 'feature':
+        return f'python3 scripts/reapply_feature.py --world <world> {plan} --apply'
+    if layer in ('ground', 'trees', 'decor'):
+        return f'python3 scripts/redo_layer.py --world <world> --cell {cell[0]},{cell[1]} --layers {layer} --apply'
+    return f'python3 scripts/element_undo.py --world <world> {plan} --apply, then rebuild it'
+
+
+def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_cell=None):
     """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
 
     Every blocker ``ReadinessPolicy.check`` raises is answered here, so a refusal never
@@ -27,18 +39,18 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None):
     @param plan: owning plan, for a mismatched apply
     @param layer: journal pass of that plan (feature, ground, trees, decor)
     @param ref: note ref, for a coverage warning
+    @param owner_cell: the mismatched entry's own cell (a neighbour's entry may touch ``cell``)
     @returns: command text
     """
     c = f'{cell[0]},{cell[1]}'
     if blocker.startswith('recovery: mismatched apply'):
-        reapply = (f'python3 scripts/reapply_feature.py --world <world> {plan} --apply' if layer == 'feature'
-                   else f'python3 scripts/redo_layer.py --world <world> --cell {c} --layers {layer} --apply')
         return (f'{CLI} reconcile {c} --fix (re-asserts the journal blocks and lands the entry); '
-                f'if it reports still mismatched, {reapply} (a redo is allowed past its own mismatch)')
+                f'if it reports still mismatched, {reapply_command(plan, layer, owner_cell or cell)} '
+                '(a redo is allowed past its own mismatch)')
     if blocker == 'recovery: unfinished apply':
         return f'python3 scripts/site_recover.py --world <world> recover {c} --apply'
     if blocker.startswith('hold:'):
-        return f'{CLI} hold clear {c}'
+        return f'{CLI} hold clear {c} (only once the owner who set the hold agrees)'
     if blocker.startswith('coverage warning '):
         return f'{CLI} dismiss-coverage {c} --warning-id {ref} --reason "<why>"'
     if blocker.startswith(('map query coverage', 'map coverage dismissal stale')):
@@ -50,7 +62,7 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None):
     if blocker.startswith(('aerial coverage', 'lidar cache')):
         return 'owner supplies local data (state source, filename and size; authorization first), then prepare'
     if blocker == 'generated ground required':
-        return f'python3 scripts/redo_layer.py --world <world> --cell {c} --layers ground --apply'
+        return f'python3 scripts/ground_layer.py --world <world> --cell {c} --apply'
     if blocker.startswith('planned features must land'):
         return f'{CLI} next (builds the planned features of the cell)'
     return f'{CLI} check --cell {c} (read the blocker; none of the known commands applies)'
@@ -176,7 +188,8 @@ class ReadinessPolicy:
         for b in blockers:
             e = by_plan.get(b.removeprefix('recovery: mismatched apply '))
             clear_with[b] = clearing_command(cell, b, plan=e.plan if e else None,
-                                             layer=e.pass_ if e else None, ref=refs.get(b))
+                                             layer=e.pass_ if e else None, ref=refs.get(b),
+                                             owner_cell=e.cell if e else None)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision(),

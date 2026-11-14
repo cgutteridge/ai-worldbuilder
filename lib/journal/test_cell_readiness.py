@@ -728,3 +728,25 @@ class MismatchedApplyTest(unittest.TestCase):
         self.assertIn('still mismatched after repair', out)
         self.assertIn('reapply_feature.py --world <world> house --apply', out)
         self.assertIn('recovery: mismatched apply house', self.check()['blockers'])
+
+    def test_neighbour_entry_names_its_own_cell_for_the_redo(self):
+        from cell_registry import format_drift
+        self.world.seed((0, 0), ground=True)
+        receipt = self.world.reg.change(Build('canopy', 'trees', {(127, 65, 5): 'minecraft:oak_leaves',
+                                                                  (128, 65, 5): 'minecraft:oak_leaves'},
+                                              cell=(0, 0)), lambda w: None)
+        self.assertEqual(receipt.status, 'mismatched')
+        report = self.policy.check((1, 0), require_validation=False)
+        command = report['clear_with']['recovery: mismatched apply canopy']
+        self.assertIn('redo_layer.py --world <world> --cell 0,0 --layers trees', command)
+        drift = self.world.reg.reconcile([(1, 0)], fix=True, apply=lambda w: None)
+        item = drift.by_kind('mismatched')[0]
+        self.assertEqual((item.owner, item.cells), ((0, 0), ((0, 0), (1, 0))))
+        self.assertIn('--cell 0,0 --layers trees', format_drift(drift, fix=True))
+
+    def test_dry_run_skips_a_superseded_mismatch(self):
+        self.mismatch()
+        self.world.reg.change(Build('patch', 'feature', self.HOUSE, modifies=('house',), cell=(0, 0)),
+                              self.world.apply)
+        self.assertEqual(self.world.reg.reconcile().by_kind('mismatched'), ())
+

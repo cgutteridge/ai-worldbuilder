@@ -342,6 +342,7 @@ class DriftItem:
     @param fixed: re-committed or resolved by ``fix=True``
     @param cells: every cell of the entry (``mismatched`` only: repair needs all of them in scope)
     @param layer: journal pass of the entry (``mismatched`` only: names the re-apply command)
+    @param owner: the entry's own cell (``mismatched`` only: a redo runs there)
     """
 
     cell: Cell
@@ -353,6 +354,7 @@ class DriftItem:
     fixed: bool = False
     cells: tuple[Cell, ...] = ()
     layer: str = ''
+    owner: Cell | None = None
 
 
 @dataclass(frozen=True)
@@ -1765,17 +1767,25 @@ class CellRegistry:
         return cleared
 
     def _mismatched_items(self, scope: set[Cell] | None) -> list[DriftItem]:
-        """One finding per live mismatched entry, with the owned positions that still differ."""
+        """One finding per mismatched entry that blocks preflight: the latest live build of its plan
+        that still owns a position (a wholly superseded one blocks nothing, #284)."""
+        latest: dict[str, int] = {}
+        for seq, e in self._entries.items():
+            if e.kind == 'build' and not e.undone:
+                latest[e.plan] = max(seq, latest.get(e.plan, 0))
         out = []
         for seq, e in self._entries.items():
-            if e.kind != 'build' or e.status != 'mismatched' or e.undone:
+            if e.kind != 'build' or e.status != 'mismatched' or e.undone or latest.get(e.plan) != seq:
                 continue
             if scope is not None and not set(e.cells) & scope:
                 continue
-            bad = self._bad(self._mismatch_mine(seq, e))
+            mine = self._mismatch_mine(seq, e)
+            if not mine:
+                continue
+            bad = self._bad(mine)
             sample = {f'{x},{y},{z}': v for (x, y, z), v in list(bad.items())[:5]}
-            out.append(DriftItem(min(e.cells) if e.cells else e.cell, 'mismatched', seq, len(bad), sample,
-                                 (e.plan,), False, tuple(sorted(e.cells)), e.pass_))
+            out.append(DriftItem(e.cell or min(e.cells), 'mismatched', seq, len(bad), sample,
+                                 (e.plan,), False, tuple(sorted(e.cells)), e.pass_, e.cell))
         return out
 
     # ---- housekeeping ----------------------------------------------------------------------
