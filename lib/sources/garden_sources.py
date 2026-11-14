@@ -1077,6 +1077,30 @@ def _closer_facing(c, run_dir: str, cells, closers) -> str:
     return {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}[side]
 
 
+def _joining_chain(it, other, q, p, chains):
+    """The chain (of ``chains`` for the jog ``q`` to ``p``) whose boards join both pieces, or None.
+
+    Shelf boards lie on the edge opposite the facing, so the piece further back (against the facing)
+    has its board a row or more behind the other one. A closer chain reaching that piece's row, in the
+    column next to the other piece, ties the two board lines together. ``chains`` is the pair from
+    ``join_front_diagonals``: the first ends in ``q``'s row at ``p``'s column, the second in ``p``'s
+    row at ``q``'s column.
+    """
+    face = next((f for k, f in (it.get('facing') or {}).items() if k not in
+                 {f'{x},{z}' for x, z in map(tuple, it.get('closers', ()))}), None)
+    if face is None:
+        return None
+    d = DIRS[face]
+    ax = 0 if d[0] else 1                                         # the facing axis: the jog is measured along it
+    if p[ax] == q[ax]:
+        return None                                               # no step along the facing: no preference
+    q_back = q[ax] * d[ax] < p[ax] * d[ax]                        # q lies further back than p
+    return chains[0] if q_back else chains[1]
+
+
+JOIN_MAX_JOG = 4   # tallest row jump between two plots' fronts that gets a closer chain (#277)
+
+
 def join_front_diagonals(items: list, keep_clear, owner: dict, street, footprint) -> int:
     """Close corner-only joins between the front boundaries of two plots (#275).
 
@@ -1086,6 +1110,11 @@ def join_front_diagonals(items: list, keep_clear, owner: dict, street, footprint
     orthogonal bridge column is covered, one bridge column is added: the one owned by one of the two
     plots (not street, house or reserved opening), else the first free one. A plank fence takes it
     as a cross shelf closer. Observed (map) items are never changed.
+
+    A jog of two or more rows (#277; up to ``JOIN_MAX_JOG``) between two plots' pieces that end facing
+    each other gets one closer chain instead: a column of cross shelves reaching the row of the piece
+    further back, sharing one facing, so the board edges join. Straightened runs (``panel_runs``) leave
+    such jogs between plots, never inside one.
 
     @returns: number of bridge columns added
     """
@@ -1097,39 +1126,59 @@ def join_front_diagonals(items: list, keep_clear, owner: dict, street, footprint
             cover[tuple(q)] = it
     blocked = set(keep_clear) | set(footprint)
     added = 0
+    pairs = [(1, s * k) for k in range(1, JOIN_MAX_JOG + 1) for s in (1, -1)]
+    pairs += [(s * k, 1) for k in range(2, JOIN_MAX_JOG + 1) for s in (1, -1)]    # the same jogs along the other axis
     for it in front:
-        for q in sorted(tuple(c) for c in it['cells']):
-            for a, b in ((1, 1), (1, -1)):
+        mine_cells = {tuple(c) for c in it['cells']}
+        for q in sorted(mine_cells):
+            for a, b in pairs:
                 p = (q[0] + a, q[1] + b)
                 other = cover.get(p)
                 if other is None or other is it or other.get('scope') == it.get('scope'):
                     continue
                 if other['provenance']['source'] == 'vector_map':
                     continue                                     # observed boundaries are never edited
-                bridges = [(q[0] + a, q[1]), (q[0], q[1] + b)]
-                if any(c in cover for c in bridges):
+                k = max(abs(a), abs(b))
+                if k > 1:                                        # a taller jog: both pieces must end here, facing each other
+                    ax = 0 if abs(a) == 1 else 1                 # the axis the pieces run along
+                    step = a if abs(a) == 1 else b
+                    their = {tuple(c) for c in other['cells']}
+                    if any(c[ax] == q[ax] + step and abs(c[1 - ax] - q[1 - ax]) <= k + 1 for c in mine_cells):
+                        continue
+                    if any(c[ax] == p[ax] - step and abs(c[1 - ax] - p[1 - ax]) <= k + 1 for c in their):
+                        continue
+                if abs(a) == 1:                                  # q's column down to p's row, or p's column back to q's row
+                    s_ = 1 if b > 0 else -1
+                    chains = [[(p[0], p[1] - s_ * i) for i in range(1, k + 1)], [(q[0], q[1] + s_ * i) for i in range(1, k + 1)]]
+                else:
+                    s_ = 1 if a > 0 else -1
+                    chains = [[(p[0] - s_ * i, p[1]) for i in range(1, k + 1)], [(q[0] + s_ * i, q[1]) for i in range(1, k + 1)]]
+                if any(c in cover for ch in chains for c in ch):
                     continue
-                free = [c for c in bridges if c not in blocked and c not in street]
+                free = [ch for ch in chains if not any(c in blocked or c in street for c in ch)]
                 if not free:
                     continue
                 mine = {_plot(it), _plot(other)} - {None}
-                own = [c for c in free if owner.get(c) is not None and owner.get(c) in mine]
-                c = (own or free)[0]
-                target = other if own and owner.get(c) == _plot(other) != _plot(it) else it
-                target['cells'].append([c[0], c[1]])
-                cover[c] = target
-                added += 1
+                own = [ch for ch in free if all(owner.get(c) is not None and owner.get(c) in mine for c in ch)]
+                joined = _joining_chain(it, other, q, p, chains) if it['kind'] == other['kind'] == 'plank_fence' else None
+                chain = joined if joined in free else (own or free)[0]
+                target = other if own and owner.get(chain[0]) == _plot(other) != _plot(it) else it
+                for c in chain:
+                    target['cells'].append([c[0], c[1]])
+                    cover[c] = target
+                    added += 1
                 if target['kind'] == 'plank_fence':
-                    near = [(k, v) for k, v in (target.get('facing') or {}).items()
-                            if k not in {f'{x},{z}' for x, z in map(tuple, target.get('closers', ()))}]
+                    near = [(k_, v) for k_, v in (target.get('facing') or {}).items()
+                            if k_ not in {f'{x},{z}' for x, z in map(tuple, target.get('closers', ()))}]
                     run_dir = near[0][1] if near else 'south'
                     cells = {tuple(x) for x in target['cells']}
-                    closers = {tuple(x) for x in target.get('closers', ())} | {c}
-                    f = _closer_facing(c, run_dir, cells, closers)
+                    closers = {tuple(x) for x in target.get('closers', ())} | set(chain)
+                    f = _closer_facing(chain[-1], run_dir, cells, closers)   # a jog of several rows shares one board edge
                     target['closers'] = [list(x) for x in sorted(closers)]
-                    target['facing'][f'{c[0]},{c[1]}'] = f
-                    target.setdefault('facing_basis', {})[f'{c[0]},{c[1]}'] = (
-                        'closing piece at a corner join between two plots: cross shelf facing ' + f)
+                    for c in chain:
+                        target['facing'][f'{c[0]},{c[1]}'] = f
+                        target.setdefault('facing_basis', {})[f'{c[0]},{c[1]}'] = (
+                            'closing piece at a corner join between two plots: cross shelf facing ' + f)
     return added
 
 

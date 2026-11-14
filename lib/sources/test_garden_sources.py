@@ -483,6 +483,96 @@ class TestFrontCornerJoin(unittest.TestCase):
         self.assertEqual(b['cells'], [[1, 1]])
 
 
+class TestFrontJogClosers(unittest.TestCase):
+    """At a real jog of any height between two plots' plank fronts there is one closer chain (#277)."""
+
+    @staticmethod
+    def _plank(plot, cells):
+        return {'id': f'garden-{plot}-front', 'boundary_role': 'front', 'kind': 'plank_fence',
+                'cells': [list(q) for q in cells], 'scope': {'property': str(plot)},
+                'provenance': {'source': 'inference'}, 'closers': [],
+                'facing': {f'{x},{z}': 'north' for x, z in cells}}
+
+    def _pair(self, height, length=4, flip=False):
+        """Plot 1 holds row 0 up to x=length-1; plot 2 starts at x=length, ``height`` rows lower."""
+        a = self._plank(1, [(x, 0) for x in range(length)])
+        b = self._plank(2, [(x, height) for x in range(length, 2 * length)])
+        owner = {(x, z): 1 for x in range(2 * length) for z in range(0, height + 3)}
+        gs.join_front_diagonals([a, b], set(), owner, set(), set())
+        return a, b
+
+    @staticmethod
+    def _run(a, b):
+        return {'facing': {**a['facing'], **b['facing']}}
+
+    def test_one_closer_chain_per_jog_of_any_height(self):
+        for h in (1, 2, 3):
+            a, b = self._pair(h)
+            closers = {tuple(c) for it in (a, b) for c in it['closers']}
+            self.assertEqual(len(closers), h, h)                       # one board edge, h rows tall
+            self.assertEqual(len({x for x, _ in closers}), 1, h)       # a single column: one chain
+            zs = sorted(z for _, z in closers)
+            self.assertEqual(zs, list(range(zs[0], zs[0] + h)), h)     # contiguous
+            self.assertEqual(len({a['facing'][f'{x},{z}'] if f'{x},{z}' in a['facing'] else b['facing'][f'{x},{z}']
+                                  for x, z in closers}), 1, h)         # shared facing
+            self.assertTrue(gs.boards_joined(self._run(a, b)), h)
+
+    def test_flat_neighbours_get_no_sideways_piece(self):
+        a = self._plank(1, [(x, 0) for x in range(4)])
+        b = self._plank(2, [(x, 0) for x in range(4, 8)])
+        self.assertEqual(gs.join_front_diagonals([a, b], set(), {}, set(), set()), 0)
+        self.assertEqual(a['closers'] + b['closers'], [])
+
+    def test_opening_between_the_pieces_stays_open(self):
+        a = self._plank(1, [(x, 0) for x in range(4)])
+        b = self._plank(2, [(x, 3) for x in range(4, 8)])
+        gs.join_front_diagonals([a, b], {(3, 2)}, {}, set(), set())      # one chain column is reserved
+        self.assertNotIn([3, 2], a['cells'] + b['cells'])
+
+    def test_fuzz_planned_line_is_connected_between_its_ends(self):
+        import random
+        rng = random.Random(277)
+        for _ in range(80):
+            rows, z = [], 5
+            for _ in range(rng.randint(2, 5)):                          # a few plots, each flat, jogs of 0 to 3 rows
+                z += rng.choice((-3, -2, -1, 0, 1, 2, 3))
+                rows.append(z)
+            x, items = 0, []
+            for i, row in enumerate(rows):
+                n = rng.randint(2, 5)
+                items.append(self._plank(i + 1, [(x + k, row) for k in range(n)]))
+                x += n
+            owner = {(xx, zz): 1 for xx in range(x) for zz in range(-2, 16)}
+            gs.join_front_diagonals(items, set(), owner, set(), set())
+            cells = {tuple(c) for it in items for c in it['cells']}
+            left, todo = set(cells), [min(cells)]
+            left.discard(todo[0])
+            while todo:
+                q = todo.pop()
+                for n in ((q[0] + 1, q[1]), (q[0] - 1, q[1]), (q[0], q[1] + 1), (q[0], q[1] - 1)):
+                    if n in left:
+                        left.discard(n)
+                        todo.append(n)
+            self.assertFalse(left, rows)
+            self.assertTrue(gs.boards_joined({'facing': {k: f for it in items for k, f in it['facing'].items()}}), rows)
+
+    def test_straightened_run_joins_at_jogs_of_height_1_2_3(self):
+        for h in (1, 2, 3):
+            n = 10
+            cols = [(x, 5) for x in range(n)] + [(n, 5 + k) for k in range(1, h)] + [(x, 5 + h) for x in range(n, 2 * n)]
+            top = {}
+            for x, z in cols:
+                top[x] = min(top.get(x, z), z)
+            mx = max(top.values()) + 4
+            owner = {(x, z): 1 for x in range(2 * n) for z in range(top[x], mx)}
+            street = {(x, z): True for x in range(2 * n) for z in range(top[x] - 3, top[x])}
+            r = gs.panel_runs(cols, 1, 'front', owner, street, (n, mx + 20))
+            self.assertTrue(gs.boards_joined(r), h)
+            closers = {tuple(c) for c in r['closers']}
+            self.assertLessEqual(len(closers), h, h)
+            self.assertLessEqual(len({x for x, _ in closers}), 1, h)
+
+
 if __name__ == '__main__':
     unittest.main()
 
