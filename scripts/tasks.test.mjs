@@ -460,14 +460,24 @@ describe("task addition", () => {
     assert.deepEqual(await showTask(directory, task.id), task)
   })
 
-  it("recognises active and completed blocker ids and records status todo", async () => {
+  it("recognises completed blockers as resolved and retains active blockers", async () => {
     const directory = await fixture()
     const result = run(directory, ["--notes", "Details", "--blocked-by", "1,9"])
     assert.equal(result.status, 0, result.stderr)
     const task = await showTask(directory, 100)
-    assert.deepEqual(task.blockedBy, [1, 9])
+    assert.deepEqual(task.blockedBy, [1])
     assert.equal(task.status, "todo")
     assert.ok(!(await listReadyTasks(directory)).some((item) => item.id === 100))
+  })
+
+  it("makes tasks with only completed blockers ready and able to start", async () => {
+    const directory = await fixture([])
+    const task = await addTask(directory, { ...fields, blockedBy: [9] })
+    assert.deepEqual(task.blockedBy, [])
+    assert.deepEqual((await showTask(directory, task.id)).blockedBy, [])
+    assert.deepEqual((await listReadyTasks(directory)).map((item) => item.id), [task.id])
+    assert.equal((await setTaskStatus(directory, task.id, "doing")).status, "doing")
+    assert.equal((await showTask(directory, task.id)).status, "doing")
   })
 
   for (const value of ["", "0", "-1", "1.5", "1,,9", "99", "100", "999"]) {

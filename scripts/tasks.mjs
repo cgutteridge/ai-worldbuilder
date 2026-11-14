@@ -334,7 +334,8 @@ export async function addTask(directory, { title, priority, complexity, blockedB
     )
   if (!isId(id + 1)) throw new TaskError("No safe next task id remains.")
   const completed = await readTrackerFile(directory, "done.json")
-  const known = new Set(snapshot.tasks.map((item) => item.id))
+  const activeIds = new Set(snapshot.tasks.map((item) => item.id))
+  const known = new Set(activeIds)
   for (const item of completed.tasks) {
     if (known.has(item.id))
       throw new TaskError("Task id occurs in both tracker files.")
@@ -346,6 +347,7 @@ export async function addTask(directory, { title, priority, complexity, blockedB
     if (!known.has(blocker))
       throw new TaskError(`Unknown blocker id ${blocker}.`, 2)
   }
+  task.blockedBy = blockedBy.filter((blocker) => activeIds.has(blocker))
   const array = snapshot.root.properties.get("tasks")
   const last = array.items.at(-1)
   const position = last ? last.end : array.start + 1
