@@ -198,7 +198,7 @@
     {
         "id": 283,
         "title": "Journal ownership scan: build all neighbour cells in one pass over the journal",
-        "status": "todo",
+        "status": "doing",
         "priority": "medium",
         "complexity": "s",
         "blockedBy": [],
