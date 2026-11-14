@@ -753,6 +753,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
 def _print_plan_notes(stats: dict) -> None:
     """Print counted exclusion reasons; full rows live in the report artifact."""
     from layer_reports import reason_summary
+    dplan.print_unresolved_barriers(stats.get('unresolved_items') or [])
     for key in ('unresolved_items', 'unplaced_items'):
         items = stats.get(key) or []
         reasons = [(i.get('provenance') or {}).get('unresolved_reason', 'unspecified') for i in items]
