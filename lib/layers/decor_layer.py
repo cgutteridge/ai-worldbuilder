@@ -612,33 +612,34 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     from osm_footprints import OSMIndex
     from surface_probe import surface_y
 
-    owned = neighbour_owned(cell, ignored_builds(cell))
-    owned_cols = {(x, z) for x, _y, z in owned}
-    masked = load_masked_positions()
-    idx = OSMIndex()
-    fp = set(idx.cells())
-    near = fp | owned_cols
-    near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
-    vmap = OSMGround(cell)
-    way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
+    with timed_stage('decor source preparation'):
+        owned = neighbour_owned(cell, ignored_builds(cell))
+        owned_cols = {(x, z) for x, _y, z in owned}
+        masked = load_masked_positions()
+        idx = OSMIndex()
+        fp = set(idx.cells())
+        near = fp | owned_cols
+        near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
+        vmap = OSMGround(cell)
+        way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
 
-    from lidar_heightmap import reference_world
+        from lidar_heightmap import reference_world
 
-    lidar_hm = reference_world().heightmap(cell)
-    from ground_sources import cell_box
+        lidar_hm = reference_world().heightmap(cell)
+        from ground_sources import cell_box
 
-    decor = dplan.build_decor_plan(
-        cell,
-        map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
-        map_furniture=list(vmap.furniture),
-        designer_items=sf.designer_items(cell),
-        photo_observations=sf.designer_observations(cell),
-        lidar_hm=lidar_hm,
-        footprint={q for q in fp if cell_contains(cell, *q)},
-        outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cell_box(cell)),
-        lidar_rise=ob.lidar_rise(cell),
-        building_columns=set(fp),
-    )
+        decor = dplan.build_decor_plan(
+            cell,
+            map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
+            map_furniture=list(vmap.furniture),
+            designer_items=sf.designer_items(cell),
+            photo_observations=sf.designer_observations(cell),
+            lidar_hm=lidar_hm,
+            footprint={q for q in fp if cell_contains(cell, *q)},
+            outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cell_box(cell)),
+            lidar_rise=ob.lidar_rise(cell),
+            building_columns=set(fp),
+        )
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):
         world = snapshot_decor_columns(                                      # batch reads (#110)
