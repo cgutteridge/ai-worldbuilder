@@ -29,6 +29,7 @@ from script_env import ROOT  # noqa: E402
 
 from ground_layer import (BLOCK_KIND, PROBE_Y_RANGE, bare, cell_contains, ignored_builds,  # noqa: E402
                           is_air, neighbour_owned, load_masked_positions)
+from block_store import SCAN_VOLUME_CAP  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import decor_plan as dplan  # noqa: E402
@@ -111,14 +112,46 @@ class DecorColumnView:
             warm(positions)
 
 
+def snapshot_groups(cols, per_col: int, cap: int = SCAN_VOLUME_CAP) -> list[list[tuple[int, int]]]:
+    """Pack columns into groups whose bounding box times ``per_col`` fits one MCP scan (#263).
+
+    Columns run chunk-row by chunk-row, west to east, and a group grows until its x/z
+    bounding box would pass ``cap`` blocks. Dense runs share a scan (about three chunks
+    at 90 levels); sparse far-apart columns shrink to separate small boxes, so a group
+    never scans a big empty area.
+
+    @param cols: iterable of ``(x, z)``
+    @param per_col: y levels read per column
+    @param cap: MCP scan volume limit
+    @returns: groups of columns, each one scan and at most ``cap`` positions
+    """
+    groups: list[list[tuple[int, int]]] = []
+    cur: list[tuple[int, int]] = []
+    x0 = x1 = z0 = z1 = 0
+    for x, z in sorted(set(cols), key=lambda c: (c[1] >> 4, c[0], c[1])):
+        if cur:
+            nx0, nx1, nz0, nz1 = min(x0, x), max(x1, x), min(z0, z), max(z1, z)
+            if (nx1 - nx0 + 1) * (nz1 - nz0 + 1) * per_col <= cap:
+                cur.append((x, z))
+                x0, x1, z0, z1 = nx0, nx1, nz0, nz1
+                continue
+            groups.append(cur)
+        cur, x0, x1, z0, z1 = [(x, z)], x, x, z, z
+    if cur:
+        groups.append(cur)
+    return groups
+
+
 def snapshot_decor_columns(world, cols):
-    """Read the blocks decor planning needs once, one 16x16 chunk at a time.
+    """Read the blocks decor planning needs once, in few bounded bulk scans.
 
     One up-front warm of every decor column can exceed the live store's cache cap; the
     store then clears itself on the next cold read and every later read is its own paced
-    section scan (a cell with a long fence hung for an hour). Here each chunk's columns
-    are warmed just before they are copied out, so each section is scanned about once
-    and the live cache never holds more than one chunk.
+    section scan (a cell with a long fence hung for an hour). Here columns are packed
+    into groups that each fill one MCP scan (:func:`snapshot_groups`), warmed just
+    before they are copied out, so each position is scanned once and the live cache never
+    holds more than one group. Per-scan pacing, not volume, dominates (#263: 122 chunk
+    scans took 145 s, of which parsing 10 s), so fewer, fuller scans are faster.
 
     @param world: :class:`World` or any duck; returned unchanged without ``prefetch``
     @param cols: iterable of ``(x, z)``
@@ -127,13 +160,10 @@ def snapshot_decor_columns(world, cols):
     if getattr(world, 'prefetch', None) is None:
         return world
     ylo, yhi = PROBE_Y_RANGE
-    chunks: dict[tuple[int, int], list[tuple[int, int]]] = {}
-    for x, z in sorted(cols):
-        chunks.setdefault((x >> 4, z >> 4), []).append((x, z))
     blocks: dict[tuple[int, int, int], str | None] = {}
-    for key in sorted(chunks):
-        world.prefetch((x, y, z) for x, z in chunks[key] for y in range(ylo, yhi + 1))  # <= 23 040
-        for x, z in chunks[key]:
+    for group in snapshot_groups(cols, yhi - ylo + 1):
+        world.prefetch((x, y, z) for x, z in group for y in range(ylo, yhi + 1))
+        for x, z in group:
             for y in range(ylo, yhi + 1):
                 blocks[(x, y, z)] = world.block(x, y, z)
     return DecorColumnView(world, blocks)
