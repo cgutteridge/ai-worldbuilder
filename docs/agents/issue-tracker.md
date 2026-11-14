@@ -26,6 +26,7 @@ Tasks carry no triage label, only a status. Workers on `task/*` branches never e
 ```sh
 node scripts/tasks.mjs list --ready
 node scripts/tasks.mjs show ID
+node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --notes "Details"  # or --notes-file PATH
 node scripts/tasks.mjs status ID doing
 node scripts/tasks.mjs status ID todo --reason "Short explanation"
 node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
