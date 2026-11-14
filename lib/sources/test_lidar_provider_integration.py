@@ -15,15 +15,22 @@ TILES = '''
 import numpy as np
 crs = 'EPSG:32630'
 class LidarTiles:
+    crs = crs
     def __init__(self, *, download=False):
         assert download is False
         self.ensured = None
+        self.pending = []
     def ensure(self, *box):
         self.ensured = box
         return []
+    def tile_status(self, *box):
+        from pathlib import Path
+        self.status_box = box
+        return self.pending, [Path(__file__)]
 def mc_box_en(x0, z0, x1, z1):
     return (x0, -z1, x1, -z0)
 def mc_heights(client, x0, z0, x1, z1, **kwargs):
+    assert not client.pending, 'readiness must not sample with missing tiles'
     shape = (x1-x0+1, z1-z0+1)
     ground = np.full(shape, 4)
     diff = np.full(shape, 3)
@@ -107,6 +114,38 @@ script_env.bind_world()
         for shim in (TOOL / 'shims').glob('lidar_*.py'):
             for row in catalogue['providers']:
                 self.assertNotIn(row['id'], shim.read_text(), str(shim))
+
+    def test_readiness_uses_opaque_provider_tiles_and_hashes_only_reported_inputs(self):
+        self.run_provider('synthetic-lidar', '''
+            import os
+            import lidar_provider
+            from readiness_evidence import LocalEvidence, file_identity
+            evidence = LocalEvidence(root)
+            missing, identities = evidence.lidar_status((0, 0))
+            assert missing == []
+            client = evidence._lidar_client
+            assert client.status_box == (-2, -3, 3, 2)
+            tile = Path(lidar_provider.load_lidar_module('tiles').__file__)
+            assert identities == [(str(tile), file_identity(tile))]
+            stamp = tile.stat()
+            tile.write_text(tile.read_text() + '\\n# changed input\\n')
+            os.utime(tile, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            evidence.refresh()
+            assert evidence.lidar_status((0, 0))[1] != identities
+            client = evidence._lidar_client
+            client.pending = [{'filename': 'opaque.bin', 'tile': 'DSM arbitrary-id', 'estimated_mb': 2}]
+            assert evidence.lidar_status((0, 0))[0] == client.pending
+            client.pending = []
+            import numpy as np
+            tiles = lidar_provider.load_lidar_module('tiles')
+            tiles.mc_heights = lambda *a, **k: {'dtm': np.array([np.nan]), 'dsm': np.array([1.])}
+            try:
+                evidence.lidar_status((0, 0))
+            except ValueError as exc:
+                assert 'no-data' in str(exc)
+            else:
+                raise AssertionError('readiness accepted no-data')
+        ''')
 
 
 if __name__ == '__main__':

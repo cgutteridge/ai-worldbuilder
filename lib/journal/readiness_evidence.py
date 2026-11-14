@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 import cellmath
 from cell_readiness import ReadinessPolicy, content_id, describe_blockers
@@ -63,26 +62,14 @@ class LocalEvidence:
     def lidar_status(self, cell):
         """Required DTM/DSM sampling-edge tiles, with filenames/costs and content identities."""
         import numpy as np
-        from lidar_provider import load_lidar_module, mc_box_en, mc_heights, tile_client
+        from lidar_provider import mc_box_en, mc_heights, tile_client
         if self._lidar_client is None:
             self._lidar_client = tile_client(download=False)
         client = self._lidar_client
         x0, z0, x1, z1 = cellmath.bounds(cell)
         en = mc_box_en(x0 - 2, z0 - 2, x1 + 2, z1 + 2)
-        missing, identities = [], []
-        module = load_lidar_module('tiles')
-        for model in ('DTM', 'DSM'):
-            for e, n in client.missing(model, *en):
-                catalogue = client.cache / 'catalogue' / f'{e}E-{n}N.json'
-                uri = module.pick_uri(json.loads(catalogue.read_text()), model) if catalogue.is_file() else None
-                filename = unquote(Path(urlsplit(uri).path).name) if uri else 'provider filename unknown (catalogue not cached)'
-                missing.append({'filename': filename, 'tile': f'{model} {e}E-{n}N',
-                                'estimated_mb': getattr(module, 'TILE_MB', 75)})
-            # Only the tiles used for the cell's interpolation edge affect its readiness.
-            needed = set(module.tiles_for(*en))
-            for key, tile in sorted(client.tiles(model).items()):
-                if key in needed:
-                    identities.append((str(tile.path), self.file_id(tile.path)))
+        missing, paths = client.tile_status(*en)
+        identities = [(str(path), self.file_id(path)) for path in paths]
         if not missing:
             heights = mc_heights(client, x0 - 1, z0 - 1, x1 + 1, z1 + 1, geocraft=False)
             if not all(np.isfinite(heights[k]).all() for k in ('dtm', 'dsm')):
