@@ -169,15 +169,7 @@
     
     
     
-    {
-      "id": 284,
-      "title": "Every preflight blocker has a sanctioned command that clears it (stuck mismatched applies)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Found 2026-11-14 reviewing I-015 in cell 48,-44. Process gap: a feature apply that ended 'mismatched' can get stuck forever. Evidence: the journal shows west_w34391673 finishing 'mismatched' (2 mismatches) on 2026-10-28 and 2026-10-29; cell_readiness.py (lines ~90 and ~111) reports 'recovery: mismatched apply west_w34391673' as a preflight blocker, so redo_layer.py refuses every redo of the cell (needs-prep). The sanctioned remedy in rules/process.md ('Mess in a cell: cell_registry.py reconcile [--fix]') and the readiness next_action ('resolve with site_recover or reconcile') does not clear it: site_recover status says clean (nothing in flight) and `reconcile --fix` repairs 'missing' blocks and upgrades some mismatched entries, but reports 30 'foreign' positions (journal owns grass_block, world holds dirt, x 6144 y 36) as NOT fixed. The only ways forward today are hand-editing blocks or the journal, which is a hack, not a process. Wanted behaviour: every blocker preflight raises has a sanctioned command that clears it, and that command's output says so. Diagnose first (read-only): what do the 2 West mismatches and the 30 foreign positions actually refer to (which plans own them, are they the same positions, is the world or the journal right at a cell edge, can a later landed plan legitimately supersede an earlier mismatch)? Then decide and implement the smallest consistent rule, one of: (a) reconcile --fix re-asserts the journal-owned block for foreign positions where no later landed plan owns them, then lands the entry; (b) a mismatched entry whose positions are all superseded by a later landed entry stops counting as a blocker; (c) a redo of the owning layer is explicitly allowed past a mismatch it will rewrite (the redo's own undo/apply readback decides). Record which in docs/plans and rules/process.md. Tests (synthetic journal and world fake): a mismatched entry with only superseded positions no longer blocks; a foreign position is repaired or reported with the exact command that would; preflight message names the clearing command. No live world writes in this task; the 48,-44 case is the acceptance example, to be checked read-only. Files: lib/journal/cell_readiness.py, cell_registry reconcile code, lib/journal/test_cell_readiness.py, rules/process.md. This is a stretch task (journal semantics): owner approval for model and effort first.\n"
-    },
+    
     {
       "id": 285,
       "title": "Readiness flags a cell's ground stale when a feature landed after it",
