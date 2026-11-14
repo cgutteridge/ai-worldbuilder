@@ -70,6 +70,9 @@ AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
 AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
 DEFAULT_RING = 2
+# Begin-line schema: 1 = legacy (no ``schema`` key), 2 = adds ``schema`` and, on feature builds,
+# optional provenance in meta (builder_name, builder_sha, spec_hash). Older lines load unchanged.
+JOURNAL_SCHEMA = 2
 SAMPLE = 10
 # Large ghost plans must not multiply retained memory across cells.
 MAX_CACHED_BLOB_BLOCKS = 262144
@@ -287,6 +290,7 @@ class EntryView:
     targets: tuple[int, ...] = ()
     mismatches: int = 0
     finish_seq: int = 0
+    schema: int = 1
 
 
 @dataclass(frozen=True)
@@ -405,6 +409,7 @@ class _Entry:
     signs: tuple = ()
     entities: tuple = ()
     prior: str | None = None    # optional blob of world blocks at begin (undo fallback)
+    schema: int = 1
 
 
 @dataclass(frozen=True)
@@ -670,7 +675,9 @@ class CellRegistry:
             targets=tuple(d.get('targets', ())), owner=d.get('owner'), ts=d.get('ts', ''),
             meta=dict(d.get('meta') or {}),
             signs=_signs_from_json(d.get('signs')), entities=_entities_from_json(d.get('entities')),
-            prior=d.get('prior'))
+            prior=d.get('prior'), schema=int(d.get('schema', 1)))
+        if e.schema > JOURNAL_SCHEMA:
+            raise JournalError(f'journal entry {e.seq} has schema {e.schema}; this tool reads up to {JOURNAL_SCHEMA}')
         if e.kind == 'build' and e.pass_ == 'feature':
             earlier = self._latest(e.plan)
             if earlier is not None and earlier.status == 'landed':
@@ -998,7 +1005,7 @@ class CellRegistry:
             if scope is not None and not scope & set(e.cells):
                 continue
             out.append(EntryView(e.seq, e.kind, e.plan, e.pass_, e.cell, e.cells, e.status, e.undone, e.n,
-                                 e.owner, e.ts, dict(e.meta), e.targets, e.mismatches, e.finish_seq))
+                                 e.owner, e.ts, dict(e.meta), e.targets, e.mismatches, e.finish_seq, e.schema))
         return tuple(out)
 
     def planning_revision(self) -> str:
@@ -1277,7 +1284,7 @@ class CellRegistry:
             'op': 'begin', 'kind': 'build', 'plan': b.plan, 'pass': b.pass_, 'cell': list(primary),
             'cells': [list(c) for c in sorted(touched)], 'n': len(positions),
             'modifies': sorted(b.modifies), 'strict': bool(b.strict), 'strip': strip,
-            'owner': os.environ.get('SITE_OWNER'),
+            'owner': os.environ.get('SITE_OWNER'), 'schema': JOURNAL_SCHEMA,
         }
         if b.mask is not None:
             record['mask'] = b.mask

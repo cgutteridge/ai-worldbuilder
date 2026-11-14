@@ -493,6 +493,8 @@ if __name__ == '__main__':
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
-    result = apply(plan, dry=not a.apply, modifies=tuple(spec['modifies']), strict=True)
+    from builder_provenance import provenance
+    result = apply(plan, dry=not a.apply, modifies=tuple(spec['modifies']), strict=True,
+                   meta=provenance('house_build', a.spec))
     if result is not None:
         print(f'readback: {result["planned"]} planned, {result["mismatches"]} mismatches')

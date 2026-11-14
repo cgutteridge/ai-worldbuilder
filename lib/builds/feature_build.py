@@ -2784,7 +2784,7 @@ def run(
     @param aerial_rgb: optional column RGB map for roof-colour dry-run lines (tests)
     @returns: Plan
     """
-    from builder_provenance import resolve_builder_path, builder_record
+    from builder_provenance import resolve_builder_path, builder_record, provenance
     spec_path = resolve_builder_path(spec_path)
     spec = load_spec(spec_path)
     if do_apply and not overwrite:
@@ -2806,7 +2806,7 @@ def run(
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
     apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']),
-          meta={'builder': builder_record('spec', spec_path)})      # ghost owners yield in the journal
+          meta={'builder': builder_record('spec', spec_path), **provenance('feature_build', spec_path)})      # ghost owners yield in the journal
     return plan
 
 
