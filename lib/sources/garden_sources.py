@@ -813,9 +813,9 @@ def flatten_panel_run(cols, plot_id, owner: dict, avoid=(), clear=(), tol: int =
     neighbour's land) and never more than ``tol - 1`` columns inside it; a jog appears only once the
     line has drifted ``tol`` columns. Jog columns are placed where they stay on the plot's own land.
 
-    Safety falls back to the original cells of a stretch: its inner side cannot be told from the
-    owners, a fitted column is not the plot's own (unless it is an original cell) or lies on ``avoid`` (house footprint), or the
-    stretch is shorter than 3 columns. Columns where an original cell lies on ``clear`` (reserved
+    A stretch keeps its original cells when its inner side cannot be told from the owners, a fitted
+    column is not the plot's own (original cells excepted) or lies on ``avoid`` (house footprint), or
+    it is shorter than 3 columns or steeper than about 31 degrees. Columns where an original cell lies on ``clear`` (reserved
     openings) get no fitted cell, so openings stay open. The corner points between stretches are kept so
     stretches stay joined.
 
@@ -897,7 +897,7 @@ def _fit_stretch(seg, plot_id, owner, avoid, clear, tol):
     return fitted
 
 
-def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), clear=()) -> dict:
+def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), clear=(), fit: bool = True) -> dict:
     """One outward facing per panel run, and closing pieces so each run is continuous.
 
     ``outward_facings`` answers per column, which on a diagonal boundary (about 1 z per 2 x) flips
@@ -921,11 +921,49 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), 
     @param centre: plot centre ``(x, z)``
     @param avoid: columns the straightened line may not move onto (house footprints)
     @param clear: reserved opening columns; the straightened line leaves them open
+    @param fit: straighten the run (``flatten_panel_run``); False for observed boundaries. A fitted run whose
+        boards do not form one piece (``boards_joined``) is discarded for the unfitted run
     @returns: ``{'cells', 'facing', 'basis', 'closers', 'cross'}``: cells include added closer columns;
         ``closers`` lists the cross-shelf columns (added and converted step columns); ``cross`` maps
         each to its facing (also in ``facing``)
     """
-    cols = flatten_panel_run(cols, plot_id, owner, avoid, clear)
+    if fit:
+        fitted = _panel_runs(flatten_panel_run(cols, plot_id, owner, avoid, clear), plot_id, role, owner, street, centre)
+        if boards_joined(fitted) or not boards_joined(_panel_runs(cols, plot_id, role, owner, street, centre)):
+            return fitted
+    return _panel_runs(cols, plot_id, role, owner, street, centre)
+
+
+SHELF_BOARD = {'north': (0, 13, 16, 16), 'south': (0, 0, 16, 3), 'west': (13, 0, 16, 16), 'east': (0, 0, 3, 16)}
+
+
+def boards_joined(run: dict) -> bool:
+    """True when the shelf back boards of a panel run (3/16, flush with the edge opposite the facing)
+    form one piece, boards touching along an edge of positive length. Runs split by an opening or a
+    street are judged per 8-connected group."""
+    boxes = {}
+    for key, f in run['facing'].items():
+        x, z = map(int, key.split(','))
+        b = SHELF_BOARD[f]
+        boxes[(x, z)] = (x * 16 + b[0], z * 16 + b[1], x * 16 + b[2], z * 16 + b[3])
+    for group in _run_components(list(boxes)):
+        seen, stack = {group[0]}, [group[0]]
+        while stack:
+            a = boxes[stack.pop()]
+            for q in group:
+                if q in seen:
+                    continue
+                b = boxes[q]
+                ox, oz = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+                if (ox >= 0 and oz > 0) or (oz >= 0 and ox > 0):
+                    seen.add(q)
+                    stack.append(q)
+        if len(seen) != len(group):
+            return False
+    return True
+
+
+def _panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     face, basis = outward_facings(cols, plot_id, role, owner, centre)
     cells = {(int(q[0]), int(q[1])) for q in cols}
     run_face: dict = {}
@@ -1180,7 +1218,9 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
     for item in items:
         if item['id'] in panels:
             cols, i, role, centre = panels[item['id']]
-            run = panel_runs(cols, i, role, owner, street, centre, avoid=idx.cells(), clear=keep_clear)
+            observed = item['provenance']['source'] == 'vector_map'          # observed boundaries are never moved
+            run = panel_runs(cols, i, role, owner, street, centre, avoid=idx.cells(), clear=keep_clear,
+                             fit=not observed)
             item['cells'] = [list(q) for q in run['cells']]
             item['facing'], item['facing_basis'] = run['facing'], run['basis']
             item['closers'] = [list(q) for q in run['closers']]

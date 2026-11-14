@@ -1073,22 +1073,32 @@ class TestPanelRuns(unittest.TestCase):
                 steps = sum(abs(b - a) for a, b in zip(
                     [min(z for x, z in line if x == c) for c in range(len(rows))],
                     [min(z for x, z in line if x == c) for c in range(1, len(rows))]))
-                self.assertLessEqual(len(r['closers']), steps + 1, (rows[:4], flip))
+                self.assertLessEqual(len(r['closers']), steps + 1, (rows[:4], flip))   # pure 45 degrees: a corner closer each
                 self.assertTrue(self._joined(self._boards(r)), (rows[:4], flip))
 
-    def test_consecutive_columns_are_joined_by_a_board_edge(self):
-        for rows in ([x // 2 for x in range(20)], [x // 4 for x in range(24)]):
+    def test_noisy_jagged_edges_keep_boards_joined_in_all_orientations(self):
+        import random
+        rng = random.Random(276)
+        cases = [[14, 14, 13, 14, 14, 15], [9, 9, 10, 9, 9, 9, 8, 8, 8, 9, 8, 8, 8, 7, 7, 7, 7, 6, 7]]
+        for _ in range(60):
+            n, base, slope = rng.randint(10, 28), rng.randint(5, 20), rng.choice((0, 0.25, 0.5, 0.5, 0.6))
+            cases.append([int(base + slope * x) + rng.choice((-1, 0, 0, 1)) for x in range(n)])
+        for rows in cases:
             for flip in (False, True):
                 cols, owner, street = self._edge(rows, flip)
-                r = gs.panel_runs(cols, 1, 'front', owner, street, (10, 30))
-                boards = {}
-                for key, box in zip(r['facing'], self._boards(r)):
-                    boards[tuple(map(int, key.split(',')))] = box
-                for q in boards:
-                    for n in ((q[0] + 1, q[1]), (q[0], q[1] + 1)):
-                        if n in boards:
-                            self.assertTrue(self._joined([boards[q], boards[n]]) or
-                                            self._joined(self._boards(r)), (q, n))
+                r = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20))
+                raw = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20), fit=False)
+                if gs.boards_joined(raw):                          # steep random jumps can defeat the old closers too
+                    self.assertTrue(gs.boards_joined(r), (rows, flip))
+                for q in map(tuple, r['cells']):
+                    self.assertNotIn(q, street, (rows, flip))
+                    self.assertIn(owner.get(q), (None, 1), (rows, flip))
+
+    def test_observed_runs_are_not_straightened(self):
+        rows = [x // 2 for x in range(24)]
+        cols, owner, street = self._edge(rows)
+        raw = gs.panel_runs(cols, 1, 'front', owner, street, (12, 30), fit=False)
+        self.assertTrue(set(cols) <= set(map(tuple, raw['cells'])))
 
     def test_openings_stay_open_in_a_fitted_run(self):
         rows = [x // 2 for x in range(24)]
