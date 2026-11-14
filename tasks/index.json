@@ -212,15 +212,6 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
-    },
-    {
-        "id": 277,
-        "title": "Straightened panel runs: one closer per jog, whatever its height",
-        "status": "todo",
-        "priority": "high",
-        "complexity": "s",
-        "blockedBy": [],
-        "notes": "Follow-up to #276 (owner review 2026-11-14 after re-apply on 53,-43). #276 removed sideways teeth but the oak panel line is now broken: planned plank columns 85, placed 84, so the placer is fine; the gaps are in the plan from panel_runs. Where a run steps by two or more rows between straight fits, no panel is planned in the intermediate rows (empty rows -5418, -5416, -5410, -5408 near x 6803-6830), so the line is disjoint. Rule from owner: no sideways piece except at a real jog, and at a real jog exactly one closer (a single thin joining board), never zero. Fix in the panel_runs straightening in lib (decor_plan / garden_sources area touched by #276): for each step of any height place one closer in the step row(s) so board edges join, facing per the run's out direction, skipping only observed items and opening columns. Tests (synthetic): jogs of height 1, 2, 3 each end with a joined edge and exactly one closer; no run has a gap larger than its opening columns; a fuzz test that the planned plank line is 4/8-connected between its ends. Check: python3 scripts/ship_branch.py merge green; read-only planner map on 53,-43 (scripts planning only, no apply, no redo_layer --apply) shows no empty rows inside a run except openings. Do not re-apply decor; owner re-applies after review."
     }
   ]
 }
