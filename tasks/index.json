@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 279,
+  "nextTaskId": 282,
   "tasks": [
     
     {
@@ -183,6 +183,35 @@
             
         ],
         "notes": "Split from #248 (2026-11-14). Once #248 records builder name, builder sha and spec hash on feature plan entries, let scripts/reapply_feature.py read the recorded builder instead of refusing plans with no recorded builder or guessing from spec notes. Plans with no recorded builder keep today's refusal, with the message pointing at #248's 'unrecorded' listing. Tests: a plan with a recorded builder reapplies with that builder (dry run); an unrecorded plan still refuses; a recorded builder that no longer exists fails closed. No live apply in this task."
+    },
+    {
+        "id": 279,
+        "title": "tasks.mjs close: refuse a sha that is not a commit reachable from main",
+        "status": "todo",
+        "priority": "low",
+        "complexity": "s",
+        "blockedBy": [],
+        "notes": "Found 2026-11-14: `tasks.mjs close 263 --sha <40 hex>` accepted a mistyped sha that did not exist, because closeTask only checks the pattern /^[0-9a-f]{40}$/ (scripts/tasks.mjs, shaPattern and closeTask). Fix: after the pattern check, run `git cat-file -e <sha>^{commit}` and `git merge-base --is-ancestor <sha> HEAD` in the tracker directory's repository (the git root of --tracker-dir) and refuse with a one-line reason naming which check failed; keep the existing atomic and idempotent close behaviour untouched. A --no-verify-sha flag is NOT wanted. Tests (find how scripts/tasks.mjs is already tested before adding any; if there is none, add scripts/test_tasks_cli.py that runs node against a temporary git repo and tracker dir): a real commit on the current branch closes; a well-formed unknown sha is refused; a real commit not reachable from HEAD is refused; the existing close tests still pass. Files: scripts/tasks.mjs and its tests only. Check: python3 scripts/run_tests.py --only <stem>. Do not edit tasks/ from the branch."
+    },
+    {
+        "id": 280,
+        "title": "tasks.mjs add: create a task from the command line",
+        "status": "todo",
+        "priority": "low",
+        "complexity": "s",
+        "blockedBy": [
+            279
+        ],
+        "notes": "Found 2026-11-14: scripts/tasks.mjs has list, show, status and close but no add, so new tasks are inserted into tasks/index.json by hand (error-prone: it needs the next id, the field order and the raw-text format). Add `add --title T --priority low|medium|high --complexity s|m|l [--blocked-by ID,...] --notes TEXT` (notes from a file with --notes-file PATH when long): take id from nextTaskId, append the task with status todo in the same field order and 2-space JSON layout as existing tasks, bump nextTaskId, refuse an unknown blocker id, refuse a title or notes outside the same length limits the file validator already enforces, print the new id. Same atomic write path as close (reuse its helper, do not write a second one), and run on main as orchestrator only as today. Blocked by #279 only because both edit scripts/tasks.mjs (merge order). Tests as for #279: id assignment, nextTaskId bump, blocker validation, round-trip through `show`, existing file otherwise byte-identical. Files: scripts/tasks.mjs, its tests, docs/agents/issue-tracker.md (one line naming the command). Do not edit tasks/ from the branch."
+    },
+    {
+        "id": 281,
+        "title": "Warn when a planned barrier is skipped because it carries an unresolved reason",
+        "status": "todo",
+        "priority": "medium",
+        "complexity": "s",
+        "blockedBy": [],
+        "notes": "Found 2026-11-12: caveats written into a convention's `unresolved_reason` made every Kitchener boundary 'unresolved', so decor_plan.resolved_barriers silently skipped them and the rebuild showed no fences. The planner gave no signal. Fix: where decor_plan.resolved_barriers skips an item because prov.is_unresolved(item provenance), record it: append the item to the existing `unplaced` list (or the equivalent report list the function already fills) with reason 'barrier skipped: provenance carries an unresolved reason' and the reason text, and make the decor plan/redo report print one summary line 'N barrier runs skipped as unresolved' with the first few ids when N>0. No behaviour change to what is placed. Files: lib/layers/decor_plan.py, the decor report printer in lib/layers/decor_layer.py if needed, and tests in lib/layers/test_decor_plan.py (and test_decor_layer.py if the report is touched): an unresolved barrier is skipped and reported; a resolved one is placed and not reported; deliberate 'none' openings are not reported; counts match. Check: python3 scripts/run_tests.py --only test_decor_plan --only test_decor_layer. Another session (#264) is editing decor_layer.py: keep the decor_layer.py edit to the report line, or put the summary in decor_plan.py. Do not edit tasks/ from the branch."
     }
   ]
 }
