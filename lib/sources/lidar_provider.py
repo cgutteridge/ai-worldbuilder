@@ -19,17 +19,19 @@ _MODULE_CACHE: dict[str, ModuleType] = {}
 
 
 def lidar_provider_row(data: dict | None = None) -> dict:
-    """Return the catalogue provider row that fills type ``lidar``.
+    """Return the first world lidar row, falling back to the system catalogue.
 
     @param data: optional place-sources dict
     @returns: provider row dict
     @raises LookupError: when no provider lists type ``lidar``
     """
-    data = data or load_place_sources()
-    for row in data.get('providers') or []:
-        types = row.get('types') or []
-        if 'lidar' in types:
+    data = load_place_sources() if data is None else data
+    rows = [row for row in data.get('providers') or [] if 'lidar' in (row.get('types') or [])]
+    for row in rows:
+        if row.get('home') == 'world':
             return row
+    if rows:
+        return rows[0]
     raise LookupError('no catalogue provider lists type "lidar"')
 
 

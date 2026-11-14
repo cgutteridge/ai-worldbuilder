@@ -43,6 +43,21 @@ class ResolveLidarRow(unittest.TestCase):
         with self.assertRaises(LookupError):
             lp.lidar_provider_row({'providers': [{'id': 'x', 'types': ['aerial']}]})
 
+    def test_world_lidar_beats_system_and_preserves_order_within_home(self):
+        rows = [
+            {'id': 'system', 'home': 'system', 'types': ['lidar']},
+            {'id': 'world-aerial', 'home': 'world', 'types': ['aerial']},
+            {'id': 'world-first', 'home': 'world', 'types': ['lidar']},
+            {'id': 'world-second', 'home': 'world', 'types': ['lidar']},
+        ]
+        self.assertIs(lp.lidar_provider_row({'providers': rows}), rows[2])
+        self.assertIs(lp.lidar_provider_row({'providers': rows[:2]}), rows[0])
+
+    def test_explicit_empty_catalogue_does_not_load_system(self):
+        with mock.patch.object(lp, 'load_place_sources', side_effect=AssertionError):
+            with self.assertRaises(LookupError):
+                lp.lidar_provider_row({})
+
 
 class LiveCatalogue(unittest.TestCase):
     """Real system catalogue wiring (no mocks)."""
