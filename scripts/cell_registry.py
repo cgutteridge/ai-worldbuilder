@@ -642,6 +642,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser('next', help='print the next undone registry work item')
     p.add_argument('--exclude-cell', action='append', default=[], metavar='TX,TZ',
                    help='run-local exclusion; repeat for each blocked cell')
+    p.add_argument('--cell', metavar='TX,TZ',
+                   help='only this cell: what next would do there (read-only)')
 
     p = sub.add_parser('verify', help='registry integrity report (exit 1 on errors)')
     p.add_argument('--json', action='store_true', help='print JSON report')
@@ -770,7 +772,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == 'next':
             from registry_next import format_next, next_task
-            task = next_task(reg, root=root, exclude={parse_cell_id(c) for c in args.exclude_cell})
+            task = next_task(reg, root=root, exclude={parse_cell_id(c) for c in args.exclude_cell},
+                             cell=parse_cell_id(args.cell) if args.cell else None)
             print(format_next(task))
             if task is not None:
                 print(json.dumps(task, indent=2, sort_keys=True))

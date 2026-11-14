@@ -76,10 +76,54 @@ class NextTaskTest(unittest.TestCase):
         self.assertEqual((task['kind'], task['feature'], task['status']), ('feature', 'a', 'planned'))
         self.jw.seed((48, -44), features=('a', 'b'))
         task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual(task['kind'], 'ground-redo')          # features landed after the ground (task 285)
+        self.jw.seed((48, -44), ground=True)
+        task = N.next_task(self.jw.reg, root=self.root)
         self.assertEqual(task['layer'], 'trees')
         self.jw.seed((48, -44), trees=True)
         task = N.next_task(self.jw.reg, root=self.root)
         self.assertEqual(task['layer'], 'decor')
+
+    def test_stale_ground_redo_comes_after_unbuilt_features_before_trees(self):
+        """Task 285: one ground redo after the cell's features, offered with its cause and command."""
+        self.jw.seed((48, -44), ground=True)
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'a', 'a'))
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'b', 'b'))
+        self.ready()
+        self.jw.seed((48, -44), features=('a',))
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['feature']), ('feature', 'b'))   # finish features first
+        self.jw.seed((48, -44), features=('b',))
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['cell'], task['layer']), ('ground-redo', '48,-44', 'ground'))
+        self.assertEqual(len(task['stale']), 2)
+        self.assertRegex(task['stale'][0], r'^ground \S+ is older than feature a landed \S+$')
+        self.assertIn('redo_layer.py --world <world> --cell 48,-44 --layers ground --apply', task['command'])
+        text = N.format_next(task)
+        self.assertIn('next: ground-redo in cell 48,-44 (offered, not started)', text)
+        self.assertIn('  ground stale: ground ', text)
+        self.assertIn('  clear: ground stale -> python3 scripts/redo_layer.py', text)
+
+    def test_needs_prep_cell_still_says_its_ground_is_stale(self):
+        self.jw.seed((48, -44), ground=True)
+        self.jw.seed((48, -44), features=('a',))
+        task = N.next_task(self.jw.reg, root=self.root)          # not validated: needs-prep
+        self.assertEqual(task['kind'], 'needs-prep')
+        self.assertIn('feature a landed', task['stale'][0])
+        self.assertIn('clear: ground stale -> ', N.format_next(task))
+
+    def test_next_for_one_cell(self):
+        self.jw.seed((48, -44), ground=True)
+        self.jw.seed((49, -44), ground=True, marker=True)
+        self.ready()
+        self.ready((49, -44))
+        self.assertEqual(N.next_task(self.jw.reg, root=self.root)['cell'], '49,-44')
+        task = N.next_task(self.jw.reg, root=self.root, cell=(48, -44))
+        self.assertEqual((task['cell'], task['layer']), ('48,-44', 'trees'))
+        self.jw.seed((48, -44), trees=True, decor=True)
+        task = N.next_task(self.jw.reg, root=self.root, cell=(48, -44))
+        self.assertEqual(task, {'kind': 'complete', 'cell': '48,-44'})
+        self.assertIn('complete', N.format_next(task))
 
     def test_held_cell_skipped(self):
         self.jw.seed((48, -44), ghost_ground=True)

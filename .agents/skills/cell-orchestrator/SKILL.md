@@ -74,12 +74,16 @@ Use `check`/`status`/`verify` for effective completion, rather than the journal'
 flag. A cell needs current validated evidence, landed features and fresh trees/decor, marker down,
 and resolved in-flight work. Legacy validation/layers require preparation/review. Ground redo
 preserves trees/decor completion; successful trees generation requires decor again. Newly landed
-or rebuilt features invalidate trees/decor across their touched cells.
+or rebuilt features invalidate trees/decor across their touched cells, and make those cells'
+ground stale (task 285) until the ground is redone.
 
 ## Per task
 
 0. Take the JSON from `next`. Handle `needs-prep` and `blocked` as above. Kinds `layer`
-   (ground|trees|decor) and `feature` are build work. `marker-clear` means content is finished:
+   (ground|trees|decor) and `feature` are build work. `ground-redo` is offered, not build work:
+   log its `ground stale:` cause and `clear:` command, exclude the cell for this run like
+   `needs-prep`, and put the redo to the owner; never run it unattended.
+   `marker-clear` means content is finished:
    clear the marker under the world lock, then verify effective completion. Recheck readiness
    before each apply; direct builders also enforce the shared policy.
 1. Raise the marker for the target cell if needed (`python3 scripts/cell_marker.py --world <world> --raise tx,tz` under SITE_OWNER) — `next` does not.

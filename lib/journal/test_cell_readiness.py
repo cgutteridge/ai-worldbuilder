@@ -291,6 +291,7 @@ class ReadinessTest(unittest.TestCase):
         self.world.reg.change(Note((0, 0), 'plan_feature', 'new house', 'house'))
         policy.validate((0, 0))
         self.world.seed((0, 0), features=('house',))
+        self.world.seed((0, 0), ground=True)          # the ground redo a later feature requires (task 285)
         self.world.reg.build_policy = policy.enforce
         before = self.world.reg.journal_path.read_bytes()
         with self.assertRaisesRegex(Refused, 'stale plan.*journal'):
@@ -449,6 +450,7 @@ class ReadinessTest(unittest.TestCase):
             self.assertIn('validation stale', report['blockers'])
 
     def test_prepared_features_and_ground_can_land_in_either_order(self):
+        """Both orders land; ground first leaves the ground stale until it is redone (task 285)."""
         from cell_journal import Note
         from cell_readiness import ReadinessPolicy
         policy = ReadinessPolicy(self.world.reg, self.evidence)
@@ -465,6 +467,9 @@ class ReadinessTest(unittest.TestCase):
             else:
                 self.world.seed(cell, ground=True)
                 self.world.seed(cell, features=(fid,))
+                self.assertTrue(policy.check(cell)['ground_stale'])
+                self.world.seed(cell, ground=True)
+            self.assertEqual(policy.check(cell)['ground_stale'], [])
             self.world.seed(cell, trees=True, decor=True)
             self.assertTrue(policy.check(cell)['complete'])
 
@@ -750,3 +755,128 @@ class MismatchedApplyTest(unittest.TestCase):
                               self.world.apply)
         self.assertEqual(self.world.reg.reconcile().by_kind('mismatched'), ())
 
+
+
+class StaleGroundTest(unittest.TestCase):
+    """Task 285: a feature that lands after the cell's ground leaves that ground stale."""
+
+    HOUSE = {(4, 61, 4): 'minecraft:bricks'}
+    CAUSE = r'^ground \d{4}-\d\d-\d\dT\d\d:\d\d is older than feature house VERB \d{4}-\d\d-\d\dT\d\d:\d\d$'
+
+    def setUp(self):
+        from cell_readiness import ReadinessPolicy
+        self.world = JournalWorld()
+        self.addCleanup(self.world.__exit__)
+        self.world.__enter__()
+        from cell_journal import Note
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        self.policy = ReadinessPolicy(self.world.reg, Evidence())
+        self.policy.validate((0, 0))
+        self.world.reg.build_policy = self.policy.enforce
+
+    def check(self, operation='build', **kw):
+        return self.policy.check((0, 0), operation, **kw)
+
+    def complete(self):
+        return self.check()['complete']
+
+    def test_feature_landed_after_ground_makes_ground_stale(self):
+        from cell_readiness import format_readiness
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((0, 0), features=('house',))
+        report = self.check()
+        self.assertEqual(len(report['ground_stale']), 1)
+        self.assertRegex(report['ground_stale'][0], self.CAUSE.replace('VERB', 'landed'))
+        self.assertTrue(report['ready'])                      # ground/feature work is never blocked
+        self.assertIn('--cell 0,0 --layers ground --apply', report['ground_redo'])
+        # trees/decor that landed over the stale ground (policy off, as in an older journal)
+        self.world.reg.build_policy = None
+        meta = {'readiness_revision': report['revision']}
+        self.world.build('seed_0_0_trees', 'trees', {(1, 61, 8): 'minecraft:oak_log'}, cell=(0, 0), meta=meta)
+        self.world.build('seed_0_0_decor', 'decor', {(2, 61, 9): 'minecraft:poppy'}, cell=(0, 0), meta=meta)
+        report = self.check()
+        self.assertTrue(report['trees_current'] and report['decor_current'])
+        self.assertFalse(report['complete'])                  # the stale ground alone keeps it not DONE
+        self.assertIn('--cell 0,0 --layers ground,trees,decor --apply', report['ground_redo'])
+        text = format_readiness(report)
+        self.assertIn('  ground_stale: ground ', text)
+        self.assertIn('  clear: ground stale -> python3 scripts/redo_layer.py', text)
+        trees = self.check('trees')
+        self.assertFalse(trees['ready'])
+        blocker = 'ground stale: ' + report['ground_stale'][0]
+        self.assertIn(blocker, trees['blockers'])
+        self.assertEqual(trees['clear_with'][blocker], report['ground_redo'])
+        self.assertTrue(self.check('trees', redoing=('seed_0_0_ground',))['ready'])   # a ground redo first
+
+    def test_ground_redone_after_the_feature_is_current(self):
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((0, 0), features=('house',))
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((0, 0), trees=True, decor=True)
+        report = self.check()
+        self.assertEqual(report['ground_stale'], [])
+        self.assertIsNone(report['ground_redo'])
+        self.assertTrue(self.complete())
+
+    def test_feature_landed_before_ground_does_not(self):
+        self.world.seed((0, 0), features=('house',))
+        self.world.seed((0, 0), ground=True, trees=True, decor=True)
+        self.assertEqual(self.check()['ground_stale'], [])
+        self.assertTrue(self.complete())
+
+    def test_undone_feature_entries_are_ignored(self):
+        from cell_journal import Undo
+        self.world.seed((0, 0), ground=True)
+        self.world.build('house', 'feature', self.HOUSE, cell=(0, 0))
+        self.assertTrue(self.check()['ground_stale'])
+        self.world.reg.change(Undo('house'), self.world.apply)
+        self.assertEqual(self.check()['ground_stale'], [])
+
+    def test_mismatched_feature_entry_is_reported(self):
+        self.world.seed((0, 0), ground=True)
+        receipt = self.world.reg.change(Build('house', 'feature', self.HOUSE, cell=(0, 0)), lambda w: None)
+        self.assertEqual(receipt.status, 'mismatched')
+        self.assertRegex(self.check()['ground_stale'][0], self.CAUSE.replace('VERB', 'applied mismatched'))
+
+    def test_begun_feature_entry_is_reported(self):
+        self.world.seed((0, 0), ground=True)
+        self.world.reg.begin(Build('house', 'feature', self.HOUSE, cell=(0, 0)))
+        report = self.check()
+        self.assertRegex(report['ground_stale'][0], self.CAUSE.replace('VERB', r'begun \(unfinished\)'))
+        self.assertIn('recovery: unfinished apply', report['blockers'])
+
+    def test_reconcile_landing_an_old_ground_later_does_not_hide_a_later_feature(self):
+        """48,-44: reconcile --fix upgraded a 10-27 ground on 11-14; the 10-29 feature is still later."""
+        self.world.reg.build_policy = None
+        receipt = self.world.reg.change(Build('seed_0_0_ground', 'ground', {(0, 60, 0): 'minecraft:grass_block'},
+                                              cell=(0, 0)), lambda w: None)
+        self.assertEqual(receipt.status, 'mismatched')
+        self.world.build('house', 'feature', self.HOUSE, cell=(0, 0))
+        self.world.reg.reconcile([(0, 0)], fix=True, apply=self.world.apply)
+        ground = self.world.reg.entries(plan='seed_0_0_ground')[-1]
+        self.assertEqual(ground.status, 'landed')
+        self.assertGreater(ground.finish_seq, self.world.reg.entries(plan='house')[-1].finish_seq)
+        self.assertRegex(self.check()['ground_stale'][0], self.CAUSE.replace('VERB', 'landed'))
+
+    def test_neighbour_feature_touching_the_cell_counts_but_not_untouched_cells(self):
+        self.world.reg.build_policy = None                  # the neighbour is not prepared here
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((1, 0), ground=True)
+        self.world.build('wide', 'feature', {(127, 61, 5): 'minecraft:bricks',
+                                             (128, 61, 5): 'minecraft:bricks'}, cell=(1, 0))
+        self.assertIn('feature wide landed', self.check()['ground_stale'][0])
+        self.world.seed((0, 1), ground=True)
+        self.assertEqual(self.policy.check((0, 1))['ground_stale'], [])
+
+    def test_morning_report_names_the_stale_ground(self):
+        from unittest import mock
+        import site_status
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((0, 0), features=('house',))
+        with mock.patch('cell_registry.view_registry', return_value=self.world.reg):
+            lines = site_status.stale_ground_lines([(0, 0), (5, 5)])
+        self.assertEqual(len(lines), 2)
+        self.assertRegex(lines[0], r'^  0,0  ground .* is older than feature house landed ')
+        self.assertIn('0,0  clear: ground stale -> python3 scripts/redo_layer.py --world <world> --cell 0,0 '
+                      '--layers ground --apply', lines[1])
