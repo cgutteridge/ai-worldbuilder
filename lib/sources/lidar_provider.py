@@ -45,7 +45,7 @@ def _module_rel(role: str, row: dict) -> str:
 
 
 def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
-    """Load a lidar package entry module by catalogue role (``world`` / ``tiles``).
+    """Load a lidar entry module by role (world, tiles, query or extremes).
 
     Prefers the shared shim loader (one ``sys.modules`` object per historical
     name) so provider-internal ``import <tiles>`` and callers share state.
@@ -56,24 +56,22 @@ def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
     """
     row = lidar_provider_row(data)
     rel = _module_rel(role, row)
-    cache_key = f"{row.get('id')}:{rel}"
-    if cache_key in _MODULE_CACHE:
-        return _MODULE_CACHE[cache_key]
-    parts = rel.split('/', 1)
-    if len(parts) == 2:
-        try:
-            from _provider_shim import load_provider
-            mod = load_provider(str(row['id']), parts[0], parts[1])
-            _MODULE_CACHE[cache_key] = mod
-            return mod
-        except FileNotFoundError:
-            pass
-    pkg = provider_package_dir(row['id'], data)
+    # Resolve the chosen row itself: a world can override a system row's id too.
+    pkg = provider_package_dir(row['id'], {'providers': [row]})
     if pkg is None:
         raise FileNotFoundError(
             f'lidar provider package missing for {row.get("id")!r}'
         )
-    path = pkg / f'{rel}.py'
+    path = (pkg / f'{rel}.py').resolve()
+    cache_key = str(path)
+    if cache_key in _MODULE_CACHE:
+        return _MODULE_CACHE[cache_key]
+    parts = rel.split('/', 1)
+    if len(parts) == 2:
+        from _provider_shim import load_provider
+        mod = load_provider(str(row['id']), parts[0], parts[1], package_dir=pkg)
+        _MODULE_CACHE[cache_key] = mod
+        return mod
     if not path.is_file():
         raise FileNotFoundError(f'lidar entry module not found: {path}')
     stem = Path(rel).name

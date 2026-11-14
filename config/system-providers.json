@@ -101,7 +101,9 @@
       ],
       "modules": {
         "world": "manage/defra_world",
-        "tiles": "get/defra_lidar"
+        "tiles": "get/defra_lidar",
+        "query": "review/lidar_query",
+        "extremes": "review/lidar_extremes"
       },
       "scope": {
         "level": "country",

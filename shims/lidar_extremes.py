@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""Shim: ``lidar_extremes`` → ``providers/ukdefra-lidar/review/lidar_extremes.py``.
+"""Shim: type-facing ``lidar_extremes`` → active lidar provider extremes module.
 
-Canonical implementation lives under the system provider package. This file
-keeps the historical import name and CLI entrypoint working.
+Resolved through ``lib/sources/lidar_provider.py`` by catalogue role. This shim
+keeps a stable import / CLI name that does not spell a vendor id.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from _provider_shim import load_provider
+from _provider_shim import ensure_import_paths
+
+ensure_import_paths()
+
+
+def _load():
+    from lidar_provider import load_lidar_module
+
+    return load_lidar_module("extremes")
+
 
 if __name__ == "__main__":
     tool = Path(__file__).resolve().parent.parent
@@ -18,7 +27,7 @@ if __name__ == "__main__":
     import script_env
 
     script_env.prepend_world_activation()
-    _mod = load_provider("ukdefra-lidar", "review", "lidar_extremes")
+    _mod = _load()
     main_fn = getattr(_mod, "main", None)
     if main_fn is None:
         raise SystemExit(
@@ -26,5 +35,5 @@ if __name__ == "__main__":
         )
     raise SystemExit(main_fn())
 else:
-    _mod = load_provider("ukdefra-lidar", "review", "lidar_extremes")
+    _mod = _load()
     sys.modules[__name__] = _mod

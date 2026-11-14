@@ -60,22 +60,23 @@ def ensure_import_paths() -> None:
 ensure_import_paths()
 
 
-def load_provider(provider_id: str, role: str, module_name: str) -> ModuleType:
+def load_provider(provider_id: str, role: str, module_name: str, *,
+                  package_dir: Path | None = None) -> ModuleType:
     """Load ``providers/<id>/<role>/<module_name>.py`` and cache it privately.
 
     @param provider_id: catalogue provider id (may contain hyphens)
     @param role: one of ``get``, ``review``, ``manage``
     @param module_name: stem of the Python file (historical import name)
+    @param package_dir: resolved catalogue package; defaults to the system package
     @returns: loaded module object
     """
     ensure_import_paths()
-    cache_key = (
-        f"_provider_impl.{provider_id}.{role}.{module_name}".replace("-", "_")
-    )
+    package = package_dir if package_dir is not None else TOOL_ROOT / 'providers' / provider_id
+    path = (package / role / f'{module_name}.py').resolve()
+    cache_key = f'_provider_impl:{path}'
     existing = sys.modules.get(cache_key)
     if existing is not None:
         return existing
-    path = TOOL_ROOT / "providers" / provider_id / role / f"{module_name}.py"
     if not path.is_file():
         raise FileNotFoundError(f"provider module not found: {path}")
     spec = importlib.util.spec_from_file_location(cache_key, path)
