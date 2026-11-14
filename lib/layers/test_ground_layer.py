@@ -657,7 +657,8 @@ class TestPlanting(unittest.TestCase):
         from block_store import MemoryBlocks
         from site_kit import World
         for y in (51, 54):
-            for material in ('spruce_fence', 'brick_wall', 'spruce_planks', 'iron_bars'):
+            for material in ('spruce_fence', 'brick_wall', 'spruce_planks', 'iron_bars',
+                             'spruce_shelf[facing=north]', 'pale_oak_shelf[facing=east]'):
                 with self.subTest(y=y, material=material):
                     pos = (1, y, 11)
                     world = World(store=MemoryBlocks({**self.blocks, pos: material}, default='air'))

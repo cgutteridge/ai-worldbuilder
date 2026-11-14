@@ -775,7 +775,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
         x, _y, z = p
         if (x, z) in nearby:
             name = bare(block(p))
-            if name.endswith(('_leaves', '_wall', '_fence', '_fence_gate', '_planks')) or name == full('iron_bars'):
+            if name.endswith(('_leaves', '_wall', '_fence', '_fence_gate', '_planks', '_shelf')) or name == full('iron_bars'):
                 retained_barriers.add((x, z))
     barrier_gap = {(x + a, z + b) for x, z in set(barriers) | retained_barriers
                    for a in (-1, 0, 1) for b in (-1, 0, 1)}
