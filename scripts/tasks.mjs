@@ -17,6 +17,7 @@
 // or refused lifecycle changes, 3 missing task.
 
 import { createHash, randomUUID } from "node:crypto"
+import { spawnSync } from "node:child_process"
 import { existsSync, realpathSync } from "node:fs"
 import * as fs from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -417,6 +418,35 @@ export async function closeTask(directory, id, sha, note) {
       "Closure requires a task id, full lowercase commit SHA and a note of 1–4000 characters.",
       2,
     )
+  // Hooks may export Git paths for another checkout; the tracker owns the repo.
+  const env = { ...process.env }
+  for (const key of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  ]) delete env[key]
+  const repository = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: directory,
+    encoding: "utf8",
+    env,
+  })
+  if (repository.status !== 0)
+    throw new TaskError("Could not locate the tracker's Git repository.", 2)
+  for (const [args, reason] of [
+    [["cat-file", "-e", `${sha}^{commit}`], "SHA is not an existing commit"],
+    [["merge-base", "--is-ancestor", sha, "HEAD"], "SHA is not reachable from HEAD"],
+  ]) {
+    const result = spawnSync("git", args, {
+      cwd: repository.stdout.trim(),
+      env,
+      stdio: "ignore",
+    })
+    if (result.status !== 0)
+      throw new TaskError(`git ${args[0]} check failed: ${reason}.`, 2)
+  }
   note = note.trim()
   await withLocks(
     [join(directory, "index.json"), join(directory, "done.json")],
