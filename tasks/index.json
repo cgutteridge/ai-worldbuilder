@@ -155,7 +155,7 @@
     {
       "id": 262,
       "title": "Provider-neutral lidar: ghost, query, extremes and readiness resolve by type; a world's own lidar row beats the system row; documented provider contract",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
