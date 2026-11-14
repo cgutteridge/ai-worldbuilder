@@ -108,6 +108,32 @@ def validate_table(doc: dict) -> dict:
                 raise TableError(f'{cid}: boundary {role} must be null or {{type, height}}')
         if cid in NO_INFERENCE and fr['inference']:
             raise TableError(f'{cid}: this class allows no inference')
+        planting = row['planting']
+        if planting is not None:
+            from foliage import REFINE_PLANTS
+
+            if not fr['inference']:
+                raise TableError(f'{cid}: this class allows no planting inference')
+            if not isinstance(planting, dict) or set(planting) != {'shrubs', 'flowers', 'pond'}:
+                raise TableError(f'{cid}: planting must be null or {{shrubs, flowers, pond}}')
+            shrubs = planting['shrubs']
+            if shrubs is not None:
+                if not isinstance(shrubs, dict) or set(shrubs) != {'per_columns'}:
+                    raise TableError(f'{cid}: shrubs must be null or {{per_columns}}')
+                if type(shrubs['per_columns']) is not int or shrubs['per_columns'] < 1:
+                    raise TableError(f'{cid}: shrubs per_columns must be an integer >= 1')
+            flowers = planting['flowers']
+            if flowers is not None:
+                if not isinstance(flowers, dict) or set(flowers) != {'share', 'kinds'}:
+                    raise TableError(f'{cid}: flowers must be null or {{share, kinds}}')
+                share, kinds = flowers['share'], flowers['kinds']
+                if isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share <= 0.2:
+                    raise TableError(f'{cid}: flowers share must be above 0 and at most 0.2')
+                if not isinstance(kinds, list) or not 1 <= len(kinds) <= 2 or any(
+                        not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds):
+                    raise TableError(f'{cid}: flowers kinds must be 1-2 names from foliage.REFINE_PLANTS')
+            if planting['pond'] is not None:
+                raise TableError(f'{cid}: planting pond must stay null')
         if cid == 'unknown' and (any(v is not None for v in fr['boundary'].values())
                                  or row['planting'] is not None or row['furniture'] is not None):
             raise TableError('unknown must not set a boundary, planting or furniture value')
@@ -131,6 +157,14 @@ def defaults(cls: str) -> dict:
     """
     rows = load_table()['classes']
     return rows[cls if cls in rows else 'unknown']
+
+
+def planting_rule(cls: str, kind: str) -> dict | None:
+    """Return the class's planting rule, or None when it allows no inference of this kind."""
+    row = defaults(cls)
+    if not row['frontage']['inference'] or row['planting'] is None:
+        return None
+    return row['planting'].get(kind)
 
 
 @lru_cache(maxsize=1)

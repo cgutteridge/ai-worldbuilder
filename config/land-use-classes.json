@@ -40,7 +40,11 @@
     "opening": "door_route",
     "pavement": 2.5
    },
-   "planting": null,
+   "planting": {
+    "shrubs": {"per_columns": 6},
+    "flowers": {"share": 0.08, "kinds": ["poppy", "dandelion"]},
+    "pond": null
+   },
    "furniture": null
   },
   {

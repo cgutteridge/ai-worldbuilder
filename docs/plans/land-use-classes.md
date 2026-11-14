@@ -86,7 +86,8 @@ validation, precedence in section 4). Row shape:
  "frontage": {"inference": true, "requires": ["identified_property", "front_segment"],
               "boundary": {"front": null, "side_front": null, "side_back": null, "rear": null, "perimeter": null},
               "private_surface": "grass", "opening": "door_route"},
- "planting": null,
+ "planting": {"shrubs": {"per_columns": 6},
+              "flowers": {"share": 0.08, "kinds": ["poppy", "dandelion"]}, "pond": null},
  "furniture": null}
 ```
 
@@ -97,10 +98,28 @@ validation, precedence in section 4). Row shape:
 | `frontage.boundary.<role>` | null, or `{type, height, block?}` | class default per role; null is "no default", never a fence. `perimeter` is the edge of a non-house parcel |
 | `frontage.private_surface` | `grass`, `paving`, `keep` | what *guessed* ground in the private extent becomes. Never touches observed or mapped surfaces (#158 unchanged) |
 | `frontage.opening` | `door_route`, `street_gate`, `none` | how an entrance gap is reserved |
-| `planting` (#252) | null, or `{shrubs, flowers, pond}` rules | null means no planting inference |
+| `planting` (#265, #266) | null, or `{shrubs, flowers, pond}` | null means no planting inference; no other keys allowed |
+| `planting.shrubs` | null, or `{per_columns: integer >= 1}` | target one shrub per this many guessed-lawn columns of the plot |
+| `planting.flowers` | null, or `{share, kinds}` | `0 < share <= 0.2`; `kinds` is a list of 1-2 names from `foliage.REFINE_PLANTS` |
+| `planting.pond` | null | reserved until #252 decides a rule |
 | `furniture` (#260) | null, or `{bench_per_100m}` | null means none inferred |
 
 The file also has a top-level `highways` map (lamp spacing per `highway` value) owned by #260.
+
+Only residential ships planting rules: shrubs `per_columns: 6`, flowers `share: 0.08` with
+`[poppy, dandelion]`. These are low-confidence starting guesses for the owner to tune. Other rows,
+including `unknown` and every class that allows no inference, keep `planting: null`.
+`land_use.planting_rule(class_id, kind)` reads the rule or returns `None`; there is no residential
+branch in the ground planner. `classify(guessed_out=...)` exposes only guessed lawn that remains grass
+after paving conversions and denoising, without changing its existing return value.
+
+Shrubs (#265) run in the ground pass on guessed-lawn `grass_block` columns, ordered by distance to
+the plot's house wall, then its boundary, with `(x,z)` ties. The target is `floor(columns/per_columns)`;
+clearance can reduce it. Each shrub is one persistent oak leaf at ground Y + 1; every third shrub
+gets a second leaf at Y + 2. Footprints, entrance routes, openings, tree/decor mask columns and
+neighbour-owned columns stay clear; shrubs leave a one-column gap from barriers and other shrubs.
+The ground report records each placement as `shrub inference (#265)`, source `inference`, confidence
+`low`. Existing foliage strip helpers remove the leaves on redo.
 
 Shipped values. Residential is exactly today: inference allowed with the two conditions, every boundary
 null (a missing convention never authorises a fence), guessed lawn kept, door route. Commercial,
@@ -119,7 +138,7 @@ A district is a named area listing its cells, one file per district in the world
 `site/districts/<slug>.json` with `name`, `cells` (list of `[tx, tz]` or inclusive rectangles), `evidence_ids`,
 and sections keyed by class id with the same shape as the table's `frontage`, `planting`, `furniture`,
 plus `palette`, `roofs`, `storeys` (stored and validated, read by nobody until #257). A cell belongs to at
-most one district; the loader refuses overlaps. Not an OSM place polygon: `place` is not fetched, it would
+most one district; the loader refuses overlaps. Not a vector-map place polygon: `place` is not fetched, it would
 tie the key to one map vendor, and UK suburbs are usually mapped as points, not areas (**UNVERIFIED**,
 general knowledge). A cell straddling two real districts goes to one; accepted for vibe.
 
@@ -201,9 +220,9 @@ Edits to make in `tasks/index.json` (orchestrator, on `main`; not made by this p
   a wrapper; `nonresidential` replaced by the class; segments for non-house parcels with role
   `perimeter`; ground's forecourt rule reads `private_surface`; deliver `land_use.resolve` with layers 1,
   2 and 4 (3 is empty until #255). State the two behaviour changes of risks 1 and 2.
-- **#255**: replace "a named area listing its cells or an OSM place polygon; state which" with "a named
+- **#255**: replace "a named area listing its cells or a vector-map place polygon; state which" with "a named
   area listing its cells, `site/districts/<slug>.json`, one district per cell". Drop "Unverified: whether
-  OSM place polygons exist". The loader plugs into `land_use.resolve` as layer 3.
+  vector-map place polygons exist". The loader plugs into `land_use.resolve` as layer 3.
 - **#240**: add the stop line of step 2; "trees in routing" closes as documented behaviour (trees are not
   moved; rule already says so); further generality is #254.
 - **#252**: add 254 to `blockedBy` (both edit the ground layer); rules live in the table's `planting`
