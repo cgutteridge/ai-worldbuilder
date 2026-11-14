@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 276,
+  "nextTaskId": 277,
   "tasks": [
     
     {
@@ -212,6 +212,15 @@
       "complexity": "s",
       "blockedBy": [ ],
       "notes": "From #252 research (2026-11-12): 0 flower blocks and 0 grass plants in the whole of 53,-43 (live scan); 407 guessed-lawn columns kept as private frontage are the candidates. Add a planting.flowers rule to config/land-use-classes.json (null = none; residential: sparse beds, a small fraction of guessed-lawn columns, clustered against the house wall or boundary, one or two flower kinds per plot from foliage.REFINE_PLANTS). Place in the ground pass as a plant block at gy+1 on grass_block only (ground_layer already tolerates a stem on lawn, STEM_OR_FLOWER), on guessed lawn only, never on the door route, opening, observed lawn or under a tree/decor mask. Labelled inference, provenance low confidence. Files: lib/layers/ground_layer.py, lib/layers/foliage.py, config/land-use-classes.json. Tests (synthetic): flowers appear only on guessed lawn of a class with a flowers rule; none for null-planting classes, observed lawn, route or opening columns; re-running the plan is idempotent and a redo strips them (is_refine_foliage). Check: per-plot flower counts before/after in a preview on 53,-43, no apply."
+    },
+    {
+      "id": 276,
+      "title": "Straighten oak fence panel runs and use one closer per step to remove sideways stubs",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [ ],
+      "notes": "From the 53,-43 checkpoint 2026-11-14. Owner after the ground and decor re-apply: brick walls look excellent, frontage is good, but sideways fence stubs remain on the oak panel runs (screenshot: /private/tmp/claude-507/-Users-cjg-Projects-ai-worldbuilder/0e5bd3f8-1754-41d4-8289-b3fceedd6fc6/scratchpad/shots/after8-owner-view-overhead.png, overhead; map script shelfmap.py in the same scratchpad). Read-only plan map shows the oak run as a repeating pattern of 2 panels facing the road then 2 perpendicular shelves (the closers from #273/#274) at every one-row step, because the boundary follows the pavement edge which is pixel-jagged and steps every 2 columns; from above each pair of sideways boards reads as a tooth and the run looks like a saw blade. Brick walls join across steps as wall blocks so they are fine. Deliver: (1) at most ONE closer per step (check shelf geometry: back board 3/16 flush with the edge opposite the facing; state the arrangement and test that every consecutive pair of columns in a panel run is joined by a board edge); (2) simplify the panel run polyline before placing so the run steps only when the line drifts by 2 or more columns from a straight fit (or similar tolerance stated and tested), giving long straight stretches with the fewest jogs, while keeping panels inside the owning plot, never on road or other-owned columns, and keeping entrance openings (#270/#275) open; (3) panel runs only; brick, hedge, iron and picket (normal fence) runs unchanged. Tests (synthetic): a jagged near-axis boundary (1-row step every 2 columns) gives a straight panel run with at most one jog per 4 columns and no sideways piece except at a real jog; a 27 and 45 degree run still has no gap; facing constant per run; closers one per step. Check, read-only: character map of 53,-43 planned barrier blocks near x 6790-6840, z -5440..-5395 before and after (and one wide map of the whole front line of Kitchener Road both sides), count of perpendicular shelves before and after. No apply, no rebuild; the owner reviews in-world."
     }
   ]
 }
