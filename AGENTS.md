@@ -24,6 +24,7 @@ Exactly one **active world** at a time (`active_world.py`; CLIs take required `-
 - Finding where something lives (tools, configs, providers, registry, bake-offs, ghost and dry-run commands): [docs/agents/layout.md](docs/agents/layout.md).
 - Adding a provider, converting coordinates, running a live-world command or a slow command, or using sound cues: [docs/agents/world-and-live-commands.md](docs/agents/world-and-live-commands.md).
 - Reading, adding or changing a tool task, or being asked to publish or fetch a ticket: [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md) (the system tracker is `tasks/index.json`; `scripts/tasks.mjs` lists, shows and updates status; run it on `main` as orchestrator only, never from a `task/*` worker).
+- Starting a session or subagent, or planning an overnight run: [docs/agents/model-and-effort.md](docs/agents/model-and-effort.md) (when a task is a stretch, ask before raising model or effort; overnight skips stretch tasks).
 - Glossary or ADR work, or exploring an unfamiliar area: [docs/agents/domain.md](docs/agents/domain.md).
 - Triage labels: [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
 - Adding or renaming a skill: skills live in `.agents/skills/`; `.claude/skills/` holds generated stubs. Run `node scripts/check-skill-stubs.mjs --write`, then `python3 scripts/run_tests.py --only test_skill_stubs`.
