@@ -85,7 +85,7 @@
     {
       "id": 249,
       "title": "Extend scripts/door_audit.py to audit landed house doors (present, two-high, level with the ground outside)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
