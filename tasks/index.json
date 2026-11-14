@@ -174,7 +174,7 @@
         "blockedBy": [
             
         ],
-        "notes": "Split from #248 (2026-11-14). Once #248 records builder name, builder sha and spec hash on feature plan entries, let scripts/reapply_feature.py read the recorded builder instead of refusing plans with no recorded builder or guessing from spec notes. Plans with no recorded builder keep today's refusal, with the message pointing at #248's 'unrecorded' listing. Tests: a plan with a recorded builder reapplies with that builder (dry run); an unrecorded plan still refuses; a recorded builder that no longer exists fails closed. No live apply in this task."
+        "notes": "Split from #248 (2026-11-14). Once #248 records builder name, builder sha and spec hash on feature plan entries, let scripts/reapply_feature.py read the recorded builder instead of refusing plans with no recorded builder or guessing from spec notes. Plans with no recorded builder keep today's refusal, with the message pointing at #248's 'unrecorded' listing. Tests: a plan with a recorded builder reapplies with that builder (dry run); an unrecorded plan still refuses; a recorded builder that no longer exists fails closed. No live apply in this task. Scope correction 2026-11-14: scripts/reapply_feature.py is a 10-line wrapper; the implementation is lib/builds/feature_reapply.py (120 lines). Edit that file and its tests (scripts/test_reapply_feature.py or a test beside it), plus the wrapper only if its interface must change."
     },
     {
         "id": 279,
