@@ -285,6 +285,23 @@ class Fetching(unittest.TestCase):
 
 
 class MinecraftFrame(unittest.TestCase):
+    def test_raw_height_contract_preserves_no_data_for_readiness(self):
+        client = mock.Mock()
+        dtm = np.array([[4.75, np.nan]])
+        dsm = np.array([[7.5, np.nan]])
+        client.sample.side_effect = [dtm, dsm]
+        h = dl.mc_heights(client, 0, 0, 0, 1, sea_level=11, geocraft=False)
+        self.assertEqual(set(h), {'dtm', 'dsm', 'diff', 'feature', 'ground_y', 'top_y'})
+        self.assertIs(h['feature'], h['diff'])
+        self.assertEqual(h['ground_y'][0, 0], 15)
+        self.assertEqual(h['top_y'][0, 0], 17)
+        self.assertEqual(h['dtm'][0, 0], 4.75)
+        for array in h.values():
+            self.assertEqual(array.shape, (1, 2))
+            self.assertTrue(np.isnan(array[0, 1]))
+        self.assertEqual([call.args[0] for call in client.sample.call_args_list], ['DTM', 'DSM'])
+        self.assertTrue(all(call.args[-1] is False for call in client.sample.call_args_list))
+
     def test_heights_follow_geocraft_block_rules(self):
         from osgb import load_offsets
         o = load_offsets()

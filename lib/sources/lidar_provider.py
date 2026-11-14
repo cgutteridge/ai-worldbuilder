@@ -2,7 +2,7 @@
 """Type-facing access to the active world's lidar provider.
 
 Callers ask for **lidar** (composite world, tile client, helpers). Catalogue
-rows with ``types: ["lidar"]`` and optional ``modules`` entrypoints choose the
+rows with ``types: ["lidar"]`` and ``modules`` entrypoints choose the
 package; vendor module filenames stay under ``providers/`` and catalogues.
 """
 from __future__ import annotations
@@ -51,8 +51,8 @@ def _module_rel(role: str, row: dict) -> str:
 def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
     """Load a lidar entry module by role (world, tiles, query or extremes).
 
-    Prefers the shared shim loader (one ``sys.modules`` object per historical
-    name) so provider-internal ``import <tiles>`` and callers share state.
+    Uses the shared shim loader for package subdirectories, caching by resolved
+    file path so historical system shims and type-facing callers share state.
 
     @param role: key under the provider's ``modules`` map
     @param data: optional place-sources dict

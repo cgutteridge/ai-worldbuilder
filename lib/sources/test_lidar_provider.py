@@ -73,6 +73,14 @@ class LiveCatalogue(unittest.TestCase):
         self.assertIn('world', modules)
         self.assertIn('tiles', modules)
 
+    def test_system_provider_exposes_documented_client_and_review_entrypoints(self):
+        client = lp.tile_client(download=False)
+        self.assertIsInstance(client.crs, str)
+        for method in ('missing', 'ensure', 'sample', 'tile_status'):
+            self.assertTrue(callable(getattr(client, method)))
+        for role in ('query', 'extremes'):
+            self.assertTrue(callable(lp.load_lidar_module(role).main))
+
     def test_live_tile_client_shares_shim_module(self):
         import defra_lidar as shim_tiles
         client_mod = lp.load_lidar_module('tiles')

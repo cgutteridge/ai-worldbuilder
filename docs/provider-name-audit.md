@@ -33,7 +33,10 @@ After each batch: run tests, then `check_provider_names.py --update-baseline` so
 | Need | Call |
 | --- | --- |
 | Composite lidar world | `lidar_provider.composite_world()` |
-| Lidar tile client / helpers | `lidar_provider.tile_client()`, `.mc_box_en`, `.mc_heights` |
+| Lidar tile client / helpers | `lidar_provider.tile_client()`, `.mc_box_en`, `.mc_heights`, `.default_heights` |
+| Lidar ghosts / ownership | Shared `lib/sources/lidar_ghost.py`; samples through `lidar_provider` (no catalogue role) |
+| Lidar query / extremes | `lidar_provider.load_lidar_module('query' / 'extremes')`; stable `shims/lidar_query.py` / `shims/lidar_extremes.py` |
+| Lidar readiness tiles / costs | `tile_client(download=False).tile_status(...)` returns missing rows and cached input paths; `LocalEvidence` hashes bytes |
 | Vector-map download / cache / clip tree | `vector_map_clips` (`downloads_dir`, `reference_dir`, `vector_map_clip_root`, `project_status`) — type-named `reference/vector_map`, once per world |
 
-Catalogue rows that fill type `lidar` set `modules.world` / `modules.tiles` (paths under the provider package). Vendor filenames stay inside `providers/` and catalogues. Optional shims: `shims/lidar_world.py`, `shims/lidar_tiles.py`.
+Catalogue rows that fill type `lidar` set `modules.world`, `modules.tiles`, `modules.query` and `modules.extremes` (paths under the provider package). The first world lidar row beats system rows; within each home, catalogue order decides. Package resolution and module caching use the chosen file's path, including world overrides of an existing id. Vendor filenames stay inside `providers/` and catalogues. The contract is in [`reference/TYPES.txt`](../reference/TYPES.txt); missing providers raise `NoLidarProviderError`, distinct from uncached tiles.
