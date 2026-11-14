@@ -104,12 +104,16 @@ class LayerCommands:
         require_running_world()
         reg = view_registry()
         policy = policy_for(reg)
-        for layer in layers:
-            # a layer redo replaces that layer's own mismatched apply, so it may pass it
-            own = {e.plan for e in reg.entries(cells=[cell]) if e.kind == 'build' and e.pass_ == layer}
-            check = policy.check(cell, layer, redoing=own)
+        # Every layer redone in this sequence replaces its own mismatched apply, so each check may
+        # pass the mismatches of all the redone layers (#284), not only its own. A ground redone
+        # first also refreshes a stale ground before trees/decor (task 285).
+        own = {e.plan for e in reg.entries(cells=[cell]) if e.kind == 'build' and e.pass_ in layers}
+        checks = [policy.check(cell, layer, redoing=own) for layer in layers]
+        for check in checks:
             if not check['ready']:
                 raise ValueError('needs-prep: ' + describe_blockers(check))
+        for cause in checks[0].get('ground_stale', []):
+            print(f'redo: ground stale: {cause} (this redo refreshes it)', flush=True)
         world = None
         for layer in ('trees', 'decor'):
             entries = [e for e in reg.entries(cells=[cell]) if e.kind == 'build' and e.pass_ == layer

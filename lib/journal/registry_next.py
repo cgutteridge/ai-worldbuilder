@@ -8,7 +8,8 @@ Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
 configured home cell (Chebyshev distance, then clockwise ring order from north), over the
 cell journal views (``CellRegistry.view()``).
 Unready cells return needs-prep before any build. Prepared-cell order is ground →
-features (by id) → trees → decor → marker-clear. Callers explicitly exclude blocked cells.
+features (by id) → ground-redo (only when readiness says the ground is stale, task 285) →
+trees → decor → marker-clear. Callers explicitly exclude blocked cells.
 
 The build task raises the marker; ``next`` does not.
 """
@@ -23,10 +24,14 @@ from cell_journal import CellRegistry, CellView
 from cell_registry import cell_id, view_registry
 
 
-def _undone_work_in_cell(v: CellView) -> list[dict[str, Any]]:
+def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Ordered remaining work items inside one cell (excluding holds).
 
+    A stale ground (a feature landed after it) is offered as a ``ground-redo`` item after the
+    cell's unbuilt features, so one redo covers them all; it is offered, never started here.
+
     @param v: the cell's journal view
+    @param report: the cell's readiness report (``ground_stale`` / ``ground_redo``)
     @returns: list of task dicts
     """
     if v.hold:
@@ -45,6 +50,9 @@ def _undone_work_in_cell(v: CellView) -> list[dict[str, Any]]:
                 'status': feat.status,
                 'name': feat.id,
             })
+    if report and report.get('ground_stale'):
+        out.append({'kind': 'ground-redo', 'cell': cid, 'layer': 'ground',
+                    'stale': list(report['ground_stale']), 'command': report['ground_redo']})
     if not v.trees:
         out.append({'kind': 'layer', 'cell': cid, 'layer': 'trees'})
     if not v.decor:
@@ -107,8 +115,11 @@ def needs_clip_coverage(reg: CellRegistry, cell: tuple[int, int]) -> dict[str, A
 
 
 def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
-              policy=None, exclude=()) -> dict[str, Any] | None:
+              policy=None, exclude=(), cell: tuple[int, int] | None = None) -> dict[str, Any] | None:
     """Read-only deterministic selection over validated readiness and journal work.
+
+    ``cell`` scopes the pick to that one cell (what ``next`` would do there); a finished
+    cell then returns ``{'kind': 'complete'}`` instead of None.
 
     ``needs-prep`` names an unready selected cell. Unattended callers log its reasons
     and pass explicit run-local exclusions on their next call. ``blocked`` means
@@ -117,6 +128,8 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
     """
     reg = registry or view_registry(root)
     views = reg.view()
+    if cell is not None:
+        views = {tuple(cell): reg.cell(tuple(cell))}
     if not views:
         return None
     if policy is None:
@@ -131,7 +144,7 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
             return {'kind': 'blocked', 'cells': [cell_id(*c) for c in sorted(pending)],
                     'reasons': {cell_id(*c): reports[c]['blockers'] or ['excluded for this run']
                                 for c in sorted(pending)}}
-        return None
+        return {'kind': 'complete', 'cell': cell_id(*cell)} if cell is not None else None
     home, marker = cellmath.home_cell(), reg.marker_cell()
 
     def order(c):
@@ -142,18 +155,34 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
     cell = min(eligible, key=order)
     report, v = reports[cell], views[cell]
     if not report['ready']:
-        return {'kind': 'needs-prep', 'cell': cell_id(*cell), 'reasons': report['blockers'],
+        task = {'kind': 'needs-prep', 'cell': cell_id(*cell), 'reasons': report['blockers'],
                 'clip_coverage': report.get('clip_coverage'),
                 'aerial_coverage': report.get('aerial_coverage'),
                 'next_actions': report.get('next_actions', [])}
+        if report.get('ground_stale'):
+            task.update(stale=list(report['ground_stale']), command=report['ground_redo'])
+        return task
     effective = replace(v, trees=report['trees_current'], decor=report['decor_current'])
-    work = _undone_work_in_cell(effective)
+    work = _undone_work_in_cell(effective, report)
     if work:
         return work[0]
     if v.marker:
         return {'kind': 'marker-clear', 'cell': cell_id(*cell)}
     # An unfinished journal invariant must never be reported as an idle queue.
     return {'kind': 'needs-prep', 'cell': cell_id(*cell), 'reasons': list(v.left)}
+
+
+def _stale_lines(task: dict[str, Any]) -> str:
+    """Stale-ground causes and the ``clear:`` line (task 284 form) under a next one-liner.
+
+    @param task: a next task that may carry ``stale`` / ``command``
+    @returns: text starting with a newline, or ''
+    """
+    if not task.get('stale'):
+        return ''
+    lines = [f'  ground stale: {cause}' for cause in task['stale']]
+    lines.append(f"  clear: ground stale -> {task['command']}")
+    return '\n' + '\n'.join(lines)
 
 
 def format_next(task: dict[str, Any] | None) -> str:
@@ -170,7 +199,11 @@ def format_next(task: dict[str, Any] | None) -> str:
             f"(status={task.get('status')})"
         )
     if task.get('kind') == 'needs-prep':
-        return f"next: needs-prep in cell {task['cell']}: " + '; '.join(task['reasons'])
+        return f"next: needs-prep in cell {task['cell']}: " + '; '.join(task['reasons']) + _stale_lines(task)
+    if task.get('kind') == 'ground-redo':
+        return f"next: ground-redo in cell {task['cell']} (offered, not started)" + _stale_lines(task)
+    if task.get('kind') == 'complete':
+        return f"next: (nothing in cell {task['cell']} — complete)"
     if task.get('kind') == 'blocked':
         return 'next: blocked (unfinished cells are held or excluded for this run)'
     if task.get('kind') == 'marker-clear':

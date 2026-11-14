@@ -293,6 +293,24 @@ def cmd_log(stages: dict, args) -> str:
     return text
 
 
+def stale_ground_lines(cells) -> list[str]:
+    """Cells whose ground is older than a feature landed on it, with the cause and the redo (task 285).
+
+    @param cells: cells to check
+    @returns: report lines (empty when every ground is current)
+    """
+    from cell_readiness import ground_redo_command, stale_ground
+    from cell_registry import view_registry
+    reg = view_registry()
+    lines = []
+    for c in sorted(cells):
+        stale = stale_ground(reg, c)
+        if stale:
+            lines += [f'  {c[0]},{c[1]}  {cause}' for cause in stale['causes']]
+            lines.append(f'  {c[0]},{c[1]}  clear: ground stale -> {ground_redo_command(c, stale)}')
+    return lines
+
+
 def cmd_morning(stages: dict, since: datetime | None) -> str:
     since = since or datetime.fromtimestamp(0)
     blocks = run_log_blocks(since)
@@ -306,6 +324,9 @@ def cmd_morning(stages: dict, since: datetime | None) -> str:
         lines += ['', 'PROBLEMS / OPEN:'] + [f'  {p}' for p in probs]
     if looks:
         lines += ['', 'NEEDS YOUR EYE:'] + [f'  {l}' for l in looks]
+    stale = stale_ground_lines(stages)
+    if stale:
+        lines += ['', 'STALE GROUND (a feature landed after the ground; redo offered, not started):'] + stale
     lines += ['', 'FOOTPRINT (built vs unbuilt vector-map area per cell):']
     any_fp = False
     for c in sorted(stages):

@@ -48,7 +48,8 @@ class PlanIdTest(unittest.TestCase):
 
     def built_street(self):
         """The street plan built earlier, with a hand-off spec naming its two houses."""
-        self.jw.seed(CELL, ground=True, trees=True, decor=True, features=(STREET,))
+        self.jw.seed(CELL, features=(STREET,))
+        self.jw.seed(CELL, ground=True, trees=True, decor=True)   # ground after the feature: not stale (#285)
         builds = self.root / 'site' / 'builds'
         builds.mkdir(parents=True)
         (builds / f'{STREET}.json').write_text(json.dumps({'name': STREET, 'ways': {'1': 'K1', '2': 'K2'}}))
