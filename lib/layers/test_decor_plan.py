@@ -1,8 +1,12 @@
 """Decor plan from aerial/photos with provenance (#150)."""
 from __future__ import annotations
 
+import copy
+import io
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -346,6 +350,93 @@ class TestBuildDecorPlan(unittest.TestCase):
         self.assertEqual(furniture[0]['kind'], 'bench')
         self.assertEqual(furniture[0]['x'], 5)
         self.assertEqual(dp.unresolved_items(plan)[0]['id'], 'u1')
+
+
+class TestUnresolvedBarrierReporting(unittest.TestCase):
+    def barrier(self, item_id='boundary', reason='', **extra):
+        return prov.attach_provenance(
+            {'id': item_id, 'role': 'barrier', 'kind': 'hedge',
+             'cells': [[10, 20], [11, 20]], 'height': 1, **extra},
+            source='inference', confidence='medium', evidence_ids=['synthetic-boundary'],
+            unresolved_reason=reason)
+
+    def test_unresolved_barrier_is_skipped_and_reported_without_changing_plan(self):
+        item = self.barrier(reason='boundary height needs confirmation')
+        original = copy.deepcopy(item)
+        unplaced = []
+        self.assertEqual(dp.resolved_barriers({'items': [item]}, unplaced), {})
+        self.assertEqual(len(unplaced), 1)
+        self.assertEqual(unplaced[0]['id'], item['id'])
+        self.assertEqual(unplaced[0]['cells'], item['cells'])
+        self.assertEqual(unplaced[0]['provenance'], {
+            **item['provenance'], 'unresolved_reason':
+            'barrier skipped: provenance carries an unresolved reason: boundary height needs confirmation'})
+        self.assertEqual(item, original)
+        self.assertEqual(dp.resolved_barriers({'items': [item]}), {})
+
+    def test_resolved_barrier_is_placed_and_not_reported(self):
+        from decor_layer import place_barriers_from_plan
+
+        item = self.barrier()
+        unplaced = []
+        self.assertEqual(dp.resolved_barriers({'items': [item]}, unplaced), {
+            (10, 20): ('hedge', dp.HEDGE_BLOCK, 1),
+            (11, 20): ('hedge', dp.HEDGE_BLOCK, 1)})
+        self.assertEqual(unplaced, [])
+        world = mock.Mock()
+        world.block.return_value = 'minecraft:air'
+        with mock.patch('surface_probe.surface_y', return_value=(64, 'grass_block')), \
+                mock.patch('decor_layer.on_carriageway', return_value=False):
+            found, report, unplaced = place_barriers_from_plan(
+                (0, 0), [item], world, way=set(), near1=set(), owned=set(), masked={})
+        self.assertEqual(found, {(10, 65, 20): dp.HEDGE_BLOCK, (11, 65, 20): dp.HEDGE_BLOCK})
+        self.assertEqual(len(report), 2)
+        self.assertEqual(unplaced, [])
+        with redirect_stdout(io.StringIO()) as output:
+            dp.print_unresolved_barriers([item])
+        self.assertEqual(output.getvalue(), '')
+
+    def test_none_opening_and_unresolved_furniture_are_not_reported_as_barriers(self):
+        opening = self.barrier('opening', reason='deliberate open frontage', kind='none')
+        furniture = self.barrier('bench', reason='coordinate missing', role='furniture', kind='bench')
+        items = [opening, furniture]
+        unplaced = []
+        self.assertEqual(dp.resolved_barriers({'items': items}, unplaced), {})
+        self.assertEqual(unplaced, [])
+        with redirect_stdout(io.StringIO()) as output:
+            dp.print_unresolved_barriers(items)
+        self.assertEqual(output.getvalue(), '')
+
+    def test_summary_counts_runs_instead_of_columns_and_bounds_ids(self):
+        skipped = [self.barrier(f'boundary-{n}', reason='height unconfirmed') for n in range(8)]
+        items = [self.barrier('resolved'), *skipped,
+                 self.barrier('opening', reason='deliberate opening', kind='none'),
+                 self.barrier('bench', reason='coordinate missing', role='furniture', kind='bench')]
+        unplaced = []
+        dp.resolved_barriers({'items': items}, unplaced)
+        self.assertEqual([i['id'] for i in unplaced], [i['id'] for i in skipped])
+        with redirect_stdout(io.StringIO()) as output:
+            dp.print_unresolved_barriers(items)
+        self.assertEqual(output.getvalue(),
+                         '  8 barrier runs skipped as unresolved: '
+                         'boundary-0, boundary-1, boundary-2, boundary-3, boundary-4, ...\n')
+
+    def test_decor_report_prints_warning_and_saves_original_reason(self):
+        import decor_layer as dl
+        from layer_reports import write_report
+
+        item = self.barrier(reason='boundary height needs confirmation')
+        stats = {'blocks': 0, 'unresolved_items': [item], 'unplaced_items': []}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(dl, 'plan_cell', return_value=({}, stats)), \
+                mock.patch('site_kit.fresh_planning_world'), \
+                mock.patch('layer_reports.write_report',
+                           side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(dl.run((0, 0)), 0)
+            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-report.json').read_text())
+        self.assertEqual(saved['stats']['unresolved_items'], [item])
+        self.assertEqual(output.getvalue().count('1 barrier runs skipped as unresolved: boundary'), 1)
 
 
 class TestLidarFurniture(unittest.TestCase):

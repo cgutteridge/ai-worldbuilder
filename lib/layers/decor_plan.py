@@ -796,12 +796,19 @@ def resolved_barriers(
     """Resolved barrier columns → ``(kind, block, height)`` for the decor layer.
 
     @param plan: decor plan
-    @param unplaced: optional list that receives resolved items of an unknown kind, with a reason
+    @param unplaced: optional list receiving skipped unresolved or unknown-kind items, with reasons
     @returns: column map ready for placement
     """
     out: dict[tuple[int, int], tuple[str, str, int]] = {}
     for item in plan.get('items') or []:
-        if item.get('role') != 'barrier' or prov.is_unresolved(item.get(prov.PROVENANCE_KEY)):
+        if item.get('role') != 'barrier':
+            continue
+        provenance = item.get(prov.PROVENANCE_KEY)
+        if prov.is_unresolved(provenance):
+            if unplaced is not None and item.get('kind') != 'none':
+                unplaced.append(mark_unplaced(
+                    item, 'barrier skipped: provenance carries an unresolved reason: '
+                    f"{provenance['unresolved_reason']}"))
             continue
         kind = item.get('kind')
         if kind not in BARRIER_KINDS:
@@ -813,6 +820,19 @@ def resolved_barriers(
         for c in item.get('cells') or []:
             out[(int(c[0]), int(c[1]))] = (kind, block, height)
     return out
+
+
+def print_unresolved_barriers(items: Sequence[Mapping[str, Any]]) -> None:
+    """Print one bounded warning for barrier runs skipped because of provenance.
+
+    @param items: plan items, including unresolved rows retained by the decor report
+    """
+    skipped = [i for i in items if i.get('role') == 'barrier' and i.get('kind') != 'none'
+               and prov.is_unresolved(i.get(prov.PROVENANCE_KEY))]
+    if skipped:
+        ids = ', '.join(str(i.get('id') or '<unnamed>') for i in skipped[:5])
+        more = ', ...' if len(skipped) > 5 else ''
+        print(f'  {len(skipped)} barrier runs skipped as unresolved: {ids}{more}')
 
 
 def resolved_furniture(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
