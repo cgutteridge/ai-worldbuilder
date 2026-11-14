@@ -552,12 +552,16 @@ class TestPlanting(unittest.TestCase):
     def planting(self, **kwargs):
         return gl.plan_planting(self.plan, self.world, self.lawn, self.ys, self.plots, self.segments, **kwargs)
 
+    @staticmethod
+    def items(row, kind):
+        return [item for item in row['items'] if item['kind'] == kind]
+
     def test_shrub_density_order_height_and_provenance(self):
         rows = self.planting()
         row = rows[0]
         self.assertEqual(row['shrubs'], len(self.lawn) // 6)
         self.assertEqual(row['items'][0]['position'], [2, 51, 11])  # nearest wall, then boundary, then x,z
-        for n, item in enumerate(row['items'], 1):
+        for n, item in enumerate(self.items(row, 'shrubs'), 1):
             x, y, z = item['position']
             self.assertEqual(item['height'], 2 if n % 3 == 0 else 1)
             self.assertEqual(item['label'], 'shrub inference (#265)')
@@ -566,7 +570,7 @@ class TestPlanting(unittest.TestCase):
             self.assertIn((x, z), self.lawn)
             for dy in range(item['height']):
                 self.assertEqual(self.plan.cells[(x, y + dy, z)], 'minecraft:oak_leaves[persistent=true]')
-        positions = [i['position'] for i in row['items']]
+        positions = [i['position'] for i in self.items(row, 'shrubs')]
         for n, (x, _, z) in enumerate(positions):
             self.assertTrue(all(max(abs(x - xx), abs(z - zz)) > 1 for xx, _, zz in positions[:n]))
 
@@ -591,7 +595,8 @@ class TestPlanting(unittest.TestCase):
         planted = {(x, z) for item in rows[0]['items'] for x, _, z in [item['position']]}
         self.assertTrue(planted)
         self.assertTrue(planted.isdisjoint(clear | set(self.fp) | {(4, 11), (6, 11), (8, 11)}))
-        self.assertTrue(all(max(abs(x - 14), abs(z - 11)) > 1 for x, z in planted))
+        shrubs = {(x, z) for item in self.items(rows[0], 'shrubs') for x, _, z in [item['position']]}
+        self.assertTrue(all(max(abs(x - 14), abs(z - 11)) > 1 for x, z in shrubs))
 
     def test_shrubs_require_known_air_for_every_leaf(self):
         from unittest import mock
@@ -605,25 +610,101 @@ class TestPlanting(unittest.TestCase):
         for cls in ('park', 'rural', 'natural', 'water', 'unknown', None):
             self.info[1]['land_use'] = cls
             with self.subTest(cls=cls):
-                self.assertEqual(self.planting()[0]['shrubs'], 0)
+                row = self.planting()[0]
+                self.assertEqual((row['shrubs'], row['flowers']), (0, 0))
 
     def test_planting_uses_class_rule_without_residential_branch(self):
         from unittest import mock
         import land_use
         self.info[1]['land_use'] = {'class': 'park'}
-        with mock.patch.object(land_use, 'planting_rule', return_value={'per_columns': 12}) as rule:
+        with mock.patch.object(land_use, 'planting_rule', side_effect=lambda cls, kind: (
+                {'per_columns': 12} if kind == 'shrubs' else None)) as rule:
             row = self.planting()[0]
-        rule.assert_called_once_with('park', 'shrubs')
+        self.assertEqual(rule.call_args_list, [mock.call('park', 'shrubs'), mock.call('park', 'flowers')])
         self.assertEqual(row['shrubs'], len(self.lawn) // 12)
+        self.assertEqual(row['flowers'], 0)
 
-    def ground_plan(self, world, *, vmap=None, rgb=None, masked=None, owned=()):
+    def test_flowers_use_beds_one_kind_and_low_confidence_with_shrubs_first(self):
+        row = self.planting()[0]
+        flowers = self.items(row, 'flowers')
+        self.assertEqual(row['flowers'], round(.08 * len(self.lawn)))
+        self.assertEqual(len(flowers), row['flowers'])
+        self.assertEqual(len({item['block'] for item in flowers}), 1)
+        shrubs = {(item['position'][0], item['position'][2]) for item in self.items(row, 'shrubs')}
+        for item in flowers:
+            x, y, z = item['position']
+            self.assertEqual(y, 51)
+            self.assertIn((x, z), self.lawn - shrubs)
+            self.assertTrue(z >= 10 or z <= 4 or x <= 4)  # wall, front or side boundary within two
+            self.assertIn(item['block'], ('poppy', 'dandelion'))
+            self.assertEqual(self.plan.cells[(x, y, z)], gl.full(item['block']))
+            self.assertEqual(self.plan.cells[(x, y - 1, z)], 'minecraft:grass_block')
+            self.assertEqual(item['label'], 'flower inference (#266)')
+            self.assertEqual((item['provenance']['source'], item['provenance']['confidence']), ('inference', 'low'))
+
+    def test_flowers_ignore_rear_edges_and_can_run_without_shrubs(self):
+        from unittest import mock
+        import land_use
+        self.fp.clear()                                  # no house-wall alternative
+        self.info[1]['land_use'] = {'class': 'park'}
+        with mock.patch.object(land_use, 'planting_rule', side_effect=lambda cls, kind: (
+                {'share': .08, 'kinds': ['poppy']} if kind == 'flowers' else None)):
+            self.segments = {(1, 'rear'): list(self.lawn)}
+            row = self.planting()[0]
+            self.assertEqual((row['shrubs'], row['flowers']), (0, 0))
+            self.segments = {(1, 'side_back'): [(0, z) for z in range(2, 12)]}
+            row = self.planting()[0]
+        # Target is round(.08*180)=14, capped by ten side-bed columns (not .08*10).
+        self.assertEqual(row['flowers'], 10)
+        self.assertTrue(all(item['position'][0] == 2 for item in self.items(row, 'flowers')))
+
+    def test_flowers_and_plot_kinds_stable_across_input_order_and_two_runs(self):
+        other = {(x + 30, z) for x, z in self.lawn}
+        self.lawn.update(other)
+        self.owner.update({q: 2 for q in other})
+        self.info[2] = {'street': 'Test Road', 'number': '2', 'land_use': {'class': 'residential'}}
+        self.fp.update({(x + 30, 12): 2 for x in range(2, 20)})
+        self.ys.update({q: 50 for q in other})
+        self.segments[(2, 'front')] = [(x + 30, 2) for x in range(2, 20)]
+        self.segments[(2, 'side_front')] = [(32, z) for z in range(2, 12)]
+        first, first_stats = self.ground_plan(self.world)
+        self.ys = dict(reversed(list(self.ys.items())))
+        self.segments = {key: list(reversed(cols)) for key, cols in reversed(list(self.segments.items()))}
+        second, second_stats = self.ground_plan(self.world)
+        self.assertEqual(first.cells, second.cells)
+        self.assertEqual(first_stats['planting'], second_stats['planting'])
+        for row in first_stats['planting']:
+            flowers = self.items(row, 'flowers')
+            self.assertTrue(flowers)
+            self.assertEqual(len({item['block'] for item in flowers}), 1)
+
+    def test_ground_flowers_leave_routes_openings_footprints_and_masks_clear(self):
+        route = {(6, z) for z in range(2, 12)}
+        opening, clearance = {(7, 11)}, {(8, 11)}
+        self.fp[(12, 11)] = 1
+        frontages = [{'eligible': True, 'route': sorted(route), 'opening': sorted(opening),
+                      'clearance': sorted(clearance)}]
+        _, stats = self.ground_plan(self.world, frontages=frontages,
+                                    masked={(9, 90, 11): 'trees 0,0', (10, 70, 11): 'decor 0,0'},
+                                    owned={(11, 60, 11)})
+        flowers = {tuple(item['position'][::2]) for row in stats['planting'] for item in self.items(row, 'flowers')}
+        self.assertTrue(flowers)
+        self.assertTrue(flowers.isdisjoint(route | opening | clearance | set(self.fp)
+                                          | {(9, 11), (10, 11), (11, 11)}))
+
+    def test_observed_lawn_gets_no_inferred_flowers(self):
+        _, stats = self.ground_plan(self.world, rgb={q: (.64, .60, .54) for q in self.lawn})
+        self.assertEqual(stats['flowers'], 0)
+        self.assertEqual(stats['planting'][0]['guessed_lawn'], 0)
+
+    def ground_plan(self, world, *, vmap=None, rgb=None, masked=None, owned=(), frontages=()):
         from unittest import mock
         from types import SimpleNamespace
         from site_kit import Plan
         live = {q: (50, 'grass_block') for q in self.lawn}
         ev = {'vmap': vmap if vmap is not None else TestGroundDecisions.Osm(),
               'rgb': rgb if rgb is not None else {q: (.44, .39, .27) for q in self.lawn},
-              'private_frontage': self.lawn, 'frontages': [], 'plots': self.plots, 'segments': self.segments,
+              'private_frontage': self.lawn, 'frontages': frontages, 'plots': self.plots, 'segments': self.segments,
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': 50)}
         plan = Plan('ground-planting-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
@@ -639,6 +720,7 @@ class TestPlanting(unittest.TestCase):
                                        rgb={q: (.84, .76, .69) for q in self.lawn})
         self.assertEqual(stats['how: aerial brick away from paths -> lawn'], len(self.lawn))
         self.assertEqual(stats['shrubs'], 0)
+        self.assertEqual(stats['flowers'], 0)
         self.assertEqual(stats['planting'][0]['guessed_lawn'], 0)
         self.assertFalse(any('leaves' in b for b in plan.cells.values()))
 
@@ -651,7 +733,7 @@ class TestPlanting(unittest.TestCase):
         self.assertGreater(stats['shrubs'], 0)
         self.assertNotIn(pos, plan.cells)
         self.assertTrue(all(max(abs(item['position'][0] - pos[0]), abs(item['position'][2] - pos[2])) > 1
-                            for row in stats['planting'] for item in row['items']))
+                            for row in stats['planting'] for item in self.items(row, 'shrubs')))
 
     def test_ground_shrubs_leave_gap_from_unmapped_masked_fence(self):
         from block_store import MemoryBlocks
@@ -666,7 +748,7 @@ class TestPlanting(unittest.TestCase):
                     self.assertGreater(stats['shrubs'], 0)
                     self.assertNotIn(pos, plan.cells)
                     self.assertTrue(all(max(abs(item['position'][0] - pos[0]), abs(item['position'][2] - pos[2])) > 1
-                                        for row in stats['planting'] for item in row['items']))
+                                        for row in stats['planting'] for item in self.items(row, 'shrubs')))
 
     def test_shrub_clearance_uses_planned_air_over_old_own_shrub(self):
         from block_store import MemoryBlocks
@@ -687,12 +769,13 @@ class TestPlanting(unittest.TestCase):
         row = self.planting(masked={pos: 'decor 0,0'})[0]
         self.assertEqual(row['items'][0]['position'], [2, 51, 11])
 
-    def test_ground_rerun_is_idempotent_and_redo_strips_shrubs(self):
+    def test_ground_rerun_is_idempotent_and_redo_strips_planting(self):
         from block_store import MemoryBlocks
         from site_kit import Plan, World
         from foliage import is_refine_foliage, strip_foliage_above_surface
         first, stats = self.ground_plan(self.world)
         self.assertGreater(stats['shrubs'], 0)
+        self.assertGreater(stats['flowers'], 0)
         after = World(store=MemoryBlocks({**self.blocks, **first.cells}, default='air'))
         second, again = self.ground_plan(after)
         self.assertEqual(first.cells, second.cells)
@@ -700,9 +783,10 @@ class TestPlanting(unittest.TestCase):
         strip = Plan('redo-strip-test')
         strip_foliage_above_surface(strip, after, self.lawn)
         leaves = {p for p, b in first.cells.items() if 'leaves' in b}
-        self.assertEqual(set(strip.cells), leaves)
+        flowers = {tuple(item['position']) for row in stats['planting'] for item in self.items(row, 'flowers')}
+        self.assertEqual(set(strip.cells), leaves | flowers)
         self.assertTrue(all(b == 'minecraft:air' for b in strip.cells.values()))
-        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves))
+        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves | flowers))
 
 
 class TestWarmSurfaceProbe(unittest.TestCase):

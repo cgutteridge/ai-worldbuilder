@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import sys
 from collections import Counter
 from pathlib import Path
@@ -752,11 +753,13 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
     fp = idx.cells()
     protected = set(masked) | set(owned)
     blocked = set(clear) | set(fp) | {(x, z) for x, _y, z in protected}
-    houses, boundaries, lawns = {}, {}, {}
+    houses, boundaries, bed_edges, lawns = {}, {}, {}, {}
     for q, i in fp.items():
         houses.setdefault(i, set()).add(q)
-    for (i, _role), cols in segments.items():
+    for (i, role), cols in segments.items():
         boundaries.setdefault(i, set()).update(cols)
+        if role in ('front', 'side_front', 'side_back'):
+            bed_edges.setdefault(i, set()).update(cols)
     for q in sorted(ys):
         if q in owner:
             lawns.setdefault(owner[q], [])
@@ -794,12 +797,10 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
         lu = meta.get('land_use') or 'unknown'
         cls = lu.get('class', 'unknown') if isinstance(lu, dict) else lu
         row = {'plot': i, 'street': meta.get('street', ''), 'number': meta.get('number', ''),
-               'land_use': cls, 'guessed_lawn': len(lawn), 'shrubs': 0, 'items': []}
+               'land_use': cls, 'guessed_lawn': len(lawn), 'shrubs': 0, 'flowers': 0, 'items': []}
         report.append(row)
         rule = land_use.planting_rule(cls, 'shrubs')
-        if rule is None:
-            continue
-        target = len(lawn) // rule['per_columns']
+        target = len(lawn) // rule['per_columns'] if rule is not None else 0
         candidates = sorted(lawn, key=lambda q: (distance(q, houses.get(i, ())),
                                                  distance(q, boundaries.get(i, ())), q))
         for x, z in candidates:
@@ -814,10 +815,34 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
             for p in positions:
                 plan.set(*p, 'oak_leaves[persistent=true]')
             row['shrubs'] += 1
-            row['items'].append({'position': list(positions[0]), 'height': height,
+            row['items'].append({'kind': 'shrubs', 'position': list(positions[0]), 'height': height,
                                  'label': 'shrub inference (#265)',
                                  'provenance': prov.provenance_record(source='inference', confidence='low')})
             shrub_gap.update((x + a, z + b) for a in (-1, 0, 1) for b in (-1, 0, 1))
+        rule = land_use.planting_rule(cls, 'flowers')
+        if rule is None:
+            continue
+        target = round(rule['share'] * len(lawn))
+        flower = random.Random(f'flower-kind:{i}').choice(rule['kinds'])
+        shrub_columns = {(item['position'][0], item['position'][2]) for item in row['items']}
+        candidates = []
+        for x, z in lawn:                              # already sorted by (x,z)
+            q = (x, z)
+            if q in blocked or q in shrub_columns:
+                continue
+            if min(distance(q, houses.get(i, ())), distance(q, bed_edges.get(i, ()))) > 4:
+                continue
+            p = (x, ys[q] + 1, z)
+            if air(p) or bare(block(p)) == full(flower):  # retain the same inferred flower on rerun
+                candidates.append(q)
+        candidates.sort(key=lambda q: (random.Random(f'flower:{i}:{q[0]}:{q[1]}').random(), q))
+        for x, z in candidates[:target]:
+            p = (x, ys[(x, z)] + 1, z)
+            plan.set(*p, flower)
+            row['flowers'] += 1
+            row['items'].append({'kind': 'flowers', 'position': list(p), 'block': flower,
+                                 'label': 'flower inference (#266)',
+                                 'provenance': prov.provenance_record(source='inference', confidence='low')})
     return report
 
 
@@ -930,6 +955,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         clear=gs.reserved_route(frontages) | gs.reserved_openings(frontages),
         masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
+    stats['flowers'] = sum(row['flowers'] for row in stats['planting'])
     return stats, conflicts, kind, skipped
 
 
@@ -990,7 +1016,8 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  top {stats["top"]}  raise {stats["raise"]}  clear {stats["clear"]}  '
           f'(kept: neighbour {stats["kept_neighbour"]}, masked {stats["kept_masked"]})')
     print(f'  planned cells {len(plan.cells)}  would change {len(changes)}')
-    print(f'  inferred shrubs: {stats["shrubs"]} (low confidence; see per-plot planting report)')
+    print(f'  inferred shrubs: {stats["shrubs"]}, flowers: {stats["flowers"]} '
+          '(low confidence; see per-plot planting report)')
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')
     for pos, want, why in conflicts[:10]:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')
