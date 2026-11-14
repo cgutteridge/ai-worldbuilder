@@ -2310,5 +2310,37 @@
         ],
         "notes": "Split from #248 (2026-11-14). Once #248 records builder name, builder sha and spec hash on feature plan entries, let scripts/reapply_feature.py read the recorded builder instead of refusing plans with no recorded builder or guessing from spec notes. Plans with no recorded builder keep today's refusal, with the message pointing at #248's 'unrecorded' listing. Tests: a plan with a recorded builder reapplies with that builder (dry run); an unrecorded plan still refuses; a recorded builder that no longer exists fails closed. No live apply in this task. Scope correction 2026-11-14: scripts/reapply_feature.py is a 10-line wrapper; the implementation is lib/builds/feature_reapply.py (120 lines). Edit that file and its tests (scripts/test_reapply_feature.py or a test beside it), plus the wrapper only if its interface must change.\n\nClosed at bd64f0b160619c480ad067705863dff7276c68d4: Merged by codex as bd64f0b: reapply_feature honours the builder recorded on the plan (#248); missing or unrecorded builders still refuse. Changes in lib/builds/feature_reapply.py and builder_provenance.py, six synthetic tests in scripts/test_reapply_feature.py. Orchestrator check: sha is on main, test_reapply_feature passes, diff within agreed scope (scope widened to lib/builds/feature_reapply.py). Live apply not tested; world untouched.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+        "id": 283,
+        "title": "Journal ownership scan: build all neighbour cells in one pass over the journal",
+        "status": "done",
+        "priority": "medium",
+        "complexity": "s",
+        "blockedBy": [],
+        "notes": "From #264's profile and #282's correction (2026-11-14). On a decor preview of 53,-43, ground_layer.neighbour_owned asks the journal for 10 distinct cells once; lib/journal/cell_journal.py _cell_owners rebuilds each cell separately at about 2 s per cell (19-21 s total), the largest block of decor source preparation, paid by ground, trees and decor. #282's per-cell cache gave no saving (no repeated cells) and is reverted. Profile first: cProfile one read-only preview (python3 scripts/decor_layer.py --world southampton-build --cell 53,-43, no apply, no redo_layer --apply) and split _cell_owners time into journal-entry iteration, blob decode (_blob) and the per-position loop; state what a shared pass would save before writing code. If the shared work is a large share, add a method that takes a set of cells and walks the entries of all of them once (decoding each blob once, assigning positions to the owner dicts of the cells they fall in), keeping per-cell semantics exactly: later wins, CANCEL removes, ghost-over-ground rule, exclude and skip, undone and begun entries skipped. neighbour_owned (ground_layer.py) and the owners() path it calls switch to it. Output must equal the per-cell result for every cell: test on a synthetic journal with overlapping builds across cell borders, ghost and ground passes, undo, exclude and skip sets, and one multi-cell blob. If profiling shows under ~5 s saving, stop and report; no code. Files: lib/journal/cell_journal.py, lib/layers/ground_layer.py (neighbour_owned only), tests. Done when: tests pass, preview shows ownership time before and after unprofiled (time the stage) and under cProfile, close report gives both numbers. A stretch task (journal-derived state): run at high effort and check the session reports high effort. No live apply. Do not edit tasks/ from the branch.\n\nClosed at a9f87c784083503568132ed1bb50b1a7363f49a3: NO-GO, measured, no code shipped (sha is the docs commit recording it). Shared pass would save 0.3-0.5 s: _cell_owners 9.5 s over 9 cells is a per-position Python loop (4.5M positions), only 3.6% redundant across cells; blob decode ~1 s. See docs/plans/283-ownership-one-pass-no-go.md. Real saving needs per-run handling or a stored in-cell split (not filed). Session reported its effort as 10, not high.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+        "id": 279,
+        "title": "tasks.mjs close: refuse a sha that is not a commit reachable from main",
+        "status": "done",
+        "priority": "low",
+        "complexity": "s",
+        "blockedBy": [],
+        "notes": "Found 2026-11-14: `tasks.mjs close 263 --sha <40 hex>` accepted a mistyped sha that did not exist, because closeTask only checks the pattern /^[0-9a-f]{40}$/ (scripts/tasks.mjs, shaPattern and closeTask). Fix: after the pattern check, run `git cat-file -e <sha>^{commit}` and `git merge-base --is-ancestor <sha> HEAD` in the tracker directory's repository (the git root of --tracker-dir) and refuse with a one-line reason naming which check failed; keep the existing atomic and idempotent close behaviour untouched. A --no-verify-sha flag is NOT wanted. Tests (find how scripts/tasks.mjs is already tested before adding any; if there is none, add scripts/test_tasks_cli.py that runs node against a temporary git repo and tracker dir): a real commit on the current branch closes; a well-formed unknown sha is refused; a real commit not reachable from HEAD is refused; the existing close tests still pass. Files: scripts/tasks.mjs and its tests only. Check: python3 scripts/run_tests.py --only <stem>. Do not edit tasks/ from the branch.\n\nClosed at d4d53c813c4db3888d55963e8e1550ff910384d6: Merged by codex as d4d53c8: tasks.mjs close verifies the sha is a real commit reachable from HEAD; tests in scripts/tasks.test.mjs and scripts/test_tasks_cli.py (test_tasks_cli passes on main). Orchestrator checked tests and diff scope only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+        "id": 280,
+        "title": "tasks.mjs add: create a task from the command line",
+        "status": "done",
+        "priority": "low",
+        "complexity": "s",
+        "blockedBy": [
+            
+        ],
+        "notes": "Found 2026-11-14: scripts/tasks.mjs has list, show, status and close but no add, so new tasks are inserted into tasks/index.json by hand (error-prone: it needs the next id, the field order and the raw-text format). Add `add --title T --priority low|medium|high --complexity s|m|l [--blocked-by ID,...] --notes TEXT` (notes from a file with --notes-file PATH when long): take id from nextTaskId, append the task with status todo in the same field order and 2-space JSON layout as existing tasks, bump nextTaskId, refuse an unknown blocker id, refuse a title or notes outside the same length limits the file validator already enforces, print the new id. Same atomic write path as close (reuse its helper, do not write a second one), and run on main as orchestrator only as today. Blocked by #279 only because both edit scripts/tasks.mjs (merge order). Tests as for #279: id assignment, nextTaskId bump, blocker validation, round-trip through `show`, existing file otherwise byte-identical. Files: scripts/tasks.mjs, its tests, docs/agents/issue-tracker.md (one line naming the command). Do not edit tasks/ from the branch.\n\nClosed at b1c1635506ffb93fd918aa9d680151e2de0ce038: Merged by codex as b1c1635 (3a68c9f, 0f4a07b): tasks.mjs add creates a todo task atomically with id from nextTaskId, blocker validation, documented in docs/agents/issue-tracker.md. Orchestrator checked tests and diff scope only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
