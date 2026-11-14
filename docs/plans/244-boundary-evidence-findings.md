@@ -84,6 +84,10 @@ Eyeballed from 14 and 30 px per block crops, about plus or minus 1 block. Not a 
 
 The convention files now set `side_front` to `{"type": "none"}` by default (world commit 209c457), superseding the line above that kept front side dividers. After in-world review of 53,-43 (rebuilt frontage), front side dividers read as sideways stubs off the front line; the street-facing frontage is the evidenced boundary. A divider appears only where a house number carries its own `side_front` override or a `side_passage` opening applies (#275). The AI-set `side_front` vetoes (task #267) are therefore moot, not the problem; remove nothing further.
 
+## Decision: slatted look of shelf panels accepted (2026-11-14)
+
+Shelf panels (#272) show open slots from the street. Owner reviewed the oak panel run in-world after #277 ("looks pretty good") and accepted the look; no back layer or full planks at fence height. Reopen only if a later review objects.
+
 ## Draft data
 
 See the two JSON files in `docs/plans/244-draft/`. They carry `evidence_ids`, a run-level `provenance`, and per-house provenance inside each `front` spec (the code reads provenance from the role spec). `SV` id `photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png` is a proposed id: it must be registered before the data task lands.
