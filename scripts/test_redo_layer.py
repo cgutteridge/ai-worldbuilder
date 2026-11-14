@@ -231,6 +231,38 @@ class TestAdditionalRedoChecks(unittest.TestCase):
                     backend.preflight((0, 0), ['trees'], [], True)
                 self.assertNotIn('mismatched apply seed_trees', str(caught.exception))   # its own mismatch is passed
 
+    def test_stale_ground_refuses_a_trees_only_redo_and_a_ground_redo_says_it_refreshes_it(self):
+        """Task 285: a feature landed after the ground; trees alone are refused, ground first passes."""
+        import contextlib
+        import io
+        from unittest import mock
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from layer_redo import LayerCommands
+        from test_cell_readiness import Evidence
+        with JournalWorld() as jw:
+            jw.seed((0, 0), ghost_ground=True, ground=True, trees=True)
+            jw.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+            jw.seed((0, 0), features=('house',))
+            policy = ReadinessPolicy(jw.reg, Evidence())
+            policy.validate((0, 0))
+            backend = LayerCommands('demo', (0, 0))
+            with mock.patch('world_discovery.require_running_world'), \
+                    mock.patch('cell_registry.view_registry', return_value=jw.reg), \
+                    mock.patch('readiness_evidence.policy_for', return_value=policy), \
+                    mock.patch.object(LayerCommands, 'has_mask', return_value=True):
+                with self.assertRaisesRegex(ValueError, r'ground stale: ground .* is older than feature house '
+                                                        r'landed .*\[clear: .*--layers ground,trees --apply'):
+                    backend.preflight((0, 0), ['trees'], [], True)
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), \
+                        mock.patch('site_kit.fresh_planning_world'), \
+                        mock.patch('pass_mask.read_mask', return_value=None):
+                    with self.assertRaisesRegex(ValueError, 'malformed mask'):   # past readiness: on to the masks
+                        backend.preflight((0, 0), ['ground', 'trees'], ['trees'], True)
+                self.assertIn('redo: ground stale: ground ', out.getvalue())
+                self.assertIn('(this redo refreshes it)', out.getvalue())
+
     def test_each_layer_apply_may_pass_its_own_mismatch(self):
         import importlib
         import os
