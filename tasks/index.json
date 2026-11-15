@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 292,
+  "nextTaskId": 293,
   "tasks": [
     
     {
@@ -163,6 +163,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Found 2026-11-15 following #284's clear: line for cell 48,-44: 'recovery: mismatched apply west_w34391673 -> ... reconcile 48,-44 --fix ...; if it reports still mismatched, python3 scripts/reapply_feature.py --world <world> west_w34391673 --apply'. The reapply was then refused at preflight: 'no replayable recorded builder; see the unrecorded listing from scripts/builder_audit.py (#248), or use redo (redesign from evidence)'. So the sanctioned clearing command named was dead for this plan. (#287 later cleared this case by treating door open/powered as play state.)\nWanted: every clear: line names only commands that can work for that plan now. For a mismatched feature apply, check whether the plan has a replayable recorded builder (the same check reapply_feature's preflight uses) and name reapply only if it does; otherwise name the redo route (redo skill / redo_layer or feature redo command, whichever is sanctioned) and say why reapply is not offered. Same audit for the other clear: lines added in #284/#285: a test per blocker kind that the named command's own preflight would accept the case.\nFiles: lib/journal/cell_readiness.py (clear_with), the reconcile 'still mismatched' message in scripts/cell_registry.py, tests. Not a stretch.\n"
+    },
+    {
+      "id": 292,
+      "title": "A cross-cell feature needs only its neighbour's evidence current, not its plans",
+      "status": "doing",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Found 2026-11-15 after #288 (d7b42cd). Owner direction: fix the process so a cross-cell feature needs only its neighbour's evidence current. #288 made the apply gate require each touched neighbour to be 'validated' without inspecting its candidates, but validation itself (prepare --apply / the readiness note) still requires every eligible feature group in that cell planned or dismissed. Evidence: `prepare --cell 47,-44` (dry run) says 'blockers: feature plans: 7 eligible groups unaccounted for; prepare_actions: record missing feature plans with existing stable IDs', so preparing 47,-44 for pond w147601601 (home 48,-44, 13 of 67 columns in 47,-44) would plan Physics (twice), Shackleton, Psychology, 2 Chamberlain Road houses, an unnamed building and a second pond: decisions the owner makes group by group when the cell is started.\nWanted: a touched neighbour of a cross-cell feature passes the apply gate when its evidence is current (clip/aerial coverage, evidence facts revision and policy current) even if its own feature groups are unaccounted; a sanctioned non-planning command records that evidence check (e.g. `prepare --cell 47,-44 --apply --evidence-only` or a distinct note kind), writes no feature plans, and its output says so. Full validation for the neighbour's own builds is unchanged. Refusal and clear: lines name the evidence-only command for neighbours.\nTests (synthetic): neighbour with unaccounted groups but current evidence passes the cross-cell apply; neighbour with stale evidence refuses with the evidence-only clear: line; evidence-only prepare writes no plan notes; the neighbour's own feature builds still need full validation. Acceptance read-only: dry run shows the evidence-only command for 47,-44 records no plans. Files: lib/journal/cell_readiness.py, cell_preparation.py, scripts/cell_registry.py prepare, tests, rules/process.md. Stretch (readiness semantics).\n"
     }
   ]
 }
