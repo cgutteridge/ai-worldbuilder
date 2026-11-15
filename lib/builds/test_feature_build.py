@@ -2943,3 +2943,4 @@ class GhostGroundIsGroundTest(unittest.TestCase):
         tops.add('minecraft:' + lidar_ghost.FILL_BLOCK)
         self.assertLessEqual(tops, set(F.GROUND))
         self.assertLessEqual(tops, set(house_build.GROUND))
+        self.assertEqual(set(F.GROUND), set(house_build.GROUND))
