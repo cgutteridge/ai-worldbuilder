@@ -164,7 +164,7 @@
     {
       "id": 286,
       "title": "next builds a cell's features before its ground, so ground is built once",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
