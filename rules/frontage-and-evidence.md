@@ -52,7 +52,7 @@ so street-convention side and rear fences still apply there (street evidence, no
 The street band is now road half-width plus the class pavement (2.5, was 3.0), so residential plot
 edges and `front` cells can shift by up to half a block.
 - Precedence per field is `land_use.resolve`: per-house override, street convention, district
-  profile (empty until #255), class default. `none` speaks and stops the search. A null class
+  profile, class default. `none` speaks and stops the search. A null class
   default never authorises a fence; no class ships one. The winning layer is `scope.layer`
   (`property`, `street`, `district`, `class`, or `aerial`) and the class is `scope.land_use`.
 - Observed evidence (mapped barrier, aerial hedge unless vetoed) still sits above all four.
@@ -62,6 +62,99 @@ edges and `front` cells can shift by up to half a block.
   (class pavement width) paves guessed lawn; paving behind the boundary, in the front extent, is
   `forecourt` (andesite), another block. Seen lawn, gravel, brick and the aerial colour rules are
   unchanged. The front boundary and entrance opening are decor's, as before.
+
+## District profiles (#255)
+
+`site/districts/<slug>.json` is area evidence in the world repository, reusable across cells.
+The key is a named area listing its cells, independent of any provider; never use vector-map `place`
+polygons. Each cell belongs to at most one district. `garden_sources.load_district(cell)` validates
+all files and refuses intersecting districts, including intersections outside the requested cell.
+Cell rectangles are inclusive, with ordered `min` and `max` integer pairs; repeated cells within
+the same district are harmless. A cell straddling real districts must be assigned to one.
+
+Synthetic format example (not a real profile):
+
+```json
+{
+  "name": "Example district",
+  "cells": [[0, 0], {"min": [1, -2], "max": [3, -1]}],
+  "evidence_ids": ["example-area-study"],
+  "classes": {
+    "residential": {
+      "frontage": {
+        "boundary": {"front": {"type": "hedge", "density": 0.54}},
+        "materials": {"hedge": {"block": "spruce_leaves[persistent=true]", "height": 1}},
+        "runs": {
+          "timber-fronts": {
+            "street": "Example Road",
+            "numbers": ["2", "4", "6"],
+            "boundary": {"front": {"type": "fence", "density": 0.77}},
+            "materials": {"fence": {"block": "oak_planks", "height": 1}}
+          }
+        }
+      },
+      "furniture": {"lamp_spacing": {"residential": 28, "primary": 40, "path": null}},
+      "palette": ["bricks", "stone"],
+      "roofs": ["gable"],
+      "storeys": {"min": 1, "max": 3}
+    }
+  }
+}
+```
+
+- `name`, a nonempty `cells` list, nonempty `evidence_ids` and `classes` are required. Class ids
+  are the land-use table ids. A missing class/section/role says nothing: fall through to the class
+  default. Unknown ids are errors; rural, natural, water and unknown cannot carry inference sections.
+- `frontage.boundary` uses the table's role names: front, side_front, side_back, rear, perimeter.
+  A role is null (no boundary) or `{type, block?, height?, density?}`; type is `none`, `hedge`,
+  `fence`, `brick_wall` or `iron_bars`. Heights are integer blocks, 1–8. Missing block/height uses
+  the same-kind material ladder, then existing builder defaults. Missing density is 1.
+- `density` is the share of whole property-role frontages, from 0 to 1. A stable hash of district,
+  street, house number, class and role selects a frontage, so reruns agree. It never scatters holes
+  along a boundary or removes a street/per-house boundary. A density miss supplies no boundary
+  inference and never vetoes an observation.
+- `materials` carries dominant block and optional height per boundary kind, derived from the cited
+  study. `runs` is keyed by a human-readable run/frontage-block name. Each names its street and
+  optionally its house numbers (strings); omit numbers for the whole street in this district.
+  Street names use the convention slug normalization. Two runs matching the same property are an
+  error. Run boundary/material entries override the class section by role/kind. Use separate numbered
+  runs where the two sides differ. Do not assume one material describes every street in a district.
+- `land_use.resolve` remains the one ladder: per-house override > street convention > district
+  profile > class default. It resolves presence by role and fills omitted material fields only from
+  the same kind. An exact per-house light fence keeps its own block and height. District/class
+  inference requires the class to allow it; district boundaries also require the table's frontage
+  conditions (identified property and street-facing segment for residential).
+- Profiles are **area inference**, never `observed`: boundary items have `source: inference`,
+  `scope.layer: district`, evidence ids and a reason. A profile cannot set observation provenance.
+  Mapped barriers and furniture points, per-property observations and aerial hedge evidence retain
+  priority. District `none` and density misses cannot veto aerial observations; explicit property
+  and street `none` vetoes keep their existing behaviour.
+- `furniture.lamp_spacing` maps vector-map highway class values to spacing in blocks (1–1000); null explicitly
+  disables lamp inference for that highway. `garden_sources.lamp_spacing` consumes this through
+  `land_use.resolve`, falling back to the table's optional `highways` map. It returns the winning
+  layer and inference provenance. Lamp placement remains #260; no lamp scatter is added by #255.
+  `bench_per_100m` (0–100) may be stored for that task, with no placement consumer yet.
+- `palette` is a nonempty list of block ids; `roofs` is a nonempty list from flat, gable, hip,
+  mansard, shed; `storeys` is `{min, max}` (ordered integers, 1–100). All are optional or null,
+  stored and validated, read by nobody until the typology trial. Optional `planting` follows the
+  class table shape and validation; profile planting also has no consumer in this ticket. Profiles
+  do not change ground surfaces, palettes, roofs, storeys or planting rules.
+
+Plank tone table (choose a distinct tone only when the run's evidence supports it):
+
+| Tone | Plank block | Use |
+| --- | --- | --- |
+| Default / mid warm brown | `oak_planks` | Default panel tone |
+| Dark | `spruce_planks`, `dark_oak_planks` | Brown to near black-brown |
+| Reddy | `jungle_planks`, `acacia_planks`, `mangrove_planks` | Pinkish tan, orange, deep red |
+| Pale | `birch_planks` | Cream |
+| White / painted | `pale_oak_planks` | Painted or white-looking fences only |
+
+Close-boarded panels use `type: fence` plus a plank block. They resolve to `plank_fence` and
+are placed as matching facing shelves (solid plank fallback when no outward direction is known).
+The existing panel helpers join steps and neighbouring fronts with cross shelves, respecting
+openings and ownership. `JOINABLE` covers older barrier kinds; panel joining is separate. Normal
+slatted/picket runs use fence blocks. This format does not change either builder path.
 
 ## Residential frontage (shared description)
 `garden_sources.frontage` (formerly `residential_frontage`) gives ground and decor one description per

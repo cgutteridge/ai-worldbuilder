@@ -137,7 +137,14 @@ def validate_table(doc: dict) -> dict:
         if cid == 'unknown' and (any(v is not None for v in fr['boundary'].values())
                                  or row['planting'] is not None or row['furniture'] is not None):
             raise TableError('unknown must not set a boundary, planting or furniture value')
-    return {'classes': out}
+    highways = doc.get('highways', {})
+    if not isinstance(highways, dict):
+        raise TableError('highways must be a lamp-spacing map')
+    for highway, spacing in highways.items():
+        if not isinstance(highway, str) or (spacing is not None and
+                (isinstance(spacing, bool) or not isinstance(spacing, (int, float)) or not 1 <= spacing <= 1000)):
+            raise TableError('highways: lamp spacing must be null or 1 to 1000 blocks')
+    return {'classes': out, 'highways': highways}
 
 
 @lru_cache(maxsize=1)
@@ -304,7 +311,7 @@ def resolve(cls: str, key: str, *, role: str | None = None, property: dict | Non
     """The one precedence function for frontage defaults (#254): which layer speaks first.
 
     Layers, strongest first: ``property`` (per-house override), ``street`` (convention),
-    ``district`` (profile, empty until #255), ``class`` (the table row). A layer speaks when it holds
+    ``district`` (profile), ``class`` (the table row). A layer speaks when it holds
     the field: for a boundary role (``key='boundary'``, ``role`` given) the role key, otherwise ``key``
     itself (``private_surface``, ``opening``, ``pavement``). ``none`` speaks: it is an explicit open
     frontage and stops the search. Observed evidence (mapped barrier, aerial hedge) sits above all
@@ -313,8 +320,8 @@ def resolve(cls: str, key: str, *, role: str | None = None, property: dict | Non
     fence and ``unknown`` never invents one; scalar fields always have a class default.
 
     @param cls: class id of the property
-    @param key: ``'boundary'`` or a scalar frontage field
-    @param role: boundary role (``front``, ``side_front``, ``side_back``, ``rear``, ``perimeter``)
+    @param key: ``'boundary'``, ``'lamp_spacing'`` or a scalar frontage field
+    @param role: boundary role, or OSM highway class for ``lamp_spacing``
     @param property: per-house override dict (``overrides.<number>``) or None
     @param street: street convention dict or None
     @param district: district profile section for the class or None
@@ -322,15 +329,46 @@ def resolve(cls: str, key: str, *, role: str | None = None, property: dict | Non
     @returns: ``{'value': spec or None, 'layer': 'property'|'street'|'district'|'class'|None,
         'open': bool}``; ``open`` is an explicit none, ``layer`` None means nothing spoke
     """
+    row = row or defaults(cls)
+    fr = row['frontage']
+    if cls not in CLASSES or not fr['inference'] or cls in NO_INFERENCE:
+        district = None
+    layers = [('property', property), ('street', street), ('district', district)]
+    if key == 'lamp_spacing':
+        for name, layer in layers:
+            lamps = (layer or {}).get('lamp_spacing', {})
+            if role in lamps:
+                return {'value': lamps[role], 'layer': name, 'open': False}
+        value = (load_table().get('highways', {}).get(role)
+                 if cls in CLASSES and cls not in NO_INFERENCE and fr['inference'] else None)
+        return {'value': value, 'layer': 'class' if value is not None else None, 'open': False}
     field = role if key == 'boundary' else key
-    for name, layer in (('property', property), ('street', street), ('district', district)):
+    for n, (name, layer) in enumerate(layers):
         if layer and field in layer:
             value = layer[field]
             if key == 'boundary' and is_open(value):
                 return {'value': None, 'layer': name, 'open': True}
+            if key == 'boundary':
+                # Presence and material have the same ladder. Fill only omitted material fields,
+                # from the same boundary kind; an exact per-house block is never recoloured.
+                value = dict(value)
+                material_layers = {}
+                candidates = [(layer_name, v) for layer_name, v in layers[n:] if v]
+                if cls in CLASSES and fr['inference'] and cls not in NO_INFERENCE:
+                    candidates.append(('class', fr['boundary']))
+                for material_layer, candidate in candidates:
+                    same = candidate.get(field) or {}
+                    dominant = candidate.get('materials', {}).get(value['type'], {})
+                    for k in ('block', 'height'):
+                        fallback = same.get(k) if same.get('type') == value['type'] else None
+                        fallback = fallback if fallback is not None else dominant.get(k)
+                        if k not in value and fallback is not None:
+                            value[k] = fallback
+                            if material_layer != name:
+                                material_layers[k] = material_layer
+                if material_layers:
+                    return {'value': value, 'layer': name, 'open': False, 'material_layers': material_layers}
             return {'value': value, 'layer': name, 'open': False}
-    row = row or defaults(cls)
-    fr = row['frontage']
     if key == 'boundary':
         spec = fr['boundary'].get(role)
         if cls not in CLASSES or cls == 'unknown' or not fr['inference'] or is_open(spec):

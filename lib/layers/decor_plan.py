@@ -537,10 +537,14 @@ def build_decor_plan(
                 item_id=_item_id(f'map-{kind}', min(group)[0], min(group)[1]),
             ))
 
+    district_items = []
     for garden_item in garden:
         if garden_item.get('kind') not in BARRIER_KINDS:
             items.append(mark_unplaced(
                 garden_item, f"unknown barrier kind {garden_item.get('kind')!r}"))
+            continue
+        if (garden_item.get('scope') or {}).get('layer') == 'district':
+            district_items.append(garden_item)       # area inference follows every observed source
             continue
         cols = [tuple(q) for q in garden_item['cells'] if tuple(q) not in seen_barrier]
         if not cols:
@@ -690,6 +694,17 @@ def build_decor_plan(
             root=root,
         )
         items.append(item)
+
+    observed_columns = seen_barrier | seen_furniture
+    for item in items:
+        observed_columns.update(tuple(c) for c in item.get('cells', ()))
+        if item.get('cell'):
+            observed_columns.add(tuple(item['cell']))
+    for item in district_items:
+        fresh = [list(c) for c in item['cells'] if tuple(c) not in observed_columns]
+        if fresh:
+            items.append({**item, 'cells': fresh})
+            observed_columns.update(map(tuple, fresh))
 
     keep_clear = (set(openings or ()) | set(route)
                   | gs.reserved_openings(frontages or ()) | gs.reserved_route(frontages or ()))
