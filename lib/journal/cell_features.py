@@ -240,6 +240,32 @@ def _houses_from_uncovered_portals(portals: list, streets) -> dict:
     }
 
 
+def _big_home(rings, cell: tuple[int, int], in_cell: int) -> tuple[int, int]:
+    """Home cell of a huge footprint without listing its whole column set.
+
+    Counts columns per cell over the cells the outer ring's bbox touches; a footprint inside
+    one cell (the common case) costs nothing extra. Same rule as :func:`home_cell`.
+
+    @param rings: OSM rings of the footprint
+    @param cell: the cell being planned, whose count is ``in_cell``
+    @param in_cell: the footprint's columns in ``cell``
+    @returns: ``(tx, tz)`` home cell
+    """
+    import cellmath
+    xs = [x for x, _ in rings[0]]
+    zs = [z for _, z in rings[0]]
+    lo = cellmath.cell_of(int(math.floor(min(xs))), int(math.floor(min(zs))))
+    hi = cellmath.cell_of(int(math.ceil(max(xs))), int(math.ceil(max(zs))))
+    counts = {cell: in_cell}
+    for qx in range(lo[0], hi[0] + 1):
+        for qz in range(lo[1], hi[1] + 1):
+            if (qx, qz) != cell:
+                n = sum(1 for _ in scan_polygon(rings, cell_bbox(qx, qz, qx, qz)))
+                if n:
+                    counts[(qx, qz)] = n
+    return sorted(counts, key=lambda c: (-counts[c], c))[0]
+
+
 def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> dict:
     """Built vs unbuilt vector-map building footprint area overlapping a cell (#142).
 
@@ -273,10 +299,11 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
         if len(cols) < MIN_COLUMNS:
             continue
         # whole footprint, so a building straddling the cell edge is judged as one
-        full = list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9))) if len(cols) < 4000 else cols
+        big = len(cols) >= 4000                       # umbrella polygons (campus): keep the clipped judgement
+        full = cols if big else list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9)))
         area = len(cols)
         built = sum(c in covered for c in full) >= COVERED_FRAC * len(full)
-        if not built and home_cell(full) != (tx, tz):
+        if not built and (_big_home(rings, (tx, tz), area) if big else home_cell(full)) != (tx, tz):
             continue                                  # proposed whole in its home cell (task 288)
         if built:
             built_area += area

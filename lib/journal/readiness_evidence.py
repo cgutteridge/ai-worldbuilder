@@ -15,6 +15,17 @@ import cellmath
 from cell_readiness import ReadinessPolicy, content_id, describe_blockers
 
 
+WHOLE = (-10**9, -10**9, 10**9, 10**9)
+
+
+def _touches_cell(rings, cell):
+    """Whether a polygon's outer-ring bbox meets the cell (skips scanning far-off water)."""
+    x0, z0, x1, z1 = cellmath.bounds(cell)
+    xs = [x for x, _ in rings[0]]
+    zs = [z for _, z in rings[0]]
+    return min(xs) <= x1 and max(xs) >= x0 and min(zs) <= z1 and max(zs) >= z0
+
+
 def file_identity(path):
     """Hash bytes, including changes whose timestamps were deliberately preserved."""
     with Path(path).open('rb') as stream:
@@ -118,8 +129,9 @@ class LocalEvidence:
         items = footprint_progress(*cell, idx=self._index, covered=covered)['unbuilt']
         water, refs = set(), {}
         for rings, props in self._index.areas:
-            if osm_tags(props).get('natural') == 'water':
-                columns = set(scan_polygon(rings, cellmath.bounds(cell)))
+            if osm_tags(props).get('natural') == 'water' and _touches_cell(rings, cell):
+                # whole polygon, as OSMGround.water: the home cell is chosen on the whole pond (task 288)
+                columns = set(scan_polygon(rings, WHOLE))
                 water.update(columns)
                 refs.update({p: osm_ref(props) for p in columns})
         items += missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=covered)

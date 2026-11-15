@@ -159,6 +159,35 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(home['unbuilt_names'], ['Line Hall'])
         self.assertEqual(other['unbuilt'], [])
 
+    def _line_hall(self, x0, x1, z1=-5580, building='university'):
+        return SimpleNamespace(buildings=[(_square(x0, -5600, x1, z1),
+                                           {'building': building, 'name': 'Line Hall', 'id': 'w9'})],
+                               streets=[])
+
+    def _progress(self, idx, cell):
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            return cf.footprint_progress(*cell, idx=idx, covered=set())
+
+    def test_cross_cell_building_tie_goes_to_the_lowest_cell(self):
+        """Task 288 follow-up: a building split evenly over a cell line is planned in the lowest cell."""
+        idx = self._line_hall(6134, 6154)             # 10 columns wide each side of x=6144
+        self.assertEqual(self._progress(idx, (47, -44))['unbuilt_names'], ['Line Hall'])
+        self.assertEqual(self._progress(idx, (48, -44))['unbuilt'], [])
+
+    def test_huge_cross_cell_building_is_still_proposed_once(self):
+        """Task 288 follow-up: ≥4000 columns in each cell must not skip the home-cell decision."""
+        idx = self._line_hall(6069, 6224, z1=-5540)   # 75x60 west, 80x60 east: both over 4000
+        self.assertEqual(self._progress(idx, (48, -44))['unbuilt_names'], ['Line Hall'])
+        self.assertEqual(self._progress(idx, (47, -44))['unbuilt'], [])
+
+    def test_huge_cross_cell_building_tie_goes_to_the_lowest_cell(self):
+        idx = self._line_hall(6064, 6224, z1=-5540)   # 80x60 each side
+        self.assertEqual(self._progress(idx, (47, -44))['unbuilt_names'], ['Line Hall'])
+        self.assertEqual(self._progress(idx, (48, -44))['unbuilt'], [])
+
     def test_water_body_carries_way_id_not_stream(self):
         """#163: polygon water → one candidate with way id + vector_map; stream → no pond."""
         import json
