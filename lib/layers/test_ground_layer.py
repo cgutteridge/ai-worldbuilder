@@ -697,7 +697,23 @@ class TestPlanting(unittest.TestCase):
         self.assertEqual(stats['flowers'], 0)
         self.assertEqual(stats['planting'][0]['guessed_lawn'], 0)
 
-    def ground_plan(self, world, *, vmap=None, rgb=None, masked=None, owned=(), frontages=()):
+    def test_feature_margin_air_column_is_surfaced_below_the_owned_air(self):
+        """Task 286: a feature's margin owns only air, so ground surfaces it, capped below that air."""
+        margin = (5, 5)
+        owned = {(margin[0], y, margin[1]) for y in range(50, 56)}
+        plan, stats = self.ground_plan(self.world, owned=owned, owned_air=owned)
+        self.assertEqual(stats['capped_under_feature_margin'], 1)
+        self.assertIn((margin[0], 49, margin[1]), plan.cells)
+        self.assertFalse(any(pos in plan.cells for pos in owned))
+        self.assertIn((6, 50, 5), plan.cells)                   # an unowned neighbour keeps lidar height
+
+    def test_owned_solid_keeps_the_column_a_structure_column(self):
+        solid, ceilings = gl.owned_air_ceilings({(1, 50, 1), (1, 51, 1), (2, 52, 2), (2, 50, 2)},
+                                                {(1, 51, 1), (2, 52, 2), (2, 50, 2)})
+        self.assertEqual(solid, {(1, 1)})
+        self.assertEqual(ceilings, {(2, 2): 50})
+
+    def ground_plan(self, world, *, vmap=None, rgb=None, masked=None, owned=(), frontages=(), owned_air=()):
         from unittest import mock
         from types import SimpleNamespace
         from site_kit import Plan
@@ -710,7 +726,8 @@ class TestPlanting(unittest.TestCase):
         with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
                 mock.patch.object(gl, 'free_columns', return_value=(live, Counter())), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
-            stats, conflicts, _, _ = gl.plan_cell((0, 0), masked or {}, set(owned), plan, world, evidence=ev)
+            stats, conflicts, _, _ = gl.plan_cell((0, 0), masked or {}, set(owned), plan, world, evidence=ev,
+                                                  owned_air=set(owned_air))
         self.assertEqual(conflicts, [])
         return plan, stats
 
@@ -835,7 +852,7 @@ class TestApplyReporting(unittest.TestCase):
         stats['retained_positions'] = retained
         skipped = Counter(item['reason'] for item in excluded)
 
-        def plan_cell(cell, masked, owned, plan, world):
+        def plan_cell(cell, masked, owned, plan, world, owned_air=()):
             plan.set(0, 64, 0, 'grass_block')
             return stats, [], {(0, 0): 'grass'}, skipped
 
@@ -844,7 +861,7 @@ class TestApplyReporting(unittest.TestCase):
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world') as fresh_world, \
                 mock.patch.object(gl, 'load_masked_positions', return_value={}), \
-                mock.patch.object(gl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
                 mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \

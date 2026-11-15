@@ -2931,3 +2931,15 @@ class BuilderPathTest(unittest.TestCase):
                                  {'kind': 'spec', 'path': 'site/builds/relative.json'})
         finally:
             os.chdir(original)
+
+
+class GhostGroundIsGroundTest(unittest.TestCase):
+    """Task 286: features build on ghost ground, so margin clearing must keep every ghost top."""
+
+    def test_ghost_tops_are_in_both_builders_ground_lists(self):
+        import house_build
+        import lidar_ghost
+        tops = {'minecraft:' + lidar_ghost.top_block_for_feature_height(h) for h in (0, 1, 3)}
+        tops.add('minecraft:' + lidar_ghost.FILL_BLOCK)
+        self.assertLessEqual(tops, set(F.GROUND))
+        self.assertLessEqual(tops, set(house_build.GROUND))

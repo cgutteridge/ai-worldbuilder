@@ -146,7 +146,8 @@ BUILT plan in place to “fix” the world.
  ring. Cell done = registry DONE (rules/radial-good-enough.md), not perfection on every shed.
  Pass order and undo: rules/handoff-layered-passes.md (features, ground, trees, decor).
  Do not stack extra passes over the same ground (I-035).
- Stale ground (#285): a feature landed after the cell's last ground makes the ground stale; `next` offers `ground-redo` with the cause and `clear:` command (redo_layer), never runs it, and the cell is not DONE until it lands.
+ Build order (#286): `next` builds a cell's planned features first (by id) on the lidar ghost ground, then the ground once, fitted around them (ground surfaces a feature's air-only margin below that air), then trees and decor; a cell with no planned features gets its ground first.
+Stale ground (#285): a feature landed after the cell's last ground makes the ground stale; `next` offers `ground-redo` with the cause and `clear:` command (redo_layer), never runs it, and the cell is not DONE until it lands.
  Next work: `python3 scripts/cell_registry.py next` (issues beat layers).
 
  Lidar ghosts: docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After

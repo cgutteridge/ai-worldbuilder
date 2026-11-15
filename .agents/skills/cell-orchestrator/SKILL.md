@@ -13,7 +13,7 @@ Progress is the **cell journal** (`registry/journal.jsonl` via `cell_registry.py
 python3 scripts/cell_registry.py --world <world> next
 ```
 
-That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Prepared-cell order: ground → features → trees → decor → marker-clear. Unprepared cells return `needs-prep` before a build. `next` does **not** raise the marker; the build task does.
+That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Prepared-cell order: features (on the ghost ground) → ground once → ground-redo (only for an older stale ground) → trees → decor → marker-clear; a cell with no planned features gets ground first (task 286). Unprepared cells return `needs-prep` before a build. `next` does **not** raise the marker; the build task does.
 
 Do **not** use retired queue / aerial-review / focus files, coverage sign-offs, `site/ISSUES.txt` I-nnn lines, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `python3 scripts/cell_registry.py --world <world> reconcile [--fix]`.
 
