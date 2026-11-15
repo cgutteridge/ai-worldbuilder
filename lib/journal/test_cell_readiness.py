@@ -181,6 +181,48 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(self.world.reg.change(Build('house', 'feature', cells, cell=(0, 0)),
                                               self.world.apply).status, 'landed')
 
+    def _cross_cell_pond(self):
+        """Pond planned in its home cell 0,0; neighbour 1,0 has ghost ground and other groups."""
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'pond (67 columns)', 'w5'))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        others = [{'id': f'w{n}', 'kind': 'building', 'refs': [f'w{n}'], 'label': 'hall'} for n in (7, 8)]
+        pond = Build('w5', 'feature', {(120, 60, 1): 'minecraft:water', (121, 60, 1): 'minecraft:water',
+                                       (128, 60, 1): 'minecraft:water'})
+        return policy, others, pond
+
+    def test_cross_cell_feature_is_accounted_in_the_neighbour(self):
+        """Task 288: a feature planned in its home cell is not unaccounted in the neighbour."""
+        policy, others, _ = self._cross_cell_pond()
+        self.evidence.items = others + [{'id': 'w5', 'kind': 'water_body', 'refs': ['w5'], 'label': 'pond'}]
+        report = policy.check((1, 0))
+        self.assertEqual([c['id'] for c in report['candidates']], ['w7', 'w8'])
+        self.assertIn('feature plans: 2 eligible groups unaccounted for', report['blockers'])
+
+    def test_cross_cell_feature_applies_with_neighbour_validated_and_its_groups_unplanned(self):
+        """Task 288: a validated neighbour's other unplanned groups do not stop the feature."""
+        policy, others, pond = self._cross_cell_pond()
+        policy.validate((1, 0))
+        self.evidence.items = others
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(self.world.reg.change(pond, self.world.apply).status, 'landed')
+
+    def test_cross_cell_feature_refusal_names_only_neighbour_validation(self):
+        """Task 288: an unvalidated neighbour refuses with validation and its clear: line only."""
+        policy, others, pond = self._cross_cell_pond()
+        self.evidence.items = others
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaises(Refused) as caught:
+            self.world.reg.begin(pond)
+        self.assertEqual(str(caught.exception), 'needs-prep 1,0: validation required '
+                         '[clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 --apply]')
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
     def test_provider_errors_are_not_empty_evidence_or_ready(self):
         from cell_readiness import ReadinessPolicy
         from unittest import mock

@@ -79,6 +79,34 @@ def ground_redo_command(cell, stale):
     return f'python3 scripts/redo_layer.py --world <world> --cell {cell[0]},{cell[1]} --layers {",".join(layers)} --apply'
 
 
+def planned_elsewhere(reg, cell):
+    """Feature ids planned in any other cell: a cross-cell feature is planned once (task 288).
+
+    A map-ref feature (a building or water body) planned in its home cell is accounted for in
+    every other cell its footprint touches. House groups key by street, not by a global map
+    ref, so callers apply this only to non-house candidates.
+
+    @param reg: cell journal
+    @param cell: ``(tx, tz)``
+    @returns: set of feature ids
+    """
+    cell = tuple(cell)
+    return {f.id for c, v in reg.view().items() if c != cell for f in v.features}
+
+
+def accounted_elsewhere(item, elsewhere):
+    """Whether a candidate is a map-ref feature already planned in another cell.
+
+    @param item: candidate dict (``kind``, ``id`` or ``refs``)
+    @param elsewhere: :func:`planned_elsewhere` result
+    @returns: bool
+    """
+    if item.get('kind') == 'houses':
+        return False
+    fid = item.get('id') or next((str(r) for r in item.get('refs') or () if r), None)
+    return fid in elsewhere
+
+
 def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
     """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
 
@@ -187,7 +215,9 @@ class ReadinessPolicy:
             try:
                 candidates = self.evidence.candidates(self.reg, cell)
                 accounted = {f.id for f in v.features} | self.reg.plan_dismissed_ids(cell)
-                candidates = [c for c in candidates if c['id'] not in accounted]
+                elsewhere = planned_elsewhere(self.reg, cell)
+                candidates = [c for c in candidates if c['id'] not in accounted
+                              and not accounted_elsewhere(c, elsewhere)]
             except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
                 blockers.append(f'candidate evidence error: {exc}')
             if candidates:
@@ -285,7 +315,11 @@ class ReadinessPolicy:
         return self.check(cell)
 
     def enforce(self, build, touched):
-        """Guard readiness before begin; tree leaf overhang needs only its owning cell ready."""
+        """Guard readiness before begin; tree leaf overhang needs only its owning cell ready.
+
+        A feature's neighbour cells (touched, not its primary cell) must be validated, but their
+        unplanned feature groups do not block it (task 288).
+        """
         if build.pass_ in GHOST_PASSES:
             return {}
         operation = (build.meta or {}).get('operation')
@@ -316,7 +350,11 @@ class ReadinessPolicy:
             required = {primary} | {cellmath.cell_of(x, z, self.reg.cell_size)
                                     for (x, _y, z), state in build.cells.items()
                                     if not block_id(state).endswith('_leaves')}
-        reports = [self.check(c, build.pass_, redoing=(build.plan,)) for c in sorted(required)]
+        # A feature is one build across cell lines (task 288): each touched neighbour needs current
+        # evidence (validation), not its own other feature groups planned.
+        reports = [self.check(c, build.pass_, redoing=(build.plan,),
+                              inspect_candidates=not (build.pass_ == 'feature' and c != primary))
+                   for c in sorted(required)]
         for report, cell in zip(reports, sorted(required)):
             if build.pass_ == 'feature' and cell == primary:
                 features = {f.id: f.status for f in self.reg.cell(cell).features}

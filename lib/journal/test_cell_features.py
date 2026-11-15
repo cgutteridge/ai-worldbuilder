@@ -119,6 +119,46 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(bodies[0]['area'], 9)
         self.assertEqual(bodies[0]['cells'], [[48, -45]])
 
+    def _two_cell_pond(self, west_cols, east_cols):
+        """Pond rows straddling the x=6144 line between cells 47,-44 and 48,-44."""
+        cols = {(x, z) for x in range(6144 - west_cols, 6144 + east_cols) for z in range(-5600, -5590)}
+        return cols, {q: 'w147601601' for q in cols}
+
+    def test_cross_cell_pond_is_proposed_once_whole_in_its_majority_cell(self):
+        """Task 288: a pond over a cell line is one candidate, in the cell holding most of it."""
+        water, refs = self._two_cell_pond(2, 5)
+        home = cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs, covered=set())
+        self.assertEqual(len(home), 1, home)
+        self.assertEqual(home[0]['refs'], ['w147601601'])
+        self.assertEqual(home[0]['area'], 70)
+        self.assertEqual(len(home[0]['outline']), 70)
+        self.assertEqual(home[0]['cells'], [[48, -44], [47, -44]])
+        self.assertEqual(cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs,
+                                                 covered=set()), [])
+
+    def test_cross_cell_tie_goes_to_the_lowest_cell(self):
+        """Task 288: an even split is planned in the lowest (tx, tz), stably."""
+        water, refs = self._two_cell_pond(3, 3)
+        self.assertEqual(cf.home_cell(water), (47, -44))
+        self.assertEqual(len(cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs,
+                                                     covered=set())), 1)
+        self.assertEqual(cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs,
+                                                 covered=set()), [])
+
+    def test_cross_cell_building_is_proposed_only_in_its_home_cell(self):
+        """Task 288: an unbuilt building over a cell line is a candidate of its home cell only."""
+        idx = SimpleNamespace(buildings=[(_square(6140, -5600, 6160, -5580),
+                                          {'building': 'university', 'name': 'Line Hall', 'id': 'w9'})],
+                              streets=[])
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            home = cf.footprint_progress(48, -44, idx=idx, covered=set())
+            other = cf.footprint_progress(47, -44, idx=idx, covered=set())
+        self.assertEqual(home['unbuilt_names'], ['Line Hall'])
+        self.assertEqual(other['unbuilt'], [])
+
     def test_water_body_carries_way_id_not_stream(self):
         """#163: polygon water → one candidate with way id + vector_map; stream → no pond."""
         import json

@@ -68,7 +68,7 @@ def unplanned_footprint_candidates(reg: CellRegistry, cid: str) -> list[dict[str
     """Vector-map buildings still missing a ``plan_feature`` / feature build (#140).
 
     Uses ``propose_feature_candidates`` (same as ``propose-features``), then drops
-    ids already on the cell plan or deliberately dismissed.
+    ids already on the cell plan, planned in another cell (task 288) or deliberately dismissed.
 
     @param reg: cell journal
     @param cid: ``tx,tz``
@@ -77,7 +77,7 @@ def unplanned_footprint_candidates(reg: CellRegistry, cid: str) -> list[dict[str
     """
     import cell_registry as CR  # noqa: WPS433
     cell = CR.parse_cell_id(cid)
-    items = CR.propose_feature_candidates(cid)
+    items = CR.drop_planned_elsewhere(reg, cell, CR.propose_feature_candidates(cid))
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     out: list[dict[str, Any]] = []
     for item, fid in zip(items, CR.plan_ids_for_candidates(reg, cell, items)):

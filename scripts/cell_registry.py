@@ -439,11 +439,29 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     return list(cf.missing_features(tx, tz))
 
 
+def drop_planned_elsewhere(reg: CellRegistry, cell: tuple[int, int],
+                           items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Candidates minus map-ref features already planned in another cell (task 288).
+
+    A feature crossing a cell line is planned once; the other cells it touches never
+    re-propose it (a legacy plan in a minority cell still counts).
+
+    @param reg: registry
+    @param cell: (tx, tz)
+    @param items: candidates from :func:`propose_feature_candidates` or readiness evidence
+    @returns: the candidates still to account for in this cell
+    """
+    from cell_readiness import accounted_elsewhere, planned_elsewhere
+    elsewhere = planned_elsewhere(reg, cell)
+    return [i for i in items if not accounted_elsewhere(i, elsewhere)]
+
+
 def record_feature_candidates(reg: CellRegistry, cid: str,
                               candidates: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Write ``plan_feature`` notes for propose-features candidates (#128).
 
-    Skips ids already on the cell plan and ids in ``plan_dismissed`` so a re-run
+    Skips ids already on the cell plan, map-ref features planned in another cell
+    (task 288), and ids in ``plan_dismissed`` so a re-run
     of ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature``
     note would clear the dismissal in the note fold).
 
@@ -454,6 +472,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     """
     cell = parse_cell_id(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
+    items = drop_planned_elsewhere(reg, cell, items)
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
     for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
@@ -719,7 +738,8 @@ def main(argv: list[str] | None = None) -> int:
             fraction = clip_coverage(parse_cell_id(args.cell))
             print(json.dumps({'cell': args.cell, 'clip_coverage': fraction,
                               'kind': 'clip-query-coverage'}, sort_keys=True))
-            items = propose_feature_candidates(args.cell)
+            items = drop_planned_elsewhere(reg, parse_cell_id(args.cell),
+                                           propose_feature_candidates(args.cell))
             for item in items:
                 print(json.dumps(item, sort_keys=True, default=_json_default))
             if args.record:
