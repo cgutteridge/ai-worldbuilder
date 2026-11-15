@@ -164,7 +164,7 @@
     {
       "id": 288,
       "title": "A feature that crosses a cell line is planned and built once",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
