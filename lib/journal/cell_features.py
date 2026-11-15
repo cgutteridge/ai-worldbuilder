@@ -266,6 +266,66 @@ def _big_home(rings, cell: tuple[int, int], in_cell: int) -> tuple[int, int]:
     return sorted(counts, key=lambda c: (-counts[c], c))[0]
 
 
+ORPHAN_PORTAL_PAD = 2  # columns held around an uncovered portal in a built outline (#154 house box)
+
+
+def settled_footprint_columns(bbox, idx: OSMIndex | None = None, covered: set | None = None,
+                              dismissed=None) -> set:
+    """Building outline columns in ``bbox`` whose feature is settled, so the ground may have them (task 295).
+
+    An outline column is held for its building's feature while that feature is unsettled. A building
+    is settled once it is built (at least COVERED_FRAC of its whole footprint touched by feature
+    builds, the :func:`footprint_progress` rule) or its map ref was dismissed from a cell plan. Its
+    columns are then the ground's wherever no build owns them (the caller checks ownership).
+    Still held: columns of unbuilt, undismissed buildings (also where outlines overlap), outbuildings
+    and slivers (never proposed as features), and a box round each portal left uncovered inside a
+    built outline (#154: those houses are still to be built).
+
+    @param bbox: ``(x0, z0, x1, z1)`` inclusive
+    @param idx: optional shared OSMIndex
+    @param covered: optional precomputed :func:`feature_columns`
+    @param dismissed: feature ids dismissed from plans (map refs such as ``w123``); default reads
+        every cell in the registry
+    @returns: set of ``(x, z)``
+    """
+    idx = idx or OSMIndex()
+    covered = feature_columns() if covered is None else covered
+    dismissed = dismissed_feature_ids() if dismissed is None else set(dismissed)
+    settled, held = set(), set()
+    for rings, p in idx.buildings:
+        cols = set(scan_polygon(rings, bbox))
+        if not cols:
+            continue
+        ref = osm_ref(p)
+        is_dismissed = any(f == ref or f.endswith('_' + ref) for f in dismissed)
+        if p.get('building') in OUTBUILDINGS or (len(cols) < MIN_COLUMNS and not is_dismissed):
+            held |= cols
+            continue
+        big = len(cols) >= 4000                       # umbrella polygons: clipped judgement, as footprint_progress
+        full = cols if big else set(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9)))
+        built = sum(c in covered for c in full) >= COVERED_FRAC * len(full)
+        if not (built or is_dismissed):
+            held |= cols
+            continue
+        settled |= cols
+        if built:
+            for portal in _uncovered_portals_in_cell(rings, covered, bbox):
+                px, pz = _portal_column(portal)
+                held |= {(px + a, pz + b) for a in range(-ORPHAN_PORTAL_PAD, ORPHAN_PORTAL_PAD + 1)
+                         for b in range(-ORPHAN_PORTAL_PAD, ORPHAN_PORTAL_PAD + 1)}
+    return settled - held
+
+
+def dismissed_feature_ids() -> set:
+    """Feature ids dismissed from the plan of any cell in the registry (#128).
+
+    @returns: set of plan ids (map refs, or ``houses_...`` group ids)
+    """
+    from cell_registry import view_registry
+    reg = view_registry()
+    return {fid for c in reg.view() for fid in reg.plan_dismissed_ids(c)}
+
+
 def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> dict:
     """Built vs unbuilt vector-map building footprint area overlapping a cell (#142).
 
