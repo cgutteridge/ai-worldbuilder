@@ -615,6 +615,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             p.add_argument('--apply', action='store_true')
             p.add_argument('--owner', default=None, help='lock owner (default: prepare-<pid>)')
+            p.add_argument('--evidence-only', action='store_true',
+                           help='cross-cell neighbour: check evidence only; records no feature plans (task 292)')
 
     p = sub.add_parser('above-ghost',
                        help='list cells with anything above ghost and count each kind (#135)')
@@ -697,6 +699,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.root:
                     command += ['--root', str(args.root)]
                 command += ['prepare', '--cell', args.cell, '--apply']
+                if args.evidence_only:
+                    command.append('--evidence-only')
                 if args.json:
                     command.append('--json')
                 return site_lock.run(owner, f'prepare cell {args.cell}', command)
@@ -705,7 +709,8 @@ def main(argv: list[str] | None = None) -> int:
                 report = policy.check(cell, args.operation)
             else:
                 from cell_preparation import prepare_cell
-                report = prepare_cell(reg, policy.evidence, cell, apply=args.apply)
+                report = prepare_cell(reg, policy.evidence, cell, apply=args.apply,
+                                      evidence_only=args.evidence_only)
             print(json.dumps(report, indent=2, sort_keys=True) if args.json else format_readiness(report))
             return 0 if report['ready'] else 1
 

@@ -43,6 +43,11 @@ Direct `live_session`/`open_registry` callers supplying a real `Build` must carr
 `meta={'evidence_revision': CHECK_SOURCE_REVISION, 'journal_revision': CHECK_JOURNAL_REVISION}`
 from their planning inputs or pass the originating Plan as `payload`. A stale or
 absent identity is refused.
+A cross-cell feature's neighbour (a touched cell that is not its home cell) needs only
+current evidence: `prepare --cell TX,TZ --apply --evidence-only` runs the same coverage and
+terrain repairs, then journals a `readiness_evidence` note (policy and evidence identity, no
+plans). It records no feature plans, and a full validation whose evidence still matches also
+counts. The neighbour's own builds still need full validation.
 Every touched cell is checked, including neighbouring cells of a feature, except
 for leaf-only tree canopy overhang: that needs readiness only in the trunk-owning
 cell. All touched cells remain tracked for ownership, in-flight exclusion and undo.

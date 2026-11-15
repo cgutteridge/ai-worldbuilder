@@ -310,16 +310,88 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(self.world.reg.change(pond, self.world.apply).status, 'landed')
 
     def test_cross_cell_feature_refusal_names_only_neighbour_validation(self):
-        """Task 288: an unvalidated neighbour refuses with validation and its clear: line only."""
+        """Tasks 288, 292: an unchecked neighbour refuses with evidence validation and its clear: line only."""
         policy, others, pond = self._cross_cell_pond()
         self.evidence.items = others
         self.world.reg.build_policy = policy.enforce
         before = self.world.reg.journal_path.read_bytes()
         with self.assertRaises(Refused) as caught:
             self.world.reg.begin(pond)
-        self.assertEqual(str(caught.exception), 'needs-prep 1,0: validation required '
-                         '[clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 --apply]')
+        self.assertEqual(str(caught.exception), 'needs-prep 1,0: evidence validation required '
+                         '[clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 '
+                         '--apply --evidence-only (records no feature plans)]')
         self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
+    def test_cross_cell_feature_applies_with_neighbour_evidence_current_and_groups_unaccounted(self):
+        """Task 292: an evidence check on the neighbour is enough; its groups stay unplanned."""
+        policy, others, pond = self._cross_cell_pond()
+        self.evidence.items = others
+        policy.validate_evidence((1, 0))
+        self.assertFalse(policy.check((1, 0), require_validation=False)['validated'])
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(self.world.reg.change(pond, self.world.apply).status, 'landed')
+        self.assertEqual(self.world.reg.notes((1, 0), kinds=('plan_feature', 'readiness')), ())
+
+    def test_cross_cell_feature_refuses_stale_neighbour_evidence_with_evidence_only_clear(self):
+        """Task 292: changed neighbour evidence refuses, naming the evidence-only command."""
+        from cell_readiness import describe_blockers
+        policy, others, pond = self._cross_cell_pond()
+        self.evidence.items = others
+        policy.validate_evidence((1, 0))
+        self.evidence.revision = 'evidence-2'
+        self.evidence.items = []
+        policy.validate((0, 0))
+        self.evidence.items = others
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaises(Refused) as caught:
+            self.world.reg.begin(pond)
+        self.assertEqual(str(caught.exception), 'needs-prep 1,0: evidence validation stale (evidence facts '
+                         'changed) [clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 '
+                         '--apply --evidence-only (records no feature plans)]')
+        report = policy.check((1, 0), 'feature', neighbour=True)
+        self.assertEqual(report['next_actions'], ['prepare --cell 1,0 --apply --evidence-only'])
+        self.assertIn('evidence validation stale', describe_blockers(report))
+
+    def test_evidence_only_prepare_writes_no_plan_notes(self):
+        """Task 292: dry run says it records no plans; apply writes only a readiness_evidence note."""
+        from cell_preparation import prepare_cell
+        from cell_readiness import format_readiness
+        from unittest import mock
+        policy, others, _ = self._cross_cell_pond()
+        self.evidence.items = others
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        self.evidence.calls = 0
+        before = self.world.reg.journal_path.read_bytes()
+        dry = prepare_cell(self.world.reg, self.evidence, (1, 0), repairs=repairs, evidence_only=True)
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.assertEqual((dry['blockers'], dry['prepare_actions'], dry['candidates']), ([], [], []))
+        self.assertIn('records no feature plans', format_readiness(dry))
+        report = prepare_cell(self.world.reg, self.evidence, (1, 0), apply=True, repairs=repairs,
+                              check_lock=lambda: None, evidence_only=True)
+        self.assertTrue(report['ready'] and report['evidence_validated'])
+        self.assertEqual(self.evidence.calls, 0)
+        kinds = [n['kind'] for n in self.world.reg.notes((1, 0))]
+        self.assertEqual(kinds, ['readiness_evidence'])
+        repeat = prepare_cell(self.world.reg, self.evidence, (1, 0), apply=True, repairs=repairs,
+                              check_lock=lambda: None, evidence_only=True)
+        self.assertTrue(repeat['ready'])
+        self.assertEqual([n['kind'] for n in self.world.reg.notes((1, 0))], ['readiness_evidence'])
+
+    def test_neighbour_own_feature_build_still_needs_full_validation(self):
+        """Task 292: an evidence check does not let the neighbour build its own features."""
+        from cell_journal import Note
+        policy, others, _ = self._cross_cell_pond()
+        self.evidence.items = others
+        policy.validate_evidence((1, 0))
+        self.world.reg.change(Note((1, 0), 'plan_feature', 'hall', 'w7'))
+        self.world.reg.build_policy = policy.enforce
+        hall = Build('w7', 'feature', {(140, 65, 1): 'minecraft:bricks'}, cell=(1, 0))
+        with self.assertRaises(Refused) as caught:
+            self.world.reg.begin(hall)
+        self.assertIn('needs-prep 1,0: validation required', str(caught.exception))
+        self.assertIn('feature plans: 1 eligible groups unaccounted for', str(caught.exception))
+        self.assertIn('prepare --cell 1,0 --apply]', str(caught.exception))
 
     def test_provider_errors_are_not_empty_evidence_or_ready(self):
         from cell_readiness import ReadinessPolicy

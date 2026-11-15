@@ -62,9 +62,11 @@ GHOST_PASSES = ('ghost-ground', 'ghost-features')
 NEUTRAL_PASSES = ('other',)        # owns blocks, no progress meaning (cell markers, clean-ups)
 PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # plan_feature / plan_feature-dismiss: cell plan (#128). Undo clears the build only;
-# dismiss is a separate deliberate note with a reason.
+# dismiss is a separate deliberate note with a reason. readiness_evidence: a cross-cell
+# neighbour's evidence check, which validates no plans (task 292).
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
-              'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness')
+              'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness',
+              'readiness_evidence')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
