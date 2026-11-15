@@ -23,7 +23,7 @@ class TestWhichWorld(unittest.TestCase):
             save = root / 'instance/saves/game'
             cfg.joinpath('world.json').write_text(json.dumps({'save_path': str(save.resolve())}))
             out = io.StringIO()
-            with mock.patch.object(which_world, 'TOOL_ROOT', root), \
+            with mock.patch.object(active_world, 'TOOL_ROOT', root), \
                     mock.patch('world_discovery.running_save', return_value=save), \
                     contextlib.redirect_stdout(out):
                 self.assertEqual(which_world.main(['--json']), 0)
