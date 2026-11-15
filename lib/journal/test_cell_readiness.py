@@ -888,8 +888,8 @@ class ClearingCommandPreflightTest(unittest.TestCase):
         self.policy = ReadinessPolicy(self.world.reg, self.evidence)
         self.policy.validate((0, 0))
 
-    def command(self, prefix, operation='build'):
-        report = self.policy.check((0, 0), operation)
+    def command(self, prefix, operation='build', **kwargs):
+        report = self.policy.check((0, 0), operation, **kwargs)
         return next(cmd for blocker, cmd in report['clear_with'].items() if blocker.startswith(prefix))
 
     def registry_command(self, command):
@@ -992,6 +992,18 @@ class ClearingCommandPreflightTest(unittest.TestCase):
         result = prepare_cell(self.world.reg, self.evidence, (0, 0), apply=True,
                               repairs=repairs, check_lock=lambda: None)
         self.assertTrue(result['ready'], result['blockers'])
+
+    def test_evidence_validation_command_accepts_the_neighbours_stale_evidence(self):
+        from cell_preparation import prepare_cell
+        from unittest import mock
+        self.evidence.revision = 'new-evidence'
+        command = self.command('evidence validation stale', neighbour=True)
+        self.assertIn('prepare --cell 0,0 --apply --evidence-only', command)
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        report = prepare_cell(self.world.reg, self.evidence, (0, 0), apply=True,
+                              evidence_only=True, repairs=repairs, check_lock=lambda: None)
+        self.assertTrue(report['ready'], report['blockers'])
 
     def test_missing_aerial_and_lidar_request_data_instead_of_a_refused_command(self):
         self.evidence.aerial = .5
@@ -1138,6 +1150,21 @@ class MismatchedApplyTest(unittest.TestCase):
                 self.assertNotIn('reapply_feature.py', command)
                 self.assertIn('redo skill', command)
                 self.assertIn(str(refused.exception), command)
+
+    def test_invalid_recorded_spec_offers_redo_with_the_preflight_reason(self):
+        import json
+        from feature_reapply import prepare
+        path = self.world.root / 'invalid.json'
+        path.write_text(json.dumps({'name': 'house'}))
+        self.world.build('house', 'feature', self.HOUSE, cell=(0, 0),
+                         meta={'builder': {'kind': 'spec', 'path': str(path)}})
+        self.mismatch(cells={(1, 60, 1): 'minecraft:bricks'})
+        with self.assertRaisesRegex(SystemExit, 'invalid builder spec') as refused:
+            prepare('house', registry=self.world.reg)
+        command = self.check()['clear_with']['recovery: mismatched apply house']
+        self.assertNotIn('reapply_feature.py', command)
+        self.assertIn('redo skill', command)
+        self.assertIn(str(refused.exception), command)
 
     def test_refusal_message_carries_the_command(self):
         self.mismatch()

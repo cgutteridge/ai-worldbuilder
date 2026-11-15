@@ -319,6 +319,7 @@ class ReadinessPolicy:
             dismissals = self.reg.notes(cell, kinds=('clip_coverage-dismiss',))
             if not dismissals[-1].get('ref'):
                 warnings.append('legacy unversioned map coverage dismissal; audit its reason')
+            # A complete query needs no dismissal; dismiss-clip-coverage rightly refuses it.
             elif facts['clip_coverage'] < 1 and dismissals[-1]['ref'] != facts.get('map_revision', facts['revision']):
                 blockers.append('map coverage dismissal stale')
         if facts['aerial_coverage'] < 1:
