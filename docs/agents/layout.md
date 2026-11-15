@@ -24,6 +24,8 @@ Read this when you need to find where a tool, config or record is kept. `AGENTS.
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; erases the registry so the journal starts fresh; also clears leftover retired progress files) |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` (no registry scaffold: `registry/` is created by the first journal write) |
 
+Linked tool worktrees always use the main checkout's `worlds/` (their own copy is ignored to keep one catalogue); do not link or remove anything under `worlds/` to set up or clean up a tool worktree.
+
 ## Provider roots (dual)
 
 Catalogue rows may set `package` (e.g. `providers/<id>`). Resolve it with

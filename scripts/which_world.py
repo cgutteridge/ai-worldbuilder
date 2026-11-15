@@ -4,8 +4,9 @@ import argparse
 import json
 import sys
 
-from script_env import TOOL_ROOT
-from world_discovery import DiscoveryError, matching_world
+import script_env  # Bootstrap shared library imports without selecting a world.
+from active_world import worlds_root
+from world_discovery import matching_world
 import world_discovery
 
 
@@ -15,8 +16,8 @@ def main(argv=None) -> int:
     ap.add_argument('--json', action='store_true')
     args = ap.parse_args(argv)
     try:
-        result = matching_world(world_discovery.running_save(), TOOL_ROOT / 'worlds')
-    except DiscoveryError as exc:
+        result = matching_world(world_discovery.running_save(), worlds_root())
+    except RuntimeError as exc:
         print(f'which_world: {exc}', file=sys.stderr)
         return 1
     print(json.dumps(result) if args.json else f'{result["world"]}\t{result["save_path"]}')
