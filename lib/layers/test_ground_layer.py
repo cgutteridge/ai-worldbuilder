@@ -829,6 +829,108 @@ class TestWarmSurfaceProbe(unittest.TestCase):
         gl.warm_surface_probe(object(), 0, 0, 3, 3)
 
 
+
+class TestMappedOutdoorSteps(unittest.TestCase):
+    """#294: ground-level highway=steps columns are surfaced at lidar height, stairs facing up the slope."""
+
+    BOX = (0, 0, 15, 7)                                   # small synthetic cell box (x0, z0, x1, z1)
+    STEPS = {(x, z): 'x' for x in range(2, 12) for z in range(3, 6)}  # way runs along x at z 3..5
+
+    class Osm:
+        def __init__(self, steps=None, bridge=()):
+            self.kind, self.pri, self.feat, self.soft = {}, {}, {}, set()
+            self.road, self.marks = set(), set()
+            self.hedge, self.wall, self.fence = set(), set(), set()
+            self.water, self.water_line, self.bridge = set(), set(), set(bridge)
+            self.steps = dict(steps or {})
+
+    @staticmethod
+    def lidar(x, z):
+        """Flat at 48 to x=3, then up one block every two columns (a flight of steps toward +x)."""
+        return 48 + max(0, (x - 2) // 2)
+
+    def world(self, extra=None):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        x0, z0, x1, z1 = self.BOX
+        blocks = {(x, 40, z): 'minecraft:stone' for x in range(x0 - 1, x1 + 2) for z in range(z0 - 1, z1 + 2)}
+        blocks.update(extra or {})
+        return World(store=MemoryBlocks(blocks, default='air'))
+
+    def run_plan(self, vmap, world=None, fp=()):
+        from types import SimpleNamespace
+        from unittest import mock
+        from site_kit import Plan
+        x0, z0, x1, z1 = self.BOX
+
+        def box(cell, margin=0):
+            return (x0 - margin, z0 - margin, x1 + margin, z1 + margin)
+
+        cols = [(x, z) for x in range(x0 - 4, x1 + 5) for z in range(z0 - 4, z1 + 5)]
+        ev = {'vmap': vmap, 'rgb': {q: (.64, .60, .54) for q in cols},
+              'private_frontage': set(), 'frontage_route': set(), 'forecourt': set(), 'pavement': set(),
+              'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
+              'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': self.lidar(x, z))}
+        plan = Plan('steps-test')
+        with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set(fp))), \
+                mock.patch.object(gl, 'cell_box', side_effect=box), \
+                mock.patch.object(gl, 'stitch_seams', return_value=0):
+            stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, set(), plan, world or self.world(), evidence=ev)
+        self.assertEqual(conflicts, [])
+        return plan, stats, kind, skipped
+
+    def test_steps_way_is_surfaced_at_lidar_height(self):
+        plan, stats, kind, _ = self.run_plan(self.Osm(self.STEPS))
+        self.assertEqual(stats['steps_surfaced'], len(self.STEPS))
+        for (x, z) in self.STEPS:
+            y = self.lidar(x, z)
+            with self.subTest(x=x, z=z):
+                self.assertEqual(kind[(x, z)], 'paving')
+                self.assertIn((x, y, z), plan.cells)
+                self.assertEqual(plan.cells[(x, y - 1, z)], 'minecraft:dirt')   # the hole below is filled
+                self.assertNotIn((x, y + 1, z), plan.cells)
+        self.assertEqual(plan.cells[(2, 48, 4)], 'minecraft:light_gray_concrete')
+
+    def test_stairs_follow_rising_lidar_and_face_up_the_slope(self):
+        plan, stats, _, _ = self.run_plan(self.Osm(self.STEPS))
+        risers = {x for x in range(3, 12) if self.lidar(x, 0) > self.lidar(x - 1, 0)}
+        self.assertEqual(risers, {4, 6, 8, 10})
+        self.assertEqual(stats['steps_stairs'], len(risers) * 3)
+        for (x, z) in self.STEPS:
+            top = plan.cells[(x, self.lidar(x, z), z)]
+            with self.subTest(x=x, z=z):
+                if x in risers:
+                    self.assertEqual(top, 'minecraft:polished_andesite_stairs[facing=east,half=bottom]')
+                else:
+                    self.assertEqual(top, 'minecraft:light_gray_concrete')
+
+    def test_step_stairs_face_toward_the_higher_side_on_either_axis(self):
+        ys = {(0, 0): 50, (0, 1): 49, (0, 2): 49, (5, 0): 49, (6, 0): 50, (7, 0): 50}
+        got = gl.step_stairs({(0, 0): 'z', (0, 1): 'z', (6, 0): 'x', (7, 0): 'x'}, ys)
+        self.assertEqual(got, {(0, 0): 'north', (6, 0): 'east'})
+
+    def test_existing_step_stair_top_is_not_a_structure(self):
+        stair = 'minecraft:polished_andesite_stairs[facing=east,half=bottom]'
+        world = self.world({(4, 49, 4): stair})
+        plan, _, _, skipped = self.run_plan(self.Osm(self.STEPS), world)
+        self.assertFalse([r for r in skipped if 'structure top' in r])
+        self.assertEqual(plan.cells[(4, 49, 4)], stair)
+
+    def test_bridge_steps_stay_skipped(self):
+        bridge = set(self.STEPS)
+        plan, stats, _, skipped = self.run_plan(self.Osm(bridge=bridge))
+        self.assertEqual(skipped['bridge / steps'], len(bridge))
+        self.assertEqual(stats['steps_surfaced'], 0)
+        self.assertFalse(any((x, z) in bridge for x, _, z in plan.cells))
+
+    def test_steps_inside_a_footprint_are_skipped_and_named(self):
+        fp = {q for q in self.STEPS if q[0] >= 8}
+        plan, stats, _, skipped = self.run_plan(self.Osm(self.STEPS), fp=fp)
+        self.assertEqual(skipped['steps: building footprint'], len(fp))
+        self.assertEqual(stats['steps_surfaced'], len(self.STEPS) - len(fp))
+        self.assertFalse(any((x, z) in fp for x, _, z in plan.cells))
+
+
 if __name__ == '__main__':
     unittest.main()
 

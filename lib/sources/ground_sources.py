@@ -344,6 +344,9 @@ def road_width(t: dict) -> float:
     return w
 
 
+STEPS_HALF_WIDTH = 1.2     # highway=steps half width in blocks
+
+
 class OSMGround:
     """Vector map rasterised to one kind + priority per column, plus road/barrier extras."""
 
@@ -358,7 +361,8 @@ class OSMGround:
         self.water: set = set()       # polygon natural=water only (pond candidates; #163)
         self.water_line: set = set()  # waterway line columns (streams); not pond candidates
         self.water_refs: dict = {}    # (x, z) -> 'w<way id>' for polygon water (#163)
-        self.bridge: set = set()      # columns under a mapped bridge/tunnel: not ours to surface
+        self.bridge: set = set()      # columns under a mapped bridge/tunnel (or raised steps): not ours to surface
+        self.steps: dict = {}         # (x, z) -> 'x' | 'z': ground-level highway=steps, the way's run axis (#294)
         self.hedge: set = set()
         self.wall: set = set()
         self.fence: set = set()
@@ -457,7 +461,12 @@ class OSMGround:
                       SURFACE_KIND.get(t.get('surface'), 'tarmac' if hw == 'cycleway' else 'paving'), PRI['path'],
                       self._fid)
         elif hw == 'steps':
-            self.bridge |= set(line_cells(pts, 1.2))          # stairs are structure, not surface
+            # Outdoor steps at ground level: surfaced by the ground layer at lidar height (#294).
+            # Bridge, tunnel and layer!=0 steps returned above, into .bridge.
+            for a, b in zip(pts, pts[1:]):
+                axis = 'x' if abs(b[0] - a[0]) >= abs(b[1] - a[1]) else 'z'
+                for q in line_cells([a, b], STEPS_HALF_WIDTH):
+                    self.steps.setdefault(q, axis)
         elif b == 'hedge':
             self.hedge |= set(line_cells(pts, 0.6))
         elif b in ('wall', 'retaining_wall'):
