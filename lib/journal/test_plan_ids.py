@@ -72,6 +72,19 @@ class PlanIdTest(unittest.TestCase):
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[GROUP_A, GROUP_B]):
             self.assertEqual(N.unplanned_footprint_candidates(self.reg, '48,-44'), [])
 
+    def test_feature_planned_in_its_home_cell_is_not_planned_again_next_door(self):
+        """Task 288: the neighbour's record and next skip a map-ref feature planned elsewhere."""
+        pond = {'kind': 'water_body', 'label': 'pond (13 columns)', 'refs': ['w147601601'],
+                'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
+        self.reg.change(Note(CELL, 'plan_feature', 'pond (67 columns)', 'w147601601'))
+        neighbour = (CELL[0] - 1, CELL[1])
+        cid = f'{neighbour[0]},{neighbour[1]}'
+        self.assertEqual(CR.record_feature_candidates(self.reg, cid, [pond, GROUP_A]),
+                         [{'id': STREET, 'label': GROUP_A['label'], 'kind': 'houses'}])
+        self.assertEqual([f.id for f in self.reg.cell(neighbour).features], [STREET])
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=[pond]):
+            self.assertEqual(N.unplanned_footprint_candidates(self.reg, cid), [])
+
     def test_dismissed_group_stays_dismissed(self):
         self.built_street()
         self.record([GROUP_A, GROUP_B])

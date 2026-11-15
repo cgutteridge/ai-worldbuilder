@@ -16,6 +16,9 @@ or run of houses becomes one feature. Outbuildings (sheds, garages) are left to 
 house plot. Connected polygon water columns become ``kind: water_body`` candidates
 (streams stay off the pond list; #163).
 
+A feature is one build whatever cell lines it crosses (task 288): a footprint is proposed
+only in its home cell (:func:`home_cell`), whole, and never in the other cells it touches.
+
   python3 scripts/cell_features.py --cell 48,-43
 """
 from __future__ import annotations
@@ -24,6 +27,7 @@ import argparse
 import math
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -50,6 +54,29 @@ MIN_COLUMNS = 12      # ignore slivers (kiosks, bin stores)
 LAYER_BUILD = re.compile(
     r'(_ground|_trees|_decor|_foliage|_canopy|_undo|_grounds_\w+)$|^cell_marker_|^clear_floating|'
     r'^highfield_grounds_|_grounds$|^ghost_')
+
+
+def footprint_cells(columns) -> list[tuple[int, int]]:
+    """Cells a footprint touches, its home cell first (task 288).
+
+    Order: most columns first; a tie goes to the lowest ``(tx, tz)`` so the choice is stable.
+
+    @param columns: ``(x, z)`` block columns of one whole footprint
+    @returns: ``[(tx, tz), ...]``; empty for an empty footprint
+    """
+    import cellmath
+    counts = Counter(cellmath.cell_of(int(x), int(z)) for x, z in columns)
+    return sorted(counts, key=lambda c: (-counts[c], c))
+
+
+def home_cell(columns) -> tuple[int, int] | None:
+    """The one cell that plans a footprint crossing cell lines: most columns, ties lowest ``(tx, tz)``.
+
+    @param columns: ``(x, z)`` block columns of one whole footprint
+    @returns: ``(tx, tz)`` or None for an empty footprint
+    """
+    cells = footprint_cells(columns)
+    return cells[0] if cells else None
 
 
 def clip_coverage(cell: tuple[int, int]) -> float:
@@ -216,7 +243,9 @@ def _houses_from_uncovered_portals(portals: list, streets) -> dict:
 def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: set | None = None) -> dict:
     """Built vs unbuilt vector-map building footprint area overlapping a cell (#142).
 
-    Area is the count of building columns that fall inside the cell. A building is
+    Area is the count of building columns that fall inside the cell. An unbuilt building
+    whose whole footprint has its home in another cell (:func:`home_cell`) is not listed or
+    counted here: that cell proposes it once (task 288). A building is
     unbuilt when fewer than COVERED_FRAC of its full footprint columns are touched
     by a feature build — the same rule as :func:`missing_features`.
 
@@ -246,7 +275,10 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
         # whole footprint, so a building straddling the cell edge is judged as one
         full = list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9))) if len(cols) < 4000 else cols
         area = len(cols)
-        if sum(c in covered for c in full) >= COVERED_FRAC * len(full):
+        built = sum(c in covered for c in full) >= COVERED_FRAC * len(full)
+        if not built and home_cell(full) != (tx, tz):
+            continue                                  # proposed whole in its home cell (task 288)
+        if built:
             built_area += area
             orphans = _uncovered_portals_in_cell(rings, covered, cb)
             if orphans:
@@ -280,7 +312,10 @@ def missing_water_bodies(
     """Mapped water bodies overlapping the cell that no feature build covers (#148, #163).
 
     Uses polygon ``natural=water`` only (not stream/drain line columns). Candidates
-    carry OSM way refs and provenance ``source: vector_map``.
+    carry OSM way refs and provenance ``source: vector_map``. A body is whole (its columns
+    outside the cell included, as far as ``water_columns`` reaches) and is proposed only in
+    its home cell (:func:`home_cell`); ``cells`` lists every cell it touches, home first
+    (task 288). Columns clipped to the cell can only show the in-cell part.
 
     @param tx: cell X
     @param tz: cell Z
@@ -301,19 +336,21 @@ def missing_water_bodies(
             # Unit fixtures / no world: no vector-map water to propose.
             return []
     x0, z0, x1, z1 = cell_bbox(tx, tz, tx, tz)
-    in_cell = {(x, z) for x, z in water_columns if x0 <= x <= x1 and z0 <= z <= z1}
-    refs_in_cell = None
-    if water_refs is not None:
-        refs_in_cell = {q: water_refs[q] for q in in_cell if q in water_refs}
     out = []
     for body in water_body_components(
-        in_cell,
+        water_columns,
         cell=(tx, tz),
         min_columns=MIN_WATER_COLUMNS,
-        column_refs=refs_in_cell,
+        column_refs=water_refs,
         provenance_source='vector_map',
     ):
         outline = [(int(c[0]), int(c[1])) for c in body['outline']]
+        if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
+            continue
+        cells = footprint_cells(outline)
+        if cells[0] != (tx, tz):
+            continue                                  # proposed whole in its home cell (task 288)
+        body['cells'] = [[c[0], c[1]] for c in cells]
         if outline and sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
             continue
         out.append(body)
