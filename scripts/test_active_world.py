@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 if str(TOOL_ROOT) not in sys.path:
@@ -259,6 +261,115 @@ class ActiveWorldContractTests(unittest.TestCase):
             aw.set_world("../etc")
         with self.assertRaises(RuntimeError):
             aw.set_world("foo/bar")
+
+
+class GitWorldResolutionTests(unittest.TestCase):
+    """Real Git checkouts share world selection and discovery across worktrees."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name).resolve()
+        self.main = root / "main"
+        self.main.mkdir()
+        self.linked = root / "linked"
+        for args in (
+            ["init", "--quiet"],
+            ["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "commit", "--quiet", "--allow-empty", "-m", "fixture"],
+            ["worktree", "add", "--quiet", "--detach", str(self.linked)],
+        ):
+            subprocess.run(["git", *args], cwd=self.main, check=True,
+                           capture_output=True, text=True)
+        self.world = self.main / "worlds" / "demo"
+        _write_fictional_world(
+            self.world,
+            world={"gameworld_id": "Demo", "save_path": str(root / "save")},
+            frame={"offsets": {"easting": 0, "northing": 0}},
+        )
+        import active_world as aw
+        self.aw = aw
+        for name, value in (("TOOL_ROOT", self.main), ("WORLD_ROOT", None)):
+            patcher = mock.patch.object(aw, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_main_checkout_unchanged(self) -> None:
+        self.assertIsNone(self.aw.WORLD_ROOT)
+        self.assertEqual(self.aw.list_world_names(), ["demo"])
+        self.assertEqual(self.aw.set_world("demo"), self.world)
+
+    def test_non_worktree_with_separate_git_directory_unchanged(self) -> None:
+        separate = self.main.parent / "separate"
+        separate.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet", "--separate-git-dir", str(self.main.parent / "git-data")],
+            cwd=separate, check=True, capture_output=True, text=True,
+        )
+        local_world = separate / "worlds" / "local"
+        local_world.mkdir(parents=True)
+        with mock.patch.object(self.aw, "TOOL_ROOT", separate):
+            self.assertEqual(self.aw.list_world_names(), ["local"])
+            self.assertEqual(self.aw.set_world("local"), local_world)
+
+    def test_broken_git_file_refuses_local_fallback(self) -> None:
+        (self.linked / ".git").write_text("gitdir: /nonexistent/task291-git-dir\n")
+        (self.linked / "worlds" / "local").mkdir(parents=True)
+        with mock.patch.object(self.aw, "TOOL_ROOT", self.linked):
+            with self.assertRaisesRegex(RuntimeError, "cannot locate shared worlds/"):
+                self.aw.set_world("local")
+
+    def test_worktree_uses_main_world_even_with_its_own_copy(self) -> None:
+        (self.linked / "worlds" / "demo").mkdir(parents=True)
+        (self.linked / "worlds" / "local-only").mkdir()
+        with mock.patch.object(self.aw, "TOOL_ROOT", self.linked):
+            self.assertIsNone(self.aw.WORLD_ROOT)
+            self.assertEqual(self.aw.list_world_names(), ["demo"])
+            self.assertEqual(self.aw.set_world("demo"), self.world)
+            self.assertEqual(self.aw.gameworld_id(), "Demo")
+            with self.assertRaisesRegex(RuntimeError, "available: demo"):
+                self.aw.set_world("local-only")
+
+    def test_worktree_missing_main_worlds_does_not_use_local_copy(self) -> None:
+        (self.main / "worlds").rename(self.main / "stored-worlds")
+        (self.linked / "worlds" / "demo").mkdir(parents=True)
+        with mock.patch.object(self.aw, "TOOL_ROOT", self.linked):
+            self.assertEqual(self.aw.list_world_names(), [])
+            with self.assertRaisesRegex(RuntimeError, "none found"):
+                self.aw.set_world("demo")
+
+    def test_unknown_names_and_non_children_still_refused(self) -> None:
+        outside = self.main / "outside"
+        outside.mkdir()
+        (self.world.parent / "escape").symlink_to(outside, target_is_directory=True)
+        for checkout in (self.main, self.linked):
+            with mock.patch.object(self.aw, "TOOL_ROOT", checkout):
+                for name in ("", " ", ".", "..", "../demo", "nested/demo",
+                             "nested\\demo", str(self.world), "missing", "escape"):
+                    with self.subTest(checkout=checkout, name=name):
+                        with self.assertRaises(RuntimeError):
+                            self.aw.set_world(name)
+                self.assertIsNone(self.aw.WORLD_ROOT)
+
+    def test_which_world_agrees_without_selecting_world(self) -> None:
+        import contextlib
+        import io
+        import which_world
+
+        # A local duplicate must not make discovery ambiguous.
+        _write_fictional_world(
+            self.linked / "worlds" / "demo",
+            world={
+                "gameworld_id": "Demo", "save_path": str(self.main.parent / "save")},
+            frame={"offsets": {"easting": 0, "northing": 0}},
+        )
+        out = io.StringIO()
+        with mock.patch.object(self.aw, "TOOL_ROOT", self.linked), \
+                mock.patch("world_discovery.running_save", return_value=self.main.parent / "save"), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(which_world.main(["--json"]), 0)
+        self.assertEqual(json.loads(out.getvalue())["world"], "demo")
+        self.assertIsNone(self.aw.WORLD_ROOT)
 
 
 if __name__ == "__main__":

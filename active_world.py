@@ -12,6 +12,7 @@ before place memory is read, or it raises.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +25,39 @@ TOOL_ROOT: Path = Path(__file__).resolve().parent
 WORLD_ROOT: Path | None = None
 
 
+def worlds_root() -> Path:
+    """Return the main checkout's ``worlds/``, shared by linked tool worktrees.
+
+    A worktree's own ``worlds/`` is ignored so selection and discovery use one
+    catalogue. Plain directories and ordinary Git checkouts keep their local
+    ``worlds/``. No world is selected by resolving this path.
+
+    @returns: absolute directory containing the world checkouts (may be missing)
+    @raises RuntimeError: when a Git checkout file cannot be resolved
+    """
+    if not (TOOL_ROOT / ".git").is_file():
+        return TOOL_ROOT / "worlds"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
+            cwd=TOOL_ROOT, check=True, capture_output=True, text=True, timeout=10,
+        )
+        common_raw, git_raw = result.stdout.strip().splitlines()
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise RuntimeError(f"cannot locate shared worlds/ for {TOOL_ROOT}: {exc}") from exc
+    common_dir = (TOOL_ROOT / common_raw).resolve()
+    git_dir = (TOOL_ROOT / git_raw).resolve()
+    # A separate Git directory (e.g. a submodule) alone is not a linked worktree.
+    root = common_dir.parent if common_dir != git_dir else TOOL_ROOT
+    return root / "worlds"
+
+
 def list_world_names() -> list[str]:
     """Return directory names under ``worlds/`` (sorted).
 
     @returns: world directory basenames; empty when ``worlds/`` is missing
     """
-    worlds = TOOL_ROOT / "worlds"
+    worlds = worlds_root()
     if not worlds.is_dir():
         return []
     return sorted(
@@ -55,9 +83,9 @@ def set_world(name: str) -> Path:
         raise RuntimeError(
             f"invalid --world {name!r}; pass a directory name under worlds/"
         )
-    path = (TOOL_ROOT / "worlds" / raw).resolve()
-    worlds_root = (TOOL_ROOT / "worlds").resolve()
-    if path.parent != worlds_root or not path.is_dir():
+    worlds = worlds_root().resolve()
+    path = (worlds / raw).resolve()
+    if path.parent != worlds or not path.is_dir():
         available = list_world_names()
         hint = ", ".join(available) if available else "(none found)"
         raise RuntimeError(

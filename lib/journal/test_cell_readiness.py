@@ -69,7 +69,94 @@ class ReadinessTest(unittest.TestCase):
         self.world.seed((0, 0), ground=True)
         self.assertTrue(policy.check((0, 0))['ready'])
         self.evidence.revision = 'evidence-2'
-        self.assertIn('validation stale', policy.check((0, 0))['blockers'])
+        self.assertIn('validation stale (evidence facts changed)', policy.check((0, 0))['blockers'])
+
+    def test_validation_records_parts_without_changing_the_combined_identity(self):
+        import json
+        from cell_readiness import POLICY_VERSION, ReadinessPolicy, content_id
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        report = policy.validate((0, 0))
+        accepted = json.loads(self.world.reg.notes((0, 0), kinds=('readiness',))[-1]['body'])
+        parts = accepted['revision_parts']
+        self.assertEqual(parts['policy'], POLICY_VERSION)
+        self.assertEqual(parts['evidence'], self.evidence.revision)
+        self.assertEqual(parts['plans'], json.loads(json.dumps(policy.plan_identity((0, 0)))))
+        self.assertEqual(accepted['revision'], content_id([parts['policy'], parts['evidence'], parts['plans']]))
+        self.assertEqual(accepted['revision'], report['revision'])
+        before = self.world.reg.journal_path.read_bytes()
+        self.assertTrue(policy.validate((0, 0))['validated'])
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+
+    def test_stale_validation_names_policy_version_change(self):
+        from unittest import mock
+        from cell_readiness import POLICY_VERSION, ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        with mock.patch('cell_readiness.POLICY_VERSION', POLICY_VERSION + 1):
+            report = policy.check((0, 0))
+        blocker = f'validation stale (policy version changed: {POLICY_VERSION} -> {POLICY_VERSION + 1})'
+        self.assertIn(blocker, report['blockers'])
+        self.assertIn('prepare --cell 0,0 --apply', report['clear_with'][blocker])
+
+    def test_stale_validation_lists_added_changed_and_removed_plan_ids(self):
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        for fid in ('hall', 'shed', 'unchanged'):
+            self.world.reg.change(Note((0, 0), 'plan_feature', fid, fid))
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        for fid in ('pond_z', 'pond_a'):
+            self.world.reg.change(Note((0, 0), 'plan_feature', fid, fid))
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'new hall design', 'hall'))
+        self.world.reg.change(Note((0, 0), 'plan_feature-dismiss', 'not a building', 'shed'))
+        before = self.world.reg.journal_path.read_bytes()
+        blocker = ('validation stale (plan identity changed: added: pond_a, pond_z; '
+                   'changed: hall; removed: shed)')
+        self.assertIn(blocker, policy.check((0, 0))['blockers'])
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.assertTrue(policy.validate((0, 0))['validated'])
+
+    def test_stale_validation_names_coverage_dismissal_without_calling_its_ref_a_plan(self):
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.world.reg.change(Note((0, 0), 'clip_coverage-dismiss', 'accepted gap', self.evidence.revision))
+        self.assertIn('validation stale (plan identity changed: coverage dismissal changed)',
+                      policy.check((0, 0))['blockers'])
+
+    def test_stale_validation_names_all_changed_parts(self):
+        from unittest import mock
+        from cell_journal import Note
+        from cell_readiness import POLICY_VERSION, ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        policy.validate((0, 0))
+        self.evidence.revision = 'evidence-2'
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'pond', 'pond'))
+        with mock.patch('cell_readiness.POLICY_VERSION', POLICY_VERSION + 1):
+            report = policy.check((0, 0))
+        self.assertIn(f'validation stale (policy version changed: {POLICY_VERSION} -> {POLICY_VERSION + 1}; '
+                      'evidence facts changed; plan identity changed: added: pond)', report['blockers'])
+
+    def test_legacy_validation_remains_valid_until_stale_then_reports_unknown_cause(self):
+        import json
+        from cell_journal import Note
+        from cell_readiness import POLICY_VERSION, ReadinessPolicy
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence)
+        report = policy.check((0, 0))
+        self.world.reg.change(Note((0, 0), 'readiness', json.dumps({'revision': report['revision'],
+                                                                 'policy': POLICY_VERSION,
+                                                                 'warnings': []})))
+        self.assertTrue(policy.check((0, 0))['validated'])
+        self.evidence.revision = 'evidence-2'
+        self.assertIn('validation stale (cause unknown: validation predates cause tracking)',
+                      policy.check((0, 0))['blockers'])
 
     def test_tree_leaves_can_land_in_unprepared_neighbors_and_undo_exactly(self):
         from cell_journal import Undo
@@ -489,7 +576,7 @@ class ReadinessTest(unittest.TestCase):
             evidence.refresh()
             report = policy.check((0, 0))
             self.assertNotEqual(first, report['revision'])
-            self.assertIn('validation stale', report['blockers'])
+            self.assertIn('validation stale (evidence facts changed)', report['blockers'])
 
     def test_prepared_features_and_ground_can_land_in_either_order(self):
         """Both orders land; ground first leaves the ground stale until it is redone (task 285)."""
