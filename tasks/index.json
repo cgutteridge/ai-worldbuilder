@@ -153,15 +153,7 @@
     },
     
     
-    {
-      "id": 288,
-      "title": "A feature that crosses a cell line is planned and built once",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Found 2026-11-15 building pond w147601601 (OSM way) for cell 48,-44 (I-015 chain). Owner direction 2026-11-15: a feature is a single build, whatever cell lines it crosses.\nEvidence: propose-features split the pond by count at the x=6144 cell line (journal seq 921 plan_feature note 'pond (54 columns)' in 48,-44; the other 13 columns would be proposed again in 47,-44). The designer's spec (worlds/southampton-build/site/builds/w147601601.json) and the journal treat it as one 67-column build. The apply was refused: 'needs-prep 47,-44: validation required [...]; feature plans: 8 eligible groups unaccounted for [clear: ... propose-features --cell 47,-44 --record, then dismiss-feature ...]'. The 8 groups are other buildings in 47,-44, unrelated to the pond.\nWanted: (1) a feature whose footprint crosses cells is planned once, in the cell holding most of its columns (ties: a stable rule), with the whole footprint; the neighbour cells see it as accounted for (no re-proposal, no 'unaccounted' count for it). (2) Applying a cross-cell feature requires each touched neighbour's evidence to be current (validation / prepare), but NOT that the neighbour's other feature groups are planned. The refusal names exactly what is missing and its clear: command.\nDiagnose first (read-only): where propose-features / cell_features split by cell, how plan_feature notes record a footprint, and which readiness check the journal apply runs for touched neighbour cells (lib/journal/cell_readiness.py, registry_next.py, cell_features, cell_journal apply gate).\nTests (synthetic): a two-cell pond is proposed once in the majority cell and not in the other; the neighbour's unaccounted count excludes it; apply passes with the neighbour validated but other neighbour groups unplanned; apply refuses with a clear: line when the neighbour is not validated. Acceptance read-only: propose-features for 48,-44 and 47,-44 show the pond once; the pond dry run passes the readiness gate after prepare 47,-44 (prepare itself is the orchestrator's live step, not this task).\nFiles: lib/journal/cell_readiness.py, cell_features / propose-features code in scripts/cell_registry.py, tests, rules/process.md one line. Stretch (planner logic across cells): ask the owner for model and effort first.\n"
-    },
+    
     
     {
       "id": 290,
