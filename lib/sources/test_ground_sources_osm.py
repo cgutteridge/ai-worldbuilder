@@ -241,6 +241,29 @@ class UndergroundWaterwayTest(unittest.TestCase):
                          'bridge columns are not ours to surface')
 
 
+class OutdoorStepsTest(unittest.TestCase):
+    """#294: ground-level highway=steps is its own set, apart from bridges."""
+
+    @staticmethod
+    def _steps(coords, **tags):
+        return {'type': 'Feature', 'properties': {'osm_id': '9', 'highway': 'steps', **tags},
+                'geometry': {'type': 'LineString', 'coordinates': coords}}
+
+    def test_ground_level_steps_are_steps_not_bridge(self):
+        ground = _ground_from_features([self._steps([[10.0, 20.0], [20.0, 20.0], [20.0, 40.0]])])
+        self.assertTrue(ground.steps)
+        self.assertFalse(ground.bridge)
+        self.assertEqual(ground.steps[(15, 20)], 'x')
+        self.assertEqual(ground.steps[(20, 30)], 'z')
+
+    def test_bridge_tunnel_and_layer_steps_stay_in_bridge(self):
+        for tags in ({'bridge': 'yes'}, {'tunnel': 'yes'}, {'layer': '1'}):
+            with self.subTest(tags=tags):
+                ground = _ground_from_features([self._steps([[10.0, 20.0], [20.0, 20.0]], **tags)])
+                self.assertFalse(ground.steps)
+                self.assertIn((15, 20), ground.bridge)
+
+
 class WaterPolyVsLineTest(unittest.TestCase):
     """#163: polygon water keeps way refs; streams stay on water_line only."""
 

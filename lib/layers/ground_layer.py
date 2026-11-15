@@ -21,7 +21,9 @@ everything above the surface is cleared except blocks a neighbour owns or a tree
 
 Columns this layer never touches: building footprint polygons, columns where any structure build
 owns a solid block (a feature's air-only margin is surfaced, below that air; task 286),
-water and its bank, mapped bridges/steps, and anything outside the cell. Trees and decor are
+water and its bank, mapped bridges (and steps on a bridge, tunnel or layer), and anything outside
+the cell. Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
+with a stair block wherever the lidar rises along the way (task 294). Trees and decor are
 separate later passes that write masks; a ground plan that lands on a masked position is a
 conflict and does not apply (undo that mask first: scripts/mask_undo.py).
 
@@ -66,6 +68,9 @@ STITCH_DEPTH = 2        # columns from a seam that copy the finished neighbour's
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
 FILL_REACH = 12         # how far shade/canopy columns look for ground around them
 STRUCTURE_TOPS = ('stairs', 'slab', '_wall', '_fence', 'bars', 'planks', '_carpet')
+STEP_STAIR = 'polished_andesite_stairs'   # outdoor step riser beside light_gray_concrete paving (#294)
+# facing of a stair that climbs toward +axis / -axis (Minecraft: east +x, south +z)
+STEP_FACING = {('x', 1): 'east', ('x', -1): 'west', ('z', 1): 'south', ('z', -1): 'north'}
 
 # Earlier ground and foliage passes. Their blocks are what this layer replaces, so they are not
 # owners. (Records of them stay in verification/site; only this ownership test forgets them.)
@@ -213,6 +218,10 @@ def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None
 def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None):
     """Columns this layer may surface, with their live surface (y, block).
 
+    Ground-level mapped steps (``vmap.steps``) are free unless a footprint, structure build or water
+    claims them; a stairs top there is the ground layer's own step, not a structure (#294). Any steps
+    column left unsurfaced has a reason that says so.
+
     Returns (live: {(x,z): (y, short block)}, skipped: Counter of reasons).
     """
     x0, z0, x1, z1 = cell_box(cell)
@@ -227,6 +236,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
                                    'waterlogged=true' in (world.block(x, probed[(x, z)][0], z) or '')):
                 water.add((x, z))
     bank = {(x + a, z + b) for x, z in water for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    steps = getattr(vmap, 'steps', {})
     for x in range(x0, x1 + 1):
         for z in range(z0, z1 + 1):
             q = (x, z)
@@ -242,10 +252,12 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
                 reason = 'bridge / steps'
             elif top is None:
                 reason = 'empty column'
-            elif any(s in top[1] for s in STRUCTURE_TOPS):
+            elif any(s in top[1] for s in STRUCTURE_TOPS) and not (q in steps and 'stairs' in top[1]):
                 reason = f'structure top {top[1]}'
             else:
                 live[q] = top
+            if reason and q in steps:
+                reason = f'steps: {reason}'
             if reason:
                 skipped[reason] += 1
                 if details is not None:
@@ -532,6 +544,9 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                     (q[0] + a, q[1] + b) in vmap.kind and vmap.pri[(q[0] + a, q[1] + b)] in (60, 70)
                     for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
                 out[q] = 'kerb'
+    for q in free & set(getattr(vmap, 'steps', ())):    # mapped outdoor steps are paving (#294)
+        out[q] = 'paving'
+        how['mapped outdoor steps -> paving'] += 1
     if guessed_out is not None:
         guessed_out.update(q for q in soft_grass if out.get(q) == 'grass')
     return out, how
@@ -585,6 +600,32 @@ def lidar_base_map(columns, maps=None) -> dict:
                 continue
         if y is not None and y > 0:
             out[(x, z)] = y
+    return out
+
+
+def step_stairs(steps: dict, ys: dict) -> dict:
+    """Stair block per steps column where the surface rises along the way (#294).
+
+    A steps column whose neighbour along the way's run axis is lower, while the neighbour on the other
+    side is not, is a riser: its top becomes a stair whose back faces up the slope. A walker on the
+    lower neighbour steps onto the stair's low half and on to the next step, as on a built staircase.
+
+    @param steps: ``{(x, z): 'x' | 'z'}`` ground-level steps columns and their run axis
+    @param ys: target surface Y per free column (lidar height)
+    @returns: ``{(x, z): facing}`` for the riser columns
+    """
+    out = {}
+    for q, axis in steps.items():
+        y = ys.get(q)
+        if y is None:
+            continue
+        sides = {}
+        for d in (1, -1):
+            n = (q[0] + d, q[1]) if axis == 'x' else (q[0], q[1] + d)
+            sides[d] = ys.get(n) is not None and ys[n] < y
+        if sides[1] != sides[-1]:
+            up = -1 if sides[1] else 1                    # climb away from the lower side
+            out[q] = STEP_FACING[(axis, up)]
     return out
 
 
@@ -927,6 +968,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         if q in ceilings and ys[q] >= ceilings[q]:
             ys[q] = ceilings[q] - 1
             capped += 1
+    steps = {q: a for q, a in getattr(vmap, 'steps', {}).items() if q in live}
+    stairs = step_stairs(steps, ys)
     stats = Counter({
         'columns': len(live),
         'from_lidar': from_lidar,
@@ -934,6 +977,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'pits_filled': pits_filled,
         'capped_under_feature_margin': capped,
         'vector_map_features': getattr(vmap, 'n_features', 0),
+        'steps_surfaced': len(steps),
+        'steps_stairs': len(stairs),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
     stats['frontage_blocked'] = gs.blocked_connections(frontages)
@@ -952,6 +997,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         if mat == 'grass_block' and shades_grass(cover):   # #242: grass dies under an opaque block
             mat = 'dirt'
             stats['dirt_under_opaque'] += 1
+        if q in stairs:
+            mat = f'{STEP_STAIR}[facing={stairs[q]},half=bottom]'
         if top in masked:
             conflicts.append((top, mat, masked[top]))
         else:
