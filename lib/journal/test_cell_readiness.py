@@ -290,6 +290,17 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual([c['id'] for c in report['candidates']], ['w7', 'w8'])
         self.assertIn('feature plans: 2 eligible groups unaccounted for', report['blockers'])
 
+    def test_cross_cell_feature_dismissed_in_its_home_cell_is_accounted_in_the_neighbour(self):
+        """Task 288 follow-up: a map-ref feature dismissed at home is dismissed everywhere; houses are not."""
+        from cell_journal import Note
+        policy, others, _ = self._cross_cell_pond()
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hall', 'w7'))
+        self.world.reg.change(Note((0, 0), 'plan_feature-dismiss', 'not a build', 'w7'))
+        group = {'id': 'st-1', 'kind': 'houses', 'refs': ['w11'], 'label': 'terrace'}
+        self.evidence.items = others + [group]
+        report = policy.check((1, 0))
+        self.assertEqual([c['id'] for c in report['candidates']], ['w8', 'st-1'])
+
     def test_cross_cell_feature_applies_with_neighbour_validated_and_its_groups_unplanned(self):
         """Task 288: a validated neighbour's other unplanned groups do not stop the feature."""
         policy, others, pond = self._cross_cell_pond()
@@ -544,6 +555,19 @@ class ReadinessTest(unittest.TestCase):
         self.world.reg.reconcile([(0, 0)], fix=True, apply=self.world.apply)
         self.assertTrue(self.world.reg.cell((0, 0)).trees)
         self.assertFalse(self.world.reg.cell((0, 0)).decor)
+
+    def test_candidates_see_the_whole_pond_so_only_the_home_cell_counts_it(self):
+        """Task 288 follow-up: a pond over a cell line is one candidate, in its majority cell only."""
+        from types import SimpleNamespace
+        from readiness_evidence import LocalEvidence
+        ring = [(6141., -5600.), (6151., -5600.), (6151., -5590.), (6141., -5590.), (6141., -5600.)]
+        props = {'natural': 'water', 'osm_way_id': '147601601'}
+        evidence = LocalEvidence(self.world.root)
+        evidence._index = SimpleNamespace(areas=[([ring], props)], buildings=[], streets=[])
+        home = evidence.candidates(self.world.reg, (48, -44))
+        self.assertEqual([c['refs'] for c in home], [['w147601601']])
+        self.assertEqual(home[0]['area'], 100)        # whole pond, not the clipped 70
+        self.assertEqual(evidence.candidates(self.world.reg, (47, -44)), [])
 
     def test_content_audit_detects_same_timestamp_changes_and_check_is_read_only(self):
         import json

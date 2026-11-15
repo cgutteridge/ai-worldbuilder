@@ -147,7 +147,7 @@ BUILT plan in place to “fix” the world.
  Pass order and undo: rules/handoff-layered-passes.md (features, ground, trees, decor).
  Do not stack extra passes over the same ground (I-035).
  Build order (#286): `next` builds a cell's planned features first (by id) on the lidar ghost ground, then the ground once, fitted around them (ground surfaces a feature's air-only margin below that air), then trees and decor; a cell with no planned features gets its ground first.
- Cross-cell features (#288): a feature is one build whatever cell lines it crosses; it is proposed and planned once, whole, in its home cell (most columns; a tie goes to the lowest tx,tz), and the other cells it touches count it as accounted for. Its apply needs each touched neighbour validated (`prepare --cell <neighbour> --apply`), not the neighbour's other feature groups planned.
+ Cross-cell features (#288): a feature is one build whatever cell lines it crosses; it is proposed and planned once, whole, in its home cell (most columns; a tie goes to the lowest tx,tz), and the other cells it touches count it as accounted for, planned or dismissed in any cell. Its apply needs each touched neighbour validated (`prepare --cell <neighbour> --apply`), not the neighbour's other feature groups planned.
  Stale ground (#285): a feature landed after the cell's last ground makes the ground stale; `next` offers `ground-redo` with the cause and `clear:` command (redo_layer), never runs it, and the cell is not DONE until it lands.
  Next work: `python3 scripts/cell_registry.py next` (issues beat layers).
 

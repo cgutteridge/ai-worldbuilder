@@ -80,18 +80,19 @@ def ground_redo_command(cell, stale):
 
 
 def planned_elsewhere(reg, cell):
-    """Feature ids planned in any other cell: a cross-cell feature is planned once (task 288).
+    """Feature ids planned or dismissed in any other cell: a cross-cell feature is one thing (task 288).
 
-    A map-ref feature (a building or water body) planned in its home cell is accounted for in
-    every other cell its footprint touches. House groups key by street, not by a global map
-    ref, so callers apply this only to non-house candidates.
+    A map-ref feature (a building or water body) planned, or deliberately dismissed, in its
+    home cell is accounted for in every other cell its footprint touches. House groups key by
+    street, not by a global map ref, so callers apply this only to non-house candidates.
 
     @param reg: cell journal
     @param cell: ``(tx, tz)``
     @returns: set of feature ids
     """
     cell = tuple(cell)
-    return {f.id for c, v in reg.view().items() if c != cell for f in v.features}
+    return {fid for c, v in reg.view().items() if c != cell
+            for fid in {f.id for f in v.features} | reg.plan_dismissed_ids(c)}
 
 
 def accounted_elsewhere(item, elsewhere):
