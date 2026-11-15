@@ -16,12 +16,20 @@ POLICY_VERSION = 1
 CLI = 'python3 scripts/cell_registry.py --world <world>'
 
 
-def reapply_command(plan, layer, cell):
+def reapply_command(plan, layer, cell, *, registry):
     """The command that re-applies ``plan`` (a ``layer`` entry whose own cell is ``cell``).
 
-    @returns: reapply_feature for a feature, redo_layer for ground/trees/decor, else undo and rebuild
+    @param registry: the journal being checked (also used by reapply's provenance preflight)
+    @returns: replayable feature command or evidence-led redo, redo_layer for ground/trees/decor,
+      else undo and rebuild
     """
     if layer == 'feature':
+        from feature_reapply import prepare
+        try:
+            prepare(plan, registry=registry)
+        except SystemExit as exc:
+            return (f'use the redo skill for feature {plan} (redesign from evidence); '
+                    f'reapply not offered: {exc}')
         return f'python3 scripts/reapply_feature.py --world <world> {plan} --apply'
     if layer in ('ground', 'trees', 'decor'):
         return f'python3 scripts/redo_layer.py --world <world> --cell {cell[0]},{cell[1]} --layers {layer} --apply'
@@ -108,7 +116,7 @@ def accounted_elsewhere(item, elsewhere):
     return fid in elsewhere
 
 
-def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
+def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
     """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
 
     Every blocker ``ReadinessPolicy.check`` raises is answered here, so a refusal never
@@ -116,6 +124,7 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_ce
 
     @param cell: ``(tx, tz)``
     @param blocker: the blocker text
+    @param registry: the journal being checked
     @param plan: owning plan, for a mismatched apply
     @param layer: journal pass of that plan (feature, ground, trees, decor)
     @param ref: note ref, for a coverage warning
@@ -128,7 +137,7 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_ce
         return ground_redo_command(cell, stale or {})
     if blocker.startswith('recovery: mismatched apply'):
         return (f'{CLI} reconcile {c} --fix (re-asserts the journal blocks and lands the entry); '
-                f'if it reports still mismatched, {reapply_command(plan, layer, owner_cell or cell)} '
+                f'if it reports still mismatched, {reapply_command(plan, layer, owner_cell or cell, registry=registry)} '
                 '(a redo is allowed past its own mismatch)')
     if blocker == 'recovery: unfinished apply':
         return f'python3 scripts/site_recover.py --world <world> recover {c} --apply'
@@ -149,7 +158,7 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_ce
     if blocker == 'generated ground required':
         return f'python3 scripts/ground_layer.py --world <world> --cell {c} --apply'
     if blocker.startswith('planned features must land'):
-        return f'{CLI} next (builds the planned features of the cell)'
+        return f'{CLI} next --cell {c} (builds the planned features of the cell)'
     return f'{CLI} check --cell {c} (read the blocker; none of the known commands applies)'
 
 
@@ -310,7 +319,8 @@ class ReadinessPolicy:
             dismissals = self.reg.notes(cell, kinds=('clip_coverage-dismiss',))
             if not dismissals[-1].get('ref'):
                 warnings.append('legacy unversioned map coverage dismissal; audit its reason')
-            elif dismissals[-1]['ref'] != facts.get('map_revision', facts['revision']):
+            # A complete query needs no dismissal; dismiss-clip-coverage rightly refuses it.
+            elif facts['clip_coverage'] < 1 and dismissals[-1]['ref'] != facts.get('map_revision', facts['revision']):
                 blockers.append('map coverage dismissal stale')
         if facts['aerial_coverage'] < 1:
             blockers.append(f"aerial coverage: {facts['aerial_coverage']:.1%}")
@@ -364,7 +374,7 @@ class ReadinessPolicy:
         clear_with = {}
         for b in blockers:
             e = by_plan.get(b.removeprefix('recovery: mismatched apply '))
-            clear_with[b] = clearing_command(cell, b, plan=e.plan if e else None,
+            clear_with[b] = clearing_command(cell, b, registry=self.reg, plan=e.plan if e else None,
                                              layer=e.pass_ if e else None, ref=refs.get(b),
                                              owner_cell=e.cell if e else None, stale=stale)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
