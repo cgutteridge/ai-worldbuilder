@@ -133,7 +133,8 @@ class LocalEvidence:
                 # whole polygon, as OSMGround.water: the home cell is chosen on the whole pond (task 288)
                 columns = set(scan_polygon(rings, WHOLE))
                 water.update(columns)
-                refs.update({p: osm_ref(props) for p in columns})
+                ref = osm_ref(props)
+                refs.update({p: ref for p in columns})
         items += missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=covered)
         known = {f.id for f in reg.cell(cell).features}
         skip = known | reg.plan_dismissed_ids(cell)
