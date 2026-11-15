@@ -138,6 +138,8 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_ce
         return f'{CLI} dismiss-coverage {c} --warning-id {ref} --reason "<why>"'
     if blocker.startswith(('map query coverage', 'map coverage dismissal stale')):
         return f'{CLI} dismiss-clip-coverage {c} --reason "<why>" (or fix the map extract, then prepare)'
+    if blocker.startswith('evidence validation'):
+        return f'{CLI} prepare --cell {c} --apply --evidence-only (records no feature plans)'
     if blocker.startswith('feature plans:'):
         return f'{CLI} propose-features --cell {c} --record, then dismiss-feature {c} --feature <id> --reason "<why>" for any you reject'
     if blocker.startswith(('validation', 'terrain:', 'candidate evidence error')):
@@ -204,6 +206,28 @@ def validation_staleness(accepted, parts):
     return 'validation stale (' + '; '.join(causes) + ')'
 
 
+def evidence_identity(parts):
+    """Identity of a cell's evidence alone: policy version and evidence facts, no plans (task 292)."""
+    return content_id([parts['policy'], parts['evidence']])
+
+
+def evidence_staleness(previous, parts):
+    """Blocker for a cross-cell neighbour whose evidence is not current.
+
+    @param previous: ``revision_parts`` of the latest evidence check or full validation, or None
+    @param parts: current ``revision_parts``
+    @returns: blocker text
+    """
+    if previous is None:
+        return 'evidence validation required'
+    causes = []
+    if previous['policy'] != parts['policy']:
+        causes.append(f"policy version changed: {previous['policy']} -> {parts['policy']}")
+    if previous['evidence'] != parts['evidence']:
+        causes.append('evidence facts changed')
+    return 'evidence validation stale (' + '; '.join(causes or ['cause unknown']) + ')'
+
+
 class ReadinessPolicy:
     """Evaluate one named cell against provider facts and journal prerequisites."""
 
@@ -213,8 +237,13 @@ class ReadinessPolicy:
         self.require_plan_identity = require_plan_identity
 
     def check(self, cell, operation='build', *, inspect_candidates=True, require_validation=True,
-              redoing=()):
+              redoing=(), neighbour=False):
         """Read-only report, including cells never mentioned in the journal.
+
+        ``neighbour`` checks a cell that a cross-cell feature touches but is not planned in
+        (task 292): it needs only its evidence current (a ``readiness_evidence`` note, or a full
+        validation whose policy and evidence parts still match), never its own feature groups
+        accounted for. Its other blockers (coverage, terrain, hold, recovery) are unchanged.
 
         ``build`` checks preparation prerequisites; ground and feature construction
         may run in either order. Trees/decor additionally require landed ground/features.
@@ -248,7 +277,17 @@ class ReadinessPolicy:
         validated = bool(accepted and accepted.get('revision') == revision)
         if validated:
             warnings += accepted.get('warnings', [])
-        if require_validation and not validated:
+        checks = self.reg.notes(cell, kinds=('readiness_evidence',))
+        records = [p for p in ((accepted or {}).get('revision_parts'),
+                               json.loads(checks[-1]['body'])['revision_parts'] if checks else None) if p]
+        previous = records[-1] if records else None
+        evidence_validated = validated or any(evidence_identity(p) == evidence_identity(parts)
+                                              for p in records)
+        if neighbour:
+            inspect_candidates = False
+            if require_validation and not evidence_validated:
+                blockers.append(evidence_staleness(previous, parts))
+        elif require_validation and not validated:
             blockers.append(validation_staleness(accepted, parts) if accepted else 'validation required')
         candidates = []
         if inspect_candidates and not validated:
@@ -306,7 +345,10 @@ class ReadinessPolicy:
             landed = max(entries, key=lambda e: e.finish_seq, default=None)
             current[layer] = bool(getattr(v, layer) and landed
                                   and landed.meta.get('readiness_revision') == revision)
-        actions = [f'prepare --cell {cell[0]},{cell[1]} --apply'] if not validated else []
+        if neighbour:
+            actions = [] if evidence_validated else [f'prepare --cell {cell[0]},{cell[1]} --apply --evidence-only']
+        else:
+            actions = [f'prepare --cell {cell[0]},{cell[1]} --apply'] if not validated else []
         if facts['aerial_coverage'] < 1:
             actions.append('supply full local aerial coverage; state source, filename and size '
                            'and obtain authorization before downloading')
@@ -328,7 +370,8 @@ class ReadinessPolicy:
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'revision_parts': parts, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision(),
-                'validated': validated, 'operation': operation, 'ground': v.ground,
+                'validated': validated, 'evidence_validated': evidence_validated,
+                'scope': 'evidence' if neighbour else 'full', 'operation': operation, 'ground': v.ground,
                 'candidates': candidates, 'next_actions': actions,
                 'trees_current': current['trees'], 'decor_current': current['decor'],
                 'blockers': blockers, 'clear_with': clear_with, 'warnings': warnings,
@@ -355,11 +398,22 @@ class ReadinessPolicy:
                                                                      'warnings': report['warnings']})))
         return self.check(cell)
 
+    def validate_evidence(self, cell):
+        """Journal a cross-cell neighbour's current evidence; writes no plans and validates none (task 292)."""
+        report = self.check(cell, require_validation=False, neighbour=True)
+        if not report['ready']:
+            raise Refused('; '.join(report['blockers']), report)
+        if not report['evidence_validated']:
+            parts = {k: report['revision_parts'][k] for k in ('policy', 'evidence')}
+            self.reg.change(Note(tuple(cell), 'readiness_evidence', json.dumps(
+                {'revision': evidence_identity(parts), 'revision_parts': parts, 'policy': POLICY_VERSION})))
+        return self.check(cell, neighbour=True)
+
     def enforce(self, build, touched):
         """Guard readiness before begin; tree leaf overhang needs only its owning cell ready.
 
-        A feature's neighbour cells (touched, not its primary cell) must be validated, but their
-        unplanned feature groups do not block it (task 288).
+        A feature's neighbour cells (touched, not its primary cell) need only current evidence
+        (``check(neighbour=True)``); their unplanned feature groups do not block it (tasks 288, 292).
         """
         if build.pass_ in GHOST_PASSES:
             return {}
@@ -391,10 +445,10 @@ class ReadinessPolicy:
             required = {primary} | {cellmath.cell_of(x, z, self.reg.cell_size)
                                     for (x, _y, z), state in build.cells.items()
                                     if not block_id(state).endswith('_leaves')}
-        # A feature is one build across cell lines (task 288): each touched neighbour needs current
-        # evidence (validation), not its own other feature groups planned.
+        # A feature is one build across cell lines (tasks 288, 292): each touched neighbour needs
+        # current evidence, not its own feature groups planned or its plans validated.
         reports = [self.check(c, build.pass_, redoing=(build.plan,),
-                              inspect_candidates=not (build.pass_ == 'feature' and c != primary))
+                              neighbour=build.pass_ == 'feature' and c != primary)
                    for c in sorted(required)]
         for report, cell in zip(reports, sorted(required)):
             if build.pass_ == 'feature' and cell == primary:
@@ -430,6 +484,9 @@ def format_readiness(report):
     """Concise named-cell report with actionable blockers and input fractions."""
     lines = [f"cell {report['cell']}: {'ready' if report['ready'] else 'needs-prep'} "
              f"complete={report['complete']} ground={report['ground']}"]
+    if report.get('scope') == 'evidence':
+        lines.append(f"  scope: evidence only (cross-cell neighbour); records no feature plans; "
+                     f"the cell's own builds still need prepare --cell {report['cell']} --apply")
     for key in ('clip_coverage', 'aerial_coverage'):
         if key in report:
             lines.append(f"  {key}: {report[key]:.1%}")
