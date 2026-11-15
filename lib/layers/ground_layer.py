@@ -23,7 +23,10 @@ everything above the surface is cleared except blocks a neighbour owns or a tree
 
 Columns this layer never touches: building footprint polygons whose feature is unsettled (a
 settled building's outline columns that no build owns are surfaced like any other; task 295),
-columns where any structure build owns a solid block (a feature's air-only margin is surfaced, below that air; task 286),
+columns where a structure build owns a solid block at or above the ground's surface (a feature's air-only
+margin is surfaced, below that air, task 286; a column where a feature owns only blocks buried below
+the lidar surface, such as a door stoop, is the ground's above the feature's highest owned block, and
+the fill never overwrites them, task 297),
 water and its bank, mapped bridges (and steps on a bridge, tunnel or layer), and anything outside
 the cell. Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
 with a stair block wherever the lidar rises along the way (task 294). Trees and decor are
@@ -185,6 +188,30 @@ def owned_air_ceilings(neighbour_owned: set, owned_air: set) -> tuple[set, dict]
     return solid, ceilings
 
 
+def owned_floors(neighbour_owned_states: dict, structure: set) -> dict:
+    """Highest owned y in each structure column, for the buried-feature test (task 297).
+
+    Between the feature and the ground every column is accounted for: where every block a feature
+    owns lies below the ground's surface, the column above the highest of them is the ground's.
+    A column holding owned water is a pond or channel, never ground's to cover.
+
+    @param neighbour_owned_states: ``{(x, y, z): state}`` owned positions
+    @param structure: columns with an owned solid block (:func:`owned_air_ceilings`)
+    @returns: ``{(x, z): highest owned y}`` (owned air counts: the ground never fills it)
+    """
+    floors: dict = {}
+    wet = set()
+    for (x, y, z), state in neighbour_owned_states.items():
+        q = (x, z)
+        if q not in structure:
+            continue
+        if is_water(full(bare(state))):
+            wet.add(q)
+        if y > floors.get(q, y - 1):
+            floors[q] = y
+    return {q: y for q, y in floors.items() if q not in wet}
+
+
 def load_masked_positions() -> dict:
     """Every position owned by a tree or decor mask: {pos: 'pass tx,tz'}."""
     owned: dict = {}
@@ -219,8 +246,12 @@ def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None
                  for y in range(ylo, yhi + 1))
 
 
-def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None):
+def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None,
+                 floors=None, heights=None):
     """Columns this layer may surface, with their live surface (y, block).
+
+    An owned structure column stays the structure's unless ``floors`` (:func:`owned_floors`) puts
+    every owned block below the column's surface: lidar ``heights``, else the live surface (task 297).
 
     Ground-level mapped steps (``vmap.steps``) are free unless a footprint, structure build or water
     claims them; a stairs top there is the ground layer's own step, not a structure (#294). Any steps
@@ -248,7 +279,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
             reason = None
             if q in fp:
                 reason = 'building footprint'
-            elif q in owned_cols:
+            elif q in owned_cols and not buried_under(q, top, floors, heights):
                 reason = 'structure build'
             elif q in bank:
                 reason = 'water / bank'
@@ -268,6 +299,19 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
                     details.append({'x': x, 'z': z, 'reason': reason})
     return live, skipped
 
+
+
+def buried_under(q, top, floors, heights) -> bool:
+    """True when every block a feature owns in column ``q`` lies below the ground's surface (task 297).
+
+    @param top: live surface ``(y, block)`` or None
+    @param floors: ``{(x, z): highest owned y}`` or None
+    @param heights: ``{(x, z): lidar y}`` or None
+    """
+    if not floors or q not in floors:
+        return False
+    surface = (heights or {}).get(q) or (top[0] if top else 0)
+    return surface > floors[q]
 
 
 PATH_KINDS = ('paving', 'brick', 'gravel', 'dirt', 'tarmac')
@@ -651,7 +695,7 @@ def support_y(block, x: int, top: int, z: int, floor: int = PROBE_Y_RANGE[0] - 1
     return None
 
 
-def floating_tops(cells: dict, block, tops: dict) -> list:
+def floating_tops(cells: dict, block, tops: dict, floors=None) -> list:
     """Planned surfaces that would stand over air once the plan lands (#296).
 
     A column floats when nothing below holds it up, or when air is left between its surface and
@@ -662,6 +706,8 @@ def floating_tops(cells: dict, block, tops: dict) -> list:
     @param cells: planned ``{(x, y, z): state}``
     @param block: ``callable(x, y, z) -> state | None`` for the world as it is
     @param tops: ``{(x, z): surface y}``
+    @param floors: ``{(x, z): highest feature-owned y}`` for buried-feature columns (task 297): the
+      ground answers for the column above that block only, the feature for what lies below it
     @returns: ``[{'x', 'z', 'surface_y', 'support_y', 'air'}]`` sorted by column
     """
     def state(x, y, z):
@@ -669,6 +715,8 @@ def floating_tops(cells: dict, block, tops: dict) -> list:
     out = []
     for (x, z), gy in sorted(tops.items()):
         base = support_y(block, x, gy, z)
+        if floors and (x, z) in floors:
+            base = floors[(x, z)] if base is None else max(base, floors[(x, z)])
         low = PROBE_Y_RANGE[0] - 1 if base is None else base
         air = sum(1 for y in range(low + 1, gy) if is_air(state(x, y, z)))
         if base is None or air:
@@ -978,13 +1026,17 @@ def settled_footprint(cell: tuple[int, int]) -> set:
 
 
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
-              evidence=None, *, owned_air: set = frozenset(), settled_fp: set = frozenset()):
+              evidence=None, *, owned_air: set = frozenset(), settled_fp: set = frozenset(),
+              owned_states: dict | None = None):
     """Plan the ground for one cell. Returns (stats, conflicts, kinds, skipped).
 
     ``owned_air`` (owned positions whose state is air) frees air-only columns such as a
     feature's margin: their surface is capped below the lowest owned air (task 286).
     ``settled_fp`` (:func:`settled_footprint`) frees building outline columns whose feature is
     built or dismissed; ownership still decides each one (task 295).
+    ``owned_states`` (``{pos: state}`` for ``neighbour_owned``) lets a column whose owned blocks all
+    lie below the lidar surface be filled above them (task 297); without it any owned solid block
+    keeps the whole column the structure's.
     """
     from osm_footprints import OSMIndex
 
@@ -994,8 +1046,13 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     x0, z0, x1, z1 = cell_box(cell, 2)
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
+    floors = owned_floors(owned_states, owned_cols) if owned_states else {}
+    floors = {q: y for q, y in floors.items() if cell_contains(cell, *q)}
+    floor_heights = lidar_base_map(floors, ev.get('lidar_maps')) if floors else {}
     excluded = []
-    live, skipped = free_columns(cell, world, vmap, fp - set(settled_fp), owned_cols, excluded)
+    live, skipped = free_columns(cell, world, vmap, fp - set(settled_fp), owned_cols, excluded,
+                                 floors=floors, heights=floor_heights)
+    buried = {q: floors[q] for q in live if q in owned_cols and q in floors}
     if 'private_frontage' in ev or 'frontage_route' in ev:
         frontages = ev.get('frontages') or []
     else:
@@ -1030,6 +1087,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         if q in ceilings and ys[q] >= ceilings[q]:
             ys[q] = ceilings[q] - 1
             capped += 1
+        if q in buried and ys[q] <= buried[q]:          # live-surface fallback can sit lower than lidar did
+            ys[q] = buried[q] + 1
     steps = {q: a for q, a in getattr(vmap, 'steps', {}).items() if q in live}
     stairs = step_stairs(steps, ys)
     stats = Counter({
@@ -1042,6 +1101,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'steps_surfaced': len(steps),
         'settled_footprint_surfaced': sum(1 for q in live if q in fp),
         'steps_stairs': len(stairs),
+        'above_buried_feature': len(buried),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
     stats['frontage_blocked'] = gs.blocked_connections(frontages)
@@ -1070,7 +1130,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         # Solid under the new top, down to the ground that holds the column up, not just down to the
         # live top: a live top can itself float over air (#296).
         base = support_y(world.block, x, gy, z)
-        for y in range((old if base is None else base) + 1, gy):
+        low = old if base is None else base
+        if q in buried:                                   # a buried feature block: fill from above it (#297)
+            low = max(low, buried[q])
+        for y in range(low + 1, gy):
             pos = (x, y, z)
             b = world.block(x, y, z)
             if pos in neighbour_owned or (y > old and not is_air(b)):
@@ -1113,7 +1176,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
     stats['flowers'] = sum(row['flowers'] for row in stats['planting'])
-    stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live})   # #296 guard
+    stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live},  # #296 guard
+                                              floors=buried)
     return stats, conflicts, kind, skipped
 
 
@@ -1161,7 +1225,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     states = neighbour_owned_states(cell, ignored_builds(cell))
     owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
-                                                settled_fp=settled_footprint(cell))
+                                                settled_fp=settled_footprint(cell), owned_states=states)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
@@ -1185,6 +1249,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     if conflicts:
         print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/mask_undo.py; HANDOFF-LAYERED §3, §10).')
     report_floating(floating)
+    report_journal_floats(cell, plan)
     out = ROOT / f'verification/site/{name}-kinds.png'
     kinds_image(cell, kind, out)
     print(f'  kinds image: {out.relative_to(ROOT)}')
@@ -1204,6 +1269,36 @@ def report_floating(floating: list) -> None:
     for row in floating[:10]:
         print(f"    ({row['x']},{row['z']}) surface y{row['surface_y']}, support y{row['support_y']}, "
               f"{row['air']} air below")
+
+
+def journal_floats(view, cell: tuple[int, int], planned: set) -> tuple[list, list]:
+    """Floating ground tops the journal holds now, split by whether this plan surfaces them (task 297).
+
+    @param view: the journal (``cell_registry.view_registry()``)
+    @param planned: ``{(x, z)}`` columns this ground plan surfaces
+    @returns: ``(settled, left)``: audit rows this plan surfaces, and rows it leaves, each of the
+      latter with ``clear``, the command that settles it (a feature's reapply/redo, or a ground redo)
+    """
+    from ground_float_audit import audit, clear_command
+    rows = audit(view, [cell])[tuple(cell)]
+    settled = [r for r in rows if (r['x'], r['z']) in planned]
+    left = [{**r, 'clear': clear_command(view, cell, r)} for r in rows if (r['x'], r['z']) not in planned]
+    return settled, left
+
+
+def report_journal_floats(cell: tuple[int, int], plan: Plan) -> None:
+    """Print the journal's floating ground tops: those this plan surfaces, and the clear for the rest."""
+    from cell_registry import view_registry
+    from ground_float_audit import describe
+    settled, left = journal_floats(view_registry(), cell, {(x, z) for x, _y, z in plan.cells})
+    if settled:
+        print(f'  journal floats this plan surfaces: {len(settled)}')
+        for row in settled[:10]:
+            print(f'    {describe(row)}')
+    if left:
+        print(f'  journal floats this plan leaves: {len(left)} (not ground\'s to fill)')
+        for row in left[:10]:
+            print(f"    {describe(row)}  [clear: {row['clear']}]")
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
@@ -1229,7 +1324,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
     with timed_stage('layer planning (includes surface warm-up)'):
         stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
-                                                    settled_fp=settled_footprint(cell))
+                                                    settled_fp=settled_footprint(cell), owned_states=states)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
@@ -1248,6 +1343,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     rb = apply(plan, modifies=ignored, stage='ground-layer', cell=cell,
                strict=True, meta={'note': 'first-principles ground (vector map + aerial); verify: patrol, visuals; ground redo preserves trees/decor completion'})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
+    report_journal_floats(cell, plan)
     return 0
 
 

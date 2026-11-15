@@ -1396,3 +1396,19 @@ class StaleGroundTest(unittest.TestCase):
         self.assertRegex(lines[0], r'^  0,0  ground .* is older than feature house landed ')
         self.assertIn('0,0  clear: ground stale -> python3 scripts/redo_layer.py --world <world> --cell 0,0 '
                       '--layers ground --apply', lines[1])
+
+
+class TestGroundFloatingLines(unittest.TestCase):
+    """#297: check names whose each floating ground column is, with the command that settles it."""
+
+    def test_format_names_the_feature_clear(self):
+        from cell_readiness import format_readiness
+        report = {'cell': '0,0', 'ready': True, 'complete': False, 'ground': 'generated',
+                  'ground_floating': [
+                      {'column': [5, 6], 'surface_y': 54, 'belongs': 'feature', 'owner': 'hall',
+                       'clear': 'python3 scripts/reapply_feature.py --world <world> hall --apply'},
+                      {'column': [7, 6], 'surface_y': 49, 'belongs': 'ground', 'owner': 'west',
+                       'clear': 'python3 scripts/redo_layer.py --world <world> --cell 0,0 --layers ground --apply'}]}
+        text = format_readiness(report)
+        self.assertIn("ground floating: (5,6) y54 is feature hall's -> clear: python3 scripts/reapply_feature.py", text)
+        self.assertIn("ground floating: (7,6) y49 is ground's -> clear: python3 scripts/redo_layer.py", text)
