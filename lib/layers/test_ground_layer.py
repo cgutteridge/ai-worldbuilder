@@ -857,7 +857,7 @@ class SyntheticGroundBox:
         blocks.update(extra or {})
         return World(store=MemoryBlocks(blocks, default='air'))
 
-    def run_plan(self, vmap, world=None, fp=(), settled_fp=(), owned=()):
+    def run_plan(self, vmap, world=None, fp=(), settled_fp=(), owned=(), owned_states=None):
         from types import SimpleNamespace
         from unittest import mock
         from site_kit import Plan
@@ -875,8 +875,11 @@ class SyntheticGroundBox:
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set(fp))), \
                 mock.patch.object(gl, 'cell_box', side_effect=box), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
-            stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, set(owned), plan, world or self.world(),
-                                                           evidence=ev, settled_fp=set(settled_fp))
+            owned = set(owned) | set(owned_states or {})
+            owned_air = {q for q, b in (owned_states or {}).items() if gl.bare(b) in gl.AIRS}
+            stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, owned, plan, world or self.world(),
+                                                           evidence=ev, settled_fp=set(settled_fp),
+                                                           owned_air=owned_air, owned_states=owned_states)
         self.assertEqual(conflicts, [])
         return plan, stats, kind, skipped
 
@@ -984,7 +987,7 @@ class TestApplyReporting(unittest.TestCase):
         stats['retained_positions'] = retained
         skipped = Counter(item['reason'] for item in excluded)
 
-        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=()):
+        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=(), owned_states=None):
             plan.set(0, 64, 0, 'grass_block')
             return stats, [], {(0, 0): 'grass'}, skipped
 
@@ -997,6 +1000,7 @@ class TestApplyReporting(unittest.TestCase):
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
+                mock.patch.object(gl, 'report_journal_floats'), \
                 mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(gl.apply_cell((0, 0)), 0)
@@ -1015,6 +1019,73 @@ class TestApplyReporting(unittest.TestCase):
         fresh_world.assert_called_once_with(strict=True)
         apply.assert_called_once()
         self.assertEqual(apply.call_args.args[0].cells, {(0, 64, 0): 'minecraft:grass_block'})
+
+
+class TestBuriedFeatureBlock(SyntheticGroundBox, unittest.TestCase):
+    """#297: a feature block buried under the lidar surface leaves the column the ground's above it."""
+
+    STOOP = (10, 2)      # a feature's door stoop at y40 under a stale top at y46; lidar says y49
+    CLEARED = (12, 2)    # the same stoop with the feature's own clearance air owned at y41-43
+    TOPPED = (12, 5)     # a feature wall from y40 up through the surface: the structure's
+
+    @staticmethod
+    def lidar(x, z):
+        return 49
+
+    def world(self, extra=None):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        x0, z0, x1, z1 = self.BOX
+        blocks = {(x, y, z): 'minecraft:stone' for x in range(x0 - 1, x1 + 2) for z in range(z0 - 1, z1 + 2)
+                  for y in range(31, 40)}
+        for x, z in (self.STOOP, self.CLEARED):
+            blocks[(x, 40, z)] = 'minecraft:smooth_stone'
+            blocks[(x, 46, z)] = 'minecraft:gray_concrete'          # stale ground top over air
+        for y in range(40, 53):
+            blocks[(self.TOPPED[0], y, self.TOPPED[1])] = 'minecraft:bricks'
+        blocks.update(extra or {})
+        return World(store=MemoryBlocks(blocks, default='air'))
+
+    def owned(self):
+        (sx, sz), (cx, cz), (tx, tz) = self.STOOP, self.CLEARED, self.TOPPED
+        states = {(sx, 40, sz): 'minecraft:smooth_stone', (cx, 40, cz): 'minecraft:smooth_stone'}
+        states.update({(cx, y, cz): 'minecraft:air' for y in (41, 42, 43)})
+        states.update({(tx, y, tz): 'minecraft:bricks' for y in range(40, 53)})
+        return states
+
+    def test_ground_fills_above_a_buried_feature_block(self):
+        plan, stats, _, skipped = self.run_plan(self.Osm(), owned_states=self.owned())
+        x, z = self.STOOP
+        self.assertIn((x, 49, z), plan.cells)
+        self.assertEqual([plan.cells.get((x, y, z)) for y in range(41, 49)], ['minecraft:dirt'] * 8)
+        self.assertNotIn((x, 40, z), plan.cells)                    # the feature's stoop stays
+        self.assertEqual(stats['floating_columns'], [])
+        self.assertEqual(stats['above_buried_feature'], 2)
+
+    def test_fill_never_overwrites_the_feature_s_owned_air(self):
+        plan, stats, _, _ = self.run_plan(self.Osm(), owned_states=self.owned())
+        x, z = self.CLEARED
+        self.assertIn((x, 49, z), plan.cells)
+        for y in (40, 41, 42, 43):
+            self.assertNotIn((x, y, z), plan.cells)
+        self.assertEqual([plan.cells.get((x, y, z)) for y in range(44, 49)], ['minecraft:dirt'] * 5)
+        self.assertEqual(stats['floating_columns'], [])           # the ground answers above the feature only
+
+    def test_a_column_with_a_feature_block_at_the_surface_is_skipped(self):
+        plan, _, _, skipped = self.run_plan(self.Osm(), owned_states=self.owned())
+        x, z = self.TOPPED
+        self.assertFalse([p for p in plan.cells if (p[0], p[2]) == (x, z)])
+        self.assertEqual(skipped['structure build'], 1)
+
+    def test_without_owned_states_any_owned_solid_keeps_the_column(self):
+        plan, _, _, skipped = self.run_plan(self.Osm(), owned=set(self.owned()))
+        for x, z in (self.STOOP, self.CLEARED, self.TOPPED):
+            self.assertFalse([p for p in plan.cells if (p[0], p[2]) == (x, z)])
+        self.assertEqual(skipped['structure build'], 3)
+
+    def test_owned_water_is_never_a_buried_floor(self):
+        states = {(1, 40, 1): 'minecraft:water', (1, 39, 1): 'minecraft:smooth_stone', (2, 40, 2): 'minecraft:stone'}
+        self.assertEqual(gl.owned_floors(states, {(1, 1), (2, 2)}), {(2, 2): 40})
 
 
 class TestRegisteredAerial(unittest.TestCase):
@@ -1126,7 +1197,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
         stats = Counter(columns=1, top=1)
         stats['floating_columns'] = [{'x': 0, 'z': 0, 'surface_y': 49, 'support_y': 36, 'air': 12}]
 
-        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=()):
+        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=(), owned_states=None):
             plan.set(0, 49, 0, 'grass_block')
             return stats, [], {(0, 0): 'grass'}, Counter()
 

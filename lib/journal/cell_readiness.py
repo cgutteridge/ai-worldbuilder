@@ -506,6 +506,10 @@ def format_readiness(report):
     lines += [f'  ground_stale: {cause}' for cause in report.get('ground_stale', [])]
     if report.get('ground_redo') and not any(b.startswith('ground stale:') for b in report.get('blockers', [])):
         lines.append(f"  clear: ground stale -> {report['ground_redo']}")
+    for row in report.get('ground_floating', []):
+        whose = f"feature {row['owner']}'s" if row['belongs'] == 'feature' else "ground's"
+        lines.append(f"  ground floating: ({row['column'][0]},{row['column'][1]}) y{row['surface_y']} is {whose} "
+                     f"-> clear: {row['clear']}")
     for item in report.get('lidar_missing', []):
         lines.append(f"  missing: {item.get('tile', '')} {item['filename']} "
                      f"(about {item['estimated_mb']} MB; explicit acquisition required)")

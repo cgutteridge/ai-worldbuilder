@@ -293,6 +293,17 @@ def latest_cells(reg: CellRegistry | None = None, *, prefix: str = '', ghosts: b
     return out
 
 
+def _ground_floating(reg, cell) -> list:
+    """Floating ground columns in a cell with generated ground, each with whose it is and its clear (task 297).
+
+    @returns: ``[{'column', 'surface_y', 'belongs', 'owner', 'clear'}]``
+    """
+    from ground_float_audit import audit, clear_command
+    return [{'column': [r['x'], r['z']], 'surface_y': r['surface_y'], 'belongs': r['belongs'],
+             'owner': r['owner'], 'clear': clear_command(reg, cell, r)}
+            for r in audit(reg, [cell])[tuple(cell)]]
+
+
 def _format_status(reg: CellRegistry, cid: str | None, *, policy=None) -> str:
     lines = []
     cur = reg.marker_cell()
@@ -709,6 +720,8 @@ def main(argv: list[str] | None = None) -> int:
             policy = policy_for(reg)
             if args.cmd == 'check':
                 report = policy.check(cell, args.operation)
+                if report.get('ground') == 'generated':
+                    report['ground_floating'] = _ground_floating(reg, cell)
             else:
                 from cell_preparation import prepare_cell
                 report = prepare_cell(reg, policy.evidence, cell, apply=args.apply,
