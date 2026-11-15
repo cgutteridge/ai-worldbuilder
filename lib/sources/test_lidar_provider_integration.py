@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[2]
@@ -53,10 +55,12 @@ assert lidar_ghost.ghost_owners_for((0, 0)) == frozenset({{'ghost_0_0_ground'}})
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-6000:])
 
-    def run_provider(self, provider_id, checks):
+    @contextmanager
+    def provider_world(self, provider_id):
         """Install a temporary provider with the real system catalogue still present."""
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp) / 'worlds' / 'synthetic'
+            root.mkdir(parents=True)
             config = root / 'config'
             config.mkdir()
             (config / 'world.json').write_text(json.dumps({
@@ -81,6 +85,10 @@ assert lidar_ghost.ghost_owners_for((0, 0)) == frozenset({{'ghost_0_0_ground'}})
                 'id': provider_id, 'types': ['lidar'],
                 'package': f'providers/{provider_id}', 'modules': modules,
             }]}))
+            yield root
+
+    def run_provider(self, provider_id, checks):
+        with self.provider_world(provider_id) as root:
             boot = f'''
 import sys
 from pathlib import Path
@@ -94,6 +102,37 @@ script_env.bind_world()
             result = subprocess.run([sys.executable, '-c', boot + textwrap.dedent(checks)],
                                     cwd=TOOL, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-6000:])
+
+    def test_ghost_cli_activates_required_world_before_dispatch(self):
+        with self.provider_world('synthetic-lidar') as root:
+            checkout = root.parent.parent
+            # Copy the real CLI bootstrap so --world resolves entirely within
+            # the disposable checkout; only shared tool libraries are linked.
+            for relative in ('active_world.py', 'python_runtime.py',
+                             'scripts/script_env.py', 'scripts/cell_registry.py',
+                             'shims/_provider_shim.py',
+                             'shims/lidar_ghost.py', 'config/system-providers.json'):
+                target = checkout / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(TOOL / relative, target)
+            (checkout / 'lib').symlink_to(TOOL / 'lib', target_is_directory=True)
+            command = [sys.executable, '-B', str(checkout / 'shims/lidar_ghost.py')]
+            args = ['plan', '--cell', '0,0']
+            result = subprocess.run(command + ['--world', 'synthetic'] + args,
+                                    cwd=checkout, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-6000:])
+            report = json.loads(result.stdout)
+            self.assertEqual(report['focus'], [0, 0])
+            self.assertTrue(report['dry'])
+            self.assertEqual(len(report['reports']), 1)
+            self.assertIn('plan-ground', report['reports'][0]['actions'])
+            self.assertFalse((root / 'registry').exists())
+            self.assertFalse((root / 'save').exists())
+
+            missing = subprocess.run(command + args, cwd=checkout,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(missing.returncode, 2, missing.stderr[-6000:])
+            self.assertIn('required: --world', missing.stderr)
 
     def test_shims_and_registry_use_world_provider_with_system_row_present(self):
         system = json.loads((TOOL / 'config/system-providers.json').read_text())

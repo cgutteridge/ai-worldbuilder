@@ -8,6 +8,9 @@ from _provider_shim import ensure_import_paths
 ensure_import_paths()
 
 if __name__ == '__main__':
+    import script_env
+
+    script_env.prepend_world_activation()
     raise SystemExit(importlib.import_module('lidar_ghost').main())
 else:
     # Paths now prefer the library. Remove this in-progress shim before importing
