@@ -16,7 +16,9 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
                           white_concrete, public-road edge smooth_stone), light paving
                           light_gray_concrete, brick paving polished_granite, grass grass_block.
 
-Then, per §10: the top block becomes the surface block, raised columns get dirt beneath, and
+Then, per §10: the top block becomes the surface block, dirt fills beneath it down to solid
+ground (never just down to a live top that itself floats over air; a plan whose surface would
+still float is refused, task 296: scripts/ground_float_audit.py lists them across a world), and
 everything above the surface is cleared except blocks a neighbour owns or a tree/decor mask holds.
 
 Columns this layer never touches: building footprint polygons whose feature is unsettled (a
@@ -196,6 +198,7 @@ def load_masked_positions() -> dict:
 
 # --- 1. which columns are ours -----------------------------------------------------------
 PROBE_Y_RANGE = (31, SCAN_TOP)   # y levels read: ``surface_y`` (110 down to 31) and the clear step (up to SCAN_TOP)
+SUPPORT_RUN = 4                  # solid blocks in a row that count as ground under a surface (#296)
 PROBE_STRIP = 16                 # x columns warmed per prefetch (keeps each request's position list small)
 
 
@@ -630,6 +633,49 @@ def step_stairs(steps: dict, ys: dict) -> dict:
     return out
 
 
+def support_y(block, x: int, top: int, z: int, floor: int = PROBE_Y_RANGE[0] - 1) -> int | None:
+    """Highest y below ``top`` where solid ground starts (#296).
+
+    Ground is ``SUPPORT_RUN`` non-air blocks in a row, or a run that reaches ``floor``. A shorter
+    run over air is a stale remnant, not ground: a surface left floating when its support was
+    undone, or ghost ground with holes where a feature once stood. It must not stop the fill.
+
+    @param block: ``callable(x, y, z) -> state | None``
+    @param top: the surface y; the search starts one below it
+    @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``)
+    @returns: y of the support's top block, or None when nothing holds the column up
+    """
+    for y in range(top - 1, floor, -1):
+        if all(not is_air(block(x, y - i, z)) for i in range(SUPPORT_RUN) if y - i > floor):
+            return y
+    return None
+
+
+def floating_tops(cells: dict, block, tops: dict) -> list:
+    """Planned surfaces that would stand over air once the plan lands (#296).
+
+    A column floats when nothing below holds it up, or when air is left between its surface and
+    the solid ground below (:func:`support_y`, found in the world as it is) once the plan is read
+    over the world. Ground found in the plan itself does not count: planned dirt over an air
+    pocket is not ground.
+
+    @param cells: planned ``{(x, y, z): state}``
+    @param block: ``callable(x, y, z) -> state | None`` for the world as it is
+    @param tops: ``{(x, z): surface y}``
+    @returns: ``[{'x', 'z', 'surface_y', 'support_y', 'air'}]`` sorted by column
+    """
+    def state(x, y, z):
+        return cells.get((x, y, z)) or block(x, y, z)
+    out = []
+    for (x, z), gy in sorted(tops.items()):
+        base = support_y(block, x, gy, z)
+        low = PROBE_Y_RANGE[0] - 1 if base is None else base
+        air = sum(1 for y in range(low + 1, gy) if is_air(state(x, y, z)))
+        if base is None or air:
+            out.append({'x': x, 'z': z, 'surface_y': gy, 'support_y': base, 'air': air})
+    return out
+
+
 def ground_heights(live: dict, lidar_ys: dict) -> dict:
     """Target surface Y per free column: lidar bare terrain is HOW HIGH (#172 / #167).
 
@@ -1021,14 +1067,21 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         else:
             plan.set(x, gy, z, mat)
             stats['top'] += 1
-        for y in range(old + 1, gy):                      # raised: solid under the new top
+        # Solid under the new top, down to the ground that holds the column up, not just down to the
+        # live top: a live top can itself float over air (#296).
+        base = support_y(world.block, x, gy, z)
+        for y in range((old if base is None else base) + 1, gy):
             pos = (x, y, z)
-            if is_air(world.block(x, y, z)) and pos not in neighbour_owned:
-                if pos in masked:
-                    conflicts.append((pos, RAISE_FILL, masked[pos]))
-                else:
-                    plan.set(x, y, z, RAISE_FILL)
-                    stats['raise'] += 1
+            b = world.block(x, y, z)
+            if pos in neighbour_owned or (y > old and not is_air(b)):
+                continue
+            if pos in masked:
+                conflicts.append((pos, RAISE_FILL, masked[pos]))
+            else:
+                plan.set(x, y, z, RAISE_FILL)          # under the live top: own a stale block too
+                stats['raise'] += 1
+                if y <= old:
+                    stats['filled_under_floating_top'] += 1
         for y in range(gy + 1, SCAN_TOP + 1):             # above the surface: clear (§10)
             pos = (x, y, z)
             b = world.block(x, y, z)
@@ -1060,6 +1113,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
     stats['flowers'] = sum(row['flowers'] for row in stats['planting'])
+    stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live})   # #296 guard
     return stats, conflicts, kind, skipped
 
 
@@ -1113,6 +1167,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
                         'planned_positions': len(plan.cells)})
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
+    floating = stats.pop('floating_columns', [])
     changes = [p for p, b in plan.cells.items() if bare(world.block(*p)) != b]
     print(f'{name}: columns {stats["columns"]}  (levelled {stats["levelled"]})')
     print(f'  vector map: {stats["vector_map_features"]} features')
@@ -1129,6 +1184,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')
     if conflicts:
         print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/mask_undo.py; HANDOFF-LAYERED §3, §10).')
+    report_floating(floating)
     out = ROOT / f'verification/site/{name}-kinds.png'
     kinds_image(cell, kind, out)
     print(f'  kinds image: {out.relative_to(ROOT)}')
@@ -1137,7 +1193,17 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
         pv = ROOT / f'verification/site/{name}-preview.png'
         preview(plan, pv, scale=2)
         print(f'  preview: {pv.relative_to(ROOT)}')
-    return len(conflicts)
+    return len(conflicts) + len(floating)
+
+
+def report_floating(floating: list) -> None:
+    """Print the floating-surface guard's columns (#296), loudly, a few at a time."""
+    if not floating:
+        return
+    print(f'  FLOATING: {len(floating)} surface(s) would stand over air; NOT SAFE TO APPLY')
+    for row in floating[:10]:
+        print(f"    ({row['x']},{row['z']}) surface y{row['surface_y']}, support y{row['support_y']}, "
+              f"{row['air']} air below")
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
@@ -1169,9 +1235,14 @@ def apply_cell(cell: tuple[int, int]) -> int:
                         'planned_positions': len(plan.cells)})
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
+    floating = stats.pop('floating_columns', [])
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
     if conflicts:
         print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
+        return 1
+    if floating:
+        report_floating(floating)
+        print(f'REFUSED: {len(floating)} ground surface(s) would float over air (#296); nothing written')
         return 1
     print(f'{name}: {len(plan.cells)} cells planned, stats {dict(stats)}')
     rb = apply(plan, modifies=ignored, stage='ground-layer', cell=cell,

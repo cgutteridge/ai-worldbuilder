@@ -1047,3 +1047,99 @@ class TestRegisteredAerial(unittest.TestCase):
         out = gs.registered_rgb([(30, 50), (1, 50), (30, 1), (60, 50), (80, 50)], [src])
         self.assertEqual(set(out), {(30, 50)})                       # (1,50),(30,1) near the edge; (60,50),(80,50) black
         self.assertEqual(gs.aerial_class(out[(30, 50)]), 'lawn')
+
+
+class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
+    """#296: ground fills under its surface down to solid ground, never just to a live top that floats."""
+
+    FLOAT = (5, 3)       # a stale surface at y49 over air down to the ghost stone top at y36
+    REMNANT = (8, 4)     # a stale three-block remnant at y47-49 over the same void
+    PLAIN = (2, 2)       # live top is the ghost stone at y36
+
+    @staticmethod
+    def lidar(x, z):
+        return 49
+
+    def world(self, extra=None):
+        from block_store import MemoryBlocks
+        from site_kit import World
+        x0, z0, x1, z1 = self.BOX
+        blocks = {(x, y, z): 'minecraft:stone' for x in range(x0 - 1, x1 + 2) for z in range(z0 - 1, z1 + 2)
+                  for y in range(31, 37)}
+        blocks[(self.FLOAT[0], 49, self.FLOAT[1])] = 'minecraft:light_gray_concrete'
+        for y in (47, 48, 49):
+            blocks[(self.REMNANT[0], y, self.REMNANT[1])] = 'minecraft:stone'
+        blocks.update(extra or {})
+        return World(store=MemoryBlocks(blocks, default='air'))
+
+    def test_rise_of_twelve_or_more_is_filled_down_to_solid(self):
+        plan, stats, _, _ = self.run_plan(self.Osm())
+        for x, z in (self.FLOAT, self.REMNANT, self.PLAIN):
+            with self.subTest(x=x, z=z):
+                self.assertIn((x, 49, z), plan.cells)
+                for y in range(37, 49):
+                    self.assertEqual(plan.cells.get((x, y, z)), 'minecraft:dirt', y)
+                self.assertNotIn((x, 36, z), plan.cells)
+        self.assertEqual(stats['floating_columns'], [])
+        self.assertEqual(stats['filled_under_floating_top'], 12 + 12)   # both stale columns, y37..48
+
+    def test_support_needs_a_run_of_ground_not_a_remnant(self):
+        col = {y: 'minecraft:stone' for y in [*range(31, 37), 47, 48, 49]}
+        block = lambda x, y, z: col.get(y)   # noqa: E731
+        self.assertEqual(gl.support_y(block, 0, 50, 0), 36)
+        self.assertEqual(gl.support_y(lambda x, y, z: None, 0, 50, 0), None)
+        self.assertEqual(gl.support_y(lambda x, y, z: 'minecraft:stone' if y <= 32 else None, 0, 50, 0), 32)
+
+    def test_guard_fires_on_a_surface_left_floating(self):
+        world = self.world()
+        x, z = self.FLOAT
+        top_only = {(x, 49, z): 'minecraft:light_gray_concrete'}
+        got = gl.floating_tops(top_only, world.block, {(x, z): 49})
+        self.assertEqual(got, [{'x': x, 'z': z, 'surface_y': 49, 'support_y': 36, 'air': 12}])
+        filled = {**top_only, **{(x, y, z): 'minecraft:dirt' for y in range(37, 49)}}
+        self.assertEqual(gl.floating_tops(filled, world.block, {(x, z): 49}), [])
+        self.assertEqual(len(gl.floating_tops({}, lambda *_: None, {(x, z): 49})), 1)   # nothing holds it up
+
+    def test_guard_reports_when_an_owned_position_blocks_the_fill(self):
+        x, z = self.FLOAT
+        owned_air = {(x, 40, z)}
+        from types import SimpleNamespace
+        from unittest import mock
+        from site_kit import Plan
+        x0, z0, x1, z1 = self.BOX
+        cols = [(a, b) for a in range(x0 - 4, x1 + 5) for b in range(z0 - 4, z1 + 5)]
+        ev = {'vmap': self.Osm(), 'rgb': {q: (.64, .60, .54) for q in cols},
+              'private_frontage': set(), 'frontage_route': set(), 'forecourt': set(), 'pavement': set(),
+              'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
+              'lidar_maps': SimpleNamespace(get=lambda a, b, field='h': 49)}
+        with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set())), \
+                mock.patch.object(gl, 'cell_box', side_effect=lambda c, m=0: (x0 - m, z0 - m, x1 + m, z1 + m)), \
+                mock.patch.object(gl, 'stitch_seams', return_value=0), \
+                mock.patch.object(gl, 'owned_air_ceilings', return_value=(set(), {})):
+            stats, *_ = gl.plan_cell((0, 0), {}, owned_air, Plan('t'), self.world(), evidence=ev)
+        self.assertEqual([(r['x'], r['z'], r['air']) for r in stats['floating_columns']], [(x, z, 1)])
+
+    def test_apply_refuses_a_floating_plan(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        stats = Counter(columns=1, top=1)
+        stats['floating_columns'] = [{'x': 0, 'z': 0, 'surface_y': 49, 'support_y': 36, 'air': 12}]
+
+        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=()):
+            plan.set(0, 49, 0, 'grass_block')
+            return stats, [], {(0, 0): 'grass'}, Counter()
+
+        with mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
+                mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.object(gl, '_fresh_world'), \
+                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
+                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
+                mock.patch.object(gl, 'settled_footprint', return_value=set()), \
+                mock.patch('layer_reports.write_report'), \
+                mock.patch('site_kit.apply') as apply, \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(gl.apply_cell((0, 0)), 1)
+        apply.assert_not_called()
+        self.assertIn('REFUSED: 1 ground surface(s) would float', output.getvalue())
