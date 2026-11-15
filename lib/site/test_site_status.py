@@ -74,6 +74,18 @@ class TestSiteStatus(unittest.TestCase):
         future = ss.cmd_morning(ss.load_stages(), datetime(2999, 1, 1))
         self.assertIn('no run-log entries', future)
 
+    def test_morning_lists_stale_ground_only_when_a_feature_landed_after_it(self):
+        """Task 285: the morning report names a stale ground with its cause and redo."""
+        self.jw.seed((47, -45), ground=True, trees=True, decor=True)
+        with mock.patch('site_status.cell_footprint', return_value={}):
+            self.assertNotIn('STALE GROUND', ss.cmd_morning(ss.load_stages(), datetime(2000, 1, 1)))
+            self.jw.seed((47, -45), features=('house',))
+            out = ss.cmd_morning(ss.load_stages(), datetime(2000, 1, 1))
+        self.assertIn('STALE GROUND', out)
+        self.assertIn('47,-45  ground ', out)
+        self.assertIn('is older than feature house landed', out)
+        self.assertIn('47,-45  clear: ground stale -> ', out)
+
     def test_format_footprint_shows_built_unbuilt_and_names(self):
         """#142: one-line footprint summary for status rows and the morning report."""
         fp = {

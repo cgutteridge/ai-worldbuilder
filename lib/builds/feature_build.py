@@ -139,10 +139,14 @@ from site_kit import (  # noqa: E402
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
+# Ground blocks the margin clear keeps and step_out lands on. gray_/black_concrete are the lidar
+# ghost's DSM-DTM tops (gray_concrete is also real tarmac): features build on ghost ground before
+# the cell's real ground (task 286), so margin clearing must not hole it.
 GROUND = (
     'minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite',
     'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block',
     'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite',
+    'minecraft:gray_concrete', 'minecraft:black_concrete',
 )
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]

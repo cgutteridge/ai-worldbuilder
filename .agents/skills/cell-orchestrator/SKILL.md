@@ -13,7 +13,7 @@ Progress is the **cell journal** (`registry/journal.jsonl` via `cell_registry.py
 python3 scripts/cell_registry.py --world <world> next
 ```
 
-That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Prepared-cell order: ground → features → trees → decor → marker-clear. Unprepared cells return `needs-prep` before a build. `next` does **not** raise the marker; the build task does.
+That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Prepared-cell order: features (on the ghost ground) → ground once → ground-redo (only for an older stale ground) → trees → decor → marker-clear; a cell with no planned features gets ground first (task 286). Unprepared cells return `needs-prep` before a build. `next` does **not** raise the marker; the build task does.
 
 Do **not** use retired queue / aerial-review / focus files, coverage sign-offs, `site/ISSUES.txt` I-nnn lines, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `python3 scripts/cell_registry.py --world <world> reconcile [--fix]`.
 
@@ -74,12 +74,16 @@ Use `check`/`status`/`verify` for effective completion, rather than the journal'
 flag. A cell needs current validated evidence, landed features and fresh trees/decor, marker down,
 and resolved in-flight work. Legacy validation/layers require preparation/review. Ground redo
 preserves trees/decor completion; successful trees generation requires decor again. Newly landed
-or rebuilt features invalidate trees/decor across their touched cells.
+or rebuilt features invalidate trees/decor across their touched cells, and make those cells'
+ground stale (task 285) until the ground is redone.
 
 ## Per task
 
 0. Take the JSON from `next`. Handle `needs-prep` and `blocked` as above. Kinds `layer`
-   (ground|trees|decor) and `feature` are build work. `marker-clear` means content is finished:
+   (ground|trees|decor) and `feature` are build work. `ground-redo` is offered, not build work:
+   log its `ground stale:` cause and `clear:` command, exclude the cell for this run like
+   `needs-prep`, and put the redo to the owner; never run it unattended.
+   `marker-clear` means content is finished:
    clear the marker under the world lock, then verify effective completion. Recheck readiness
    before each apply; direct builders also enforce the shared policy.
 1. Raise the marker for the target cell if needed (`python3 scripts/cell_marker.py --world <world> --raise tx,tz` under SITE_OWNER) — `next` does not.

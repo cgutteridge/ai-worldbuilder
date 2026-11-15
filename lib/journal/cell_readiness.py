@@ -28,7 +28,58 @@ def reapply_command(plan, layer, cell):
     return f'python3 scripts/element_undo.py --world <world> {plan} --apply, then rebuild it'
 
 
-def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_cell=None):
+STALE_VERB = {'landed': 'landed', 'mismatched': 'applied mismatched', 'begun': 'begun (unfinished)'}
+
+
+def stale_ground(reg, cell):
+    """Why the cell's ground is stale: feature entries that changed the cell after its last landed ground.
+
+    The ground pass shapes the surface around the features standing when it ran, so a feature
+    built, rebuilt or begun after it leaves the ground stale (task 285). Order is the journal's
+    begin order (the ``ts`` shown), not landing order: ``reconcile --fix`` can land an old entry
+    much later without re-planning it. Every live feature entry touching the cell counts, a
+    neighbour's feature included. Undone and abandoned entries do not; mismatched and begun ones
+    are reported with their status, because they wrote blocks too.
+
+    @param reg: cell journal
+    @param cell: ``(tx, tz)``
+    @returns: ``{'plan', 'ts', 'causes': [text, ...], 'trees', 'decor'}`` or None when the ground
+      is current or not generated; ``trees``/``decor`` say whether those layers have landed entries
+    """
+    cell = tuple(cell)
+    entries = [e for e in reg.entries(cells=[cell]) if e.kind == 'build' and not e.undone]
+    grounds = [e for e in entries if e.pass_ == 'ground' and e.cell == cell and e.status == 'landed']
+    if not grounds:
+        return None
+    ground = max(grounds, key=lambda e: e.seq)
+    later = {}
+    for e in entries:
+        if e.pass_ == 'feature' and e.status in STALE_VERB and e.seq > ground.seq:
+            later[e.plan] = e                               # entries come in seq order: keep the latest
+    if not later:
+        return None
+    causes = [f'ground {ground.ts[:16]} is older than feature {e.plan} {STALE_VERB[e.status]} {e.ts[:16]}'
+              for e in sorted(later.values(), key=lambda e: e.seq)]
+    landed = {e.pass_ for e in entries if e.cell == cell and e.status == 'landed'}
+    return {'plan': ground.plan, 'ts': ground.ts, 'causes': causes,
+            'trees': 'trees' in landed, 'decor': 'decor' in landed}
+
+
+def ground_redo_command(cell, stale):
+    """The redo that refreshes a stale ground, with the cell's landed trees/decor redone after it.
+
+    The ground pass does not count the cell's own trees and decor as owners, so they are undone and
+    re-applied in the same checked sequence.
+
+    @param cell: ``(tx, tz)``
+    @param stale: :func:`stale_ground` result
+    @returns: command text
+    """
+    layers = ['ground'] + [layer for layer in ('trees', 'decor') if stale.get(layer)]
+    return f'python3 scripts/redo_layer.py --world <world> --cell {cell[0]},{cell[1]} --layers {",".join(layers)} --apply'
+
+
+def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
     """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
 
     Every blocker ``ReadinessPolicy.check`` raises is answered here, so a refusal never
@@ -40,9 +91,12 @@ def clearing_command(cell, blocker, *, plan=None, layer=None, ref=None, owner_ce
     @param layer: journal pass of that plan (feature, ground, trees, decor)
     @param ref: note ref, for a coverage warning
     @param owner_cell: the mismatched entry's own cell (a neighbour's entry may touch ``cell``)
+    @param stale: :func:`stale_ground` result, for a stale-ground blocker
     @returns: command text
     """
     c = f'{cell[0]},{cell[1]}'
+    if blocker.startswith('ground stale:'):
+        return ground_redo_command(cell, stale or {})
     if blocker.startswith('recovery: mismatched apply'):
         return (f'{CLI} reconcile {c} --fix (re-asserts the journal blocks and lands the entry); '
                 f'if it reports still mismatched, {reapply_command(plan, layer, owner_cell or cell)} '
@@ -102,6 +156,11 @@ class ReadinessPolicy:
         block its redo (the redo's undo and new readback replace it). A mismatched entry that
         later landed entries have wholly superseded (it owns no position) blocks nothing.
         Every blocker has its clearing command in ``clear_with``.
+
+        A feature entry later than the cell's last landed ground makes the ground stale
+        (``ground_stale`` causes, ``ground_redo`` command): the cell is not complete, and trees/decor
+        are refused until the ground is redone (unless the redo names the ground plan in
+        ``redoing``). It never blocks ground or feature work, so ``next`` can offer the redo.
         """
         cell = tuple(cell)
         v = self.reg.cell(cell)
@@ -167,6 +226,9 @@ class ReadinessPolicy:
                 blockers.append('generated ground required')
             if any(f.status != 'built' for f in v.features):
                 blockers.append('planned features must land before trees/decor')
+        stale = stale_ground(self.reg, cell)
+        if stale and operation in ('trees', 'decor') and stale['plan'] not in redoing:
+            blockers += [f'ground stale: {cause}' for cause in stale['causes']]
         current = {}
         for layer in ('trees', 'decor'):
             entries = [e for e in self.reg.entries(cells=[cell]) if e.kind == 'build'
@@ -182,6 +244,9 @@ class ReadinessPolicy:
             actions.append('acquire the listed lidar files explicitly before prepare --apply')
         if v.in_flight or stuck:
             actions.append('resolve interrupted/mismatched work with site_recover or reconcile')
+        redo = ground_redo_command(cell, stale) if stale else None
+        if stale:
+            actions.append(f'redo the stale ground (offered, never started automatically): {redo}')
         by_plan = {e.plan: e for e in stuck}
         refs = {f'coverage warning {n.ref}: {n.body}': n.ref for n in v.notes if n.kind == 'coverage'}
         clear_with = {}
@@ -189,7 +254,7 @@ class ReadinessPolicy:
             e = by_plan.get(b.removeprefix('recovery: mismatched apply '))
             clear_with[b] = clearing_command(cell, b, plan=e.plan if e else None,
                                              layer=e.pass_ if e else None, ref=refs.get(b),
-                                             owner_cell=e.cell if e else None)
+                                             owner_cell=e.cell if e else None, stale=stale)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision(),
@@ -197,8 +262,10 @@ class ReadinessPolicy:
                 'candidates': candidates, 'next_actions': actions,
                 'trees_current': current['trees'], 'decor_current': current['decor'],
                 'blockers': blockers, 'clear_with': clear_with, 'warnings': warnings,
+                'ground_stale': stale['causes'] if stale else [], 'ground_redo': redo,
                 'ready': not blockers,
-                'complete': validated and v.done and not blockers and current['trees'] and current['decor']}
+                'complete': (validated and v.done and not blockers and not stale
+                             and current['trees'] and current['decor'])}
 
     def plan_identity(self, cell):
         """Plan/dismissal inputs, deliberately excluding ground/tree/decor apply history."""
@@ -290,6 +357,9 @@ def format_readiness(report):
     for key in ('blockers', 'warnings', 'prepare_actions', 'next_actions'):
         lines += [f'  {key}: {item}' for item in report.get(key, [])]
     lines += [f'  clear: {b} -> {cmd}' for b, cmd in report.get('clear_with', {}).items()]
+    lines += [f'  ground_stale: {cause}' for cause in report.get('ground_stale', [])]
+    if report.get('ground_redo') and not any(b.startswith('ground stale:') for b in report.get('blockers', [])):
+        lines.append(f"  clear: ground stale -> {report['ground_redo']}")
     for item in report.get('lidar_missing', []):
         lines.append(f"  missing: {item.get('tile', '')} {item['filename']} "
                      f"(about {item['estimated_mb']} MB; explicit acquisition required)")

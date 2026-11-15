@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 286,
+  "nextTaskId": 288,
   "tasks": [
     
     {
@@ -160,24 +160,6 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Owner direction 2026-11-10: other people using the toolkit install their own providers; tool code asks for a reference type, never a vendor (#28 covered only the lidar world and tiles modules). Plan: docs/plans/vibe-at-scale.md. Evidence (checked in code): (1) shims/lidar_ghost.py, lidar_query.py and lidar_extremes.py call load_provider('ukdefra-lidar', ...) with a literal id; callers are lib/layers/ground_layer.py:119, lib/journal/cell_preparation.py:57, scripts/cell_registry.py:132 and 149, scripts/cell_marker.py:470 and 494. (2) load_place_sources (lib/sources/cell_sources.py ~99-110) lists system rows before world rows and lidar_provider_row returns the first lidar match, so a locally installed lidar row never beats the system one, for world and tiles too. (3) lib/journal/readiness_evidence.py lidar_status (~63-85) uses pick_uri, TILE_MB, tiles_for and client.cache/catalogue/<E>E-<N>N.json and client.tiles, a provider-specific interface that cell preparation depends on. (4) lib/sources/test_lidar_provider.py mocks load_lidar_module, so it checks row choice only. (5) ghost planning catches LookupError as 'no lidar for cell', so a no-provider LookupError would be swallowed. Reviewer-checked: lidar_ghost is vendor-neutral apart from a 4-line default_heights, and ghost_owners_for needs no lidar; lidar_query and lidar_extremes hard-import defra_lidar, DEFRA_CRS and --bbox-osgb; no core code imports them, but .agents/skills/new-world-build/SKILL.md:90 names lidar_extremes. Unverified: whether a provider outside England can meet the readiness tile interface as it stands. Deliver: (a) world-over-system precedence for the lidar catalogue row, with a test; (b) lidar_ghost as shared code that samples through lidar_provider (not a catalogue role), with default_heights moved into the provider; (c) query and extremes as catalogue modules roles resolved by type, copying the shims/lidar_world.py pattern; (d) readiness_evidence.lidar_status reads missing tiles and tile identity through a provider-neutral method on the tile client; (e) a typed no-provider error instead of LookupError; (f) extend the lidar contract already in reference/TYPES.txt (and fix its stale scripts/ path) with entry points, model names DTM and DSM, missing(), sample(), the mc_heights keys, crs and the tile and cost methods, and update the seams table in docs/provider-name-audit.md. Out of scope: writing a real second provider; a fallback height source where no lidar exists. Files: shims/lidar_ghost.py, lidar_query.py, lidar_extremes.py, _provider_shim.py; lib/sources/lidar_provider.py, cell_sources.py, config/system-providers.json; lib/layers/ground_layer.py; lib/journal/cell_preparation.py, readiness_evidence.py; scripts/cell_registry.py, cell_marker.py; reference/TYPES.txt; docs/provider-name-audit.md; tests. Check: a new test with a synthetic second lidar provider in a temp world, with the system row still present, run in a fresh process (scripts/run_tests.py is one process and the shims overwrite sys.modules): the shims, the registry and readiness pick it up; a static assertion that no catalogue id appears in shims/lidar_*.py; python3 scripts/check_provider_names.py still passes. Trials #256-#259 outside the first world's country depend on this being done or on the trial naming its own height source."
-    },
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    {
-      "id": 285,
-      "title": "Readiness flags a cell's ground stale when a feature landed after it",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Found 2026-11-14 reviewing I-015 in cell 48,-44. Process gap: rebuilding a feature after the cell's ground leaves the ground stale, and nothing says so. Evidence: journal for 48,-44 on 2026-10-29 shows ground 14:55, jubilee feature undone and rebuilt 14:57-14:58, SUSU feature undone 16:27, ground redone 16:31 while SUSU was absent, SUSU rebuilt 17:21 on top. A 26-column slot (x 6162-6172, z -5583..-5579, floor y 37, open to the surface at y ~48-54) now runs beside the SUSU wall, and a void was found near 6147,-5520; this is I-015 ('void where the ring was'), and I-040 ('ground built before features') is the same ordering problem. cell_registry.py next and the readiness report only look at whether layers exist, so they never ask for a ground redo after a later feature landing. Wanted behaviour: readiness derives 'ground is stale' per cell when any feature plan in that cell (or footprint-affecting plan) has a landed build entry later than the cell's last landed ground build, and `next` / the redo preflight / the morning report say so with the cause ('ground 2026-10-29T16:31 is older than feature susu_w33830305 landed 2026-10-29T17:21'). Same idea for decor and trees over a later ground if the existing dependency order (ground, trees, decor) does not already catch it; check before adding. Stale ground makes the cell not DONE and offers the ground redo as the next action, but never starts it. Diagnose first (read-only): confirm with the journal what dependency order readiness already enforces (lib/journal/cell_readiness.py, registry_next.py) and where a later feature is ignored. Tests on a synthetic journal: feature landed after ground makes ground stale; feature landed before ground does not; undone feature entries are ignored; a mismatched or begun feature entry is reported, not silently ignored; next proposes the ground redo. Files: lib/journal/cell_readiness.py, lib/journal/registry_next.py and their tests, rules/process.md (one line). No live world writes; 48,-44 is the acceptance example, checked read-only (`cell_registry.py next` output before and after). A stretch task (readiness semantics): owner approval for model and effort first.\n"
     }
   ]
 }

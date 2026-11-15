@@ -59,7 +59,7 @@ Done when all three checks agree. Say so in one line: scope, what was erased, jo
 
 ## 4. Design blind
 
-The element is now unbuilt, so `cell_registry.py next` will offer it in the normal order (ground, features, trees, decor), or hand it straight to the owner:
+The element is now unbuilt, so `cell_registry.py next` will offer it in the normal order (features, ground, trees, decor; ground first when the cell has no planned features), or hand it straight to the owner:
 
 - **Feature:** the `redo` skill from its evidence-table step: footprint, heights, openings, roof and greeblies read fresh from the sources, filled in before planning. Do not recover geometry or material choices from the tar, git history or chat.
 - **Ground / trees / decor:** run the layer script for the cell (`ground_layer.py`, `trees_layer.py`, `decor_layer.py`; dry run, then `--apply`) from current evidence.
