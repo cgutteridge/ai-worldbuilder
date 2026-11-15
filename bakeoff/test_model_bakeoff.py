@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import model_bakeoff as MB
+from unit_test_world import unit_test_cli_checkout
 
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 BAKEOFF_WORLD_FLAG = '--world bakeoff'
@@ -762,41 +763,25 @@ class TestBakeoffWorldGuard(unittest.TestCase):
 
     def test_cli_subprocess_status_imports(self):
         """Running the script as ``python3 bakeoff/model_bakeoff.py`` must find active_world."""
-        import shutil
-
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
+        with unit_test_cli_checkout(
+            'bakeoff/model_bakeoff.py', '_cli_status_world', gameworld_id='bakeoff',
+        ) as checkout:
+            root = checkout / 'bakeoff-state'
+            root.mkdir()
             _seed(root)
-            worlds = TOOL_ROOT / 'worlds'
-            worlds.mkdir(exist_ok=True)
-            world = worlds / '_cli_status_world'
-            if world.exists():
-                shutil.rmtree(world)
-            (world / 'config').mkdir(parents=True)
-            (world / 'config' / 'world.json').write_text(
-                json.dumps({'gameworld_id': 'bakeoff', 'save_path': str(world)}),
-                encoding='utf-8',
+            script = checkout / 'bakeoff' / 'model_bakeoff.py'
+            result = subprocess.run(
+                [
+                    sys.executable, '-B', str(script),
+                    '--world', '_cli_status_world',
+                    '--root', str(root), 'status',
+                ],
+                cwd=checkout,
+                env=os.environ.copy(),
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            (world / 'config' / 'world-frame.json').write_text(
-                json.dumps({'offsets': {'easting': 0, 'northing': 0}}),
-                encoding='utf-8',
-            )
-            script = TOOL_ROOT / 'bakeoff' / 'model_bakeoff.py'
-            try:
-                result = subprocess.run(
-                    [
-                        sys.executable, str(script),
-                        '--world', '_cli_status_world',
-                        '--root', str(root), 'status',
-                    ],
-                    cwd=str(TOOL_ROOT),
-                    env=os.environ.copy(),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            finally:
-                shutil.rmtree(world, ignore_errors=True)
             self.assertEqual(
                 result.returncode,
                 0,

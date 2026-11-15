@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 import build_roles as BR
-from script_env import TOOL_ROOT
+from unit_test_world import unit_test_cli_checkout
 
 
 def _write_cfg(path: Path, **fields: str) -> Path:
@@ -107,45 +107,19 @@ class TestResolveRoles(unittest.TestCase):
         self.assertIn('Same model', BR.format_roles_block(same))
 
 
-def _stub_world(name: str) -> Path:
-    """Create a minimal ``worlds/<name>`` checkout for CLI subprocess tests.
-
-    @param name: directory name under ``worlds/``
-    @returns: path to the stub world
-    """
-    world = TOOL_ROOT / 'worlds' / name
-    config = world / 'config'
-    config.mkdir(parents=True, exist_ok=True)
-    (config / 'world.json').write_text(
-        json.dumps({'gameworld_id': name, 'save_path': str(world / 'save')}),
-        encoding='utf-8',
-    )
-    (config / 'world-frame.json').write_text(
-        json.dumps({
-            'offsets': {'easting': 0, 'northing': 0},
-        }),
-        encoding='utf-8',
-    )
-    return world
-
-
 class TestBuildRolesCli(unittest.TestCase):
     def test_show_and_resolve_json(self):
-        import shutil
-
-        script = TOOL_ROOT / 'scripts' / 'build_roles.py'
         world_name = '_build_roles_cli'
-        world = _stub_world(world_name)
-        self.addCleanup(lambda: shutil.rmtree(world, ignore_errors=True))
-        with tempfile.TemporaryDirectory() as d:
-            path = _write_cfg(Path(d) / 'roles.json')
+        with unit_test_cli_checkout('scripts/build_roles.py', world_name) as checkout:
+            script = checkout / 'scripts' / 'build_roles.py'
+            path = _write_cfg(checkout / 'roles.json')
             show = subprocess.run(
                 [
-                    sys.executable, str(script),
+                    sys.executable, '-B', str(script),
                     '--world', world_name,
                     '--config', str(path), 'show',
                 ],
-                cwd=str(TOOL_ROOT),
+                cwd=checkout,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -156,6 +130,7 @@ class TestBuildRolesCli(unittest.TestCase):
             resolved = subprocess.run(
                 [
                     sys.executable,
+                    '-B',
                     str(script),
                     '--world', world_name,
                     '--config',
@@ -167,7 +142,7 @@ class TestBuildRolesCli(unittest.TestCase):
                     'composer',
                     '--json',
                 ],
-                cwd=str(TOOL_ROOT),
+                cwd=checkout,
                 capture_output=True,
                 text=True,
                 check=False,
