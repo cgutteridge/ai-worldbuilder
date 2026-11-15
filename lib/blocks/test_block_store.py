@@ -541,6 +541,25 @@ class TestStateHelpers(unittest.TestCase):
                                     'minecraft:oak_fence_gate[facing=north,open=false]'))
         self.assertFalse(same_state('oak_fence_gate[facing=north]', 'minecraft:oak_fence_gate[facing=south]'))
 
+    def test_same_state_ignores_door_play_state(self):
+        # players open doors: open/powered never count as a mismatch (#287)
+        import site_kit
+        planned = 'spruce_door[facing=east,half=lower,hinge=left,open=false]'
+        self.assertTrue(same_state(
+            planned, 'minecraft:spruce_door[facing=east,half=lower,hinge=left,open=true,powered=false]'))
+        self.assertTrue(same_state('iron_door[half=upper,powered=false]',
+                                   'minecraft:iron_door[half=upper,powered=true]'))
+        self.assertTrue(site_kit.same(planned, 'minecraft:spruce_door[facing=east,half=lower,hinge=left,open=true]'))
+
+    def test_same_state_keeps_door_shape_properties(self):
+        planned = 'spruce_door[facing=east,half=lower,hinge=left,open=false]'
+        self.assertFalse(same_state(planned, 'minecraft:spruce_door[facing=west,half=lower,hinge=left,open=false]'))
+        self.assertFalse(same_state(planned, 'minecraft:spruce_door[facing=east,half=upper,hinge=left,open=false]'))
+        self.assertFalse(same_state(planned, 'minecraft:spruce_door[facing=east,half=lower,hinge=right,open=false]'))
+        self.assertFalse(same_state(planned, 'minecraft:oak_door[facing=east,half=lower,hinge=left,open=false]'))
+        self.assertFalse(same_state('oak_trapdoor[half=bottom,open=false]',
+                                    'minecraft:oak_trapdoor[half=bottom,open=true]'))
+
     def test_same_state_ignores_game_owned_stair_shape(self):
         # pitched roofs plan outer_left/right; the game stores straight (#161)
         planned = 'oak_stairs[facing=east,half=bottom,shape=outer_left]'
