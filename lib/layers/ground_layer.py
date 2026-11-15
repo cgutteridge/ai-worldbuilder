@@ -19,8 +19,9 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
 Then, per §10: the top block becomes the surface block, raised columns get dirt beneath, and
 everything above the surface is cleared except blocks a neighbour owns or a tree/decor mask holds.
 
-Columns this layer never touches: building footprint polygons, columns where any structure build
-owns a solid block (a feature's air-only margin is surfaced, below that air; task 286),
+Columns this layer never touches: building footprint polygons whose feature is unsettled (a
+settled building's outline columns that no build owns are surfaced like any other; task 295),
+columns where any structure build owns a solid block (a feature's air-only margin is surfaced, below that air; task 286),
 water and its bank, mapped bridges (and steps on a bridge, tunnel or layer), and anything outside
 the cell. Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
 with a stair block wherever the lidar rises along the way (task 294). Trees and decor are
@@ -917,12 +918,27 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
     return report
 
 
+def settled_footprint(cell: tuple[int, int]) -> set:
+    """Building outline columns near the cell whose feature is built or dismissed (task 295).
+
+    Between the feature and the ground every column is accounted for: an outline column no build
+    owns is the ground's once its building's feature is settled. Reads the map and registry.
+
+    @param cell: ``(tx, tz)``
+    @returns: set of ``(x, z)`` within two columns of the cell
+    """
+    from cell_features import settled_footprint_columns
+    return settled_footprint_columns(cell_box(cell, 2))
+
+
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
-              evidence=None, *, owned_air: set = frozenset()):
+              evidence=None, *, owned_air: set = frozenset(), settled_fp: set = frozenset()):
     """Plan the ground for one cell. Returns (stats, conflicts, kinds, skipped).
 
     ``owned_air`` (owned positions whose state is air) frees air-only columns such as a
     feature's margin: their surface is capped below the lowest owned air (task 286).
+    ``settled_fp`` (:func:`settled_footprint`) frees building outline columns whose feature is
+    built or dismissed; ownership still decides each one (task 295).
     """
     from osm_footprints import OSMIndex
 
@@ -933,7 +949,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
     excluded = []
-    live, skipped = free_columns(cell, world, vmap, fp, owned_cols, excluded)
+    live, skipped = free_columns(cell, world, vmap, fp - set(settled_fp), owned_cols, excluded)
     if 'private_frontage' in ev or 'frontage_route' in ev:
         frontages = ev.get('frontages') or []
     else:
@@ -978,6 +994,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'capped_under_feature_margin': capped,
         'vector_map_features': getattr(vmap, 'n_features', 0),
         'steps_surfaced': len(steps),
+        'settled_footprint_surfaced': sum(1 for q in live if q in fp),
         'steps_stairs': len(stairs),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
@@ -1089,7 +1106,8 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     masked = load_masked_positions()
     states = neighbour_owned_states(cell, ignored_builds(cell))
     owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
-    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air)
+    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
+                                                settled_fp=settled_footprint(cell))
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
@@ -1144,7 +1162,8 @@ def apply_cell(cell: tuple[int, int]) -> int:
     states = neighbour_owned_states(cell, ignored)
     owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
     with timed_stage('layer planning (includes surface warm-up)'):
-        stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air)
+        stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
+                                                    settled_fp=settled_footprint(cell))
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})

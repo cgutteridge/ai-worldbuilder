@@ -830,8 +830,8 @@ class TestWarmSurfaceProbe(unittest.TestCase):
 
 
 
-class TestMappedOutdoorSteps(unittest.TestCase):
-    """#294: ground-level highway=steps columns are surfaced at lidar height, stairs facing up the slope."""
+class SyntheticGroundBox:
+    """A small synthetic cell box over stone at y40, with a lidar flight of steps rising toward +x."""
 
     BOX = (0, 0, 15, 7)                                   # small synthetic cell box (x0, z0, x1, z1)
     STEPS = {(x, z): 'x' for x in range(2, 12) for z in range(3, 6)}  # way runs along x at z 3..5
@@ -857,7 +857,7 @@ class TestMappedOutdoorSteps(unittest.TestCase):
         blocks.update(extra or {})
         return World(store=MemoryBlocks(blocks, default='air'))
 
-    def run_plan(self, vmap, world=None, fp=()):
+    def run_plan(self, vmap, world=None, fp=(), settled_fp=(), owned=()):
         from types import SimpleNamespace
         from unittest import mock
         from site_kit import Plan
@@ -875,9 +875,14 @@ class TestMappedOutdoorSteps(unittest.TestCase):
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set(fp))), \
                 mock.patch.object(gl, 'cell_box', side_effect=box), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
-            stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, set(), plan, world or self.world(), evidence=ev)
+            stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, set(owned), plan, world or self.world(),
+                                                           evidence=ev, settled_fp=set(settled_fp))
         self.assertEqual(conflicts, [])
         return plan, stats, kind, skipped
+
+
+class TestMappedOutdoorSteps(SyntheticGroundBox, unittest.TestCase):
+    """#294: ground-level highway=steps columns are surfaced at lidar height, stairs facing up the slope."""
 
     def test_steps_way_is_surfaced_at_lidar_height(self):
         plan, stats, kind, _ = self.run_plan(self.Osm(self.STEPS))
@@ -935,6 +940,31 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class TestSettledFootprint(SyntheticGroundBox, unittest.TestCase):
+    """Task 295: between the feature and the ground every column is accounted for."""
+
+    FP = {(x, z) for x in range(4, 10) for z in range(2, 6)}     # a building outline in the synthetic box
+
+    def test_unowned_column_of_a_settled_building_is_surfaced(self):
+        plan, stats, _, skipped = self.run_plan(self.Osm(), fp=self.FP, settled_fp=self.FP)
+        self.assertEqual(skipped['building footprint'], 0)
+        self.assertEqual(stats['settled_footprint_surfaced'], len(self.FP))
+        for x, z in self.FP:
+            self.assertIn((x, self.lidar(x, z), z), plan.cells)
+
+    def test_unsettled_building_outline_stays_skipped(self):
+        plan, stats, _, skipped = self.run_plan(self.Osm(), fp=self.FP)
+        self.assertEqual(skipped['building footprint'], len(self.FP))
+        self.assertEqual(stats['settled_footprint_surfaced'], 0)
+        self.assertFalse(any((x, z) in self.FP for x, _, z in plan.cells))
+
+    def test_owned_column_of_a_settled_building_stays_skipped(self):
+        owned = {(5, y, 3) for y in range(41, 60)}
+        plan, _, _, skipped = self.run_plan(self.Osm(), fp=self.FP, settled_fp=self.FP, owned=owned)
+        self.assertEqual(skipped['structure build'], 1)
+        self.assertFalse(any((x, z) == (5, 3) for x, _, z in plan.cells))
+
+
 class TestApplyReporting(unittest.TestCase):
     def test_apply_prints_exclusion_counts_and_saves_all_details(self):
         import io
@@ -954,7 +984,7 @@ class TestApplyReporting(unittest.TestCase):
         stats['retained_positions'] = retained
         skipped = Counter(item['reason'] for item in excluded)
 
-        def plan_cell(cell, masked, owned, plan, world, owned_air=()):
+        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=()):
             plan.set(0, 64, 0, 'grass_block')
             return stats, [], {(0, 0): 'grass'}, skipped
 
@@ -965,6 +995,7 @@ class TestApplyReporting(unittest.TestCase):
                 mock.patch.object(gl, 'load_masked_positions', return_value={}), \
                 mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
+                mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
                 mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
                 redirect_stdout(io.StringIO()) as output:

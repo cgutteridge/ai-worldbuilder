@@ -104,6 +104,44 @@ class TestCellFeatures(unittest.TestCase):
         self.assertIn('University Road', houses[0]['label'])
         self.assertGreater(houses[0]['area'], 0)
 
+    def _settled(self, covered, dismissed=(), portals=()):
+        """settled_footprint_columns over a built hall (w1) and an empty hall (w2) in cell 48,-44."""
+        from coverage import cell_bbox
+        idx = SimpleNamespace(buildings=[
+            (_square(6160, -5600, 6180, -5580), {'building': 'university', 'id': 'w1'}),
+            (_square(6200, -5600, 6220, -5580), {'building': 'university', 'id': 'w2'}),
+            (_square(6230, -5600, 6236, -5594), {'building': 'shed', 'id': 'w3'}),
+        ], streets=[])
+        with mock.patch('cell_features.for_footprint', side_effect=lambda r: list(portals) if r[0][0][0] == 6160 else []), \
+                mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']):
+            return cf.settled_footprint_columns(cell_bbox(48, -44, 48, -44), idx=idx, covered=covered,
+                                                dismissed=dismissed)
+
+    def test_settled_footprint_is_built_or_dismissed_buildings_only(self):
+        """Task 295: a built building's outline is the ground's where no build owns it; an unbuilt one is held."""
+        from coverage import scan_polygon, cell_bbox
+        cb = cell_bbox(48, -44, 48, -44)
+        hall = set(scan_polygon(_square(6160, -5600, 6180, -5580), cb))
+        empty = set(scan_polygon(_square(6200, -5600, 6220, -5580), cb))
+        shed = set(scan_polygon(_square(6230, -5600, 6236, -5594), cb))
+        gap = {q for q in hall if q[1] == -5581}                  # an edge strip the feature build left out
+        settled = self._settled(hall - gap)
+        self.assertEqual(settled, hall)                             # the strip is not held: ownership decides
+        self.assertTrue(settled.isdisjoint(empty | shed))
+        self.assertEqual(self._settled(set(), dismissed={'w2'}), empty)       # dismissed: the ground's
+        self.assertEqual(self._settled(set(), dismissed={'plan_w2'}), empty)  # plan ids that end in the ref
+        self.assertEqual(self._settled(set()), set())
+
+    def test_settled_footprint_holds_uncovered_portals_in_a_built_outline(self):
+        """Task 295 / #154: houses swallowed by a built outline keep their columns held."""
+        from coverage import scan_polygon, cell_bbox
+        hall = set(scan_polygon(_square(6160, -5600, 6180, -5580), cell_bbox(48, -44, 48, -44)))
+        portal = {'id': '7-A', 'building': '7', 'x': 6170, 'z': -5590, 'images': []}
+        settled = self._settled(hall - {(6170, -5590)}, portals=[portal])
+        box = {(6170 + a, -5590 + b) for a in range(-2, 3) for b in range(-2, 3)}
+        self.assertTrue(settled.isdisjoint(box))
+        self.assertEqual(settled, hall - box)
+
     def test_missing_water_bodies_from_columns(self):
         """#148: connected water columns become water_body candidates until covered."""
         # Cell 48,-45: place a 3×3 pond and a covered 2×2 (below MIN_WATER_COLUMNS after filter).
