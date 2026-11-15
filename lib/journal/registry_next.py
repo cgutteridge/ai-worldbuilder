@@ -7,9 +7,11 @@ and never block a cell — ticket #121).
 Cell choice: marker cell if not DONE, else nearest undone non-held cell to the
 configured home cell (Chebyshev distance, then clockwise ring order from north), over the
 cell journal views (``CellRegistry.view()``).
-Unready cells return needs-prep before any build. Prepared-cell order is ground →
-features (by id) → ground-redo (only when readiness says the ground is stale, task 285) →
-trees → decor → marker-clear. Callers explicitly exclude blocked cells.
+Unready cells return needs-prep before any build. Prepared-cell order is features (by id,
+built on the lidar ghost ground) → ground (once, fitted around the landed features; task 286) →
+ground-redo (only when readiness says the ground is stale: a feature landed after an older
+ground, task 285) → trees → decor → marker-clear. A cell with no planned features gets its
+ground first. Callers explicitly exclude blocked cells.
 
 The build task raises the marker; ``next`` does not.
 """
@@ -27,8 +29,10 @@ from cell_registry import cell_id, view_registry
 def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Ordered remaining work items inside one cell (excluding holds).
 
-    A stale ground (a feature landed after it) is offered as a ``ground-redo`` item after the
-    cell's unbuilt features, so one redo covers them all; it is offered, never started here.
+    Features come first, on the ghost ground, then the cell's ground once (task 286), so ground
+    fits around finished features instead of being redone. A stale ground (an older ground with a
+    feature landed after it, task 285) is offered as a ``ground-redo`` item after the cell's
+    unbuilt features, so one redo covers them all; it is offered, never started here.
 
     @param v: the cell's journal view
     @param report: the cell's readiness report (``ground_stale`` / ``ground_redo``)
@@ -38,9 +42,6 @@ def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> l
         return []
     cid = cell_id(*v.cell)
     out: list[dict[str, Any]] = []
-    if v.ground != 'generated':
-        out.append({'kind': 'layer', 'cell': cid, 'layer': 'ground'})
-        return out  # ground first; later layers wait
     for feat in v.features:
         if feat.status != 'built':
             out.append({
@@ -50,6 +51,9 @@ def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> l
                 'status': feat.status,
                 'name': feat.id,
             })
+    if v.ground != 'generated':
+        out.append({'kind': 'layer', 'cell': cid, 'layer': 'ground'})
+        return out  # ground once, after the features; trees and decor wait for it
     if report and report.get('ground_stale'):
         out.append({'kind': 'ground-redo', 'cell': cid, 'layer': 'ground',
                     'stale': list(report['ground_stale']), 'command': report['ground_redo']})

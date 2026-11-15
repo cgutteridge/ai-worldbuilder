@@ -67,6 +67,31 @@ class NextTaskTest(unittest.TestCase):
         self.assertEqual(task['kind'], 'needs-prep')
         self.assertIn('terrain: focus ghost baseline required', task['reasons'])
 
+    def test_fresh_cell_builds_features_before_ground_once(self):
+        """Task 286: features first on the ghost ground, then ground once (not stale), trees, decor."""
+        self.jw.seed((48, -44), ghost_ground=True)
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'b', 'b'))
+        self.jw.reg.change(Note((48, -44), 'plan_feature', 'a', 'a'))
+        self.ready()
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['feature']), ('feature', 'a'))      # by id
+        self.jw.seed((48, -44), features=('a',))
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['feature']), ('feature', 'b'))
+        self.jw.seed((48, -44), features=('b',))
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['layer']), ('layer', 'ground'))
+        self.jw.seed((48, -44), ground=True)
+        self.assertEqual(self.policy.check((48, -44))['ground_stale'], [])
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['layer']), ('layer', 'trees'))
+
+    def test_cell_without_features_gets_ground_first(self):
+        self.jw.seed((48, -44), ghost_ground=True)
+        self.ready()
+        task = N.next_task(self.jw.reg, root=self.root)
+        self.assertEqual((task['kind'], task['layer']), ('layer', 'ground'))
+
     def test_order_inside_cell_ground_features_trees_decor(self):
         self.jw.seed((48, -44), ground=True)
         self.jw.reg.change(Note((48, -44), 'plan_feature', 'a', 'a'))

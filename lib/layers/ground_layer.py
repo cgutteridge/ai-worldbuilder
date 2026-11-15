@@ -19,7 +19,8 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
 Then, per §10: the top block becomes the surface block, raised columns get dirt beneath, and
 everything above the surface is cleared except blocks a neighbour owns or a tree/decor mask holds.
 
-Columns this layer never touches: building footprint polygons, columns any structure build owns,
+Columns this layer never touches: building footprint polygons, columns where any structure build
+owns a solid block (a feature's air-only margin is surfaced, below that air; task 286),
 water and its bank, mapped bridges/steps, and anything outside the cell. Trees and decor are
 separate later passes that write masks; a ground plan that lands on a masked position is a
 conflict and does not apply (undo that mask first: scripts/mask_undo.py).
@@ -131,6 +132,19 @@ def _all_build_names() -> set:
     return {e.plan for e in view_registry().entries()}
 
 
+def neighbour_owned_states(cell: tuple[int, int], exclude=()) -> dict:
+    """Positions other builds own in the cell and its 8 neighbours, with the owned block state.
+
+    @param cell: (tx, tz)
+    @param exclude: plan names that do not count (``ignored_builds``)
+    @returns: {(x, y, z): state, ...}
+    """
+    from cell_registry import view_registry
+    tx, tz = cell
+    around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
+    return {p: state for p, (_plan, state) in view_registry().owners(around, exclude=exclude).items()}
+
+
 def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
     """Positions the cell journal says other builds own, in the cell and its 8 neighbours.
 
@@ -141,10 +155,26 @@ def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
     @param exclude: plan names that do not count (``ignored_builds``)
     @returns: {(x, y, z), ...}
     """
-    from cell_registry import view_registry
-    tx, tz = cell
-    around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
-    return set(view_registry().owners(around, exclude=exclude))
+    return set(neighbour_owned_states(cell, exclude))
+
+
+def owned_air_ceilings(neighbour_owned: set, owned_air: set) -> tuple[set, dict]:
+    """Split owned columns into structure columns and air-only (feature margin) columns.
+
+    A feature's margin clear owns only air beside its walls. Features now land before the cell's
+    ground (task 286), so ground must still surface those columns, below the lowest owned air;
+    a column with any owned solid block stays the structure's.
+
+    @param neighbour_owned: owned positions
+    @param owned_air: the subset whose owned state is air
+    @returns: (structure columns, {(x, z): lowest owned air y} for air-only columns)
+    """
+    solid = {(x, z) for x, y, z in neighbour_owned if (x, y, z) not in owned_air}
+    ceilings: dict = {}
+    for x, y, z in owned_air:
+        if (x, z) not in solid and y < ceilings.get((x, z), y + 1):
+            ceilings[(x, z)] = y
+    return solid, ceilings
 
 
 def load_masked_positions() -> dict:
@@ -847,8 +877,12 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
 
 
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
-              evidence=None):
-    """Plan the ground for one cell. Returns (stats, conflicts, kinds, skipped)."""
+              evidence=None, *, owned_air: set = frozenset()):
+    """Plan the ground for one cell. Returns (stats, conflicts, kinds, skipped).
+
+    ``owned_air`` (owned positions whose state is air) frees air-only columns such as a
+    feature's margin: their surface is capped below the lowest owned air (task 286).
+    """
     from osm_footprints import OSMIndex
 
     ev = evidence or {}
@@ -856,7 +890,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     rgb = ev.get('rgb') or aerial_rgb(cell)
     x0, z0, x1, z1 = cell_box(cell, 2)
     fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
-    owned_cols = {(x, z) for x, _y, z in neighbour_owned}
+    owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
     excluded = []
     live, skipped = free_columns(cell, world, vmap, fp, owned_cols, excluded)
     if 'private_frontage' in ev or 'frontage_route' in ev:
@@ -888,11 +922,17 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         for q, y in pit_ys.items():
             if q not in lidar_ys:
                 ys[q] = y
+    capped = 0
+    for q in live:
+        if q in ceilings and ys[q] >= ceilings[q]:
+            ys[q] = ceilings[q] - 1
+            capped += 1
     stats = Counter({
         'columns': len(live),
         'from_lidar': from_lidar,
         'levelled': levelled,
         'pits_filled': pits_filled,
+        'capped_under_feature_margin': capped,
         'vector_map_features': getattr(vmap, 'n_features', 0),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
@@ -1000,8 +1040,9 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     plan = Plan(name)
     world = _fresh_world()
     masked = load_masked_positions()
-    owned = neighbour_owned(cell, ignored_builds(cell))
-    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
+    states = neighbour_owned_states(cell, ignored_builds(cell))
+    owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
+    stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
@@ -1053,9 +1094,10 @@ def apply_cell(cell: tuple[int, int]) -> int:
     world = _fresh_world(strict=True)
     masked = load_masked_positions()
     ignored = ignored_builds(cell)
-    owned = neighbour_owned(cell, ignored)
+    states = neighbour_owned_states(cell, ignored)
+    owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
     with timed_stage('layer planning (includes surface warm-up)'):
-        stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world)
+        stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air)
     from layer_reports import write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
                         'planned_positions': len(plan.cells)})
