@@ -82,26 +82,31 @@ def block_id(state: str) -> str:
 # Props the game re-derives after placement (skipped by same_state).
 _CONNECTION_PROPS = frozenset({'north', 'south', 'east', 'west', 'up'})
 _STAIR_SHAPE_PROPS = frozenset({'shape'})
+_DOOR_PLAY_PROPS = frozenset({'open', 'powered'})
 
 
 def _game_derives_connections(block: str) -> frozenset[str]:
-    """Properties the game rewrites for ``block`` after placement (empty if none).
+    """Properties the game or players rewrite for ``block`` after placement (empty if none).
 
     Panes, bars, fences and walls: neighbour connections. Stairs: ``shape``
-    (pitched roofs plan outer_left/right; the game stores straight).
+    (pitched roofs plan outer_left/right; the game stores straight). Doors: ``open`` and
+    ``powered`` are play state (players open doors, #287); trapdoors and gates still count.
     """
     name = block.removeprefix('minecraft:')
     if name.endswith(('_pane', '_fence', '_wall', '_bars')):
         return _CONNECTION_PROPS
     if name.endswith('_stairs'):
         return _STAIR_SHAPE_PROPS
+    if name.endswith('_door'):
+        return _DOOR_PLAY_PROPS
     return frozenset()
 
 
 def same_state(planned: str, actual: str | None) -> bool:
     """Whether ``actual`` satisfies ``planned``: same id and every planned property
     (``waterlogged`` ignored; so are connection properties of panes, bars, fences and walls,
-    and ``shape`` on ``*_stairs``, which the game rewrites from the neighbours).
+    and ``shape`` on ``*_stairs``, which the game rewrites from the neighbours, and
+    ``open``/``powered`` on ``*_door``, which players change).
     Mirrored by ``site_kit.same``.
 
     @param planned: planned block state
