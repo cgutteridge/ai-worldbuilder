@@ -23,7 +23,7 @@ Top-block colour encodes DSM − DTM height per column (location check vs real f
   python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2
   SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 2
 
-``plan`` / unit tests inject height samples (no live server, no DEFRA download).
+``plan`` / unit tests inject height samples (no live server, no provider download).
 """
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ import numpy as np
 import cellmath
 from cell_journal import announce_ghost_generation, ghost_name
 from script_env import make_parser  # noqa: E402
+from lidar_provider import default_heights
 
 DEFAULT_RING = 2
 FILL_BOTTOM = 1                     # empty save has bedrock at y=0; fill solid above it
@@ -129,22 +130,6 @@ def neighbour_cells(focus: tuple[int, int], ring: int = DEFAULT_RING,
     return out
 
 
-def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
-    """Sample DEFRA composite heights for an inclusive block box (needs cached tiles).
-
-    @param x0: min block X
-    @param z0: min block Z
-    @param x1: max block X
-    @param z1: max block Z
-    @returns: ``mc_heights`` dict (ground_y, feature/diff, …)
-    """
-    import defra_lidar as dl
-    lidar = dl.DefraLidar(download=False)
-    en = dl.mc_box_en(x0, z0, x1, z1)
-    lidar.ensure(*en)
-    return dl.mc_heights(lidar, x0, z0, x1, z1)
-
-
 def top_block_for_feature_height(fh: int) -> str:
     """Surface block id for a DSM − DTM integer height (same bands as the old columns).
 
@@ -207,7 +192,7 @@ def ring_from_env(default: int = DEFAULT_RING) -> int:
 
 
 def _mock_or_default(heights_json: Path | None) -> HeightsFn | None:
-    """Load a fixture heights JSON, or None to use DEFRA defaults."""
+    """Load a fixture heights JSON, or None to use provider defaults."""
     if heights_json is None:
         return None
 
@@ -230,7 +215,7 @@ def ghost_planner(heights_fn: HeightsFn | None = None) -> Callable[[tuple[int, i
 
     Heights are sampled once per cell (a few cells are cached).
 
-    @param heights_fn: injectable sampler (tests / fixtures); default DEFRA cached tiles
+    @param heights_fn: injectable sampler (tests / fixtures); default provider cached tiles
     @returns: ``planner(cell, 'ground') -> {pos: state}``; None when lidar tiles are not
         cached for the cell (the registry then skips it). ``layer`` must be ``ground``.
     """

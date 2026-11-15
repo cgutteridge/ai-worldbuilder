@@ -2,7 +2,7 @@
 """Type-facing access to the active world's lidar provider.
 
 Callers ask for **lidar** (composite world, tile client, helpers). Catalogue
-rows with ``types: ["lidar"]`` and optional ``modules`` entrypoints choose the
+rows with ``types: ["lidar"]`` and ``modules`` entrypoints choose the
 package; vendor module filenames stay under ``providers/`` and catalogues.
 """
 from __future__ import annotations
@@ -18,35 +18,41 @@ from cell_sources import load_place_sources, provider_package_dir  # noqa: E402
 _MODULE_CACHE: dict[str, ModuleType] = {}
 
 
+class NoLidarProviderError(RuntimeError):
+    """No catalogue row supplies lidar; distinct from an uncached tile LookupError."""
+
+
 def lidar_provider_row(data: dict | None = None) -> dict:
-    """Return the catalogue provider row that fills type ``lidar``.
+    """Return the first world lidar row, falling back to the system catalogue.
 
     @param data: optional place-sources dict
     @returns: provider row dict
-    @raises LookupError: when no provider lists type ``lidar``
+    @raises NoLidarProviderError: when no provider lists type ``lidar``
     """
-    data = data or load_place_sources()
-    for row in data.get('providers') or []:
-        types = row.get('types') or []
-        if 'lidar' in types:
+    data = load_place_sources() if data is None else data
+    rows = [row for row in data.get('providers') or [] if 'lidar' in (row.get('types') or [])]
+    for row in rows:
+        if row.get('home') == 'world':
             return row
-    raise LookupError('no catalogue provider lists type "lidar"')
+    if rows:
+        return rows[0]
+    raise NoLidarProviderError('no catalogue provider lists type "lidar"; install a lidar provider')
 
 
 def _module_rel(role: str, row: dict) -> str:
     modules = row.get('modules') or {}
     if role not in modules:
-        raise LookupError(
+        raise ValueError(
             f'lidar provider {row.get("id")!r} has no modules.{role} entrypoint'
         )
     return str(modules[role])
 
 
 def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
-    """Load a lidar package entry module by catalogue role (``world`` / ``tiles``).
+    """Load a lidar entry module by role (world, tiles, query or extremes).
 
-    Prefers the shared shim loader (one ``sys.modules`` object per historical
-    name) so provider-internal ``import <tiles>`` and callers share state.
+    Uses the shared shim loader for package subdirectories, caching by resolved
+    file path so historical system shims and type-facing callers share state.
 
     @param role: key under the provider's ``modules`` map
     @param data: optional place-sources dict
@@ -54,24 +60,22 @@ def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
     """
     row = lidar_provider_row(data)
     rel = _module_rel(role, row)
-    cache_key = f"{row.get('id')}:{rel}"
-    if cache_key in _MODULE_CACHE:
-        return _MODULE_CACHE[cache_key]
-    parts = rel.split('/', 1)
-    if len(parts) == 2:
-        try:
-            from _provider_shim import load_provider
-            mod = load_provider(str(row['id']), parts[0], parts[1])
-            _MODULE_CACHE[cache_key] = mod
-            return mod
-        except FileNotFoundError:
-            pass
-    pkg = provider_package_dir(row['id'], data)
+    # Resolve the chosen row itself: a world can override a system row's id too.
+    pkg = provider_package_dir(row['id'], {'providers': [row]})
     if pkg is None:
         raise FileNotFoundError(
             f'lidar provider package missing for {row.get("id")!r}'
         )
-    path = pkg / f'{rel}.py'
+    path = (pkg / f'{rel}.py').resolve()
+    cache_key = str(path)
+    if cache_key in _MODULE_CACHE:
+        return _MODULE_CACHE[cache_key]
+    parts = rel.split('/', 1)
+    if len(parts) == 2:
+        from _provider_shim import load_provider
+        mod = load_provider(str(row['id']), parts[0], parts[1], package_dir=pkg)
+        _MODULE_CACHE[cache_key] = mod
+        return mod
     if not path.is_file():
         raise FileNotFoundError(f'lidar entry module not found: {path}')
     stem = Path(rel).name
@@ -143,3 +147,13 @@ def mc_heights(*args: Any, **kwargs: Any):
     @returns: height dict from the provider helper
     """
     return load_lidar_module('tiles').mc_heights(*args, **kwargs)
+
+
+def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
+    """Sample cached provider heights for an inclusive Minecraft block box.
+
+    @returns: ``mc_heights`` dict (ground_y, feature/diff, dtm, dsm, top_y)
+    """
+    client = tile_client(download=False)
+    client.ensure(*mc_box_en(x0, z0, x1, z1))
+    return mc_heights(client, x0, z0, x1, z1)

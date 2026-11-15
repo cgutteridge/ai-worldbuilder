@@ -131,6 +131,42 @@ class Sampling(unittest.TestCase):
             self.lidar.ensure(441000, 111000, 442000, 112000)
 
 
+class TileStatus(unittest.TestCase):
+    def test_missing_metadata_uses_cached_catalogue_without_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            catalogue = cache / 'catalogue/0E-0N.json'
+            catalogue.parent.mkdir()
+            catalogue.write_text(json.dumps({'results': [{
+                'product': {'id': 'lidar_composite_dtm'}, 'year': {'id': '2022'},
+                'resolution': {'id': '1'}, 'uri': 'https://example.test/terrain%20tile.zip',
+            }]}))
+            client = dl.DefraLidar(cache, download=False)
+            with mock.patch.object(dl, '_http', side_effect=AssertionError('network read')):
+                missing, paths = client.tile_status(0, 0, 1, 1)
+            self.assertEqual(paths, [])
+            self.assertEqual(missing, [
+                {'filename': 'terrain tile.zip', 'tile': 'DTM 0E-0N', 'estimated_mb': dl.TILE_MB},
+                {'filename': 'provider filename unknown (catalogue not cached)',
+                 'tile': 'DSM 0E-0N', 'estimated_mb': dl.TILE_MB},
+            ])
+
+    def test_cached_paths_cover_required_tiles_and_interpolation_edge_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            expected = []
+            for model in ('DTM', 'DSM'):
+                for e in (0, 5000, 15000):
+                    path = cache / model / f'{e}.tif'
+                    write_tif(path, np.ones((2, 2)), e, 2)
+                    if e < 15000:
+                        expected.append(path)
+            client = dl.DefraLidar(cache, download=False)
+            missing, paths = client.tile_status(4998, 0, 4999, 0)
+            self.assertEqual(missing, [])
+            self.assertEqual(paths, expected)
+
+
 class Fetching(unittest.TestCase):
     def test_fetch_tile_unzips_basename_only_and_caches_catalogue(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +285,23 @@ class Fetching(unittest.TestCase):
 
 
 class MinecraftFrame(unittest.TestCase):
+    def test_raw_height_contract_preserves_no_data_for_readiness(self):
+        client = mock.Mock()
+        dtm = np.array([[4.75, np.nan]])
+        dsm = np.array([[7.5, np.nan]])
+        client.sample.side_effect = [dtm, dsm]
+        h = dl.mc_heights(client, 0, 0, 0, 1, sea_level=11, geocraft=False)
+        self.assertEqual(set(h), {'dtm', 'dsm', 'diff', 'feature', 'ground_y', 'top_y'})
+        self.assertIs(h['feature'], h['diff'])
+        self.assertEqual(h['ground_y'][0, 0], 15)
+        self.assertEqual(h['top_y'][0, 0], 17)
+        self.assertEqual(h['dtm'][0, 0], 4.75)
+        for array in h.values():
+            self.assertEqual(array.shape, (1, 2))
+            self.assertTrue(np.isnan(array[0, 1]))
+        self.assertEqual([call.args[0] for call in client.sample.call_args_list], ['DTM', 'DSM'])
+        self.assertTrue(all(call.args[-1] is False for call in client.sample.call_args_list))
+
     def test_heights_follow_geocraft_block_rules(self):
         from osgb import load_offsets
         o = load_offsets()

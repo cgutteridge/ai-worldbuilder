@@ -48,6 +48,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import numpy as np
 from PIL import Image
@@ -217,6 +218,29 @@ class DefraLidar:
         """Tiles under the box that are not cached for ``model``."""
         have = self.tiles(model)
         return [t for t in tiles_for(e0, n0, e1, n1) if t not in have]
+
+    def tile_status(self, e0: float, n0: float, e1: float, n1: float,
+                    models=('DTM', 'DSM')) -> tuple[list[dict], list[Path]]:
+        """Read-only readiness metadata for required tiles, including interpolation edges.
+
+        @returns: (missing rows with filename/tile/estimated_mb, cached input paths).
+            Never queries the network; filenames may be unknown without a cached catalogue.
+        """
+        needed = tiles_for(e0, n0, e1, n1)
+        missing, paths = [], []
+        for model in models:
+            cached = self.tiles(model)
+            for e, n in needed:
+                if (e, n) in cached:
+                    paths.append(cached[(e, n)].path)
+                    continue
+                catalogue = self.cache / 'catalogue' / f'{e}E-{n}N.json'
+                uri = pick_uri(json.loads(catalogue.read_text()), model) if catalogue.is_file() else None
+                filename = (unquote(Path(urlsplit(uri).path).name) if uri else
+                            'provider filename unknown (catalogue not cached)')
+                missing.append({'filename': filename, 'tile': f'{model} {e}E-{n}N',
+                                'estimated_mb': TILE_MB})
+        return missing, paths
 
     # ---- fetching --------------------------------------------------------------------------------------------
 

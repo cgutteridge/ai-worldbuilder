@@ -1,5 +1,5 @@
 REFERENCE EVIDENCE TYPES
-Updated: 17 Oct 2026
+Updated: 14 Nov 2026
 
 Types are stable classes of evidence question. Rules and queue language name
 types; providers live in config/system-providers.json (nationwide+) and each
@@ -40,10 +40,88 @@ streetlevel
 lidar
   Absolute Y / massing. Products: DTM (bare earth), DSM (surface), diff = DSM−DTM.
   Tendency: heights only; never invent materials from it.
-  Glue: scripts/lidar_provider.py (composite_world / tile_client). Catalogue rows
-  that fill this type should set modules.world and modules.tiles (paths under the
-  package, e.g. manage/… and get/…). Prefer type-facing class names LidarWorld /
-  LidarTiles on those modules.
+  Glue: lib/sources/lidar_provider.py (composite_world / tile_client / default_heights).
+  The first world row with types: ["lidar"] wins over system rows, including a
+  world row with the same id. Otherwise the first system row wins. Selection is
+  by type and catalogue order, not geographic coverage. A broken selected row
+  fails; it never silently falls back to a different provider.
+
+  PROVIDER CONTRACT
+  A row sets package and modules paths relative to that package, without .py:
+    world:    manage/<module>  exports LidarWorld (or CompositeWorld)
+    tiles:    get/<module>     exports LidarTiles, mc_box_en and mc_heights
+    query:    review/<module>  exports main(argv=None) -> exit code
+    extremes: review/<module> exports main(argv=None) -> exit code
+  These four roles are selected through lidar_provider.load_lidar_module(role).
+  Stable entry points: shims/lidar_world.py, lidar_tiles.py, lidar_query.py and
+  lidar_extremes.py (each under shims/). CLI calls require --world NAME. Query
+  and extremes implementations should accept --cell TX,TZ and --bbox-mc
+  X0,Z0,X1,Z1; extra coordinate options belong to the provider.
+  Ghost planning lives in lib/sources/lidar_ghost.py (CLI shims/lidar_ghost.py),
+  shared by all providers. It is NOT a catalogue role. It samples through
+  lidar_provider.default_heights(), which opens a download=False tile client,
+  calls ensure(*mc_box_en(...)), then mc_heights(...).
+
+  Models and coordinates:
+    DTM = bare earth; DSM = surface. Both are required. Additional model names
+    (e.g. first-return surface) are provider extensions, not readiness inputs.
+    LidarTiles.crs is a CRS identifier understood by the provider (e.g. EPSG).
+    E/N coordinates for missing, ensure, sample and tile_status use that CRS.
+    Heights are metres above the provider's vertical datum, consistently mapped
+    to Minecraft by the world's y_offset; record the datum with the provider.
+    mc_box_en(x0,z0,x1,z1) returns (e0,n0,e1,n1) in the tile client's CRS for an
+    inclusive MC block box. The provider owns projection and interpolation;
+    shared readiness assumes neither a national grid nor a tile size.
+
+  Tile client:
+    LidarTiles(download=False, **provider_options) must work offline. Cache and
+    catalogue layouts, tile keys, raster resolution and URLs stay private.
+    missing(model,e0,n0,e1,n1) -> provider-defined tile keys not cached locally.
+    ensure(e0,n0,e1,n1,models=('DTM','DSM')) ensures tiles including the sampling
+    edge. With download=False, uncached tiles raise LookupError; no fetch occurs.
+    sample(model,e,n,geocraft=True) -> NumPy array of metre heights; e and n may
+    be broadcastable scalars or arrays. The historical geocraft keyword selects
+    whole-metre sampling for block plans; False preserves float heights and NaN
+    for no-data. Readiness uses False to avoid disguising missing samples.
+    tile_status(e0,n0,e1,n1,models=('DTM','DSM')) -> (missing_rows, input_paths).
+      Read-only and offline even when downloads are allowed on the client.
+      Include every tile needed for interpolation, exclude unrelated cached tiles.
+      Each missing row has filename (or an explicit unknown label), tile (opaque
+      human-readable model/tile identity) and estimated_mb (download cost).
+      input_paths contains readable local Paths for the cached inputs used by
+      these models/box. Order is deterministic. Shared readiness hashes their
+      bytes, so same-timestamp content changes invalidate readiness after refresh.
+      Tile geometry, filename lookup and cost calculation belong in this method;
+      shared code does not read cache/catalogue directories or module constants.
+
+  mc_heights(client,x0,z0,x1,z1,sea_level=None,geocraft=True) -> dict:
+    All arrays have shape (x1-x0+1, z1-z0+1), indexed [x-x0,z-z0].
+    dtm, dsm: sampled metre heights of DTM and DSM.
+    diff, feature: aliases for max(trunc(dsm-dtm),0), in blocks.
+    ground_y: y_offset + trunc(dtm) (sea_level overrides y_offset when given).
+    top_y: ground_y + diff.
+    Default block-plan arrays are whole-block values. With geocraft=False,
+    dtm/dsm retain float values and no-data; readiness rejects non-finite samples.
+
+  Composite world:
+    LidarWorld supplies covers(cell), heightmap(cell), block(x,y,z),
+    uniform_air(x,y,z,airs) and ground(x,z,top=140,bottom=40).
+    heightmap supplies cell, x0, z0 and per-column h/base/terrain/roof/kind arrays
+    compatible with lib/sources/lidar_heightmap.py. Historical class names in
+    existing packages remain supported by the loader.
+
+  Errors:
+    NoLidarProviderError (RuntimeError) means no row supplies lidar. Missing
+    modules.<role> raises ValueError; a missing package/file raises FileNotFoundError.
+    These are configuration errors, not the uncached-tile LookupError that ghost
+    planning may skip. Ownership/ring helpers work without loading a provider.
+
+  Verification boundary:
+    Fresh-process tests install a synthetic world provider with a different CRS
+    and opaque tile metadata while keeping system rows. This verifies routing
+    and the neutral readiness boundary. A real provider outside England has NOT
+    been validated; its projection, vertical datum and sampling remain a trial.
+    A real second provider and a fallback where no lidar exists are out of scope.
 
 ------------------------------------------------------------------------
 PROVIDERS: SYSTEM VS LOCAL

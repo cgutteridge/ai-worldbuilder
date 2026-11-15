@@ -1,30 +1,19 @@
 #!/usr/bin/env python3
-"""Shim: ``lidar_ghost`` → ``providers/ukdefra-lidar/manage/lidar_ghost.py``.
-
-Canonical implementation lives under the system provider package. This file
-keeps the historical import name and CLI entrypoint working.
-"""
-from __future__ import annotations
-
+"""CLI entry point for the shared lidar ghost planner."""
+import importlib
 import sys
-from pathlib import Path
 
-from _provider_shim import load_provider
+from _provider_shim import ensure_import_paths
 
-if __name__ == "__main__":
-    tool = Path(__file__).resolve().parent.parent
-    if str(tool) not in sys.path:
-        sys.path.insert(0, str(tool))
+ensure_import_paths()
+
+if __name__ == '__main__':
     import script_env
 
     script_env.prepend_world_activation()
-    _mod = load_provider("ukdefra-lidar", "manage", "lidar_ghost")
-    main_fn = getattr(_mod, "main", None)
-    if main_fn is None:
-        raise SystemExit(
-            "lidar_ghost is a library module; import it, do not run as a CLI"
-        )
-    raise SystemExit(main_fn())
+    raise SystemExit(importlib.import_module('lidar_ghost').main())
 else:
-    _mod = load_provider("ukdefra-lidar", "manage", "lidar_ghost")
-    sys.modules[__name__] = _mod
+    # Paths now prefer the library. Remove this in-progress shim before importing
+    # its shared module so direct imports with only shims/ on sys.path also work.
+    del sys.modules[__name__]
+    sys.modules[__name__] = importlib.import_module(__name__)
