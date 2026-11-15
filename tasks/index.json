@@ -165,7 +165,7 @@
     {
       "id": 289,
       "title": "Stale validation names what changed since it was accepted",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
