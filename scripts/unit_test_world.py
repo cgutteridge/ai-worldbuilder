@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -14,6 +15,46 @@ from unittest import mock
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
 if str(_TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(_TOOL_ROOT))
+
+
+@contextmanager
+def unit_test_cli_checkout(
+    entrypoint: str,
+    world_name: str,
+    *,
+    gameworld_id: str | None = None,
+) -> Iterator[Path]:
+    """Copy a real CLI bootstrap into a disposable checkout and synthetic world.
+
+    Shared libraries are linked; run subprocesses with ``python -B`` so they
+    cannot write bytecode into the source checkout. World discovery runs through
+    the copied ``active_world.py`` without using any real world's catalogue.
+
+    @param entrypoint: CLI file relative to the tool checkout
+    @param world_name: synthetic world directory name
+    @param gameworld_id: identity override (defaults to ``world_name``)
+    @returns: temporary tool checkout, removed on exit
+    """
+    with tempfile.TemporaryDirectory(prefix='worldbuilder-cli-') as tmp:
+        checkout = Path(tmp)
+        for relative in (
+            'active_world.py', 'python_runtime.py', 'scripts/script_env.py', entrypoint,
+        ):
+            target = checkout / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(_TOOL_ROOT / relative, target)
+        (checkout / 'lib').symlink_to(_TOOL_ROOT / 'lib', target_is_directory=True)
+        world = checkout / 'worlds' / world_name
+        config = world / 'config'
+        config.mkdir(parents=True)
+        (config / 'world.json').write_text(json.dumps({
+            'gameworld_id': gameworld_id or world_name,
+            'save_path': str(world / 'save'),
+        }), encoding='utf-8')
+        (config / 'world-frame.json').write_text(json.dumps({
+            'offsets': {'easting': 0, 'northing': 0},
+        }), encoding='utf-8')
+        yield checkout
 
 
 @contextmanager

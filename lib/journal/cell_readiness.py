@@ -137,6 +137,44 @@ def content_id(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def validation_staleness(accepted, parts):
+    """Explain changed validation inputs without altering their combined identity.
+
+    @param accepted: the last readiness note's decoded body
+    @param parts: current policy, evidence facts identity and cell plan inputs
+    @returns: stale blocker text, including plan ids added, changed or removed
+    """
+    previous = accepted.get('revision_parts')
+    if previous is None:
+        return 'validation stale (cause unknown: validation predates cause tracking)'
+    causes = []
+    if previous['policy'] != parts['policy']:
+        causes.append(f"policy version changed: {previous['policy']} -> {parts['policy']}")
+    if previous['evidence'] != parts['evidence']:
+        causes.append('evidence facts changed')
+    old, new = previous['plans'], parts['plans']
+    if content_id(old) != content_id(new):
+        old_ids, new_ids = set(old['features']), set(new['features'])
+        added, removed = new_ids - old_ids, old_ids - new_ids
+        histories = []
+        for plan in (old, new):
+            by_id = {}
+            for note in plan['notes']:
+                if note['kind'] in ('plan_feature', 'plan_feature-dismiss'):
+                    by_id.setdefault(note['ref'], []).append(note)
+            histories.append(by_id)
+        before, after = histories
+        changed = {fid for fid in before.keys() | after.keys() if before.get(fid) != after.get(fid)}
+        changed -= added | removed
+        details = [f'{label}: {", ".join(sorted(ids))}' for label, ids in
+                   (('added', added), ('changed', changed), ('removed', removed)) if ids]
+        if ([n for n in old['notes'] if n['kind'] == 'clip_coverage-dismiss'] !=
+                [n for n in new['notes'] if n['kind'] == 'clip_coverage-dismiss']):
+            details.append('coverage dismissal changed')
+        causes.append('plan identity changed' + (': ' + '; '.join(details) if details else ''))
+    return 'validation stale (' + '; '.join(causes) + ')'
+
+
 class ReadinessPolicy:
     """Evaluate one named cell against provider facts and journal prerequisites."""
 
@@ -174,14 +212,15 @@ class ReadinessPolicy:
                     'clear_with': {f'evidence error: {exc}': f'{CLI} check --cell {cell[0]},{cell[1]} '
                                    '(fix the named input; no command applies)'},
                     'ready': False, 'complete': False, 'validated': False}
-        revision = content_id([POLICY_VERSION, facts['revision'], self.plan_identity(cell)])
+        parts = {'policy': POLICY_VERSION, 'evidence': facts['revision'], 'plans': self.plan_identity(cell)}
+        revision = content_id([parts['policy'], parts['evidence'], parts['plans']])
         validations = self.reg.notes(cell, kinds=('readiness',))
         accepted = json.loads(validations[-1]['body']) if validations else None
         validated = bool(accepted and accepted.get('revision') == revision)
         if validated:
             warnings += accepted.get('warnings', [])
         if require_validation and not validated:
-            blockers.append('validation stale' if accepted else 'validation required')
+            blockers.append(validation_staleness(accepted, parts) if accepted else 'validation required')
         candidates = []
         if inspect_candidates and not validated:
             try:
@@ -256,7 +295,7 @@ class ReadinessPolicy:
                                              layer=e.pass_ if e else None, ref=refs.get(b),
                                              owner_cell=e.cell if e else None, stale=stale)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
-                **facts, 'revision': revision, 'evidence_revision': facts['revision'],
+                **facts, 'revision': revision, 'revision_parts': parts, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision(),
                 'validated': validated, 'operation': operation, 'ground': v.ground,
                 'candidates': candidates, 'next_actions': actions,
@@ -280,6 +319,7 @@ class ReadinessPolicy:
             raise Refused('; '.join(report['blockers']), report)
         if not report['validated']:
             self.reg.change(Note(tuple(cell), 'readiness', json.dumps({'revision': report['revision'],
+                                                                     'revision_parts': report['revision_parts'],
                                                                      'policy': POLICY_VERSION,
                                                                      'warnings': report['warnings']})))
         return self.check(cell)
