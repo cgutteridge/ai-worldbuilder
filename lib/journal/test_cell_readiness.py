@@ -27,6 +27,21 @@ class Evidence:
         return self.items
 
 
+def layer_command_preflight(command, world, policy):
+    """Run redo_layer's real preflight, substituting synthetic identity/evidence and absent masks."""
+    import shlex
+    from unittest import mock
+    from layer_redo import LayerCommands
+    argv = shlex.split(command)
+    cell = tuple(map(int, argv[argv.index('--cell') + 1].split(',')))
+    layers = argv[argv.index('--layers') + 1].split(',')
+    with mock.patch('world_discovery.require_running_world'), \
+            mock.patch('cell_registry.view_registry', return_value=world.reg), \
+            mock.patch('readiness_evidence.policy_for', return_value=policy), \
+            mock.patch.object(LayerCommands, 'has_mask', return_value=False):
+        LayerCommands('unit-test', cell).preflight(cell, layers, [], False)
+
+
 class ReadinessTest(unittest.TestCase):
     def setUp(self):
         self.world = JournalWorld()
@@ -788,6 +803,191 @@ class DirectApplyTest(LiveApplyCase):
         self.assertNotIn('block_fill_batch', FakePaced.calls)
 
 
+class ClearingCommandPreflightTest(unittest.TestCase):
+    """Task 290: exercise the named route, with only external I/O replaced."""
+
+    def setUp(self):
+        from cell_readiness import ReadinessPolicy
+        self.world = JournalWorld()
+        self.addCleanup(self.world.__exit__)
+        self.world.__enter__()
+        self.world.seed((0, 0), ghost_ground=True)
+        self.evidence = Evidence()
+        self.policy = ReadinessPolicy(self.world.reg, self.evidence)
+        self.policy.validate((0, 0))
+
+    def command(self, prefix, operation='build'):
+        report = self.policy.check((0, 0), operation)
+        return next(cmd for blocker, cmd in report['clear_with'].items() if blocker.startswith(prefix))
+
+    def registry_command(self, command):
+        import contextlib
+        import io
+        import shlex
+        from unittest import mock
+        import cell_registry
+        # Run the first command, stripping its explanatory prose and filling the explicit placeholders.
+        argv = shlex.split(command.split(' (')[0].split(', then')[0]
+                           .replace('<world>', 'unit-test').replace('<why>', 'fixture reason'))
+        self.assertEqual(argv[:2], ['python3', 'scripts/cell_registry.py'])
+        self.assertNotIn('--apply', argv)
+        out = io.StringIO()
+        with mock.patch.object(cell_registry, 'activate_world_from_args'), \
+                mock.patch.object(cell_registry, 'view_registry', return_value=self.world.reg), \
+                mock.patch('readiness_evidence.policy_for', return_value=self.policy), \
+                mock.patch('cell_features.clip_coverage', return_value=self.evidence.fraction), \
+                mock.patch.object(cell_registry, 'propose_feature_candidates', return_value=self.evidence.items), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(cell_registry.main(argv[2:]), 0, out.getvalue())
+        return out.getvalue()
+
+    def test_hold_clear_is_accepted_with_a_hold(self):
+        from cell_journal import Note
+        self.world.reg.change(Note((0, 0), 'hold', 'owner requests pause'))
+        self.registry_command(self.command('hold:'))
+        self.assertIsNone(self.world.reg.cell((0, 0)).hold)
+
+    def test_coverage_dismissal_is_accepted_for_the_named_warning(self):
+        from cell_journal import Note
+        self.world.reg.change(Note((0, 0), 'coverage', 'gap', 'gap-id'))
+        self.registry_command(self.command('coverage warning'))
+        self.assertFalse(any(b.startswith('coverage warning') for b in self.policy.check((0, 0))['blockers']))
+
+    def test_clip_dismissal_is_accepted_for_incomplete_coverage(self):
+        self.evidence.fraction = .5
+        self.registry_command(self.command('map query coverage'))
+        self.assertTrue(self.policy.check((0, 0), require_validation=False)['ready'])
+
+    def test_stale_clip_dismissal_can_be_renewed(self):
+        from cell_journal import Note
+        self.evidence.fraction = .5
+        self.world.reg.change(Note((0, 0), 'clip_coverage-dismiss', 'accepted gap', 'old-map'))
+        self.registry_command(self.command('map coverage dismissal stale'))
+        self.assertTrue(self.policy.check((0, 0), require_validation=False)['ready'])
+
+    def test_complete_clip_does_not_offer_a_dismissal_that_its_command_refuses(self):
+        from cell_journal import Note
+        self.world.reg.change(Note((0, 0), 'clip_coverage-dismiss', 'accepted old gap', 'old-map'))
+        report = self.policy.check((0, 0))
+        self.assertNotIn('map coverage dismissal stale', report['blockers'])
+        self.assertFalse(any('dismiss-clip-coverage' in cmd for cmd in report['clear_with'].values()))
+
+    def test_propose_features_can_record_the_unaccounted_candidate(self):
+        self.evidence.items = [{'id': 'w1', 'refs': ['w1'], 'kind': 'building'}]
+        self.evidence.revision = 'new-map'
+        self.registry_command(self.command('feature plans:'))
+        self.assertEqual([f.id for f in self.world.reg.cell((0, 0)).features], ['w1'])
+
+    def test_prepare_accepts_validation_and_terrain_blockers(self):
+        from cell_preparation import prepare_cell
+        from unittest import mock
+        # Preparation's actual preflight and journal validation run over synthetic local repairs.
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        repairs.ghost.side_effect = lambda cell: self.world.seed(cell, ghost_ground=True)
+        for prefix in ('validation required', 'validation stale', 'terrain:'):
+            with self.subTest(blocker=prefix):
+                if prefix == 'validation required':
+                    cell = (1, 0)
+                    self.world.seed(cell, ghost_ground=True)
+                elif prefix == 'validation stale':
+                    cell = (0, 0)
+                    self.evidence.revision = 'new-evidence'
+                else:
+                    cell = (2, 0)
+                report = self.policy.check(cell)
+                command = next(cmd for b, cmd in report['clear_with'].items() if b.startswith(prefix))
+                self.assertIn(f'prepare --cell {cell[0]},{cell[1]} --apply', command)
+                result = prepare_cell(self.world.reg, self.evidence, cell, apply=True,
+                                      repairs=repairs, check_lock=lambda: None)
+                self.assertTrue(result['ready'], result['blockers'])
+
+    def test_prepare_can_repair_a_candidate_error_with_a_local_extract(self):
+        from cell_preparation import prepare_cell
+        from unittest import mock
+        self.evidence.fraction = .5
+        self.evidence.revision = 'missing-extract'
+        candidates = self.evidence.candidates
+        def extract(cell):
+            self.evidence.fraction = 1
+            self.evidence.candidates = candidates
+        self.evidence.candidates = mock.Mock(side_effect=ValueError('missing local extract'))
+        command = self.command('candidate evidence error')
+        self.assertIn('prepare --cell 0,0 --apply', command)
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        repairs.extract.side_effect = extract
+        result = prepare_cell(self.world.reg, self.evidence, (0, 0), apply=True,
+                              repairs=repairs, check_lock=lambda: None)
+        self.assertTrue(result['ready'], result['blockers'])
+
+    def test_missing_aerial_and_lidar_request_data_instead_of_a_refused_command(self):
+        self.evidence.aerial = .5
+        self.evidence.missing = ['tile.tif']
+        for prefix in ('aerial coverage', 'lidar cache'):
+            with self.subTest(blocker=prefix):
+                command = self.command(prefix)
+                self.assertIn('owner supplies local data', command)
+                self.assertNotIn('python3', command)
+
+    def test_evidence_error_requests_input_repair(self):
+        from unittest import mock
+        with mock.patch.object(self.evidence, 'facts', side_effect=ValueError('broken input')):
+            command = self.command('evidence error:')
+        self.assertIn('fix the named input; no command applies', command)
+
+    def test_generated_ground_command_passes_its_readiness_preflight(self):
+        from readiness_evidence import require_ready
+        from unittest import mock
+        command = self.command('generated ground required', 'trees')
+        self.assertIn('ground_layer.py --world <world> --cell 0,0 --apply', command)
+        with mock.patch('site_lock.check'), \
+                mock.patch('cell_registry.view_registry', return_value=self.world.reg), \
+                mock.patch('readiness_evidence.policy_for', return_value=self.policy):
+            require_ready([(0, 0)], 'ground')
+
+    def test_planned_features_command_selects_the_blocked_cells_feature(self):
+        from cell_journal import Note
+        self.world.seed((0, 0), ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hall', 'hall'))
+        self.policy.validate((0, 0))
+        # Another cell holds focus; an unscoped next would select that cell instead.
+        self.world.seed((1, 0), ghost_ground=True, marker=True)
+        self.policy.validate((1, 0))
+        command = self.command('planned features must land', 'trees')
+        out = self.registry_command(command)
+        self.assertIn('"feature": "hall"', out)
+        self.assertIn('"cell": "0,0"', out)
+
+    def test_recovery_accepts_the_unfinished_entry(self):
+        from unittest import mock
+        from journal_testkit import View
+        import site_recover
+        ticket = self.world.reg.begin(Build('hall', 'feature', {(4, 61, 4): 'minecraft:bricks'}, cell=(0, 0)))
+        self.world.apply(ticket.writes)  # interrupted between writing and finishing
+        self.assertIn('site_recover.py --world <world> recover 0,0 --apply',
+                      self.command('recovery: unfinished apply'))
+        with mock.patch.object(site_recover, 'lock_state', return_value={'state': 'none', 'lock': None}):
+            report = site_recover.recover((0, 0), flush=lambda: None,
+                                          world_factory=lambda: View(self.world.blocks))
+        self.assertEqual(report['action'], 'would-applied', report)
+
+    def test_mismatched_layers_command_passes_its_own_preflight(self):
+        from cell_readiness import ReadinessPolicy
+        for layer in ('ground', 'trees', 'decor'):
+            with self.subTest(layer=layer), JournalWorld() as world:
+                world.seed((0, 0), ground=True)
+                policy = ReadinessPolicy(world.reg, Evidence())
+                policy.validate((0, 0))
+                receipt = world.reg.change(Build('broken', layer, {(4, 61, 4): 'minecraft:stone'},
+                                                 cell=(0, 0)), lambda w: None)
+                self.assertEqual(receipt.status, 'mismatched')
+                command = policy.check((0, 0))['clear_with']['recovery: mismatched apply broken']
+                redo = command.split('if it reports still mismatched, ')[1].split(' (')[0]
+                self.assertIn(f'--layers {layer}', redo)
+                layer_command_preflight(redo, world, policy)
+
+
 class MismatchedApplyTest(unittest.TestCase):
     """Task 284: a mismatched apply is cleared by a named command, never by hand-editing."""
 
@@ -811,15 +1011,61 @@ class MismatchedApplyTest(unittest.TestCase):
         self.assertEqual(receipt.status, 'mismatched')
         return receipt
 
-    def test_blocker_names_the_clearing_command(self):
+    def record_builder(self, source="NAME = 'house'\n"):
+        path = self.world.root / 'build_house.py'
+        path.write_text(source)
+        self.world.build('house', 'feature', self.HOUSE, cell=(0, 0),
+                         meta={'builder': {'kind': 'script', 'path': str(path)}})
+        return path
+
+    def test_blocker_names_reapply_only_when_its_preflight_accepts(self):
+        from feature_reapply import prepare
         from cell_readiness import format_readiness
-        self.mismatch()
+        self.record_builder()
+        self.mismatch(cells={(1, 60, 1): 'minecraft:bricks'})
         report = self.check()
         self.assertEqual(report['blockers'], ['recovery: mismatched apply house'])
         command = report['clear_with']['recovery: mismatched apply house']
         self.assertIn('cell_registry.py --world <world> reconcile 0,0 --fix', command)
         self.assertIn('reapply_feature.py --world <world> house --apply', command)
+        self.assertTrue(prepare('house', registry=self.world.reg))
         self.assertIn('clear: recovery: mismatched apply house -> ', format_readiness(report))
+
+    def test_unrecorded_mismatch_offers_redo_and_reconcile_accepts(self):
+        from unittest import mock
+        from element_undo import require_rebuild_ready
+        from feature_reapply import prepare
+        self.mismatch()
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaisesRegex(SystemExit, 'no replayable recorded builder'):
+            prepare('house', registry=self.world.reg)
+        command = self.check()['clear_with']['recovery: mismatched apply house']
+        self.assertNotIn('reapply_feature.py', command)
+        self.assertIn('redo skill', command)
+        self.assertIn('house', command)
+        self.assertIn('no replayable recorded builder', command)
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        # The redo skill's undo-before-rebuild gate accepts the same unrecorded plan.
+        with mock.patch('site_lock.check'), \
+                mock.patch('cell_registry.view_registry', return_value=self.world.reg), \
+                mock.patch('readiness_evidence.policy_for', return_value=self.policy):
+            require_rebuild_ready('house')
+        self.assertTrue(self.world.reg.reconcile(fix=True, apply=self.world.apply).clean)
+
+    def test_unusable_recorded_builders_offer_redo_with_the_preflight_reason(self):
+        from feature_reapply import prepare
+        for source in (None, 'NAME = broken syntax', "NAME = 'another-feature'\n"):
+            with self.subTest(source=source):
+                path = self.record_builder(source or "NAME = 'house'\n")
+                if source is None:
+                    path.unlink()
+                self.mismatch(cells={(1, 60, 1): 'minecraft:bricks'})
+                with self.assertRaises(SystemExit) as refused:
+                    prepare('house', registry=self.world.reg)
+                command = self.check()['clear_with']['recovery: mismatched apply house']
+                self.assertNotIn('reapply_feature.py', command)
+                self.assertIn('redo skill', command)
+                self.assertIn(str(refused.exception), command)
 
     def test_refusal_message_carries_the_command(self):
         self.mismatch()
@@ -867,25 +1113,36 @@ class MismatchedApplyTest(unittest.TestCase):
         self.mismatch()
         dry = self.world.reg.reconcile()
         self.assertEqual([i.kind for i in dry.by_kind('mismatched')], ['mismatched'])
-        self.assertIn('clear with: reconcile 0,0 --fix', format_drift(dry))
+        self.assertIn('clear with: reconcile 0,0 --fix', format_drift(dry, registry=self.world.reg))
         drift = self.world.reg.reconcile(fix=True, apply=self.world.apply)
         self.assertTrue(drift.clean)
         self.assertEqual([plan for plan, _seq in drift.cleared], ['house'])
-        self.assertIn('house', format_drift(drift, fix=True))
-        self.assertIn('preflight no longer blocks', format_drift(drift, fix=True))
+        self.assertIn('house', format_drift(drift, registry=self.world.reg, fix=True))
+        self.assertIn('preflight no longer blocks', format_drift(drift, registry=self.world.reg, fix=True))
         self.assertTrue(self.check()['ready'])
 
     def test_reconcile_fix_that_cannot_hold_names_the_reapply_command(self):
         from cell_registry import format_drift
-        self.mismatch()
+        self.record_builder()
+        self.mismatch(cells={(1, 60, 1): 'minecraft:bricks'})
         drift = self.world.reg.reconcile(fix=True, apply=lambda w: None)      # the game undoes every write
         self.assertFalse(drift.clean)
         item = drift.by_kind('mismatched')[0]
-        self.assertEqual((item.plans, item.layer, item.count, item.fixed), (('house',), 'feature', 2, False))
-        out = format_drift(drift, fix=True)
+        self.assertEqual((item.plans, item.layer, item.count, item.fixed), (('house',), 'feature', 1, False))
+        out = format_drift(drift, registry=self.world.reg, fix=True)
         self.assertIn('still mismatched after repair', out)
         self.assertIn('reapply_feature.py --world <world> house --apply', out)
         self.assertIn('recovery: mismatched apply house', self.check()['blockers'])
+
+    def test_reconcile_fix_without_a_builder_names_redo(self):
+        from cell_registry import format_drift
+        self.mismatch()
+        drift = self.world.reg.reconcile(fix=True, apply=lambda w: None)
+        out = format_drift(drift, registry=self.world.reg, fix=True)
+        self.assertIn('still mismatched after repair', out)
+        self.assertIn('redo skill', out)
+        self.assertIn('no replayable recorded builder', out)
+        self.assertNotIn('reapply_feature.py', out)
 
     def test_neighbour_entry_names_its_own_cell_for_the_redo(self):
         from cell_registry import format_drift
@@ -900,7 +1157,7 @@ class MismatchedApplyTest(unittest.TestCase):
         drift = self.world.reg.reconcile([(1, 0)], fix=True, apply=lambda w: None)
         item = drift.by_kind('mismatched')[0]
         self.assertEqual((item.owner, item.cells), ((0, 0), ((0, 0), (1, 0))))
-        self.assertIn('--cell 0,0 --layers trees', format_drift(drift, fix=True))
+        self.assertIn('--cell 0,0 --layers trees', format_drift(drift, registry=self.world.reg, fix=True))
 
     def test_dry_run_skips_a_superseded_mismatch(self):
         self.mismatch()
@@ -971,6 +1228,13 @@ class StaleGroundTest(unittest.TestCase):
         self.assertEqual(report['ground_stale'], [])
         self.assertIsNone(report['ground_redo'])
         self.assertTrue(self.complete())
+
+    def test_stale_ground_command_passes_redo_layers_actual_preflight(self):
+        self.world.seed((0, 0), ground=True)
+        self.world.seed((0, 0), features=('house',))
+        report = self.check('trees')
+        command = report['clear_with']['ground stale: ' + report['ground_stale'][0]]
+        layer_command_preflight(command, self.world, self.policy)
 
     def test_feature_landed_before_ground_does_not(self):
         self.world.seed((0, 0), features=('house',))

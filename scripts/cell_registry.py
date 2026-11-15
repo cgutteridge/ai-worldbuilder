@@ -510,11 +510,12 @@ RECONCILE_HELP = ('compare the journal with the blocks; dry run unless --fix. '
                   'reconcile = detect and repair drift forward')
 
 
-def mismatch_next_step(item, fix: bool) -> str:
+def mismatch_next_step(item, fix: bool, registry) -> str:
     """The sanctioned next command for a mismatched entry that reconcile did not clear.
 
     @param item: a ``mismatched`` DriftItem
     @param fix: the run was a ``--fix`` run
+    @param registry: the journal that produced the drift
     @returns: one line naming the command
     """
     plan = item.plans[0] if item.plans else '?'
@@ -523,16 +524,17 @@ def mismatch_next_step(item, fix: bool) -> str:
         return (f'clear with: reconcile {cell_id(*item.cell)} --fix (the entry also touches cell(s) {cells}; '
                 'name them all if positions differ there)')
     from cell_readiness import reapply_command
-    reapply = reapply_command(plan, item.layer, item.owner or item.cell)
+    reapply = reapply_command(plan, item.layer, item.owner or item.cell, registry=registry)
     return (f'still mismatched after repair ({item.count} position(s) differ now; cells {cells}). Next: '
-            f'reconcile the other cell(s) above if they drifted, or re-apply the plan past its own mismatch: {reapply}')
+            f'reconcile the other cell(s) above if they drifted, or redo the plan past its own mismatch: {reapply}')
 
 
-def format_drift(drift, *, fix: bool = False) -> str:
+def format_drift(drift, *, registry, fix: bool = False) -> str:
     """Human report of a :class:`cell_journal.Drift`, grouped by kind.
 
     @param drift: result of ``CellRegistry.reconcile``
     @param fix: the run was a ``--fix`` run (marks each cell fixed / still drifting)
+    @param registry: the journal that produced the drift
     @returns: report text
     """
     if not drift.items and not drift.upgraded:
@@ -552,7 +554,7 @@ def format_drift(drift, *, fix: bool = False) -> str:
             for pos, (want, got) in list(i.sample.items())[:3]:
                 lines.append(f'      {pos}: want {want}, got {got}')
             if i.kind == 'mismatched':
-                lines.append('      ' + mismatch_next_step(i, fix))
+                lines.append('      ' + mismatch_next_step(i, fix, registry))
     left = [i for i in drift.items if not i.fixed]
     if drift.upgraded:
         lines.append(f'upgraded {drift.upgraded} mismatched entr{"y" if drift.upgraded == 1 else "ies"} to landed: '
@@ -584,7 +586,7 @@ def run_reconcile(root: Path | None, cells: list[str], fix: bool) -> int:
     else:
         reg = open_registry(root, blocks=site_kit.disk_blocks())
         drift = reg.reconcile(scope)
-    print(format_drift(drift, fix=fix))
+    print(format_drift(drift, registry=reg, fix=fix))
     if not drift.items:
         return 0
     return 0 if fix and drift.clean else 1
