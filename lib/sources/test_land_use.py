@@ -233,6 +233,66 @@ class Table(unittest.TestCase):
             self.assertEqual(L.validate_table(self.doc)['classes']['residential']['planting'], rule)
 
 
+class FurnitureRules(unittest.TestCase):
+    """#260: the highways lamp map and the park bench section ship in the table; resolve reads them."""
+
+    def setUp(self):
+        self.doc = copy.deepcopy(json.loads(L.TABLE_PATH.read_text()))
+
+    def test_shipped_highways_cover_the_inferred_classes_and_leave_the_rest_unlit(self):
+        highways = L.load_table()['highways']
+        for hw in ('residential', 'tertiary', 'secondary', 'primary', 'trunk', 'footway'):
+            self.assertGreater(highways[hw], 0, hw)
+        for hw in ('service', 'path', 'cycleway', 'steps', 'primary_link', 'track'):
+            self.assertNotIn(hw, highways, hw)
+        self.assertLess(highways['residential'], highways['tertiary'])
+
+    def test_lamp_spacing_resolves_from_class_only_where_inference_is_allowed(self):
+        r = L.resolve('residential', 'lamp_spacing', role='residential')
+        self.assertEqual((r['value'], r['layer']), (30, 'class'))
+        for cls in ('rural', 'natural', 'unknown'):
+            r = L.resolve(cls, 'lamp_spacing', role='residential')
+            self.assertEqual((r['value'], r['layer']), (None, None), cls)
+        district = {'lamp_spacing': {'residential': 20}}
+        r = L.resolve('residential', 'lamp_spacing', role='residential', district=district)
+        self.assertEqual((r['value'], r['layer']), (20, 'district'))
+
+    def test_only_park_ships_a_furniture_section(self):
+        rows = L.load_table()['classes']
+        self.assertEqual({cid for cid, row in rows.items() if row['furniture'] is not None}, {'park'})
+        self.assertGreater(L.defaults('park')['furniture']['bench_per_100m'], 0)
+        self.assertLessEqual(L.defaults('park')['furniture']['bench_per_100m'], 3)     # low density
+
+    def test_bench_density_ladder(self):
+        r = L.resolve('park', 'bench_per_100m')
+        self.assertEqual((r['value'], r['layer']), (1.5, 'class'))
+        r = L.resolve('park', 'bench_per_100m', district={'bench_per_100m': 4})
+        self.assertEqual((r['value'], r['layer']), (4, 'district'))
+        r = L.resolve('park', 'bench_per_100m', street={'bench_per_100m': 2}, district={'bench_per_100m': 4})
+        self.assertEqual((r['value'], r['layer']), (2, 'street'))
+        for cls in ('residential', 'commercial', 'civic', 'rural', 'unknown', 'banana'):
+            self.assertEqual(L.resolve(cls, 'bench_per_100m')['value'], None, cls)
+
+    def test_bad_furniture_or_highways_refused(self):
+        row = next(r for r in self.doc['classes'] if r['id'] == 'park')
+        for bad in ({}, {'bench_per_100m': 0}, {'bench_per_100m': 101}, {'bench_per_100m': True},
+                    {'bench_per_100m': 1, 'extra': 1}, 3, []):
+            with self.subTest(furniture=bad):
+                row['furniture'] = bad
+                with self.assertRaises(L.TableError):
+                    L.validate_table(self.doc)
+        row['furniture'] = {'bench_per_100m': 1.5}
+        for cls in L.NO_INFERENCE:
+            doc = copy.deepcopy(self.doc)
+            next(r for r in doc['classes'] if r['id'] == cls)['furniture'] = {'bench_per_100m': 1}
+            with self.subTest(cls=cls), self.assertRaises(L.TableError):
+                L.validate_table(doc)
+        for bad in (0, 1001, True, 'x'):
+            doc = dict(self.doc, highways={'residential': bad})
+            with self.subTest(highways=bad), self.assertRaises(L.TableError):
+                L.validate_table(doc)
+
+
 class ParcelMeta(unittest.TestCase):
     def build(self, areas, buildings):
         return C.ParcelBuilder('t', (0, 0, 0, 0), index(areas, buildings)).run()

@@ -352,6 +352,231 @@ class TestBuildDecorPlan(unittest.TestCase):
         self.assertEqual(dp.unresolved_items(plan)[0]['id'], 'u1')
 
 
+def _way(highway, points, half=3.0, **extra):
+    return {'highway': highway, 'points': points, 'half': half, **extra}
+
+
+def _strip_classes(cls, z0=40, z1=90, x0=0, x1=127):
+    return {(x, z): cls for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
+
+
+class TestInferredStreetFurniture(unittest.TestCase):
+    """#260 (I-008): labelled lamp and bench inference on synthetic road and path strips, cell (0, 0)."""
+
+    ROAD = [(0.0, 64.0), (127.0, 64.0)]
+
+    def plan(self, roads=(), paths=(), classes=None, profile=None, **kw):
+        return dp.build_decor_plan(
+            (0, 0), map_barriers={}, garden=[], rgb={}, footprint=set(), canopy=set(),
+            road_lines=list(roads), path_lines=list(paths),
+            land_classes=_strip_classes('residential') if classes is None else classes,
+            district_profile={} if profile is None else profile, **kw)
+
+    @staticmethod
+    def inferred(plan, kind=None):
+        return [i for i in plan['items'] if i.get('role') == 'furniture'
+                and i['provenance']['source'] == 'inference' and kind in (None, i['kind'])]
+
+    def test_lamps_are_labelled_inference_low_and_never_observed(self):
+        plan = self.plan(roads=[_way('residential', self.ROAD, seed=3)])
+        lamps = self.inferred(plan, 'street_lamp')
+        self.assertGreaterEqual(len(lamps), 3)
+        for lamp in lamps:
+            self.assertEqual((lamp['provenance']['source'], lamp['provenance']['confidence']), ('inference', 'low'))
+            self.assertIn('not observed', lamp['note'])
+            self.assertFalse(prov.is_unresolved(lamp['provenance']))
+        self.assertEqual({r['source'] for r in dp.resolved_furniture(plan)}, {'inference'})
+        summary = plan['furniture_inference']
+        self.assertEqual(summary['lamps'], len(lamps))
+        self.assertEqual(summary['spacing_layers'], {'class': 1})
+        self.assertEqual(summary['lit_tags'], {'absent': 1})
+
+    def test_no_ways_means_no_inference_block_and_no_extra_items(self):
+        plan = self.plan()
+        self.assertNotIn('furniture_inference', plan)
+        self.assertEqual(plan['items'], [])
+
+    def test_spacing_follows_the_highway_class(self):
+        counts = {highway: sum(len(self.inferred(self.plan(roads=[_way(highway, self.ROAD, seed=seed)])))
+                               for seed in range(12))
+                  for highway in ('residential', 'tertiary', 'trunk')}      # 30, 34 and 40 blocks apart
+        self.assertGreater(counts['residential'], counts['tertiary'])
+        self.assertGreater(counts['tertiary'], counts['trunk'])
+        for highway in ('service', 'cycleway', 'steps'):               # no table row: unlit
+            plan = self.plan(roads=[_way(highway, self.ROAD)])
+            self.assertEqual(self.inferred(plan), [])
+            self.assertEqual(plan['furniture_inference']['ways_skipped'],
+                             {'no lamp spacing for this way (class, highway or lit=no)': 1})
+
+    def test_district_profile_spacing_beats_the_table(self):
+        way = _way('residential', self.ROAD, seed=3)
+        base = self.plan(roads=[way])
+        tight = self.plan(roads=[way], profile={
+            'name': 'x', 'evidence_ids': [], 'classes': {'residential': {'furniture': {'lamp_spacing': {'residential': 12}}}}})
+        self.assertGreater(len(self.inferred(tight)), len(self.inferred(base)))
+        self.assertEqual(tight['furniture_inference']['spacing_layers'], {'district': 1})
+        none = self.plan(roads=[way], profile={
+            'name': 'x', 'evidence_ids': [], 'classes': {'residential': {'furniture': {'lamp_spacing': {'residential': None}}}}})
+        self.assertEqual(self.inferred(none), [])                      # an explicit null stops inference
+        self.assertEqual(list(none['furniture_inference']['ways_skipped'].values()), [1])
+
+    def test_class_that_allows_no_inference_or_is_unknown_gets_no_lamps(self):
+        for cls in ('rural', 'natural', 'unknown'):
+            plan = self.plan(roads=[_way('residential', self.ROAD)], classes=_strip_classes(cls))
+            self.assertEqual(self.inferred(plan), [], cls)
+        self.assertEqual(self.inferred(self.plan(roads=[_way('residential', self.ROAD)], classes={})), [])
+
+    def test_lit_tag_is_used_when_present_and_counted_when_absent(self):
+        plan = self.plan(roads=[_way('residential', self.ROAD, lit='no'),
+                                _way('cycleway', [(0.0, 80.0), (127.0, 80.0)], half=1.2, lit='yes'),
+                                _way('residential', [(0.0, 50.0), (127.0, 50.0)])])
+        self.assertEqual(plan['furniture_inference']['lit_tags'], {'no': 1, 'yes': 1, 'absent': 1})
+        zs = {i['cell'][1] for i in self.inferred(plan, 'street_lamp')}
+        self.assertTrue(all(z > 70 or z < 55 for z in zs))             # none beside the lit=no road at z=64
+        self.assertTrue(any(z > 70 for z in zs))                       # the lit=yes cycleway got lamps
+
+    def test_sidewalk_footways_leave_lamps_to_the_road(self):
+        plan = self.plan(paths=[_way('footway', self.ROAD, half=1.0, footway='sidewalk')])
+        self.assertEqual(self.inferred(plan), [])
+
+    def test_a_mapped_point_wins_nearby_and_far_lamps_still_fill(self):
+        way = _way('residential', self.ROAD, seed=3)
+        free = self.inferred(self.plan(roads=[way]), 'street_lamp')
+        target = free[len(free) // 2]['cell']
+        plan = self.plan(roads=[way], map_furniture=[(target[0] + 2, target[1], 'street_lamp')])
+        lamps = self.inferred(plan, 'street_lamp')
+        self.assertFalse(any(abs(l['cell'][0] - target[0]) < 22 for l in lamps))
+        self.assertTrue(any(i['provenance']['source'] == 'vector_map' for i in plan['items']))
+        self.assertGreater(len(lamps), 0)
+        self.assertGreaterEqual(plan['furniture_inference']['dropped']['mapped or designed item here or nearby'], 1)
+
+    def test_a_designer_trace_wins_like_a_mapped_point(self):
+        way = _way('residential', self.ROAD, seed=3)
+        target = self.inferred(self.plan(roads=[way]), 'street_lamp')[1]['cell']
+        plan = self.plan(roads=[way], designer_items=[
+            {'x': target[0], 'z': target[1], 'kind': 'street_lamp', 'source': 'designer'}])
+        self.assertEqual([i['cell'] for i in plan['items'] if i['cell'] == target
+                          and i['provenance']['source'] != 'inference'], [target])
+        self.assertFalse(any(abs(l['cell'][0] - target[0]) < 22 for l in self.inferred(plan, 'street_lamp')))
+        # a designer bench does not suppress lamps, only an item at the same column does
+        bench = self.plan(roads=[way], designer_items=[
+            {'x': target[0] + 10, 'z': target[1], 'kind': 'bench', 'source': 'designer'}])
+        self.assertEqual(len(self.inferred(bench, 'street_lamp')), len(self.inferred(self.plan(roads=[way]))))
+
+    def test_nothing_on_routes_openings_or_the_carriageway(self):
+        way = _way('residential', self.ROAD, seed=3)
+        free = self.inferred(self.plan(roads=[way]), 'street_lamp')
+        victim = free[0]['cell']
+        for kwargs in ({'openings': {(victim[0], victim[1])}},                 # entrance opening
+                       {'openings': {(victim[0] + 1, victim[1] + 1)}},         # clearance of one column
+                       {'carriageway': {(victim[0], victim[1])}},
+                       {'furniture_avoid': {(victim[0], victim[1])}}):
+            plan = self.plan(roads=[way], **kwargs)
+            self.assertNotIn(victim, [i['cell'] for i in self.inferred(plan)], kwargs)
+            self.assertEqual(len(self.inferred(plan)), len(free) - 1, kwargs)
+        plan = self.plan(roads=[way], openings={(victim[0], victim[1])})
+        self.assertIn('door route or entrance opening', plan['furniture_inference']['dropped'])
+
+    def test_door_route_from_frontages_is_kept_clear(self):
+        way = _way('residential', self.ROAD, seed=3)
+        victim = self.inferred(self.plan(roads=[way]), 'street_lamp')[0]['cell']
+        frontage = {'id': 'f1', 'route_reserved': [list(victim)]}
+        with mock.patch('garden_sources.reserved_route', return_value={tuple(victim)}):
+            plan = self.plan(roads=[way], frontages=[frontage])
+        self.assertNotIn(victim, [i['cell'] for i in self.inferred(plan)])
+
+    def test_outside_the_cell_is_dropped_and_counted(self):
+        plan = self.plan(roads=[_way('residential', [(-40.0, 64.0), (170.0, 64.0)], seed=3)])
+        self.assertTrue(all(0 <= i['cell'][0] <= 127 for i in self.inferred(plan)))
+        self.assertGreater(plan['furniture_inference']['dropped']['outside cell'], 0)
+
+    def test_two_ways_do_not_double_up_lamps_at_a_junction(self):
+        plan = self.plan(roads=[_way('residential', self.ROAD, seed=3), _way('residential', self.ROAD, seed=3)])
+        cells = [tuple(i['cell']) for i in self.inferred(plan)]
+        self.assertEqual(len(cells), len(set(cells)))
+        self.assertEqual(len(cells), len(self.inferred(self.plan(roads=[_way('residential', self.ROAD, seed=3)]))))
+
+    def test_benches_only_on_paths_beside_park_land(self):
+        path = _way('footway', [(0.0, 64.0), (127.0, 64.0)], half=1.0, lit='no')
+        park = self.plan(paths=[path], classes=_strip_classes('park'))
+        benches = self.inferred(park, 'bench')
+        self.assertGreaterEqual(len(benches), 1)
+        for bench in benches:
+            self.assertEqual((bench['provenance']['source'], bench['provenance']['confidence']), ('inference', 'low'))
+            self.assertIn('not observed', bench['note'])
+        for cls in ('residential', 'civic', 'commercial', 'rural', 'unknown'):
+            plan = self.plan(paths=[path], classes=_strip_classes(cls))
+            self.assertEqual(self.inferred(plan, 'bench'), [], cls)
+        self.assertIn('no bench density for the adjoining class',
+                      self.plan(paths=[path], classes=_strip_classes('residential'))['furniture_inference']['ways_skipped'])
+        for kind in ('cycleway', 'service', 'steps'):                  # not walking paths
+            self.assertEqual(self.inferred(self.plan(paths=[_way(kind, path['points'], half=1.0)],
+                                                     classes=_strip_classes('park')), 'bench'), [])
+
+    def test_bench_density_can_come_from_a_profile_and_a_mapped_bench_wins(self):
+        path = _way('path', [(0.0, 64.0), (127.0, 64.0)], half=0.8, lit='no', seed=5)
+        dense = {'name': 'x', 'evidence_ids': [], 'classes': {'park': {'furniture': {'bench_per_100m': 10}}}}
+        base = self.inferred(self.plan(paths=[path], classes=_strip_classes('park')), 'bench')
+        plan = self.plan(paths=[path], classes=_strip_classes('park'), profile=dense)
+        many = self.inferred(plan, 'bench')
+        self.assertGreater(len(many), len(base))
+        mapped = self.plan(paths=[path], classes=_strip_classes('park'), profile=dense,
+                           map_furniture=[(many[0]['cell'][0], many[0]['cell'][1], 'bench')])
+        self.assertFalse(any(abs(b['cell'][0] - many[0]['cell'][0]) < 8 and b['cell'][1] == many[0]['cell'][1]
+                             for b in self.inferred(mapped, 'bench')))
+
+    def test_benches_stay_off_routes_and_paths(self):
+        path = _way('path', [(0.0, 64.0), (127.0, 64.0)], half=0.8, lit='no', seed=5)
+        dense = {'name': 'x', 'evidence_ids': [], 'classes': {'park': {'furniture': {'bench_per_100m': 10}}}}
+        free = self.inferred(self.plan(paths=[path], classes=_strip_classes('park'), profile=dense), 'bench')
+        victim = tuple(free[0]['cell'])
+        plan = self.plan(paths=[path], classes=_strip_classes('park'), profile=dense, openings={victim})
+        self.assertNotIn(victim, [tuple(i['cell']) for i in self.inferred(plan)])
+
+    def test_inference_is_deterministic(self):
+        way = _way('residential', self.ROAD)
+        self.assertEqual(self.plan(roads=[way])['items'], self.plan(roads=[way])['items'])
+
+
+class TestAdjoiningClass(unittest.TestCase):
+    ROAD = [(0.0, 64.0), (100.0, 64.0)]
+
+    def test_most_common_class_within_reach_wins_and_ties_sort_first(self):
+        classes = {**_strip_classes('park', 40, 63, 0, 100), **_strip_classes('residential', 66, 70, 0, 100)}
+        self.assertEqual(dp.adjoining_class(self.ROAD, 3.0, classes), 'park')
+        tie = {**_strip_classes('park', 60, 63, 0, 100), **_strip_classes('civic', 65, 68, 0, 100)}
+        self.assertEqual(dp.adjoining_class(self.ROAD, 3.0, tie), 'civic')
+
+    def test_nothing_classified_nearby_is_unknown(self):
+        self.assertEqual(dp.adjoining_class(self.ROAD, 3.0, {}), 'unknown')
+        self.assertEqual(dp.adjoining_class(self.ROAD, 3.0, _strip_classes('park', 0, 20, 0, 100)), 'unknown')
+
+
+class TestLandClassColumns(unittest.TestCase):
+    """Area polygons and buildings become a column to class map; unknown claims nothing."""
+
+    class Idx:
+        def __init__(self, areas, buildings):
+            self.areas, self.buildings = areas, buildings
+
+        def cells(self):
+            return {(x, z): 0 for x in range(20, 24) for z in range(20, 24)} if self.buildings else {}
+
+        def layer_covered(self, layer, x, z):
+            return True
+
+    def test_park_polygon_and_a_house_over_it(self):
+        ring = lambda x0, z0, x1, z1: [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+        idx = self.Idx(areas=[(ring(0, 0, 40, 40), {'leisure': 'park', 'osm_way_id': 1}),
+                              (ring(60, 60, 70, 70), {'landuse': 'military', 'osm_way_id': 2})],
+                       buildings=[(ring(20, 20, 24, 24), {'building': 'retail', 'osm_way_id': 3})])
+        cols = dp.land_class_columns(idx, (0, 0, 80, 80))
+        self.assertEqual(cols[(5, 5)], 'park')
+        self.assertEqual(cols[(21, 21)], 'commercial')            # the building's own class
+        self.assertNotIn((65, 65), cols)                          # unlisted value claims nothing
+        self.assertNotIn((50, 50), cols)
+
+
 class TestUnresolvedBarrierReporting(unittest.TestCase):
     def barrier(self, item_id='boundary', reason='', **extra):
         return prov.attach_provenance(

@@ -389,5 +389,32 @@ class GroundAreaTagsTest(unittest.TestCase):
                                  f'landuse={lu}+surface must still leave kind empty')
 
 
+class WayLinesForFurnitureTest(unittest.TestCase):
+    """#260: OSMGround keeps each mapped carriageway and path as a line for lamp and bench inference."""
+
+    @staticmethod
+    def line(osm_id, props, pts):
+        return {'type': 'Feature', 'properties': dict(props, osm_id=osm_id),
+                'geometry': {'type': 'LineString', 'coordinates': pts}}
+
+    def test_roads_and_paths_are_recorded_with_class_width_and_tags(self):
+        ground = _ground_from_features([
+            self.line('1', {'highway': 'residential', 'lit': 'yes', 'lanes': '2'}, [[10.0, 20.0], [60.0, 20.0]]),
+            self.line('2', {'highway': 'footway', 'footway': 'sidewalk'}, [[10.0, 24.0], [60.0, 24.0]]),
+            self.line('3', {'highway': 'path'}, [[10.0, 40.0], [60.0, 40.0]]),
+            self.line('4', {'highway': 'residential', 'bridge': 'yes'}, [[10.0, 80.0], [60.0, 80.0]]),
+            self.line('5', {'highway': 'steps'}, [[10.0, 90.0], [20.0, 90.0]]),
+        ])
+        roads = {(w['highway'], w['lit']): w for w in ground.road_lines}
+        self.assertEqual(list(roads), [('residential', 'yes')])
+        self.assertEqual(roads[('residential', 'yes')]['half'], GS.LANE_WIDTH)        # two lanes
+        self.assertEqual(roads[('residential', 'yes')]['points'], [(10.0, 20.0), (60.0, 20.0)])
+        paths = {w['highway']: w for w in ground.path_lines}
+        self.assertEqual(sorted(paths), ['footway', 'path'])
+        self.assertEqual(paths['footway']['footway'], 'sidewalk')
+        self.assertEqual(paths['path']['half'], GS.PATH_WIDTH['path'] / 2)
+        self.assertIsNone(paths['path']['lit'])                                        # absent stays None
+
+
 if __name__ == '__main__':
     unittest.main()

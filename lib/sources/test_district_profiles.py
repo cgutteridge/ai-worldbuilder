@@ -169,6 +169,27 @@ class ProfileResolution(unittest.TestCase):
             self.assertIsNone(gs.lamp_spacing((0, 0), 'unknown', 'secondary', profile=doc)['value'])
 
 
+    def test_bench_density_uses_the_same_ladder_park_class_default_last(self):
+        doc = profile()
+        doc['classes']['park'] = {'furniture': {'bench_per_100m': 5}}
+        result = gs.bench_density((0, 0), 'park', profile=doc)
+        self.assertEqual((result['value'], result['layer'], result['provenance']['source']), (5, 'district', 'inference'))
+        self.assertEqual(result['provenance']['evidence_ids'], ['synthetic-area-study'])
+        conv = {'furniture': {'bench_per_100m': 2}, 'overrides': {'7': {'furniture': {'bench_per_100m': 0.5}}}}
+        self.assertEqual(gs.bench_density((0, 0), 'park', conv, '7', profile=doc)['value'], 0.5)
+        self.assertEqual(gs.bench_density((0, 0), 'park', conv, '8', profile=doc)['value'], 2)
+        result = gs.bench_density((0, 0), 'park', profile={})
+        self.assertEqual((result['value'], result['layer']), (1.5, 'class'))               # shipped park row
+        for cls in ('residential', 'unknown', 'rural'):
+            self.assertIsNone(gs.bench_density((0, 0), cls, profile=doc)['value'], cls)
+
+    def test_profile_may_carry_bench_density_for_park_only_validation(self):
+        doc = profile()
+        doc['classes']['park'] = {'furniture': {'bench_per_100m': 101}}
+        with self.assertRaises(dp.ProfileError):
+            dp.validate_profile(doc)
+
+
 class ProfilePipeline(unittest.TestCase):
     def garden(self, *, conv=None, doc=None, share=0, cls='residential', identified=True):
         house = {(x, z) for x in range(2, 8) for z in range(8, 13)}

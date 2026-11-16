@@ -285,8 +285,10 @@ class TestReviewFixes(unittest.TestCase):
         idx = mock.Mock()
         idx.cells.return_value = {}
         idx.buildings = []
+        idx.areas = []
         vmap = types.SimpleNamespace(road=set(), feat=set(), water=set(), water_line=set(), hedge=set(),
-                                     wall=set(), fence=set(), furniture=[])
+                                     wall=set(), fence=set(), furniture=[], marks=set(),
+                                     road_lines=[], path_lines=[])
         plan = types.SimpleNamespace(cells={}, keep_slab_cells=set(),
                                      set=lambda x, y, z, b: plan.cells.__setitem__((x, y, z), b))
         world = mock.Mock()

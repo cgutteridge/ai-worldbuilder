@@ -347,6 +347,12 @@ def road_width(t: dict) -> float:
 STEPS_HALF_WIDTH = 1.2     # highway=steps half width in blocks
 
 
+def _way_line(t: dict, pts, half: float) -> dict:
+    """One mapped way as the furniture inference reads it: class, centreline, half width, lit and footway tags."""
+    return {'highway': t.get('highway'), 'points': [(float(p[0]), float(p[1])) for p in pts],
+            'half': float(half), 'lit': t.get('lit'), 'footway': t.get('footway')}
+
+
 class OSMGround:
     """Vector map rasterised to one kind + priority per column, plus road/barrier extras."""
 
@@ -372,6 +378,8 @@ class OSMGround:
         self.trees: list = []         # (x, z) natural=tree points
         self.tree_rows: list = []     # natural=tree_row polylines as [(x, z), ...] in MC (#157)
         self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
+        self.road_lines: list = []    # {'highway','points','half','lit','footway'} per mapped carriageway (#260)
+        self.path_lines: list = []    # same, per mapped path (footway, path, cycleway, pedestrian, ...)
         feats = load_osm(cell)
         self.n_features = len(feats)  # reporting for dry runs (#113); 0 is legitimate
         self._load(feats)
@@ -454,6 +462,7 @@ class OSMGround:
             return
         if hw in ROAD_CLASSES or hw == 'service' or hw == 'track':
             half = road_width(t) / 2
+            self.road_lines.append(_way_line(t, pts, half))
             cells = line_cells(pts, half)
             kind = SURFACE_KIND.get(t.get('surface'), 'tarmac')
             pri = PRI['service'] if hw in ('service', 'track') else PRI['road']
@@ -463,6 +472,7 @@ class OSMGround:
                 if half >= 3 and t.get('oneway') != 'yes':
                     self.marks |= centre_mark_cells(cells)
         elif hw in PATH_WIDTH:
+            self.path_lines.append(_way_line(t, pts, PATH_WIDTH[hw] / 2))
             self._fid += 1
             self._put(line_cells(pts, PATH_WIDTH[hw] / 2),
                       SURFACE_KIND.get(t.get('surface'), 'tarmac' if hw == 'cycleway' else 'paving'), PRI['path'],

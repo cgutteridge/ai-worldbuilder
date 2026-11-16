@@ -134,6 +134,15 @@ def validate_table(doc: dict) -> dict:
                     raise TableError(f'{cid}: flowers kinds must be 1-2 names from foliage.REFINE_PLANTS')
             if planting['pond'] is not None:
                 raise TableError(f'{cid}: planting pond must stay null')
+        furniture = row['furniture']
+        if furniture is not None:
+            if not fr['inference']:
+                raise TableError(f'{cid}: this class allows no furniture inference')
+            if not isinstance(furniture, dict) or set(furniture) != {'bench_per_100m'}:
+                raise TableError(f'{cid}: furniture must be null or {{bench_per_100m}}')
+            bench = furniture['bench_per_100m']
+            if isinstance(bench, bool) or not isinstance(bench, (int, float)) or not 0 < bench <= 100:
+                raise TableError(f'{cid}: bench_per_100m must be above 0 and at most 100')
         if cid == 'unknown' and (any(v is not None for v in fr['boundary'].values())
                                  or row['planting'] is not None or row['furniture'] is not None):
             raise TableError('unknown must not set a boundary, planting or furniture value')
@@ -320,7 +329,7 @@ def resolve(cls: str, key: str, *, role: str | None = None, property: dict | Non
     fence and ``unknown`` never invents one; scalar fields always have a class default.
 
     @param cls: class id of the property
-    @param key: ``'boundary'``, ``'lamp_spacing'`` or a scalar frontage field
+    @param key: ``'boundary'``, ``'lamp_spacing'``, ``'bench_per_100m'`` or a scalar frontage field
     @param role: boundary role, or OSM highway class for ``lamp_spacing``
     @param property: per-house override dict (``overrides.<number>``) or None
     @param street: street convention dict or None
@@ -341,6 +350,12 @@ def resolve(cls: str, key: str, *, role: str | None = None, property: dict | Non
                 return {'value': lamps[role], 'layer': name, 'open': False}
         value = (load_table().get('highways', {}).get(role)
                  if cls in CLASSES and cls not in NO_INFERENCE and fr['inference'] else None)
+        return {'value': value, 'layer': 'class' if value is not None else None, 'open': False}
+    if key == 'bench_per_100m':
+        for name, layer in layers:
+            if layer and 'bench_per_100m' in layer:
+                return {'value': layer['bench_per_100m'], 'layer': name, 'open': False}
+        value = (row['furniture'] or {}).get('bench_per_100m') if fr['inference'] else None
         return {'value': value, 'layer': 'class' if value is not None else None, 'open': False}
     field = role if key == 'boundary' else key
     for n, (name, layer) in enumerate(layers):

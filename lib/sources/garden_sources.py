@@ -105,6 +105,32 @@ def lamp_spacing(cell: tuple[int, int], cls: str, highway: str, conv: dict | Non
     return {**result, 'provenance': prov.provenance_record(source='inference', confidence='low', evidence_ids=ids)}
 
 
+def bench_density(cell: tuple[int, int], cls: str, conv: dict | None = None, number: str = '', *,
+                  profile: dict | None = None) -> dict:
+    """Resolve bench density (per 100 blocks of path) for #260; null means no bench inference.
+
+    Same ladder as :func:`lamp_spacing`: per-house override, street convention, district profile,
+    then the class row's ``furniture`` section (shipped for ``park`` only).
+
+    @param cell: world-grid cell; profile is loaded here unless supplied by the caller
+    @param cls: adjoining land-use class id
+    @param conv: optional street convention, with a furniture section
+    @param number: optional per-property furniture override
+    @param profile: already loaded profile
+    @returns: value/layer/open resolution with inference provenance and evidence ids
+    """
+    import provenance as prov
+
+    profile = load_district(cell) if profile is None else profile
+    prop, street = _layers(conv, number)
+    furniture = ((profile or {}).get('classes', {}).get(cls, {}).get('furniture') or {})
+    result = land_use.resolve(cls, 'bench_per_100m',
+                              property=(prop or {}).get('furniture'), street=(street or {}).get('furniture'),
+                              district=furniture)
+    ids = (profile or {}).get('evidence_ids', ()) if result['layer'] == 'district' else (conv or {}).get('evidence_ids', ())
+    return {**result, 'provenance': prov.provenance_record(source='inference', confidence='low', evidence_ids=ids)}
+
+
 def _layers(conv: dict | None, number: str) -> tuple[dict | None, dict | None]:
     """(per-house override, street convention) layers for ``land_use.resolve``."""
     if not conv:

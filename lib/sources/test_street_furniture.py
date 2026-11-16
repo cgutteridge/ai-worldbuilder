@@ -135,5 +135,90 @@ class DesignerSpec(unittest.TestCase):
                          [(10, 20, 'bench', 'map'), (11, 20, 'bollard', 'designer')])
 
 
+TABLE = {'residential': 30, 'primary': 38, 'footway': 40, 'service': None}
+ROAD = [(0.0, 0.0), (300.0, 0.0)]          # a straight 300-block strip along +x, centreline z=0
+
+
+class LampPositions(unittest.TestCase):
+    """#260: labelled lamp inference along a synthetic road strip."""
+
+    def lamps(self, highway='residential', seed=1, **kw):
+        return sf.lamp_positions(ROAD, highway, TABLE, seed, **kw)
+
+    def test_spacing_follows_the_highway_class(self):
+        for highway, spacing in (('residential', 30), ('primary', 38), ('footway', 40)):
+            xs = [i['x'] for i in self.lamps(highway)]
+            self.assertGreaterEqual(len(xs), int(300 // spacing) - 1)
+            self.assertLessEqual(len(xs), int(300 // spacing) + 1)
+            gaps = [b - a for a, b in zip(xs, xs[1:])]
+            self.assertTrue(all(abs(g - spacing) <= 1 for g in gaps), (highway, gaps))
+        self.assertGreater(len(self.lamps('residential')), len(self.lamps('primary')))
+
+    def test_lamps_alternate_sides_and_stand_off_the_carriageway(self):
+        items = self.lamps(half_width=4.5)
+        sides = [1 if i['z'] > 0 else -1 for i in items]
+        self.assertTrue(all(a != b for a, b in zip(sides, sides[1:])))
+        # carriageway columns are those within 4.5 of the centreline: a lamp column centre is beyond it
+        self.assertTrue(all(abs(i['z'] + 0.5) >= 4.5 + 0.5 for i in items))
+
+    def test_every_item_is_labelled_inference_and_low_confidence(self):
+        items = self.lamps()
+        self.assertTrue(items)
+        for item in items:
+            self.assertEqual((item['kind'], item['source'], item['confidence']),
+                             ('street_lamp', 'inference', 'low'))
+            self.assertIn(item['kind'], sf.RECIPES)
+
+    def test_same_seed_same_lamps_other_seed_other_phase(self):
+        self.assertEqual(self.lamps(seed=7), self.lamps(seed=7))
+        self.assertNotEqual([i['x'] for i in self.lamps(seed=7)], [i['x'] for i in self.lamps(seed=8)])
+        self.assertEqual(sf.stable_seed('48,-44', 12), sf.stable_seed('48,-44', 12))
+        self.assertNotEqual(sf.stable_seed('48,-44', 12), sf.stable_seed('48,-44', 13))
+
+    def test_class_without_spacing_is_unlit_unless_lit_says_so(self):
+        self.assertEqual(self.lamps('service'), [])          # null in the table
+        self.assertEqual(self.lamps('cycleway'), [])         # absent from the table
+        self.assertEqual(self.lamps('residential', lit='no'), [])
+        lit = self.lamps('cycleway', lit='yes')
+        self.assertTrue(lit)                                  # lit=yes lights it at the fallback spacing
+        self.assertEqual({i['spacing'] for i in lit}, {sf.LIT_FALLBACK_SPACING})
+        self.assertEqual({i['spacing'] for i in self.lamps('residential', lit='yes')}, {30.0})
+
+    def test_bent_road_follows_the_line_and_degenerate_lines_give_nothing(self):
+        bent = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]
+        items = sf.lamp_positions(bent, 'residential', TABLE, 3, half_width=3.0)
+        self.assertTrue(any(i['x'] > 90 and i['z'] > 10 for i in items))     # lamps on the second leg
+        self.assertEqual(sf.lamp_positions([(5.0, 5.0)], 'residential', TABLE, 3), [])
+        self.assertEqual(sf.lamp_positions([(5.0, 5.0), (5.0, 5.0)], 'residential', TABLE, 3), [])
+
+
+class BenchPositions(unittest.TestCase):
+    """#260: bench inference along a synthetic path."""
+
+    PATH = [(0.0, 0.0), (200.0, 0.0)]
+
+    def test_density_and_labels(self):
+        counts = [len(sf.bench_positions(self.PATH, 1.5, seed)) for seed in range(40)]
+        self.assertTrue(set(counts) <= {2, 3})                       # 1.5 per 100 on 200 blocks: 3 expected
+        self.assertGreater(sum(counts) / len(counts), 2.5)
+        for item in sf.bench_positions(self.PATH, 1.5, 1):
+            self.assertEqual((item['kind'], item['source'], item['confidence']),
+                             ('bench', 'inference', 'low'))
+            self.assertGreaterEqual(abs(item['z'] + 0.5), 1.0 + 0.5)   # beside the path, not on it
+            self.assertTrue(0 <= item['x'] <= 200)
+
+    def test_no_density_no_benches_and_seed_is_stable(self):
+        self.assertEqual(sf.bench_positions(self.PATH, 0, 1), [])
+        self.assertEqual(sf.bench_positions(self.PATH, None, 1), [])
+        self.assertEqual(sf.bench_positions([(0.0, 0.0)], 5, 1), [])
+        self.assertEqual(sf.bench_positions(self.PATH, 1.5, 4), sf.bench_positions(self.PATH, 1.5, 4))
+
+    def test_benches_are_spread_not_clumped(self):
+        items = sf.bench_positions([(0.0, 0.0), (400.0, 0.0)], 2.0, 5)
+        xs = sorted(i['x'] for i in items)
+        self.assertGreaterEqual(len(xs), 7)
+        self.assertTrue(all(b - a >= 10 for a, b in zip(xs, xs[1:])), xs)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,5 @@
 {
- "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
+ "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Furniture (#260): park ships bench_per_100m (benches on its paths); every other class ships null. highways is the default lamp spacing in blocks along the way, staggered either side, per OSM highway class; a class absent here (service, path, cycleway, steps, links) is not lit by inference, and a district profile or street convention beats it. Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
  "classes": [
   {
    "id": "residential",
@@ -266,7 +266,7 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": {"bench_per_100m": 1.5}
   },
   {
    "id": "rural",
@@ -502,5 +502,16 @@
    "planting": null,
    "furniture": null
   }
- ]
+ ],
+ "highways": {
+  "trunk": 40,
+  "primary": 38,
+  "secondary": 36,
+  "tertiary": 34,
+  "unclassified": 34,
+  "residential": 30,
+  "living_street": 28,
+  "pedestrian": 30,
+  "footway": 40
+ }
 }

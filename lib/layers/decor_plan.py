@@ -17,6 +17,8 @@ Sources (cheapest first; later still listed when they add something new):
 """
 from __future__ import annotations
 
+import math
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
@@ -458,6 +460,12 @@ def build_decor_plan(
     lidar_rise: Mapping[str, Any] | None = None,
     plot_owner: Mapping[tuple[int, int], int] | None = None,
     building_columns: set[tuple[int, int]] | None = None,
+    road_lines: Sequence[Mapping[str, Any]] = (),
+    path_lines: Sequence[Mapping[str, Any]] = (),
+    land_classes: Mapping[tuple[int, int], str] | None = None,
+    carriageway: set[tuple[int, int]] | None = None,
+    furniture_avoid: set[tuple[int, int]] | None = None,
+    district_profile: Mapping[str, Any] | None = None,
     evidence_ids: Sequence[str] = (),
     root=None,
 ) -> dict[str, Any]:
@@ -484,9 +492,19 @@ def build_decor_plan(
     @param plot_owner: ``{(x, z): plot id}``; read from the garden report when ``garden`` is built here
     @param building_columns: every building column near the cell (outbuilding blobs keep one column
         clear of them); ``footprint`` when omitted
+    @param road_lines: mapped carriageways for lamp inference (``OSMGround.road_lines``); none, none inferred
+    @param path_lines: mapped paths for bench and lamp inference (``OSMGround.path_lines``)
+    @param land_classes: ``{(x, z): land-use class}`` around the cell (:func:`land_class_columns`);
+        picks the class that decides a way's lamp spacing and bench density
+    @param carriageway: road columns no inferred furniture may stand on
+    @param furniture_avoid: further columns inferred furniture skips (buildings, paths, water)
+    @param district_profile: district profile for the cell; loaded from the world when omitted and
+        any ways are given
     @param evidence_ids: default evidence ids for aerial-derived rows
     @param root: world root for provenance evidence checks
-    @returns: ``{'cell': [tx, tz], 'items': [...], 'reserved': {...}, 'frontages': [...]}``
+    @returns: ``{'cell': [tx, tz], 'items': [...], 'reserved': {...}, 'frontages': [...]}``; with
+        ways given also ``'furniture_inference'`` (counts by outcome and reason, see
+        :func:`infer_street_furniture`)
     """
     from ground_sources import OSMGround, aerial_rgb
     import garden_sources as gs
@@ -709,10 +727,232 @@ def build_decor_plan(
     keep_clear = (set(openings or ()) | set(route)
                   | gs.reserved_openings(frontages or ()) | gs.reserved_route(frontages or ()))
     reserved = reserve_openings(items, keep_clear)
-    return {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
+    inference = None
+    if road_lines or path_lines:
+        # Last of all: a mapped point, designer trace or labelled object at or near a spot wins.
+        observed = [i for i in reserved['items'] if i.get('role') == 'furniture' and i.get('cell')
+                    and (i.get(prov.PROVENANCE_KEY) or {}).get('source') != 'inference']
+        inferred, inference = infer_street_furniture(
+            cell, road_lines=road_lines, path_lines=path_lines, land_classes=land_classes or {},
+            observed=observed, profile=district_profile, evidence_ids=evidence_ids, root=root,
+            keep_out={
+                'door route or entrance opening': _dilate(keep_clear, ROUTE_CLEARANCE),
+                'carriageway': set(carriageway or ()),
+                'building, path or water column': set(furniture_avoid or ()) | object_columns,
+            })
+        reserved['items'] = list(reserved['items']) + inferred
+    plan = {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
             'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),
                          'conflicts': reserved['conflicts']},
             'frontages': [compact_frontage(f) for f in frontages or ()]}
+    if inference is not None:
+        plan['furniture_inference'] = inference
+    return plan
+
+
+# --- inferred street furniture (#260, I-008) -----------------------------------------------
+ROUTE_CLEARANCE = 1       # columns kept clear around a door route or entrance opening
+LAMP_MIN_GAP = 10         # blocks between two inferred lamps, whichever ways they stand on
+BENCH_MIN_GAP = 8
+OBSERVED_LAMP_SHARE = 0.75    # a mapped or designed lamp suppresses inferred ones within this share of the spacing
+OBSERVED_BENCH_RADIUS = 8     # ... and a mapped or designed bench within this many blocks
+BENCH_PATHS = ('footway', 'path', 'pedestrian')
+CLASS_REACH = 10          # blocks either side of a way looked at to find the land it adjoins
+CLASS_STEP = 3.0          # blocks between samples along the way
+
+
+def _dilate(cols: Iterable[tuple[int, int]], n: int) -> set[tuple[int, int]]:
+    cols = {tuple(c) for c in cols}
+    if n <= 0:
+        return cols
+    return {(x + a, z + b) for x, z in cols for a in range(-n, n + 1) for b in range(-n, n + 1)}
+
+
+def land_class_columns(idx, box: tuple[int, int, int, int]) -> dict[tuple[int, int], str]:
+    """Land-use class (#253) of each column in ``box`` that a polygon or building classifies.
+
+    Area polygons by the coverage rule (smallest use polygon, then cover), then each building's own
+    class over its footprint. Columns nothing classifies are absent (``unknown`` claims nothing).
+
+    @param idx: ``OSMIndex``
+    @param box: inclusive ``(x0, z0, x1, z1)``
+    @returns: ``{(x, z): class id}``
+    """
+    from coverage import area_classes, building_land_use
+
+    classes = area_classes(idx, box)
+    out = {q: v[0] for q, v in classes.items() if v[0] != 'unknown'}
+    x0, z0, x1, z1 = box
+    by_building: dict[int, str] = {}
+    for q, i in idx.cells().items():
+        if not (x0 <= q[0] <= x1 and z0 <= q[1] <= z1):
+            continue
+        if i not in by_building:
+            rings, props = idx.buildings[i]
+            by_building[i] = building_land_use(idx, rings, props, classes)['class']
+        if by_building[i] != 'unknown':
+            out[q] = by_building[i]
+    return out
+
+
+def adjoining_class(points: Sequence[Sequence[float]], half_width: float,
+                    land_classes: Mapping[tuple[int, int], str], *,
+                    reach: float = CLASS_REACH, step: float = CLASS_STEP) -> str:
+    """Land-use class a way adjoins: the most common class within ``reach`` blocks of its edges.
+
+    Samples the way's own columns and both sides out to ``half_width + reach`` every ``step``
+    blocks. Ties go to the class id that sorts first, so a way always gets the same answer.
+
+    @param points: way centreline ``(x, z)``
+    @param half_width: half the carriageway or path width
+    @param land_classes: :func:`land_class_columns` result
+    @param reach: how far past the edge to look
+    @param step: sampling interval
+    @returns: class id, or ``'unknown'`` when nothing classified is near
+    """
+    import street_furniture as sf
+
+    length = sf.polyline_length(points)
+    n = max(int(length // step) + 1, 1)
+    offsets = [0.0] + [sign * d for d in range(1, int(half_width + reach) + 1, 2) for sign in (1, -1)]
+    votes: Counter = Counter()
+    for x, z, tx, tz in sf._stations(points, [min(i * step, length) for i in range(n)]):
+        for d in offsets:
+            cls = land_classes.get((math.floor(x - tz * d), math.floor(z + tx * d)))
+            if cls:
+                votes[cls] += 1
+    return min(votes, key=lambda c: (-votes[c], c)) if votes else 'unknown'
+
+
+def infer_street_furniture(
+    cell: tuple[int, int],
+    *,
+    road_lines: Sequence[Mapping[str, Any]] = (),
+    path_lines: Sequence[Mapping[str, Any]] = (),
+    land_classes: Mapping[tuple[int, int], str],
+    observed: Sequence[Mapping[str, Any]] = (),
+    keep_out: Mapping[str, set[tuple[int, int]]] | None = None,
+    profile: Mapping[str, Any] | None = None,
+    evidence_ids: Sequence[str] = (),
+    root=None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Labelled lamp and bench plan items where the map holds no point for them (#260, I-008).
+
+    Lamps follow mapped roads and paths at a spacing resolved by ``land_use.resolve`` from the land
+    the way adjoins (district profile, else the table's ``highways`` map; null or a class that allows
+    no inference means none; OSM ``lit=no`` means none, ``lit=yes`` lights a way the table does not).
+    Benches follow footways, paths and pedestrian ways whose adjoining class row (or profile) gives a
+    ``bench_per_100m`` (park only, as shipped). Every item is ``inference`` / ``low`` and never reads
+    as observed. A candidate is dropped, and counted by reason, when it:
+
+      * is outside the cell,
+      * stands on a column an observed item holds, or within the suppression radius of an observed
+        item of its kind (a mapped point, designer trace or labelled object wins),
+      * stands in any ``keep_out`` set (door route and entrance opening, carriageway, building, path
+        or water column),
+      * is closer than the minimum gap to an inferred item of its kind already kept.
+
+    @param cell: ``(tx, tz)``
+    @param road_lines: ``{'highway', 'points', 'half', 'lit'?, 'footway'?, 'seed'?}`` per mapped road
+    @param path_lines: same shape per mapped path
+    @param land_classes: :func:`land_class_columns` result
+    @param observed: plan furniture items from map, designer or photo (rows with a ``cell``)
+    @param keep_out: ``{reason: columns}``; the first set holding a candidate names its reason
+    @param profile: district profile; loaded from the world when None
+    @param evidence_ids: evidence ids from the caller; a profile's own ids are added for its spacing
+    @param root: world root for the evidence check
+    @returns: ``(items, summary)``; summary has ``lamps``, ``benches``, ``candidates``, ``dropped``
+        (reason: count), ``ways_skipped`` (reason: count), ``lit_tags`` and ``spacing_layers``
+    """
+    from ground_sources import cell_box
+    import garden_sources as gs
+    import street_furniture as sf
+
+    profile = gs.load_district(cell) if profile is None else profile
+    x0, z0, x1, z1 = cell_box(cell)
+    taken = {tuple(i['cell']) for i in observed}
+    seen_kind = {}
+    for item in observed:
+        seen_kind.setdefault(item.get('kind'), []).append(tuple(item['cell']))
+    keep_out = dict(keep_out or {})
+    dropped: Counter = Counter()
+    skipped: Counter = Counter()
+    lit_tags: Counter = Counter()
+    layers: Counter = Counter()
+    items: list[dict[str, Any]] = []
+    kept: dict[str, list[tuple[int, int]]] = {'street_lamp': [], 'bench': []}
+    summary = {'lamps': 0, 'benches': 0, 'candidates': 0}
+
+    def admit(cand: dict[str, Any], radius: float, gap: float, note: str, ids) -> None:
+        summary['candidates'] += 1
+        q = (cand['x'], cand['z'])
+        if not (x0 <= q[0] <= x1 and z0 <= q[1] <= z1):
+            dropped['outside cell'] += 1
+            return
+        near = [o for o in seen_kind.get(cand['kind'], ()) if math.dist(o, q) <= radius]
+        if q in taken or near:
+            dropped['mapped or designed item here or nearby'] += 1
+            return
+        for reason, cols in keep_out.items():
+            if q in cols:
+                dropped[reason] += 1
+                return
+        if any(math.dist(o, q) < gap for o in kept[cand['kind']]):
+            dropped['too close to another inferred item'] += 1
+            return
+        kept[cand['kind']].append(q)
+        item = _furniture_item(q[0], q[1], cand['kind'], source='inference', confidence='low',
+                               evidence_ids=ids, note=note, root=root)
+        item['id'] = _item_id('infer-' + cand['kind'], *q)
+        item['inferred'] = {k: v for k, v in cand.items() if k not in ('kind', 'x', 'z', 'source', 'confidence')}
+        items.append(item)
+        summary['lamps' if cand['kind'] == 'street_lamp' else 'benches'] += 1
+
+    for way, is_path in [(w, False) for w in road_lines] + [(w, True) for w in path_lines]:
+        highway, pts = way.get('highway'), way.get('points') or []
+        lit = way.get('lit') or None
+        lit_tags[lit or 'absent'] += 1
+        if way.get('footway') in sf.UNLIT_FOOTWAYS:
+            skipped['sidewalk or crossing (the road carries the lamps)'] += 1
+            continue
+        half = float(way.get('half') or (1.0 if is_path else 3.0))
+        cls = adjoining_class(pts, half, land_classes)
+        seed = int(way.get('seed') if way.get('seed') is not None
+                   else sf.stable_seed(cell, highway, *(round(c) for c in (pts[0] if pts else (0, 0)))))
+        resolved = gs.lamp_spacing(cell, cls, highway, profile=profile or {})
+        stop = resolved['value'] is None and resolved['layer'] is not None   # an explicit null: unlit on purpose
+        if not stop:
+            table = {highway: resolved['value']}
+            candidates = sf.lamp_positions(pts, highway, table, seed, half_width=half, lit=lit)
+            if candidates:
+                layers[resolved['layer'] or 'lit tag'] += 1
+                spacing = candidates[0]['spacing']
+                ids = list(evidence_ids) + list(resolved['provenance']['evidence_ids'] if resolved['layer'] else ())
+                basis = {'district': 'district profile', 'class': 'class table', None: 'OSM lit=yes'}.get(
+                    resolved['layer'], f"{resolved['layer']} convention")
+                for cand in candidates:
+                    cand.update(land_class=cls, layer=resolved['layer'] or 'lit tag')
+                    admit(cand, spacing * OBSERVED_LAMP_SHARE, LAMP_MIN_GAP,
+                          f'inferred lamp: {highway} way beside {cls} land, {spacing:g}-block spacing ({basis}); not observed',
+                          ids)
+            else:
+                skipped['no lamp spacing for this way (class, highway or lit=no)'] += 1
+        else:
+            skipped['profile sets no lamps for this highway'] += 1
+        if is_path and highway in BENCH_PATHS:
+            dens = gs.bench_density(cell, cls, profile=profile or {})
+            if dens['value'] is None:
+                skipped['no bench density for the adjoining class'] += 1
+                continue
+            ids = list(evidence_ids) + list(dens['provenance']['evidence_ids'] if dens['layer'] else ())
+            for cand in sf.bench_positions(pts, dens['value'], seed + 1, half_width=half):
+                cand.update(land_class=cls, layer=dens['layer'], per_100m=dens['value'])
+                admit(cand, OBSERVED_BENCH_RADIUS, BENCH_MIN_GAP,
+                      f'inferred bench: {highway} through {cls} land, {dens["value"]:g} per 100 blocks '
+                      f'({dens["layer"]}); not observed', ids)
+    summary.update(dropped=dict(dropped), ways_skipped=dict(skipped), lit_tags=dict(lit_tags),
+                   spacing_layers=dict(layers))
+    return items, summary
 
 
 def _outbuilding_items(
