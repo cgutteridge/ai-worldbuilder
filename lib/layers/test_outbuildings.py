@@ -268,9 +268,9 @@ class TestRefusals(unittest.TestCase):
         found, _report, unplaced = place(self.items, extra=roof, owned=set(roof))
         self.assertEqual((found, self.reasons(unplaced)), ({}, ['feature above terrain']))
 
-    def test_ground_block_owned_by_a_feature_is_no_ground(self):
+    def test_ground_block_owned_by_a_feature_is_feature_above_terrain(self):
         found, _report, unplaced = place(self.items, owned={(31, GROUND, 31)})
-        self.assertEqual((found, self.reasons(unplaced)), ({}, ['no ground at terrain']))
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['feature above terrain']))
 
 
 class TestReviewFixes(unittest.TestCase):

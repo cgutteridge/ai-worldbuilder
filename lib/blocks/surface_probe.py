@@ -106,3 +106,17 @@ def raised_over_terrain(w: World, x: int, z: int, y: int) -> bool:
     """True when the live surface of the column stands above terrain ``y`` (a roof or deck over the ground)."""
     live = surface_y(w, x, z)
     return bool(live and live[0] > y)
+
+
+def ground_missing_reason(hm, x: int, z: int, owned=()) -> str:
+    """Why :func:`ground_at` found no ground, as the reason the layers report.
+
+    'feature above terrain' where a feature owns the block at terrain Y (it stands on, in or over the
+    ground: a building's own floor or wall), 'no ground at terrain' where terrain exists but the block
+    there is not solid ground (air, a plant, a log, a floating base), 'no surface' where there is no terrain
+    and the live column is empty.
+    """
+    y = terrain_y(hm, x, z)
+    if y is None:
+        return 'no surface'
+    return 'feature above terrain' if (x, y, z) in owned else 'no ground at terrain'

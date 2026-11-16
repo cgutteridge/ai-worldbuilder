@@ -39,7 +39,7 @@ from script_env import ROOT  # noqa: E402
 
 from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, is_air,  # noqa: E402
                           load_masked_positions, neighbour_owned, warm_surface_probe)
-from surface_probe import ground_at, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
+from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from plant_cell_canopy import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
@@ -617,7 +617,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
         return ground_at(world, inputs.terrain, x, z, owned=owned, masked=masked, fallback=surface_y)
 
     def no_ground(x, z):
-        return 'no ground at terrain' if terrain_y(inputs.terrain, x, z) is not None else 'no surface'
+        return ground_missing_reason(inputs.terrain, x, z, owned)
 
     def candidate(x, z, r, observed):
         if (x, 0, z) not in cell_xz:

@@ -670,10 +670,10 @@ class TestTerrainGround(unittest.TestCase):
         self.assertFalse(placed)
         self.assertEqual(report['skipped'][0][-1], 'no ground at terrain')
 
-    def test_feature_owned_block_at_terrain_is_no_ground(self):
+    def test_feature_owned_block_at_terrain_is_feature_above_terrain_and_never_ground(self):
         placed, report = self.plan(owned={(10, self.GROUND, 10)})
         self.assertFalse(placed)
-        self.assertEqual(report['skipped'][0][-1], 'no ground at terrain')
+        self.assertEqual(report['skipped'][0][-1], 'feature above terrain')
 
     def test_missing_terrain_keeps_todays_live_surface_and_is_reported(self):
         for terrain, x0 in ((None, 0), (0, 0), (60, 500)):          # no map, zero terrain, column outside the map

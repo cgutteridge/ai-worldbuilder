@@ -10,7 +10,7 @@ cannot resolve are listed, not silently skipped. Placed only where the live bloc
 the cell. Items stand on the true ground: the block at lidar terrain Y (``surface_probe.ground_at``), never
 the live top block, so a roof or deck over the ground is not ground (#301). A column with no solid unowned
 block at terrain Y is unplaced ('no ground at terrain'); an item whose own column holds a feature-owned
-block between terrain and its top is unplaced ('feature above terrain'); where terrain is missing the live
+block from terrain up to its top (the ground block itself included) is unplaced ('feature above terrain'); where terrain is missing the live
 surface is used as before. Then any wall or fence pieces of the same type that one extra block could link
 (face to face, diagonal is disjoint) are joined, one block per join, repeating until none
 remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
@@ -192,13 +192,6 @@ def on_carriageway(world: World, x: int, z: int, lidar_hm: Mapping[str, Any] | N
     return column_ground_kind(world, x, z, lidar_hm) in sf.ROAD_KINDS
 
 
-def no_ground_reason(lidar_hm: Mapping[str, Any] | None, x: int, z: int) -> str:
-    """Why a column has no ground: 'no ground at terrain' where lidar terrain exists, else 'no surface'."""
-    from surface_probe import terrain_y
-
-    return 'no ground at terrain' if terrain_y(lidar_hm, x, z) is not None else 'no surface'
-
-
 def may_join_at(
     pos: tuple[int, int, int],
     mat: str,
@@ -326,7 +319,7 @@ def place_furniture(
                      not on a roof over it; the live surface is used only where terrain is missing
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
-    from surface_probe import ground_at, raised_over_terrain, terrain_y
+    from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
@@ -349,7 +342,7 @@ def place_furniture(
             continue
         top = ground_at(world, lidar_hm, x, z, owned, masked)
         if not top:
-            unplaced.append(dplan.mark_unplaced(item, no_ground_reason(lidar_hm, x, z)))
+            unplaced.append(dplan.mark_unplaced(item, ground_missing_reason(lidar_hm, x, z, owned)))
             continue
         stack = sf.recipe(kind)
         voxels: dict[tuple[int, int, int], str] = {}
@@ -407,7 +400,7 @@ def place_barriers_from_plan(
     @param lidar_hm: lidar height map; barriers stand on the block at terrain Y (:func:`surface_probe.ground_at`)
     @returns: (placements, placed report rows, unplaced items)
     """
-    from surface_probe import ground_at, raised_over_terrain, terrain_y
+    from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
     present: dict[tuple[int, int, int], str] = {}
@@ -445,7 +438,7 @@ def place_barriers_from_plan(
                 unplaced.append(dplan.mark_unplaced(
                     {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
                     'on road/path/water or no surface' if q in way or terrain_y(lidar_hm, *q) is None
-                    else 'no ground at terrain',
+                    else ground_missing_reason(lidar_hm, *q, owned),
                 ))
                 continue
             if on_carriageway(world, q[0], q[1], lidar_hm):
@@ -536,7 +529,7 @@ def place_outbuildings(
     @param lidar_hm: lidar height map with ``terrain``
     @returns: (placements, placed report rows, unplaced items)
     """
-    from surface_probe import ground_at
+    from surface_probe import ground_at, ground_missing_reason
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
@@ -574,8 +567,9 @@ def place_outbuildings(
             if min(ground.values()) <= 0:
                 refuse('no lidar ground')
                 continue
-            if any(not ground_at(world, lidar_hm, *q, owned, masked) for q in cells):
-                refuse('no ground at terrain')
+            missing = [q for q in cells if not ground_at(world, lidar_hm, *q, owned, masked)]
+            if missing:
+                refuse(ground_missing_reason(lidar_hm, *missing[0], owned))
                 continue
             blocks = ob.voxels(item, ground)
             bad = [p for p in blocks if not is_air(world.block(*p)) or p in owned or p in masked or p in found]

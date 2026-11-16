@@ -82,6 +82,13 @@ class TestGroundAt(unittest.TestCase):
         self.assertEqual(sp.ground_at(w, None, 1, 1, owned={(1, 70, 1)}), (70, 'red_concrete'))   # today's behaviour
         self.assertEqual(sp.ground_at(w, None, 1, 1, fallback=lambda *_a: (3, 'x')), (3, 'x'))
 
+    def test_missing_reason_names_the_cause(self):
+        h = hm()
+        self.assertEqual(sp.ground_missing_reason(h, 1, 1), 'no ground at terrain')
+        self.assertEqual(sp.ground_missing_reason(h, 1, 1, owned={(1, 64, 1)}), 'feature above terrain')
+        self.assertEqual(sp.ground_missing_reason(h, 1, 1, owned={(1, 70, 1)}), 'no ground at terrain')
+        self.assertEqual(sp.ground_missing_reason(None, 1, 1), 'no surface')
+
     def test_raised_over_terrain(self):
         w = _Grid({(1, 64, 1): 'minecraft:grass_block', (1, 70, 1): 'minecraft:red_concrete', (2, 64, 1): 'minecraft:grass_block'})
         self.assertTrue(sp.raised_over_terrain(w, 1, 1, 64))
