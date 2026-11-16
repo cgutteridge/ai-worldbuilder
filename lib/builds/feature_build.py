@@ -455,11 +455,38 @@ def assign_roof_zones(
     return readable, zone, levels_used, axis_used, dropped
 
 
+def _cap_lone_cells(rise_m: np.ndarray, sel: np.ndarray, readable: np.ndarray) -> np.ndarray:
+    """Cap each in-zone cell's rise at its highest readable 8-neighbour's rise.
+
+    A lone one-cell spike (chimney, plant room, noise) has no neighbour as
+    high, so it drops to the neighbour level; a ridge two or more cells wide
+    keeps its height because neighbours match it.
+
+    @param rise_m: metres above the zone plateau
+    @param sel: boolean mask of the zone's cells
+    @param readable: footprint mask; neighbours in another zone count, so a
+        crest on a zone edge keeps its height when the ridge runs on across it
+    @returns: capped rise (cells outside ``sel`` unchanged)
+    """
+    masked = np.where(readable, rise_m, -np.inf)
+    padded = np.pad(masked, 1, mode='constant', constant_values=-np.inf)
+    h, w = rise_m.shape
+    nb = np.full(rise_m.shape, -np.inf)
+    for dz in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dz == 0 and dx == 0:
+                continue
+            nb = np.maximum(nb, padded[1 + dz:1 + dz + h, 1 + dx:1 + dx + w])
+    cap = np.where(np.isfinite(nb), nb, rise_m)
+    return np.where(sel, np.minimum(rise_m, cap), rise_m)
+
+
 def zone_ridge_half_steps(
     med: np.ndarray,
     zone: np.ndarray,
     readable: np.ndarray,
     flat_tol_m: float = 1.0,
+    levels: list | None = None,
 ) -> np.ndarray:
     """Half-block rises above each zone plateau for pitched roofs.
 
@@ -467,26 +494,36 @@ def zone_ridge_half_steps(
     plateau, every cell in that zone stays at the eave (flat deck). Otherwise
     each cell rises ``max(0, round((med - level) * 2))`` half-steps (1 m ≈ 1
     block), so a lidar ridge becomes stair / slab / full-block courses instead
-    of stepped flat terraces.
+    of stepped flat terraces. A lone one-cell spike is no ridge (it cannot turn
+    a flat zone pitched), and each rise is clipped to the gap to the next zone
+    level so a bucket-edge mismatch cannot spike past the next plateau.
 
-    @param med: 5×5 median DSM metres AOD
+    @param med: median DSM metres AOD (pitched labels pass the 3×3 median so a
+        narrow ridge keeps its peak; zone snapping uses the 5×5)
     @param zone: snapped plateau grid (same shape)
     @param readable: footprint mask
     @param flat_tol_m: max rise that still counts as a flat plateau
+    @param levels: plateau levels for the next-level clip (default: the levels
+        present in ``zone`` over ``readable``)
     @returns: int half-steps above the zone eave (0 outside readable / flat zones)
     """
     out = np.zeros(zone.shape, dtype=int)
     if not readable.any():
         return out
     med_f = med.astype(float)
-    for level in np.unique(zone[readable]):
+    present = sorted({float(v) for v in np.unique(zone[readable])})
+    all_levels = sorted({float(v) for v in (levels if levels is not None else present)} | set(present))
+    for level in present:
         sel = readable & (zone == level)
         if not sel.any():
             continue
-        rise_m = med_f - float(level)
+        rise_m = _cap_lone_cells(med_f - level, sel, readable)
         if float(np.nanmax(rise_m[sel])) < flat_tol_m:
             continue
         half = np.maximum(0, np.rint(rise_m * 2).astype(int))
+        above = [v for v in all_levels if v > level]
+        if above:
+            half = np.minimum(half, int(np.rint((above[0] - level) * 2)))
         out[sel] = half[sel]
     return out
 
@@ -1474,7 +1511,7 @@ class Build:
             new_cells = mask_to_cells(readable, x0, z0)
             pitched = f.roof.get('kind') == 'pitched'
             half_grid = (
-                zone_ridge_half_steps(_win(dsm.astype(float), 5, np.median), zone, readable)
+                zone_ridge_half_steps(_win(dsm.astype(float), 3, np.median), zone, readable, levels=_levels)
                 if pitched else None
             )
             roof: dict = {}

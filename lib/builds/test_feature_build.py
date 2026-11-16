@@ -1675,6 +1675,100 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         )
 
 
+class RidgeHalfStepsTest(unittest.TestCase):
+    """#299: zone_ridge_half_steps keeps a narrow lidar ridge, ignores lone spikes, clips to the next level."""
+
+    def _grid(self, med):
+        med = np.asarray(med, dtype=float)
+        readable = np.ones(med.shape, dtype=bool)
+        return med, readable
+
+    def test_four_cell_ridge_two_metres_above_eave_gets_four_half_steps(self):
+        med = np.full((7, 12), 44.0)
+        med[:, 4:8] = 46.0  # 4-cell-wide ridge, 2 m above the eave
+        med, readable = self._grid(med)
+        zone = np.full(med.shape, 44.0)
+        out = F.zone_ridge_half_steps(med, zone, readable)
+        self.assertTrue((out[:, 4:8] == 4).all())
+        self.assertTrue((out[:, :4] == 0).all() and (out[:, 8:] == 0).all())
+
+    def test_flat_zone_with_noise_and_lone_spike_stays_flat(self):
+        rng = np.random.default_rng(3)
+        med = 44.0 + rng.uniform(-0.3, 0.3, (7, 12))
+        med[3, 6] = 45.5  # 1-cell spike, 1.5 m
+        med = np.clip(med, 43.7, None)
+        med, readable = self._grid(med)
+        zone = np.full(med.shape, 44.0)
+        out = F.zone_ridge_half_steps(med, zone, readable)
+        self.assertEqual(int(out.max()), 0)
+
+    def test_lone_spike_in_a_pitched_zone_is_no_ridge(self):
+        med = np.full((7, 12), 44.0)
+        med[:, 2:6] = 46.0  # real ridge makes the zone pitched
+        med[3, 10] = 46.0  # lone chimney away from the ridge
+        med, readable = self._grid(med)
+        zone = np.full(med.shape, 44.0)
+        out = F.zone_ridge_half_steps(med, zone, readable)
+        self.assertEqual(int(out[3, 10]), 0)
+        self.assertEqual(int(out[3, 3]), 4)
+
+    def test_rise_clipped_to_gap_to_next_level(self):
+        med = np.full((7, 12), 44.0)
+        med[:, 4:8] = 49.0  # 5 m above eave, next level only 3 m up
+        med, readable = self._grid(med)
+        zone = np.full(med.shape, 44.0)
+        out = F.zone_ridge_half_steps(med, zone, readable, levels=[44, 47, 50])
+        self.assertEqual(int(out.max()), 6)
+        # Highest level has no next level: not clipped.
+        top = F.zone_ridge_half_steps(med, zone, readable, levels=[44])
+        self.assertEqual(int(top.max()), 10)
+
+    def test_clip_uses_levels_present_in_zone_by_default(self):
+        med = np.full((7, 12), 44.0)
+        med[:, :6] = 48.0
+        med[:, 6:] = 49.0
+        med, readable = self._grid(med)
+        zone = np.full(med.shape, 44.0)
+        zone[:, 6:] = 47.0
+        out = F.zone_ridge_half_steps(med, zone, readable)
+        self.assertEqual(int(out[:, :6].max()), 6)  # 4 m rise clipped to the 3 m gap to level 47
+        self.assertEqual(int(out[:, 6:].max()), 4)
+
+    def test_call_site_uses_3x3_median_for_ridge_and_5x5_for_zone(self):
+        cells = {(x, z) for x in range(10, 22) for z in range(20, 27)}
+        x0, z0 = 9, 19
+        depth, width = 9, 14
+        dsm = np.full((depth, width), 44.0)
+        dsm[1:8, 5:9] = 46.0  # x 14..17, 4 wide, 7 deep
+        spec = {
+            'name': 'unit_ridge_3x3', 'ways': {'99': 'A'}, 'storeys': {'A': 3},
+            'roofs': {'A': {'kind': 'pitched', 'material': 'brick'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [], 'floor_min': 40, 'step_max': 4, 'door_frame': True,
+            'keep_edits': False, 'wall': 'bricks', 'floor': 'smooth_stone', 'ledge_stair': False,
+            'zones': {'A': {'from': 'lidar', 'levels': [44, 50], 'bucket': 2, 'axis_deg': 0}},
+        }
+        seen = {}
+        real = F.zone_ridge_half_steps
+
+        def spy(med, zone, readable, *a, **k):
+            seen['med'], seen['zone'] = med.copy(), zone.copy()
+            return real(med, zone, readable, *a, **k)
+
+        builder = F.Build(
+            spec, footprints={'A': cells}, world=_StoneWorld(),
+            zone_data={'A': {'dsm': dsm, 'ground_y': np.full((depth, width), 40), 'x0': x0, 'z0': z0}},
+        )
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                mock.patch.object(F, 'zone_ridge_half_steps', side_effect=spy), \
+                redirect_stdout(io.StringIO()):
+            builder.build()
+        np.testing.assert_array_equal(seen['med'], F._win(dsm, 3, np.median))
+        self.assertFalse(np.array_equal(seen['med'], F._win(dsm, 5, np.median)))
+        self.assertEqual(float(seen['med'][4, 7]), 46.0)  # peak survives the 3x3 median
+        self.assertEqual(float(np.unique(seen['zone'][seen['zone'] > 0]).max()), 44.0)  # zone still on 5x5
+
+
 class ZoneGuardFixtureTest(unittest.TestCase):
     """Done-when: zoned build + guard keeps door stoop; 0 outside after prune."""
 
