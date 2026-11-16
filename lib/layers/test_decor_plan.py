@@ -533,6 +533,38 @@ class TestInferredStreetFurniture(unittest.TestCase):
         plan = self.plan(paths=[path], classes=_strip_classes('park'), profile=dense, openings={victim})
         self.assertNotIn(victim, [tuple(i['cell']) for i in self.inferred(plan)])
 
+    def test_a_way_crossing_two_cells_has_one_phase(self):
+        way = _way('residential', [(0.0, 64.0), (255.0, 64.0)])          # no explicit seed: derived from the way
+        classes = _strip_classes('residential', x1=255)
+        left = self.inferred(self.plan(roads=[way], classes=classes), 'street_lamp')
+        right = [i for i in self.inferred(dp.build_decor_plan(
+            (1, 0), map_barriers={}, garden=[], rgb={}, footprint=set(), canopy=set(), road_lines=[way],
+            land_classes=classes, district_profile={}), 'street_lamp')]
+        self.assertTrue(left and right)
+        whole = {tuple(i['cell']) for i in left} | {tuple(i['cell']) for i in right}
+        import street_furniture as sf
+        seed = sf.stable_seed('residential', 0, 64)
+        expected = {(i['x'], i['z']) for i in sf.lamp_positions(
+            way['points'], 'residential', {'residential': 30}, seed, half_width=3.0)}
+        self.assertEqual(whole, expected)                                   # cell edges change nothing
+        xs = sorted(x for x, _ in whole)
+        self.assertTrue(all(b - a <= 31 for a, b in zip(xs, xs[1:])), xs)   # no doubled gap at x=127/128
+
+    def test_barrier_columns_are_never_built_over(self):
+        way = _way('residential', self.ROAD, seed=3)
+        victim = self.inferred(self.plan(roads=[way]), 'street_lamp')[0]['cell']
+        for kwargs in ({'map_barriers': {'fence': {tuple(victim)}}},
+                       {'designer_items': [{'kind': 'hedge', 'cells': [list(victim)]}]},
+                       {'garden': [{'id': 'g', 'role': 'barrier', 'kind': 'hedge', 'cells': [list(victim)],
+                                    'provenance': {'source': 'inference', 'confidence': 'medium',
+                                                   'evidence_ids': [], 'unresolved_reason': ''}}]}):
+            args = dict(map_barriers={}, garden=[], rgb={}, footprint=set(), canopy=set(), road_lines=[way],
+                        land_classes=_strip_classes('residential'), district_profile={})
+            args.update(kwargs)
+            plan = dp.build_decor_plan((0, 0), **args)
+            self.assertNotIn(victim, [i['cell'] for i in self.inferred(plan)], list(kwargs))
+            self.assertIn('barrier column', plan['furniture_inference']['dropped'], list(kwargs))
+
     def test_inference_is_deterministic(self):
         way = _way('residential', self.ROAD)
         self.assertEqual(self.plan(roads=[way])['items'], self.plan(roads=[way])['items'])

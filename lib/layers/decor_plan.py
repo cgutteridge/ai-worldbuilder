@@ -732,12 +732,15 @@ def build_decor_plan(
         # Last of all: a mapped point, designer trace or labelled object at or near a spot wins.
         observed = [i for i in reserved['items'] if i.get('role') == 'furniture' and i.get('cell')
                     and (i.get(prov.PROVENANCE_KEY) or {}).get('source') != 'inference']
+        barrier_columns = set(seen_barrier) | {
+            tuple(c) for i in reserved['items'] if i.get('role') == 'barrier' for c in i.get('cells') or ()}
         inferred, inference = infer_street_furniture(
             cell, road_lines=road_lines, path_lines=path_lines, land_classes=land_classes or {},
             observed=observed, profile=district_profile, evidence_ids=evidence_ids, root=root,
             keep_out={
                 'door route or entrance opening': _dilate(keep_clear, ROUTE_CLEARANCE),
                 'carriageway': set(carriageway or ()),
+                'barrier column': barrier_columns,
                 'building, path or water column': set(furniture_avoid or ()) | object_columns,
             })
         reserved['items'] = list(reserved['items']) + inferred
@@ -917,8 +920,9 @@ def infer_street_furniture(
             continue
         half = float(way.get('half') or (1.0 if is_path else 3.0))
         cls = adjoining_class(pts, half, land_classes)
+        # The seed names the way, never the cell: one way planned from two cells gets one phase.
         seed = int(way.get('seed') if way.get('seed') is not None
-                   else sf.stable_seed(cell, highway, *(round(c) for c in (pts[0] if pts else (0, 0)))))
+                   else sf.stable_seed(highway, *(round(c) for c in (pts[0] if pts else (0, 0)))))
         resolved = gs.lamp_spacing(cell, cls, highway, profile=profile or {})
         stop = resolved['value'] is None and resolved['layer'] is not None   # an explicit null: unlit on purpose
         if not stop:
