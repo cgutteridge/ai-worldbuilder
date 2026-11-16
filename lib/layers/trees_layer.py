@@ -3,9 +3,15 @@
 
 Crowns are read from local aerial mosaics with verified full-cell coverage by texture
 plus greenness, not colour alone: sunlit crowns here are the same hue as the lawn.
+Trees stand on the true ground: the trunk base is the block at lidar terrain Y (``ground_at``), never the
+live top block, so a roof is not ground (#301). The block at terrain Y must be solid, unowned ground
+('no ground at terrain' otherwise) and no feature-owned block may stand in the trunk's own column up to
+the crown top ('feature above terrain'); the tree is never moved onto the roof. Where terrain is missing
+the live surface is used as before and the report counts it.
 Trees go only where the live block is air (or a grass stem / flower, as in §10), so the
 mask undo is exact. A crown voxel that is not air (roof, wall, a neighbour's block) is
-dropped; the tree is skipped if too much of it would be dropped or the trunk is blocked.
+dropped; leaves may fill air beside or above a feature, but a feature's own blocks and margin air
+(``owned``) are never used. The tree is skipped if too much of it would be dropped or the trunk is blocked.
 A tree belongs to the cell its trunk is in (the trunk is always in-cell); its crown may overhang into
 neighbours' columns where the block is air or a leaf of a neighbour's trees mask (crowns merge), recorded
 in this cell's mask. It never overwrites any other block. Undo skips blocks another mask also lists.
@@ -17,6 +23,7 @@ Writes a trees mask (§3) only after a clean readback.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 import argparse
 import json
@@ -32,7 +39,7 @@ from script_env import ROOT  # noqa: E402
 
 from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, is_air,  # noqa: E402
                           load_masked_positions, neighbour_owned, warm_surface_probe)
-from surface_probe import short_id, surface_y  # noqa: E402
+from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from plant_cell_canopy import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
@@ -344,6 +351,19 @@ def cell_ndsm(cell: tuple[int, int]) -> np.ndarray | None:
         return None
 
 
+def cell_terrain(cell: tuple[int, int]) -> dict | None:
+    """Lidar height map of one cell (``terrain`` = DTM ground Y), or None when lidar is unavailable.
+
+    @param cell: ``(tx, tz)``
+    @returns: the ``reference_world().heightmap(cell)`` dict, or None
+    """
+    try:
+        from lidar_heightmap import reference_world
+        return reference_world().heightmap(cell)
+    except Exception:
+        return None
+
+
 def tree_row_sample_points(
     pts: list[tuple[float, float]],
     spacing: int = TREE_ROW_SPACING,
@@ -486,6 +506,7 @@ class TreeInputs:
     road: set = field(default_factory=set)
     water: set = field(default_factory=set)
     crown_origins: list | None = None  # world (x, z), aligned with retained crowns before lidar snapping
+    terrain: Any = None                # lidar height map of the cell (``terrain`` = ground Y), None when unavailable (#301)
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -556,7 +577,7 @@ def planning_inputs(cell, osm_ground=None):
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
                       set(getattr(osm_ground, 'road', ())),
                       set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
-                      crown_origins=crown_origins)
+                      crown_origins=crown_origins, terrain=cell_terrain(cell))
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -575,7 +596,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
               'crown_snaps': inputs.crown_snaps,
               'mapped_rejections': inputs.mapped_rejections or [],
-              'mapped_snaps': inputs.mapped_snaps or [], 'rooting': []}
+              'mapped_snaps': inputs.mapped_snaps or [], 'rooting': [],
+              'terrain': {'used': 0, 'moved': 0, 'fallback': 0}}
     warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
                        x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
     # Explicit aerial, surveyed and extra crowns are evidence; detector/dense fill
@@ -588,12 +610,21 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     if crown_origins is not None and len(crown_origins) != len(crowns):
         raise ValueError('crown_origins must align with crowns')
 
+    base_kind: dict[tuple[int, int], tuple[str, int]] = {}   # (x, z) -> ('terrain' | 'live', base Y) of the last accepted base
+
+    def ground(x, z):
+        """Ground block at lidar terrain Y; the live surface only where terrain is missing (#301)."""
+        return ground_at(world, inputs.terrain, x, z, owned=owned, masked=masked, fallback=surface_y)
+
+    def no_ground(x, z):
+        return ground_missing_reason(inputs.terrain, x, z, owned)
+
     def candidate(x, z, r, observed):
         if (x, 0, z) not in cell_xz:
             return {}, 'trunk outside cell'
-        surf = surface_y(world, x, z)
+        surf = ground(x, z)
         if not surf:
-            return {}, 'no surface'
+            return {}, no_ground(x, z)
         if not observed and ((x, z) in fp or (ground_cols is not None and (x, z) not in ground_cols)):
             return {}, 'feature zone'
         if not observed and surf[1] not in (LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES):
@@ -602,11 +633,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
         vox = voxels_for(x, z, gy, r)
         trunk = [p for p, b in vox.items() if 'log' in b]
         roots = {(p[0], p[2]) for p in trunk if p[1] == gy + 1} or {(x, z)}
-        from surface_probe import is_water
         for q in sorted(roots):
-            top = surface_y(world, *q)
+            top = ground(*q)
             if not top:
-                return {}, 'no surface'
+                return {}, no_ground(*q)
             live = world.block(q[0], top[0], q[1])
             if live is None:
                 return {}, 'unknown water status'
@@ -618,12 +648,17 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
                 return {}, 'carriageway'
             if observed and top[0] != gy:
                 return {}, 'uneven trunk ground'
+        # a feature's own block anywhere in the trunk column up to the crown top (a low roof) leaves no room (#301)
+        crown_top = max(p[1] for p in vox)
+        if any((q[0], y, q[1]) in owned for q in roots for y in range(gy + 1, crown_top + 1)):
+            return {}, 'feature above terrain'
         kept = {p: b for p, b in vox.items()
                 if may_plant(world.block(*p), b, masked.get(p)) and p not in owned and p not in placed}
         if any(p not in kept or p not in cell_xz for p in trunk):
-            return {}, 'trunk blocked'
+            return {}, 'feature above terrain' if any(p in owned for p in trunk) else 'trunk blocked'
         if len(kept) < KEEP_FRACTION * len(vox):
             return {}, f'{len(vox) - len(kept)} of {len(vox)} voxels blocked'
+        base_kind[(x, z)] = ('terrain' if terrain_y(inputs.terrain, x, z) is not None else 'live', gy)
         return kept, None
 
     for index, (i, j, r) in enumerate(crowns):
@@ -654,6 +689,13 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
             continue
         placed.update(kept)
         report['trees'].append((x, z, r, 'bush' if r < MIN_CROWN_R + 0.2 else 'tree'))
+        kind, gy = base_kind[(x, z)]
+        if kind == 'terrain':
+            report['terrain']['used'] += 1
+            if raised_over_terrain(world, x, z, gy):
+                report['terrain']['moved'] += 1      # the live surface here is higher (a roof): the tree stands below it
+        else:
+            report['terrain']['fallback'] += 1       # no lidar terrain for this column: live surface, as before
     for p, b in placed.items():
         plan.set(*p, b)
     report['overhang'] = sum(1 for p in placed if p not in cell_xz)

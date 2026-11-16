@@ -18,7 +18,7 @@ class TestLayerReports(unittest.TestCase):
 
     def test_full_details_survive_console_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = write_report('decor', {'unplaced': [{'reason': 'above lidar ground'}] * 30}, Path(tmp))
+            path = write_report('decor', {'unplaced': [{'reason': 'feature above terrain'}] * 30}, Path(tmp))
             self.assertEqual(len(json.loads(path.read_text())['unplaced']), 30)
 
     def test_unknown_prewrite_is_not_reported_as_already_correct_air(self):
