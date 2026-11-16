@@ -119,6 +119,7 @@ class LocalEvidence:
         from cell_registry import candidate_plan_id, plan_ids_for_candidates, planned_refs
         from coverage import osm_ref, scan_polygon
         from osm_footprints import OSMIndex, osm_tags
+        from plan_refs import candidate_covered, covered_by_plans
         from vector_map_clips import vector_map_clip_root
         if self._index is None:
             self._index = OSMIndex(vector_map_clip_root(self.root), read_only=True)
@@ -143,7 +144,9 @@ class LocalEvidence:
                                        for item, fid in zip(items, ids)
                                        if item.get('kind') == 'houses' and fid in known
                                        and fid == candidate_plan_id(item) and planned_refs(self.root, fid) is None]
-        return [{**item, 'id': fid} for item, fid in zip(items, ids) if fid not in skip]
+        here = covered_by_plans(self.root, skip)       # a prefixed plan covers its map ref (task 293)
+        return [{**item, 'id': fid} for item, fid in zip(items, ids)
+                if fid not in skip and not candidate_covered(item, here)]
 
     def warnings(self, cell):
         """Ambiguous legacy accounting found during candidate audit."""
