@@ -548,6 +548,93 @@ def zone_ridge_half_steps(
     return out
 
 
+def flatten_half_step_decks(half: np.ndarray, zone: np.ndarray, readable: np.ndarray) -> np.ndarray:
+    """Drop 1-half-step decks and toes to the eave so a deck is not a block of slabs.
+
+    Zone levels are whole metres but a real deck often sits half a metre above
+    its level, which the provider's float option now shows. A 1-half-step cell
+    with no same-zone neighbour above 1 is that deck (or a toe), not a pitch, so
+    it drops to the eave (0). A 1-half-step cell beside a 2 or more stays: it
+    is the foot of a slope and plans the slab course there.
+
+    @param half: int half-steps above the zone eave (from ``zone_ridge_half_steps``)
+    @param zone: snapped plateau grid (same shape)
+    @param readable: footprint mask
+    @returns: new int grid of the same shape
+    """
+    out = half.copy()
+    h, w = out.shape
+    pz = np.pad(zone, 1, mode='constant', constant_values=np.nan)
+    pr = np.pad(readable, 1, mode='constant', constant_values=False)
+    ph = np.pad(half, 1, mode='constant', constant_values=0)
+    above_one = np.zeros(out.shape, dtype=bool)
+    for dz, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        sl = (slice(1 + dz, 1 + dz + h), slice(1 + dx, 1 + dx + w))
+        above_one |= pr[sl] & (pz[sl] == zone) & (ph[sl] >= 2)
+    out[readable & (out == 1) & ~above_one] = 0
+    return out
+
+
+def _lone_odd_half_heights(half_heights: dict[tuple[int, int], int]) -> list[tuple[int, int]]:
+    """Columns whose half-height is odd and differs from every N4 neighbour.
+
+    @param half_heights: ``{(x, z): half_height}``
+    @returns: the lone odd columns (a slab speckle, not a slab course)
+    """
+    lone = []
+    for (x, z), v in half_heights.items():
+        if v % 2 == 0:
+            continue
+        nbs = [half_heights[(x + dx, z + dz)] for dx, dz in N4 if (x + dx, z + dz) in half_heights]
+        if nbs and v not in nbs:
+            lone.append((x, z))
+    return lone
+
+
+def snap_lone_odd_half_heights(
+    half_heights: dict[tuple[int, int], int],
+    levels: dict[tuple[int, int], int],
+    passes: int = 6,
+) -> dict[tuple[int, int], int]:
+    """Snap each lone odd half-height to its neighbours so a slab is never a speckle.
+
+    The provider's float option carries single-cell noise. An odd rise (a slab
+    course) that differs from all of its neighbours is noise. First it snaps to
+    the closest half-height among its same-zone neighbours (the lower on a tie),
+    so a clean slope or ridge keeps its line. A cell that still stands alone
+    after that (a steep hip where each snap hands the speckle to the next cell)
+    drops one half-step to the even height below; the cliff cap in
+    ``regularise_roof_half_heights`` that follows then pulls its neighbours to
+    even heights too. Odd steps in a clean course (a neighbour shares the
+    height) are kept.
+
+    @param half_heights: ``{(x, z): half_height}``, already regularised
+    @param levels: semantic zone level per column (as for ``regularise_roof_half_heights``)
+    @param passes: max passes of each repair
+    @returns: new dict with the same keys
+    """
+    h = dict(half_heights)
+    for _ in range(passes):
+        lone = _lone_odd_half_heights(h)
+        nxt = dict(h)
+        for (x, z) in lone:
+            same = [h[(x + dx, z + dz)] for dx, dz in N4
+                    if (x + dx, z + dz) in h and levels[(x + dx, z + dz)] == levels[(x, z)]]
+            if same:
+                nxt[(x, z)] = min(same, key=lambda s: (abs(s - h[(x, z)]), s))
+        if nxt == h:
+            break
+        h = regularise_roof_half_heights(nxt, levels)
+    for _ in range(passes):
+        lone = _lone_odd_half_heights(h)
+        if not lone:
+            break
+        for c in lone:
+            h[c] -= 1
+        h = regularise_roof_half_heights(h, levels)
+    return h
+
+
 def edge_wall_expose(roof: dict, ground: dict, cell: tuple[int, int]) -> int:
     """Lowest neighbour top (roof if built-on, else ground); wall faces above this.
 
@@ -1541,7 +1628,10 @@ class Build:
                 # pitched labels read the float DSM (when given) so a half-block rise survives
                 fine = grids.get('dsm_fine')
                 fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
-                half_grid = zone_ridge_half_steps(_win_nanmedian(fine, 3), zone, readable, levels=_levels)
+                half_grid = flatten_half_step_decks(
+                    zone_ridge_half_steps(_win_nanmedian(fine, 3), zone, readable, levels=_levels),
+                    zone, readable,
+                )
             roof: dict = {}
             eaves: dict = {}
             half_h: dict = {}
@@ -1563,7 +1653,7 @@ class Build:
                     gy[(wx, wz)] = int(ground[z, x])
                     zl[(wx, wz)] = int(round(float(zone[z, x])))
             if pitched:
-                half_h = regularise_roof_half_heights(half_h, zl)
+                half_h = snap_lone_odd_half_heights(regularise_roof_half_heights(half_h, zl), zl)
                 roof = {c: roof_block_y(h) for c, h in half_h.items()}
             # neighbourhood ground for expose() outside the mass
             for z in range(depth):

@@ -1849,6 +1849,110 @@ class RidgeHalfStepsTest(unittest.TestCase):
         self.assertEqual(float(np.unique(seen['zone'][seen['zone'] > 0]).max()), 44.0)  # zone still on 5x5
 
 
+class SmoothRoofHalfStepsTest(unittest.TestCase):
+    """#302: smoothing the provider's float half-steps (flat decks, lone odd cells, straight ridges)."""
+
+    def _flatten(self, half, zone=None):
+        half = np.asarray(half, dtype=int)
+        zone = np.full(half.shape, 48.0) if zone is None else np.asarray(zone, dtype=float)
+        return F.flatten_half_step_decks(half, zone, np.ones(half.shape, dtype=bool))
+
+    @staticmethod
+    def _snap(rows):
+        """rows of half-heights (one zone) -> rows after the lone-odd repair"""
+        h = {(x, z): v for z, row in enumerate(rows) for x, v in enumerate(row)}
+        out = F.snap_lone_odd_half_heights(h, {c: 48 for c in h})
+        return [[out[(x, z)] for x in range(len(rows[0]))] for z in range(len(rows))]
+
+    def test_deck_half_a_metre_above_its_level_stays_flat(self):
+        out = self._flatten(np.ones((6, 8), dtype=int))
+        self.assertFalse(out.any(), 'a whole zone at +1 half-step is a flat deck, not 1-half-step slabs')
+
+    def test_toe_beside_a_deck_drops_but_the_foot_of_a_slope_stays(self):
+        row = [1, 1, 1, 1, 2, 3, 4, 5, 6]
+        out = self._flatten(np.tile(row, (5, 1)))
+        self.assertEqual(out[2].tolist(), [0, 0, 0, 1, 2, 3, 4, 5, 6])
+
+    def test_whole_metre_input_is_unchanged_by_flattening_and_snapping(self):
+        half = np.tile([0, 0, 2, 2, 4, 4, 2, 2, 0, 0], (5, 1))
+        self.assertEqual(self._flatten(half).tolist(), half.tolist())
+        self.assertEqual(self._snap(half.tolist()), half.tolist())
+
+    def test_flattening_works_in_each_zone_apart(self):
+        # a 1 beside a 2 in another zone is still a lone 1 in its own zone: it drops
+        half = np.array([[0, 1, 0], [2, 2, 2]])
+        zone = np.array([[48.0, 48.0, 48.0], [50.0, 50.0, 50.0]])
+        self.assertEqual(self._flatten(half, zone).tolist(), [[0, 0, 0], [2, 2, 2]])
+
+    def test_lone_odd_cell_snaps_to_its_neighbours(self):
+        rows = np.full((7, 7), 4)
+        rows[3, 3] = 5
+        out = self._snap(rows.tolist())
+        self.assertEqual(out, np.full((7, 7), 4).tolist())
+
+    def test_lone_odd_cell_ties_go_to_the_lower_neighbour(self):
+        rows = np.tile([2, 2, 4, 4, 6, 6], (6, 1))
+        rows[3, 2] = 3      # differs from 2 (left), 4 (right), 4 (up), 4 (down)
+        out = self._snap(rows.tolist())
+        self.assertEqual(out[3][2], 2)
+
+    def test_clean_odd_courses_are_kept(self):
+        rows = np.tile([0, 1, 2, 3, 4, 5, 6, 7], (5, 1))
+        self.assertEqual(self._snap(rows.tolist()), rows.tolist(), 'a clean slope keeps its odd (slab) steps')
+
+    def test_steep_hip_leaves_no_lone_odd_cell(self):
+        # odd cells whose snap would hand the speckle on: the repair must still end with none
+        rows = [[0, 2, 4, 6, 8, 10],
+                [0, 3, 5, 7, 9, 10],
+                [0, 2, 4, 6, 8, 10],
+                [0, 3, 5, 7, 9, 10]]
+        out = self._snap(rows)
+        flat = {(x, z): v for z, row in enumerate(out) for x, v in enumerate(row)}
+        self.assertEqual(F._lone_odd_half_heights(flat), [])
+
+    def test_snap_only_lowers_or_keeps_no_cliff_above_two(self):
+        rows = [[0, 1, 4, 7, 4], [0, 2, 5, 5, 4], [0, 1, 3, 3, 3]]
+        out = self._snap(rows)
+        for z in range(len(out)):
+            for x in range(len(out[0])):
+                for dx, dz in F.N4:
+                    xx, zz = x + dx, z + dz
+                    if 0 <= zz < len(out) and 0 <= xx < len(out[0]):
+                        self.assertLessEqual(abs(out[z][x] - out[zz][xx]), 2)
+
+    def test_flat_deck_half_a_metre_up_builds_without_slabs_and_a_ridge_keeps_its_slabs(self):
+        t = PitchedZonesFloatDsmTest('test_whole_metre_float_input_behaves_exactly_as_without_it')
+        t.setUp()
+        # deck 0.5 m above its level, no ridge: nothing pitched survives, so no slab
+        flat = np.full((7, 11), 48.5)
+        data = t._data(flat)
+        plan = t._build('pitched', [48], data)
+        self.assertFalse(
+            any('slab' in st and 'brick' in st for st in plan.cells.values()),
+            'a deck 0.5 m above its level must stay flat, not a block of 1-half-step slabs',
+        )
+        # same deck with a clean float ridge keeps its slabs
+        fine = np.asarray(t.ridge_zone_data['A']['dsm'], dtype=float).copy()
+        fine[:, 4:7] = 48.0 + 1.5
+        plan = t._build('pitched', [48], t._data(fine))
+        self.assertTrue(any('slab' in st and 'brick' in st for st in plan.cells.values()))
+
+
+    def test_noisy_float_ridge_plans_no_ridge_jog_and_no_lone_slab(self):
+        import roof_lint
+        t = PitchedZonesFloatDsmTest('test_whole_metre_float_input_behaves_exactly_as_without_it')
+        t.setUp()
+        base = np.full((7, 11), 48.0)
+        for xi, h in enumerate([48.5, 48.5, 49.5, 50.5, 52.5, 50.5, 49.5, 48.5, 48.5]):
+            base[:, 1 + xi] = h
+        for seed in range(6):
+            rng = np.random.default_rng(seed)
+            fine = base + rng.choice([-0.5, 0.0, 0.0, 0.5], size=base.shape)
+            plan = t._build('pitched', [48], t._data(fine))
+            self.assertEqual(roof_lint.ridge_jogs(plan.cells), [], f'seed {seed}')
+            self.assertEqual(roof_lint.stair_shape_mismatches(plan.cells), [], f'seed {seed}')
+
+
 class ZoneGuardFixtureTest(unittest.TestCase):
     """Done-when: zoned build + guard keeps door stoop; 0 outside after prune."""
 
