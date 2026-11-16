@@ -21,26 +21,25 @@ Snags live only inside issues (live: `registry/issues.json` and `registry/issues
 `fix-landed` is set by `issues.py sync` only when every element of the snags the fix covers was redesigned (new landed build, changed content) after the fix merged. Never review an issue that is only `open`.
 
 1. `issues.py review I-nnn` gives the packet. Run `sherlock`'s grouping check first (see that skill); tell the owner if a snag looks misfiled.
-2. **Survey, one snag per stop.** Each stop is a survey card, and the owner answers one question. For the snag in front of them, in this order:
-   1. `Read` its picture (`registry/issues/img/`) so it shows. Show any other image or data that bears on it (a plan, a count the check line names). No picture: say so in a line.
-   2. Move the player to where the picture was taken (stored `pos` and `facing`; `--facing` is a look-at point, so convert a stored yaw,pitch). A snag with no stored position (agent snags): pick a spot from the evidence, and say so in a line.
+2. **Survey, one snag per stop.** The card is the whole message and the owner's answer is the next event. For the snag in front of the owner:
+   1. `Read` its picture (`registry/issues/img/`) so it shows, plus any other image or data that bears on it. No picture: the card says so.
+   2. Move the player to where the picture was taken (stored `pos` and `facing`; `--facing` is a look-at point, so convert a stored yaw,pitch). A snag with no stored position (agent snags): pick a spot from the evidence; the card says where and why.
 
       ```bash
       python3 scripts/mc_player.py --world <w> move --why "Showing <snag in plain words>" --pos x,y,z --facing x,y,z --gamemode spectator
       ```
-   3. Write the card, in this shape and no more:
+   3. Send the card:
 
       ```
-      <plain description of what was wrong>  (S-nnn, small)
-      "<their words, verbatim, one or two lines>"
+      Snag: <plain description of what was wrong>
+      "<their words, verbatim>"
       [picture and other relevant images or data]
-      What changed: <one line on the fix>
-      Please view in game and confirm: <what to look at, and what should now be different>
+      What changed: <one line>
+      Please view in game and confirm: <what to look at and what should now be different>. Fixed? Yes (default) / Not fixed
       ```
-   4. Ask one question: is it fixed? Offer yes first, as the default answer, then not fixed.
 
-   The owner's own words and a plain description carry the card; an ID is a small tag after them, never the way to name the snag. One question at a time: the next snag's picture, move and card wait until this one is answered. Say nothing about what comes next, how many are left or which issue follows; no preamble before the card, no recap after the answer.
-3. The owner judges in game; no tour, no scripted camera, no pictures taken for them. Take a `view_capture` only when **you** need to see something to decide or diagnose. If a capture does not show the thing, say so and move on. Block scans may inform you; give the owner counts only if they ask.
+   Name the snag by what it is, in the owner's words; keep IDs out of the card (give one only when the owner asks). Ask nothing else: the next snag's picture, move and card follow the answer. The owner is the judge: you take them to the spot and let them look.
+3. Take a `view_capture` only when **you** need to see something to decide or diagnose; if it does not show the thing, move on. Block scans inform you; counts go to the owner when they ask.
 4. When the last snag of the issue is answered, record it from the per-snag answers (no further question):
    - all fixed: `issues.py verdict I-nnn --all-fixed`
    - otherwise: `issues.py verdict I-nnn --fixed S-001 ... --not-fixed S-003`. The issue returns to `open`; the unresolved snags stay on it.
