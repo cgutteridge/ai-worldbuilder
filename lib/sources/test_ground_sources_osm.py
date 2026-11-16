@@ -241,6 +241,36 @@ class UndergroundWaterwayTest(unittest.TestCase):
                          'bridge columns are not ours to surface')
 
 
+class BridgeAndTunnelSplitTest(unittest.TestCase):
+    """#298: a way's columns are a deck (bridge, layer>0) or a tunnel (tunnel=yes, layer<0); .bridge holds both."""
+
+    @staticmethod
+    def _way(**tags):
+        return {'type': 'Feature', 'properties': {'osm_id': '7', 'highway': 'footway', **tags},
+                'geometry': {'type': 'LineString', 'coordinates': [[10.0, 20.0], [30.0, 20.0]]}}
+
+    def test_bridge_and_raised_layer_are_deck(self):
+        for tags in ({'bridge': 'yes', 'layer': '1'}, {'bridge': 'viaduct'}, {'layer': '1'}):
+            with self.subTest(tags=tags):
+                ground = _ground_from_features([self._way(**tags)])
+                self.assertIn((20, 20), ground.deck)
+                self.assertFalse(ground.tunnel)
+                self.assertEqual(ground.bridge, ground.deck)
+
+    def test_tunnel_and_underground_layer_are_tunnel(self):
+        for tags in ({'tunnel': 'yes'}, {'layer': '-1'}, {'tunnel': 'yes', 'layer': '-1'}):
+            with self.subTest(tags=tags):
+                ground = _ground_from_features([self._way(**tags)])
+                self.assertIn((20, 20), ground.tunnel)
+                self.assertFalse(ground.deck)
+                self.assertEqual(ground.bridge, ground.tunnel)
+
+    def test_a_bridge_wins_over_a_negative_layer(self):
+        ground = _ground_from_features([self._way(bridge='yes', layer='-1')])
+        self.assertIn((20, 20), ground.deck)
+        self.assertFalse(ground.tunnel)
+
+
 class OutdoorStepsTest(unittest.TestCase):
     """#294: ground-level highway=steps is its own set, apart from bridges."""
 

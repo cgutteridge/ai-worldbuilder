@@ -361,7 +361,9 @@ class OSMGround:
         self.water: set = set()       # polygon natural=water only (pond candidates; #163)
         self.water_line: set = set()  # waterway line columns (streams); not pond candidates
         self.water_refs: dict = {}    # (x, z) -> 'w<way id>' for polygon water (#163)
-        self.bridge: set = set()      # columns under a mapped bridge/tunnel (or raised steps): not ours to surface
+        self.bridge: set = set()      # columns of every mapped bridge, tunnel and layer!=0 way (deck | tunnel)
+        self.deck: set = set()        # columns under a mapped bridge or raised way: the ground below is ground's (#298)
+        self.tunnel: set = set()      # columns over a mapped tunnel or underground way: the surface above is ground's
         self.steps: dict = {}         # (x, z) -> 'x' | 'z': ground-level highway=steps, the way's run axis (#294)
         self.hedge: set = set()
         self.wall: set = set()
@@ -443,7 +445,12 @@ class OSMGround:
             return
         if hw and (t.get('bridge') in ('yes', 'viaduct') or t.get('tunnel') == 'yes' or
                    t.get('layer', '0') not in ('0', '')):
-            self.bridge |= set(line_cells(pts, max(1.5, road_width(t) / 2 if hw in ROAD_CLASSES else 1.5)))
+            cells = set(line_cells(pts, max(1.5, road_width(t) / 2 if hw in ROAD_CLASSES else 1.5)))
+            self.bridge |= cells
+            if t.get('bridge') not in ('yes', 'viaduct') and (t.get('tunnel') == 'yes' or _tag_negative(t.get('layer'))):
+                self.tunnel |= cells
+            else:
+                self.deck |= cells
             return
         if hw in ROAD_CLASSES or hw == 'service' or hw == 'track':
             half = road_width(t) / 2
@@ -462,7 +469,7 @@ class OSMGround:
                       self._fid)
         elif hw == 'steps':
             # Outdoor steps at ground level: surfaced by the ground layer at lidar height (#294).
-            # Bridge, tunnel and layer!=0 steps returned above, into .bridge.
+            # Bridge, tunnel and layer!=0 steps returned above, into .bridge (.deck / .tunnel).
             for a, b in zip(pts, pts[1:]):
                 axis = 'x' if abs(b[0] - a[0]) >= abs(b[1] - a[1]) else 'z'
                 for q in line_cells([a, b], STEPS_HALF_WIDTH):
