@@ -151,7 +151,7 @@ class TestPlaceFurniture(unittest.TestCase):
 
     def _place(self, items, *, way=None, near1=None):
         with mock.patch('decor_layer.column_ground_kind',
-                        side_effect=lambda w, x, z: 'paving' if (x, z) in self.paving else None), \
+                        side_effect=lambda w, x, z, hm=None: 'paving' if (x, z) in self.paving else None), \
                 mock.patch('surface_probe.surface_y', self._surface):
             return dl.place_furniture(
                 (0, 0), items, self.world,
@@ -183,7 +183,7 @@ class TestPlaceFurniture(unittest.TestCase):
         ]
         kinds = {10: None, 13: 'tarmac'}
         with mock.patch('decor_layer.column_ground_kind',
-                        side_effect=lambda w, x, z: kinds[x]), \
+                        side_effect=lambda w, x, z, hm=None: kinds[x]), \
                 mock.patch('surface_probe.surface_y', self._surface):
             _, report, unplaced = dl.place_furniture(
                 (0, 0), items, self.world, way=set(), near1=set(), owned=set(), masked=set())
@@ -228,77 +228,142 @@ class TestFurnitureByProvenance(unittest.TestCase):
             'unplaced': {'inference': 1}})
 
 
-class TestLidarGroundVeto(unittest.TestCase):
-    """Decor uses live surfaces for placement, with lidar terrain as a veto."""
+class TestTerrainGround(unittest.TestCase):
+    """#301: decor stands on the block at lidar terrain Y, never on the roof over it; nothing is skipped for a roof."""
+
+    GROUND = 64
+    ROOF = 70
 
     def setUp(self):
+        self.live = {}
+        self.owned = set()
+        self.hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), self.GROUND)}
+        self.options = dict(way=set(), near1=set(), masked=set())
+
+        def block(x, y, z):
+            if (x, y, z) in self.live:
+                return self.live[(x, y, z)]
+            return 'minecraft:grass_block' if y <= self.GROUND else 'minecraft:air'
+
         self.world = mock.Mock()
-        self.world.block = lambda x, y, z: (
-            'minecraft:light_gray_concrete' if y == 64 else 'minecraft:air')
-        self.hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), 64)}
-        self.hm['terrain'][10, 20] = 58  # Roof six blocks above terrain.
-        self.options = dict(way=set(), near1=set(), owned=set(), masked=set())
+        self.world.block = block
 
-    def test_furniture_refuses_roof_but_places_on_ground(self):
-        items = [{'x': x, 'z': 20, 'kind': 'bench'} for x in (10, 11)]
-        found, report, unplaced = dl.place_furniture(
-            (0, 0), items, self.world, lidar_hm=self.hm, **self.options)
-        self.assertEqual(set(found), {(11, 65, 20)})
-        self.assertEqual([r['x'] for r in report], [11])
-        self.assertEqual([(u['x'], u['provenance']['unresolved_reason']) for u in unplaced],
-                         [(10, 'above lidar ground')])
+    def roof(self, xs=(10,), z=20, y=ROOF):
+        """A roof slab over the column(s), owned by a feature."""
+        for x in xs:
+            self.live[(x, y, z)] = 'minecraft:red_concrete'
+            self.owned.add((x, y, z))
 
-    def test_barriers_refuse_roof_but_place_on_ground(self):
-        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge',
-                'cells': [[10, 20], [11, 20]], 'height': 2, 'allow_against_build': True}
+    def furniture(self, items, **kw):
+        return dl.place_furniture((0, 0), items, self.world, owned=self.owned, lidar_hm=self.hm, **{**self.options, **kw})
+
+    def test_furniture_under_an_overhang_is_placed_at_terrain_height(self):
+        self.roof(xs=(10, 11), y=self.GROUND + 8)
+        found, report, unplaced = self.furniture([{'x': x, 'z': 20, 'kind': 'bench'} for x in (10, 11)])
+        self.assertEqual(unplaced, [])
+        self.assertEqual({p[1] for p in found}, {self.GROUND + 1})
+        self.assertEqual({p[:1] + p[2:] for p in found}, {(10, 20), (11, 20)})
+        self.assertTrue(all(r['moved_to_terrain'] for r in report))
+
+    def test_furniture_is_never_put_on_a_roof(self):
+        self.roof(y=self.GROUND + 8)
+        found, _r, _u = self.furniture([{'x': 10, 'z': 20, 'kind': 'bench'}])
+        self.assertTrue(found)
+        self.assertTrue(all(p[1] < self.GROUND + 8 for p in found))
+
+    def test_plain_ground_is_not_moved(self):
+        found, report, _u = self.furniture([{'x': 11, 'z': 20, 'kind': 'bench'}])
+        self.assertEqual(set(found), {(11, self.GROUND + 1, 20)})
+        self.assertFalse(report[0]['moved_to_terrain'])
+
+    def test_furniture_blocked_by_a_feature_block_in_its_column_is_feature_above_terrain(self):
+        self.roof(y=self.GROUND + 1)                        # directly over the ground: a low roof
+        found, report, unplaced = self.furniture([{'x': 10, 'z': 20, 'kind': 'bench'}])
+        self.assertEqual((found, report), ({}, []))
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['feature above terrain'])
+
+    def test_unowned_live_block_in_the_column_stays_blocked_by_live(self):
+        self.live[(10, self.GROUND + 1, 20)] = 'minecraft:stone'
+        _f, _r, unplaced = self.furniture([{'x': 10, 'z': 20, 'kind': 'bench'}])
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['blocked by live or owned block'])
+
+    def test_owned_and_masked_blocks_are_never_overwritten(self):
+        self.owned.add((10, self.GROUND + 1, 20))
+        found, _r, unplaced = self.furniture([{'x': 10, 'z': 20, 'kind': 'bench'}])
+        self.assertNotIn((10, self.GROUND + 1, 20), found)
+        found, _r, unplaced = self.furniture([{'x': 11, 'z': 20, 'kind': 'bench'}],
+                                             masked={(11, self.GROUND + 1, 20): 'decor 0,0'})
+        self.assertEqual(found, {})
+        self.assertEqual(len(unplaced), 1)
+
+    def test_floating_base_is_no_ground_at_terrain(self):
+        self.live[(10, self.GROUND, 20)] = 'minecraft:air'           # air at terrain, a deck floats above
+        self.live[(10, self.GROUND + 3, 20)] = 'minecraft:oak_planks'
+        found, _r, unplaced = self.furniture([{'x': 10, 'z': 20, 'kind': 'bench'}])
+        self.assertEqual(found, {})
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['no ground at terrain'])
+
+    def test_barriers_stand_on_terrain_under_a_roof(self):
+        self.roof(xs=(10, 11), y=self.GROUND + 6)
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20], [11, 20]], 'height': 2,
+                'allow_against_build': True}
         found, report, unplaced = dl.place_barriers_from_plan(
-            (0, 0), [item], self.world, lidar_hm=self.hm,
+            (0, 0), [item], self.world, owned=self.owned, lidar_hm=self.hm,
             **{**self.options, 'near1': {(10, 20), (11, 20)}})
-        self.assertEqual(set(found), {(11, 65, 20), (11, 66, 20)})
-        self.assertEqual([r['x'] for r in report], [11])
-        self.assertEqual([(u['cells'], u['provenance']['unresolved_reason']) for u in unplaced],
-                         [([[10, 20]], 'above lidar ground')])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(set(found), {(x, self.GROUND + i, 20) for x in (10, 11) for i in (1, 2)})
+        self.assertTrue(all(r['moved_to_terrain'] for r in report))
 
-    def test_join_pieces_cannot_bridge_a_roof_column(self):
-        found = {(9, 65, 20): B, (11, 65, 20): B}
+    def test_barrier_column_under_a_low_roof_is_feature_above_terrain(self):
+        self.roof(y=self.GROUND + 1)
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 1}
+        found, _r, unplaced = dl.place_barriers_from_plan(
+            (0, 0), [item], self.world, owned=self.owned, lidar_hm=self.hm, **self.options)
+        self.assertEqual(found, {})
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['feature above terrain'])
+
+    def test_barrier_on_floating_ground_is_unplaced(self):
+        self.live[(10, self.GROUND, 20)] = 'minecraft:air'
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 1}
+        found, _r, unplaced = dl.place_barriers_from_plan(
+            (0, 0), [item], self.world, owned=self.owned, lidar_hm=self.hm, **self.options)
+        self.assertEqual(found, {})
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['on road/path/water or no surface'
+                                                                                  if False else 'no ground at terrain'])
+
+    def test_carriageway_is_read_at_terrain_not_on_the_roof(self):
+        self.roof(y=self.GROUND + 8)
+        self.live[(10, self.ROOF - 3, 20)] = 'minecraft:black_concrete'   # a tarmac-coloured deck is not the road
+        self.assertFalse(dl.on_carriageway(self.world, 10, 20, self.hm))
+        self.live[(10, self.GROUND, 20)] = 'minecraft:black_concrete'
+        self.assertEqual(dl.column_ground_kind(self.world, 10, 20, self.hm), dl.BLOCK_KIND.get('black_concrete'))
+
+    def test_join_pieces_has_no_terrain_veto(self):
+        found = {(9, self.GROUND + 1, 20): B, (11, self.GROUND + 1, 20): B}
 
         def can_place(pos, mat):
-            return dl.may_join_at(
-                pos, mat, cell=(0, 0), near1=set(), allow_near1_mats=set(),
-                owned=set(), masked=set(), world=self.world, lidar_hm=self.hm)
+            return dl.may_join_at(pos, mat, cell=(0, 0), near1=set(), allow_near1_mats=set(),
+                                  owned=set(), masked=set(), world=self.world)
 
-        self.assertEqual(dl.join_pieces(found, lambda p: self.world.block(*p), can_place), {})
-        # At the two-block tolerance the join still sits on the live surface.
-        self.hm['terrain'][10, 20] = 62
         self.assertEqual(dl.join_pieces(found, lambda p: self.world.block(*p), can_place),
-                         {(10, 65, 20): B})
+                         {(10, self.GROUND + 1, 20): B})
 
-    def test_missing_terrain_does_not_veto_any_placer(self):
+    def test_missing_terrain_keeps_todays_live_surface_for_every_placer(self):
+        self.live = {(10, 65, 20): 'minecraft:light_gray_concrete', **{(10, y, 20): 'minecraft:air' for y in range(66, 72)}}
         item = {'x': 10, 'z': 20, 'kind': 'bench'}
         barrier = {'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 1}
-        for hm in (None, {'x0': 0, 'z0': 0},
-                   {**self.hm, 'terrain': np.zeros((128, 128), dtype=int)}):
+        self.world.block = lambda x, y, z: self.live.get((x, y, z), 'minecraft:air' if y > 65 else 'minecraft:stone')
+        for hm in (None, {'x0': 0, 'z0': 0}, {**self.hm, 'terrain': np.zeros((128, 128), dtype=int)}):
             with self.subTest(hm=hm):
-                furniture, _, unplaced = dl.place_furniture(
-                    (0, 0), [item], self.world, lidar_hm=hm, **self.options)
-                self.assertEqual(set(furniture), {(10, 65, 20)})
+                furniture, report, unplaced = dl.place_furniture(
+                    (0, 0), [item], self.world, lidar_hm=hm, owned=set(), **self.options)
+                self.assertEqual(set(furniture), {(10, 66, 20)})
                 self.assertEqual(unplaced, [])
+                self.assertNotIn('on_terrain', report[0])
                 barriers, _, unplaced = dl.place_barriers_from_plan(
-                    (0, 0), [barrier], self.world, lidar_hm=hm, **self.options)
-                self.assertEqual(set(barriers), {(10, 65, 20)})
+                    (0, 0), [barrier], self.world, lidar_hm=hm, owned=set(), **self.options)
+                self.assertEqual(set(barriers), {(10, 66, 20)})
                 self.assertEqual(unplaced, [])
-                self.assertTrue(dl.may_join_at(
-                    (10, 65, 20), B, cell=(0, 0), near1=set(), allow_near1_mats=set(),
-                    owned=set(), masked=set(), world=self.world, lidar_hm=hm))
-
-    def test_terrain_is_a_veto_not_a_placement_height(self):
-        self.hm['terrain'][10, 20] = 62
-        self.hm['terrain'][11, 20] = 61
-        items = [{'x': x, 'z': 20, 'kind': 'bench'} for x in (10, 11)]
-        found, _, unplaced = dl.place_furniture(
-            (0, 0), items, self.world, lidar_hm=self.hm, **self.options)
-        self.assertEqual(set(found), {(10, 65, 20)})
-        self.assertEqual([u['x'] for u in unplaced], [11])
 
 
 class TestOnCarriageway(unittest.TestCase):
@@ -306,7 +371,7 @@ class TestOnCarriageway(unittest.TestCase):
 
     def carriageway(self, kinds, at=(10, 20)):
         with mock.patch.object(dl, 'column_ground_kind',
-                               side_effect=lambda _w, x, z: kinds.get((x, z))):
+                               side_effect=lambda _w, x, z, _hm=None: kinds.get((x, z))):
             return dl.on_carriageway(mock.Mock(), *at)
 
     def test_tarmac_marking_and_kerb_are_carriageway(self):
@@ -577,7 +642,7 @@ class TestReporting(unittest.TestCase):
         from pathlib import Path
         from layer_reports import write_report
         items = [{'id': f'hedge-{n}', 'kind': 'hedge',
-                  'provenance': {'unresolved_reason': 'above lidar ground'}} for n in range(40)]
+                  'provenance': {'unresolved_reason': 'feature above terrain'}} for n in range(40)]
         stats = {'blocks': 0, 'unplaced_items': items}
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(dl, 'plan_cell', return_value=({}, stats)), \
@@ -587,7 +652,7 @@ class TestReporting(unittest.TestCase):
             self.assertEqual(dl.run((0, 0)), 0)
             saved = json.loads((Path(tmp) / 'highfield_0_0_decor-report.json').read_text())
             self.assertEqual(saved['stats']['unplaced_items'], items)
-        self.assertIn("'above lidar ground': 40", output.getvalue())
+        self.assertIn("'feature above terrain': 40", output.getvalue())
         self.assertIn('full report:', output.getvalue())
         self.assertIn('empty decor plan', output.getvalue())
         self.assertNotIn('hedge-39', output.getvalue())

@@ -7,7 +7,11 @@ sits on paving, never on a path-line column. Building-border hedges from the aer
 against a footprint; other barriers and furniture stay clear of builds. Items the plan
 cannot resolve are listed, not silently skipped. Placed only where the live block is air
 (or a stem/flower, as in §10) and not owned by a neighbour or by another mask, clipped to
-the cell. Then any wall or fence pieces of the same type that one extra block could link
+the cell. Items stand on the true ground: the block at lidar terrain Y (``surface_probe.ground_at``), never
+the live top block, so a roof or deck over the ground is not ground (#301). A column with no solid unowned
+block at terrain Y is unplaced ('no ground at terrain'); an item whose own column holds a feature-owned
+block between terrain and its top is unplaced ('feature above terrain'); where terrain is missing the live
+surface is used as before. Then any wall or fence pieces of the same type that one extra block could link
 (face to face, diagonal is disjoint) are joined, one block per join, repeating until none
 remain; supported spots first, air/flowers only. Writes a decor mask (§3) only after a
 clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
@@ -68,7 +72,7 @@ def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
 
 
 def warm_decor_columns(world, cols) -> int:
-    """Prefetch the blocks ``surface_y`` and the placement checks read, for ``cols`` only.
+    """Prefetch the blocks ``surface_y``, the terrain-Y ground reads and the placement checks need, for ``cols`` only.
 
     A whole-cell probe (132 x 132 x 90) is far over the live store's cache cap, so it
     evicted itself and every later read was its own paced MCP scan. Stops at
@@ -169,31 +173,30 @@ def snapshot_decor_columns(world, cols):
     return DecorColumnView(world, blocks)
 
 
-def column_ground_kind(world: World, x: int, z: int) -> str | None:
-    """Classified ground kind at the live surface of (x, z), or None if empty."""
-    from surface_probe import surface_y
+def column_ground_kind(world: World, x: int, z: int, lidar_hm: Mapping[str, Any] | None = None) -> str | None:
+    """Classified ground kind at the ground block of (x, z), or None if there is none.
 
-    top = surface_y(world, x, z)
+    Ground is the block at lidar terrain Y, so a roof over the column does not make it a carriageway
+    or paving; the live surface is read only where terrain is missing (#301).
+    """
+    from surface_probe import ground_at
+
+    top = ground_at(world, lidar_hm, x, z)
     if not top:
         return None
     return BLOCK_KIND.get(top[1])
 
 
-def on_carriageway(world: World, x: int, z: int) -> bool:
+def on_carriageway(world: World, x: int, z: int, lidar_hm: Mapping[str, Any] | None = None) -> bool:
     """True when a barrier column would sit on the carriageway (tarmac, marking, kerb)."""
-    return column_ground_kind(world, x, z) in sf.ROAD_KINDS
+    return column_ground_kind(world, x, z, lidar_hm) in sf.ROAD_KINDS
 
 
-def above_lidar_ground(x: int, y: int, z: int, lidar_hm: Mapping[str, Any] | None) -> bool:
-    """Veto a live surface over two blocks above DTM; missing terrain gives no veto."""
-    if lidar_hm is None or 'terrain' not in lidar_hm:
-        return False
-    terrain = lidar_hm['terrain']
-    i, j = x - int(lidar_hm['x0']), z - int(lidar_hm['z0'])
-    if not (0 <= i < terrain.shape[0] and 0 <= j < terrain.shape[1]):
-        return False
-    ground = int(terrain[i, j])
-    return ground > 0 and y - ground > 2
+def no_ground_reason(lidar_hm: Mapping[str, Any] | None, x: int, z: int) -> str:
+    """Why a column has no ground: 'no ground at terrain' where lidar terrain exists, else 'no surface'."""
+    from surface_probe import terrain_y
+
+    return 'no ground at terrain' if terrain_y(lidar_hm, x, z) is not None else 'no surface'
 
 
 def may_join_at(
@@ -206,7 +209,6 @@ def may_join_at(
     owned: set,
     masked: set,
     world: World,
-    lidar_hm: Mapping[str, Any] | None = None,
     keep_clear=frozenset(),
 ) -> bool:
     """True when ``join_pieces`` may place ``mat`` at ``pos``.
@@ -224,7 +226,6 @@ def may_join_at(
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
     @param world: live or planning world
-    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
     @param keep_clear: shared entrance openings, routes and approach clearance columns
     @returns: whether the join candidate is allowed
     """
@@ -233,12 +234,6 @@ def may_join_at(
         return False
     if xz in near1 and mat not in allow_near1_mats:
         return False
-    if lidar_hm is not None:
-        from surface_probe import surface_y
-
-        top = surface_y(world, *xz)
-        if top and above_lidar_ground(pos[0], top[0], pos[2], lidar_hm):
-            return False
     return (cell_contains(cell, pos[0], pos[2])
             and is_air(world.block(*pos)) and pos not in owned and pos not in masked)
 
@@ -327,10 +322,11 @@ def place_furniture(
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
-    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
+    @param lidar_hm: lidar height map; items stand on the block at terrain Y (:func:`surface_probe.ground_at`),
+                     not on a roof over it; the live surface is used only where terrain is missing
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
-    from surface_probe import surface_y
+    from surface_probe import ground_at, raised_over_terrain, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
@@ -348,31 +344,34 @@ def place_furniture(
         if q in near1 and not allow:
             unplaced.append(dplan.mark_unplaced(item, 'against build'))
             continue
-        if column_ground_kind(world, x, z) in sf.ROAD_KINDS:
+        if column_ground_kind(world, x, z, lidar_hm) in sf.ROAD_KINDS:
             unplaced.append(dplan.mark_unplaced(item, 'on carriageway'))
             continue
-        top = surface_y(world, x, z)
+        top = ground_at(world, lidar_hm, x, z, owned, masked)
         if not top:
-            unplaced.append(dplan.mark_unplaced(item, 'no surface'))
-            continue
-        if above_lidar_ground(x, top[0], z, lidar_hm):
-            unplaced.append(dplan.mark_unplaced(item, 'above lidar ground'))
+            unplaced.append(dplan.mark_unplaced(item, no_ground_reason(lidar_hm, x, z)))
             continue
         stack = sf.recipe(kind)
         voxels: dict[tuple[int, int, int], str] = {}
         ok = True
+        why = 'blocked by live or owned block'
         for dy, block in stack:
             pos = (x, top[0] + dy, z)
             if not is_air(world.block(*pos)) or pos in owned or pos in masked or pos in found:
                 ok = False
+                if pos in owned:
+                    why = 'feature above terrain'          # a feature's own block stands in this column over the ground
                 break
             voxels[pos] = block
         if not ok:
-            unplaced.append(dplan.mark_unplaced(item, 'blocked by live or owned block'))
+            unplaced.append(dplan.mark_unplaced(item, why))
             continue
         found.update(voxels)
         row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
                'blocks': len(voxels)}
+        if terrain_y(lidar_hm, x, z) is not None:
+            row['on_terrain'] = True
+            row['moved_to_terrain'] = raised_over_terrain(world, x, z, top[0])
         if item.get('note'):
             row['note'] = item['note']
         if item.get('plan_id'):
@@ -405,10 +404,10 @@ def place_barriers_from_plan(
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
-    @param lidar_hm: optional lidar height map; terrain vetoes raised live surfaces
+    @param lidar_hm: lidar height map; barriers stand on the block at terrain Y (:func:`surface_probe.ground_at`)
     @returns: (placements, placed report rows, unplaced items)
     """
-    from surface_probe import surface_y
+    from surface_probe import ground_at, raised_over_terrain, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
     present: dict[tuple[int, int, int], str] = {}
@@ -441,20 +440,15 @@ def place_barriers_from_plan(
                     'against build',
                 ))
                 continue
-            top = surface_y(world, *q)
-            if top and above_lidar_ground(q[0], top[0], q[1], lidar_hm):
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'above lidar ground',
-                ))
-                continue
+            top = ground_at(world, lidar_hm, *q, owned, masked)
             if not top or q in way:
                 unplaced.append(dplan.mark_unplaced(
                     {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'on road/path/water or no surface',
+                    'on road/path/water or no surface' if q in way or terrain_y(lidar_hm, *q) is None
+                    else 'no ground at terrain',
                 ))
                 continue
-            if on_carriageway(world, q[0], q[1]):
+            if on_carriageway(world, q[0], q[1], lidar_hm):
                 unplaced.append(dplan.mark_unplaced(
                     {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
                     'on carriageway',
@@ -496,12 +490,15 @@ def place_barriers_from_plan(
                     'plan_id': item.get('id'),
                     'allow_against_build': allow,
                     'placed_positions': placed_positions, 'excluded_positions': excluded,
+                    **({'on_terrain': True, 'moved_to_terrain': raised_over_terrain(world, q[0], q[1], top[0])}
+                       if terrain_y(lidar_hm, *q) is not None else {}),
                 })
             else:
                 unplaced.append(dplan.mark_unplaced(
                     {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}",
                      'excluded_positions': excluded},
-                    'blocked by live or owned block',
+                    'feature above terrain' if any(tuple(e['position']) in owned for e in excluded)
+                    else 'blocked by live or owned block',
                 ))
     return found, report, unplaced
 
@@ -523,9 +520,10 @@ def place_outbuildings(
     An outbuilding is all or nothing: a half-built shed is worse than none. Refused when its
     rectangle leaves the cell, spans plots (no plot holds half of it), sits on a route, clearance column or
     entrance opening (``keep_clear``), a mapped road/path/water column (``way``), a house footprint,
-    the carriageway, ground more than two blocks under the live surface (``above lidar ground``),
-    or any block that is not air or is owned / masked. Ground height is lidar terrain; without a
-    lidar ground the item is unplaced.
+    the carriageway, a column with no solid unowned block at lidar terrain Y (``no ground at terrain``),
+    or any block that is not air or is owned / masked (``feature above terrain`` when a feature owns it).
+    Ground height is lidar terrain, read through :func:`surface_probe.ground_at`; without a lidar ground
+    the item is unplaced.
 
     @param cell: (tx, tz)
     @param items: ``outbuilding`` plan items
@@ -538,7 +536,7 @@ def place_outbuildings(
     @param lidar_hm: lidar height map with ``terrain``
     @returns: (placements, placed report rows, unplaced items)
     """
-    from surface_probe import surface_y
+    from surface_probe import ground_at
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
@@ -563,7 +561,7 @@ def place_outbuildings(
             refuse('on path/road/water column')
         elif any(q in houses for q in cells):
             refuse('on a house footprint')
-        elif any(column_ground_kind(world, *q) in sf.ROAD_KINDS for q in cells):
+        elif any(column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS for q in cells):
             refuse('on carriageway')
         elif lidar_hm is None or 'terrain' not in lidar_hm:
             refuse('no lidar ground')
@@ -576,17 +574,13 @@ def place_outbuildings(
             if min(ground.values()) <= 0:
                 refuse('no lidar ground')
                 continue
-            tops = {q: surface_y(world, *q) for q in cells}
-            if any(t and above_lidar_ground(q[0], t[0], q[1], lidar_hm) for q, t in tops.items()):
-                refuse('above lidar ground')
-                continue
-            if any(t and t[0] < ground[q] - 1 for q, t in tops.items()):
-                refuse('below lidar ground')
+            if any(not ground_at(world, lidar_hm, *q, owned, masked) for q in cells):
+                refuse('no ground at terrain')
                 continue
             blocks = ob.voxels(item, ground)
             bad = [p for p in blocks if not is_air(world.block(*p)) or p in owned or p in masked or p in found]
             if bad:
-                refuse('blocked by live or owned block')
+                refuse('feature above terrain' if any(p in owned for p in bad) else 'blocked by live or owned block')
                 continue
             found.update(blocks)
             report.append({
@@ -629,7 +623,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     from ground_sources import OSMGround
     from coverage import OUTBUILDINGS
     from osm_footprints import OSMIndex
-    from surface_probe import surface_y
+    from surface_probe import ground_at
 
     with timed_stage('decor source preparation'):
         owned = neighbour_owned(cell, ignored_builds(cell))
@@ -696,7 +690,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
             q = (int(raw[0]), int(raw[1]))
             if not cell_contains(cell, *q):
                 continue
-            top = surface_y(world, *q)
+            top = ground_at(world, lidar_hm, *q)
             if top and top[1] == mat:
                 present[(q[0], top[0], q[1])] = mat
             if top:
@@ -732,6 +726,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['furniture inference'] = sum(1 for r in furniture_report if r['source'] == 'inference')
     stats['barriers'] = len(barrier_report)
     stats['unresolved'] = len(unresolved)
+    stats['moved_to_terrain'] = (sum(1 for r in furniture_report if r.get('moved_to_terrain'))
+                                 + sum(1 for r in barrier_report if r.get('moved_to_terrain')))
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
     furniture_unplaced = list(furniture_unplaced) + gap_furniture
@@ -749,7 +745,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         return may_join_at(
             pos, mat, cell=cell, near1=near1, allow_near1_mats=allow_near1_mats,
             owned=owned, masked=masked, world=world,
-            lidar_hm=lidar_hm, keep_clear=reserved_gap,
+            keep_clear=reserved_gap,
         )
 
     joins = join_pieces(found, lambda p: world.block(*p), can_place, present)

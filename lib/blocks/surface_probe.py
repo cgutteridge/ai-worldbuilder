@@ -53,3 +53,56 @@ def surface_y(w: World, x: int, z: int, top: int = 110) -> tuple[int, str] | Non
             continue
         return y, short_id(b)
     return None
+
+
+def terrain_y(hm, x: int, z: int) -> int | None:
+    """Lidar terrain (DTM) Y of one column: the Y of the top ground block, or None where it is missing.
+
+    @param hm: height map dict (``x0``, ``z0``, ``terrain``) or None
+    @returns: Y, or None when there is no map, no ``terrain`` array, the column is outside it or holds 0
+    """
+    if hm is None or 'terrain' not in hm:
+        return None
+    terrain = hm['terrain']
+    i, j = x - int(hm['x0']), z - int(hm['z0'])
+    if not (0 <= i < terrain.shape[0] and 0 <= j < terrain.shape[1]):
+        return None
+    y = int(terrain[i, j])
+    return y if y > 0 else None
+
+
+def ground_at(w: World, hm, x: int, z: int, owned=(), masked=(), fallback=None) -> tuple[int, str] | None:
+    """The ground block of a column, at lidar terrain Y rather than the live top block (#301).
+
+    Over a roof ``surface_y`` returns the roof, so anything that stood on it stood on the roof. The
+    terrain height is the truth for ground; the live world is only read AT that height, for the block
+    id and for whether it is real ground. Material, water, carriageway and 'uneven ground' checks read
+    this block, never ``surface_y``.
+
+    Where terrain is missing for the column the live surface is used as before (``fallback``,
+    default :func:`surface_y`), and the caller can tell by ``terrain_y(hm, x, z) is None``.
+
+    @param hm: height map dict with ``terrain``, or None
+    @param owned: positions a feature owns; ground there is not ground
+    @param masked: positions another pass mask owns
+    @param fallback: ``callable(w, x, z)`` used when terrain is missing; default :func:`surface_y`
+    @returns: ``(y, short block id)`` like ``surface_y`` (water counts), or None when the column has no
+        solid, unowned block at terrain Y (air, plant, log, leaves, marker wool, owned or masked)
+    """
+    y = terrain_y(hm, x, z)
+    if y is None:
+        return (fallback or surface_y)(w, x, z)
+    b = w.block(x, y, z) or 'minecraft:air'
+    if not is_water(b):
+        if b.endswith('air') or any(p in b for p in PLANTS) or 'leaves' in b or '_log' in b \
+                or short_id(b) in MARKER_WOOL:
+            return None
+    if (x, y, z) in owned or (x, y, z) in masked:
+        return None
+    return y, short_id(b)
+
+
+def raised_over_terrain(w: World, x: int, z: int, y: int) -> bool:
+    """True when the live surface of the column stands above terrain ``y`` (a roof or deck over the ground)."""
+    live = surface_y(w, x, z)
+    return bool(live and live[0] > y)

@@ -498,7 +498,7 @@ class TestEvidencedRooting(unittest.TestCase):
     def test_blocked_trunk_does_not_shunt_on_legal_ground(self):
         placed, report = self.plan(owned={(10, 61, 10)})
         self.assertFalse(placed)
-        self.assertEqual(report['skipped'][0][-1], 'trunk blocked')
+        self.assertEqual(report['skipped'][0][-1], 'feature above terrain')
         self.assertIsNone(report['rooting'][0]['to'])
 
     def test_one_block_adjustment_cannot_move_trunk_outside_its_cell(self):
@@ -577,13 +577,145 @@ class TestEvidencedRooting(unittest.TestCase):
         self.assertTrue(placed)
         self.assertEqual(report['rooting'][0]['to'], [10, 11])
         attempts = report['rooting'][0]['attempts']
-        self.assertEqual([a['reason'] for a in attempts], ['carriageway', 'trunk blocked', 'trunk blocked', 'accepted'])
+        self.assertEqual([a['reason'] for a in attempts], ['carriageway', 'feature above terrain', 'trunk blocked', 'accepted'])
         self.assertTrue(all(abs(a['at'][0] - 10) + abs(a['at'][1] - 10) <= 1 for a in attempts))
 
     def test_waterlogged_live_surface_is_not_a_legal_root(self):
         placed, report = self.plan(ground_block=lambda *args: 'minecraft:smooth_stone_slab[waterlogged=true]')
         self.assertFalse(placed)
         self.assertIn('water', report['skipped'][0][-1])
+
+
+class TestTerrainGround(unittest.TestCase):
+    """#301: trunk base, material, water and carriageway checks read the block at lidar terrain Y, never a roof."""
+
+    GROUND = 60
+    ROOF = 70
+
+    def plan(self, blocks=None, owned=(), masked=None, terrain=GROUND, road=(), water=(), crown=(10, 10, 3.),
+             source='aerial', footprints=(), tx=(0, 0), terrain_x0=0):
+        from site_kit import Plan
+        origin = (crown[0], crown[1])
+        hm = None if terrain is None else {'x0': terrain_x0, 'z0': 0, 'terrain': np.full((128, 128), terrain)}
+        inputs = tl.TreeInputs([crown], 0, set(), {origin} if source == 'aerial' else set(), set(owned), None,
+                               masked or {}, set(footprints), terrain=hm, road=set(road), water=set(water))
+        live = dict(blocks or {})
+
+        class W:
+            def block(self, x, y, z):
+                if (x, y, z) in live:
+                    return live[(x, y, z)]
+                return 'minecraft:grass_block' if y <= TestTerrainGround.GROUND else 'minecraft:air'
+        with mock.patch.object(tl, 'warm_surface_probe'):
+            placed, report = tl.plan_cell(tx, Plan('terrain'), W(), inputs)
+        return placed, report
+
+    @staticmethod
+    def roof(xs=range(0, 25), zs=range(0, 25), y=ROOF):
+        return {(x, y, z): 'minecraft:red_concrete' for x in xs for z in zs}
+
+    def logs(self, placed):
+        return [p for p, b in placed.items() if 'log' in b]
+
+    def test_crown_over_a_roof_with_open_ground_beneath_grows_from_the_terrain(self):
+        # the live top block is the roof at 70; ground at 60 is open beneath it (an overhang or a canopy roof)
+        placed, report = self.plan(blocks=self.roof(y=self.ROOF + 10))
+        self.assertTrue(self.logs(placed))
+        self.assertEqual(min(p[1] for p in self.logs(placed)), self.GROUND + 1)
+        self.assertEqual(report['skipped'], [])
+        self.assertEqual(report['terrain']['used'], 1)
+        self.assertEqual(report['terrain']['moved'], 1)
+
+    def test_trunk_never_stands_on_the_roof(self):
+        placed, _ = self.plan(blocks=self.roof(y=self.GROUND + 40))
+        self.assertTrue(all(p[1] <= self.GROUND + 40 for p in placed))
+        for p in self.logs(placed):
+            self.assertLess(p[1], self.GROUND + 40)
+
+    def test_crown_overlapping_a_feature_roof_keeps_the_roof_and_drops_those_leaves(self):
+        roof = {(x, self.GROUND + 4, z): 'minecraft:red_concrete' for x in range(12, 25) for z in range(5, 16)}
+        owned = {(x, y, z) for (x, y, z) in roof}
+        placed, report = self.plan(blocks=roof, owned=owned)
+        self.assertTrue(self.logs(placed))
+        self.assertFalse(set(placed) & set(roof))
+        self.assertTrue(any(p[0] >= 12 for p in placed))             # leaves above and beside it still fill air
+        self.assertTrue(all(p[0] < 12 or p[1] != self.GROUND + 4 for p in placed))
+
+    def test_trunk_column_blocked_by_a_feature_block_is_unplaced_feature_above_terrain(self):
+        for y in (self.GROUND + 1, self.GROUND + 3):
+            with self.subTest(y=y):
+                owned = {(10, y, 10)}
+                placed, report = self.plan(blocks={(10, y, 10): 'minecraft:red_concrete'}, owned=owned)
+                self.assertEqual(report['skipped'][0][-1], 'feature above terrain')
+                self.assertFalse(placed)
+
+    def test_leaves_fill_air_beside_a_wall(self):
+        wall = {(13, y, z): 'minecraft:bricks' for y in range(self.GROUND + 1, self.GROUND + 12) for z in range(0, 25)}
+        placed, report = self.plan(blocks=wall, owned=set(wall))
+        self.assertEqual(report['skipped'], [])
+        self.assertTrue(any(p[0] == 12 and 'leaves' in b for p, b in placed.items()))   # beside the wall
+        self.assertFalse(set(placed) & set(wall))
+
+    def test_owned_and_masked_blocks_are_never_overwritten(self):
+        owned = {(x, self.GROUND + 4, 10) for x in range(5, 16)}
+        masked = {(x, self.GROUND + 5, 9): 'decor 0,0' for x in range(5, 16)}
+        placed, _ = self.plan(owned=owned, masked=masked, crown=(10, 8, 3.))
+        self.assertFalse(set(placed) & owned)
+        self.assertFalse(set(placed) & set(masked))
+
+    def test_floating_base_is_no_ground_at_terrain(self):
+        # terrain says 60 but the block at 60 is air and the live surface floats at 63
+        blocks = {(10, 60, 10): 'minecraft:air', (10, 63, 10): 'minecraft:grass_block'}
+        placed, report = self.plan(blocks=blocks)
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'no ground at terrain')
+
+    def test_feature_owned_block_at_terrain_is_no_ground(self):
+        placed, report = self.plan(owned={(10, self.GROUND, 10)})
+        self.assertFalse(placed)
+        self.assertEqual(report['skipped'][0][-1], 'no ground at terrain')
+
+    def test_missing_terrain_keeps_todays_live_surface_and_is_reported(self):
+        for terrain, x0 in ((None, 0), (0, 0), (60, 500)):          # no map, zero terrain, column outside the map
+            with self.subTest(terrain=terrain, x0=x0):
+                with mock.patch.object(tl, 'surface_y', lambda w, x, z: (self.ROOF, 'red_concrete')):
+                    placed, report = self.plan(terrain=terrain, terrain_x0=x0, blocks={(10, self.ROOF, 10): 'minecraft:red_concrete'})
+                self.assertEqual(min(p[1] for p in self.logs(placed)), self.ROOF + 1)
+                self.assertEqual(report['terrain'], {'used': 0, 'moved': 0, 'fallback': 1})
+
+    def test_water_and_carriageway_read_the_block_at_terrain(self):
+        pond = {(x, self.GROUND, z): 'minecraft:water' for x in range(8, 13) for z in range(8, 13)}
+        placed, report = self.plan(blocks={**pond, **self.roof(y=self.ROOF)})
+        self.assertFalse(placed)
+        self.assertIn('water', report['skipped'][0][-1])
+        # a tarmac roof deck at 70 does not matter; the road set decides the carriageway
+        placed, report = self.plan(blocks=self.roof(), road={(10, 10)}, source='detector')
+        self.assertEqual(report['skipped'][0][-1], 'carriageway')
+        # live surface is a roof, terrain is lawn: detector material rule reads the terrain block
+        placed, report = self.plan(blocks=self.roof(y=self.ROOF + 5), source='detector')
+        self.assertEqual(report['skipped'][0][-1] if report['skipped'] else None, None)
+        placed, report = self.plan(blocks={(10, self.GROUND, 10): 'minecraft:stone'}, source='detector')
+        self.assertEqual(report['skipped'][0][-1], 'surface stone')
+
+    def test_planning_inputs_loads_the_terrain_once(self):
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), 60)}
+        osm = types.ModuleType('osm_footprints')
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c: None), \
+                mock.patch.object(tl, 'cell_terrain', lambda c: hm) as ct, \
+                mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
+                mock.patch.object(tl, 'ignored_builds', lambda cell: set()), \
+                mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
+                mock.patch.dict(sys.modules, {'osm_footprints': osm}), \
+                mock.patch('cell_registry.view_registry', lambda: types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs(CELL, osm_ground=_empty_osm_ground())
+        self.assertIs(inputs.terrain, hm)
+
+    def test_cell_terrain_is_none_when_lidar_is_unavailable(self):
+        with mock.patch('lidar_heightmap.reference_world', side_effect=RuntimeError('no lidar')):
+            self.assertIsNone(tl.cell_terrain((0, 0)))
 
 
 if __name__ == '__main__':

@@ -49,13 +49,19 @@ def lidar_hm(ground=GROUND, size=140):
     return {'x0': X0, 'z0': Z0, 'terrain': np.full((size, size), ground), 'h': np.full((size, size), ground)}
 
 
-def place(items, *, keep_clear=(), houses=(), way=(), lidar=None, cell=(0, 0), surface=GROUND):
+def live_world(top=GROUND, extra=None):
+    """Live blocks: grass up to ``top``, air above, plus ``extra`` ``{(x, y, z): block}``."""
+    extra = extra or {}
     world = mock.Mock()
-    world.block = lambda x, y, z: 'minecraft:air'
-    with mock.patch('surface_probe.surface_y', side_effect=lambda w, x, z: (surface, 'grass_block')):
-        return dl.place_outbuildings(
-            cell, items, world, way=set(way), houses=set(houses), keep_clear=set(keep_clear),
-            owned=set(), masked=set(), lidar_hm=lidar or lidar_hm())
+    world.block = lambda x, y, z: extra.get((x, y, z), 'minecraft:grass_block' if y <= top else 'minecraft:air')
+    return world
+
+
+def place(items, *, keep_clear=(), houses=(), way=(), lidar=None, cell=(0, 0), surface=GROUND, extra=None, owned=()):
+    """``surface`` is the top of the live ground; ground height itself comes from the lidar terrain."""
+    return dl.place_outbuildings(
+        cell, items, live_world(surface, extra), way=set(way), houses=set(houses), keep_clear=set(keep_clear),
+        owned=set(owned), masked=set(), lidar_hm=lidar or lidar_hm())
 
 
 def blob_plan(cells, rise_value=2.6, **kw):
@@ -243,15 +249,28 @@ class TestRefusals(unittest.TestCase):
         self.assertEqual(self.reasons(unplaced), ['on carriageway'])
 
     def test_blocked_or_ungrounded_is_unplaced_whole(self):
-        world = mock.Mock()
-        world.block = lambda x, y, z: 'minecraft:stone' if (y, x) == (GROUND + 1, 30) else 'minecraft:air'
-        with mock.patch('surface_probe.surface_y', side_effect=lambda w, x, z: (GROUND, 'grass_block')):
-            f, _r, unplaced = dl.place_outbuildings(
-                (0, 0), self.items, world, way=set(), houses=set(), keep_clear=set(), owned=set(),
-                masked=set(), lidar_hm=lidar_hm())
+        f, _r, unplaced = place(self.items, extra={(30, GROUND + 1, z): 'minecraft:stone' for z in range(28, 36)})
         self.assertEqual((f, self.reasons(unplaced)), ({}, ['blocked by live or owned block']))
         self.assertEqual(self.reasons(place(self.items, lidar=lidar_hm(ground=0))[2]), ['no lidar ground'])
-        self.assertEqual(self.reasons(place(self.items, surface=GROUND + 4)[2]), ['above lidar ground'])
+        self.assertEqual(self.reasons(place(self.items, surface=GROUND - 1)[2]), ['no ground at terrain'])
+
+    def test_a_roof_over_the_ground_does_not_veto_the_shed(self):
+        """#301: the shed stands from lidar terrain; a feature's roof high over its column is no reason to skip it."""
+        roof = {(x, GROUND + 12, z): 'minecraft:red_concrete' for x in range(28, 36) for z in range(28, 36)}
+        found, _report, unplaced = place(self.items, extra=roof, owned=set(roof))
+        self.assertEqual(unplaced, [])
+        self.assertTrue(found)
+        self.assertTrue(all(p[1] < GROUND + 12 for p in found))
+        self.assertTrue(not set(found) & set(roof))
+
+    def test_a_feature_block_in_the_shed_volume_is_feature_above_terrain(self):
+        roof = {(30, GROUND + 1, 30): 'minecraft:red_concrete'}
+        found, _report, unplaced = place(self.items, extra=roof, owned=set(roof))
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['feature above terrain']))
+
+    def test_ground_block_owned_by_a_feature_is_no_ground(self):
+        found, _report, unplaced = place(self.items, owned={(31, GROUND, 31)})
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['no ground at terrain']))
 
 
 class TestReviewFixes(unittest.TestCase):
@@ -271,8 +290,8 @@ class TestReviewFixes(unittest.TestCase):
 
     def test_walls_never_float_over_a_lower_live_surface(self):
         item = only(blob_plan(rect(30, 30, 3, 3)))[0]
-        _f, _r, unplaced = place([item], surface=GROUND - 2)
-        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['below lidar ground'])
+        _f, _r, unplaced = place([item], surface=GROUND - 2)      # live ground below the lidar terrain
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['no ground at terrain'])
 
     def test_plan_cell_sets_footprint_override_keeps_roof_slabs_and_clears_the_interior(self):
         """Unmapped outbuildings need ``outside_footprint_ok`` (osm_footprints.guard) and half-height roof slabs."""
@@ -291,8 +310,7 @@ class TestReviewFixes(unittest.TestCase):
                                      road_lines=[], path_lines=[])
         plan = types.SimpleNamespace(cells={}, keep_slab_cells=set(),
                                      set=lambda x, y, z, b: plan.cells.__setitem__((x, y, z), b))
-        world = mock.Mock()
-        world.block = lambda x, y, z: 'minecraft:air'
+        world = live_world()
         with mock.patch('decor_layer.neighbour_owned', return_value=set()), \
                 mock.patch('decor_layer.ignored_builds', return_value=()), \
                 mock.patch('decor_layer.load_masked_positions', return_value={}), \
@@ -364,7 +382,8 @@ class TestMassing(unittest.TestCase):
         item = only(blob_plan(cells, rise_value=3.5))[0]
         hm = lidar_hm()
         hm['terrain'][30, 30] = GROUND - 1                       # one corner sits a block lower
-        found, _r, unplaced = place([item], lidar=hm)
+        lowered = {(30, GROUND, 30): 'minecraft:air'}              # the live ground there is lower too
+        found, _r, unplaced = place([item], lidar=hm, extra=lowered)
         self.assertEqual(unplaced, [])
         self.assertEqual(found[(30, GROUND, 30)], 'bricks')        # wall runs down to the low ground
         self.assertTrue(all(y <= GROUND + 6 for _x, y, _z in found))
