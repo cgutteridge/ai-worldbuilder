@@ -1675,6 +1675,69 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         )
 
 
+class PitchedZonesFloatDsmTest(unittest.TestCase):
+    """#300: ``dsm_fine`` (the provider's float option) feeds pitched half-steps only."""
+
+    setUp = PitchedZonesRidgeTest.setUp
+    _spec = PitchedZonesRidgeTest._spec
+    _build = PitchedZonesRidgeTest._build
+
+    def _data(self, fine):
+        d = {k: dict(v) for k, v in self.ridge_zone_data.items()}
+        if fine is not None:
+            d['A']['dsm_fine'] = fine
+        return d
+
+    def _builder(self, zone_data):
+        return F.Build(
+            self._spec('pitched', [48]), footprints={'A': self.cells},
+            world=_StoneWorld(), zone_data=zone_data,
+        )
+
+    def _prepare(self, zone_data):
+        builder = self._builder(zone_data)
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(io.StringIO()):
+            builder.prepare_zones()
+        return builder.features[0]
+
+    def test_float_rise_of_one_and_a_half_metres_plans_three_half_steps_and_a_slab(self):
+        fine = np.asarray(self.ridge_zone_data['A']['dsm'], dtype=float).copy()
+        fine[:, 4:7] = 48.0 + 1.5   # 3-wide ridge 1.5 m above the eave
+        data = self._data(fine)
+        data['A']['dsm'] = np.where(fine > 49.0, 50.0, 48.0)   # whole-metre grid rounds it
+        f = self._prepare(data)
+        rises = {h - 2 * f.zone_eave[c] for c, h in f.zone_roof_half.items()}
+        self.assertIn(3, rises)
+        plan = self._build('pitched', [48], data)
+        self.assertTrue(
+            any('slab' in st and 'brick' in st for st in plan.cells.values()),
+            'a 3-half-step rise must plan a slab course',
+        )
+
+    def test_whole_metre_float_input_behaves_exactly_as_without_it(self):
+        base = self._prepare(self._data(None))
+        same = self._prepare(self._data(np.asarray(self.ridge_zone_data['A']['dsm'], dtype=float)))
+        self.assertEqual(base.zone_roof_half, same.zone_roof_half)
+        self.assertEqual(base.zone_roof, same.zone_roof)
+
+    def test_dsm_and_ground_grids_are_identical_with_and_without_dsm_fine(self):
+        fine = np.asarray(self.ridge_zone_data['A']['dsm'], dtype=float) + 0.5
+        a = self._prepare(self._data(None))
+        b = self._prepare(self._data(fine))
+        self.assertEqual(a.cells, b.cells)
+        self.assertEqual(a.zone_eave, b.zone_eave)
+        self.assertEqual(a.zone_ground, b.zone_ground)
+        self.assertEqual(a.zone_level, b.zone_level)
+
+    def test_nan_cells_in_dsm_fine_do_not_poison_the_roof(self):
+        fine = np.asarray(self.ridge_zone_data['A']['dsm'], dtype=float).copy()
+        fine[3, 5] = np.nan
+        f = self._prepare(self._data(fine))
+        self.assertTrue(f.zone_roof_half, 'a no-data cell must not blank the roof')
+        self.assertEqual(len(f.zone_roof_half), len(self._prepare(self._data(None)).zone_roof_half))
+
+
 class RidgeHalfStepsTest(unittest.TestCase):
     """#299: zone_ridge_half_steps keeps a narrow lidar ridge, ignores lone spikes, clips to the next level."""
 
@@ -1691,6 +1754,23 @@ class RidgeHalfStepsTest(unittest.TestCase):
         out = F.zone_ridge_half_steps(med, zone, readable)
         self.assertTrue((out[:, 4:8] == 4).all())
         self.assertTrue((out[:, :4] == 0).all() and (out[:, 8:] == 0).all())
+
+    def test_float_rise_of_one_and_a_half_metres_gives_three_half_steps(self):
+        med = np.full((7, 12), 44.0)
+        med[:, 4:8] = 45.5
+        med, readable = self._grid(med)
+        out = F.zone_ridge_half_steps(med, np.full(med.shape, 44.0), readable)
+        self.assertTrue((out[:, 4:8] == 3).all())
+
+    def test_nan_cell_is_unreadable_not_a_zero_metre_roof(self):
+        med = np.full((7, 12), 44.0)
+        med[:, 4:8] = 46.0
+        med[3, 5] = np.nan
+        med, readable = self._grid(med)
+        out = F.zone_ridge_half_steps(med, np.full(med.shape, 44.0), readable)
+        self.assertEqual(int(out[3, 5]), 0)
+        self.assertEqual(int(out[3, 6]), 4)   # neighbours keep their rise
+        self.assertTrue(readable.all(), 'the caller mask is left alone')
 
     def test_flat_zone_with_noise_and_lone_spike_stays_flat(self):
         rng = np.random.default_rng(3)

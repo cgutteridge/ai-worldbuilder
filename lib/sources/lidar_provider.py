@@ -149,6 +149,25 @@ def mc_heights(*args: Any, **kwargs: Any):
     return load_lidar_module('tiles').mc_heights(*args, **kwargs)
 
 
+def mc_heights_float(*args: Any, **kwargs: Any):
+    """Like ``mc_heights`` but asks the provider for its float option.
+
+    The provider's default rounds every DSM/DTM sample to a whole metre, so a
+    roof that rises half a block never shows up. This wrapper asks for the
+    provider's float option (unrounded heights, NaN for no-data) and, for a
+    provider whose ``mc_heights`` has no such option (``TypeError``), falls
+    back to the whole-metre grid so callers keep working.
+
+    @returns: height dict; ``dsm`` / ``dtm`` are float (NaN = no data) when the
+        provider has the float option, whole-metre integers otherwise
+    """
+    fn = load_lidar_module('tiles').mc_heights
+    try:
+        return fn(*args, geocraft=False, **kwargs)
+    except TypeError:
+        return fn(*args, **kwargs)
+
+
 def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:
     """Sample cached provider heights for an inclusive Minecraft block box.
 

@@ -134,6 +134,25 @@ class LoadEntries(unittest.TestCase):
             self.assertEqual(lp.mc_box_en(0, 0, 1, 1), (1.0, 2.0, 3.0, 4.0))
             self.assertEqual(lp.mc_heights(None, 0, 0, 1, 1)['feature'], None)
 
+    def test_mc_heights_float_asks_for_the_float_option(self):
+        seen = {}
+
+        def fake(*a, geocraft=True, **k):
+            seen['geocraft'] = geocraft
+            return {'dsm': 'float-grid'}
+
+        fake_mod = types.ModuleType('fake_tiles')
+        fake_mod.mc_heights = fake
+        with mock.patch.object(lp, 'load_lidar_module', return_value=fake_mod):
+            self.assertEqual(lp.mc_heights_float(None, 0, 0, 1, 1)['dsm'], 'float-grid')
+        self.assertIs(seen['geocraft'], False)
+
+    def test_mc_heights_float_falls_back_when_provider_has_no_float_option(self):
+        fake_mod = types.ModuleType('fake_tiles')
+        fake_mod.mc_heights = lambda client, x0, z0, x1, z1: {'dsm': 'int-grid'}
+        with mock.patch.object(lp, 'load_lidar_module', return_value=fake_mod):
+            self.assertEqual(lp.mc_heights_float(None, 0, 0, 1, 1)['dsm'], 'int-grid')
+
 
 if __name__ == '__main__':
     unittest.main()

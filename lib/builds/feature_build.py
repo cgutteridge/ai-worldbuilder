@@ -120,6 +120,7 @@ import argparse
 import json
 import math
 import statistics
+import warnings
 from collections import Counter, deque
 from pathlib import Path
 
@@ -187,6 +188,18 @@ def _win(a: np.ndarray, k: int, fn) -> np.ndarray:
     """
     pad = k // 2
     return fn(_sw(np.pad(a, pad, mode='edge'), (k, k)), axis=(2, 3))
+
+
+def _win_nanmedian(a: np.ndarray, k: int) -> np.ndarray:
+    """k×k sliding median that skips NaN (no-data) cells.
+
+    @param a: 2-D float array, NaN where there is no data
+    @param k: odd window size
+    @returns: same shape as ``a``; NaN only where the whole window is NaN
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)  # all-NaN window → NaN, handled by the caller
+        return _win(a, k, np.nanmedian)
 
 
 def dilate_mask(mask: np.ndarray, k: int = 3) -> np.ndarray:
@@ -511,6 +524,13 @@ def zone_ridge_half_steps(
     if not readable.any():
         return out
     med_f = med.astype(float)
+    nodata = np.isnan(med_f)
+    if nodata.any():
+        # no-data is unreadable, never a zero-metre roof: drop it from the zone and its neighbours
+        readable = readable & ~nodata
+        med_f = np.where(nodata, 0.0, med_f)
+        if not readable.any():
+            return out
     present = sorted({float(v) for v in np.unique(zone[readable])})
     all_levels = sorted({float(v) for v in (levels if levels is not None else present)} | set(present))
     for level in present:
@@ -1320,7 +1340,7 @@ class Build:
             fixture trees only). Production always uses this world's
             ``reference/vector_map`` via ``vector_map_clips.vector_map_clip_root``;
             do not point at another world's clips.
-        @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests
+        @param zone_data: optional ``{label: {dsm, ground_y, x0, z0}}`` grids for tests (optional ``dsm_fine``: float DSM for pitched half-steps, NaN = no data)
             (arrays indexed ``[z, x]`` / row=z; ``ground_y`` is block Y; ``dsm`` metres AOD).
             Unzoned labels may inject ground_y without dsm. When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
         @param aerial_rgb: optional ``{(x, z): (r, g, b) 0..1}`` for roof-colour
@@ -1463,11 +1483,17 @@ class Build:
                 f'bbox=({x0},{z0})-({x1},{z1})'
             )
         h = lp.mc_heights(lidar, x0, z0, x1, z1)
+        # The whole-metre grid above rounds every DSM sample, so a roof that rises half
+        # a block never shows. ``dsm_fine`` is the provider's float option (NaN = no data;
+        # whole metres when the provider has none) and only feeds the pitched-roof
+        # half-steps; snapping, footprints and ground heights stay on the whole-metre grid.
+        fine = lp.mc_heights_float(lidar, x0, z0, x1, z1)
         # mc_heights is [x - x0, z - z0]; convert to [z, x] for zone helpers
         return {
             'x0': x0,
             'z0': z0,
             'dsm': np.asarray(h['dsm']).T,
+            'dsm_fine': np.asarray(fine['dsm'], dtype=float).T,
             'ground_y': np.asarray(h['ground_y']).T,
         }
 
@@ -1510,10 +1536,12 @@ class Build:
                 )
             new_cells = mask_to_cells(readable, x0, z0)
             pitched = f.roof.get('kind') == 'pitched'
-            half_grid = (
-                zone_ridge_half_steps(_win(dsm.astype(float), 3, np.median), zone, readable, levels=_levels)
-                if pitched else None
-            )
+            half_grid = None
+            if pitched:
+                # pitched labels read the float DSM (when given) so a half-block rise survives
+                fine = grids.get('dsm_fine')
+                fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
+                half_grid = zone_ridge_half_steps(_win_nanmedian(fine, 3), zone, readable, levels=_levels)
             roof: dict = {}
             eaves: dict = {}
             half_h: dict = {}
