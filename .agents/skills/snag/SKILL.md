@@ -21,24 +21,28 @@ Snags live only inside issues (live: `registry/issues.json` and `registry/issues
 `fix-landed` is set by `issues.py sync` only when every element of the snags the fix covers was redesigned (new landed build, changed content) after the fix merged. Never review an issue that is only `open`.
 
 1. `issues.py review I-nnn` gives the packet. Run `sherlock`'s grouping check first (see that skill); tell the owner if a snag looks misfiled.
-2. Brief the owner before moving them, **short enough to read on one screen at a glance**: a three-part card, plain words, plain titles first (IDs small, after):
-   - **The snag:** the owner's words in a line or two, plus its picture (`Read` the image in `registry/issues/img/` so it shows; no picture: say so, no staging).
-   - **The fix:** one or two lines on what changed (the code or method), not the cause story and not the ticket history.
-   - **The question:** what to look at, from where, what should now be different (the check line made concrete), ending in the question the owner answers (fixed or not fixed?).
+2. **Survey, one snag per stop.** Each stop is a survey card, and the owner answers one question. For the snag in front of them, in this order:
+   1. `Read` its picture (`registry/issues/img/`) so it shows. Show any other image or data that bears on it (a plan, a count the check line names). No picture: say so in a line.
+   2. Move the player to where the picture was taken (stored `pos` and `facing`; `--facing` is a look-at point, so convert a stored yaw,pitch). A snag with no stored position (agent snags): pick a spot from the evidence, and say so in a line.
 
-   An issue with several snags gets one card per stop, not one long brief. No tables, no lists of counts; evidence only if the owner asks.
-3. The owner judges in game. Take them near each snag's position and stop; do not tour, script the camera or take pictures for them:
+      ```bash
+      python3 scripts/mc_player.py --world <w> move --why "Showing <snag in plain words>" --pos x,y,z --facing x,y,z --gamemode spectator
+      ```
+   3. Write the card, in this shape and no more:
 
-   ```bash
-   python3 scripts/mc_player.py --world <w> move --why "Showing <snag in plain words>" --pos x,y,z --facing x,y,z --gamemode spectator
-   ```
+      ```
+      <plain description of what was wrong>  (S-nnn, small)
+      "<their words, verbatim, one or two lines>"
+      [picture and other relevant images or data]
+      What changed: <one line on the fix>
+      Please view in game and confirm: <what to look at, and what should now be different>
+      ```
+   4. Ask one question: is it fixed? Offer yes first, as the default answer, then not fixed.
 
-   `--facing` is a look-at point, not yaw/pitch (convert a stored yaw,pitch). Snags with no stored position (agent snags): pick a spot from the evidence in the snag, say so, and give coordinates in the brief.
-   - Do **one stop at a time**, then ask: fixed or not fixed? Re-showing the original picture is optional.
-   - Take a `view_capture` only when **you** need to see something to decide or diagnose, never as a show-and-tell. If a capture does not show the thing (roof, wall with no door), say so and move on; do not stage more.
-   - You may check with block scans where useful, but give the owner the counts as evidence, not as a verdict.
-4. After the last snag, one question: "Did this resolve ALL N snags?" Record it:
-   - all fine: `issues.py verdict I-nnn --all-fixed`
+   The owner's own words and a plain description carry the card; an ID is a small tag after them, never the way to name the snag. One question at a time: the next snag's picture, move and card wait until this one is answered. Say nothing about what comes next, how many are left or which issue follows; no preamble before the card, no recap after the answer.
+3. The owner judges in game; no tour, no scripted camera, no pictures taken for them. Take a `view_capture` only when **you** need to see something to decide or diagnose. If a capture does not show the thing, say so and move on. Block scans may inform you; give the owner counts only if they ask.
+4. When the last snag of the issue is answered, record it from the per-snag answers (no further question):
+   - all fixed: `issues.py verdict I-nnn --all-fixed`
    - otherwise: `issues.py verdict I-nnn --fixed S-001 ... --not-fixed S-003`. The issue returns to `open`; the unresolved snags stay on it.
 5. Only the owner's verdict confirms an issue. Nothing else does, not a rebuild, not a green test.
 
