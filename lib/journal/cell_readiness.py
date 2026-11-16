@@ -10,6 +10,7 @@ import json
 
 from cell_journal import CANCEL, GHOST_PASSES, Note, Refused
 from block_store import block_id
+from plan_refs import candidate_covered, covered_by_plans
 
 
 POLICY_VERSION = 1
@@ -88,19 +89,32 @@ def ground_redo_command(cell, stale):
 
 
 def planned_elsewhere(reg, cell):
-    """Feature ids planned or dismissed in any other cell: a cross-cell feature is one thing (task 288).
+    """Feature ids and map refs planned or dismissed in any other cell: a cross-cell feature is one thing (task 288).
 
     A map-ref feature (a building or water body) planned, or deliberately dismissed, in its
     home cell is accounted for in every other cell its footprint touches. House groups key by
-    street, not by a global map ref, so callers apply this only to non-house candidates.
+    street, not by a global map ref, so callers apply this only to non-house candidates. A plan
+    named ``<prefix>_w<osmid>`` covers ``w<osmid>`` too (task 293, see ``plan_refs``).
 
     @param reg: cell journal
     @param cell: ``(tx, tz)``
-    @returns: set of feature ids
+    @returns: set of feature ids and the map refs those plans cover
     """
     cell = tuple(cell)
-    return {fid for c, v in reg.view().items() if c != cell
-            for fid in {f.id for f in v.features} | reg.plan_dismissed_ids(c)}
+    ids = {fid for c, v in reg.view().items() if c != cell
+           for fid in {f.id for f in v.features} | reg.plan_dismissed_ids(c)}
+    return covered_by_plans(reg.root, ids)
+
+
+def planned_here(reg, cell):
+    """Feature ids and map refs planned, built or dismissed in this cell (task 293).
+
+    @param reg: cell journal
+    @param cell: ``(tx, tz)``
+    @returns: set of feature ids and the map refs those plans cover
+    """
+    cell = tuple(cell)
+    return covered_by_plans(reg.root, {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell))
 
 
 def accounted_elsewhere(item, elsewhere):
@@ -110,10 +124,7 @@ def accounted_elsewhere(item, elsewhere):
     @param elsewhere: :func:`planned_elsewhere` result
     @returns: bool
     """
-    if item.get('kind') == 'houses':
-        return False
-    fid = item.get('id') or next((str(r) for r in item.get('refs') or () if r), None)
-    return fid in elsewhere
+    return candidate_covered(item, elsewhere)
 
 
 def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
@@ -302,9 +313,10 @@ class ReadinessPolicy:
         if inspect_candidates and not validated:
             try:
                 candidates = self.evidence.candidates(self.reg, cell)
-                accounted = {f.id for f in v.features} | self.reg.plan_dismissed_ids(cell)
+                accounted = planned_here(self.reg, cell)
                 elsewhere = planned_elsewhere(self.reg, cell)
                 candidates = [c for c in candidates if c['id'] not in accounted
+                              and not candidate_covered(c, accounted)
                               and not accounted_elsewhere(c, elsewhere)]
             except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
                 blockers.append(f'candidate evidence error: {exc}')

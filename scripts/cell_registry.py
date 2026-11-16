@@ -24,6 +24,7 @@ Per-cell view (folded, never stored)::
   python3 scripts/cell_registry.py query --feature <id>
   python3 scripts/cell_registry.py query --cell tx,tz
   python3 scripts/cell_registry.py propose-features --cell tx,tz [--record]
+  python3 scripts/cell_registry.py duplicate-plans [--json]
   python3 scripts/cell_registry.py hold set tx,tz --reason R
   python3 scripts/cell_registry.py hold clear tx,tz
   python3 scripts/cell_registry.py dismiss-coverage tx,tz --warning-id ID --reason R
@@ -204,6 +205,50 @@ def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
     return out
 
 
+def duplicate_plans(reg: CellRegistry) -> list[dict[str, Any]]:
+    """Plan notes whose map refs another, differently named plan already covers (task 293).
+
+    Read-only. Covers every feature plan in the journal, dismissed ones included (flagged), so
+    the owner sees what is left to ``dismiss-feature``. A plan counts as dismissed only when
+    no cell still has it on its plan.
+
+    @param reg: registry
+    @returns: rows from ``plan_refs.duplicate_plans`` (``plan``, ``refs``, ``covered_by``, ``source``,
+        ``status``, ``cells``, ``dismissed``)
+    """
+    from plan_refs import duplicate_plans as find
+    plans = {pid: {**rec, 'dismissed': False} for pid, rec in feature_cells(reg).items()}
+    for cell in reg.view():
+        for pid in reg.plan_dismissed_ids(cell):
+            rec = plans.setdefault(pid, {'status': 'dismissed', 'cells': [], 'dismissed': True})
+            if rec['dismissed']:
+                rec['cells'].append(cell_id(*cell))
+    return find(reg.root, plans)
+
+
+def format_duplicate_plans(rows: list[dict[str, Any]]) -> str:
+    """Plain words for :func:`duplicate_plans` rows.
+
+    @param rows: duplicate rows
+    @returns: report text
+    """
+    if not rows:
+        return 'no duplicate plans: every map ref has one plan'
+    live = [r for r in rows if not r['dismissed']]
+    lines = [f'{len(rows)} duplicate plan note{"s" if len(rows) != 1 else ""} '
+             f'({len(live)} not dismissed):']
+    for r in rows:
+        basis = 'refs on its spec' if r['source'] == 'spec' else 'ref read from its name (no spec)'
+        state = 'dismissed' if r['dismissed'] else r['status']
+        cells = ' '.join(r['cells'])
+        lines.append(f"  {r['plan']} [{state}] in {cells}: covers {','.join(r['refs'])} like {r['covered_by']} ({basis})")
+        if not r['dismissed']:
+            for c in r['cells']:
+                lines.append(f"    python3 scripts/cell_registry.py --world <world> dismiss-feature {c} "
+                             f"--feature {r['plan']} --reason 'duplicate of {r['covered_by']}'")
+    return '\n'.join(lines)
+
+
 def cells_above_ghost(reg: CellRegistry) -> dict[str, Any]:
     """Every cell with anything above ghost, with per-kind counts (#135).
 
@@ -376,8 +421,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
 
 def _norm_ref(ref: Any) -> str:
     """Map ref in comparable form: ``w123`` (a bare ``123`` from a spec is a way id)."""
-    r = str(ref)
-    return r if r[:1] in ('w', 'r') else 'w' + r
+    from plan_refs import norm_ref
+    return norm_ref(ref)
 
 
 def planned_refs(root: Path | str, plan_id: str) -> set[str] | None:
@@ -387,13 +432,8 @@ def planned_refs(root: Path | str, plan_id: str) -> set[str] | None:
     @param plan_id: feature plan id
     @returns: refs like ``w176658456``, or None when there is no readable spec to say
     """
-    import json
-    try:
-        data = json.loads((Path(root) / 'site' / 'builds' / f'{plan_id}.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    ways = data.get('ways') if isinstance(data, dict) else None
-    return {_norm_ref(k) for k in ways} if isinstance(ways, dict) and ways else None
+    from plan_refs import spec_refs
+    return spec_refs(root, plan_id)
 
 
 def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
@@ -450,21 +490,25 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     return list(cf.missing_features(tx, tz))
 
 
-def drop_planned_elsewhere(reg: CellRegistry, cell: tuple[int, int],
-                           items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Candidates minus map-ref features already planned in another cell (task 288).
+def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
+                            items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Candidates minus map-ref features already planned or built, here or in another cell (tasks 288, 293).
 
     A feature crossing a cell line is planned once; the other cells it touches never
-    re-propose it (a legacy plan in a minority cell still counts).
+    re-propose it (a legacy plan in a minority cell still counts). A plan covers a candidate
+    by map ref, not only by id: ``west_w34391673`` covers ``w34391673`` (``plan_refs``).
+    House groups are not matched here: ``plan_ids_for_candidates`` keeps them by street.
 
     @param reg: registry
     @param cell: (tx, tz)
     @param items: candidates from :func:`propose_feature_candidates` or readiness evidence
     @returns: the candidates still to account for in this cell
     """
-    from cell_readiness import accounted_elsewhere, planned_elsewhere
+    from cell_readiness import accounted_elsewhere, planned_elsewhere, planned_here
+    from plan_refs import candidate_covered
     elsewhere = planned_elsewhere(reg, cell)
-    return [i for i in items if not accounted_elsewhere(i, elsewhere)]
+    here = planned_here(reg, cell)
+    return [i for i in items if not accounted_elsewhere(i, elsewhere) and not candidate_covered(i, here)]
 
 
 def record_feature_candidates(reg: CellRegistry, cid: str,
@@ -472,7 +516,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     """Write ``plan_feature`` notes for propose-features candidates (#128).
 
     Skips ids already on the cell plan, map-ref features planned in another cell
-    (task 288), and ids in ``plan_dismissed`` so a re-run
+    (task 288) and features whose plan covers the candidate's map ref (task 293), and ids in ``plan_dismissed`` so a re-run
     of ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature``
     note would clear the dismissal in the note fold).
 
@@ -483,7 +527,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     """
     cell = parse_cell_id(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
-    items = drop_planned_elsewhere(reg, cell, items)
+    items = drop_covered_candidates(reg, cell, items)
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
     for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
@@ -645,6 +689,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--record', action='store_true',
                    help='journal plan_feature notes for each candidate (#128)')
 
+    p = sub.add_parser('duplicate-plans',
+                       help='read-only: plan notes whose map ref another plan already covers (task 293)')
+    p.add_argument('--json', action='store_true', help='print JSON rows')
+
     p = sub.add_parser('hold', help='set or clear a cell hold')
     hold_sub = p.add_subparsers(dest='hold_cmd', required=True)
     ps = hold_sub.add_parser('set')
@@ -758,8 +806,8 @@ def main(argv: list[str] | None = None) -> int:
             fraction = clip_coverage(parse_cell_id(args.cell))
             print(json.dumps({'cell': args.cell, 'clip_coverage': fraction,
                               'kind': 'clip-query-coverage'}, sort_keys=True))
-            items = drop_planned_elsewhere(reg, parse_cell_id(args.cell),
-                                           propose_feature_candidates(args.cell))
+            items = drop_covered_candidates(reg, parse_cell_id(args.cell),
+                                            propose_feature_candidates(args.cell))
             for item in items:
                 print(json.dumps(item, sort_keys=True, default=_json_default))
             if args.record:
@@ -770,6 +818,11 @@ def main(argv: list[str] | None = None) -> int:
                     print('recorded: (all candidates already on the cell plan)')
                 elif not items:
                     print('recorded: (no candidates)')
+            return 0
+
+        if args.cmd == 'duplicate-plans':
+            rows = duplicate_plans(reg)
+            print(json.dumps(rows, indent=2, sort_keys=True) if args.json else format_duplicate_plans(rows))
             return 0
 
         if args.cmd == 'hold':
