@@ -12,6 +12,9 @@ tests share one vocabulary for fetching points into ``reference/vector_map``.
 from __future__ import annotations
 
 import json
+import math
+import random
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -277,3 +280,165 @@ def merge_items(mapped: list[dict], designed: list[dict]) -> list[dict]:
     for item in designed + mapped:  # map last so it overwrites designer
         by_col[(item['x'], item['z'])] = item
     return sorted(by_col.values(), key=lambda i: (i['x'], i['z'], i['kind']))
+
+
+# --- inferred furniture (#260, I-008) ----------------------------------------------------
+# Where the map has no points, lamps and benches are inferred from the ways themselves. Every
+# item is labelled ``source='inference'``, ``confidence='low'``: a guess from road class or land
+# use, never an observation. The plan (``decor_plan``) merges them under mapped and designer rows.
+INFERRED = 'inference'
+LAMP_VERGE = 1.5        # blocks from the carriageway or path edge to the lamp column centre
+BENCH_VERGE = 1.5
+LIT_FALLBACK_SPACING = 40.0   # OSM lit=yes on a way the table leaves unlit (path, cycleway, service)
+UNLIT_FOOTWAYS = ('sidewalk', 'crossing')   # footway=* values lit by the road they run beside
+
+
+def stable_seed(*parts) -> int:
+    """Deterministic integer seed from identity parts (cell, way id): same input, same lamps."""
+    import hashlib
+
+    return int.from_bytes(hashlib.sha256('|'.join(str(p) for p in parts).encode()).digest()[:8], 'big')
+
+
+def polyline_length(points: Sequence[Sequence[float]]) -> float:
+    """Length of a polyline in blocks."""
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+
+
+def _stations(points: Sequence[Sequence[float]], distances: Sequence[float]):
+    """``(x, z, tx, tz)`` at each arc distance along a polyline: the point and unit tangent there.
+
+    @param points: polyline vertices ``(x, z)``
+    @param distances: ascending arc distances; those beyond the line's end are dropped
+    """
+    segments = []
+    run = 0.0
+    for a, b in zip(points, points[1:]):
+        length = math.dist(a, b)
+        if length > 0:
+            segments.append((run, length, a, b))
+        run += length
+    k = 0
+    for d in distances:
+        while k < len(segments) and d > segments[k][0] + segments[k][1]:
+            k += 1
+        if k == len(segments):
+            return
+        start, length, a, b = segments[k]
+        t = (d - start) / length
+        tx, tz = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+        yield a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, tx, tz
+
+
+def _item(kind: str, x: float, z: float, **extra) -> dict:
+    return {'kind': kind, 'x': math.floor(x), 'z': math.floor(z),
+            'source': INFERRED, 'confidence': 'low', **extra}
+
+
+def lamp_spacing_for(highway_class: str, spacing_table: Mapping[str, float | None], lit: str | None = None):
+    """Lamp spacing in blocks for one way, or None when it gets no lamps.
+
+    ``lit=no`` (OSM) always means none. ``lit=yes`` lights a way the table leaves unlit, at
+    :data:`LIT_FALLBACK_SPACING`. A table value of None or a missing class is unlit.
+
+    @param highway_class: OSM highway value
+    @param spacing_table: ``{highway: spacing or None}``
+    @param lit: OSM ``lit`` tag value, or None when the way carries none
+    @returns: spacing, or None
+    """
+    if lit == 'no':
+        return None
+    spacing = spacing_table.get(highway_class)
+    if spacing is None:
+        return LIT_FALLBACK_SPACING if lit == 'yes' else None
+    return float(spacing) if spacing > 0 else None
+
+
+def lamp_positions(
+    road_polyline: Sequence[Sequence[float]],
+    highway_class: str,
+    spacing_table: Mapping[str, float | None],
+    rng_seed: int,
+    *,
+    half_width: float = 3.0,
+    lit: str | None = None,
+    verge: float = LAMP_VERGE,
+) -> list[dict]:
+    """Street lamps along one way, staggered either side, labelled as inference.
+
+    Lamps stand every ``spacing`` blocks along the line, alternating sides, ``half_width + verge``
+    from the centreline (beside the carriageway, never on it). The seed sets the starting phase and
+    first side, so a way always gets the same lamps. No spacing for the class (or ``lit=no``) gives
+    none. Keep-outs (door routes, openings, buildings, mapped points) are the caller's business.
+
+    @param road_polyline: centreline vertices ``(x, z)`` in world columns
+    @param highway_class: OSM highway value
+    @param spacing_table: ``{highway: spacing in blocks or None}`` (resolved by the caller)
+    @param rng_seed: deterministic seed for phase and first side
+    @param half_width: half the carriageway or path width in blocks
+    @param lit: OSM ``lit`` tag value if the way carries one
+    @param verge: gap between the way's edge and the lamp column centre
+    @returns: items ``{kind: 'street_lamp', x, z, source: 'inference', confidence: 'low', highway,
+        spacing, side}``
+    """
+    spacing = lamp_spacing_for(highway_class, spacing_table, lit)
+    if spacing is None or len(road_polyline) < 2:
+        return []
+    rng = random.Random(rng_seed)
+    start = rng.uniform(0, spacing)
+    side = rng.choice((1, -1))
+    count = int((polyline_length(road_polyline) - start) // spacing) + 1
+    stations = _stations(road_polyline, [start + i * spacing for i in range(max(count, 0))])
+    out, seen = [], set()
+    offset = half_width + verge
+    for x, z, tx, tz in stations:
+        item = _item('street_lamp', x - tz * offset * side, z + tx * offset * side,
+                     highway=highway_class, spacing=spacing, side='left' if side > 0 else 'right')
+        side = -side
+        if (item['x'], item['z']) not in seen:
+            seen.add((item['x'], item['z']))
+            out.append(item)
+    return out
+
+
+def bench_positions(
+    path_polyline: Sequence[Sequence[float]],
+    per_100m: float,
+    rng_seed: int,
+    *,
+    half_width: float = 1.0,
+    verge: float = BENCH_VERGE,
+) -> list[dict]:
+    """Benches beside one path at ``per_100m`` per 100 blocks, labelled as inference.
+
+    The expected count is ``per_100m * length / 100``, rounded up or down by the seed, so a short
+    path gets a bench now and then rather than always or never. Benches spread evenly along the
+    path (a small jitter per bench), each on a seeded side, ``half_width + verge`` off the centreline.
+
+    @param path_polyline: path centreline vertices ``(x, z)``
+    @param per_100m: bench density (from the class row, a profile or a convention); 0 or None gives none
+    @param rng_seed: deterministic seed
+    @param half_width: half the path width in blocks
+    @param verge: gap between the path edge and the bench column centre
+    @returns: items ``{kind: 'bench', x, z, source: 'inference', confidence: 'low', side}``
+    """
+    if not per_100m or per_100m <= 0 or len(path_polyline) < 2:
+        return []
+    length = polyline_length(path_polyline)
+    rng = random.Random(rng_seed)
+    expected = per_100m * length / 100.0
+    n = int(expected) + (1 if rng.random() < expected - int(expected) else 0)
+    if n == 0:
+        return []
+    gap = length / n
+    distances = [min(length, max(0.0, (i + 0.5) * gap + rng.uniform(-gap / 4, gap / 4))) for i in range(n)]
+    out, seen = [], set()
+    offset = half_width + verge
+    for x, z, tx, tz in _stations(path_polyline, sorted(distances)):
+        side = rng.choice((1, -1))
+        item = _item('bench', x - tz * offset * side, z + tx * offset * side,
+                     side='left' if side > 0 else 'right')
+        if (item['x'], item['z']) not in seen:
+            seen.add((item['x'], item['z']))
+            out.append(item)
+    return out

@@ -208,6 +208,26 @@ class TestPlaceFurniture(unittest.TestCase):
             self.assertEqual(found[(10, self.surface_y + dy, 20)], block)
 
 
+class TestFurnitureByProvenance(unittest.TestCase):
+    """#260: the decor report counts furniture by provenance source; inferred never reads as mapped."""
+
+    @staticmethod
+    def item(source, kind='street_lamp', reason=''):
+        return {'role': 'furniture', 'kind': kind, 'cell': [1, 1],
+                'provenance': {'source': source, 'confidence': 'low', 'evidence_ids': [], 'unresolved_reason': reason}}
+
+    def test_planned_placed_and_unplaced_are_split_by_source(self):
+        decor = {'items': [self.item('vector_map'), self.item('inference'), self.item('inference'),
+                           self.item('aerial', reason='no coordinate'),
+                           {'role': 'barrier', 'provenance': {'source': 'inference', 'unresolved_reason': ''}}]}
+        report = [{'source': 'vector_map'}, {'source': 'inference'}]
+        unplaced = [self.item('inference', reason='against build')]
+        self.assertEqual(dl.furniture_by_provenance(decor, report, unplaced), {
+            'planned': {'vector_map': 1, 'inference': 2},
+            'placed': {'vector_map': 1, 'inference': 1},
+            'unplaced': {'inference': 1}})
+
+
 class TestLidarGroundVeto(unittest.TestCase):
     """Decor uses live surfaces for placement, with lidar terrain as a veto."""
 

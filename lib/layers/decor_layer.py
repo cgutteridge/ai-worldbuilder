@@ -601,6 +601,25 @@ def place_outbuildings(
     return found, report, unplaced
 
 
+def furniture_by_provenance(decor: Mapping[str, Any], report: list[dict], unplaced: list[dict]) -> dict:
+    """Furniture counts by provenance source, so an inferred item never reads as observed (#260).
+
+    @param decor: decor plan
+    @param report: placed furniture rows (``source`` is the provenance source)
+    @param unplaced: furniture rows that failed placement or were held back, with reasons
+    @returns: ``{'planned': {...}, 'placed': {...}, 'unplaced': {...}}``, each ``{source: count}``
+    """
+    def source(row):
+        return (row.get(prov.PROVENANCE_KEY) or {}).get('source') or row.get('source') or 'unknown'
+
+    return {
+        'planned': dict(Counter(source(i) for i in decor.get('items') or []
+                                if i.get('role') == 'furniture' and not prov.is_unresolved(i.get(prov.PROVENANCE_KEY)))),
+        'placed': dict(Counter(source(r) for r in report)),
+        'unplaced': dict(Counter(source(r) for r in unplaced)),
+    }
+
+
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     """Plan barriers and street furniture for one cell. Returns (placements, stats).
 
@@ -628,6 +647,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
         lidar_hm = reference_world().heightmap(cell)
         from ground_sources import cell_box
 
+        land_classes = dplan.land_class_columns(idx, cell_box(cell, 12))
         decor = dplan.build_decor_plan(
             cell,
             map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
@@ -639,6 +659,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
             outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cell_box(cell)),
             lidar_rise=ob.lidar_rise(cell),
             building_columns=set(fp),
+            road_lines=vmap.road_lines,
+            path_lines=vmap.path_lines,
+            land_classes=land_classes,
+            carriageway=set(vmap.road) | set(vmap.marks),
+            furniture_avoid=way | near1,
         )
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):
@@ -703,14 +728,16 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['overlap_positions'] = overlap_positions
     stats['furniture'] = len(furniture_report)
     stats['furniture map'] = sum(1 for r in furniture_report if r['source'] == 'vector_map')
-    stats['furniture designer'] = sum(
-        1 for r in furniture_report if r['source'] in ('aerial', 'photo_read', 'inference')
-    )
+    stats['furniture designer'] = sum(1 for r in furniture_report if r['source'] in ('aerial', 'photo_read'))
+    stats['furniture inference'] = sum(1 for r in furniture_report if r['source'] == 'inference')
     stats['barriers'] = len(barrier_report)
     stats['unresolved'] = len(unresolved)
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
     furniture_unplaced = list(furniture_unplaced) + gap_furniture
+    stats['furniture_by_provenance'] = furniture_by_provenance(decor, furniture_report, furniture_unplaced)
+    if decor.get('furniture_inference') is not None:
+        stats['furniture_inference'] = decor['furniture_inference']
     stats['unplaced'] = len(barrier_unplaced) + len(furniture_unplaced) + len(outbuilding_unplaced)
 
     # Joins may enter near1 only for materials already placed with allow_against_build.
@@ -803,7 +830,13 @@ def run(cell: tuple[int, int]) -> int:
     stats.pop('decor_plan', None)
     stats.pop('clipped_positions', None)
     kinds = Counter(placed.values())
+    by_provenance = stats.pop('furniture_by_provenance', None)
+    inference = stats.pop('furniture_inference', None)
     print(f'{name}: {dict(stats)}' + (' (empty decor plan)' if not placed else ''))
+    if by_provenance is not None:
+        print(f'  furniture by provenance: {by_provenance}')
+    if inference is not None:
+        print(f'  furniture inference: {inference}')
     print(f'  by block: {dict(kinds)}')
     _print_plan_notes({
         'furniture_report': furniture_report,
