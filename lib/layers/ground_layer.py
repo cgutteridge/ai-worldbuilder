@@ -27,8 +27,11 @@ columns where a structure build owns a solid block at or above the ground's surf
 margin is surfaced, below that air, task 286; a column where a feature owns only blocks buried below
 the lidar surface, such as a door stoop, is the ground's above the feature's highest owned block, and
 the fill never overwrites them, task 297),
-water and its bank, mapped bridges (and steps on a bridge, tunnel or layer), and anything outside
-the cell. Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
+water and its bank, and anything outside the cell. A mapped bridge, tunnel or layer leaves its columns
+free: the ground under a bridge is the ground's at lidar terrain height (the deck is a structure's,
+never ground), and the surface above a tunnel is ground as normal (task 298). Where the column has a
+crust of solid blocks over unowned air (a cavity left when a stone ring was undone), the air below the
+crust is filled down to the baseline floor, the crust kept (task 298). Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
 with a stair block wherever the lidar rises along the way (task 294). Trees and decor are
 separate later passes that write masks; a ground plan that lands on a masked position is a
 conflict and does not apply (undo that mask first: scripts/mask_undo.py).
@@ -246,12 +249,27 @@ def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None
                  for y in range(ylo, yhi + 1))
 
 
+def _deck(vmap) -> set:
+    """Columns under a mapped bridge (or raised way); a vector map without ``deck`` says it by ``bridge``."""
+    return set(vmap.deck if hasattr(vmap, 'deck') else getattr(vmap, 'bridge', ()))
+
+
+def _ring(columns) -> set:
+    """``columns`` and their eight neighbours (the bank of a water set)."""
+    return {(x + a, z + b) for x, z in columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
+
+
 def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None,
                  floors=None, heights=None):
     """Columns this layer may surface, with their live surface (y, block).
 
     An owned structure column stays the structure's unless ``floors`` (:func:`owned_floors`) puts
     every owned block below the column's surface: lidar ``heights``, else the live surface (task 297).
+
+    A mapped bridge or tunnel does not take its columns out: the ground under a bridge is the
+    ground's, at lidar terrain height, and the surface above a tunnel is ground as normal (#298). The
+    deck itself is a structure's; it is never ground, and is reported as unbuilt when no feature
+    holds it. A mapped stream with no water built still keeps its bank, except under a bridge.
 
     Ground-level mapped steps (``vmap.steps``) are free unless a footprint, structure build or water
     claims them; a stairs top there is the ground layer's own step, not a structure (#294). Any steps
@@ -261,7 +279,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
     """
     x0, z0, x1, z1 = cell_box(cell)
     live, skipped = {}, Counter()
-    water = set(vmap.water) | set(vmap.water_line)
+    water = set(vmap.water)
     probed = {}
     warm_surface_probe(world, x0 - 1, z0 - 1, x1 + 1, z1 + 1)
     for x in range(x0 - 1, x1 + 2):
@@ -270,7 +288,10 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
             if probed[(x, z)] and (is_water(f'minecraft:{probed[(x, z)][1]}') or
                                    'waterlogged=true' in (world.block(x, probed[(x, z)][0], z) or '')):
                 water.add((x, z))
-    bank = {(x + a, z + b) for x, z in water for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    bank = _ring(water)
+    # A mapped stream line with no water built keeps its bank, but not under a mapped bridge (#298).
+    stream_bank = _ring(vmap.water_line)
+    deck = _deck(vmap)
     steps = getattr(vmap, 'steps', {})
     for x in range(x0, x1 + 1):
         for z in range(z0, z1 + 1):
@@ -281,10 +302,8 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
                 reason = 'building footprint'
             elif q in owned_cols and not buried_under(q, top, floors, heights):
                 reason = 'structure build'
-            elif q in bank:
+            elif q in bank or (q in stream_bank and q not in deck):
                 reason = 'water / bank'
-            elif q in vmap.bridge:
-                reason = 'bridge / steps'
             elif top is None:
                 reason = 'empty column'
             elif any(s in top[1] for s in STRUCTURE_TOPS) and not (q in steps and 'stairs' in top[1]):
@@ -695,6 +714,29 @@ def support_y(block, x: int, top: int, z: int, floor: int = PROBE_Y_RANGE[0] - 1
     return None
 
 
+def hollow_ys(block, x: int, z: int, base: int | None, owned_floor: int | None = None,
+              floor: int = PROBE_Y_RANGE[0] - 1) -> list:
+    """Air positions under a column's crust, down to the baseline floor (task 298).
+
+    :func:`support_y` stops at the first solid run under the surface, so a crust of solid blocks
+    over air (ghost stone left floating when a stone ring was undone) reads as ground. Every air
+    block below that run, down to ``floor``, is a hidden cavity: nothing holds it, and a player
+    can fall into it where the crust is missing. Solid blocks are never listed, so the crust and
+    whatever lies under the cavity are kept.
+
+    @param block: ``callable(x, y, z) -> state | None``
+    @param base: y of the support's top block (:func:`support_y`); None means there is none
+    @param owned_floor: highest y a feature owns in the column (task 297); the feature answers for
+      it and everything below
+    @param floor: highest y not read
+    @returns: ascending ``[y, ...]`` of air positions (``floor < y < base``) the ground may fill
+    """
+    if base is None:
+        return []
+    low = floor if owned_floor is None else max(floor, owned_floor)
+    return [y for y in range(low + 1, base) if is_air(block(x, y, z))]
+
+
 def floating_tops(cells: dict, block, tops: dict, floors=None) -> list:
     """Planned surfaces that would stand over air once the plan lands (#296).
 
@@ -1089,6 +1131,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
             capped += 1
         if q in buried and ys[q] <= buried[q]:          # live-surface fallback can sit lower than lidar did
             ys[q] = buried[q] + 1
+    deck = _deck(vmap)
+    tunnel = set(getattr(vmap, 'tunnel', ()))
     steps = {q: a for q, a in getattr(vmap, 'steps', {}).items() if q in live}
     stairs = step_stairs(steps, ys)
     stats = Counter({
@@ -1102,6 +1146,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         'settled_footprint_surfaced': sum(1 for q in live if q in fp),
         'steps_stairs': len(stairs),
         'above_buried_feature': len(buried),
+        'bridge_ground': sum(1 for q in live if q in deck),
+        'tunnel_ground': sum(1 for q in live if q in tunnel and q not in deck),
     })
     stats.update({f'how: {k}': v for k, v in how.items()})
     stats['frontage_blocked'] = gs.blocked_connections(frontages)
@@ -1109,6 +1155,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     retained = []
     stats['retained_positions'] = retained
     conflicts = []
+    cavity_cols: set = set()
     for q in sorted(live):
         x, z = q
         old = live[q][0]
@@ -1145,6 +1192,16 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 stats['raise'] += 1
                 if y <= old:
                     stats['filled_under_floating_top'] += 1
+        for y in hollow_ys(world.block, x, z, base, buried.get(q)):    # air under a crust of solid blocks (#298)
+            pos = (x, y, z)
+            if pos in neighbour_owned:
+                continue
+            if pos in masked:
+                conflicts.append((pos, RAISE_FILL, masked[pos]))
+            else:
+                plan.set(x, y, z, RAISE_FILL)
+                stats['cavity_filled'] += 1
+                cavity_cols.add(q)
         for y in range(gy + 1, SCAN_TOP + 1):             # above the surface: clear (§10)
             pos = (x, y, z)
             b = world.block(x, y, z)
@@ -1166,6 +1223,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 continue                                  # a flower or grass stem may stand on lawn
             plan.set(x, y, z, 'air')
             stats['clear'] += 1
+    stats['cavity_columns'] = len(cavity_cols)
     plots = ev['plots'] if 'plots' in ev else gs.plots_for(cell_box(cell))
     owner, info, street, idx = plots
     segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cell_box(cell))
@@ -1241,6 +1299,9 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  top {stats["top"]}  raise {stats["raise"]}  clear {stats["clear"]}  '
           f'(kept: neighbour {stats["kept_neighbour"]}, masked {stats["kept_masked"]})')
     print(f'  planned cells {len(plan.cells)}  would change {len(changes)}')
+    print(f'  bridges: {stats["bridge_ground"]} column(s) surfaced under a mapped bridge (deck is a structure\'s; '
+          f'unbuilt unless a feature holds it); tunnels: {stats["tunnel_ground"]} surfaced above')
+    print(f'  cavities: {stats["cavity_filled"]} air block(s) filled under a crust in {stats["cavity_columns"]} column(s)')
     print(f'  inferred shrubs: {stats["shrubs"]}, flowers: {stats["flowers"]} '
           '(low confidence; see per-plot planting report)')
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')

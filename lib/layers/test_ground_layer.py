@@ -837,11 +837,13 @@ class SyntheticGroundBox:
     STEPS = {(x, z): 'x' for x in range(2, 12) for z in range(3, 6)}  # way runs along x at z 3..5
 
     class Osm:
-        def __init__(self, steps=None, bridge=()):
+        def __init__(self, steps=None, bridge=(), tunnel=(), water_line=(), water=()):
             self.kind, self.pri, self.feat, self.soft = {}, {}, {}, set()
             self.road, self.marks = set(), set()
             self.hedge, self.wall, self.fence = set(), set(), set()
-            self.water, self.water_line, self.bridge = set(), set(), set(bridge)
+            self.water, self.water_line = set(water), set(water_line)
+            self.deck, self.tunnel = set(bridge), set(tunnel)
+            self.bridge = self.deck | self.tunnel
             self.steps = dict(steps or {})
 
     @staticmethod
@@ -924,12 +926,12 @@ class TestMappedOutdoorSteps(SyntheticGroundBox, unittest.TestCase):
         self.assertFalse([r for r in skipped if 'structure top' in r])
         self.assertEqual(plan.cells[(4, 49, 4)], stair)
 
-    def test_bridge_steps_stay_skipped(self):
+    def test_bridge_steps_leave_the_ground_below_surfaced(self):
         bridge = set(self.STEPS)
         plan, stats, _, skipped = self.run_plan(self.Osm(bridge=bridge))
-        self.assertEqual(skipped['bridge / steps'], len(bridge))
-        self.assertEqual(stats['steps_surfaced'], 0)
-        self.assertFalse(any((x, z) in bridge for x, _, z in plan.cells))
+        self.assertEqual(skipped['bridge / steps'], 0)
+        self.assertEqual(stats['steps_surfaced'], 0)             # the raised steps themselves are not ground's
+        self.assertEqual(stats['bridge_ground'], len(bridge))
 
     def test_steps_inside_a_footprint_are_skipped_and_named(self):
         fp = {q for q in self.STEPS if q[0] >= 8}
@@ -1214,3 +1216,100 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
             self.assertEqual(gl.apply_cell((0, 0)), 1)
         apply.assert_not_called()
         self.assertIn('REFUSED: 1 ground surface(s) would float', output.getvalue())
+
+
+class TestBridgeTunnelAndCavity(SyntheticGroundBox, unittest.TestCase):
+    """Task 298: no hole under a mapped bridge, none under a crust; the surface above a tunnel is ground."""
+
+    LIDAR = 44
+
+    def lidar(self, x, z):
+        return self.LIDAR
+
+    def world(self, extra=None, crust=False, ghost_top=36):
+        """Ghost stone y31..``ghost_top`` everywhere; with ``crust`` another run at y49-52 (cavity y37..48)."""
+        from block_store import MemoryBlocks
+        from site_kit import World
+        x0, z0, x1, z1 = self.BOX
+        blocks = {}
+        for x in range(x0 - 1, x1 + 2):
+            for z in range(z0 - 1, z1 + 2):
+                blocks.update({(x, y, z): 'minecraft:stone' for y in range(31, ghost_top + 1)})
+                if crust:
+                    blocks.update({(x, y, z): 'minecraft:stone' for y in range(49, 53)})
+        blocks.update(extra or {})
+        return World(store=MemoryBlocks(blocks, default='air'))
+
+    DECK = {(x, z) for x in range(4, 9) for z in range(2, 6)}
+
+    def test_bridge_column_gets_ground_at_lidar_terrain_height(self):
+        plan, stats, _, skipped = self.run_plan(self.Osm(bridge=self.DECK))
+        self.assertEqual(skipped['bridge / steps'], 0)
+        self.assertEqual(stats['bridge_ground'], len(self.DECK))
+        for x, z in self.DECK:
+            with self.subTest(x=x, z=z):
+                self.assertIn((x, 44, z), plan.cells)
+                self.assertEqual(plan.cells[(x, 37, z)], 'minecraft:dirt')     # solid from the ghost top to it
+                self.assertNotIn((x, 45, z), plan.cells)
+
+    def test_bridge_over_a_mapped_stream_is_still_ground(self):
+        stream = {(6, z) for z in range(0, 8)}
+        plan, _, _, skipped = self.run_plan(self.Osm(bridge=self.DECK, water_line=stream))
+        self.assertIn((6, 44, 3), plan.cells)                                   # under the deck: ground
+        self.assertNotIn((6, 44, 0), plan.cells)                                # the open stream keeps its bank
+        self.assertEqual(skipped['water / bank'], len({q for q in
+                         {(x + a, z + b) for x, z in stream for a in (-1, 0, 1) for b in (-1, 0, 1)}
+                         if 0 <= q[0] <= 15 and 0 <= q[1] <= 7} - self.DECK))
+
+    def test_bridge_over_built_water_is_not_surfaced(self):
+        water = {(x, z): 'minecraft:water' for x, z in ((6, 3), (6, 4))}
+        world = self.world({(x, 36, z): b for (x, z), b in water.items()})
+        plan, _, _, skipped = self.run_plan(self.Osm(bridge=self.DECK), world)
+        self.assertFalse(any((x, z) in {(6, 3), (6, 4)} for x, _, z in plan.cells))
+        self.assertGreater(skipped['water / bank'], 0)
+
+    def test_tunnel_column_is_surfaced(self):
+        tunnel = {(x, 3) for x in range(2, 12)}
+        plan, stats, _, skipped = self.run_plan(self.Osm(tunnel=tunnel))
+        self.assertEqual(skipped['bridge / steps'], 0)
+        self.assertEqual(stats['tunnel_ground'], len(tunnel))
+        self.assertEqual(stats['bridge_ground'], 0)
+        for x, z in tunnel:
+            self.assertIn((x, 44, z), plan.cells)
+
+    def test_cavity_under_a_crust_is_filled_and_the_crust_kept(self):
+        self.LIDAR = 54
+        plan, stats, _, _ = self.run_plan(self.Osm(), self.world(crust=True))
+        for x, z in ((3, 3), (9, 5)):
+            with self.subTest(x=x, z=z):
+                for y in range(37, 49):
+                    self.assertEqual(plan.cells[(x, y, z)], 'minecraft:dirt')
+                self.assertEqual(plan.cells[(x, 53, z)], 'minecraft:dirt')
+                self.assertNotIn((x, 49, z), plan.cells)                        # the crust is not rewritten
+                self.assertNotIn((x, 36, z), plan.cells)
+        self.assertEqual(stats['cavity_columns'], 16 * 8)
+        self.assertEqual(stats['cavity_filled'], 16 * 8 * 12)
+        self.assertEqual(stats['floating_columns'], [])
+
+    def test_no_cavity_means_nothing_filled(self):
+        self.LIDAR = 54
+        _, stats, _, _ = self.run_plan(self.Osm(), self.world(ghost_top=52))
+        self.assertEqual(stats['cavity_filled'], 0)
+
+    def test_feature_owned_air_in_a_cavity_is_left_alone(self):
+        self.LIDAR = 54
+        owned = {(3, y, 3) for y in (40, 41)}
+        states = {p: 'minecraft:air' for p in owned}                           # a feature's own clear
+        plan, stats, _, _ = self.run_plan(self.Osm(), self.world(crust=True), owned_states=states)
+        self.assertFalse({(3, 40, 3), (3, 41, 3)} & set(plan.cells))            # never planned over a feature's air
+        self.assertIn((4, 40, 3), plan.cells)                                  # the next column's cavity still is
+
+    def test_hollow_ys_lists_air_under_the_support_down_to_the_floor(self):
+        solid = {y for y in list(range(31, 37)) + list(range(49, 53))}
+
+        def block(x, y, z):
+            return 'minecraft:stone' if y in solid else 'minecraft:air'
+        self.assertEqual(gl.hollow_ys(block, 0, 0, 52), list(range(37, 49)))
+        self.assertEqual(gl.hollow_ys(block, 0, 0, 52, owned_floor=40), list(range(41, 49)))
+        self.assertEqual(gl.hollow_ys(block, 0, 0, None), [])
+        self.assertEqual(gl.hollow_ys(block, 0, 0, 36), [])                    # solid all the way down
