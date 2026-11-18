@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 304,
+  "nextTaskId": 305,
   "tasks": [
     
     {
@@ -120,6 +120,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Found in #244 (2026-11-16). `python3 scripts/decor_layer.py --world W --cell C` (dry run) on a cell that is already built treats the cell's own decor mask as blocked, so it understates the plan: on 53,-43 it reported 305 blocks instead of about 2,716 and every front hedge failed as 'blocked by live or owned block'. A real rebuild undoes first, so only the dry run misleads. Also, the dry run overwrote two tracked world files (the 53,-43 decor report and preview).\nChange: on a dry run, treat the cell's own decor mask as undone (as the redo path does), or print a clear warning when the cell has a decor mask; and write a dry run's report and preview to the verification folder only, never over a tracked world file. Tests: a built cell's dry-run count matches a clean plan; the tracked report is not rewritten. Same check for trees_layer.py and ground if they share the behaviour (say which do). Note from #301: trees_layer.py's dry run also crashes in `preview()` when the plan is empty; fix it here.\n"
+    },
+    {
+      "id": 304,
+      "title": "Pitched roof ridges: a one-wide ridge top is a bottom-half slab, a two-wide ridge top is a pair of stairs facing each other",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Issue: Roof ridge tops are full blocks, not slabs or opposed stairs (I-047), owner snag S-083 (West). Moved off I-019, which no fix covers.\n\nBefore starting: check that no task merged since 2026-11-17 has already given ridge tops a cap rule (checked 2026-11-17: #125, #149, #207, #209, #300, #302 only handle odd half-steps and slab tops beside stairs, none handles ridges; a synthetic run on main confirms full blocks at the top). Re-run the two profiles below on current main; if they already give a slab or stair pair, close this as already done.\n\nCause: pitched_roof_states (lib/builds/feature_build.py ~823) gives a stair only to a cell with a neighbour at least 2 half-steps higher. A ridge cell has none, so an even-height ridge gets a full block whether 1 or 2 wide; a 2-wide odd ridge gets two slabs between full-block flanks. Profiles across x: [0,2,4,6,4,2,0] gives a full block at the top; [0,2,4,6,6,4,2,0] gives two full blocks. Not verified: how many ridge cells on real West (west_w34391673), David Kiddle (w146985470) and Hartley (w33830050) plans are 1 or 2 wide; the in-game look.\n\nChange: in pitched_roof_states, after regularising, find ridge runs: an N4-connected set of equal-height cells with no higher N4 neighbour, bounding box 1xN or 2xN, narrow axis bounded both sides by lower roof cells (a zone-level boundary is not a lower roof cell). Width 1: bottom-half slab at roof_block_y(h) with a solid block below (reuse the wall-under-slab path). Width 2: two stairs at roof_block_y(h), each facing the other (facing here is the upslope direction, so both high backs meet in the middle and the peak is kept). Odd 2-wide ridges: two opposed stairs too. A hip apex (1x1) takes a slab. 2x2 blocks, L/T shapes, wider decks and runs with a higher neighbour at the end stay as they are.\nTrade-off the owner accepted: a slab ridge sits half a block lower than today's full-block ridge (lidar is a guide for roofs); the stair pair keeps today's height.\nFiles: lib/builds/feature_build.py, rules/feature-builds.md (roof text ~177-188), lib/builds/test_feature_build.py (update test_gable_stairs_face_upslope_ridge_full, which asserts a full block at a one-wide ridge; check test_pitched_zones_ridge_slabs_flat_plateaus_unchanged). Tests: 1-wide and 2-wide, even and odd; 3-wide deck stays full; run ends; hip apex; zone boundary; same-Y stair shape rule; slab support block. roof_lint (lib/audit/roof_lint.py _ridges accepts a 0-cell cap and a 1-cell cap) clean on the three plans.\nCheck: after rebuilding West, python3 scripts/roof_lint.py reports no ridge jogs and no stair-shape mismatches; in game its one-wide ridges are bottom-half slabs, two-wide ridges are stair pairs meeting at a peak, wide decks stay full blocks.\nOn landing: log the fix on I-047 with a check line for S-083 (issues.py fix).\n"
     }
   ]
 }
