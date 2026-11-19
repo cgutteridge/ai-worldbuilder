@@ -307,13 +307,25 @@ def _furniture_item(
     evidence_ids: Sequence[str] = (),
     note: str = '',
     root=None,
+    rotation: int | None = None,
+    rotation_source: str = 'default',
 ) -> dict[str, Any]:
+    """Furniture plan item at an anchor column.
+
+    A multi-block kind (``street_furniture.FOOTPRINTS``) carries ``rotation`` (0, 90, 180 or 270 degrees
+    clockwise from above, default 0) and ``rotation_source``; its anchor is the centre column.
+    """
+    import street_furniture as sf
+
     item: dict[str, Any] = {
         'id': _item_id(kind, x, z),
         'kind': kind,
         'role': 'furniture',
         'cell': [int(x), int(z)],
     }
+    if kind in sf.FOOTPRINTS:
+        item['rotation'] = int(rotation or 0)
+        item['rotation_source'] = rotation_source
     if note:
         item['note'] = note
     prov.attach_provenance(
@@ -392,7 +404,7 @@ def lidar_objects(hm, footprint, canopy, observations, *, root=None, components=
         if not labels:
             continue
         columns |= group
-        valid = [o for o in labels if o.get('kind') in sf.RECIPES
+        valid = [o for o in labels if o.get('kind') in sf.FURNITURE_KINDS
                  and o.get('source', 'photo_read') in ('photo_read', 'aerial')
                  and not o.get('unresolved_reason')]
         # Any incompatible label blocks the whole component, including a vehicle
@@ -402,11 +414,13 @@ def lidar_objects(hm, footprint, canopy, observations, *, root=None, components=
         label = valid[0] if resolved else {}
         x, z = tuple(label['cell']) if resolved else min(group)
         kind = str(label.get('kind') or 'unknown')
+        rotation, rotation_error = sf.parse_rotation(label.get('rotation'))
         item = _furniture_item(
             x, z, kind, source=label.get('source', 'photo_read') if resolved else 'inference',
             confidence='medium' if resolved else 'low',
             evidence_ids=label.get('evidence_ids') or (), root=root,
             note=str(label.get('note') or 'lidar surface above bare terrain'),
+            rotation=rotation, rotation_source='observation',
         )
         item['id'] = _item_id('lidar-object', *min(group))
         item['lidar_cells'] = [list(q) for q in sorted(group)]
@@ -414,6 +428,8 @@ def lidar_objects(hm, footprint, canopy, observations, *, root=None, components=
         if not resolved:
             item['provenance']['unresolved_reason'] = (
                 'lidar object needs an unambiguous photo/aerial permanent furniture label')
+        elif rotation_error and kind in sf.FOOTPRINTS:
+            item['provenance']['unresolved_reason'] = rotation_error
         out.append(item)
     return out, columns
 
@@ -597,7 +613,7 @@ def build_decor_plan(
         items.append(item)
 
     for x, z, kind in map_furniture:
-        if kind not in sf.RECIPES or (x, z) in seen_furniture:
+        if kind not in sf.FURNITURE_KINDS or (x, z) in seen_furniture:
             continue
         seen_furniture.add((x, z))
         items.append(_furniture_item(
@@ -610,7 +626,7 @@ def build_decor_plan(
         kind = raw.get('kind')
         if kind in ob.DESIGNER_KINDS:
             continue                                  # outbuilding traces: planned below, after lidar
-        if kind not in sf.RECIPES:
+        if kind not in sf.FURNITURE_KINDS:
             # Designer may propose barrier strips with cells.
             if kind in BARRIER_KINDS and raw.get('cells'):
                 cells = [(int(c[0]), int(c[1])) for c in raw['cells']]
@@ -650,12 +666,18 @@ def build_decor_plan(
             continue
         seen_furniture.add((x, z))
         src, conf = _designer_source(raw)
-        items.append(_furniture_item(
+        rotation, rotation_error = sf.parse_rotation(raw.get('rotation'))
+        rotation_error = str(raw.get('rotation_error') or rotation_error) if kind in sf.FOOTPRINTS else ''
+        item = _furniture_item(
             x, z, kind,
             source=src, confidence=conf,
             evidence_ids=evidence_ids, root=root,
             note=str(raw.get('note') or ''),
-        ))
+            rotation=rotation, rotation_source='designer',
+        )
+        if rotation_error:
+            item['provenance']['unresolved_reason'] = rotation_error
+        items.append(item)
 
     # Last of the barrier sources: designer and map rows outrank aerial inference.
     for item in (aerial_free_hedges(
@@ -692,7 +714,7 @@ def build_decor_plan(
         item = {
             'id': _item_id('photo', kind, i),
             'kind': kind,
-            'role': 'furniture' if kind in sf.RECIPES else 'barrier',
+            'role': 'furniture' if kind in sf.FURNITURE_KINDS else 'barrier',
             'note': str(obs.get('note') or ''),
         }
         if obs.get('cell') is not None:
@@ -1117,6 +1139,8 @@ def resolved_furniture(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
         }
         if item.get('note'):
             row['note'] = item['note']
+        if 'rotation' in item:
+            row['rotation'] = int(item['rotation'])
         out.append(row)
     return out
 

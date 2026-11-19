@@ -301,15 +301,24 @@ def place_furniture(
     owned: set,
     masked: set,
     lidar_hm: Mapping[str, Any] | None = None,
+    keep_clear: set | frozenset = frozenset(),
+    barrier_voxels: Mapping[tuple[int, int, int], str] | None = None,
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place street-furniture recipes on any non-carriageway surface column.
 
-    Skips path-line columns (``way``), columns against a build (``near1``) unless the
-    item sets ``allow_against_build``, carriageway surfaces (road, marking, kerb), and any recipe spot that is
-    not air / is owned or masked. Failed rows are returned as unplaced plan-shaped dicts.
+    A kind is a footprint of columns about the item's anchor (:func:`street_furniture.footprint`; a
+    single-column kind is one column, a picnic table nine), placed whole or refused whole
+    (``docs/specs/decor-furniture-footprints.md``, #305). Every footprint column must pass: inside the
+    cell (``crosses the cell edge`` when only the anchor is), off path-line columns (``way``), off
+    columns against a build (``near1``; ``allow_against_build`` lifts it), off ``keep_clear``
+    (route, clearance and entrance-opening columns), off the carriageway (road, marking, kerb) and on
+    lidar ground within one block of the anchor's (``uneven ground``). Each voxel must be air, not
+    owned or masked, not already taken by another furniture item (``overlaps another furniture
+    item``) and, for a multi-block kind, not a planned barrier block (``overlaps a planned barrier``).
+    Failed rows are returned as unplaced plan-shaped dicts, with ``blocked_column`` on a multi-block one.
 
     @param cell: (tx, tz)
-    @param items: ``{x,z,kind,source}`` from the decor plan
+    @param items: ``{x,z,kind,source}`` from the decor plan; ``rotation`` (degrees clockwise) for a multi-block kind
     @param world: live or planning world
     @param way: mapped road / path / water columns
     @param near1: footprint and structure columns dilated by 1
@@ -317,6 +326,8 @@ def place_furniture(
     @param masked: positions owned by another pass mask
     @param lidar_hm: lidar height map; items stand on the block at terrain Y (:func:`surface_probe.ground_at`),
                      not on a roof over it; the live surface is used only where terrain is missing
+    @param keep_clear: columns no furniture may use (entrance openings, door routes, clearance)
+    @param barrier_voxels: blocks already planned by the barrier pass; a multi-block item refuses to replace them
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
     from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
@@ -326,45 +337,83 @@ def place_furniture(
     unplaced: list[dict] = []
     for item in items:
         x, z, kind = int(item['x']), int(item['z']), item['kind']
-        q = (x, z)
         allow = bool(item.get('allow_against_build'))
-        if not cell_contains(cell, *q):
-            unplaced.append(dplan.mark_unplaced(item, 'outside cell'))
+        multi = kind in sf.FOOTPRINTS
+        rotation = int(item.get('rotation') or 0) % 360 if multi else 0
+        rows = sf.footprint(kind, rotation)
+        columns = list(dict.fromkeys((x + dx, z + dz) for dx, dz, _dy, _block in rows))
+
+        def refuse(reason, column=None, _item=item):
+            row = dplan.mark_unplaced(_item, reason)
+            if multi and column is not None:
+                row['blocked_column'] = list(column)
+            unplaced.append(row)
+
+        if not cell_contains(cell, x, z):
+            refuse('outside cell')
             continue
-        if q in way:
-            unplaced.append(dplan.mark_unplaced(item, 'on path/road/water column'))
+        edge = next((q for q in columns if not cell_contains(cell, *q)), None)
+        if edge is not None:
+            refuse('crosses the cell edge', edge)
             continue
-        if q in near1 and not allow:
-            unplaced.append(dplan.mark_unplaced(item, 'against build'))
+        checks = (
+            (lambda q: q in keep_clear, 'entrance opening or route reserved'),
+            (lambda q: q in way, 'on path/road/water column'),
+            (lambda q: q in near1 and not allow, 'against build'),
+            (lambda q: column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS, 'on carriageway'),
+        )
+        failed = False
+        for test, reason in checks:
+            bad = next((q for q in columns if test(q)), None)
+            if bad is not None:
+                refuse(reason, bad)
+                failed = True
+                break
+        if failed:
             continue
-        if column_ground_kind(world, x, z, lidar_hm) in sf.ROAD_KINDS:
-            unplaced.append(dplan.mark_unplaced(item, 'on carriageway'))
+        tops: dict[tuple[int, int], int] = {}
+        for q in columns:
+            top = ground_at(world, lidar_hm, q[0], q[1], owned, masked)
+            if not top:
+                refuse(ground_missing_reason(lidar_hm, q[0], q[1], owned), q)
+                failed = True
+                break
+            tops[q] = top[0]
+        if failed:
             continue
-        top = ground_at(world, lidar_hm, x, z, owned, masked)
-        if not top:
-            unplaced.append(dplan.mark_unplaced(item, ground_missing_reason(lidar_hm, x, z, owned)))
+        if any(abs(tops[q] - tops[(x, z)]) > 1 for q in columns):
+            refuse('uneven ground', next(q for q in columns if abs(tops[q] - tops[(x, z)]) > 1))
             continue
-        stack = sf.recipe(kind)
         voxels: dict[tuple[int, int, int], str] = {}
-        ok = True
-        why = 'blocked by live or owned block'
-        for dy, block in stack:
-            pos = (x, top[0] + dy, z)
-            if not is_air(world.block(*pos)) or pos in owned or pos in masked or pos in found:
-                ok = False
-                if pos in owned:
-                    why = 'feature above terrain'          # a feature's own block stands in this column over the ground
+        why, bad_pos = '', None
+        for dx, dz, dy, block in rows:
+            pos = (x + dx, tops[(x + dx, z + dz)] + dy, z + dz)
+            if pos in owned:
+                why = 'feature above terrain'              # a feature's own block stands in this column over the ground
+            elif pos in found:
+                why = 'overlaps another furniture item'
+            elif multi and pos in (barrier_voxels or ()):
+                why = 'overlaps a planned barrier'
+            elif not is_air(world.block(*pos)) or pos in masked:
+                why = 'blocked by live or owned block'
+            if why:
+                bad_pos = pos
                 break
             voxels[pos] = block
-        if not ok:
-            unplaced.append(dplan.mark_unplaced(item, why))
+        if why:
+            refuse(why, (bad_pos[0], bad_pos[2]))
             continue
         found.update(voxels)
         row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
                'blocks': len(voxels)}
+        if multi:
+            row['rotation'] = rotation
+            row['footprint'] = [list(q) for q in columns]
         if terrain_y(lidar_hm, x, z) is not None:
             row['on_terrain'] = True
-            row['moved_to_terrain'] = raised_over_terrain(world, x, z, top[0])
+            row['moved_to_terrain'] = any(
+                terrain_y(lidar_hm, *q) is not None and raised_over_terrain(world, q[0], q[1], tops[q])
+                for q in columns)
         if item.get('note'):
             row['note'] = item['note']
         if item.get('plan_id'):
@@ -693,13 +742,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                     if bare(world.block(*pos)) == f'minecraft:{mat}':
                         present[pos] = mat
 
-    all_furniture = dplan.resolved_furniture(decor)
-    furniture_items = [i for i in all_furniture if (int(i['x']), int(i['z'])) not in reserved_gap]
-    gap_furniture = [dplan.mark_unplaced(i, 'entrance opening or route reserved')
-                     for i in all_furniture if (int(i['x']), int(i['z'])) in reserved_gap]
     furniture, furniture_report, furniture_unplaced = place_furniture(
-        cell, furniture_items, world, way=way, near1=near1, owned=owned, masked=masked,
-        lidar_hm=lidar_hm,
+        cell, dplan.resolved_furniture(decor), world, way=way, near1=near1, owned=owned, masked=masked,
+        lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
     barrier_positions = len(found)
@@ -724,7 +769,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
                                  + sum(1 for r in barrier_report if r.get('moved_to_terrain')))
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
-    furniture_unplaced = list(furniture_unplaced) + gap_furniture
+    furniture_unplaced = list(furniture_unplaced)
     stats['furniture_by_provenance'] = furniture_by_provenance(decor, furniture_report, furniture_unplaced)
     if decor.get('furniture_inference') is not None:
         stats['furniture_inference'] = decor['furniture_inference']
@@ -751,7 +796,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     for p, b in clipped.items():
         plan.set(*p, b)
     roof_slabs = {p for p in outbuilding_found if p in clipped and clipped[p].endswith('[type=bottom]')}
-    plan.keep_slab_cells |= roof_slabs                  # roof slabs stay half height (else rewritten to full blocks)
+    bench_slabs = {p for p in furniture if p in clipped and clipped[p].endswith('[type=bottom]')}
+    plan.keep_slab_cells |= roof_slabs | bench_slabs    # roof and bench slabs stay half height (else rewritten to full blocks)
     unmapped = [r for r in outbuilding_report if r['source'] != 'vector_map']
     if unmapped:                                        # not on a mapped footprint: osm_footprints.guard needs a reason
         plan.outside_footprint_ok = ('garden outbuildings from lidar blob / designer trace evidence: '

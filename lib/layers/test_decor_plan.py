@@ -13,6 +13,7 @@ from unittest import mock
 import decision_record as dr
 import decor_plan as dp
 import provenance as prov
+import street_furniture as sf
 
 
 class TestBuildingBorderHedges(unittest.TestCase):
@@ -350,6 +351,74 @@ class TestBuildDecorPlan(unittest.TestCase):
         self.assertEqual(furniture[0]['kind'], 'bench')
         self.assertEqual(furniture[0]['x'], 5)
         self.assertEqual(dp.unresolved_items(plan)[0]['id'], 'u1')
+
+
+class TestPicnicTablePlan(unittest.TestCase):
+    """#306: picnic tables are furniture plan rows carrying a rotation, from map, designer and photo labels."""
+
+    def plan(self, **kw):
+        return dp.build_decor_plan((0, 0), map_barriers={}, garden=[], rgb={}, footprint=set(), canopy=set(), **kw)
+
+    @staticmethod
+    def tables(plan):
+        return [i for i in plan['items'] if i.get('role') == 'furniture' and i['kind'].startswith('picnic_table')]
+
+    def test_a_map_table_is_a_high_confidence_row_at_rotation_zero(self):
+        item, = self.tables(self.plan(map_furniture=[(10, 20, 'picnic_table')]))
+        self.assertEqual((item['cell'], item['rotation'], item['rotation_source']), ([10, 20], 0, 'default'))
+        self.assertEqual((item['provenance']['source'], item['provenance']['confidence']), ('vector_map', 'high'))
+        row, = dp.resolved_furniture(self.plan(map_furniture=[(10, 20, 'picnic_table')]))
+        self.assertEqual((row['kind'], row['rotation']), ('picnic_table', 0))
+
+    def test_a_designer_table_carries_its_rotation_and_both_kinds_plan(self):
+        plan = self.plan(designer_items=[
+            {'x': 10, 'z': 20, 'kind': 'picnic_table', 'rotation': 90, 'source': 'designer', 'evidence': 'aerial z20'},
+            {'x': 30, 'z': 20, 'kind': 'picnic_table_round', 'source': 'designer', 'evidence': 'aerial z20'}])
+        rect, rnd = self.tables(plan)
+        self.assertEqual((rect['rotation'], rect['rotation_source']), (90, 'designer'))
+        self.assertEqual(rnd['rotation'], 0)
+        self.assertEqual({i['provenance']['source'] for i in (rect, rnd)}, {'aerial'})
+        self.assertEqual({r['x']: r['rotation'] for r in dp.resolved_furniture(plan)}, {10: 90, 30: 0})
+
+    def test_single_column_kinds_carry_no_rotation(self):
+        item, = [i for i in self.plan(map_furniture=[(4, 4, 'bench')])['items'] if i['role'] == 'furniture']
+        self.assertNotIn('rotation', item)
+        self.assertNotIn('rotation', dp.resolved_furniture(self.plan(map_furniture=[(4, 4, 'bench')]))[0])
+
+    def test_the_same_anchor_from_map_and_designer_is_one_row_and_the_map_wins(self):
+        plan = self.plan(map_furniture=[(10, 20, 'picnic_table')], designer_items=[
+            {'x': 10, 'z': 20, 'kind': 'picnic_table', 'rotation': 90, 'source': 'designer'}])
+        item, = self.tables(plan)
+        self.assertEqual((item['provenance']['source'], item['rotation']), ('vector_map', 0))
+
+    def test_a_bad_designer_rotation_is_unresolved_with_the_reason(self):
+        plan = self.plan(designer_items=[
+            {'x': 10, 'z': 20, 'kind': 'picnic_table', 'rotation': 0, 'rotation_error': 'rotation 45 is not 0, 90, 180 or 270',
+             'source': 'designer'}])
+        item, = self.tables(plan)
+        self.assertEqual(item['provenance']['unresolved_reason'], 'rotation 45 is not 0, 90, 180 or 270')
+        self.assertEqual(dp.resolved_furniture(plan), [])
+
+    def test_a_labelled_lump_places_the_table_at_the_label_with_its_rotation(self):
+        import numpy as np
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((16, 16), 64), 'h': np.full((16, 16), 64),
+              'kind': np.zeros((16, 16))}
+        hm['h'][4, 4] = hm['h'][4, 5] = 65
+        plan = self.plan(lidar_hm=hm, photo_observations=[
+            {'kind': 'picnic_table', 'cell': [4, 5], 'source': 'aerial', 'rotation': 90}])
+        item, = self.tables(plan)
+        self.assertEqual((item['cell'], item['rotation'], item['rotation_source']), ([4, 5], 90, 'observation'))
+        self.assertFalse(prov.is_unresolved(item['provenance']))
+
+    def test_inference_never_creates_a_multi_block_kind(self):
+        road = [(0.0, 64.0), (127.0, 64.0)]
+        plan = self.plan(road_lines=[_way('residential', road, seed=1)],
+                         path_lines=[_way('footway', [(0.0, 30.0), (127.0, 30.0)], half=1.0, seed=2)],
+                         land_classes=_strip_classes('park', z0=0, z1=127))
+        inferred = [i for i in plan['items'] if (i.get('provenance') or {}).get('source') == 'inference'
+                    and i.get('role') == 'furniture']
+        self.assertTrue(inferred)
+        self.assertEqual({i['kind'] for i in inferred} & set(sf.FOOTPRINTS), set())
 
 
 def _way(highway, points, half=3.0, **extra):

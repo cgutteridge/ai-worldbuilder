@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Street furniture kinds for the decor pass: map points, recipes, designer specs.
 
-Mapped OSM point tags (bench, bin, bike rack, lamp, bollard, sign) become one
+Mapped OSM point tags (bench, bin, bike rack, lamp, bollard, sign, picnic table) become one
 furniture kind each. The decor layer places a small block recipe on paving at
 that column. When the map has no points, a designer writes
 ``reference/decor-furniture.json`` (same idea as trees-extra-crowns.json).
@@ -27,6 +27,8 @@ KINDS = (
     'street_lamp',
     'bollard',
     'sign',
+    'picnic_table',
+    'picnic_table_round',
 )
 
 # Block stacks relative to the live surface: (dy_above_surface, block).
@@ -39,6 +41,23 @@ RECIPES: dict[str, list[tuple[int, str]]] = {
     'bollard': [(1, 'stone_brick_wall')],
     'sign': [(1, 'oak_sign')],
 }
+
+# Multi-block kinds (#305, docs/specs/decor-furniture-footprints.md): rows ``(dx, dz, dy, block)``
+# anchored at the centre column (0, 0), canonical rotation 0 (long axis along x). Every column is
+# within ``FOOTPRINT_RADIUS`` of the anchor (``decor_layer.decor_columns`` warms one ring). States are
+# rotation-invariant (slab ``type`` only), so rotating the offsets is the whole rotation.
+FOOTPRINT_RADIUS = 1
+FOOTPRINTS: dict[str, list[tuple[int, int, int, str]]] = {
+    'picnic_table': (
+        [(dx, 0, 1, 'spruce_slab[type=top]') for dx in (-1, 0, 1)]
+        + [(dx, dz, 1, 'spruce_slab[type=bottom]') for dz in (-1, 1) for dx in (-1, 0, 1)]),
+    'picnic_table_round': [
+        (0, 0, 1, 'spruce_slab[type=top]'),
+        (-1, 0, 1, 'spruce_slab[type=bottom]'), (1, 0, 1, 'spruce_slab[type=bottom]'),
+        (0, -1, 1, 'spruce_slab[type=bottom]'), (0, 1, 1, 'spruce_slab[type=bottom]')],
+}
+FURNITURE_KINDS = frozenset(RECIPES) | frozenset(FOOTPRINTS)
+ROTATIONS = (0, 90, 180, 270)
 
 # Real Minecraft wall blocks used elsewhere in this repo (decor / garden / block ref).
 # Recipe ``*_wall`` names must be one of these — ``smooth_stone_wall`` is not a block.
@@ -57,6 +76,7 @@ EXTRACT_JOBS: list[tuple[str, str, list[str]]] = [
         (
             "amenity IN ('bench','waste_basket','bicycle_parking') "
             "OR highway = 'street_lamp' "
+            "OR other_tags LIKE '%\"leisure\"=>\"picnic_table\"%' "
             "OR barrier = 'bollard' "
             "OR traffic_sign IS NOT NULL "
             "OR information IS NOT NULL"
@@ -103,6 +123,8 @@ def classify(tags: dict) -> str | None:
         return 'street_lamp'
     if tags.get('barrier') == 'bollard':
         return 'bollard'
+    if tags.get('leisure') == 'picnic_table':
+        return 'picnic_table'
     if tags.get('traffic_sign') or tags.get('information') or tags.get('tourism') == 'information':
         return 'sign'
     return None
@@ -116,6 +138,41 @@ def recipe(kind: str) -> list[tuple[int, str]]:
     @raises KeyError: unknown kind
     """
     return list(RECIPES[kind])
+
+
+def rotate_offset(dx: int, dz: int, rotation: int) -> tuple[int, int]:
+    """Offset turned ``rotation`` degrees clockwise seen from above (north is -z): east becomes south."""
+    for _ in range((rotation // 90) % 4):
+        dx, dz = -dz, dx
+    return dx, dz
+
+
+def footprint(kind: str, rotation: int = 0) -> list[tuple[int, int, int, str]]:
+    """Rows ``(dx, dz, dy, block)`` of one furniture kind at ``rotation``, about its anchor column.
+
+    A single-column kind is ``[(0, 0, dy, block), ...]`` whatever the rotation, so the placer has one
+    code path for every kind.
+
+    @param kind: furniture kind id
+    @param rotation: 0, 90, 180 or 270 degrees clockwise from above
+    @raises KeyError: unknown kind
+    """
+    if kind in FOOTPRINTS:
+        return [(*rotate_offset(dx, dz, rotation), dy, block) for dx, dz, dy, block in FOOTPRINTS[kind]]
+    return [(0, 0, dy, block) for dy, block in RECIPES[kind]]
+
+
+def parse_rotation(raw) -> tuple[int | None, str]:
+    """``(rotation, '')`` for a missing (0) or valid value, ``(None, reason)`` for one that is not a multiple of 90."""
+    if raw is None or raw == '':
+        return 0, ''
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None, f'rotation {raw!r} is not 0, 90, 180 or 270'
+    if isinstance(raw, float) and raw != n or n % 90:
+        return None, f'rotation {raw!r} is not 0, 90, 180 or 270'
+    return n % 360, ''
 
 
 BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence', 'plank_fence'})
@@ -149,7 +206,7 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
     """Designer-proposed furniture and barrier strips for one cell.
 
     File shape: ``{"tx,tz": {"evidence": "...", "items": [
-      {"x","z","kind","note"?},
+      {"x","z","kind","note"?,"rotation"? (picnic_table kinds: 0|90|180|270 clockwise; x,z is the centre)},
       {"kind":"hedge","cells":[[x,z],...],"note"?,"allow_against_build"?},
       {"kind":"shed"|"garage","cells":[[x,z],...],"evidence_ids":["<id>"],"note"?}
     ]}}``.
@@ -168,12 +225,17 @@ def designer_items(cell: tuple[int, int], path: Path | None = None) -> list[dict
         if not isinstance(raw, dict):
             continue
         kind = raw.get('kind')
-        if kind in RECIPES:
+        if kind in FURNITURE_KINDS:
             try:
                 x, z = int(raw['x']), int(raw['z'])
             except (KeyError, TypeError, ValueError):
                 continue
             item = {'x': x, 'z': z, 'kind': kind, 'source': 'designer'}
+            if kind in FOOTPRINTS:
+                rotation, error = parse_rotation(raw.get('rotation'))
+                item['rotation'] = rotation if rotation is not None else 0
+                if error:
+                    item['rotation_error'] = error
             if raw.get('note'):
                 item['note'] = str(raw['note'])
             if evidence:
@@ -236,6 +298,8 @@ def designer_observations(cell: tuple[int, int], path: Path | None = None) -> li
         if not isinstance(raw, dict) or not raw.get('kind'):
             continue
         obs = {'kind': str(raw['kind'])}
+        if raw.get('rotation') is not None:
+            obs['rotation'] = raw['rotation']
         if raw.get('cell') is not None:
             try:
                 obs['cell'] = [int(raw['cell'][0]), int(raw['cell'][1])]
@@ -263,7 +327,7 @@ def map_items(furniture: list[tuple[int, int, str]]) -> list[dict]:
     """
     out: list[dict] = []
     for x, z, kind in furniture:
-        if kind not in RECIPES:
+        if kind not in FURNITURE_KINDS:
             continue
         out.append({'x': int(x), 'z': int(z), 'kind': kind, 'source': 'map'})
     return out

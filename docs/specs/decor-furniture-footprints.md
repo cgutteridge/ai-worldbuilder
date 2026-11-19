@@ -6,7 +6,7 @@ Design only; no code, no tests, nothing under `worlds/`. Written for task #306 (
 
 - `place_furniture` (`lib/layers/decor_layer.py`) takes one `ground_at` top per item; every recipe voxel is `(x, top+dy, z)`. Recipes in `lib/sources/street_furniture.py` are `(dy, block)` pairs with no `dx`/`dz`, so a table with a bench each side cannot be written.
 - `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. This note reuses those answers and says where furniture differs and why.
-- Kinds to add: **`picnic_table`** (rectangular, from the map and designer) and **`picnic_table_round`** (designer only; no OSM tag distinguishes a round one).
+- Kinds to add: **`picnic_table`** (rectangular, from the map and designer) and **`picnic_table_round`** (designer only; no map tag distinguishes a round one).
 
 ## 1. Footprint format (question 1)
 
@@ -28,7 +28,7 @@ A table top at table height (top slab, no leg) over a half block of air is an in
 ## 2. Rotation (question 2)
 
 - `rotation` is degrees clockwise seen from above (north is -z), one of 0, 90, 180, 270. One quarter turn maps an offset `(dx, dz)` to `(-dz, dx)` (east `(1, 0)` becomes south `(0, 1)`). The rectangle is 180-degree symmetric, so only 0 and 90 differ; the round table is symmetric under all four. The recorded value is the one given (mod 360), not collapsed.
-- **Map point:** no direction exists to read. Checked with `ogr2ogr` on `hampshire-latest.osm.pbf`, Highfield bounding box, `other_tags LIKE '%picnic_table%'`: 30 points, tags seen are `covered`, `access`, `bench`, `colour`, `material`, `lit`, `check_date`, none `direction`. So a map table is `rotation 0`, `rotation_source: default`. (The map furniture triple is `(x, z, kind)`; honouring a future tag means widening it, which this task does not do.) `access=private` is present on many; furniture is not filtered by access.
+- **Map point:** no direction exists to read. Checked with `ogr2ogr` on the world's downloaded regional map extract, Highfield bounding box, `other_tags LIKE '%picnic_table%'`: 30 points, tags seen are `covered`, `access`, `bench`, `colour`, `material`, `lit`, `check_date`, none `direction`. So a map table is `rotation 0`, `rotation_source: default`. (The map furniture triple is `(x, z, kind)`; honouring a future tag means widening it, which this task does not do.) `access=private` is present on many; furniture is not filtered by access.
 - **Designer item:** row in `reference/decor-furniture.json`: `{"x", "z", "kind": "picnic_table", "rotation": 90?, "note"?}`. `x, z` is the centre of the whole table (the bench-table-bench middle), `rotation` is optional and defaults to 0. `rotation` that is not an integer multiple of 90 makes the row unresolved with that reason (the same handling as a missing x, z), never a silent 0.
 
 ## 3. Ground height (question 3)
@@ -90,7 +90,7 @@ A `designer_observations` row for a lidar lump gains the same optional `rotation
 
 ## Files to change
 
-`lib/sources/street_furniture.py`, `lib/layers/decor_plan.py`, `lib/layers/decor_layer.py`, `rules/handoff-layered-passes.md`, the three test files above. Optional: `config/osmconf.ini` (`leisure` in the points `attributes`; not needed, `other_tags` suffices). World work, not this task: re-extract existing worlds' `reference/vector_map` (their `downloads/osmconf.ini` copies are not tracked), the designer re-read of 48,-44, the decor redo.
+`lib/sources/street_furniture.py`, `lib/layers/decor_plan.py`, `lib/layers/decor_layer.py`, `rules/handoff-layered-passes.md`, the three test files above. Optional: the extract schema `config/osmconf.ini` (`leisure` in the points `attributes`; not needed, `other_tags` suffices). World work, not this task: re-extract existing worlds' `reference/vector_map` (their `downloads/osmconf.ini` copies are not tracked), the designer re-read of 48,-44, the decor redo.
 
 ## Not decided here (left open for the owner)
 
