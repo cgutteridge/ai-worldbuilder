@@ -1915,8 +1915,11 @@ class Build:
 
         ``edge_wall_expose`` compares whole-block tops. At the lowest adjacent
         roof Y it can leave air below a taller column, even when a lower stair's
-        upper half opens into that air. Back only those openings with wall;
-        existing floors and exterior air are left alone.
+        upper half opens into that air. Back only those openings with wall.
+        A storey floor block sitting at the stair's Y in the taller column is
+        also swapped for wall: left in place it shows as a light-grey square
+        through the stair's open half (#310, I-022 S-087). Other blocks and
+        exterior air are left alone.
 
         @param roof: membrane block Y per owned roof column
         @param states: membrane states (after same-Y stair shape derivation)
@@ -1942,7 +1945,7 @@ class Build:
                 if face in closed or roof.get(neighbour, y) <= y:
                     continue
                 pos = (neighbour[0], y, neighbour[1])
-                if self.p.cells.get(pos) == 'minecraft:air':
+                if self.p.cells.get(pos) in ('minecraft:air', f'minecraft:{self.floor_mat}'):
                     self.set(*pos, self.wall)
 
     def top_solid(self, x, z, near):
