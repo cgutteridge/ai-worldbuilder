@@ -879,15 +879,27 @@ def roof_ridge_runs(
         sx, sz = max(xs) - min(xs) + 1, max(zs) - min(zs) + 1
         width = axis = None
         if len(cells) == sx * sz and (sx, sz) != (2, 2):
-            # Prefer the narrower axis; a one-row gable can still have a 2-wide cap.
-            for span, candidate, delta in sorted(((sx, 'x', (1, 0)), (sz, 'z', (0, 1)))):
-                dx, dz = delta
-                flanks = [(c, (c[0] + sign * dx, c[1] + sign * dz))
+            # Prefer the narrower axis; a one-row gable can still have a 2-wide cap. A 1x1
+            # apex has no narrow axis, so it must be bounded on both.
+            axes = sorted(((sx, 'x', (1, 0)), (sz, 'z', (0, 1))))
+            if len(cells) == 1:
+                axes = [(1, 'x', (1, 0)), (1, 'z', (0, 1))]
+            fits = []
+            for span, candidate, (step_x, step_z) in axes:
+                flanks = [(c, (c[0] + sign * step_x, c[1] + sign * step_z))
                           for c in cells for sign in (-1, 1)
-                          if (c[0] + sign * dx, c[1] + sign * dz) not in cells]
-                if all(n in half_heights and same_zone(c, n) and half_heights[n] < h for c, n in flanks):
-                    width, axis = span, candidate
-                    break
+                          if (c[0] + sign * step_x, c[1] + sign * step_z) not in cells]
+                fits.append((span, candidate,
+                             all(n in half_heights and same_zone(c, n) and half_heights[n] < h
+                                 for c, n in flanks)))
+            if len(cells) == 1:
+                if all(ok for _span, _axis, ok in fits):
+                    width, axis = 1, 'x'
+            else:
+                for span, candidate, ok in fits:
+                    if ok:
+                        width, axis = span, candidate
+                        break
         runs.append(RoofRidgeRun(frozenset(cells), width, axis))
     return runs
 

@@ -3429,6 +3429,14 @@ class RoofRidgeCapsTest(unittest.TestCase):
                 states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'), levels=levels)
                 self.assertTrue(all(states[(3, z)] == 'bricks' for z in range(5)))
 
+    def test_apex_needs_lower_cells_on_both_axes(self):
+        x_only = {(-1, 0): 24, (0, 0): 26, (1, 0): 24}
+        run = next(r for r in F.roof_ridge_runs(x_only) if r.cells == {(0, 0)})
+        self.assertEqual((run.width, run.axis), (None, None))
+        both = {**x_only, (0, -1): 24, (0, 1): 24}
+        run = next(r for r in F.roof_ridge_runs(both) if r.cells == {(0, 0)})
+        self.assertEqual(run.width, 1)
+
     def test_square_l_and_t_plateaus_trim_edges_without_becoming_ridge_caps(self):
         slab = 'brick_slab[type=bottom,waterlogged=false]'
         cases = (
