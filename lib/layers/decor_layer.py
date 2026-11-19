@@ -638,6 +638,15 @@ def place_outbuildings(
     return found, report, unplaced
 
 
+def half_slab_positions(placed: Mapping[tuple[int, int, int], str],
+                        clipped: Mapping[tuple[int, int, int], str]) -> set[tuple[int, int, int]]:
+    """Positions of ``placed`` that survive clipping as bottom-half slabs.
+
+    They go in ``plan.keep_slab_cells``; otherwise ``rewrite_bottom_half_slabs`` turns each into a full block.
+    """
+    return {p for p in placed if p in clipped and clipped[p].endswith('[type=bottom]')}
+
+
 def furniture_by_provenance(decor: Mapping[str, Any], report: list[dict], unplaced: list[dict]) -> dict:
     """Furniture counts by provenance source, so an inferred item never reads as observed (#260).
 
@@ -795,8 +804,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     stats['clipped_positions'] = [{'position': list(p), 'reason': 'outside cell'} for p in found if p not in clipped]
     for p, b in clipped.items():
         plan.set(*p, b)
-    roof_slabs = {p for p in outbuilding_found if p in clipped and clipped[p].endswith('[type=bottom]')}
-    bench_slabs = {p for p in furniture if p in clipped and clipped[p].endswith('[type=bottom]')}
+    roof_slabs = half_slab_positions(outbuilding_found, clipped)
+    bench_slabs = half_slab_positions(furniture, clipped)
     plan.keep_slab_cells |= roof_slabs | bench_slabs    # roof and bench slabs stay half height (else rewritten to full blocks)
     unmapped = [r for r in outbuilding_report if r['source'] != 'vector_map']
     if unmapped:                                        # not on a mapped footprint: osm_footprints.guard needs a reason

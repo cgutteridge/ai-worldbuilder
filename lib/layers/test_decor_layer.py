@@ -367,6 +367,14 @@ class TestPicnicFootprints(unittest.TestCase):
         found, _r, unplaced = self.place([{'x': 11, 'z': 21, 'kind': 'bench', 'source': 'map'}], barrier_voxels=barrier)
         self.assertEqual((len(found), unplaced), (1, []))              # single column: furniture wins, as before
 
+    def test_bench_slabs_are_picked_for_keep_slab_cells_and_top_slabs_are_not(self):
+        found, _r, _u = self.place([self.table()])
+        slabs = dl.half_slab_positions(found, dict(found))
+        self.assertEqual(len(slabs), 6)
+        self.assertTrue(all(found[p].endswith('[type=bottom]') for p in slabs))
+        clipped = {p: b for p, b in found.items() if p[0] != 9}
+        self.assertEqual(len(dl.half_slab_positions(found, clipped)), 4)      # clipped-away slabs are not kept
+
     def test_keep_clear_reaches_single_column_items_with_the_old_reason(self):
         _f, _r, unplaced = self.place([{'x': 10, 'z': 20, 'kind': 'bench', 'source': 'map'}], keep_clear={(10, 20)})
         self.assertEqual(self.reasons(unplaced), ['entrance opening or route reserved'])

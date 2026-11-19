@@ -725,6 +725,11 @@ def build_decor_plan(
         # Resolved photo rows (have coords) keep empty unresolved_reason.
         if item.get('cell') or item.get('cells'):
             reason = str(obs.get('unresolved_reason') or '').strip()
+        if kind in sf.FOOTPRINTS:                      # a table's rotation counts on this path too
+            rotation, rotation_error = sf.parse_rotation(obs.get('rotation'))
+            item['rotation'], item['rotation_source'] = rotation or 0, 'observation'
+            if rotation_error and not reason:
+                reason = rotation_error
         prov.attach_provenance(
             item,
             source=src,

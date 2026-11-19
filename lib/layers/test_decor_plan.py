@@ -410,6 +410,15 @@ class TestPicnicTablePlan(unittest.TestCase):
         self.assertEqual((item['cell'], item['rotation'], item['rotation_source']), ([4, 5], 90, 'observation'))
         self.assertFalse(prov.is_unresolved(item['provenance']))
 
+    def test_an_unlumped_observation_keeps_its_rotation_and_a_bad_one_is_unresolved(self):
+        plan = self.plan(photo_observations=[
+            {'kind': 'picnic_table', 'cell': [4, 5], 'source': 'aerial', 'rotation': 90},
+            {'kind': 'picnic_table', 'cell': [8, 5], 'source': 'aerial', 'rotation': 45}])
+        good, bad = self.tables(plan)
+        self.assertEqual((good['rotation'], prov.is_unresolved(good['provenance'])), (90, False))
+        self.assertTrue(prov.is_unresolved(bad['provenance']))
+        self.assertEqual([r['rotation'] for r in dp.resolved_furniture(plan)], [90])
+
     def test_inference_never_creates_a_multi_block_kind(self):
         road = [(0.0, 64.0), (127.0, 64.0)]
         plan = self.plan(road_lines=[_way('residential', road, seed=1)],
