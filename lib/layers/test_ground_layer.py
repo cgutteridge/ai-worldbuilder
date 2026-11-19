@@ -1163,6 +1163,17 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
         self.assertEqual(gl.support_y(lambda x, y, z: None, 0, 50, 0), None)
         self.assertEqual(gl.support_y(lambda x, y, z: 'minecraft:stone' if y <= 32 else None, 0, 50, 0), 32)
 
+    def test_surface_on_the_probe_floor_rests_on_the_baseline(self):
+        """A surface at the lowest probed y has nothing readable below it; that is not a float."""
+        floor_y = gl.PROBE_Y_RANGE[0]
+        stone = lambda x, y, z: 'minecraft:stone' if y <= floor_y else None   # noqa: E731
+        self.assertEqual(gl.support_y(stone, 0, floor_y, 0), floor_y - 1)
+        self.assertEqual(gl.floating_tops({}, stone, {(0, 0): floor_y}), [])
+        # one block up the run is still read, and a column with nothing at all still floats
+        self.assertEqual(gl.support_y(stone, 0, floor_y + 1, 0), floor_y)
+        self.assertEqual(gl.support_y(lambda x, y, z: None, 0, floor_y + 1, 0), None)
+        self.assertEqual(len(gl.floating_tops({}, lambda *_: None, {(0, 0): floor_y + 1})), 1)
+
     def test_guard_fires_on_a_surface_left_floating(self):
         world = self.world()
         x, z = self.FLOAT

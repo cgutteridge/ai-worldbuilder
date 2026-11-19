@@ -706,8 +706,14 @@ def support_y(block, x: int, top: int, z: int, floor: int = PROBE_Y_RANGE[0] - 1
     @param block: ``callable(x, y, z) -> state | None``
     @param top: the surface y; the search starts one below it
     @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``)
+    A surface at the probe floor has nothing readable below it: the probe never reads ``floor`` or
+    lower, so the search range is empty and would report a float over solid stone. It rests on the
+    baseline there, and ``floor`` is its support.
+
     @returns: y of the support's top block, or None when nothing holds the column up
     """
+    if top - 1 <= floor:
+        return floor
     for y in range(top - 1, floor, -1):
         if all(not is_air(block(x, y - i, z)) for i in range(SUPPORT_RUN) if y - i > floor):
             return y
