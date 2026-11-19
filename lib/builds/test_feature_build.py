@@ -3500,6 +3500,21 @@ class RoofRidgeCapsTest(unittest.TestCase):
         self.assertFalse(any((0, 0) in run.cells for run in F.roof_ridge_runs(half)))
         self.assert_clean(half, states)
 
+    def test_flat_deck_gets_no_corner_stair_from_a_diagonal_taller_zone(self):
+        # #311: a flat deck whose only higher neighbour is a taller zone across
+        # a diagonal is beside a wall-backed step, not a hip eave: no stair.
+        half = {(x, z): 116 for x in range(4) for z in range(4)}
+        for c in ((2, 2), (3, 2), (2, 3), (3, 3)):
+            half[c] = 120
+        mats = dict.fromkeys(half, 'brick')
+        zones = {c: (49 if half[c] == 120 else 47) for c in half}
+        states = F.pitched_roof_states(half, mats, levels=zones)
+        self.assertNotIn('_stairs[', states[(1, 1)])
+        self.assertEqual(states[(1, 1)], 'bricks')
+        # same diagonal inside one zone is a real hip corner and keeps its stair
+        same = F.pitched_roof_states(half, mats, levels=dict.fromkeys(half, 47))
+        self.assertIn('_stairs[', same[(1, 1)])
+
     def test_new_ridge_pair_shapes_include_same_y_slope_neighbours(self):
         # Odd h=25 slope stairs share block Y=13 with the even h=26 ridge.
         half = self.profile(2)
