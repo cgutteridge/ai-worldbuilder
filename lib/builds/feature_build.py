@@ -907,7 +907,11 @@ def pitched_roof_states(
     (vanilla neighbour rule via ``roof_lint.stair_shape_from_neighbours``), not
     from height differences on the diagonal. One-wide ridges and hip apexes
     use bottom-half slabs; two-wide ridges use stairs facing each other.
-    Wider / unqualified plateaus use a full block (even) or bottom-half slab
+    At even terrace edges with no higher neighbour, a one-block drop backed by
+    a level roof cell gets a stair facing away from the drop. Half-block drops
+    and corners with two perpendicular drops get bottom-half slabs. Opposing
+    drops, missing backing cells and zone steps do not trim a terrace.
+    Plateau interiors use a full block (even) or bottom-half slab
     (odd; see :func:`roof_block_y`: the slab
     sits one block above the full block of ``h - 1``, so surfaces rise by half
     a block per step; a top-half slab there would match a full block, I-019 / #207).
@@ -985,10 +989,10 @@ def pitched_roof_states(
             if diag_pair:
                 facings[(x, z)] = diag_pair[0]
 
-    ridge_slabs = set()
+    cap_slabs = set()
     for run in roof_ridge_runs(half_heights, levels):
         if run.width == 1:
-            ridge_slabs.update(run.cells)
+            cap_slabs.update(run.cells)
         elif run.width == 2:
             across = 0 if run.axis == 'x' else 1
             low = min(c[across] for c in run.cells)
@@ -996,7 +1000,30 @@ def pitched_roof_states(
                 facings[c] = (('east' if c[across] == low else 'west') if across == 0 else
                               ('south' if c[across] == low else 'north'))
 
-    # Pass 2: shape from same-Y stair neighbours, including the new ridge pairs.
+    # Terrace edges supplement slope stairs and ridge caps before shapes are chosen.
+    opposite = {'north': 'south', 'east': 'west', 'south': 'north', 'west': 'east'}
+    for (x, z), h in half_heights.items():
+        c = (x, z)
+        if h % 2 or c in facings or c in cap_slabs:
+            continue
+        neighbours = {face: (x + dx, z + dz) for face, (dx, dz) in _ROOF_DELTA.items()}
+        if any(half_heights.get(n, h) > h for n in neighbours.values()):
+            continue
+        drops = [face for face in _ROOF_FACE_ORDER
+                 if (n := neighbours[face]) in half_heights
+                 and (levels is None or levels[n] == levels[c])
+                 and 0 < h - half_heights[n] <= 2]
+        if not (len(drops) == 1 or (len(drops) == 2 and ortho_pair_of(drops))):
+            continue
+        if any(half_heights.get(n := neighbours[opposite[face]]) != h
+               or (levels is not None and levels[n] != levels[c]) for face in drops):
+            continue
+        if len(drops) == 1 and h - half_heights[neighbours[drops[0]]] == 2:
+            facings[c] = opposite[drops[0]]
+        else:
+            cap_slabs.add(c)
+
+    # Pass 2: shape from same-Y stair neighbours, including ridge and terrace stairs.
     for (x, z), h in half_heights.items():
         mat = materials[(x, z)]
         f = fam(mat)
@@ -1018,7 +1045,7 @@ def pitched_roof_states(
                 out[(x, z)] = fallback(mat, 'stairs')
             continue
 
-        if h % 2 == 1 or (x, z) in ridge_slabs:
+        if h % 2 == 1 or (x, z) in cap_slabs:
             if 'slab' in f:
                 out[(x, z)] = _roof_slab(mat, 'bottom')
             else:

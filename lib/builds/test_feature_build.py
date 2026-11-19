@@ -3224,8 +3224,91 @@ class GhostGroundIsGroundTest(unittest.TestCase):
         self.assertEqual(set(F.GROUND), set(house_build.GROUND))
 
 
+class RoofTerraceEdgesTest(unittest.TestCase):
+    """#309: trim backed terrace edges without changing existing slopes or zone steps."""
+
+    def assert_clean(self, half, states):
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        cells = {(x, F.roof_block_y(half[(x, z)]), z): st for (x, z), st in states.items()}
+        self.assertEqual(ridge_jogs(cells), [])
+        self.assertEqual(stair_shape_mismatches(cells), [])
+
+    def test_full_and_half_block_drops_in_every_direction(self):
+        for facing, (dx, dz) in F._ROOF_DELTA.items():
+            for drop in (1, 2):
+                with self.subTest(facing=facing, drop=drop):
+                    # A three-column terrace between the lower roof and a higher slope.
+                    half = {(dx * i - dz * j, dz * i + dx * j): h
+                            for i, h in enumerate((22 - drop, 22, 22, 22, 24))
+                            for j in range(3)}
+                    before = dict(half)
+                    states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
+                    edge = (dx - dz, dz + dx)
+                    expected = (F._roof_stair('brick', facing) if drop == 2 else
+                                'brick_slab[type=bottom,waterlogged=false]')
+                    self.assertEqual(states[edge], expected)
+                    self.assertEqual(states[(2 * dx - dz, 2 * dz + dx)], 'bricks')
+                    self.assertEqual(half, before)
+                    self.assert_clean(half, states)
+
+    def test_perpendicular_drops_use_slab_and_keep_deck_interior_full(self):
+        for north_drop in (1, 2):
+            with self.subTest(north_drop=north_drop):
+                half = {(x, z): 22 for x in range(3) for z in range(3)}
+                half.update({(-1, z): 20 for z in range(3)})
+                half.update({(x, -1): 22 - north_drop for x in range(3)})
+                states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
+                self.assertEqual(states[(0, 0)], 'brick_slab[type=bottom,waterlogged=false]')
+                self.assertEqual(states[(0, 1)], F._roof_stair('brick', 'east'))
+                self.assertEqual(states[(1, 1)], 'bricks')
+                self.assert_clean(half, states)
+
+    def test_opposed_drops_and_missing_backing_keep_full_block(self):
+        cases = (
+            {(-1, 0): 20, (0, 0): 22, (1, 0): 20, (0, 1): 22},
+            {(-1, 0): 20, (0, 0): 22, (0, 1): 22},
+        )
+        for half in cases:
+            with self.subTest(half=half):
+                states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
+                self.assertEqual(states[(0, 0)], 'bricks')
+
+    def test_half_step_higher_neighbour_keeps_full_block(self):
+        half = {(-1, 0): 20, (0, 0): 22, (1, 0): 22, (0, 1): 23}
+        states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
+        self.assertEqual(states[(0, 0)], 'bricks')
+
+    def test_lower_or_backing_cell_in_other_zone_does_not_trim_edge(self):
+        half = {(0, 0): 20, (1, 0): 22, (2, 0): 22, (3, 0): 24}
+        for boundary in ((0, 0), (2, 0)):
+            with self.subTest(boundary=boundary):
+                levels = dict.fromkeys(half, 0)
+                levels[boundary] = 1
+                states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'), levels=levels)
+                self.assertEqual(states[(1, 0)], 'bricks')
+
+    def test_existing_slope_stairs_and_odd_slabs_stay_unchanged(self):
+        half = {(x, z): h for x, h in enumerate((20, 22, 23, 24, 26)) for z in range(3)}
+        states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
+        self.assertEqual(states[(0, 1)], F._roof_stair('brick', 'east'))
+        self.assertEqual(states[(2, 1)], 'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(states[(3, 1)], F._roof_stair('brick', 'east'))
+        self.assert_clean(half, states)
+
+    def test_missing_terrace_variants_fall_back_and_warn(self):
+        for drop, missing in ((2, 'stairs'), (1, 'slab')):
+            material = 'stone'
+            with self.subTest(material=material, drop=drop):
+                half = {(x, 0): h for x, h in enumerate((22 - drop, 22, 22, 22, 24))}
+                warnings = []
+                with mock.patch.object(F, 'block_family_variants', return_value={'full': material}):
+                    states = F.pitched_roof_states(half, dict.fromkeys(half, material), warnings)
+                self.assertEqual(states[(1, 0)], material)
+                self.assertTrue(any(f'no {missing}' in warning for warning in warnings))
+
+
 class RoofRidgeCapsTest(unittest.TestCase):
-    """#304: only bounded narrow maxima change; every stair uses the same-Y shape rule."""
+    """#304: bounded narrow maxima keep their caps; #309 also trims wider terrace edges."""
 
     @staticmethod
     def profile(width=1, odd=0, axis='x'):
@@ -3239,7 +3322,7 @@ class RoofRidgeCapsTest(unittest.TestCase):
         self.assertEqual(ridge_jogs(cells), [])
         self.assertEqual(stair_shape_mismatches(cells), [])
 
-    def test_even_and_odd_caps_in_both_axes_and_wider_deck_unchanged(self):
+    def test_even_and_odd_caps_in_both_axes_and_wider_deck_interior_unchanged(self):
         for width in (1, 2, 3, 4):
             for odd in (0, 1):
                 for axis in ('x', 'z'):
@@ -3261,7 +3344,13 @@ class RoofRidgeCapsTest(unittest.TestCase):
                                     'south' if cross == 3 else 'north')
                                 self.assertEqual(states[c], F._roof_stair('brick', facing))
                             else:
-                                self.assertEqual(states[c], 'bricks')
+                                cross = c[0 if axis == 'x' else 1]
+                                if cross in (3, width + 2):
+                                    facing = ('east' if cross == 3 else 'west') if axis == 'x' else (
+                                        'south' if cross == 3 else 'north')
+                                    self.assertEqual(states[c], F._roof_stair('brick', facing))
+                                else:
+                                    self.assertEqual(states[c], 'bricks')
                         self.assert_clean(half, states)
 
     def test_run_with_higher_neighbour_at_end_is_not_partially_capped(self):
@@ -3286,16 +3375,23 @@ class RoofRidgeCapsTest(unittest.TestCase):
                 states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'), levels=levels)
                 self.assertTrue(all(states[(3, z)] == 'bricks' for z in range(5)))
 
-    def test_square_l_and_t_plateaus_keep_full_blocks(self):
-        for top in ({(0, 0), (0, 1), (1, 0), (1, 1)},
-                    {(0, 0), (0, 1), (0, 2), (1, 2)},
-                    {(0, 0), (1, 0), (2, 0), (1, 1), (1, 2)}):
+    def test_square_l_and_t_plateaus_trim_edges_without_becoming_ridge_caps(self):
+        slab = 'brick_slab[type=bottom,waterlogged=false]'
+        cases = (
+            {(0, 0): slab, (0, 1): slab, (1, 0): slab, (1, 1): slab},
+            {(0, 0): 'bricks', (0, 1): 'bricks', (0, 2): slab, (1, 2): 'bricks'},
+            {(0, 0): 'bricks', (1, 0): F._roof_stair('brick', 'south'),
+             (2, 0): 'bricks', (1, 1): 'bricks', (1, 2): 'bricks'},
+        )
+        for expected in cases:
+            top = set(expected)
             with self.subTest(top=top):
                 half = {(x + dx, z + dz): 24 for x, z in top for dx, dz in F.N8}
                 half.update(dict.fromkeys(top, 26))
                 states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'))
-                self.assertTrue(all(states[c] == 'bricks' for c in top))
+                self.assertEqual({c: states[c] for c in top}, expected)
                 self.assertIsNone(next(run for run in F.roof_ridge_runs(half) if run.cells == top).width)
+                self.assert_clean(half, states)
 
     def test_diagonal_rise_keeps_first_pass_stair(self):
         half = {(0, 0): 26, (-1, 0): 24, (1, 0): 26, (1, 1): 28}
