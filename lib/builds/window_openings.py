@@ -35,13 +35,22 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
     @param exposed: callback (column, face) for exterior geometry
     @param outside_ground: mapping exterior (x, z) to known terrain Y or None
     @param protected: door/frame positions that must remain intact
-    @returns: (position-to-block writes, per-face Counter of outcomes/reasons)
+    @returns: (position-to-block writes, per-face Counter of outcomes/reasons).
+        Each intended position counts once per face, including shared corners;
+        face totals must not be summed to count distinct glass writes. Rejection
+        reasons name the first failed check; boundary details apply to the whole
+        connected opening, which is accepted or refused together.
     """
     protected = set(protected)
     report = defaultdict(Counter)
     grouped = defaultdict(list)
     for window in candidates:
         grouped[window.pos].append(window)
+
+    def record(pos, reason):
+        for face in {v.face for v in grouped[pos]}:
+            report[face][reason] += 1
+
     active = {}
     for pos, choices in sorted(grouped.items()):
         # A corner with two evidenced faces still has one deterministic material.
@@ -49,8 +58,10 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         x, y, z = pos
         c = (x, z)
         corner = sum(exposed(c, d) for d in DIRECTIONS) > 1
-        if pos in protected or not structural(block(*pos)):
-            reason = 'protected entrance or non-wall'
+        if pos in protected:
+            reason = 'protected entrance'
+        elif not structural(block(*pos)):
+            reason = 'non-wall'
         elif corner and not any(v.corner_evidence for v in choices):
             reason = 'corner pier / tread too short'
         else:
@@ -63,7 +74,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
             else:
                 active[pos] = (w, corner)
                 continue
-        report[w.face][reason] += 1
+        record(pos, reason)
 
     writes = {}
     remaining = set(active)
@@ -90,7 +101,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
                 ):
                     todo.append(q)
         remaining -= component
-        bounded = True
+        missing_bounds = set()
         for x, y, z in component:
             current = active[x, y, z][0]
             for ox, oy, oz in offsets_for(current):
@@ -107,10 +118,17 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
                             (x + sign * nx, y, z + sign * nz) not in active
                             and structural(block(x + sign * nx, y, z + sign * nz)))) for sign in (-1, 1))
                 if not supported:
-                    bounded = False
-        if not bounded:
+                    boundary = 'lintel' if oy > 0 else 'sill' if oy < 0 else 'jamb'
+                    if q in active:
+                        missing_bounds.add(f'{boundary} meets another opening')
+                    elif oy == 0 and (q[0], q[2]) not in walls:
+                        missing_bounds.add('jamb outside wall')
+                    else:
+                        missing_bounds.add(f'non-structural {boundary}')
+        if missing_bounds:
+            reason = 'unbounded opening: ' + ', '.join(sorted(missing_bounds))
             for p in component:
-                report[active[p][0].face]['unbounded opening'] += 1
+                record(p, reason)
             continue
         # Stepped treads and explicitly evidenced corners use full cubes. A pane
         # must not acquire a third arm from an opening in a perpendicular plane.
@@ -125,18 +143,27 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         state = 'glass' if solid else f'glass_pane[{axis}]'
         writes.update((p, state) for p in component)
         for p in component:
-            report[active[p][0].face]['solid-glass' if solid else 'panes'] += 1
+            record(p, 'solid-glass' if solid else 'panes')
     return writes, report
 
 
 def report_lines(label, report):
-    """Return concise outcome and omission counts for the existing dry-run output."""
+    """Compare selected glass with unique intended voxels on each face.
+
+    The percentage measures retention of intended glazing, not glazed wall area.
+    Shared corner positions count on each face that requested them.
+    """
     lines = []
     for face, counts in sorted(report.items()):
         reasons = {k: v for k, v in counts.items() if k not in ('panes', 'solid-glass')}
         omitted = sum(reasons.values())
+        panes, solid = counts.get('panes', 0), counts.get('solid-glass', 0)
+        selected = panes + solid
+        intended = selected + omitted
+        pct = 100 * selected / intended if intended else 0
         detail = ', '.join(f'{k}={v}' for k, v in sorted(reasons.items()))
-        lines.append(f'{label} face {face}: windows panes={counts["panes"]} '
-                     f'solid-glass={counts["solid-glass"]} omitted={omitted}'
+        lines.append(f'{label} face {face}: windows intended={intended} '
+                     f'selected={selected} ({pct:.1f}%) panes={panes} '
+                     f'solid-glass={solid} omitted={omitted}'
                      + (f' ({detail})' if detail else ''))
     return lines

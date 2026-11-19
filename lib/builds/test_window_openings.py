@@ -10,7 +10,127 @@ import numpy as np
 import feature_build as F
 import house_build as H
 from site_kit import Plan
-from window_openings import DIRECTIONS
+from window_openings import DIRECTIONS, Window, choose_windows, report_lines
+
+
+class WindowReportTest(unittest.TestCase):
+    def select(self, candidates, blocks, walls, columns=None, protected=()):
+        columns = walls if columns is None else columns
+        return choose_windows(candidates, block=lambda x, y, z: blocks.get((x, y, z), 'air'),
+            walls=walls, exposed=lambda c, face: (
+                c[0] + DIRECTIONS[face][0], c[1] + DIRECTIONS[face][1]) not in columns,
+            outside_ground={
+                (w.pos[0] + DIRECTIONS[w.face][0], w.pos[2] + DIRECTIONS[w.face][1]): -1
+                for w in candidates}, protected=protected)
+
+    def test_shared_corner_counts_once_on_each_intended_face(self):
+        candidates = [Window((0, 1, 0), face) for face in ('N', 'W', 'N')]
+        writes, report = self.select(candidates, {(0, 1, 0): 'bricks'}, {(0, 0)})
+        self.assertEqual(writes, {})
+        self.assertEqual(dict(report), {
+            face: {'corner pier / tread too short': 1} for face in ('N', 'W')})
+
+    def test_axis_aligned_mass_keeps_exact_glass_positions_and_states(self):
+        columns = {(x, z) for x in range(8) for z in range(5)}
+        walls = {c for c in columns if c[0] in (0, 7) or c[1] in (0, 4)}
+        blocks = {(x, y, z): 'bricks' for x, z in walls for y in range(4)}
+        candidates = [Window((x, y, z), face) for x, z in sorted(walls)
+            for face, (dx, dz) in DIRECTIONS.items() if (x + dx, z + dz) not in columns
+            for y in (1, 2)]
+        expected = {(x, y, z): 'glass_pane[east=true,west=true]'
+            for x in range(1, 7) for y in (1, 2) for z in (0, 4)}
+        expected.update({(x, y, z): 'glass_pane[north=true,south=true]'
+            for x in (0, 7) for y in (1, 2) for z in range(1, 4)})
+        writes, report = self.select(candidates, blocks, walls, columns)
+        self.assertEqual(writes, expected)
+        for face in DIRECTIONS:
+            self.assertEqual(sum(report[face].values()),
+                sum(w.face == face for w in candidates))
+        self.assertEqual(self.select(list(reversed(candidates)), blocks, walls, columns),
+                         (writes, report))
+
+    def test_report_names_failed_jamb_lintel_and_sill_checks(self):
+        # Remove one of the four structural bounds from a single opening.
+        blocks = {(x, y, 0): 'bricks' for x in (-1, 0, 1) for y in range(3)}
+        walls = {(-1, 0), (0, 0), (1, 0)}
+        columns = walls | {(x, 1) for x in (-1, 0, 1)}
+        for pos, failure in (((1, 1, 0), 'jamb'), ((0, 2, 0), 'lintel'),
+                             ((0, 0, 0), 'sill')):
+            with self.subTest(failure=failure):
+                shell = {p: s for p, s in blocks.items() if p != pos}
+                writes, report = self.select([Window((0, 1, 0), 'N', stepped=True)],
+                                            shell, walls, columns)
+                self.assertEqual(writes, {})
+                self.assertEqual(report['N'], {f'unbounded opening: non-structural {failure}': 1})
+
+    def test_structural_block_outside_wall_is_not_a_jamb(self):
+        blocks = {(x, y, 0): 'bricks' for x in (-1, 0, 1) for y in range(3)}
+        _, report = self.select([Window((0, 1, 0), 'N')], blocks,
+                                {(-1, 0), (0, 0)}, columns={(-1, 0), (0, 0), (1, 0), (0, 1)})
+        self.assertEqual(report['N'], {'unbounded opening: jamb outside wall': 1})
+
+    def test_multiple_missing_bounds_count_the_whole_opening_once(self):
+        blocks = {(x, y, 0): 'bricks' for x in (-1, 0, 1) for y in range(4)}
+        del blocks[1, 1, 0]
+        del blocks[0, 3, 0]
+        candidates = [Window((0, y, 0), 'N') for y in (1, 2)]
+        writes, report = self.select(candidates, blocks, {(-1, 0), (0, 0), (1, 0)},
+                                    columns={(-1, 0), (0, 0), (1, 0), (0, 1)})
+        self.assertEqual(writes, {})
+        self.assertEqual(report['N'], {
+            'unbounded opening: non-structural jamb, non-structural lintel': 2})
+
+    def test_perpendicular_intended_glass_cannot_supply_a_jamb(self):
+        columns = {(-1, 0), (0, 0), (1, 0), (0, 1), (1, -1), (1, 1)}
+        blocks = {(x, y, z): 'bricks' for x, z in columns for y in range(3)}
+        candidates = [Window((0, 1, 0), 'N'), Window((1, 1, 0), 'E')]
+        writes, report = self.select(candidates, blocks, columns)
+        self.assertEqual(writes, {(1, 1, 0): 'glass'})
+        self.assertEqual(report['N'], {'unbounded opening: jamb meets another opening': 1})
+        self.assertEqual(report['E'], {'solid-glass': 1})
+
+    def test_selected_evidenced_corner_counts_on_both_faces(self):
+        walls = {(0, 0), (1, 0), (0, 1)}
+        blocks = {(x, y, z): 'bricks' for x, z in walls for y in range(3)}
+        candidates = [Window((0, 1, 0), face, corner_evidence=True) for face in ('N', 'W')]
+        writes, report = self.select(candidates, blocks, walls)
+        self.assertEqual(writes, {(0, 1, 0): 'glass'})
+        self.assertEqual(dict(report), {face: {'solid-glass': 1} for face in ('N', 'W')})
+
+    def test_rotated_mass_reports_every_intention_and_large_loss(self):
+        # A 26.6-degree parallelogram, with one- and two-block treads.
+        columns = {(x + z // 2, z) for x in range(12) for z in range(20)}
+        walls = {c for c in columns if any((c[0] + dx, c[1] + dz) not in columns
+            for dx in (-1, 0, 1) for dz in (-1, 0, 1))}
+        blocks = {(x, y, z): 'bricks' for x, z in walls for y in range(4)}
+        candidates = [Window((x, y, z), face, stepped=True) for x, z in sorted(walls)
+            for face, (dx, dz) in DIRECTIONS.items() if (x + dx, z + dz) not in columns
+            for y in (1, 2)]
+        _, report = self.select(candidates, blocks, walls, columns)
+        self.assertEqual(sum(report['E'].values()), 40)
+        self.assertEqual(sum(report['W'].values()), 40)
+        self.assertEqual(report['E']['corner pier / tread too short'], 22)
+        self.assertEqual(report['W']['corner pier / tread too short'], 22)
+        for face in DIRECTIONS:
+            self.assertEqual(sum(report[face].values()),
+                sum(w.face == face for w in candidates))
+
+    def test_protected_and_non_wall_omissions_are_distinct(self):
+        candidates = [Window((0, 1, 0), 'N'), Window((1, 1, 0), 'N')]
+        _, report = self.select(candidates, {(0, 1, 0): 'bricks'}, {(0, 0), (1, 0)},
+                                protected={(0, 1, 0)})
+        self.assertEqual(report['N'], {'protected entrance': 1, 'non-wall': 1})
+
+    def test_report_quantifies_loss_against_intended_glazing(self):
+        report = {'N': {'solid-glass': 2, 'corner pier / tread too short': 8}}
+        self.assertEqual(report_lines('A', report), [
+            'A face N: windows intended=10 selected=2 (20.0%) panes=0 solid-glass=2 '
+            'omitted=8 (corner pier / tread too short=8)'])
+
+    def test_report_with_no_selected_glass_still_shows_total_loss(self):
+        self.assertEqual(report_lines('A', {'N': {'corner pier / tread too short': 6}}), [
+            'A face N: windows intended=6 selected=0 (0.0%) panes=0 solid-glass=0 '
+            'omitted=6 (corner pier / tread too short=6)'])
 
 
 class WindowPolicyTest(unittest.TestCase):
