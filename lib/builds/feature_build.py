@@ -966,6 +966,15 @@ def pitched_roof_states(
             and nh >= h + 2
         ]
 
+    def diag_rises(x: int, z: int, h: int, dx: int, dz: int) -> bool:
+        # A hip eave corner rises diagonally within its own zone. A taller zone
+        # across a boundary is a wall-backed step, so a flat deck beside it
+        # must not grow a corner stair that climbs nowhere (#311).
+        nh = h_at(x + dx, z + dz)
+        if nh is None or nh < h + 2:
+            return False
+        return levels is None or levels.get((x + dx, z + dz)) == levels.get((x, z))
+
     def ortho_pair_of(ups: list[str]) -> tuple[str, str] | None:
         for i, a in enumerate(ups):
             for b in ups[i + 1:]:
@@ -994,8 +1003,7 @@ def pitched_roof_states(
                     bx, bz = _ROOF_DELTA[b]
                     if ax * bx + az * bz != 0:
                         continue
-                    nh = h_at(x + ax + bx, z + az + bz)
-                    if nh is not None and nh >= h + 2:
+                    if diag_rises(x, z, h, ax + bx, az + bz):
                         diag_pair = (a, b)
                         break
                 if diag_pair:
