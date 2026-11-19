@@ -14,7 +14,7 @@ A new table `FOOTPRINTS: dict[str, list[tuple[int, int, int, str]]]` in `street_
 
 - `FURNITURE_KINDS = frozenset(RECIPES) | frozenset(FOOTPRINTS)`; every `in sf.RECIPES` test that means "is street furniture" becomes `in sf.FURNITURE_KINDS` (`decor_plan.py` lines about 395, 600, 613, 695; `street_furniture.py` `designer_items` and `map_items`). `KINDS` gains the two names.
 - `footprint(kind, rotation=0) -> list[(dx, dz, dy, block)]`: for a `RECIPES` kind it returns `[(0, 0, dy, block), ...]`, so `place_furniture` has **one code path** for every kind. For a `FOOTPRINTS` kind it rotates the offsets (section 2).
-- Every footprint column is within one block of the anchor (`|dx|, |dz| <= 1`, a 3 x 3 box). This is a contract, not a coincidence: `decor_columns` warms only the anchor plus `WARM_RING = 1`, and `reserved_gap`-style checks assume it. A test asserts the radius so a bigger kind has to change the warm-up too.
+- Every footprint column is within one block of the anchor (`|dx|, |dz| <= 1`, a 3 x 3 box). This is a contract, not a coincidence: `decor_columns` warms only the anchor plus `WARM_RING = 1`,. A test asserts the radius so a bigger kind has to change the warm-up too.
 
 Blocks (rotation 0, long axis along x):
 
