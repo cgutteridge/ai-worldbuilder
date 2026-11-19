@@ -1794,6 +1794,112 @@ class PitchedZonesFloatDsmTest(FloatDsmFixture, unittest.TestCase):
         self.assertTrue(f.zone_roof_half, 'a no-data cell must not blank the roof')
         self.assertEqual(len(f.zone_roof_half), len(self._prepare(self._data(None)).zone_roof_half))
 
+    def test_low_roof_stays_a_full_deck_through_preparation_and_shell(self):
+        fine = np.full_like(self.ridge_zone_data['A']['dsm'], 48.0, dtype=float)
+        fine[:, 4:7] = 49.0
+        builder = self._builder(self._data(fine))
+        with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(io.StringIO()):
+            plan = builder.build()
+        feature = builder.features[0]
+        self.assertEqual(feature.zone_flat_cells, feature.cells)
+        for x, z in feature.cells:
+            self.assertEqual(plan.cells[(x, feature.zone_roof[(x, z)], z)], 'minecraft:bricks')
+
+
+class FlatRoofPolicyTest(unittest.TestCase):
+    """#314: low roofs flatten; taller roofs need a slope of at least 20%."""
+
+    def ridge(self, profile, length=5):
+        med = np.tile(np.asarray(profile, dtype=float), (length, 1))
+        return F.zone_ridge_half_steps(med, np.zeros(med.shape), np.ones(med.shape, dtype=bool))
+
+    def test_low_rises_flatten_and_exactly_one_and_a_half_can_stay_pitched(self):
+        for peak in (0.5, 1.0, 1.499, 1.5):
+            with self.subTest(peak=peak):
+                out = self.ridge([0, peak, peak, 0])
+                if peak < 1.5:
+                    self.assertFalse(out.any())
+                else:
+                    self.assertTrue((out[:, 1:3] == 3).all())
+
+    def test_large_shallow_roof_flattens_even_when_its_total_rise_is_large(self):
+        out = self.ridge(np.arange(41) * 0.1)
+        self.assertFalse(out.any())  # Four metres of rise, 10% slope.
+
+    def test_gradient_boundary_is_strict(self):
+        self.assertFalse(self.ridge(np.arange(11) * 0.199).any())
+        self.assertGreater(int(self.ridge(np.arange(11) * 0.2).max()), 0)
+
+    def test_long_steep_roof_uses_cross_slope_instead_of_ridge_length(self):
+        out = self.ridge([0, 0.5, 1, 1.5, 2, 1.5, 1, 0.5, 0], length=101)
+        self.assertTrue((out[:, 4] == 4).all())  # 50% slope despite the long ridge.
+
+    def test_rotated_roofs_use_the_combined_gradient(self):
+        z, x = np.mgrid[:21, :21]
+        for gradient in (0.19, 0.22):
+            with self.subTest(gradient=gradient):
+                med = (x + z) * gradient / np.sqrt(2)
+                out = F.zone_ridge_half_steps(med, np.zeros(med.shape), np.ones(med.shape, bool))
+                self.assertEqual(bool(out.any()), gradient >= 0.2)
+
+    def test_tall_pitch_does_not_keep_a_low_bump_beyond_a_saddle(self):
+        out = self.ridge([0, 1.2, 1.2, 0.5, 1, 2, 3, 3, 2, 0])
+        self.assertFalse(out[:, 1:3].any())
+        self.assertTrue((out[:, 6:8] == 6).all())
+        self.assertTrue((out[:, 4] == 2).all())  # The qualifying roof keeps its toe.
+
+    def test_gentler_upper_pitch_stays_connected_to_its_steep_lower_slope(self):
+        out = self.ridge([0, 1.5, 1.6, 1.7, 1.8, 1.9, 2])
+        self.assertTrue((out[:, -1] == 4).all())
+        self.assertTrue((out[:, 1] == 3).all())
+
+    def test_shallow_roof_does_not_borrow_a_different_roofs_steep_slope(self):
+        out = self.ridge([0, 1, 2, 0] + list(np.arange(31) * 0.1))
+        self.assertTrue((out[:, 2] == 4).all())
+        self.assertFalse(out[:, 4:].any())
+
+    def test_other_zones_and_nodata_cannot_supply_a_qualifying_pitch(self):
+        for gap in ('zone', 'nodata'):
+            with self.subTest(gap=gap):
+                med = np.tile([0, 1, 1, 2, 3, 3], (5, 1)).astype(float)
+                zone = np.zeros(med.shape)
+                readable = np.ones(med.shape, bool)
+                if gap == 'zone':
+                    zone[:, 3:] = 3
+                else:
+                    med[:, 3] = np.nan
+                before = readable.copy()
+                out = F.zone_ridge_half_steps(med, zone, readable)
+                self.assertFalse(out[:, :3].any())
+                np.testing.assert_array_equal(readable, before)
+
+    def test_flattened_bump_cannot_gain_stairs_slabs_or_caps_beside_retained_pitch(self):
+        med = np.tile([0, 1.2, 1.2, 1, 1.5, 2, 3, 3, 2, 0], (5, 1))
+        mask = np.ones(med.shape, bool)
+        flat = np.empty(med.shape, bool)
+        grid = F.zone_ridge_half_steps(med, np.zeros(med.shape), mask, flat_out=flat)
+        half = {(x, z): 20 + int(grid[z, x]) for z, x in zip(*np.nonzero(mask))}
+        flat_cells = {(x, z) for z, x in zip(*np.nonzero(flat))}
+        states = F.pitched_roof_states(half, dict.fromkeys(half, 'brick'), flat_cells=flat_cells)
+        self.assertIn((2, 2), flat_cells)
+        for c in flat_cells:
+            self.assertEqual(states[c], 'bricks')
+        self.assertIn('_stairs[', states[(5, 2)])
+        from roof_lint import stair_shape_mismatches
+        placed = {(x, F.roof_block_y(half[(x, z)]), z): st for (x, z), st in states.items()}
+        self.assertEqual(stair_shape_mismatches(placed), [])
+
+    def test_flat_decks_keep_orthogonal_cross_zone_stairs(self):
+        half = {(0, 0): 20, (1, 0): 24, (0, 1): 20}
+        levels = {(0, 0): 0, (1, 0): 1, (0, 1): 0}
+        flat_cells = {(0, 0), (0, 1)}
+        states = F.pitched_roof_states(
+            half, dict.fromkeys(half, 'brick'), levels=levels, flat_cells=flat_cells,
+        )
+        self.assertEqual(states[(0, 0)], F._roof_stair('brick', 'east'))
+        self.assertEqual(states[(0, 1)], 'bricks')
+
 
 class RidgeHalfStepsTest(unittest.TestCase):
     """#299: zone_ridge_half_steps keeps a narrow lidar ridge, ignores lone spikes, clips to the next level."""
@@ -1864,6 +1970,8 @@ class RidgeHalfStepsTest(unittest.TestCase):
         med = np.full((7, 12), 44.0)
         med[:, :6] = 48.0
         med[:, 6:] = 49.0
+        med[:, 0] = 44.0  # Each zone has a real slope up from its own eave.
+        med[:, -1] = 47.0
         med, readable = self._grid(med)
         zone = np.full(med.shape, 44.0)
         zone[:, 6:] = 47.0
