@@ -40,6 +40,12 @@ class TestFloatingGroundTops(unittest.TestCase):
         self.assertEqual(len(got[(0, 0)]), 2)
 
 
+    def test_a_lone_top_block_is_still_unsupported_in_the_journal(self):
+        """The audit passes its own floor: a top with nothing owned beneath it is a stale remnant, even at y31."""
+        for y in (49, 31):
+            got = gfa.floating_ground_tops(column(5, 0, {y: ('g', 'grass_block')}), {'g'})
+            self.assertEqual([(r['x'], r['surface_y'], r['support_y']) for r in got], [(5, y, None)])
+
 
 class TestWhoseFloatingColumn(unittest.TestCase):
     """#297: each floating column names whose it is to settle: the ground's or a feature's."""

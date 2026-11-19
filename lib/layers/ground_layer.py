@@ -696,24 +696,29 @@ def step_stairs(steps: dict, ys: dict) -> dict:
     return out
 
 
-def support_y(block, x: int, top: int, z: int, floor: int = PROBE_Y_RANGE[0] - 1) -> int | None:
+def support_y(block, x: int, top: int, z: int, floor: int | None = None) -> int | None:
     """Highest y below ``top`` where solid ground starts (#296).
 
     Ground is ``SUPPORT_RUN`` non-air blocks in a row, or a run that reaches ``floor``. A shorter
     run over air is a stale remnant, not ground: a surface left floating when its support was
     undone, or ghost ground with holes where a feature once stood. It must not stop the fill.
 
-    @param block: ``callable(x, y, z) -> state | None``
-    @param top: the surface y; the search starts one below it
-    @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``)
     A surface at the probe floor has nothing readable below it: the probe never reads ``floor`` or
     lower, so the search range is empty and would report a float over solid stone. It rests on the
-    baseline there, and ``floor`` is its support.
+    baseline there, and ``floor`` is its support. The cost is that a genuine float at that lowest
+    level is not detected. Only a call without ``floor`` gets this: a caller passing its own floor,
+    such as the journal audit, still sees a lone top block as unsupported.
 
+    @param block: ``callable(x, y, z) -> state | None``
+    @param top: the surface y; the search starts one below it
+    @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``); None means the
+      probe floor, ``PROBE_Y_RANGE[0] - 1``
     @returns: y of the support's top block, or None when nothing holds the column up
     """
-    if top - 1 <= floor:
-        return floor
+    if floor is None:
+        floor = PROBE_Y_RANGE[0] - 1
+        if top - 1 <= floor:
+            return floor
     for y in range(top - 1, floor, -1):
         if all(not is_air(block(x, y - i, z)) for i in range(SUPPORT_RUN) if y - i > floor):
             return y
