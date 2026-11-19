@@ -513,7 +513,9 @@ def zone_ridge_half_steps(
     level so a bucket-edge mismatch cannot spike past the next plateau.
 
     @param med: median DSM metres AOD (pitched labels pass the 3×3 median so a
-        narrow ridge keeps its peak; zone snapping uses the 5×5)
+        narrow ridge keeps its peak; zone snapping uses the 5×5). NaN means no
+        data: that cell is dropped from ``readable`` and from the neighbour cap
+        (it is never read as a zero-metre roof) and gets 0 half-steps
     @param zone: snapped plateau grid (same shape)
     @param readable: footprint mask
     @param flat_tol_m: max rise that still counts as a flat plateau
@@ -1679,11 +1681,13 @@ class Build:
                 f'{self.name}: lidar DTM/DSM cache missing for zones on {f.no} '
                 f'bbox=({x0},{z0})-({x1},{z1})'
             )
+        # keeps ``dsm`` (and everything built on it) exactly as before the float option existed
         h = lp.mc_heights(lidar, x0, z0, x1, z1)
         # The whole-metre grid above rounds every DSM sample, so a roof that rises half
         # a block never shows. ``dsm_fine`` is the provider's float option (NaN = no data;
         # whole metres when the provider has none) and only feeds the pitched-roof
         # half-steps; snapping, footprints and ground heights stay on the whole-metre grid.
+        # (a second sample of the same bbox; the cost is accepted to leave ``dsm`` untouched)
         fine = lp.mc_heights_float(lidar, x0, z0, x1, z1)
         # mc_heights is [x - x0, z - z0]; convert to [z, x] for zone helpers
         return {
