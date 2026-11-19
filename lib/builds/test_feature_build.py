@@ -1635,6 +1635,44 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         builder._back_roof_stair_edges({(0, 0): 50, (1, 0): 51}, states)
         self.assertEqual(builder.p.cells[(1, 50, 0)], 'minecraft:smooth_stone')
 
+    def test_zoned_shell_swaps_storey_floor_for_wall_beside_open_stair_half(self):
+        # S-087 end to end: with the facade datum at 42, a storey floor falls at
+        # Y60, the stair's Y, in the taller south column. Its open upper half
+        # must see wall, not the light-grey smooth_stone floor (#310).
+        cells = {(x, z) for x in range(6163, 6168) for z in range(-5633, -5628)}
+        rows = [
+            [120, 120, 120, 120, 120],
+            [120, 120, 120, 122, 122],
+            [120, 120, 120, 122, 124],
+            [120, 120, 122, 124, 124],
+            [120, 120, 122, 124, 124],
+        ]
+        raw = {(6163 + x, -5633 + z): h for z, row in enumerate(rows) for x, h in enumerate(row)}
+        halfs = F.regularise_roof_half_heights(raw)
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': cells}, world=_StoneWorld())
+        feature = builder.features[0]
+        feature.b = 42  # storey floors at 42, 45, ..., 60
+        feature.zone_ground = {c: 41 for c in cells}
+        feature.zone_level = {c: 49 for c in cells}
+        feature.zone_eave = {c: 70 for c in cells}
+        feature.zone_roof_half = halfs
+        feature.zone_roof = {c: F.roof_block_y(h) for c, h in halfs.items()}
+        builder.shell_zoned(0, feature)
+        self.assertIn('facing=east', builder.p.cells[(6165, 60, -5631)])
+        self.assertIn('shape=straight', builder.p.cells[(6165, 60, -5631)])
+        # The stair's closed (east) side keeps the storey floor at that Y.
+        self.assertEqual(builder.p.cells[(6166, 60, -5631)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(6165, 60, -5630)], 'minecraft:bricks')
+
+    def test_stair_backing_replaces_floor_block_beside_outer_corner_stair(self):
+        # An outer-corner stair has an open side on every face; a floor block
+        # on one of them is swapped for wall too.
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': self.cells}, world=_StoneWorld())
+        states = {(0, 0): 'brick_stairs[facing=east,half=bottom,shape=outer_left]'}
+        builder.p.set(-1, 50, 0, builder.floor_mat)
+        builder._back_roof_stair_edges({(0, 0): 50, (-1, 0): 51}, states)
+        self.assertEqual(builder.p.cells[(-1, 50, 0)], 'minecraft:bricks')
+
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
         """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
         pitched = self._build('pitched', [48], self.ridge_zone_data, material='brick')
