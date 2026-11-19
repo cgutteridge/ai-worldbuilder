@@ -8,6 +8,7 @@ package; vendor module filenames stay under ``providers/`` and catalogues.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -149,23 +150,47 @@ def mc_heights(*args: Any, **kwargs: Any):
     return load_lidar_module('tiles').mc_heights(*args, **kwargs)
 
 
+_FLOAT_FALLBACK_WARNED = False
+
+
+def _accepts_geocraft(fn: Any) -> bool:
+    """True when ``fn`` takes a ``geocraft`` keyword (the provider's float option)."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return 'geocraft' in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+
+
 def mc_heights_float(*args: Any, **kwargs: Any):
     """Like ``mc_heights`` but asks the provider for its float option.
 
     The provider's default rounds every DSM/DTM sample to a whole metre, so a
     roof that rises half a block never shows up. This wrapper asks for the
-    provider's float option (unrounded heights, NaN for no-data) and, for a
-    provider whose ``mc_heights`` has no such option (``TypeError``), falls
-    back to the whole-metre grid so callers keep working.
+    provider's float option (unrounded heights, NaN for no-data). The provider
+    signature is checked up front, so a ``TypeError`` raised inside the provider
+    is never mistaken for a missing option. A provider with no such option falls
+    back to the whole-metre grid (one warning on stderr, once per run) so
+    callers keep working. A caller that passes its own ``geocraft`` keeps it.
 
     @returns: height dict; ``dsm`` / ``dtm`` are float (NaN = no data) when the
         provider has the float option, whole-metre integers otherwise
     """
+    global _FLOAT_FALLBACK_WARNED
     fn = load_lidar_module('tiles').mc_heights
-    try:
-        return fn(*args, geocraft=False, **kwargs)
-    except TypeError:
+    if 'geocraft' in kwargs or _accepts_geocraft(fn):
+        kwargs.setdefault('geocraft', False)
         return fn(*args, **kwargs)
+    if not _FLOAT_FALLBACK_WARNED:
+        _FLOAT_FALLBACK_WARNED = True
+        print(
+            'lidar_provider: provider mc_heights has no float option; '
+            'using whole-metre heights (roof half-steps will not show)',
+            file=sys.stderr,
+        )
+    return fn(*args, **kwargs)
 
 
 def default_heights(x0: int, z0: int, x1: int, z1: int) -> dict[str, Any]:

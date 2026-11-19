@@ -207,7 +207,8 @@ def may_join_at(
     Footprint-ring columns (``near1``) are banned by default. Only materials that
     already have ``allow_against_build`` placements (building-border hedges) may
     join into that ring. Live block must be air/flower, and the spot must not be
-    owned or masked.
+    owned or masked. There is no ground check: a join across a gap or over water is
+    kept on purpose (``test_join_pieces_has_no_terrain_veto``, #307).
 
     @param pos: candidate (x, y, z)
     @param mat: joinable block id being considered
@@ -532,6 +533,7 @@ def place_barriers_from_plan(
                     'placed_positions': placed_positions, 'excluded_positions': excluded,
                     **({'on_terrain': True, 'moved_to_terrain': raised_over_terrain(world, q[0], q[1], top[0])}
                        if terrain_y(lidar_hm, *q) is not None else {}),
+                    **({'partial': True} if excluded else {}),   # placed, but some of the column was refused
                 })
             else:
                 unplaced.append(dplan.mark_unplaced(
@@ -774,6 +776,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     stats['unresolved'] = len(unresolved)
     stats['moved_to_terrain'] = (sum(1 for r in furniture_report if r.get('moved_to_terrain'))
                                  + sum(1 for r in barrier_report if r.get('moved_to_terrain')))
+    # no lidar terrain for the column: the live surface was used (rows carry on_terrain only with terrain)
+    stats['terrain_fallback'] = (sum(1 for r in furniture_report if not r.get('on_terrain'))
+                                 + sum(1 for r in barrier_report if not r.get('on_terrain')))
+    stats['barrier_partial_columns'] = sum(1 for r in barrier_report if r.get('partial'))
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
     furniture_unplaced = list(furniture_unplaced)
@@ -894,6 +900,7 @@ def run(cell: tuple[int, int]) -> int:
     _print_outbuildings(outbuilding_rows(outbuilding_report, unresolved, unplaced))
     if placed:
         preview(plan, artifact_path(name, 'preview.png', dry=True), scale=2)
+        # the simulated undo reads this pass's own earlier build, so its name must be in `modifies`
         apply(plan, dry=True, modifies=(*ignored_builds(cell), name))
     else:
         print('  no preview written: empty decor plan')

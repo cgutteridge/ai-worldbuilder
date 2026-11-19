@@ -717,9 +717,19 @@ class TestTerrainGround(unittest.TestCase):
         with mock.patch('lidar_heightmap.reference_world', side_effect=RuntimeError('no lidar')):
             self.assertIsNone(tl.cell_terrain((0, 0)))
 
+    def test_cell_terrain_warns_once_per_call_when_lidar_is_unavailable(self):
+        import io
+        from contextlib import redirect_stderr
+        err = io.StringIO()
+        with mock.patch('lidar_heightmap.reference_world', side_effect=RuntimeError('no lidar')), \
+                redirect_stderr(err):
+            tl.cell_terrain((3, 4))
+        self.assertIn('no lidar terrain for cell (3, 4)', err.getvalue())
+        self.assertIn('no lidar', err.getvalue())
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_terrain_summary_line_names_used_moved_and_fallback(self):
+        line = tl.terrain_summary({'terrain': {'used': 5, 'moved': 2, 'fallback': 1}})
+        self.assertEqual(line, '  terrain ground: 5 used, 2 moved under a roof, 1 fell back to the live surface')
 
 
 class TestDryRunUndo(unittest.TestCase):
@@ -797,3 +807,7 @@ class TestDryRunUndo(unittest.TestCase):
                 redirect_stdout(io.StringIO()):
             self.assertEqual(tl.apply_cell((0, 0)), 0)
             self.assertEqual([p.name for p in Path(tmp).iterdir()], [tl.plan_name(0, 0) + '-report.json'])
+
+
+if __name__ == '__main__':
+    unittest.main()

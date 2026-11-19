@@ -38,6 +38,14 @@ class TestReplan(unittest.TestCase):
         self.assertEqual(undo.world.block(64, 61, 64), 'minecraft:oak_log')
         self.assertEqual(set(undo.masked), set(old))
 
+    def test_no_own_mask_returns_the_world_unwrapped(self):
+        from layer_planning import plan_after_undo
+        live = World()
+        with tempfile.TemporaryDirectory() as d:
+            undo = plan_after_undo('trees', CELL, live, mask_dir=Path(d))
+        self.assertIs(undo.world, live)
+        self.assertEqual((undo.conflicts, undo.own), ([], set()))
+
     def test_preview_matches_actual_undo_and_preserves_shared_crown(self):
         placed, _ = plan_cell(CELL, Plan('first'), World(), inputs())
         self.assertGreater(len(placed), 0)

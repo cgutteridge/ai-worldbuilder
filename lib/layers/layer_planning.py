@@ -33,4 +33,6 @@ def plan_after_undo(pass_name, cell, world, *, mask_dir=None) -> UndoPreview:
     if conflicts:
         masked = {**dict.fromkeys(own, f'{pass_name} {cell[0]},{cell[1]}'), **remaining}
         return UndoPreview(world, masked, own, conflicts)
+    if mask is None:                    # nothing of this pass to undo: plan on the world as it is
+        return UndoPreview(world, remaining, own, [])
     return UndoPreview(PlannedWorld(Plan('undo-preview'), world, ignore=cleared), remaining, own, [])
