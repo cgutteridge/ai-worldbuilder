@@ -474,6 +474,22 @@ class TestTerrainGround(unittest.TestCase):
         self.assertEqual(found, {})
         self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['feature above terrain'])
 
+    def test_barrier_column_with_a_refused_part_is_marked_partial(self):
+        self.roof(y=self.GROUND + 2)          # a feature owns the second block of a 2-high hedge (a solid block, so 'not air')
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 2}
+        found, report, unplaced = dl.place_barriers_from_plan(
+            (0, 0), [item], self.world, owned=self.owned, lidar_hm=self.hm, **self.options)
+        self.assertEqual(set(found), {(10, self.GROUND + 1, 20)})
+        self.assertEqual(unplaced, [])
+        self.assertTrue(report[0]['partial'])
+        self.assertEqual([e['reason'] for e in report[0]['excluded_positions']], ['not air'])
+
+    def test_whole_barrier_column_is_not_marked_partial(self):
+        item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 2}
+        _f, report, _u = dl.place_barriers_from_plan(
+            (0, 0), [item], self.world, owned=self.owned, lidar_hm=self.hm, **self.options)
+        self.assertNotIn('partial', report[0])
+
     def test_barrier_on_floating_ground_is_unplaced(self):
         self.live[(10, self.GROUND, 20)] = 'minecraft:air'
         item = {'id': 'hedge', 'role': 'barrier', 'kind': 'hedge', 'cells': [[10, 20]], 'height': 1}

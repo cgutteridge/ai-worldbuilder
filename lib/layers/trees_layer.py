@@ -360,8 +360,22 @@ def cell_terrain(cell: tuple[int, int]) -> dict | None:
     try:
         from lidar_heightmap import reference_world
         return reference_world().heightmap(cell)
-    except Exception:
+    except Exception as exc:
+        # every tree then stands on the live surface, roofs included: say so, do not revert silently
+        print(f'  warning: no lidar terrain for cell {cell} ({type(exc).__name__}: {exc}); '
+              f'trees use the live surface', file=sys.stderr)
         return None
+
+
+def terrain_summary(report: dict) -> str:
+    """One console line for ``report['terrain']`` (the JSON report has the same counts).
+
+    @param report: ``plan_cell`` report
+    @returns: the summary line
+    """
+    t = report['terrain']
+    return (f"  terrain ground: {t['used']} used, {t['moved']} moved under a roof, "
+            f"{t['fallback']} fell back to the live surface")
 
 
 def tree_row_sample_points(
@@ -614,6 +628,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
 
     def ground(x, z):
         """Ground block at lidar terrain Y; the live surface only where terrain is missing (#301)."""
+        # fallback=surface_y is passed explicitly so tests can patch this module's surface_y
         return ground_at(world, inputs.terrain, x, z, owned=owned, masked=masked, fallback=surface_y)
 
     def no_ground(x, z):
@@ -761,6 +776,7 @@ def run(cell: tuple[int, int]) -> int:
         n_moved = sum(1 for s in mapped_snaps if s['status'] == 'moved')
         print(f'  mapped-tree lidar snap: {n_moved}/{len(mapped_snaps)} moved; '
               f'young/unconfirmed kept as small crowns (#129)')
+    print(terrain_summary(rep))
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
     shunts = [r for r in rep['rooting'] if r['to'] and r['from'] != r['to']]
@@ -774,6 +790,7 @@ def run(cell: tuple[int, int]) -> int:
          'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps']}, indent=1))
     if placed:
         preview(plan, artifact_path(name, 'preview.png', dry=True), scale=2)
+        # the simulated undo reads this pass's own earlier build, so its name must be in `modifies`
         apply(plan, dry=True, modifies=(*ignored_builds(cell), name))
     else:
         print('  no preview written: empty trees plan')
@@ -797,6 +814,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     with timed_stage('layer planning (includes surface warm-up)'):
         placed, rep = plan_cell(cell, plan, world)
     from layer_reports import reason_summary, write_report
+    print(terrain_summary(rep))
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
     shunts = [r for r in rep['rooting'] if r['to'] and r['from'] != r['to']]
