@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 313,
+  "nextTaskId": 314,
   "tasks": [
     
     {
@@ -144,6 +144,15 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Issue: Flat roof areas are built with stairs that gain no height (I-048), owner snag S-088 (west_w34391673): \"the flat black roof uses stairs without gaining height\".\n\nVerified in the live world 2026-11-19: polished-deepslate stairs run along x6156-6181 at z-5640 and again at z-5639, both at y58, all facing south (straight), so two adjacent rows at the same height face the same way and climb nowhere.\n\nCause not established. pitched_roof_states (lib/builds/feature_build.py ~823) gives a stair only where a neighbour is at least 2 half-steps higher, so a flat deck should not get stairs from that path. Candidates: the dark zone (level 47) height grid had a ramp that was flattened after the stairs were chosen, or another path places them (a zone-material boundary, edge rows, or a hip eave). Step one: dump the half-height grid for west_w34391673 around x6156-6181, z-5640 and see.\n\nBefore starting: #304 touches the same function; re-run on current main first and close as already done if the stairs are gone.\n\nChange: remove the cause, with a unit test of a flat deck beside the offending boundary that expects no stairs.\n\nCheck: python3 scripts/run_tests.py --only test_feature_build passes; a dry run of West plans no stairs on the flat dark zone. After a rebuild the owner reviews S-088 in game (world work). On landing: the orchestrator logs the fix on I-048 with a check line for S-088.\n"
+    },
+    {
+      "id": 313,
+      "title": "Tests and a second-cause check for the #310 grey quarter squares fix (I-022 S-087)",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Review nits from the #310 review (2026-11-19, merged, no blockers). Issue: Roof stairs ignore neighbours and rotation (I-022), snag S-087. #310 swapped a storey-floor block beside an open roof stair half for the wall in _back_roof_stair_edges (lib/builds/feature_build.py).\n\n1. Test: no test runs shell_zoned with a storey-floor row beside a lower stair; the #310 test calls _back_roof_stair_edges with a hand-placed floor. Add a shell_zoned case (like PitchedZonesRidgeTest) that pins the end-to-end pattern: floor at the stair's Y in the taller column becomes wall.\n2. Test: add a one-line outer-corner stair case with a floor block on an open quadrant side (the #310 test covers a straight stair, one open and one closed face).\n3. Investigate (read-only, say what you find, change nothing unless the cause is clear and small): is a roof-material smooth_stone (the default roof material, around feature_build.py line 2953) a second source of grey blocks behind stairs? West's roof zones use polished deepslate and brick; check which spec fields can leave smooth_stone as a roof block.\n\nCheck: python3 scripts/run_tests.py --only test_feature_build passes; the new tests fail without the #310 swap. Touches lib/builds/feature_build.py and test_feature_build.py; serialise with #307, #311 and #309 (same files).\n"
     }
   ]
 }
