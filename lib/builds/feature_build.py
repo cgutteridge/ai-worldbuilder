@@ -495,18 +495,71 @@ def _cap_lone_cells(rise_m: np.ndarray, sel: np.ndarray, readable: np.ndarray) -
     return np.where(sel, np.minimum(rise_m, cap), rise_m)
 
 
+def _roof_pitch_mask(
+    rise_m: np.ndarray, mask: np.ndarray, flat_tol_m: float, flat_gradient: float,
+) -> np.ndarray:
+    """Keep slopes reaching the height threshold through a steep part of the roof.
+
+    Gradient is rise/run across adjacent one-metre samples in the same roof
+    zone; perpendicular components combine so rotated roofs use the same
+    threshold. A steep low bump must reach a higher roof by a non-descending
+    path to qualify. Walking back downhill from those higher cells preserves
+    their toes, while a separate low bump beyond a saddle stays flat.
+
+    @param rise_m: non-negative, capped metres above the zone eave
+    @param mask: readable cells in this zone; holes and other zones do not join
+    @param flat_tol_m: exclusive height threshold for flattening
+    @param flat_gradient: exclusive gradient threshold for flattening
+    @returns: boolean mask of cells belonging to a retained pitch
+    """
+    gx = np.zeros(rise_m.shape)
+    gz = np.zeros(rise_m.shape)
+    dx = np.where(mask[:, 1:] & mask[:, :-1], np.abs(np.diff(rise_m, axis=1)), 0.0)
+    dz = np.where(mask[1:, :] & mask[:-1, :], np.abs(np.diff(rise_m, axis=0)), 0.0)
+    gx[:, 1:] = np.maximum(gx[:, 1:], dx)
+    gx[:, :-1] = np.maximum(gx[:, :-1], dx)
+    gz[1:, :] = np.maximum(gz[1:, :], dz)
+    gz[:-1, :] = np.maximum(gz[:-1, :], dz)
+
+    def spread(seeds: np.ndarray, uphill: bool) -> np.ndarray:
+        seen = seeds.copy()
+        pending = deque(zip(*np.nonzero(seeds)))
+        while pending:
+            z, x = pending.popleft()
+            for dz, dx in N4:
+                nz, nx = z + dz, x + dx
+                if not (0 <= nz < mask.shape[0] and 0 <= nx < mask.shape[1]):
+                    continue
+                if seen[nz, nx] or not mask[nz, nx]:
+                    continue
+                a, b = rise_m[z, x], rise_m[nz, nx]
+                follows_slope = b >= a if uphill else b <= a
+                if follows_slope:
+                    seen[nz, nx] = True
+                    pending.append((nz, nx))
+        return seen
+
+    steep = mask & (rise_m > 0) & (np.hypot(gx, gz) >= flat_gradient)
+    uphill = spread(steep, uphill=True)
+    return spread(uphill & (rise_m >= flat_tol_m), uphill=False)
+
+
 def zone_ridge_half_steps(
     med: np.ndarray,
     zone: np.ndarray,
     readable: np.ndarray,
-    flat_tol_m: float = 1.0,
+    flat_tol_m: float = 1.5,
     levels: list | None = None,
+    flat_gradient: float = 0.2,
+    flat_out: np.ndarray | None = None,
 ) -> np.ndarray:
     """Half-block rises above each zone plateau for pitched roofs.
 
-    Per snapped level, if the median DSM stays within ``flat_tol_m`` of the
-    plateau, every cell in that zone stays at the eave (flat deck). Otherwise
-    each cell rises ``max(0, round((med - level) * 2))`` half-steps (1 m ≈ 1
+    A roof rise below ``flat_tol_m`` (default 1.5 m, including every rise at or
+    below 1 m) stays flat. A larger rise also stays flat when its gradient is
+    below ``flat_gradient`` (default 20%). Qualifying slopes keep their lower
+    toes, but cannot make a separate low bump in the same zone pitched.
+    Retained cells rise ``max(0, round((med - level) * 2))`` half-steps (1 m ≈ 1
     block), so a lidar ridge becomes stair / slab / full-block courses instead
     of stepped flat terraces. A lone one-cell spike is no ridge (it cannot turn
     a flat zone pitched), and each rise is clipped to the gap to the next zone
@@ -518,12 +571,17 @@ def zone_ridge_half_steps(
         (it is never read as a zero-metre roof) and gets 0 half-steps
     @param zone: snapped plateau grid (same shape)
     @param readable: footprint mask
-    @param flat_tol_m: max rise that still counts as a flat plateau
+    @param flat_tol_m: exclusive rise threshold for a flat roof (default 1.5 m)
     @param levels: plateau levels for the next-level clip (default: the levels
         present in ``zone`` over ``readable``)
+    @param flat_gradient: exclusive rise/run threshold for a flat roof (default 0.2)
+    @param flat_out: optional boolean output grid; receives True for readable
+        cells rejected as pitch, so block selection cannot add stairs back
     @returns: int half-steps above the zone eave (0 outside readable / flat zones)
     """
     out = np.zeros(zone.shape, dtype=int)
+    if flat_out is not None:
+        flat_out[:] = readable
     if not readable.any():
         return out
     med_f = med.astype(float)
@@ -540,14 +598,15 @@ def zone_ridge_half_steps(
         sel = readable & (zone == level)
         if not sel.any():
             continue
-        rise_m = _cap_lone_cells(med_f - level, sel, readable)
-        if float(np.nanmax(rise_m[sel])) < flat_tol_m:
-            continue
-        half = np.maximum(0, np.rint(rise_m * 2).astype(int))
+        rise_m = np.maximum(0, _cap_lone_cells(med_f - level, sel, readable))
         above = [v for v in all_levels if v > level]
         if above:
-            half = np.minimum(half, int(np.rint((above[0] - level) * 2)))
-        out[sel] = half[sel]
+            rise_m = np.minimum(rise_m, above[0] - level)
+        pitched = _roof_pitch_mask(rise_m, sel, flat_tol_m, flat_gradient)
+        if flat_out is not None:
+            flat_out[pitched] = False
+        half = np.rint(rise_m * 2).astype(int)
+        out[pitched] = half[pitched]
     return out
 
 
@@ -909,6 +968,7 @@ def pitched_roof_states(
     materials: dict[tuple[int, int], str],
     warnings: list[str] | None = None,
     levels: dict[tuple[int, int], int] | None = None,
+    flat_cells: set[tuple[int, int]] | None = None,
 ) -> dict[tuple[int, int], str]:
     """Choose stair / slab / full block states for a pitched-roof heightfield.
 
@@ -936,12 +996,15 @@ def pitched_roof_states(
     @param materials: ``{(x, z): material prefix}`` (must cover every column)
     @param warnings: optional list that receives fallback messages
     @param levels: optional semantic zone levels preserving intentional plateau steps
+    @param flat_cells: optional cells classified as flat; keep full decks here,
+        allowing only orthogonal stairs toward a higher, different roof zone
     @returns: ``{(x, z): block state}`` (place at ``roof_block_y(half_height)`` after
         regularisation)
     """
     from roof_lint import stair_shape_from_neighbours
 
     half_heights = regularise_roof_half_heights(half_heights, levels)
+    flat_cells = flat_cells or set()
     warn = warnings if warnings is not None else []
     fam_cache: dict[str, dict[str, str]] = {}
     out: dict[tuple[int, int], str] = {}
@@ -960,11 +1023,17 @@ def pitched_roof_states(
         return half_heights.get((x, z))
 
     def ups_at(x: int, z: int, h: int) -> list[str]:
-        return [
-            face for face in _ROOF_FACE_ORDER
-            if (nh := h_at(x + _ROOF_DELTA[face][0], z + _ROOF_DELTA[face][1])) is not None
-            and nh >= h + 2
-        ]
+        ups = []
+        for face in _ROOF_FACE_ORDER:
+            dx, dz = _ROOF_DELTA[face]
+            n = (x + dx, z + dz)
+            nh = half_heights.get(n)
+            if nh is None or nh < h + 2:
+                continue
+            if (x, z) in flat_cells and (levels is None or levels[n] == levels[(x, z)]):
+                continue
+            ups.append(face)
+        return ups
 
     def diag_rises(x: int, z: int, h: int, dx: int, dz: int) -> bool:
         # A hip eave corner rises diagonally within its own zone. A taller zone
@@ -993,7 +1062,7 @@ def pitched_roof_states(
             facings[(x, z)] = ups[0]
         elif pair is not None:
             facings[(x, z)] = pair[0]
-        elif not ups:
+        elif not ups and (x, z) not in flat_cells:
             diag_pair = None
             for a in _ROOF_FACE_ORDER:
                 for b in _ROOF_FACE_ORDER:
@@ -1014,11 +1083,13 @@ def pitched_roof_states(
     cap_slabs = set()
     for run in roof_ridge_runs(half_heights, levels):
         if run.width == 1:
-            cap_slabs.update(run.cells)
+            cap_slabs.update(run.cells - flat_cells)
         elif run.width == 2:
             across = 0 if run.axis == 'x' else 1
             low = min(c[across] for c in run.cells)
             for c in run.cells:
+                if c in flat_cells:
+                    continue
                 facings[c] = (('east' if c[across] == low else 'west') if across == 0 else
                               ('south' if c[across] == low else 'north'))
 
@@ -1026,7 +1097,7 @@ def pitched_roof_states(
     opposite = {'north': 'south', 'east': 'west', 'south': 'north', 'west': 'east'}
     for (x, z), h in half_heights.items():
         c = (x, z)
-        if h % 2 or c in facings or c in cap_slabs:
+        if h % 2 or c in facings or c in cap_slabs or c in flat_cells:
             continue
         neighbours = {face: (x + dx, z + dz) for face, (dx, dz) in _ROOF_DELTA.items()}
         if any(half_heights.get(n, h) > h for n in neighbours.values()):
@@ -1067,7 +1138,9 @@ def pitched_roof_states(
                 out[(x, z)] = fallback(mat, 'stairs')
             continue
 
-        if h % 2 == 1 or (x, z) in cap_slabs:
+        if (x, z) in flat_cells:
+            out[(x, z)] = f['full']
+        elif h % 2 == 1 or (x, z) in cap_slabs:
             if 'slab' in f:
                 out[(x, z)] = _roof_slab(mat, 'bottom')
             else:
@@ -1758,17 +1831,21 @@ class Build:
             new_cells = mask_to_cells(readable, x0, z0)
             pitched = f.roof.get('kind') == 'pitched'
             half_grid = None
+            flat_grid = np.zeros(readable.shape, dtype=bool)
             if pitched:
                 # pitched labels read the float DSM (when given) so a half-block rise survives
                 fine = grids.get('dsm_fine')
                 fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
                 half_grid = flatten_half_step_decks(
-                    zone_ridge_half_steps(_win_nanmedian(fine, 3), zone, readable, levels=_levels),
+                    zone_ridge_half_steps(
+                        _win_nanmedian(fine, 3), zone, readable, levels=_levels, flat_out=flat_grid,
+                    ),
                     zone, readable,
                 )
             roof: dict = {}
             eaves: dict = {}
             half_h: dict = {}
+            flat_cells = set()
             gy: dict = {}
             zl: dict = {}
             for z in range(depth):
@@ -1782,6 +1859,8 @@ class Build:
                         h = int(half_grid[z, x])
                         half_h[(wx, wz)] = 2 * eave_y + h
                         roof[(wx, wz)] = roof_block_y(half_h[(wx, wz)])
+                        if flat_grid[z, x]:
+                            flat_cells.add((wx, wz))
                     else:
                         roof[(wx, wz)] = eave_y
                     gy[(wx, wz)] = int(ground[z, x])
@@ -1798,6 +1877,7 @@ class Build:
             f.zone_roof = roof
             f.zone_eave = eaves
             f.zone_roof_half = half_h if pitched else None
+            f.zone_flat_cells = flat_cells
             f.zone_ground = gy
             f.zone_level = zl
             f.roof_material_level = (
@@ -1913,6 +1993,7 @@ class Build:
             }
             pitched_states = pitched_roof_states(
                 halfs, mats, warnings=self._roof_warnings, levels=zl,
+                flat_cells=getattr(f, 'zone_flat_cells', None),
             )
 
         def top_of(q: tuple[int, int]) -> int:
