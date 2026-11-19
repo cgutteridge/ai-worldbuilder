@@ -122,6 +122,7 @@ import math
 import statistics
 import warnings
 from collections import Counter, deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -820,6 +821,75 @@ def regularise_roof_half_heights(
     return h
 
 
+@dataclass(frozen=True)
+class RoofRidgeRun:
+    """One level maximum; width/axis are None for an unbounded or irregular plateau."""
+    cells: frozenset[tuple[int, int]]
+    width: int | None
+    axis: str | None
+
+
+def roof_ridge_runs(
+    half_heights: dict[tuple[int, int], int],
+    levels: dict[tuple[int, int], int] | None = None,
+) -> list[RoofRidgeRun]:
+    """Find equal-height N4 maxima in a regularised pitched-roof heightfield.
+
+    A cap is rectangular, bounded across its width by lower roof cells in the
+    same zone. Missing cells and zone boundaries are not lower roof. A 2x2
+    square or an irregular plateau has no ridge axis. Existing slope stairs
+    (including diagonal rises) are excluded before classifying the whole run.
+    Wider and unqualified maxima are returned too, for diagnostic counts.
+
+    @param half_heights: regularised ``{(x, z): half_height}``
+    @param levels: optional semantic zone levels; boundaries cannot bound a cap
+    @returns: runs with their width and cross-slope axis (None if unqualified)
+    """
+    seen = set()
+    runs = []
+
+    def same_zone(a, b):
+        return levels is None or levels[a] == levels[b]
+
+    for start in sorted(half_heights):
+        if start in seen:
+            continue
+        h = half_heights[start]
+        cells = {start}
+        seen.add(start)
+        pending = [start]
+        while pending:
+            x, z = pending.pop()
+            for dx, dz in N4:
+                n = (x + dx, z + dz)
+                if n not in seen and half_heights.get(n) == h and same_zone(start, n):
+                    seen.add(n)
+                    cells.add(n)
+                    pending.append(n)
+        if any(half_heights.get((x + dx, z + dz), h) > h
+               for x, z in cells for dx, dz in N4):
+            continue
+        if any(half_heights.get((x + dx, z + dz), h) >= h + 2
+               for x, z in cells for dx in (-1, 1) for dz in (-1, 1)):
+            continue
+
+        xs, zs = zip(*cells)
+        sx, sz = max(xs) - min(xs) + 1, max(zs) - min(zs) + 1
+        width = axis = None
+        if len(cells) == sx * sz and (sx, sz) != (2, 2):
+            # Prefer the narrower axis; a one-row gable can still have a 2-wide cap.
+            for span, candidate, delta in sorted(((sx, 'x', (1, 0)), (sz, 'z', (0, 1)))):
+                dx, dz = delta
+                flanks = [(c, (c[0] + sign * dx, c[1] + sign * dz))
+                          for c in cells for sign in (-1, 1)
+                          if (c[0] + sign * dx, c[1] + sign * dz) not in cells]
+                if all(n in half_heights and same_zone(c, n) and half_heights[n] < h for c, n in flanks):
+                    width, axis = span, candidate
+                    break
+        runs.append(RoofRidgeRun(frozenset(cells), width, axis))
+    return runs
+
+
 def pitched_roof_states(
     half_heights: dict[tuple[int, int], int],
     materials: dict[tuple[int, int], str],
@@ -835,8 +905,10 @@ def pitched_roof_states(
     half-steps toward a neighbour is a stair facing upslope; hip eaves with only a diagonal rise
     also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
     (vanilla neighbour rule via ``roof_lint.stair_shape_from_neighbours``), not
-    from height differences on the diagonal. Flat / ridge cells use a full
-    block (even) or bottom-half slab (odd; see :func:`roof_block_y`: the slab
+    from height differences on the diagonal. One-wide ridges and hip apexes
+    use bottom-half slabs; two-wide ridges use stairs facing each other.
+    Wider / unqualified plateaus use a full block (even) or bottom-half slab
+    (odd; see :func:`roof_block_y`: the slab
     sits one block above the full block of ``h - 1``, so surfaces rise by half
     a block per step; a top-half slab there would match a full block, I-019 / #207).
     Missing stair/slab variants fall back to
@@ -913,7 +985,18 @@ def pitched_roof_states(
             if diag_pair:
                 facings[(x, z)] = diag_pair[0]
 
-    # Pass 2: shape from same-Y stair neighbours; slabs / fulls elsewhere.
+    ridge_slabs = set()
+    for run in roof_ridge_runs(half_heights, levels):
+        if run.width == 1:
+            ridge_slabs.update(run.cells)
+        elif run.width == 2:
+            across = 0 if run.axis == 'x' else 1
+            low = min(c[across] for c in run.cells)
+            for c in run.cells:
+                facings[c] = (('east' if c[across] == low else 'west') if across == 0 else
+                              ('south' if c[across] == low else 'north'))
+
+    # Pass 2: shape from same-Y stair neighbours, including the new ridge pairs.
     for (x, z), h in half_heights.items():
         mat = materials[(x, z)]
         f = fam(mat)
@@ -935,7 +1018,7 @@ def pitched_roof_states(
                 out[(x, z)] = fallback(mat, 'stairs')
             continue
 
-        if h % 2 == 1:
+        if h % 2 == 1 or (x, z) in ridge_slabs:
             if 'slab' in f:
                 out[(x, z)] = _roof_slab(mat, 'bottom')
             else:
@@ -2463,7 +2546,7 @@ class Build:
             self.set(x, eave, z, f'{rm}_slab[type=bottom]')
 
     def roof_pitched(self, features: list[Feature], own: set):
-        """Hip roof from the footprint edge: stairs upslope, full block at the ridge.
+        """Hip roof from the footprint edge, with slab or opposed-stair ridge caps.
 
         Chebyshev distance from the roof outline sets a one-block rise per step
         (45°). ``pitched_roof_states`` picks stair facing/shape, slabs and full

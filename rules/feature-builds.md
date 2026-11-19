@@ -179,6 +179,16 @@ Dry run unless `--apply`; `--apply` refuses a plan that already has a landed bui
   Lidar heights are only a guide: the builder regularises them so
   neighbouring columns within each roof zone differ by at most one stair
   (2 half-blocks); intentional steps between distinct zone levels stay. It then
+  caps a one-wide ridge or 1x1 hip apex with a bottom-half slab, backed by
+  a solid block below. A two-wide ridge uses two stairs facing each other
+  at `roof_block_y(h)`, including odd half-heights. This lowers an even
+  one-wide cap by half a block; an odd two-wide pair peaks half a block
+  above the previous slabs. Ridge runs must be rectangular equal-height
+  N4 maxima, bounded across their width by lower roof cells in the same
+  zone. Missing cells and zone boundaries do not count as lower roof;
+  2x2 squares, L/T shapes, runs with higher neighbours at an end, and
+  decks three or more cells wide keep their existing states. The same
+  cap rules apply to footprint-based Chebyshev hips. The builder then
   sets each stair's facing from the upslope and its `shape` from stairs
   at the **same block Y** (the game's neighbour rule — not from height
   differences on the diagonal). `python3 scripts/roof_lint.py` checks
