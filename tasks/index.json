@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 314,
+  "nextTaskId": 315,
   "tasks": [
     
     {
@@ -109,34 +109,14 @@
       ],
       "notes": "NEEDS USER INPUT: the owner names the world, a park with paths and pitches and a rural patch with fields, hedges and woodland (water or coast welcome if close), and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md section 6. Owner direction 2026-11-10: any UK place, so open land matters. Spike. Using the #253 classes, try defaults by hand and with a throwaway prototype where cheap: field boundaries (hedge, fence, gate), path surfaces, pitch markings, woodland edge and scrub, grass colour variation, ponds and streams via the water_body feature (#163), bench and lamp placement from OSM points or labelled inference. Compare variants by what a player sees walking through and from a hill. Deliver findings in docs/plans/park-rural.md: recommended defaults rows for the park/leisure, farmland/rural and woodland classes, which evidence exists UK-wide and where it is thin (sparse OSM; height source outside England unverified), cost in minutes and session tokens (method stated), and follow-up tasks to file from the findings. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and recommended-row table; the owner's in-game verdict is recorded in it."
     },
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     {
-      "id": 311,
-      "title": "Flat roof areas built with stairs that gain no height (I-048 S-088)",
+      "id": 314,
+      "title": "Flat decks with small lidar bumps still get stairs: tighten the flat tolerance (I-048 S-088 residue)",
       "status": "todo",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Issue: Flat roof areas are built with stairs that gain no height (I-048), owner snag S-088 (west_w34391673): \"the flat black roof uses stairs without gaining height\".\n\nVerified in the live world 2026-11-19: polished-deepslate stairs run along x6156-6181 at z-5640 and again at z-5639, both at y58, all facing south (straight), so two adjacent rows at the same height face the same way and climb nowhere.\n\nCause not established. pitched_roof_states (lib/builds/feature_build.py ~823) gives a stair only where a neighbour is at least 2 half-steps higher, so a flat deck should not get stairs from that path. Candidates: the dark zone (level 47) height grid had a ramp that was flattened after the stairs were chosen, or another path places them (a zone-material boundary, edge rows, or a hip eave). Step one: dump the half-height grid for west_w34391673 around x6156-6181, z-5640 and see.\n\nBefore starting: #304 touches the same function; re-run on current main first and close as already done if the stairs are gone.\n\nChange: remove the cause, with a unit test of a flat deck beside the offending boundary that expects no stairs.\n\nCheck: python3 scripts/run_tests.py --only test_feature_build passes; a dry run of West plans no stairs on the flat dark zone. After a rebuild the owner reviews S-088 in game (world work). On landing: the orchestrator logs the fix on I-048 with a check line for S-088.\n"
-    },
-    {
-      "id": 313,
-      "title": "Tests and a second-cause check for the #310 grey quarter squares fix (I-022 S-087)",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Review nits from the #310 review (2026-11-19, merged, no blockers). Issue: Roof stairs ignore neighbours and rotation (I-022), snag S-087. #310 swapped a storey-floor block beside an open roof stair half for the wall in _back_roof_stair_edges (lib/builds/feature_build.py).\n\n1. Test: no test runs shell_zoned with a storey-floor row beside a lower stair; the #310 test calls _back_roof_stair_edges with a hand-placed floor. Add a shell_zoned case (like PitchedZonesRidgeTest) that pins the end-to-end pattern: floor at the stair's Y in the taller column becomes wall.\n2. Test: add a one-line outer-corner stair case with a floor block on an open quadrant side (the #310 test covers a straight stair, one open and one closed face).\n3. Investigate (read-only, say what you find, change nothing unless the cause is clear and small): is a roof-material smooth_stone (the default roof material, around feature_build.py line 2953) a second source of grey blocks behind stairs? West's roof zones use polished deepslate and brick; check which spec fields can leave smooth_stone as a roof block.\n\nCheck: python3 scripts/run_tests.py --only test_feature_build passes; the new tests fail without the #310 swap. Touches lib/builds/feature_build.py and test_feature_build.py; serialise with #307, #311 and #309 (same files).\n"
+      "notes": "Issue: Flat roof areas are built with stairs that gain no height (I-048), snag S-088 (west_w34391673). #311 removed the cross-zone diagonal corner stairs (West polished_deepslate stairs 320 to 264 in a dry run). About 100 remain on the dark zone (level 47, y58), e.g. (6175,-5639), (6176,-5640), (6181,-5640): same-zone hip corners and ramp ends around lidar bumps of +1 to +1.5 blocks (half-heights 118-119). zone_ridge_half_steps treats a zone as pitched once its rise exceeds flat_tol_m = 1.0.\n\nDesign decision for the owner before work starts: tighten the flat tolerance, or treat bumps below some size as flat, so a deck that is flat to the eye gets no stairs. Trade-off: real low-pitch roofs may flatten. Orthogonal cross-zone stairs (a stair at the foot of a taller zone) stay: PitchedMaterialOwnershipTest.test_prepared_lidar_slope_uses_explicit_membership_in_shell expects them.\n\nCheck: python3 scripts/run_tests.py --only test_feature_build passes; a dry run of West plans no stairs on the flat dark zone (read-only, live world); Kiddle (w146985470) and Hartley (w33830050) dry runs unchanged otherwise. After a rebuild the owner reviews S-088 in game. On landing: the orchestrator logs the fix on I-048.\n"
     }
   ]
 }
