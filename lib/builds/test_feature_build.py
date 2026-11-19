@@ -1612,13 +1612,28 @@ class PitchedZonesRidgeTest(unittest.TestCase):
                     expected = 'minecraft:air' if face in solid_edges else 'minecraft:bricks'
                     self.assertEqual(builder.p.cells[(dx, 50, dz)], expected)
         builder.p.cells.clear()
-        builder.p.set(0, 50, 1, 'smooth_stone')
+        builder.p.set(0, 50, 1, 'oak_planks')
         states = {(0, 0): 'brick_stairs[facing=east,half=bottom,shape=straight]'}
         builder._back_roof_stair_edges({(0, 0): 50, (0, 1): 51}, states)
-        self.assertEqual(builder.p.cells[(0, 50, 1)], 'minecraft:smooth_stone')
+        self.assertEqual(builder.p.cells[(0, 50, 1)], 'minecraft:oak_planks')
         builder.p.cells.clear()
         builder._back_roof_stair_edges({(0, 0): 50}, states)
         self.assertEqual(builder.p.cells, {}, 'backing must not expand outside the roof mass')
+
+    def test_stair_backing_replaces_storey_floor_block_beside_open_half(self):
+        # S-087: a smooth_stone storey floor at the stair's Y in the taller
+        # column showed as a light-grey square through the stair's open half.
+        builder = F.Build(self._spec('pitched', [48]), footprints={'A': self.cells}, world=_StoneWorld())
+        states = {(0, 0): 'brick_stairs[facing=east,half=bottom,shape=straight]'}
+        # Open side (south) at the stair's Y: floor becomes wall.
+        builder.p.set(0, 50, 1, builder.floor_mat)
+        builder._back_roof_stair_edges({(0, 0): 50, (0, 1): 51}, states)
+        self.assertEqual(builder.p.cells[(0, 50, 1)], 'minecraft:bricks')
+        # The stair's closed (facing) side keeps its floor block.
+        builder.p.cells.clear()
+        builder.p.set(1, 50, 0, builder.floor_mat)
+        builder._back_roof_stair_edges({(0, 0): 50, (1, 0): 51}, states)
+        self.assertEqual(builder.p.cells[(1, 50, 0)], 'minecraft:smooth_stone')
 
     def test_pitched_zones_ridge_slabs_flat_plateaus_unchanged(self):
         """Pitched+zones follows the lidar ridge with stairs; flat stays stepped decks."""
