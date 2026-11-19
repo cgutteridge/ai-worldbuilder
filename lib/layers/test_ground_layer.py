@@ -1003,7 +1003,7 @@ class TestApplyReporting(unittest.TestCase):
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
                 mock.patch.object(gl, 'report_journal_floats'), \
-                mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
+                mock.patch('layer_reports.write_report', side_effect=lambda n, r, **kw: write_report(n, r, Path(tmp), **kw)), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(gl.apply_cell((0, 0)), 0)
             saved = json.loads((Path(tmp) / 'highfield_0_0_ground-report.json').read_text())
@@ -1313,3 +1313,48 @@ class TestBridgeTunnelAndCavity(SyntheticGroundBox, unittest.TestCase):
         self.assertEqual(gl.hollow_ys(block, 0, 0, 52, owned_floor=40), list(range(41, 49)))
         self.assertEqual(gl.hollow_ys(block, 0, 0, None), [])
         self.assertEqual(gl.hollow_ys(block, 0, 0, 36), [])                    # solid all the way down
+
+
+class TestDryArtifacts(unittest.TestCase):
+    def test_dry_artifacts_preserve_apply_and_mask_conflicts_remain_visible(self):
+        import io
+        import json
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from unittest import mock
+        from layer_reports import artifact_path
+        from PIL import Image
+
+        conflicts = [((0, 64, 0), 'grass_block', 'decor 0,0')]
+
+        def plan(cell, masked, owned, plan, world, **kw):
+            self.assertEqual(masked, {(0, 64, 0): 'decor 0,0'})
+            plan.set(0, 64, 0, 'grass_block')
+            return Counter(columns=1), conflicts, {(0, 0): 'grass'}, Counter()
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(gl, '_fresh_world', return_value=mock.Mock(block=lambda *p: 'minecraft:air')), \
+                mock.patch.object(gl, 'load_masked_positions', return_value={(0, 64, 0): 'decor 0,0'}), \
+                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(gl, 'settled_footprint', return_value=set()), \
+                mock.patch.object(gl, 'report_journal_floats'), \
+                mock.patch.object(gl, 'plan_cell', side_effect=plan), \
+                mock.patch('aerial_coverage.cell_image', return_value=Image.new('RGB', (128, 128))), \
+                mock.patch('layer_reports.artifact_path', side_effect=lambda n, a, **kw:
+                    artifact_path(n, a, **{**kw, 'directory': Path(tmp)})), \
+                redirect_stdout(io.StringIO()) as output:
+            directory = Path(tmp)
+            name = gl.plan_name(0, 0)
+            originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in
+                         ('report.json', 'preview.png', 'kinds.png')}
+            for path, data in originals.items():
+                path.write_bytes(data)
+            self.assertEqual(gl.run((0, 0)), 1)
+            for path, data in originals.items():
+                self.assertEqual(path.read_bytes(), data)
+            for suffix in ('report.json', 'preview.png', 'kinds.png'):
+                self.assertTrue((directory / f'{name}-dry-{suffix}').exists())
+            report = json.loads((directory / f'{name}-dry-report.json').read_text())
+            self.assertEqual(report['conflicts'], [[[0, 64, 0], 'grass_block', 'decor 0,0']])
+            self.assertIn('NOT SAFE TO APPLY: undo the listed mask first', output.getvalue())

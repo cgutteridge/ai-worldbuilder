@@ -3,10 +3,22 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from layer_reports import write_report, apply_counts
+from layer_reports import artifact_path, write_report, apply_counts
 
 
 class TestLayerReports(unittest.TestCase):
+    def test_dry_report_preserves_apply_and_apply_keeps_its_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            applied = write_report('decor', {'applied': True}, directory)
+            before = applied.read_bytes()
+            dry = write_report('decor', {'applied': False}, directory, dry=True)
+            self.assertEqual(dry.name, 'decor-dry-report.json')
+            self.assertEqual(applied.read_bytes(), before)
+            self.assertEqual(artifact_path('decor', 'preview.png', dry=True, directory=directory).name,
+                             'decor-dry-preview.png')
+            self.assertEqual(applied.name, 'decor-report.json')
+
     def test_unchanged_positions_are_explicit_and_missing_writes_fail(self):
         plan = {(0, 60, 0): 'minecraft:stone', (1, 60, 0): 'minecraft:dirt'}
         counts = apply_counts(plan, plan, {(0, 60, 0): 'minecraft:stone'}, plan)

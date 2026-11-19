@@ -5,13 +5,18 @@ from collections import Counter
 from pathlib import Path
 
 
-def write_report(name: str, report: dict, directory: Path | None = None) -> Path:
-    """Write all item/column details; the console can stay a bounded summary."""
+def artifact_path(name: str, artifact: str, *, dry: bool = False, directory: Path | None = None) -> Path:
+    """Resolve every element artifact through one redirectable path boundary."""
     from script_env import ROOT
-    from atomic_json import write_json
     directory = Path(directory) if directory is not None else ROOT / 'verification/site'
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f'{name}-report.json'
+    return directory / f'{name}{"-dry" if dry else ""}-{artifact}'
+
+
+def write_report(name: str, report: dict, directory: Path | None = None, *, dry: bool = False) -> Path:
+    """Write all item/column details; dry runs preserve the last apply's report."""
+    from atomic_json import write_json
+    path = artifact_path(name, 'report.json', dry=dry, directory=directory)
     write_json(path, report)
     print(f'  full report: {path}')
     return path

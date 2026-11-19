@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Dry plan of the trees pass for a cell that already has trees: its own old trees mask is treated as undone. Writes nothing to the world.
 
-trees_layer.py's dry run plans against the live world, where the cell's own old trees block every column, so it cannot preview a
-redo. This plans as if scripts/mask_undo.py had run (the old crowns' blocks are air, their mask positions are not owned), prints the
+Like trees_layer.py's dry run, this plans as if scripts/mask_undo.py had run
+(the old crowns' blocks are air, their mask positions are not owned), prints the
 counts and skips, and writes the plan JSON that shims/google_window.py plan draws over the aerial sheet.
 
   python3 scripts/trees_replan.py --cell 48,-44 --out plan.json
@@ -23,32 +23,19 @@ script_env.ensure_import_paths()
 
 import trees_layer as tl  # noqa: E402
 from cellmath import parse_cell  # noqa: E402
-from pass_mask import mask_path, mask_placements, read_mask  # noqa: E402
+from layer_planning import plan_after_undo  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
 
 def replan(cell: tuple[int, int], *, world=None, inputs=None, mask_dir=None):
     """Plan after the same fail-closed undo used by mask_undo, without mutating globals."""
-    from pass_mask import MASK_DIR, plan_undo
-    from site_kit import PlannedWorld
-    directory = MASK_DIR if mask_dir is None else mask_dir
-    path = mask_path('trees', cell, directory)
-    mask = read_mask(path) if path.exists() else None
-    own = set(mask_placements(mask)) if mask else set()
-    remaining = {}
-    for other in sorted(directory.glob('*.mask.json')):
-        if other == path:
-            continue
-        m = read_mask(other)
-        remaining.update({p: f"{m['pass']} {m['cell'][0]},{m['cell'][1]}" for p in mask_placements(m)})
     world = World() if world is None else world
-    cleared, conflicts = plan_undo(mask, lambda p: world.block(*p), own & remaining.keys()) if mask else ([], [])
-    if conflicts:
-        raise ValueError(f'{len(conflicts)} tree undo conflicts; preview cannot simulate a clean undo')
+    undo = plan_after_undo('trees', cell, world, mask_dir=mask_dir)
+    if undo.conflicts:
+        raise ValueError(f'{len(undo.conflicts)} tree undo conflicts; preview cannot simulate a clean undo')
     inputs = tl.planning_inputs(cell) if inputs is None else inputs
-    view = PlannedWorld(Plan('undo-preview'), world, ignore=cleared)
-    placed, rep = tl.plan_cell(cell, Plan('replan'), view, inputs.after_undo(remaining))
-    return own, placed, rep
+    placed, rep = tl.plan_cell(cell, Plan('replan'), undo.world, inputs.after_undo(undo.masked))
+    return undo.own, placed, rep
 
 
 def main(argv=None) -> int:

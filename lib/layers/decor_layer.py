@@ -29,8 +29,6 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from script_env import ROOT  # noqa: E402
-
 from ground_layer import (BLOCK_KIND, PROBE_Y_RANGE, bare, cell_contains, ignored_builds,  # noqa: E402
                           is_air, neighbour_owned, load_masked_positions)
 from block_store import SCAN_VOLUME_CAP  # noqa: E402
@@ -666,7 +664,7 @@ def furniture_by_provenance(decor: Mapping[str, Any], report: list[dict], unplac
     }
 
 
-def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
+def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict | None = None):
     """Plan barriers and street furniture for one cell. Returns (placements, stats).
 
     Builds a decor plan (#150) from aerial, photos, map and designer, then places
@@ -680,7 +678,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World):
     with timed_stage('decor source preparation'):
         owned = neighbour_owned(cell, ignored_builds(cell))
         owned_cols = {(x, z) for x, _y, z in owned}
-        masked = load_masked_positions()
+        masked = load_masked_positions() if masked is None else masked
         idx = OSMIndex()
         fp = set(idx.cells())
         near = fp | owned_cols
@@ -861,12 +859,16 @@ def _print_outbuildings(rows) -> None:
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan and run the kit's guards. Never writes the world."""
     from site_kit import apply, fresh_planning_world, preview
+    from layer_planning import plan_after_undo
+    from layer_reports import artifact_path, write_report
 
     name = plan_name(*cell)
-    plan = Plan(name)
-    placed, stats = plan_cell(cell, plan, fresh_planning_world())
-    from layer_reports import write_report
-    write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)})
+    plan = Plan(f'{name}-dry')
+    undo = plan_after_undo('decor', cell, fresh_planning_world())
+    if undo.conflicts:
+        print(f'  {len(undo.conflicts)} decor undo conflicts; planning against the unmodified world')
+    placed, stats = plan_cell(cell, plan, undo.world, masked=undo.masked)
+    write_report(name, {'stats': dict(stats), 'placement_positions': len(placed)}, dry=True)
     furniture_report = stats.pop('furniture_report', [])
     barrier_report = stats.pop('barrier_report', [])
     outbuilding_report = stats.pop('outbuilding_report', [])
@@ -891,8 +893,10 @@ def run(cell: tuple[int, int]) -> int:
     })
     _print_outbuildings(outbuilding_rows(outbuilding_report, unresolved, unplaced))
     if placed:
-        preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
-        apply(plan, dry=True, modifies=ignored_builds(cell))
+        preview(plan, artifact_path(name, 'preview.png', dry=True), scale=2)
+        apply(plan, dry=True, modifies=(*ignored_builds(cell), name))
+    else:
+        print('  no preview written: empty decor plan')
     return 0
 
 

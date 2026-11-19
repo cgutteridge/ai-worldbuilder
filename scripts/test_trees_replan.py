@@ -25,6 +25,19 @@ def inputs(masked=None):
 
 
 class TestReplan(unittest.TestCase):
+    def test_conflicting_undo_leaves_all_old_blocks_and_ownership_intact(self):
+        from layer_planning import plan_after_undo
+        old = {(64, 61, 64): 'oak_log', (64, 62, 64): 'oak_log'}
+        live = World({**old, (64, 62, 64): 'stone'})
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            write_mask(build_mask('trees', CELL, 'old', old, lambda p: True), directory)
+            undo = plan_after_undo('trees', CELL, live, mask_dir=directory)
+        self.assertEqual(len(undo.conflicts), 1)
+        self.assertIs(undo.world, live)
+        self.assertEqual(undo.world.block(64, 61, 64), 'minecraft:oak_log')
+        self.assertEqual(set(undo.masked), set(old))
+
     def test_preview_matches_actual_undo_and_preserves_shared_crown(self):
         placed, _ = plan_cell(CELL, Plan('first'), World(), inputs())
         self.assertGreater(len(placed), 0)

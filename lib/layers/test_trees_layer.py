@@ -720,3 +720,80 @@ class TestTerrainGround(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestDryRunUndo(unittest.TestCase):
+    def test_built_cell_and_empty_plan_preserve_apply_artifacts(self):
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from layer_reports import artifact_path
+        from pass_mask import build_mask, write_mask
+        from site_kit import Plan, full
+        from PIL import Image
+
+        class Ground:
+            def __init__(self, blocks=None):
+                self.blocks = {p: full(b) for p, b in (blocks or {}).items()}
+
+            def block(self, x, y, z):
+                return self.blocks.get((x, y, z), 'minecraft:grass_block' if y <= 60 else 'minecraft:air')
+
+        for crowns in ([(64, 64, 3.)], []):
+            with self.subTest(crowns=crowns), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                masks = directory / 'masks'
+                masks.mkdir()
+                inputs = tl.TreeInputs(crowns, len(crowns), set(), set(), set(), None, {}, set())
+                expected, _ = tl.plan_cell((0, 0), Plan('empty'), Ground(), inputs)
+                write_mask(build_mask('trees', (0, 0), 'old', expected, lambda p: True), masks)
+                name = tl.plan_name(0, 0)
+                originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in
+                             ('report.json', 'preview.png', 'crowns.png', 'plan.json')}
+                for path, data in originals.items():
+                    path.write_bytes(data)
+                with mock.patch('pass_mask.MASK_DIR', masks), \
+                        mock.patch.object(tl, 'planning_inputs', return_value=inputs), \
+                        mock.patch('site_kit.fresh_planning_world', return_value=Ground(expected)), \
+                        mock.patch('aerial_coverage.require_coverage'), \
+                        mock.patch('aerial_coverage.cell_image', return_value=Image.new('RGB', (128, 128))), \
+                        mock.patch('layer_reports.artifact_path', side_effect=lambda n, a, **kw:
+                            artifact_path(n, a, **{**kw, 'directory': directory})), \
+                        mock.patch('site_kit.apply', return_value={}) as apply, \
+                        mock.patch('site_kit.preview', wraps=__import__('site_kit').preview) as preview, \
+                        redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(tl.run((0, 0)), 0)
+                report = json.loads((directory / f'{name}-dry-report.json').read_text())
+                self.assertEqual(report['placement_positions'], len(expected))
+                self.assertEqual(report['skipped'], [])
+                for suffix in ('report.json', 'plan.json', 'crowns.png'):
+                    self.assertTrue((directory / f'{name}-dry-{suffix}').exists())
+                if expected:
+                    self.assertTrue((directory / f'{name}-dry-preview.png').exists())
+                    apply.assert_called_once()
+                else:
+                    preview.assert_not_called()
+                    apply.assert_not_called()
+                    self.assertIn('no preview written', output.getvalue())
+                for path, data in originals.items():
+                    self.assertEqual(path.read_bytes(), data)
+
+    def test_apply_still_writes_unsuffixed_report(self):
+        import io
+        from contextlib import redirect_stdout
+        from layer_reports import artifact_path
+        from site_kit import Plan
+        placed, report = tl.plan_cell((0, 0), Plan('empty'), FakeWorld(),
+                                     tl.TreeInputs([], 0, set(), set(), set(), None, {}, set()))
+        placed = {(10, 61, 10): 'oak_log'}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict('os.environ', {'SITE_OWNER': 'unit-test'}), \
+                mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.object(tl, 'World', return_value=FakeWorld()), \
+                mock.patch.object(tl, 'plan_cell', return_value=(placed, report)), \
+                mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}), \
+                mock.patch('layer_reports.artifact_path', side_effect=lambda n, a, **kw:
+                    artifact_path(n, a, **{**kw, 'directory': Path(tmp)})), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(tl.apply_cell((0, 0)), 0)
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], [tl.plan_name(0, 0) + '-report.json'])

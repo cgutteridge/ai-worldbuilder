@@ -731,14 +731,19 @@ def review_image(cell: tuple[int, int], report: dict, out: Path) -> None:
 def run(cell: tuple[int, int]) -> int:
     """Dry run: plan, run the kit's guards, write the review image. Never writes the world."""
     from site_kit import apply, fresh_planning_world, preview
+    from layer_planning import plan_after_undo
+    from layer_reports import artifact_path, reason_summary, write_report
     from aerial_coverage import require_coverage
     require_coverage(cell)
 
     tx, tz = cell
     name = plan_name(tx, tz)
-    plan = Plan(name)
+    plan = Plan(f'{name}-dry')
     world = fresh_planning_world()
-    placed, rep = plan_cell(cell, plan, world)
+    undo = plan_after_undo('trees', cell, world)
+    if undo.conflicts:
+        print(f'  {len(undo.conflicts)} trees undo conflicts; planning against the unmodified world')
+    placed, rep = plan_cell(cell, plan, undo.world, planning_inputs(cell).after_undo(undo.masked))
     print(f'{name}: crowns found {rep["detected"]} + dense fill {rep["candidates"] - rep["detected"]}  planted {len(rep["trees"])} '
           f'({sum(1 for t in rep["trees"] if t[3] == "tree")} trees, '
           f'{sum(1 for t in rep["trees"] if t[3] == "bush")} bushes)  skipped {len(rep["skipped"])}  '
@@ -756,20 +761,22 @@ def run(cell: tuple[int, int]) -> int:
         n_moved = sum(1 for s in mapped_snaps if s['status'] == 'moved')
         print(f'  mapped-tree lidar snap: {n_moved}/{len(mapped_snaps)} moved; '
               f'young/unconfirmed kept as small crowns (#129)')
-    from layer_reports import reason_summary, write_report
     print(f"  skipped by reason: {reason_summary(w for *_pos, w in rep['skipped'])}")
     print(f"  mapped exclusions by reason: {reason_summary(r['reason'] for r in rep.get('mapped_rejections') or [])}")
     shunts = [r for r in rep['rooting'] if r['to'] and r['from'] != r['to']]
     print(f"  root adjustments: {len(shunts)}; by reason: {reason_summary(r['reason'] for r in shunts)}")
-    write_report(name, {**rep, 'placement_positions': len(placed)})
-    img = ROOT / f'verification/site/{name}-crowns.png'
+    write_report(name, {**rep, 'placement_positions': len(placed)}, dry=True)
+    img = artifact_path(name, 'crowns.png', dry=True)
     review_image(cell, rep, img)
-    print(f'  review image: {img.relative_to(ROOT)}  (magenta tree, cyan bush, red skipped, yellow root adjustment)')
-    (ROOT / f'verification/site/{name}-plan.json').write_text(json.dumps(
+    print(f'  review image: {img}  (magenta tree, cyan bush, red skipped, yellow root adjustment)')
+    artifact_path(name, 'plan.json', dry=True).write_text(json.dumps(
         {'trees': rep['trees'], 'skipped': rep['skipped'], 'blocks': len(placed),
          'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps']}, indent=1))
-    preview(plan, ROOT / f'verification/site/{name}-preview.png', scale=2)
-    apply(plan, dry=True, modifies=ignored_builds(cell))
+    if placed:
+        preview(plan, artifact_path(name, 'preview.png', dry=True), scale=2)
+        apply(plan, dry=True, modifies=(*ignored_builds(cell), name))
+    else:
+        print('  no preview written: empty trees plan')
     return 0
 
 
