@@ -153,6 +153,29 @@ class LoadEntries(unittest.TestCase):
         with mock.patch.object(lp, 'load_lidar_module', return_value=fake_mod):
             self.assertEqual(lp.mc_heights_float(None, 0, 0, 1, 1)['dsm'], 'int-grid')
 
+    def test_mc_heights_float_does_not_swallow_a_provider_type_error(self):
+        def fake(*a, geocraft=True, **k):
+            raise TypeError('inside the float path')
+
+        fake_mod = types.ModuleType('fake_tiles')
+        fake_mod.mc_heights = fake
+        with mock.patch.object(lp, 'load_lidar_module', return_value=fake_mod):
+            with self.assertRaises(TypeError):
+                lp.mc_heights_float(None, 0, 0, 1, 1)
+
+    def test_mc_heights_float_keeps_a_caller_geocraft_without_duplicate_keyword(self):
+        seen = {}
+
+        def fake(*a, geocraft=True, **k):
+            seen['geocraft'] = geocraft
+            return {'dsm': 'grid'}
+
+        fake_mod = types.ModuleType('fake_tiles')
+        fake_mod.mc_heights = fake
+        with mock.patch.object(lp, 'load_lidar_module', return_value=fake_mod):
+            lp.mc_heights_float(None, 0, 0, 1, 1, geocraft=True)
+        self.assertIs(seen['geocraft'], True)
+
 
 if __name__ == '__main__':
     unittest.main()
