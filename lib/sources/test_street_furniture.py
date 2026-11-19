@@ -19,6 +19,8 @@ class ClassifyAndRecipes(unittest.TestCase):
             ({'amenity': 'bicycle_parking'}, 'bicycle_parking'),
             ({'highway': 'street_lamp'}, 'street_lamp'),
             ({'barrier': 'bollard'}, 'bollard'),
+            ({'leisure': 'picnic_table'}, 'picnic_table'),
+            ({'leisure': 'pitch'}, None),
             ({'traffic_sign': 'yes'}, 'sign'),
             ({'information': 'board'}, 'sign'),
             ({'amenity': 'cafe'}, None),
@@ -28,7 +30,7 @@ class ClassifyAndRecipes(unittest.TestCase):
             self.assertEqual(sf.classify(tags), want, tags)
 
     def test_every_kind_has_a_non_empty_recipe(self):
-        for kind in sf.KINDS:
+        for kind in sf.RECIPES:
             stack = sf.recipe(kind)
             self.assertTrue(stack, kind)
             for dy, block in stack:
@@ -41,6 +43,61 @@ class ClassifyAndRecipes(unittest.TestCase):
                     )
 
 
+class Footprints(unittest.TestCase):
+    """#305/#306: multi-block kinds are centre-anchored footprints; single-column kinds are one column."""
+
+    def test_every_kind_is_a_recipe_or_a_footprint(self):
+        self.assertEqual(set(sf.KINDS), set(sf.FURNITURE_KINDS))
+        self.assertEqual(set(sf.FOOTPRINTS) & set(sf.RECIPES), set())
+
+    def test_single_column_kinds_keep_their_recipe_at_every_rotation(self):
+        for rot in sf.ROTATIONS:
+            self.assertEqual(sf.footprint('street_lamp', rot),
+                             [(0, 0, dy, b) for dy, b in sf.recipe('street_lamp')])
+
+    def test_rectangular_table_is_a_table_row_between_two_bench_rows(self):
+        rows = sf.footprint('picnic_table')
+        self.assertEqual(len(rows), 9)
+        self.assertEqual({(dx, dz) for dx, dz, _dy, _b in rows}, {(x, z) for x in (-1, 0, 1) for z in (-1, 0, 1)})
+        tops = {(dx, dz) for dx, dz, _dy, b in rows if b.endswith('[type=top]')}
+        self.assertEqual(tops, {(-1, 0), (0, 0), (1, 0)})
+
+    def test_rotation_turns_clockwise_from_above(self):
+        self.assertEqual(sf.rotate_offset(1, 0, 90), (0, 1))          # east -> south (+z)
+        self.assertEqual(sf.rotate_offset(1, 0, 180), (-1, 0))
+        self.assertEqual(sf.rotate_offset(1, 0, 270), (0, -1))
+        tops90 = {(dx, dz) for dx, dz, _dy, b in sf.footprint('picnic_table', 90) if b.endswith('[type=top]')}
+        self.assertEqual(tops90, {(0, -1), (0, 0), (0, 1)})            # long axis now along z
+        self.assertEqual(sorted(sf.footprint('picnic_table', 180)), sorted(sf.footprint('picnic_table', 0)))
+
+    def test_round_table_is_a_plus_that_rotation_leaves_alone(self):
+        rows = sf.footprint('picnic_table_round')
+        self.assertEqual(len(rows), 5)
+        self.assertEqual({(dx, dz) for dx, dz, _dy, _b in rows}, {(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)})
+        for rot in sf.ROTATIONS:
+            self.assertEqual(sorted(sf.footprint('picnic_table_round', rot)), sorted(rows))
+
+    def test_footprints_stay_within_the_warm_ring_and_use_only_rotation_invariant_states(self):
+        for kind, rows in sf.FOOTPRINTS.items():
+            self.assertIn((0, 0), {(dx, dz) for dx, dz, _dy, _b in rows}, kind)
+            for dx, dz, dy, block in rows:
+                self.assertLessEqual(max(abs(dx), abs(dz)), sf.FOOTPRINT_RADIUS, kind)
+                self.assertGreaterEqual(dy, 1)
+                states = block.partition('[')[2].rstrip(']')
+                for kv in filter(None, states.split(',')):
+                    self.assertEqual(kv.split('=')[0], 'type', f'{kind}: {block} needs a rotator')
+
+    def test_parse_rotation(self):
+        self.assertEqual(sf.parse_rotation(None), (0, ''))
+        self.assertEqual(sf.parse_rotation(90), (90, ''))
+        self.assertEqual(sf.parse_rotation('270'), (270, ''))
+        self.assertEqual(sf.parse_rotation(-90), (270, ''))
+        for bad in (45, 'east', 91.5):
+            rot, reason = sf.parse_rotation(bad)
+            self.assertIsNone(rot)
+            self.assertIn('not 0, 90, 180 or 270', reason)
+
+
 class ExtractJobs(unittest.TestCase):
     """Part (1): extract WHERE covers the furniture tags for the points layer."""
 
@@ -49,7 +106,7 @@ class ExtractJobs(unittest.TestCase):
         layers = {job[0] for job in sf.EXTRACT_JOBS}
         self.assertIn('points', layers)
         where = ' '.join(job[1] for job in sf.EXTRACT_JOBS)
-        for needle in ('bench', 'waste_basket', 'bicycle_parking', 'street_lamp', 'bollard'):
+        for needle in ('bench', 'waste_basket', 'bicycle_parking', 'street_lamp', 'bollard', 'picnic_table'):
             self.assertIn(needle, where)
 
     def test_extract_jobs_install_into_layer_presets(self):
@@ -125,6 +182,27 @@ class DesignerSpec(unittest.TestCase):
                        'evidence_ids': ['aerial1']}]
             path.write_text(json.dumps({'0,0': {'observations': labels}}))
             self.assertEqual(sf.designer_observations((0, 0), path), labels)
+
+    def test_designer_picnic_tables_carry_a_rotation_and_a_bad_one_is_flagged(self):
+        rows = [{'x': 5, 'z': 6, 'kind': 'picnic_table', 'rotation': 90},
+                {'x': 8, 'z': 6, 'kind': 'picnic_table_round'},
+                {'x': 11, 'z': 6, 'kind': 'picnic_table', 'rotation': 45},
+                {'x': 14, 'z': 6, 'kind': 'bench', 'rotation': 90}]
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'decor-furniture.json'
+            path.write_text(json.dumps({'0,0': {'items': rows,
+                                                'observations': [{'kind': 'picnic_table', 'cell': [5, 6], 'rotation': 90}]}}))
+            items = sf.designer_items((0, 0), path)
+            obs = sf.designer_observations((0, 0), path)
+        self.assertEqual([(i['kind'], i.get('rotation')) for i in items],
+                         [('picnic_table', 90), ('picnic_table_round', 0), ('picnic_table', 0), ('bench', None)])
+        self.assertIn('not 0, 90, 180 or 270', items[2]['rotation_error'])
+        self.assertNotIn('rotation_error', items[0])
+        self.assertEqual(obs[0]['rotation'], 90)
+
+    def test_map_items_keep_a_picnic_table_and_drop_unknown_kinds(self):
+        self.assertEqual([i['kind'] for i in sf.map_items([(1, 2, 'picnic_table'), (3, 4, 'zeppelin')])],
+                         ['picnic_table'])
 
     def test_merge_prefers_map_over_designer_at_same_column(self):
         mapped = sf.map_items([(10, 20, 'bench')])

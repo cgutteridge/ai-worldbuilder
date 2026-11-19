@@ -260,15 +260,21 @@ LIDAR OBJECTS IN DECOR (#173)
       "observations": [{"kind":"waste_basket", "cell":[6200,-5550],
                         "source":"photo_read", "evidence_ids":["street-photo-1"]},
                        {"kind":"vehicle", "cell":[6203,-5550],
+                        "source":"aerial", "evidence_ids":["aerial-1"]},
+                       {"kind":"picnic_table", "cell":[6210,-5560], "rotation":90,
                         "source":"aerial", "evidence_ids":["aerial-1"]}]
     cell is the MC [x,z] of a detected column (not the registry cell); source is
     photo_read (default) or aerial. Known street_furniture recipe kinds identify
     permanent furniture. Unknown kinds never authorize a build. Keep uncertain
     observations unresolved with unresolved_reason; do not guess a label from
     lidar shape or colour samples alone.
-  - One classified object places one existing furniture recipe at the observed
-    column on the actual ground, subject to the usual paving, ownership, mask
-    and clearance guards. The plan retains lidar_cells and lidar_height for
+  - One classified object places its kind's recipe at the observed column (the
+    anchor) on the actual ground, subject to the usual paving, ownership, mask
+    and clearance guards. A multi-block kind (`picnic_table`, `picnic_table_round`;
+    `docs/specs/decor-furniture-footprints.md`) places its whole footprint centred
+    on that column at the optional `rotation` (0, 90, 180 or 270 degrees clockwise
+    from above; the label cell is the table's centre): every footprint column
+    must pass the guards, or the whole table is listed unplaced with a named reason. The plan retains lidar_cells and lidar_height for
     inspection, and map, designer and photo furniture standing on a lump carries
     the same two hints; DSM height does not raise the ground or become a vehicle mesh.
   - Barriers (map, designer, border) whose height is only the kind's default take

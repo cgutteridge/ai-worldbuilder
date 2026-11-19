@@ -228,6 +228,158 @@ class TestFurnitureByProvenance(unittest.TestCase):
             'unplaced': {'inference': 1}})
 
 
+class TestPicnicFootprints(unittest.TestCase):
+    """#306: a picnic table is a whole footprint of columns, placed whole or refused whole with a reason."""
+
+    GROUND = 64
+
+    def setUp(self):
+        self.live = {}
+        self.hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), self.GROUND)}
+        self.options = dict(way=set(), near1=set(), masked=set(), owned=set())
+        self.kind = {}
+
+        def block(x, y, z):
+            if (x, y, z) in self.live:
+                return self.live[(x, y, z)]
+            return 'minecraft:grass_block' if y <= self.GROUND else 'minecraft:air'
+
+        self.world = mock.Mock()
+        self.world.block = block
+
+    def raise_ground(self, x, z, by):
+        self.hm['terrain'][x, z] = self.GROUND + by
+        for y in range(self.GROUND + 1, self.GROUND + by + 1):
+            self.live[(x, y, z)] = 'minecraft:grass_block'
+        for y in range(self.GROUND + by + 1, self.GROUND + 4):
+            self.live.pop((x, y, z), None)
+
+    def place(self, items, **kw):
+        with mock.patch('decor_layer.column_ground_kind',
+                        side_effect=lambda w, x, z, hm=None: self.kind.get((x, z))):
+            return dl.place_furniture((0, 0), items, self.world, lidar_hm=self.hm, **{**self.options, **kw})
+
+    @staticmethod
+    def reasons(unplaced):
+        return [u['provenance']['unresolved_reason'] for u in unplaced]
+
+    def table(self, x=10, z=20, kind='picnic_table', **extra):
+        return {'x': x, 'z': z, 'kind': kind, 'source': 'designer', 'plan_id': f'{kind}-{x}-{z}', **extra}
+
+    def test_rectangular_table_is_placed_whole_on_lawn(self):
+        found, report, unplaced = self.place([self.table()])
+        self.assertEqual(unplaced, [])
+        y = self.GROUND + 1
+        self.assertEqual(len(found), 9)
+        self.assertEqual({p[1] for p in found}, {y})
+        self.assertEqual({found[(x, y, 20)] for x in (9, 10, 11)}, {'spruce_slab[type=top]'})
+        self.assertEqual({found[(x, y, z)] for x in (9, 10, 11) for z in (19, 21)}, {'spruce_slab[type=bottom]'})
+        row = report[0]
+        self.assertEqual((row['x'], row['z'], row['kind'], row['blocks'], row['rotation']),
+                         (10, 20, 'picnic_table', 9, 0))
+        self.assertEqual(len(row['footprint']), 9)
+        self.assertEqual(row['plan_id'], 'picnic_table-10-20')
+        self.assertTrue(row['on_terrain'] and not row['moved_to_terrain'])
+
+    def test_rotation_swaps_the_long_axis(self):
+        found, report, _u = self.place([self.table(rotation=90)])
+        y = self.GROUND + 1
+        self.assertEqual({found[(10, y, z)] for z in (19, 20, 21)}, {'spruce_slab[type=top]'})
+        self.assertEqual({found[(x, y, z)] for x in (9, 11) for z in (19, 20, 21)}, {'spruce_slab[type=bottom]'})
+        self.assertEqual(report[0]['rotation'], 90)
+
+    def test_round_table_is_a_plus_of_five(self):
+        found, _r, unplaced = self.place([self.table(kind='picnic_table_round')])
+        self.assertEqual(unplaced, [])
+        self.assertEqual({(p[0], p[2]) for p in found}, {(10, 20), (9, 20), (11, 20), (10, 19), (10, 21)})
+        self.assertEqual(found[(10, self.GROUND + 1, 20)], 'spruce_slab[type=top]')
+
+    def test_a_carriageway_under_one_bench_column_refuses_the_whole_table(self):
+        self.kind[(11, 21)] = 'tarmac'
+        found, report, unplaced = self.place([self.table()])
+        self.assertEqual((found, report), ({}, []))
+        self.assertEqual(self.reasons(unplaced), ['on carriageway'])
+        self.assertEqual(unplaced[0]['blocked_column'], [11, 21])
+        self.assertEqual(unplaced[0]['rotation'] if 'rotation' in unplaced[0] else 0, 0)
+
+    def test_each_per_column_filter_refuses_the_whole_table(self):
+        cases = [({'way': {(9, 19)}}, 'on path/road/water column'),
+                 ({'near1': {(11, 20)}}, 'against build'),
+                 ({'keep_clear': {(10, 21)}}, 'entrance opening or route reserved')]
+        for opts, reason in cases:
+            found, _r, unplaced = self.place([self.table()], **opts)
+            self.assertEqual(found, {}, reason)
+            self.assertEqual(self.reasons(unplaced), [reason])
+
+    def test_allow_against_build_lifts_only_the_near1_filter(self):
+        found, _r, unplaced = self.place([self.table(allow_against_build=True)], near1={(11, 20)})
+        self.assertEqual((len(found), unplaced), (9, []))
+
+    def test_footprint_crossing_the_cell_edge_is_refused_not_halved(self):
+        found, _r, unplaced = self.place([self.table(x=127)])
+        self.assertEqual(found, {})
+        self.assertEqual(self.reasons(unplaced), ['crosses the cell edge'])
+        self.assertEqual(unplaced[0]['blocked_column'], [128, 20])
+        _f, _r, unplaced = self.place([self.table(x=200)])
+        self.assertEqual(self.reasons(unplaced), ['outside cell'])
+
+    def test_ground_more_than_one_block_off_the_anchor_is_uneven(self):
+        self.raise_ground(11, 21, 2)
+        found, _r, unplaced = self.place([self.table()])
+        self.assertEqual(found, {})
+        self.assertEqual(self.reasons(unplaced), ['uneven ground'])
+        self.raise_ground(11, 21, 1)                                 # one block off stands on its own ground
+        found, _r, unplaced = self.place([self.table()])
+        self.assertEqual((len(found), unplaced), (9, []))
+        self.assertEqual({p[1] for p in found if (p[0], p[2]) == (11, 21)}, {self.GROUND + 2})
+
+    def test_missing_ground_under_one_column_names_its_reason(self):
+        self.live[(9, self.GROUND, 19)] = 'minecraft:air'
+        found, _r, unplaced = self.place([self.table()])
+        self.assertEqual(found, {})
+        self.assertEqual(self.reasons(unplaced), ['no ground at terrain'])
+        self.assertEqual(unplaced[0]['blocked_column'], [9, 19])
+
+    def test_owned_and_live_blocks_in_the_footprint_refuse_it(self):
+        found, _r, unplaced = self.place([self.table()], owned={(9, self.GROUND + 1, 21)})
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['feature above terrain']))
+        self.live[(11, self.GROUND + 1, 19)] = 'minecraft:stone'
+        found, _r, unplaced = self.place([self.table()])
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['blocked by live or owned block']))
+        found, _r, unplaced = self.place([self.table(x=20)], masked={(19, self.GROUND + 1, 19): 'outbuilding'})
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['blocked by live or owned block']))
+
+    def test_overlapping_tables_get_their_own_reason_and_the_first_stands(self):
+        found, report, unplaced = self.place([self.table(x=10), self.table(x=11)])
+        self.assertEqual(len(found), 9)
+        self.assertEqual([r['x'] for r in report], [10])
+        self.assertEqual(self.reasons(unplaced), ['overlaps another furniture item'])
+
+    def test_a_single_column_item_inside_a_table_overlaps_it_too(self):
+        _f, _r, unplaced = self.place([self.table(), {'x': 10, 'z': 21, 'kind': 'bench', 'source': 'map'}])
+        self.assertEqual(self.reasons(unplaced), ['overlaps another furniture item'])
+        self.assertNotIn('blocked_column', unplaced[0])                # only multi-block rows carry it
+
+    def test_a_multi_block_item_never_replaces_a_planned_barrier(self):
+        barrier = {(11, self.GROUND + 1, 21): 'oak_fence'}
+        found, _r, unplaced = self.place([self.table()], barrier_voxels=barrier)
+        self.assertEqual((found, self.reasons(unplaced)), ({}, ['overlaps a planned barrier']))
+        found, _r, unplaced = self.place([{'x': 11, 'z': 21, 'kind': 'bench', 'source': 'map'}], barrier_voxels=barrier)
+        self.assertEqual((len(found), unplaced), (1, []))              # single column: furniture wins, as before
+
+    def test_bench_slabs_are_picked_for_keep_slab_cells_and_top_slabs_are_not(self):
+        found, _r, _u = self.place([self.table()])
+        slabs = dl.half_slab_positions(found, dict(found))
+        self.assertEqual(len(slabs), 6)
+        self.assertTrue(all(found[p].endswith('[type=bottom]') for p in slabs))
+        clipped = {p: b for p, b in found.items() if p[0] != 9}
+        self.assertEqual(len(dl.half_slab_positions(found, clipped)), 4)      # clipped-away slabs are not kept
+
+    def test_keep_clear_reaches_single_column_items_with_the_old_reason(self):
+        _f, _r, unplaced = self.place([{'x': 10, 'z': 20, 'kind': 'bench', 'source': 'map'}], keep_clear={(10, 20)})
+        self.assertEqual(self.reasons(unplaced), ['entrance opening or route reserved'])
+
+
 class TestTerrainGround(unittest.TestCase):
     """#301: decor stands on the block at lidar terrain Y, never on the roof over it; nothing is skipped for a roof."""
 
