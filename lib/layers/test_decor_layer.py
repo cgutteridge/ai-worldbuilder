@@ -799,10 +799,10 @@ class TestReporting(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(dl, 'plan_cell', return_value=({}, stats)), \
                 mock.patch('site_kit.fresh_planning_world'), \
-                mock.patch('layer_reports.write_report', side_effect=lambda n, r: write_report(n, r, Path(tmp))), \
+                mock.patch('layer_reports.write_report', side_effect=lambda n, r, **kw: write_report(n, r, Path(tmp), **kw)), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(dl.run((0, 0)), 0)
-            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-report.json').read_text())
+            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-dry-report.json').read_text())
             self.assertEqual(saved['stats']['unplaced_items'], items)
         self.assertIn("'feature above terrain': 40", output.getvalue())
         self.assertIn('full report:', output.getvalue())
@@ -907,3 +907,87 @@ class PicketKeepsFenceBlockTest(ShelfFencePlacementTest):
                   'cells': [[13, 20]]}
         both = {**self._place(panel)[0], **self._place(picket)[0]}
         self.assertEqual(both[(10, 65, 20)], alone[(10, 65, 20)])
+
+
+class TestDryRunUndo(unittest.TestCase):
+    """Built decor is previewed against a simulated undo; apply artifacts survive."""
+
+    def test_built_cell_matches_empty_world_and_preserves_apply_artifacts(self):
+        import io
+        import json
+        import tempfile
+        import types
+        from contextlib import ExitStack, redirect_stdout
+        from pathlib import Path
+        from layer_reports import artifact_path
+        from pass_mask import build_mask, write_mask
+        from site_kit import Plan
+
+        class Ground:
+            def __init__(self, blocks=None):
+                self.blocks = blocks or {}
+
+            def block(self, x, y, z):
+                return self.blocks.get((x, y, z), 'minecraft:grass_block' if y <= 64 else 'minecraft:air')
+
+        empty = Ground()
+        item = {'id': 'front', 'role': 'barrier', 'kind': 'hedge', 'height': 2, 'cells': [[10, 20], [11, 20]]}
+        vmap = types.SimpleNamespace(**{k: set() for k in
+            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks')},
+            furniture=[], road_lines=[], path_lines=[])
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as stack, redirect_stdout(io.StringIO()):
+            directory = Path(tmp)
+            masks = directory / 'masks'
+            masks.mkdir()
+            stack.enter_context(mock.patch('pass_mask.MASK_DIR', masks))
+            stack.enter_context(mock.patch('ground_sources.OSMGround', return_value=vmap))
+            stack.enter_context(mock.patch('osm_footprints.OSMIndex', return_value=mock.Mock(cells=lambda: {}, buildings={})))
+            stack.enter_context(mock.patch.object(dl, 'neighbour_owned', return_value=set()))
+            stack.enter_context(mock.patch.object(dl, 'load_masked_positions', return_value={}))
+            stack.enter_context(mock.patch.object(dl.dplan, 'land_class_columns', return_value={}))
+            stack.enter_context(mock.patch.object(dl.dplan, 'build_decor_plan', return_value={'items': [item]}))
+            stack.enter_context(mock.patch.object(dl.ob, 'mapped_outbuilding_footprints', return_value=[]))
+            stack.enter_context(mock.patch.object(dl.ob, 'lidar_rise', return_value=None))
+            stack.enter_context(mock.patch.object(dl.sf, 'designer_items', return_value=[]))
+            stack.enter_context(mock.patch.object(dl.sf, 'designer_observations', return_value=[]))
+            stack.enter_context(mock.patch('lidar_heightmap.reference_world', return_value=mock.Mock(heightmap=lambda c: None)))
+            expected, _ = dl.plan_cell((0, 0), Plan('empty'), empty)
+            self.assertGreater(len(expected), 0)
+            write_mask(build_mask('decor', (0, 0), 'old', expected, lambda p: True), masks)
+            built = Ground({p: 'minecraft:' + b for p, b in expected.items()})
+            name = dl.plan_name(0, 0)
+            originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in ('report.json', 'preview.png')}
+            for path, data in originals.items():
+                path.write_bytes(data)
+            stack.enter_context(mock.patch('site_kit.fresh_planning_world', return_value=built))
+            stack.enter_context(mock.patch('site_kit.apply', return_value={}))
+            stack.enter_context(mock.patch('layer_reports.artifact_path', side_effect=lambda n, a, **kw:
+                artifact_path(n, a, **{**kw, 'directory': directory})))
+            self.assertEqual(dl.run((0, 0)), 0)
+            report = json.loads((directory / f'{name}-dry-report.json').read_text())
+            self.assertEqual(report['placement_positions'], len(expected))
+            self.assertEqual(report['stats']['unplaced_items'], [])
+            self.assertTrue((directory / f'{name}-dry-preview.png').exists())
+            for path, data in originals.items():
+                self.assertEqual(path.read_bytes(), data)
+
+    def test_conflicting_undo_is_reported_and_world_is_unchanged(self):
+        import io
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from pass_mask import build_mask, write_mask
+
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()) as output:
+            directory = Path(tmp)
+            pos = (10, 65, 20)
+            write_mask(build_mask('decor', (0, 0), 'old', {pos: 'oak_leaves'}, lambda p: True), directory)
+            live = mock.Mock(block=lambda *p: 'minecraft:stone')
+            with mock.patch('pass_mask.MASK_DIR', directory), \
+                    mock.patch('site_kit.fresh_planning_world', return_value=live), \
+                    mock.patch('layer_reports.write_report'), \
+                    mock.patch.object(dl, 'plan_cell', return_value=({}, {'blocks': 0})) as planner:
+                self.assertEqual(dl.run((0, 0)), 0)
+            self.assertIs(planner.call_args.args[2], live)
+            self.assertIn(pos, planner.call_args.kwargs['masked'])
+            self.assertIn('undo conflicts; planning against the unmodified world', output.getvalue())

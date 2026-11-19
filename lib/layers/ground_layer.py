@@ -1277,16 +1277,16 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     """Dry-run one cell. Returns the number of conflicts (0 means it is safe to apply)."""
     tx, tz = cell
     name = plan_name(tx, tz)
-    plan = Plan(name)
+    plan = Plan(f'{name}-dry')
     world = _fresh_world()
     masked = load_masked_positions()
     states = neighbour_owned_states(cell, ignored_builds(cell))
     owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                 settled_fp=settled_footprint(cell), owned_states=states)
-    from layer_reports import write_report
+    from layer_reports import artifact_path, write_report
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
-                        'planned_positions': len(plan.cells)})
+                        'planned_positions': len(plan.cells)}, dry=True)
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
     floating = stats.pop('floating_columns', [])
@@ -1311,14 +1311,14 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
         print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/mask_undo.py; HANDOFF-LAYERED §3, §10).')
     report_floating(floating)
     report_journal_floats(cell, plan)
-    out = ROOT / f'verification/site/{name}-kinds.png'
+    out = artifact_path(name, 'kinds.png', dry=True)
     kinds_image(cell, kind, out)
-    print(f'  kinds image: {out.relative_to(ROOT)}')
+    print(f'  kinds image: {out}')
     if not skip_preview:
         from site_kit import preview
-        pv = ROOT / f'verification/site/{name}-preview.png'
+        pv = artifact_path(name, 'preview.png', dry=True)
         preview(plan, pv, scale=2)
-        print(f'  preview: {pv.relative_to(ROOT)}')
+        print(f'  preview: {pv}')
     return len(conflicts) + len(floating)
 
 
