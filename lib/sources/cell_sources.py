@@ -719,7 +719,8 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
     e, n = to_osgb(cx, cz)
     vm = vmc.project_status()
     return [
-        f'python3 shims/google_aerial.py sheet --cell {tx},{tz}   # ALWAYS: download PNG, Read it, then --record google-satellite',
+        f'python3 shims/google_aerial.py sheet --cell {tx},{tz} --dry-run   # state source, filename and size; '
+        'obtain owner authorization before rerunning with --download-authorized, then Read and --record google-satellite',
         f'python3 scripts/ref_manifest.py find --xz {cx},{cz}',
         f'python3 scripts/geo.py tiles --bbox {bbox} --zoom 18 --mosaic 3',
         f'# then: scripts/aerial_mosaic.py … → reference/aerial/<place>/{rec["mosaic_filename"]}',

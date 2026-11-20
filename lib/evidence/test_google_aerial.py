@@ -7,7 +7,10 @@ GDAL, pyproj, network, or a real world frame. Coordinate correctness belongs to
 """
 from __future__ import annotations
 
+import io
+import json
 import sys
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -38,15 +41,16 @@ def _fictional_mc_to_tile(
     return [(x / _BLOCKS_PER_TILE, z / _BLOCKS_PER_TILE) for x, z in points]
 
 
-def _solid_tile(x: int, y: int, zoom: int) -> Image.Image:
+def _solid_tile(x: int, y: int, zoom: int, *, download_authorized: bool = False) -> Image.Image:
     """Deterministic RGB tile for offline sheet tests.
 
     @param x: tile x
     @param y: tile y
     @param zoom: zoom level (unused)
+    @param download_authorized: authorization forwarded by the renderer (unused)
     @returns: 256×256 solid-colour image keyed by tile indices
     """
-    del zoom
+    del zoom, download_authorized
     return Image.new('RGB', (ga.TILE, ga.TILE), (x % 256, y % 256, 80))
 
 
@@ -134,6 +138,88 @@ class TestGrid(unittest.TestCase):
         self.assertEqual([o['label'] for o in out], ['456'])
 
 
+class DownloadAuthorizationTest(unittest.TestCase):
+    """Exercise the CLI and shared network boundary without fetching imagery."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.sheets = Path(temp.name) / 'sheets'
+        for patch in (
+            mock.patch.object(ga, 'SHEETS', self.sheets),
+            mock.patch.object(ga, 'mc_to_tile', side_effect=_fictional_mc_to_tile),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_direct_fetch_without_authorization_never_opens_network(self):
+        with mock.patch.object(ga.urllib.request, 'urlopen') as network:
+            with self.assertRaisesRegex(PermissionError, '--download-authorized'):
+                ga.fetch_tile(0, 0, 20)
+        network.assert_not_called()
+
+    def test_authorized_fetch_decodes_the_response(self):
+        raw = io.BytesIO()
+        Image.new('RGB', (256, 256), 'blue').save(raw, format='PNG')
+        with mock.patch.object(ga.urllib.request, 'urlopen', return_value=io.BytesIO(raw.getvalue())) as network:
+            im = ga.fetch_tile(0, 1, 20, download_authorized=True)
+        self.assertEqual(im.getpixel((0, 0)), (0, 0, 255))
+        self.assertEqual(network.call_args.args[0].full_url, ga.tile_url(0, 1, 20))
+
+    def test_render_and_write_refuse_before_fetching_or_creating_output(self):
+        with mock.patch.object(ga, 'fetch_tile') as fetch:
+            with self.assertRaises(PermissionError):
+                ga.sheet_image((0, 0, 80, 80), 20)
+            with self.assertRaises(PermissionError):
+                ga.write_sheet('test', (0, 0, 80, 80), 20, 1.0)
+        fetch.assert_not_called()
+        self.assertFalse(self.sheets.exists())
+
+    def test_cli_requires_authorization_before_reading_overlays_or_downloading(self):
+        with mock.patch.object(ga.urllib.request, 'urlopen') as network, mock.patch.object(
+            ga, 'osm_outlines', side_effect=AssertionError('must refuse before reading outlines'),
+        ), mock.patch('sys.stdout', new_callable=io.StringIO), mock.patch('sys.stderr', new_callable=io.StringIO) as err:
+            code = ga.main(['sheet', '--at', '40,40', '--outlines', '--marks', 'missing.json'])
+        self.assertEqual(code, 2)
+        self.assertIn('--download-authorized', err.getvalue())
+        network.assert_not_called()
+        self.assertFalse(self.sheets.exists())
+
+    def test_dry_run_describes_download_without_writes_even_with_authorization(self):
+        for flags in ([], ['--download-authorized']):
+            with self.subTest(flags=flags), mock.patch.object(ga.urllib.request, 'urlopen') as network, mock.patch(
+                'sys.stdout', new_callable=io.StringIO,
+            ) as out:
+                code = ga.main(['sheet', '--at', '40,40', '--dry-run', '--outlines', '--marks', 'missing.json', *flags])
+            self.assertEqual(code, 0)
+            plan = json.loads(out.getvalue())
+            self.assertEqual(plan['source'], ga.BASE)
+            self.assertEqual(plan['output'], str(self.sheets / 'at_40_40_osm_marks.png'))
+            self.assertEqual(plan['tile_count'], 4)
+            self.assertEqual(plan['estimated_bytes'], 4 * 256 * 256 * 3)
+            self.assertIn('compressed', plan['size_note'])
+            network.assert_not_called()
+            self.assertFalse(self.sheets.exists())
+
+    def test_url_remains_available_without_authorization(self):
+        with mock.patch.object(ga.urllib.request, 'urlopen') as network, mock.patch(
+            'sys.stdout', new_callable=io.StringIO,
+        ) as out:
+            code = ga.main(['url', '--at', '40,40'])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue().strip(), ga.tile_url(1, 1, 20))
+        network.assert_not_called()
+
+    def test_authorized_cli_forwards_authorization_to_every_tile(self):
+        with mock.patch.object(ga, 'fetch_tile', side_effect=_solid_tile) as fetch, mock.patch(
+            'sys.stdout', new_callable=io.StringIO,
+        ):
+            self.assertEqual(ga.main(['sheet', '--at', '40,40', '--download-authorized']), 0)
+        self.assertEqual(fetch.call_count, 4)
+        self.assertTrue(all(call.kwargs['download_authorized'] for call in fetch.call_args_list))
+        self.assertTrue((self.sheets / 'at_40_40.png').is_file())
+
+
 class MarkupSheetTest(unittest.TestCase):
     """sheet_image against stubbed ``mc_to_tile`` / ``fetch_tile`` (no network, no CRS)."""
 
@@ -163,7 +249,7 @@ class MarkupSheetTest(unittest.TestCase):
             self.addCleanup(p.stop)
 
     def test_sheet_size_covers_every_tile(self):
-        im = ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+        im = ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE, download_authorized=True)
         # 3×3 tiles at scale 2 → 1536×1536
         self.assertEqual(im.size, (1536, 1536))
         # Interior of tile (0,0) / (2,2) keep stub colour (avoid bbox outline at corners).
@@ -178,6 +264,7 @@ class MarkupSheetTest(unittest.TestCase):
         im = ga.sheet_image(
             self.BBOX, self.ZOOM, scale=self.SCALE,
             outlines=[{'ring': ring, 'label': '441'}],
+            download_authorized=True,
         )
         self.assertEqual(im.size, (1536, 1536))
         for x, z in ring:
@@ -185,20 +272,21 @@ class MarkupSheetTest(unittest.TestCase):
         # Without outlines, fewer projection batches (no ring points).
         bare = _ProjectionStub()
         with mock.patch.object(ga, 'mc_to_tile', side_effect=bare):
-            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE, download_authorized=True)
         self.assertGreater(len(self.proj.all_points()), len(bare.all_points()))
 
     def test_marks_project_cell_corners(self):
         im = ga.sheet_image(
             self.BBOX, self.ZOOM, scale=self.SCALE,
             marks=[(40, 40, '#f0f'), (41, 40, '#0ff')],
+            download_authorized=True,
         )
         self.assertEqual(im.size, (1536, 1536))
         for p in ((40.0, 40.0), (41.0, 40.0), (41.0, 41.0), (40.0, 41.0)):
             self.assertIn(p, self.proj.all_points())
         bare = _ProjectionStub()
         with mock.patch.object(ga, 'mc_to_tile', side_effect=bare):
-            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE)
+            ga.sheet_image(self.BBOX, self.ZOOM, scale=self.SCALE, download_authorized=True)
         self.assertGreater(len(self.proj.all_points()), len(bare.all_points()))
 
     def test_marks_are_translucent_over_tiles(self):
@@ -207,6 +295,7 @@ class MarkupSheetTest(unittest.TestCase):
         im = ga.sheet_image(
             self.BBOX, self.ZOOM, scale=self.SCALE,
             marks=[(40, 40, '#ff00ff')],
+            download_authorized=True,
         )
         # Interior of the marked cell (away from polygon edges / grid).
         px = im.getpixel((520, 520))
