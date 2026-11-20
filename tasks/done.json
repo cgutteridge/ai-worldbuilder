@@ -2807,5 +2807,25 @@
       "blockedBy": [],
       "notes": "Cause (from the 63,-45 decor report): ways_skipped 'no bench density for the adjoining class' 5, 0 candidates. Hypothesis, not verified: land_class_columns uses the smallest-polygon rule, so a path through meadow or beside wood classes as rural or natural and only the park row has bench_per_100m (config/land-use-classes.json, used in lib/layers/decor_plan.py, BENCH_PATHS footway, path, pedestrian). Owner choice needed: should a path inside a leisure=park polygon take park furniture when the nearer polygon is meadow or wood? Deliverable: check the five ways' classes, then change adjoining_class or the class precedence, or record the rule. Check: named test; re-run on 63,-45 gives benches at the stated density.\n\nClosed at 305e38946219dae158fe32663a3a76e27bb1555d: Merged task/322-bench-class-precedence: a park-class polygon is an umbrella over nested rural/natural land for decor furniture class; rule in rules/frontage-and-evidence.md. Live 63,-45 decor re-run still to check.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 316,
+      "title": "Per-class setting for aerial paving that is not on a mapped way",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause (verified in the 63,-45 ground report: 1,107 columns): aerial paving detection turns shade, brown undergrowth and worn grass in park, rural and natural land into light_gray_concrete (ground_layer.classify, the elif a in ('light','dark') branch, about line 523). Deliverable: per-class surface.unmapped_paving (dirt for park, grass for rural and natural): a paving-by-aerial column not on a mapped way (vmap.pri < 40) takes the class kind, and grass inside wood or scrub polygons. This task owns the schema pattern: add the key to the land_use.py validator (which rejects unknown keys) and config/land-use-classes.json; later tasks that add keys (trees, ground_texture) build on it. Test: shade fixture in a park, a rural and a residential class. Check: re-run ground on 63,-45: no light_gray_concrete off mapped ways and the report counts aerial paving as 0 outside residential. Source: docs/plans/park-rural.md.\n\nClosed at fb172d4fbb9bf22e96dba462f6c2a01d3716c453: Merged task/316-unmapped-paving-per-class: per-class surface.unmapped_paving (park dirt, rural/natural grass) in land_use validator, config and ground classify; wood/scrub grass. Live 63,-45 ground re-run still to check.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 334,
+      "title": "Traffic signals and crossings as street furniture kinds",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner noted little street furniture where the street has traffic lights, but the trial did not run decor, so that observation is unverified. Lamps, bollards and bike racks already exist (mapped points #127; lamp inference #260). Real gap: EXTRACT_JOBS in lib/sources/street_furniture.py omits highway=traffic_signals and crossing, and those kinds do not exist. Deliverable: add traffic_signals and crossing kinds (extract preset, recipe, decor placement); traffic island only where mapped. Run decor on 50,-36 first to see what is already missing. Depends in practice on blocked #237 (furniture preset fails under default GDAL) if that is still the case. Check: decor dry run on 50,-36 lists signals at the OSM signal nodes. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at f75ee23e46a33da2f90ac8964c714ebd16bf28c4: Merged task/334-traffic-signals-crossings: traffic_signals, crossing and traffic_island kinds; extract preset; kerbside snap placement (placed_at). Live 50,-36 decor dry run and world-local provider patch (#237) still to do.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

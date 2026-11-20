@@ -73,15 +73,7 @@
     
     
     
-    {
-      "id": 316,
-      "title": "Per-class setting for aerial paving that is not on a mapped way",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause (verified in the 63,-45 ground report: 1,107 columns): aerial paving detection turns shade, brown undergrowth and worn grass in park, rural and natural land into light_gray_concrete (ground_layer.classify, the elif a in ('light','dark') branch, about line 523). Deliverable: per-class surface.unmapped_paving (dirt for park, grass for rural and natural): a paving-by-aerial column not on a mapped way (vmap.pri < 40) takes the class kind, and grass inside wood or scrub polygons. This task owns the schema pattern: add the key to the land_use.py validator (which rejects unknown keys) and config/land-use-classes.json; later tasks that add keys (trees, ground_texture) build on it. Test: shade fixture in a park, a rural and a residential class. Check: re-run ground on 63,-45: no light_gray_concrete off mapped ways and the report counts aerial paving as 0 outside residential. Source: docs/plans/park-rural.md."
-    },
+    
     {
       "id": 317,
       "title": "Trees only from mapped trees, wood, scrub or lidar height on open grass",
@@ -89,7 +81,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [
-        316
+        
       ],
       "notes": "Cause: the texture-only crown detector and the dense fill plant meadow and pasture as forest (trees_layer.planning_inputs, dense fill, mosaic detector). Deliverable: on open-land classes keep crowns only from mapped trees, tree rows (#157), wood or scrub within 2 blocks, or lidar standing height of 2 m or more; add a trees.sources key to the class table via the schema pattern from the unmapped-paving task. Reference rule: variant B in docs/plans/park-rural.md (the prototype was scratch, not in the repo). Check: farmland cell 87,-48 has no crowns on open pasture (trial dropped 258 crowns in the park, 186 on farmland); meadow-polygon fixture test passes."
     },
@@ -100,8 +92,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
-        317,
-        316
+        317
       ],
       "notes": "Deliverable: inside wood polygons, fill towards the aerial canopy cover (about 80%), mixed species and heights, understorey bushes (persistent leaves at Y+1 to Y+2) and ferns, podzol/coarse_dirt/moss_block floor with grass at the edges; labelled inference, removable through the foliage and decor masks. Owner: trees need more density. Feasibility risk: trees apply cost 962 s for 113 trees (about 8.5 s per tree), so an 80% fill is thousands of trees; diagnose the per-tree apply cost first or batch it. Check: wood across the river in cell 63,-45 matches the aerial density; apply time for it stays under a stated limit; owner verdict in game."
     },
@@ -112,7 +103,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        316
+        
       ],
       "notes": "Owner request: plain grass on farmland reads bland, the aerial shows mottled ground. Deliverable: new class key ground_texture (add to the validator via the schema pattern). Gate: meadow, farmland, grassland, heath, scrub and nature_reserve only; lawns never (rules in docs/plans/park-rural.md section Rough grass without spoiling lawns). Place from aerial texture variance, seeded per cell and column, removable through the masks and counted in the report. Planting is null when frontage.inference is false and rural has inference false, so use its own key; reuse the flower vocabulary of #266 (REFINE_PLANTS), do not re-implement. OWNER DECISION PENDING: palette shares (starting values in the plan doc, low confidence). Check: farmland cell 87,-48 shows tufts and mottling, park lawns unchanged; owner verdict."
     },
@@ -150,11 +141,11 @@
     {
       "id": 325,
       "title": "Widen a mapped path to the paving seen beside it",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        316
+        
       ],
       "notes": "Cause partly unverified: the riverside path in 63,-45 has est_width 1.75 and surface asphalt, and the aerial width was lost, so it reads as a coarse-dirt band with a thin grey strip (owner noted this as a fault). Deliverable: widen a mapped way to the paving seen beside it in the aerial, per class. Check: in game the riverside path in cell 63,-45 reads as one path of the aerial width."
     },
@@ -230,15 +221,7 @@
       ],
       "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
-    {
-      "id": 334,
-      "title": "Traffic signals and crossings as street furniture kinds",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Owner noted little street furniture where the street has traffic lights, but the trial did not run decor, so that observation is unverified. Lamps, bollards and bike racks already exist (mapped points #127; lamp inference #260). Real gap: EXTRACT_JOBS in lib/sources/street_furniture.py omits highway=traffic_signals and crossing, and those kinds do not exist. Deliverable: add traffic_signals and crossing kinds (extract preset, recipe, decor placement); traffic island only where mapped. Run decor on 50,-36 first to see what is already missing. Depends in practice on blocked #237 (furniture preset fails under default GDAL) if that is still the case. Check: decor dry run on 50,-36 lists signals at the OSM signal nodes. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
     {
       "id": 335,
       "title": "Landmark buildings need a street-level check before building",
