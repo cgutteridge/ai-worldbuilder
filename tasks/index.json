@@ -49,15 +49,7 @@
       "blockedBy": [],
       "notes": "NEEDS USER INPUT. In worlds/southampton-build/providers/geofabrik-hampshire/osm_extract.py run_ogr2ogr passed no --config OSM_CONFIG_FILE, so GDAL 3.13's default schema (no `amenity` on points) failed the furniture preset and blocked `prepare --apply`. I patched it in the world checkout (osm_config(): world downloads/osmconf.ini else TOOL_ROOT/config/osmconf.ini); the patch is uncommitted and has no test, on top of the owner's existing uncommitted edits. The world provider duplicates the presets and run_ogr2ogr in lib/sources/geofabrik_provider.py; decide whether to delete the copy and call the tool one. Also: manifest hints from prepare (`ref_manifest.py add ...` for prepared-53--42 and prepared-54--42, 52,-42, 52,-43) were not run."
     },
-    {
-      "id": 238,
-      "title": "Background cell sessions downloaded aerial tiles without authorization",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "xs",
-      "blockedBy": [],
-      "notes": "The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs. Decision 2026-11-20: owner approved an explicit download-authorization flag; implement and test offline without world edits."
-    },
+    
     
     
     
