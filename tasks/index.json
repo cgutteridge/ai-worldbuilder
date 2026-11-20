@@ -238,13 +238,13 @@
     {
       "id": 338,
       "title": "Surface car parks paint as tarmac in the ground layer",
-      "status": "doing",
+      "status": "todo",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [
         
       ],
-      "notes": "Cause (reported by trial #258 from the 50,-35 ground pass, not independently verified): the ground layer does not read amenity=parking (surface car parks) as a surface, because land-use classes are kept out of ground paint (task #158 keeps landuse=residential, retail, commercial, industrial unread so they never paint under houses). So a car park comes out as aerial-coloured grass and tarmac patches: 50,-35 plan was tarmac 2,060, paving 3,493, forecourt 1,283, grass 2,728 columns, and the owner saw grass in a car park where the aerial shows none (issue I-054, snag S-096). Deliverable: ground layer maps amenity=parking (surface, and not multi-storey or underground) to tarmac, with bay lines left to task 336; a narrow exception to the #158 rule recorded in the rules and the land-use notes. Check: re-run ground on 50,-35 (needs the surface-probe fix #315 first, or the cell reads as empty below Y 31): the car park behind the high street is tarmac with no grass patches; a fixture test with an amenity=parking polygon and one with a multi-storey parking polygon. Source: docs/plans/industrial-commercial.md section 8.\n"
+      "notes": "Cause (reported by trial #258 from the 50,-35 ground pass, not independently verified): the ground layer does not read amenity=parking (surface car parks) as a surface, because land-use classes are kept out of ground paint (task #158 keeps landuse=residential, retail, commercial, industrial unread so they never paint under houses). So a car park comes out as aerial-coloured grass and tarmac patches: 50,-35 plan was tarmac 2,060, paving 3,493, forecourt 1,283, grass 2,728 columns, and the owner saw grass in a car park where the aerial shows none (issue I-054, snag S-096). Deliverable: ground layer maps amenity=parking (surface, and not multi-storey or underground) to tarmac, with bay lines left to task 336; a narrow exception to the #158 rule recorded in the rules and the land-use notes. Check: re-run ground on 50,-35 (needs the surface-probe fix #315 first, or the cell reads as empty below Y 31): the car park behind the high street is tarmac with no grass patches; a fixture test with an amenity=parking polygon and one with a multi-storey parking polygon. Source: docs/plans/industrial-commercial.md section 8.\n\n\nReturned to todo: Waits for #336 (car-park bay lines): both edit the ground layer; run one after the other.\n\n[tasks CLI] Status update recorded; subject to human review."
     }
   ]
 }
