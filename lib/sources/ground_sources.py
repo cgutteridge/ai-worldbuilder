@@ -375,6 +375,8 @@ class OSMGround:
         self.wall: set = set()
         self.fence: set = set()
         self.soft: set = set()        # mapped parking polygon: the aerial may show it is really lawn
+        self.parking_areas: list = []  # one column set per surface car park polygon (#336, bay lines)
+        self.parking_aisles: list = []  # {'points', 'half'} per service=parking_aisle centreline (#336)
         self.trees: list = []         # (x, z) natural=tree points
         self.tree_rows: list = []     # natural=tree_row polylines as [(x, z), ...] in MC (#157)
         self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
@@ -423,6 +425,8 @@ class OSMGround:
             self._put(poly_cells(polys), SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
         elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey'):
             cs = poly_cells(polys)
+            x0, z0, x1, z1 = cell_box(self.cell, MARGIN)
+            self.parking_areas.append({q for q in cs if x0 <= q[0] <= x1 and z0 <= q[1] <= z1})
             self._put(cs, 'tarmac', PRI['parking'])
             self.soft |= {q for q in cs if self.pri.get(q) == PRI['parking']}
         elif t.get('amenity') == 'bicycle_parking':
@@ -463,6 +467,8 @@ class OSMGround:
         if hw in ROAD_CLASSES or hw == 'service' or hw == 'track':
             half = road_width(t) / 2
             self.road_lines.append(_way_line(t, pts, half))
+            if hw == 'service' and t.get('service') == 'parking_aisle':
+                self.parking_aisles.append({'points': [(float(p[0]), float(p[1])) for p in pts], 'half': float(half)})
             cells = line_cells(pts, half)
             kind = SURFACE_KIND.get(t.get('surface'), 'tarmac')
             pri = PRI['service'] if hw in ('service', 'track') else PRI['road']

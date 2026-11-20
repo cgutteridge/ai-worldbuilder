@@ -53,6 +53,7 @@ from script_env import ROOT  # noqa: E402
 
 from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb, cell_box,  # noqa: E402
                             line_cells, hsv, majority, MARGIN)
+from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
 from site_kit import Plan, World, full  # noqa: E402
@@ -1213,6 +1214,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                          unmapped_paving=unmapped, path_widen=widen)
     how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
+    how['car park bay line (perpendicular to the mapped aisle)'] = mark_car_park_bays(kind, vmap)   # #336
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
     lidar_ys = lidar_base_map(live, ev.get('lidar_maps'))

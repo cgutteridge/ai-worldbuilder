@@ -168,6 +168,10 @@ rule-file copy.
     approval (`cell_registry.py approve <cell> --layers ...`) only records which layers the owner
     signed off. Consumers: car-park bay lines (#336), kerb/crossing paint, tarmac surfaces. The
     ground pass itself and ghost passes are exempt (#327).
+  - Car-park bay lines (#336, lib/layers/bay_lines.py) are drawn by the ground pass itself as `mark`
+    (white_concrete) columns, so they are exempt from that gate and do not use `Plan.ground_marking`. One
+    column every 3 blocks along each mapped `service=parking_aisle`, 5 deep either side of the aisle edge,
+    at right angles to it; tarmac columns of the car park polygon only. No mapped aisle, no lines.
   - Clear unowned blocks above (road-label signs, orphan posts);
     re-solidify the bed down to the lowest cell any superseded streetscape
     pass wrote (their trims left air: gravel falls, readback sees "structure").
