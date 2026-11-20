@@ -179,9 +179,20 @@ def interior_ground_clears(plan, floors):
 
 
 class Plan:
+    """Blocks, signs and entities for one named apply.
+
+    ``ground_layer`` (#327): True once the plan writes a ground-layer thing (a marking or surface laid
+    on the ground: car-park bay lines, kerb or crossing paint). The journal then refuses the apply
+    unless every cell it writes into has a landed ground pass. Do not set it by hand: write such blocks
+    through :meth:`ground_marking` / :meth:`ground_marking_fill`, which flag the plan themselves, so the
+    gate does not depend on the author remembering. :func:`apply` reads the attribute directly; there
+    is no fallback, so a rename fails loudly.
+    """
+
     def __init__(self, name):
         from readiness_evidence import planning_inputs
         self.evidence_revision, self.journal_revision = planning_inputs()
+        self.ground_layer = False   # see class docstring: set by ground_marking*, read by apply
         self.parent_feature = None  # explicit built parent for named follow-ups; also list it in modifies
         self.name = name
         self.cells = {}
@@ -225,6 +236,30 @@ class Plan:
                 for z in range(z0, z1 + 1):
                     self.cells[(x, y, z)] = st
                     self.keep_slab_cells.discard((x, y, z))
+
+    def ground_marking(self, x, y, z, s):
+        """Record one ground-layer block (marking or surface) and flag the plan as ground-layer work.
+
+        The journal then refuses the apply on any written cell without a landed ground pass (#327).
+        Use this, not :meth:`set`, for bay lines, paint and similar things laid on the ground.
+
+        @param x: block X
+        @param y: block Y
+        @param z: block Z
+        @param s: block id or short name
+        """
+        self.set(x, y, z, s)
+        self.ground_layer = True
+
+    def ground_marking_fill(self, a, b, s):
+        """Fill an axis-aligned box of ground-layer blocks and flag the plan (see :meth:`ground_marking`).
+
+        @param a: corner [x,y,z]
+        @param b: opposite corner
+        @param s: block id or short name
+        """
+        self.fill(a, b, s)
+        self.ground_layer = True
 
     def get(self, x, y, z):
         return self.cells.get((x, y, z))
@@ -1198,7 +1233,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         mask_ref = {'pass': mask['pass'], 'cell': list(mask['cell']), 'plan': mask['plan'],
                     'count': mask.get('count'), 'sha256': mask.get('sha256')}
     build = Build(plan.name, pass_, dict(plan.cells), modifies=tuple(sorted(set(modifies))), strict=bool(strict),
-                  mask=mask_ref, cell=cell, payload=plan, meta=record)
+                  mask=mask_ref, cell=cell, payload=plan, meta=record,
+                  ground_layer=plan.ground_layer)
     try:
         with timed_stage('registry.begin guard reads and journal write', timings):
             ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write

@@ -329,6 +329,45 @@ class TestRules(Base):
                 self.build('x', p, plan(0, 0, STONE), cell=(0, 0))
         self.assertEqual(self.applied, [])
 
+    def test_ground_layer_work_refused_on_ghost_only_cell(self):
+        """#327: bay lines on a ghost-only cell are refused and write nothing."""
+        self.reg.change(Build('ghost_0_0_ground', 'ghost-ground', plan(0, 0, GREY, y=60), cell=(0, 0)), self.apply)
+        before = len(self.applied)
+        lines = {P(0, 0, i, 61): 'minecraft:white_concrete' for i in range(3)}
+        for pass_ in ('feature', 'other'):
+            with self.assertRaises(Refused) as ctx:
+                self.build('dressing', pass_, lines, ground_layer=True, cell=(0, 0))
+            self.assertIn('landed ground pass', str(ctx.exception))
+        self.assertEqual(len(self.applied), before)
+        self.assertEqual(self.reg.owned(list(lines)), {})
+
+    def test_ground_layer_work_checks_every_cell_written_not_just_primary(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), cell=(0, 0))
+        before = len(self.applied)
+        spans = {P(0, 0, 0, 61): 'minecraft:white_concrete', P(1, 0, 0, 61): 'minecraft:white_concrete'}
+        with self.assertRaises(Refused) as ctx:
+            self.build('dressing', 'feature', spans, ground_layer=True, cell=(0, 0))
+        self.assertIn('[1, 0]', str(ctx.exception))
+        self.assertEqual(len(self.applied), before)
+        self.build('ground_1_0', 'ground', plan(1, 0, STONE, y=60), cell=(1, 0))
+        self.build('dressing', 'feature', spans, ground_layer=True, cell=(0, 0))
+
+    def test_ground_layer_flag_does_not_block_the_ground_pass_or_plain_features(self):
+        self.build('ground_0_0', 'ground', plan(0, 0, STONE, y=60), ground_layer=True, cell=(0, 0))
+        self.build('house', 'feature', {P(1, 0, 0, 61): GLASS}, cell=(1, 0))      # features need only ghost/none
+
+    def test_approval_records_layers_and_refusal_names_them(self):
+        self.assertEqual(self.reg.approved_layers((0, 0)), frozenset())
+        self.reg.change(Note((0, 0), 'approval', 'ghost,buildings'))
+        self.assertEqual(self.reg.approved_layers((0, 0)), {'ghost', 'buildings'})
+        self.assertEqual(self.registry().approved_layers((0, 0)), {'ghost', 'buildings'})   # survives reload
+        with self.assertRaises(Refused) as ctx:
+            self.build('dressing', 'feature', {P(0, 0, 0, 61): GLASS}, ground_layer=True, cell=(0, 0))
+        self.assertIn("approved=['buildings', 'ghost']", str(ctx.exception))
+        for bad in ('', 'ground,sky'):
+            with self.assertRaises(Refused):
+                self.reg.change(Note((0, 0), 'approval', bad))
+
     def test_empty_decor_pass_can_finish_a_cell(self):
         """Part (5): a genuine no-furniture cell may journal an empty decor land (#127)."""
         self.build('ground_0_0', 'ground', plan(0, 0, STONE), cell=(0, 0))

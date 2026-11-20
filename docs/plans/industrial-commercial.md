@@ -283,7 +283,12 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
     block grid.
 11. **Ground-layer dressing needs a ground pass, and approvals name layers** (orchestrator finding,
     section 8). Markings and surfaces refuse on a cell with no landed ground; a cell approval records which
-    layers it covers (ghost, buildings crossing in, ground, dressing). The 50,-35 run also shows that a mapped surface car park
+    layers it covers (ghost, buildings crossing in, ground, dressing). Contract (#327): ground-layer
+    markings must be written through `Plan.ground_marking` / `Plan.ground_marking_fill`, which flag the
+    plan so `site_kit.apply` makes the journal refuse it (nothing written) unless every cell it writes
+    into has a landed ground pass; plain `plan.set` is not gated. Future consumers: car-park bay lines
+    (#336, item 10 here). Approvals are written with `cell_registry.py approve <cell> --layers ...` and
+    never stand in for the ground pass. The 50,-35 run also shows that a mapped surface car park
     (`amenity=parking`, `parking=surface`) needs a tarmac surface rule before markings make sense; that is an
     exception to the #158 "land use never paints surfaces" rule, so it is the owner's call.
 12. **Shop rule v2 faults** (owner, section 8): anchor awnings and signs to the wall on non-axis fronts

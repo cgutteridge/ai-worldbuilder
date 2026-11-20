@@ -31,6 +31,7 @@ Per-cell view (folded, never stored)::
   python3 scripts/cell_registry.py dismiss-clip-coverage tx,tz --reason R
   python3 scripts/cell_registry.py dismiss-feature tx,tz --feature ID --reason R
   python3 scripts/cell_registry.py note tx,tz --kind review --ref REF --body TEXT
+  python3 scripts/cell_registry.py approve tx,tz --layers ghost,buildings,ground,...
   python3 scripts/cell_registry.py next
   python3 scripts/cell_registry.py verify
   python3 scripts/cell_registry.py reconcile [CELL ...] [--fix]
@@ -53,7 +54,7 @@ from typing import Any, Callable
 from script_env import ROOT, make_parser, add_world_arg, activate_world_from_args  # noqa: E402
 
 from block_store import BlockStoreError  # noqa: E402
-from cell_journal import CellJournalError, CellRegistry, CellView, Note  # noqa: E402
+from cell_journal import APPROVAL_LAYERS, CellJournalError, CellRegistry, CellView, Note  # noqa: E402
 
 
 def _json_default(obj: Any) -> Any:
@@ -721,6 +722,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--ref', required=True, help='note id, e.g. trees-over-roof:x0,z0,x1,z1')
     p.add_argument('--body', default='', help='text (the reason)')
 
+    p = sub.add_parser('approve', help='record which layers the owner approved on a cell (#327)')
+    p.add_argument('cell')
+    p.add_argument('--layers', required=True, metavar='L,L',
+                   help='comma-separated, from ' + ', '.join(APPROVAL_LAYERS) + '; replaces the earlier approval')
+
     p = sub.add_parser('next', help='print the next undone registry work item')
     p.add_argument('--exclude-cell', action='append', default=[], metavar='TX,TZ',
                    help='run-local exclusion; repeat for each blocked cell')
@@ -861,6 +867,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == 'note':
             note(reg, parse_cell_id(args.cell), args.kind, args.body, args.ref)
             print(f'{args.kind} {args.ref} on {args.cell}')
+            return 0
+
+        if args.cmd == 'approve':
+            note(reg, parse_cell_id(args.cell), 'approval', args.layers.replace(' ', ''))
+            print(f'approval on {args.cell}: {sorted(reg.approved_layers(parse_cell_id(args.cell)))}')
             return 0
 
         if args.cmd == 'next':

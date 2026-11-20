@@ -160,6 +160,14 @@ rule-file copy.
   - A column whose live top is not ground (carpet over brick / standing structure)
     is an unrebuilt building in the street: write it unchanged, drop only the carpet,
     lay no street there (clearing holes the building).
+  - Ground-layer markings (bay lines, kerb or crossing paint, any surface laid on the ground)
+    go through `Plan.ground_marking` / `Plan.ground_marking_fill` (lib/site/site_kit.py), never
+    plain `plan.set` / `plan.fill`. Those calls flag the plan, and `site_kit.apply` then makes the
+    journal refuse it (Refused, nothing written, no journal entry) unless EVERY cell the plan
+    writes into has a landed ground pass. Ghost ground and a cell approval do not count; an
+    approval (`cell_registry.py approve <cell> --layers ...`) only records which layers the owner
+    signed off. Consumers: car-park bay lines (#336), kerb/crossing paint, tarmac surfaces. The
+    ground pass itself and ghost passes are exempt (#327).
   - Clear unowned blocks above (road-label signs, orphan posts);
     re-solidify the bed down to the lowest cell any superseded streetscape
     pass wrote (their trims left air: gravel falls, readback sees "structure").
