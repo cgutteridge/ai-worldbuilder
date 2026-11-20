@@ -323,3 +323,33 @@ All in `southampton-build` (world repo and save), none on the tool's main branch
 - Trees and decor were not run (no shed/shop planting or furniture question in this trial; about 16 min a
   cell). The cells are therefore not DONE in the registry; `next` will offer their remaining features and
   layers. Hold them if the owner wants the trial state kept as is.
+
+## 11. Task 330 implementation and validation (2026-11-20)
+
+Shared industrial and big-box defaults landed in `e748d68` (including its preceding
+implementation and fixes), integrated into main through `d7dc48d`. Industrial fronts get
+shutters, named-colour fascia and road-bounded loading bays; large retail fronts get a glazed
+base, fascia and an attached mapped-name sign. Explicit facade plans take precedence.
+Roof recipes are outside this change. Westquay's unsourced trial glazing rows were removed
+from its world-owned spec so the shared defaults actually drive the rebuild.
+
+Normal locked journal undo/apply rebuilt all four recorded specs without the prototype:
+
+| Spec | Cells | Landed journal sequence | Readback mismatches |
+| --- | --- | --- | --- |
+| `w241498208` | 55,-41 | 1386 | 0 |
+| `w241499737` | 55,-41 | 1388 | 0 |
+| `w241497621` | 55,-41 | 1392 | 0 |
+| `w465660355` | 42,-16; 43,-16 | 1396 | 0 |
+
+The corner loading bay originally reached the mapped carriageway in 55,-40; the corrected
+shared rule stops at road widths and continuous forecourt, and the final plan stays in 55,-41.
+One Belgrave cycle-shop unit is mapped retail and retains small-shop behaviour, rather than
+being reclassified as industrial.
+
+The large Westquay undo exposed repeated decoding of an oversized prior snapshot. A
+synthetic cache-budget regression caught it; undo now reads each required prior once without
+raising the bounded cache limit. The original live undo then completed in 50.714 seconds;
+the rebuild completed in 178.089 seconds. Focused suites, full pre-commit suites and fresh
+read-only reviews passed. Task 330 remains doing pending the owner's in-game verdict.
+First-person captures were deferred because another active build held the world lock.
