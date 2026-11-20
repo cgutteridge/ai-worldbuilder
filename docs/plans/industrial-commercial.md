@@ -235,7 +235,14 @@ shop windows in the wall down the alley." Three faults:
 Car-park finding (orchestrator, from reviewing the world): the bay lines in 50,-35 were painted onto a
 ghost-only cell. `car_park()` clipped to a box spanning two cells and checked only the approved-cell
 list, but bay lines are ground-layer work, and 50,-35 had no ground pass (approval there covered the
-ghost and the buildings crossing into it). Rule for the productionised version: dressing that writes
+ghost and the buildings crossing into it). Follow-up the same day (owner: "Run ground pass"): before it, 50,-35
+held 558 white blocks from the v2 dressing (557 bay lines on ghost stone at y 26-29, one fascia block); v1 had
+been undone. A stock ground dry run planned only 2,642 columns, because 7,344 read as empty below the y=31
+probe floor (#315). The low-floor run planned 9,986 (tarmac 2,060, paving 3,493, forecourt 1,283, grass 2,728)
+and landed with 0 mismatches (journal seq 1341, LIDAR_GHOST_RING=0, 50,-35 only). The bay lines did **not**
+end up on tarmac: of 625 line blocks, 378 touch grass, 192 sit in tarmac and 55 in paving. The ground pass
+does not read `amenity=parking` as a surface (the #158 rule keeps land use out of ground paint), so the car
+park came out as aerial-coloured grass and tarmac patches, and the grid-aligned bays run across both. Rule for the productionised version: dressing that writes
 ground-layer things (markings, surfaces) must have a real ground pass under it or refuse, and cell
 approvals must say which layers they cover.
 
@@ -272,7 +279,9 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
     block grid.
 11. **Ground-layer dressing needs a ground pass, and approvals name layers** (orchestrator finding,
     section 8). Markings and surfaces refuse on a cell with no landed ground; a cell approval records which
-    layers it covers (ghost, buildings crossing in, ground, dressing).
+    layers it covers (ghost, buildings crossing in, ground, dressing). The 50,-35 run also shows that a mapped surface car park
+    (`amenity=parking`, `parking=surface`) needs a tarmac surface rule before markings make sense; that is an
+    exception to the #158 "land use never paints surfaces" rule, so it is the owner's call.
 12. **Shop rule v2 faults** (owner, section 8): anchor awnings and signs to the wall on non-axis fronts
     (depends on 6); frame doors on stepped faces; apply shop fronts only to the street face, never to side
     or alley walls.
