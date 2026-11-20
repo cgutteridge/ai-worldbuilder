@@ -10,6 +10,10 @@ small mosaic (<= 3x3 tiles, e.g. the z18 3x3 in worlds/bakeoff/reference/aerial/
 kept under the world's ``reference/aerial/`` as a fixed comparison image; that is one saved image, not a bulk harvest.
 Aerial lean: a tall roof sits a few blocks off its ground footprint.
 
+Run ``sheet --dry-run`` first to state the source, output filename and size estimate.
+Add ``--download-authorized`` only after the owner authorizes that download in chat.
+Neither ``--dry-run`` nor ``url`` downloads anything; preparation never grants authorization.
+
   python3 shims/google_aerial.py sheet --cell 49,-42            # whole cell, z19
   python3 shims/google_aerial.py sheet --at 6379,-5277          # around a building, z20, radius 30 blocks
   python3 shims/google_aerial.py sheet --at 6379,-5277 --radius 60 --zoom 19
@@ -65,14 +69,28 @@ def tile_url(x: int, y: int, zoom: int) -> str:
     return f'{BASE}&x={x}&y={y}&z={zoom}'
 
 
-def fetch_tile(x: int, y: int, zoom: int) -> Image.Image:
+def require_download_authorization(download_authorized: bool) -> None:
+    """Refuse network access unless this download was explicitly authorized.
+
+    @param download_authorized: caller confirms the owner's authorization
+    @raises PermissionError: when authorization is absent
+    """
+    if not download_authorized:
+        raise PermissionError('Aerial download requires owner authorization: state the source, '
+                              'filename and size with --dry-run, then pass --download-authorized '
+                              'only after the owner approves the download in chat.')
+
+
+def fetch_tile(x: int, y: int, zoom: int, *, download_authorized: bool = False) -> Image.Image:
     """Download one satellite tile as an RGB image.
 
     @param x: tile x
     @param y: tile y
     @param zoom: zoom level
+    @param download_authorized: caller confirms the owner's authorization
     @returns: 256×256 RGB image
     """
+    require_download_authorization(download_authorized)
     req = urllib.request.Request(tile_url(x, y, zoom), headers=HDR)
     raw = urllib.request.urlopen(req, timeout=30).read()
     return Image.open(io.BytesIO(raw)).convert('RGB')
@@ -93,6 +111,27 @@ def tile_range(bbox: tuple[int, int, int, int], zoom: int) -> tuple[int, int, in
     if tx1 - tx0 + 1 > MAX_TILES or ty1 - ty0 + 1 > MAX_TILES:
         raise ValueError(f'{tx1 - tx0 + 1}x{ty1 - ty0 + 1} tiles at z{zoom}: lower --zoom or --radius (max {MAX_TILES} a side)')
     return tx0, ty0, tx1, ty1
+
+
+def download_plan(bbox: tuple[int, int, int, int], zoom: int, output: Path) -> dict:
+    """Describe a proposed download without network access or filesystem writes.
+
+    @param bbox: MC x0, z0, x1, z1
+    @param zoom: zoom level
+    @param output: destination sheet filename
+    @returns: source, filename, tile count and explicitly labelled size estimate
+    """
+    tx0, ty0, tx1, ty1 = tile_range(bbox, zoom)
+    count = (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
+    return {
+        'source': BASE,
+        'output': str(output),
+        'bbox': bbox,
+        'zoom': zoom,
+        'tile_count': count,
+        'estimated_bytes': count * TILE * TILE * 3,
+        'size_note': 'Uncompressed RGB tiles; compressed download and output PNG sizes vary.',
+    }
 
 
 def grid_lines(bbox: tuple[int, int, int, int]) -> list[dict]:
@@ -148,7 +187,8 @@ def _font(size: int = 11):
 
 
 def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
-                outlines: list[dict] | None = None, marks: list | None = None) -> Image.Image:
+                outlines: list[dict] | None = None, marks: list | None = None, *,
+                download_authorized: bool = False) -> Image.Image:
     """Stitch downloaded tiles and draw the bbox outline plus labelled MC grid.
 
     @param bbox: MC x0, z0, x1, z1 to outline (tiles cover it)
@@ -156,15 +196,17 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
     @param scale: resize factor for each 256 px tile (1 = native)
     @param outlines: optional building outlines (osm_outlines()), drawn red with a yellow label at the centroid
     @param marks: optional [(x, z, colour)] MC cells drawn as translucent squares
+    @param download_authorized: caller confirms the owner's authorization
     @returns: RGB image
     """
+    require_download_authorization(download_authorized)
     tx0, ty0, tx1, ty1 = tile_range(bbox, zoom)
     s = max(1, int(round(TILE * scale)))
     w, h = (tx1 - tx0 + 1) * s, (ty1 - ty0 + 1) * s
     im = Image.new('RGBA', (w, h))
     for y in range(ty0, ty1 + 1):
         for x in range(tx0, tx1 + 1):
-            tile = fetch_tile(x, y, zoom)
+            tile = fetch_tile(x, y, zoom, download_authorized=download_authorized)
             if s != TILE:
                 tile = tile.resize((s, s), Image.Resampling.BILINEAR)
             im.paste(tile, ((x - tx0) * s, (y - ty0) * s))
@@ -212,7 +254,8 @@ def sheet_image(bbox: tuple[int, int, int, int], zoom: int, scale: float = 1.0,
 
 
 def write_sheet(name: str, bbox: tuple[int, int, int, int], zoom: int, scale: float,
-                outlines: list[dict] | None = None, marks: list | None = None) -> Path:
+                outlines: list[dict] | None = None, marks: list | None = None, *,
+                download_authorized: bool = False) -> Path:
     """Download tiles, compose the sheet, write PNG under instance/google-aerial/.
 
     @param name: file stem
@@ -221,11 +264,14 @@ def write_sheet(name: str, bbox: tuple[int, int, int, int], zoom: int, scale: fl
     @param scale: tile resize factor
     @param outlines: optional building outlines (osm_outlines())
     @param marks: optional [(x, z, colour)] cells to colour
+    @param download_authorized: caller confirms the owner's authorization
     @returns: path to the PNG
     """
+    require_download_authorization(download_authorized)
     SHEETS.mkdir(parents=True, exist_ok=True)
     out = SHEETS / f'{name}.png'
-    sheet_image(bbox, zoom, scale, outlines, marks).save(out, format='PNG')
+    sheet_image(bbox, zoom, scale, outlines, marks,
+                download_authorized=download_authorized).save(out, format='PNG')
     return out
 
 
@@ -243,9 +289,10 @@ def _bbox(a: argparse.Namespace) -> tuple[tuple[int, int, int, int], str, int]:
     return (x - r, z - r, x + r, z + r), f'at_{x}_{z}', a.zoom or 20
 
 
-def main() -> int:
+def main(argv=None) -> int:
     """CLI entry point.
 
+    @param argv: optional argv override
     @returns: exit code
     """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -258,7 +305,9 @@ def main() -> int:
     ap.add_argument('--scale', type=float, default=1.0, help='tile resize factor (1 = native 256 px)')
     ap.add_argument('--outlines', action='store_true', help='draw the OSM building outlines (red, way-id tail) on the sheet')
     ap.add_argument('--marks', help='JSON file [[x, z, "#rrggbb"], ...]: MC cells to colour on the sheet')
-    a = ap.parse_args()
+    ap.add_argument('--dry-run', action='store_true', help='describe source, filename and size without downloading')
+    ap.add_argument('--download-authorized', action='store_true', help='confirm the owner authorized this download in chat')
+    a = ap.parse_args(argv)
     bbox, name, zoom = _bbox(a)
     if a.cmd == 'url':
         cx, cz = (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
@@ -266,11 +315,16 @@ def main() -> int:
         print(tile_url(int(fx), int(fy), zoom))
         return 0
     try:
+        stem = name + ('_osm' if a.outlines else '') + ('_marks' if a.marks else '')
+        print(json.dumps(download_plan(bbox, zoom, SHEETS / f'{stem}.png')))
+        if a.dry_run:
+            return 0
+        require_download_authorization(a.download_authorized)
         outlines = osm_outlines(bbox) if a.outlines else None
         marks = [tuple(m) for m in json.loads(Path(a.marks).read_text())] if a.marks else None
-        path = write_sheet(name + ('_osm' if a.outlines else '') + ('_marks' if marks else ''), bbox, zoom,
-                           a.scale, outlines, marks)
-    except ValueError as e:
+        path = write_sheet(stem, bbox, zoom, a.scale, outlines, marks,
+                           download_authorized=a.download_authorized)
+    except (ValueError, PermissionError) as e:
         print(e, file=sys.stderr)
         return 2
     tx0, ty0, tx1, ty1 = tile_range(bbox, zoom)

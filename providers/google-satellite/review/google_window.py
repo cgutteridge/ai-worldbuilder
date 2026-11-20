@@ -5,6 +5,9 @@ Downloads tiles via ``google_aerial.fetch_tile``, warps them to an exact MC bloc
 pixels to the MC grid), draws a 5-block grid, writes a PNG under ``instance/google-aerial/``. Agents ``Read``
 the PNG — no browser. Do not commit these files into ``reference/``.
 
+Use ``--dry-run`` to state the source, filename and size estimate. Pass
+``--download-authorized`` only after the owner approves this download in chat.
+
   python3 shims/google_window.py crop --at 6240,-5664 --half 32x16 --ppb 13        # reading window
   python3 shims/google_window.py crop --at 6240,-5664 --half 32x16 --outlines      # + OSM building outlines
   python3 shims/google_window.py plan --at 6240,-5664 --half 32x16 --plan p.json   # planned crowns
@@ -37,7 +40,8 @@ def _font(size: int = 11):
 
 
 def window_image(cx: int, cz: int, hx: int, hz: int, ppb: int,
-                 draw_extra: Callable[[ImageDraw.ImageDraw, int, int, int], None]) -> Image.Image:
+                 draw_extra: Callable[[ImageDraw.ImageDraw, int, int, int], None], *,
+                 download_authorized: bool = False) -> Image.Image:
     """Exact crop x cx-hx..cx+hx, z cz-hz..cz+hz with MC grid and optional overlays.
 
     @param cx: centre MC x
@@ -46,8 +50,10 @@ def window_image(cx: int, cz: int, hx: int, hz: int, ppb: int,
     @param hz: half-height in blocks
     @param ppb: pixels per block
     @param draw_extra: ``(draw, x0, z0, ppb)`` to paint extra overlays
+    @param download_authorized: caller confirms the owner's authorization
     @returns: RGB image
     """
+    G.require_download_authorization(download_authorized)
     x0, z0, x1, z1 = cx - hx, cz - hz, cx + hx, cz + hz
     w, h = 2 * hx * ppb, 2 * hz * ppb
     tx0, ty0, tx1, ty1 = G.tile_range((x0, z0, x1, z1), ZOOM)
@@ -56,7 +62,8 @@ def window_image(cx: int, cz: int, hx: int, hz: int, ppb: int,
     tiles = Image.new('RGB', (tw, th))
     for y in range(ty0, ty1 + 1):
         for x in range(tx0, tx1 + 1):
-            tiles.paste(G.fetch_tile(x, y, ZOOM), ((x - tx0) * s, (y - ty0) * s))
+            tiles.paste(G.fetch_tile(x, y, ZOOM, download_authorized=download_authorized),
+                        ((x - tx0) * s, (y - ty0) * s))
 
     # Window corners in tile-pixel space → affine window→tile for PIL Image.transform.
     p = [((fx - tx0) * s, (fy - ty0) * s) for fx, fy in G.mc_to_tile([(x0, z0), (x1, z0), (x0, z1)], ZOOM)]
@@ -131,18 +138,28 @@ def main(argv=None) -> int:
     ap.add_argument('--ppb', type=int, default=13, help='pixels per block')
     ap.add_argument('--outlines', action='store_true')
     ap.add_argument('--plan', help='JSON {"trees": [[x, z, r, kind]], "skipped": [[x, z, r, why]]} (trees_replan.py writes it)')
+    ap.add_argument('--dry-run', action='store_true', help='describe source, filename and size without downloading')
+    ap.add_argument('--download-authorized', action='store_true', help='confirm the owner authorized this download in chat')
     a = ap.parse_args(argv)
     cx, cz = (int(v) for v in a.at.split(','))
     hx, hz = (int(v) for v in a.half.split('x'))
+    out = G.SHEETS / f'{"p" if a.mode == "plan" else "w"}_{cx}_{cz}.png'
+    try:
+        print(json.dumps(G.download_plan((cx - hx, cz - hz, cx + hx, cz + hz), ZOOM, out)))
+        if a.dry_run:
+            return 0
+        G.require_download_authorization(a.download_authorized)
+    except (ValueError, PermissionError) as e:
+        ap.error(str(e))
     if a.mode == 'plan':
         fn = plan_draw(json.loads(open(a.plan).read()))
     elif a.outlines:
         fn = outlines_draw((cx - hx, cz - hz, cx + hx, cz + hz))
     else:
         fn = lambda *_a: None  # noqa: E731
-    out = G.SHEETS / f'{"p" if a.mode == "plan" else "w"}_{cx}_{cz}.png'
     G.SHEETS.mkdir(parents=True, exist_ok=True)
-    window_image(cx, cz, hx, hz, a.ppb, fn).save(out, format='PNG')
+    window_image(cx, cz, hx, hz, a.ppb, fn,
+                 download_authorized=a.download_authorized).save(out, format='PNG')
     print(f'Read: {out}  x {cx - hx}..{cx + hx} z {cz - hz}..{cz + hz}  {a.ppb} px/block')
     return 0
 
