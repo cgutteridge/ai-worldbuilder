@@ -15,6 +15,32 @@ JUNK_ABOVE = ('_log', 'leaves', '_carpet', 'sapling')
 # Cell-marker hazard tape (cell_marker.WOOL): ~30 above ground, so any height, not just high ones.
 MARKER_WOOL = ('black_wool', 'yellow_wool')
 
+# Below the lowest ground the tool builds: lidar ghost ground fills stone from Y 1 up
+# (``lidar_ghost.FILL_BOTTOM``), so under Y 1 there is only the empty save (bedrock, or air down to it).
+WORLD_FLOOR_Y = 0
+# Metres below sea level (0 m on the lidar datum) that ground may still lie. The lowest UK land is
+# about -3 m (the Fens); low tide and dock water a little more. Ground deeper than this is not expected.
+LOW_GROUND_MARGIN_M = 10
+
+
+def probe_floor() -> int:
+    """Highest Y the surface probe never reads: ground at or below it is not looked for.
+
+    Derived from the active world: sea level (``world-frame.json`` ``y_offset``) minus
+    :data:`LOW_GROUND_MARGIN_M`, never below :data:`WORLD_FLOOR_Y`. ``surface_y``, the layer
+    warm-ups (``ground_layer.probe_y_range``) and the ground layer's support and cavity searches all
+    use it, so the prefetch always covers what the probe reads. Not below the ghost fill: the
+    cavity search would otherwise fill the empty save's air under every column. With no world
+    selected (unit tests) it is :data:`WORLD_FLOOR_Y`.
+
+    @returns: floor Y (``surface_y`` reads down to ``probe_floor() + 1``)
+    """
+    import script_env
+    if not script_env.world_bound():
+        return WORLD_FLOOR_Y
+    from world_frame import load_frame
+    return max(WORLD_FLOOR_Y, load_frame().y_offset - LOW_GROUND_MARGIN_M)
+
 
 def short_id(block: str) -> str:
     """Block id without ``minecraft:`` or ``[state]``."""
@@ -32,13 +58,16 @@ def is_tree_or_plant_block(block: str) -> bool:
     return 'sapling' in short or any(j in block for j in JUNK_ABOVE) or short in PLANTS
 
 
-def surface_y(w: World, x: int, z: int, top: int = 110) -> tuple[int, str] | None:
+def surface_y(w: World, x: int, z: int, top: int = 110, floor: int | None = None) -> tuple[int, str] | None:
     """Top ground block of a column, skipping air, plants, logs, leaves and marker wool (any height).
 
+    @param floor: highest Y not read; default :func:`probe_floor`
     @returns: (y, short block id), or None for an empty column. Water counts as a surface.
     """
+    if floor is None:
+        floor = probe_floor()
     y = top
-    while y > 30:
+    while y > floor:
         b = w.block(x, y, z) or 'minecraft:air'
         if is_water(b):
             return y, short_id(b)

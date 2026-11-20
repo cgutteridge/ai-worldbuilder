@@ -629,12 +629,12 @@ class TestPrefetchBatching(unittest.TestCase):
         from pass_mask import clip_to_cell
         items = self.barrier_items()
         w = FakeLive()
-        dl.warm_decor_columns(w, dl.decor_columns(items, []))
+        view = dl.snapshot_decor_columns(w, dl.decor_columns(items, []))   # what plan_cell does (#263)
         found, _rep, _un = dl.place_barriers_from_plan(
-            (0, 0), items, w, way=set(), near1=set(), owned=set(), masked=set())
+            (0, 0), items, view, way=set(), near1=set(), owned=set(), masked=set())
         self.assertEqual(len(found), 200)
-        joins = dl.join_pieces(found, lambda p: w.block(*p),
-                               lambda pos, mat='': dl.is_air(w.block(*pos)), {})
+        joins = dl.join_pieces(found, lambda p: view.block(*p),
+                               lambda pos, mat='': dl.is_air(view.block(*pos)), {})
         found.update(joins)
         placed, _ = clip_to_cell(found, 0, 0)
         w.prefetch(placed)                                # what apply_cell does before build_mask

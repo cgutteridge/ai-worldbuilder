@@ -817,16 +817,45 @@ class TestWarmSurfaceProbe(unittest.TestCase):
                 calls.append(set(positions))
 
         gl.warm_surface_probe(Stub(), 0, 0, 33, 1)
-        ylo, yhi = gl.PROBE_Y_RANGE
+        ylo, yhi = gl.probe_y_range()
         self.assertEqual(len(calls), 3)                      # 34 x columns in strips of 16
         got = set().union(*calls)
         self.assertEqual(len(got), 34 * 2 * (yhi - ylo + 1))
         self.assertIn((33, gl.SCAN_TOP, 1), got)
         self.assertEqual(yhi, gl.SCAN_TOP)
-        self.assertIn((0, 31, 0), got)
+        self.assertIn((0, ylo, 0), got)
+        self.assertNotIn((0, ylo - 1, 0), got)
 
     def test_world_without_prefetch_is_fine(self):
         gl.warm_surface_probe(object(), 0, 0, 3, 3)
+
+    def test_warm_up_covers_every_read_of_a_low_ground_probe(self):
+        """Ground at Y 14 (y_offset 11): every block ``surface_y`` reads was prefetched, so none is a paced call."""
+        import surface_probe
+        from test_surface_probe import bound_world
+
+        class Low:
+            """Grass up to ``ground`` (None: an empty column); records reads the warm-up missed."""
+
+            def __init__(self, ground):
+                self.ground, self.warmed, self.cold = ground, set(), []
+
+            def prefetch(self, positions):
+                self.warmed.update(positions)
+
+            def block(self, x, y, z):
+                if (x, y, z) not in self.warmed:
+                    self.cold.append((x, y, z))
+                return 'minecraft:grass_block' if self.ground is not None and y <= self.ground else 'minecraft:air'
+
+        for ground in (14, None):
+            with self.subTest(ground=ground), bound_world(11):
+                w = Low(ground)
+                gl.warm_surface_probe(w, 0, 0, 3, 3)
+                got = {gl.surface_y(w, x, z) for x in range(4) for z in range(4)}
+                self.assertEqual(got, {(14, 'grass_block')} if ground else {None})
+                self.assertEqual(w.cold, [])
+                self.assertEqual(gl.probe_y_range(), (11 - surface_probe.LOW_GROUND_MARGIN_M + 1, gl.SCAN_TOP))
 
 
 
@@ -1165,7 +1194,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
 
     def test_surface_on_the_probe_floor_rests_on_the_baseline(self):
         """A surface at the lowest probed y has nothing readable below it; that is not a float."""
-        floor_y = gl.PROBE_Y_RANGE[0]
+        floor_y = gl.probe_y_range()[0]
         stone = lambda x, y, z: 'minecraft:stone' if y <= floor_y else None   # noqa: E731
         self.assertEqual(gl.support_y(stone, 0, floor_y, 0), floor_y - 1)
         self.assertEqual(gl.floating_tops({}, stone, {(0, 0): floor_y}), [])
@@ -1238,14 +1267,15 @@ class TestBridgeTunnelAndCavity(SyntheticGroundBox, unittest.TestCase):
         return self.LIDAR
 
     def world(self, extra=None, crust=False, ghost_top=36):
-        """Ghost stone y31..``ghost_top`` everywhere; with ``crust`` another run at y49-52 (cavity y37..48)."""
+        """Ghost stone y1..``ghost_top`` everywhere (as ``lidar_ghost`` fills it); with ``crust`` another run
+        at y49-52 (cavity y37..48)."""
         from block_store import MemoryBlocks
         from site_kit import World
         x0, z0, x1, z1 = self.BOX
         blocks = {}
         for x in range(x0 - 1, x1 + 2):
             for z in range(z0 - 1, z1 + 2):
-                blocks.update({(x, y, z): 'minecraft:stone' for y in range(31, ghost_top + 1)})
+                blocks.update({(x, y, z): 'minecraft:stone' for y in range(1, ghost_top + 1)})
                 if crust:
                     blocks.update({(x, y, z): 'minecraft:stone' for y in range(49, 53)})
         blocks.update(extra or {})
@@ -1316,7 +1346,7 @@ class TestBridgeTunnelAndCavity(SyntheticGroundBox, unittest.TestCase):
         self.assertIn((4, 40, 3), plan.cells)                                  # the next column's cavity still is
 
     def test_hollow_ys_lists_air_under_the_support_down_to_the_floor(self):
-        solid = {y for y in list(range(31, 37)) + list(range(49, 53))}
+        solid = {y for y in list(range(1, 37)) + list(range(49, 53))}
 
         def block(x, y, z):
             return 'minecraft:stone' if y in solid else 'minecraft:air'

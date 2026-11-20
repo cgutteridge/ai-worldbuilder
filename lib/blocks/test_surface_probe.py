@@ -33,6 +33,74 @@ class TestSurfaceY(unittest.TestCase):
         self.assertEqual(sp.surface_y(_Col({42: 'minecraft:grass_block'}), 0, 0), (42, 'grass_block'))
 
 
+def bound_world(y_offset):
+    """Patch a selected world whose ``world-frame.json`` sets ``y_offset``."""
+    from contextlib import ExitStack
+    from unittest import mock
+    from world_frame import WorldFrame
+    stack = ExitStack()
+    stack.enter_context(mock.patch('script_env.world_bound', return_value=True))
+    stack.enter_context(mock.patch('world_frame.load_frame',
+                                   return_value=WorldFrame({'offsets': {'easting': 0, 'northing': 0},
+                                                            'y_offset': y_offset})))
+    return stack
+
+
+class _Reads(_Col):
+    """Column stub that records the Y of every read."""
+
+    def __init__(self, blocks):
+        super().__init__(blocks)
+        self.ys = []
+
+    def block(self, x, y, z):
+        self.ys.append(y)
+        return super().block(x, y, z)
+
+
+class TestProbeFloor(unittest.TestCase):
+    """Low ground (river valleys, coasts) must be seen: the floor comes from the world, not Y 30."""
+
+    def test_floor_is_sea_level_less_the_margin(self):
+        with bound_world(11):                                    # southampton-build
+            self.assertEqual(sp.probe_floor(), 11 - sp.LOW_GROUND_MARGIN_M)
+        with bound_world(64):
+            self.assertEqual(sp.probe_floor(), 64 - sp.LOW_GROUND_MARGIN_M)
+
+    def test_floor_never_goes_under_the_ghost_fill(self):
+        with bound_world(0):
+            self.assertEqual(sp.probe_floor(), sp.WORLD_FLOOR_Y)
+        with bound_world(-900):                                  # a mountain site
+            self.assertEqual(sp.probe_floor(), sp.WORLD_FLOOR_Y)
+
+    def test_ghost_fill_starts_one_above_the_world_floor(self):
+        import lidar_ghost
+        self.assertEqual(lidar_ghost.FILL_BOTTOM, sp.WORLD_FLOOR_Y + 1)
+
+    def test_no_world_selected_uses_the_world_floor(self):
+        from unittest import mock
+        with mock.patch('script_env.world_bound', return_value=False):
+            self.assertEqual(sp.probe_floor(), sp.WORLD_FLOOR_Y)
+
+    def test_ground_at_y14_is_found(self):
+        """Riverside Park / the industrial trial cell: ground at Y 13-16 read as an empty column."""
+        with bound_world(11):
+            self.assertEqual(sp.surface_y(_Col({14: 'minecraft:grass_block'}), 0, 0), (14, 'grass_block'))
+            self.assertEqual(sp.surface_y(_Col({3: 'minecraft:water'}), 0, 0), (3, 'water'))
+
+    def test_empty_column_reads_down_to_the_floor_only(self):
+        col = _Reads({})
+        with bound_world(11):
+            self.assertIsNone(sp.surface_y(col, 0, 0))
+            floor = sp.probe_floor()
+        self.assertEqual(min(col.ys), floor + 1)
+
+    def test_explicit_floor_wins(self):
+        col = _Reads({14: 'minecraft:stone'})
+        self.assertIsNone(sp.surface_y(col, 0, 0, floor=30))
+        self.assertEqual(min(col.ys), 31)
+
+
 class _Grid:
     """World stub: ``{(x, y, z): block}``, air elsewhere."""
 
