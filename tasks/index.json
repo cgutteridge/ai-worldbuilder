@@ -38,7 +38,7 @@
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "NEEDS USER INPUT. houses_kitchener_road_w176658416 could not be reapplied (reapply_feature: no available recorded builder). At the owner's request I applied its old spec directly with house_build.py --apply under the lock (31905 positions, 0 mismatches), which bypasses the legacy-builder refusal and still leaves no recorded builder. Decide whether to backfill builder records for legacy spec-backed features (links #225, #228) so reapply works, and whether direct spec apply should be allowed for them."
+      "notes": "Owner decision 2026-11-20: allow explicit registration of verified legacy builders and require an override for direct applies over existing builds. Implement a dry-run-first registration command for legacy spec-backed features (house_build and feature_build), validating the named spec and binding an append-only registration to the reviewed live build entry. Require a verification reason; preserve unknown historical provenance. Reapply accepts explicit registrations and retains validation-before-undo. house_build direct apply refuses an existing landed build unless --overwrite is explicit, matching feature_build. Cover registration/refusal, journal persistence, builder identity, and overwrite/undo behavior with synthetic fixtures; no live-world changes. Original report: houses_kitchener_road_w176658416 lacked a recorded builder; owner-authorized direct house_build apply wrote 31905 positions with zero mismatches. Related #225, #228. Current house_build already records provenance for new applies."
     },
     {
       "id": 237,
