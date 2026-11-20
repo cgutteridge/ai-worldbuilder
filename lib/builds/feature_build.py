@@ -2617,8 +2617,8 @@ class Build:
         from floor_reference import outside_ground
         from window_openings import Window, DIRECTIONS, choose_windows, report_lines
         facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
-        if not facades and self._street_face_rule(f):
-            return  # class street faces replace the unevidenced all-face storey grid
+        if not facades and self._suppress_window_grid(f):
+            return  # a dressed class street face replaces the unevidenced all-face storey grid
         door = self._door_keepout(f)
         candidates = []
         # Preserve actual door leaves and their lateral framing, including jambs
@@ -2677,6 +2677,60 @@ class Build:
         roof = getattr(f, 'zone_roof', None)
         height = max(roof[c] - self._column_floor(f, c) for c in f.cells) if roof else f.storeys * STOREY_H
         return land_use.street_face_defaults(cls, tags, columns=len(f.cells), height=height)
+
+    def _fronts_for(self, f: Feature) -> dict:
+        """Street-face columns for this feature, using the mapped address street when set.
+
+        @param f: feature mass
+        @returns: ``{(x, z): face}`` from :func:`facade_plan.front_columns`
+        """
+        tags = self.building_tags.get(f.no, {})
+        return facade_plan_mod.front_columns(
+            f.cells, self.streets, occupied=self.by_no_all_cells,
+            street_name=tags.get('addr:street'))
+
+    def _shop_band_fits(self, f: Feature, cell: tuple[int, int], glass_height: int) -> bool:
+        """True when a column has room for glass, the awning row and the sign row under the roof.
+
+        @param f: feature mass
+        @param cell: ``(x, z)``
+        @param glass_height: opening height in blocks from the shop recipe
+        @returns: whether the fascia band fits below the roof
+        """
+        floor = self._column_floor(f, cell)
+        roof_y = self._column_roof_y(f, cell)
+        roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+        return floor + glass_height + 2 < roof_y
+
+    def _shop_front_fits(self, f: Feature, fronts: dict, rule: dict) -> bool:
+        """True when at least one front column can take the shop fascia band.
+
+        @param f: feature mass
+        @param fronts: street-face columns
+        @param rule: shop recipe
+        @returns: whether the shell is tall enough to dress
+        """
+        return any(self._shop_band_fits(f, cell, rule['glass_height']) for cell in fronts)
+
+    def _suppress_window_grid(self, f: Feature) -> bool:
+        """Whether the unevidenced storey grid should stay off this shell.
+
+        Industrial and big-box rules always replace that grid. A shop replaces it
+        only when a street front is actually dressed; a shop with no mapped street,
+        or a shell too low for the fascia, keeps the grid.
+
+        @param f: feature mass
+        @returns: True when the grid must not run
+        """
+        rule = self._street_face_rule(f)
+        if not rule:
+            return False
+        if rule['kind'] != 'shop':
+            return True
+        if (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
+            return False
+        fronts = self._fronts_for(f)
+        return bool(fronts) and self._shop_front_fits(f, fronts, rule)
 
     def _longest_front_run(self, cells: set) -> list:
         """Longest 4-connected front run, sorted along its long axis.
@@ -2739,13 +2793,11 @@ class Build:
         glass_h = rule['glass_height']
         rows = {}
         for cell in fronts:
+            if not self._shop_band_fits(f, cell, glass_h):
+                continue
             floor = self._column_floor(f, cell)
-            roof_y = self._column_roof_y(f, cell)
-            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
             awning_y = floor + glass_h + 1
-            sign_y = awning_y + 1
-            if sign_y < roof_y:
-                rows[cell] = (floor, awning_y, sign_y)
+            rows[cell] = (floor, awning_y, awning_y + 1)
         if door_cell not in rows:
             door_cell = None
         doors = self._door_keepout(f)
@@ -2820,13 +2872,15 @@ class Build:
         if not rule or (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
             return
         tags = self.building_tags.get(f.no, {})
-        fronts = facade_plan_mod.front_columns(
-            f.cells, self.streets, occupied=self.by_no_all_cells, street_name=tags.get('addr:street'))
+        fronts = self._fronts_for(f)
         if not fronts:
             print(f'{f.no} street face {rule["kind"]}: no mapped street front')
             return
         name = tags.get('name') or tags.get('brand') or tags.get('addr:unit') or ''
         if rule['kind'] == 'shop':
+            if not self._shop_front_fits(f, fronts, rule):
+                print(f'{f.no} street face shop: shell too low for a fascia band; left the window grid')
+                return
             self._dress_shop_front(f, fronts, rule, name)
             print(
                 f'{f.no} street face shop: {len(fronts)} columns; '

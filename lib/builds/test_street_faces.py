@@ -173,8 +173,10 @@ class StreetFaceBuildTest(unittest.TestCase):
                           building_tags={'A': body},
                           zone_data=ground,
                           streets=[street()] if streets is None else streets)
-        with redirect_stdout(io.StringIO()):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
             plan = builder.build()
+        builder.output = buf.getvalue()
         return builder, plan
 
     def test_industrial_shutter_fascia_and_bay_without_window_grid(self):
@@ -280,7 +282,8 @@ class StreetFaceBuildTest(unittest.TestCase):
     def _shop(self, shop='books', **kwargs):
         tags = {'shop': shop, 'building': 'retail'}
         tags.update(kwargs.pop('tags', {}))
-        return self.build('retail', storeys=2, tags=tags, **kwargs)
+        kwargs.setdefault('storeys', 2)
+        return self.build('retail', tags=tags, **kwargs)
 
     def test_shop_front_is_glass_door_fascia_and_contrasting_sign(self):
         name = next(candidate for candidate in (
@@ -366,12 +369,19 @@ class StreetFaceBuildTest(unittest.TestCase):
         _, plan = self._shop(shop='cafe', spec=spec)
         self.assertFalse(any('trapdoor' in state or 'oak_door' in state for state in plan.cells.values()))
 
-    def test_shop_without_a_street_is_not_dressed(self):
-        _, plan = self._shop(shop='cafe', streets=[])
-        self.assertFalse(any(
-            'glass' in state or 'trapdoor' in state or 'oak_door' in state
-            for state in plan.cells.values()))
-        self.assertEqual(plan.cells[(15, 52, 20)], 'minecraft:bricks')
+    def test_shop_without_a_street_keeps_the_window_grid(self):
+        builder, plan = self._shop(shop='cafe', streets=[])
+        self.assertIn('no mapped street front', builder.output)
+        self.assertTrue(any('glass' in state for state in plan.cells.values()))
+        self.assertFalse(any('trapdoor' in state or 'oak_door' in state
+                             for state in plan.cells.values()))
+
+    def test_single_storey_shop_keeps_the_window_grid(self):
+        builder, plan = self._shop(shop='cafe', storeys=1)
+        self.assertIn('shell too low for a fascia band', builder.output)
+        self.assertTrue(any('glass' in state for state in plan.cells.values()))
+        self.assertFalse(any('trapdoor' in state or 'oak_door' in state or '_wall_sign[' in state
+                             for state in plan.cells.values()))
 
 
 class LoadingBayTest(unittest.TestCase):
