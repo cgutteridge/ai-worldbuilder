@@ -686,6 +686,51 @@ class TestLandClassColumns(unittest.TestCase):
         self.assertNotIn((65, 65), cols)                          # unlisted value claims nothing
         self.assertNotIn((50, 50), cols)
 
+    def test_park_is_an_umbrella_over_nested_meadow_and_wood(self):
+        """#322: a path through meadow or beside wood inside a park polygon still takes park furniture."""
+        ring = lambda x0, z0, x1, z1: [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+        idx = self.Idx(areas=[(ring(0, 0, 80, 80), {'leisure': 'park', 'osm_way_id': 1}),
+                              (ring(10, 10, 30, 30), {'landuse': 'meadow', 'osm_way_id': 2}),
+                              (ring(40, 40, 60, 60), {'natural': 'wood', 'osm_way_id': 3}),
+                              (ring(60, 10, 70, 20), {'leisure': 'nature_reserve', 'osm_way_id': 4}),
+                              (ring(200, 0, 220, 20), {'landuse': 'meadow', 'osm_way_id': 5})],
+                       buildings=[])
+        cols = dp.land_class_columns(idx, (0, 0, 230, 80))
+        self.assertEqual(cols[(20, 20)], 'park')                  # meadow nested in the park
+        self.assertEqual(cols[(50, 50)], 'park')                  # wood is cover: the park use polygon holds it
+        self.assertEqual(cols[(65, 15)], 'park')                  # nested reserve
+        self.assertEqual(cols[(210, 10)], 'rural')                # meadow outside any park stays rural
+
+    def test_grass_cover_and_other_classes_are_not_an_umbrella(self):
+        ring = lambda x0, z0, x1, z1: [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+        idx = self.Idx(areas=[(ring(0, 0, 80, 80), {'landuse': 'grass', 'osm_way_id': 1}),
+                              (ring(10, 10, 30, 30), {'landuse': 'meadow', 'osm_way_id': 2}),
+                              (ring(100, 0, 180, 80), {'landuse': 'residential', 'osm_way_id': 3}),
+                              (ring(110, 10, 130, 30), {'landuse': 'orchard', 'osm_way_id': 4})],
+                       buildings=[])
+        cols = dp.land_class_columns(idx, (0, 0, 200, 80))
+        self.assertEqual(cols[(20, 20)], 'rural')                 # grass cover is no umbrella
+        self.assertEqual(cols[(120, 20)], 'rural')                # nor is a residential polygon
+
+    def test_a_footway_through_nested_meadow_in_a_park_gets_benches(self):
+        ring = lambda x0, z0, x1, z1: [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+        meadow = (ring(10, 50, 120, 80), {'landuse': 'meadow', 'osm_way_id': 2})
+        inside = self.Idx(areas=[(ring(0, 0, 127, 127), {'leisure': 'park', 'osm_way_id': 1}), meadow], buildings=[])
+        alone = self.Idx(areas=[meadow], buildings=[])
+        path = _way('footway', [(12.0, 64.0), (115.0, 64.0)], half=1.0, lit='no')
+        results = {}
+        for name, idx in (('in park', inside), ('alone', alone)):
+            plan = dp.build_decor_plan(
+                (0, 0), map_barriers={}, garden=[], rgb={}, footprint=set(), canopy=set(), path_lines=[path],
+                land_classes=dp.land_class_columns(idx, (0, 0, 127, 127)), district_profile={})
+            results[name] = plan
+        benches = [i for i in results['in park']['items'] if i['kind'] == 'bench']
+        self.assertGreaterEqual(len(benches), 1)
+        self.assertNotIn('no bench density for the adjoining class',
+                         results['in park']['furniture_inference']['ways_skipped'])
+        self.assertIn('no bench density for the adjoining class',        # the same meadow outside a park: none
+                      results['alone']['furniture_inference']['ways_skipped'])
+
 
 class TestUnresolvedBarrierReporting(unittest.TestCase):
     def barrier(self, item_id='boundary', reason='', **extra):

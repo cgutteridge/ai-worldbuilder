@@ -32,6 +32,12 @@ water, transport, parking, unknown. Read it as follows.
   `building=house` stays residential.
 - Use polygons (what the land is for): smallest wins. Cover polygons (grass, flowerbed, natural
   cover) set the class only where no use polygon covers the column.
+- Exception for furniture (#322): a park-class use polygon (`leisure=park`, `garden`, `common`, ...)
+  is an umbrella. Columns inside it that the smallest-polygon rule would give to a nested rural or
+  natural polygon (`landuse=meadow`, `orchard`, `leisure=nature_reserve`) read as park for
+  `decor_plan.land_class_columns`, so a path through them takes park furniture (bench density).
+  Wood and other cover polygons already lose to the park use polygon. `landuse=grass` is cover, not an
+  umbrella. Buildings and the coverage rule itself are unchanged.
 - Unknown carries a reason: `not_checked` (no clip that asked for landuse covers it, so fetch),
   `unmapped`, or `unlisted` (a tag value the table does not know). No neighbour inheritance.
 - The class never paints surfaces and never authorises a fence: every boundary default is null.

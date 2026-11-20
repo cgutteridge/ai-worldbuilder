@@ -800,11 +800,39 @@ def _dilate(cols: Iterable[tuple[int, int]], n: int) -> set[tuple[int, int]]:
     return {(x + a, z + b) for x, z in cols for a in range(-n, n + 1) for b in range(-n, n + 1)}
 
 
+PARK_UMBRELLA_OVER = ('rural', 'natural')   # nested land that a park polygon still reads as park (#322)
+
+
+def park_umbrella_columns(idx, box: tuple[int, int, int, int]) -> set[tuple[int, int]]:
+    """Columns of ``box`` inside any park-class use polygon, however small a polygon nests inside it.
+
+    The coverage rule gives a column to the smallest use polygon, so a path through a
+    ``landuse=meadow`` patch inside ``leisure=park`` reads as rural and takes no benches (#322). A
+    path inside a park is still a park path: the park polygon is the umbrella. Park-class cover
+    polygons (``landuse=grass``) are not an umbrella; they only classify columns no use polygon holds.
+
+    @param idx: ``OSMIndex`` (reads ``idx.areas``)
+    @param box: inclusive ``(x0, z0, x1, z1)``
+    @returns: set of ``(x, z)`` columns
+    """
+    from coverage import osm_tags, scan_polygon
+    import land_use
+
+    cols: set[tuple[int, int]] = set()
+    for rings, props in idx.areas:
+        hit = land_use.area_class(osm_tags(props))
+        if hit and hit['kind'] == 'use' and hit['class'] == 'park':
+            cols.update(scan_polygon(rings, box))
+    return cols
+
+
 def land_class_columns(idx, box: tuple[int, int, int, int]) -> dict[tuple[int, int], str]:
     """Land-use class (#253) of each column in ``box`` that a polygon or building classifies.
 
-    Area polygons by the coverage rule (smallest use polygon, then cover), then each building's own
-    class over its footprint. Columns nothing classifies are absent (``unknown`` claims nothing).
+    Area polygons by the coverage rule (smallest use polygon, then cover), except that a park polygon
+    is an umbrella over nested rural or natural land (#322, :func:`park_umbrella_columns`), then each
+    building's own class over its footprint. Columns nothing classifies are absent (``unknown``
+    claims nothing). Only furniture reads this map; the coverage rule itself is unchanged.
 
     @param idx: ``OSMIndex``
     @param box: inclusive ``(x0, z0, x1, z1)``
@@ -814,6 +842,9 @@ def land_class_columns(idx, box: tuple[int, int, int, int]) -> dict[tuple[int, i
 
     classes = area_classes(idx, box)
     out = {q: v[0] for q, v in classes.items() if v[0] != 'unknown'}
+    for q in park_umbrella_columns(idx, box):
+        if out.get(q) in PARK_UMBRELLA_OVER:
+            out[q] = 'park'
     x0, z0, x1, z1 = box
     by_building: dict[int, str] = {}
     for q, i in idx.cells().items():
