@@ -203,15 +203,7 @@
       "blockedBy": [],
       "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
-    {
-      "id": 329,
-      "title": "Evidence revision must not hash build specs",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause (read from code, not yet confirmed as the trial's exact trigger): LocalEvidence.source_revision() in lib/journal/readiness_evidence.py hashes every json/png under the world's config/, reference/ and site/builds/, so every new or changed build spec changes the evidence revision of every cell: landing a feature stales its neighbours (the trial re-ran prepare --evidence-only by hand; the sheds and Westquay neighbours went stale). Probably also the unexplained cause in blocked task #232 ('did not find which input changes'); relates to #234, do not set blockedBy. The site/builds hash was added in 88ac28d with no recorded reason; spec content is already covered by plan identity and plan_refs. Deliverable: drop site/builds from source_revision (evidence only). Confirm first by diffing revision_parts before and after a spec write. Check: test: write a spec under site/builds, evidence revisions of other cells do not change; live: apply a feature crossing into 51,-36 straight after another landed, with no 'evidence facts changed' refusal and no manual prepare. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
     {
       "id": 330,
       "title": "Industrial and big-box street-face rules by land-use class",
