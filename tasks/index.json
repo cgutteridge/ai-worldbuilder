@@ -52,11 +52,11 @@
     {
       "id": 238,
       "title": "Background cell sessions downloaded aerial tiles without authorization",
-      "status": "blocked",
+      "status": "doing",
       "priority": "low",
       "complexity": "xs",
       "blockedBy": [],
-      "notes": "NEEDS USER INPUT (process). The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs."
+      "notes": "The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs. Decision 2026-11-20: owner approved an explicit download-authorization flag; implement and test offline without world edits."
     },
     
     
