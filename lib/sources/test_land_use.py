@@ -214,6 +214,23 @@ class Table(unittest.TestCase):
         self.row('park')['surface'] = {'unmapped_paving': None}
         L.validate_table(self.doc)
 
+    def test_shipped_path_widen_per_class(self):
+        got = {cid: L.path_widen(cid) for cid in L.CLASSES}
+        self.assertEqual({k: v for k, v in got.items() if v}, {'park': 3})
+        self.assertIsNone(L.path_widen('residential'))
+        self.assertIsNone(L.path_widen('banana'))
+
+    def test_path_widen_is_optional_and_checked(self):
+        self.row('park')['surface'] = {'unmapped_paving': 'dirt'}
+        L.validate_table(self.doc)                                  # absent key widens nothing
+        for bad in (0, 7, 2.5, '3', True):
+            self.row('park')['surface'] = {'path_widen': bad}
+            with self.assertRaisesRegex(L.TableError, 'path_widen'):
+                L.validate_table(self.doc)
+        for good in (None, 1, 6):
+            self.row('park')['surface'] = {'path_widen': good}
+            L.validate_table(self.doc)
+
     def test_unknown_row_column_refused(self):
         self.row('park')['ground_texture'] = None
         with self.assertRaisesRegex(L.TableError, 'unknown column'):
