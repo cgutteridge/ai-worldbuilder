@@ -281,15 +281,21 @@ class Table(unittest.TestCase):
         self.assertEqual(L.planting_rule('residential', 'flowers'),
                          {'share': 0.08, 'kinds': ['poppy', 'dandelion']})
         for cls in set(L.CLASSES) - {'residential'} | {'unlisted'}:
-            for kind in ('shrubs', 'flowers', 'pond'):
+            for kind in ('shrubs', 'flowers', 'cover', 'pond'):
                 self.assertIsNone(L.planting_rule(cls, kind), (cls, kind))
+        self.assertEqual(L.planting_rule('residential', 'cover'),
+                         {'share': 0.12, 'kinds': ['short_grass', 'fern']})
         self.assertIsNone(L.planting_rule('residential', 'pond'))
 
     def test_bad_planting_schema_refused(self):
         valid = copy.deepcopy(self.row('residential')['planting'])
         invalid = [False, [], {}, dict(valid, unknown=None), dict(valid, pond={}),
                    dict(valid, shrubs={}), dict(valid, shrubs={'per_columns': 6, 'extra': 1}),
-                   dict(valid, flowers={}), dict(valid, flowers={'share': .1, 'kinds': ['poppy'], 'extra': 1})]
+                   dict(valid, flowers={}), dict(valid, flowers={'share': .1, 'kinds': ['poppy'], 'extra': 1}),
+                   dict(valid, cover={}), dict(valid, cover={'share': .1, 'kinds': ['fern'], 'extra': 1})]
+        invalid += [dict(valid, cover={'share': n, 'kinds': ['fern']}) for n in (0, -.1, .31, True, '0.1', None)]
+        invalid += [dict(valid, cover={'share': .1, 'kinds': kinds})
+                    for kinds in ([], ['fern', 'fern'], ['fern'] * 4, ['stone'], 'fern', [None])]
         invalid += [dict(valid, shrubs={'per_columns': n}) for n in (0, -1, True, 1.5, '6', None)]
         invalid += [dict(valid, flowers={'share': n, 'kinds': ['poppy']})
                     for n in (0, -.1, .21, True, '0.1', None, float('nan'))]
@@ -308,8 +314,9 @@ class Table(unittest.TestCase):
                 L.validate_table(doc)
 
     def test_planting_null_rules_and_limits(self):
-        for rule in ({'shrubs': None, 'flowers': None, 'pond': None},
-                     {'shrubs': {'per_columns': 1}, 'flowers': {'share': .2, 'kinds': ['fern']}, 'pond': None}):
+        for rule in ({'shrubs': None, 'flowers': None, 'cover': None, 'pond': None},
+                     {'shrubs': {'per_columns': 1}, 'flowers': {'share': .2, 'kinds': ['fern']},
+                      'cover': {'share': .3, 'kinds': ['short_grass', 'fern', 'tall_grass']}, 'pond': None}):
             self.row('residential')['planting'] = rule
             self.assertEqual(L.validate_table(self.doc)['classes']['residential']['planting'], rule)
 
