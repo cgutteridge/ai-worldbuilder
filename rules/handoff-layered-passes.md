@@ -27,6 +27,11 @@ In-flight applies are `begun` journal entries; mess-in-a-cell → `cell_registry
  report missing feature builds, layer passes, and trees-mask currency; a finished cell with an
  old tree mask is reopened for a trees re-run.
 
+Cell approvals (#327): `cell_registry.py approve tx,tz --layers ghost,buildings,ground,trees,decor,dressing`
+records which layers the owner signed off (latest note replaces the earlier one; read with
+`CellRegistry.approved_layers`). An approval never stands in for a pass: ground-layer work
+(`Plan.ground_marking`) is refused on any cell without a landed ground pass.
+
 Gardens (user, 2026-10-14): a house feature is the house only. Gardens belong to the later
 passes: lawn/paving = GROUND, trees and shrubs = TREES, fences, hedges, sheds, planting and
 other small things = DECOR. Feature builds must not lay garden cells.

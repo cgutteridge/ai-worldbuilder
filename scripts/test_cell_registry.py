@@ -83,6 +83,15 @@ class RegistryCliTest(unittest.TestCase):
         self.assertEqual([(n.kind, n.ref, n.body) for n in self.view().notes],
                          [('review', 'trees-over-roof:1,2,3,4', 'crown kept')])
 
+    def test_approve_records_layers_and_rejects_unknown_ones(self):
+        reg = lambda: R.view_registry(self.root)
+        self.assertEqual(reg().approved_layers((48, -44)), frozenset())
+        code, out = run('--root', self.root, 'approve', '48,-44', '--layers', 'ghost,buildings')
+        self.assertEqual(code, 0)
+        self.assertEqual(reg().approved_layers((48, -44)), {'ghost', 'buildings'})
+        self.assertEqual(run('--root', self.root, 'approve', '48,-44', '--layers', 'ground,sky')[0], 2)
+        self.assertEqual(reg().approved_layers((48, -44)), {'ghost', 'buildings'})   # refusal wrote nothing
+
     def test_register_feature_is_gone(self):
         with self.assertRaises(SystemExit):
             with contextlib.redirect_stderr(io.StringIO()):
