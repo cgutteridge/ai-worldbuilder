@@ -147,6 +147,46 @@ class AreaRaster(unittest.TestCase):
         self.assertEqual(C.building_land_use(idx, *idx.buildings[0], classes)['class'], 'unknown')
 
 
+class BuildingCentroid(unittest.TestCase):
+    def test_holes_cover_and_unlisted_polygons_do_not_supply_inheritance(self):
+        retail = sq(0, 0, 30, 30) + sq(10, 10, 20, 20)
+        idx = index(areas=[(sq(-500000, -500000, 500000, 500000), {'landuse': 'industrial'}),
+                           (retail, {'landuse': 'retail'}),
+                           (sq(10, 10, 20, 20), {'landuse': 'grass'}),
+                           (sq(10, 10, 20, 20), {'landuse': 'banana'})],
+                    buildings=[(sq(12, 12, 18, 18), {'building': 'yes'})])
+        got = C.building_land_use(idx, *idx.buildings[0])
+        self.assertEqual((got['class'], got['reason'], got['ref']),
+                         ('industrial', 'use_polygon', 'w1'))
+        idx.areas.pop(0)
+        self.assertEqual(C.building_land_use(idx, *idx.buildings[0])['class'], 'unknown')
+
+    def test_holes_are_subtracted_when_ranking_whole_polygon_sizes(self):
+        retail = sq(-10, -10, 50, 50) + sq(10, -9, 49, 49)
+        idx = index(areas=[(sq(0, 0, 40, 40), {'landuse': 'industrial'}),
+                           (retail, {'landuse': 'retail'})],
+                    buildings=[(sq(5, 5, 9, 9), {'building': 'yes'})])
+        self.assertEqual(C.building_land_use(idx, *idx.buildings[0])['class'], 'commercial')
+
+    def test_split_reference_sizes_include_parts_outside_the_centroid(self):
+        idx = index(areas=[(sq(0, 0, 20, 20), {'landuse': 'industrial'}),
+                           (sq(5, 5, 15, 15), {'landuse': 'retail'}),
+                           (sq(100, 100, 150, 150), {'landuse': 'retail'})],
+                    buildings=[(sq(6, 6, 10, 10), {'building': 'yes'})])
+        idx.areas[2][1]['osm_way_id'] = idx.areas[1][1]['osm_way_id']
+        for ordered in (idx.areas, list(reversed(idx.areas))):
+            with self.subTest(refs=[p['osm_way_id'] for _, p in ordered]):
+                idx.areas = ordered
+                self.assertEqual(C.building_land_use(idx, *idx.buildings[0])['class'], 'industrial')
+
+    def test_repeated_polygon_does_not_inflate_its_size(self):
+        idx = index(areas=[(sq(0, 0, 20, 20), {'landuse': 'industrial'}),
+                           (sq(2, 2, 18, 18), {'landuse': 'retail'})],
+                    buildings=[(sq(6, 6, 10, 10), {'building': 'yes'})])
+        idx.areas.append(idx.areas[1])
+        self.assertEqual(C.building_land_use(idx, *idx.buildings[0])['class'], 'commercial')
+
+
 class CheckedExtent(unittest.TestCase):
     def test_layer_extent_comes_from_clip_name(self):
         from pathlib import Path

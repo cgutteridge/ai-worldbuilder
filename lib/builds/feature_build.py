@@ -1677,12 +1677,11 @@ class Build:
                     continue
                 tags = osm_footprints.osm_tags(props)
                 self.building_tags.setdefault(label, tags)
-                cls = land_use.classify_building(tags)['class']
-                if cls == 'unknown' and getattr(self.idx, 'areas', None):
-                    from coverage import area_classes, building_land_use, polygon_centroid
-                    cx, cz = polygon_centroid(rings)
-                    classes = area_classes(self.idx, (cx, cz, cx, cz))
-                    cls = building_land_use(self.idx, rings, props, classes)['class']
+                if getattr(self.idx, 'areas', None):
+                    from coverage import building_land_use
+                    cls = building_land_use(self.idx, rings, props)['class']
+                else:
+                    cls = land_use.classify_building(tags)['class']
                 self.land_uses[label] = cls
         self.streets = (streets if streets is not None else
                         footprint_overlap.streets_from_index(self.idx) if self.idx is not None and

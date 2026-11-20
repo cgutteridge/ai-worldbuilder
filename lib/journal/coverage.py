@@ -339,18 +339,49 @@ def area_classes(idx: OSMIndex, bbox, report: Counter | None = None) -> dict:
     return out
 
 
-def building_land_use(idx: OSMIndex, rings, props: dict, classes: dict) -> dict:
+def _smallest_use_polygon(idx: OSMIndex, x: int, z: int) -> tuple | None:
+    """Use class and reference at a column, ranked by whole polygon area."""
+    sizes = Counter()
+    hits = {}
+    seen = set()
+    for rings, props in idx.areas:
+        hit = land_use.area_class(osm_tags(props))
+        if hit is None or hit['kind'] != 'use':
+            continue
+        ref = osm_ref(props)
+        key = (ref, tuple(tuple(tuple(point) for point in ring) for ring in rings))
+        if key in seen:
+            continue
+        seen.add(key)
+        ring_areas = [abs(sum(ax * bz - bx * az
+                              for (ax, az), (bx, bz) in zip(ring, ring[1:] + ring[:1]))) / 2
+                      for ring in rings]
+        # OSMIndex stores the parts of a multipolygon separately under one reference.
+        sizes[ref] += ring_areas[0] - sum(ring_areas[1:])
+        if next(scan_polygon(rings, (x, z, x, z)), None) is not None:
+            hits[ref] = hit['class']
+    if not hits:
+        return None
+    ref = min(hits, key=lambda ref: (sizes[ref], ref))
+    return hits[ref], ref
+
+
+def building_land_use(idx: OSMIndex, rings, props: dict, classes: dict | None = None) -> dict:
     """Class of one building: own tags, else smallest use polygon at its centroid, else house number.
 
     @param idx: OSMIndex (for the checked extent)
     @param rings: building polygon rings
     @param props: building feature properties
-    @param classes: result of :func:`area_classes`
+    @param classes: result of :func:`area_classes`; omit to test the centroid directly
+        against whole use polygons without rasterising their areas
     @returns: ``{'class', 'reason', 'ref'}``
     """
     cx, cz = polygon_centroid(rings)
-    hit = classes.get((cx, cz))
-    polygon = (hit[0], hit[1]) if hit and hit[2] == 'use' else None
+    if classes is None:
+        polygon = _smallest_use_polygon(idx, cx, cz)
+    else:
+        hit = classes.get((cx, cz))
+        polygon = (hit[0], hit[1]) if hit and hit[2] == 'use' else None
     return land_use.classify_building(osm_tags(props), polygon=polygon,
                                       checked=idx.layer_covered('landuse', cx, cz), ref=osm_ref(props))
 

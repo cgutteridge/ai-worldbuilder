@@ -56,14 +56,35 @@ class FrontColumnsTest(unittest.TestCase):
 
 
 class StreetFaceDefaultsTest(unittest.TestCase):
-    def test_build_context_inherits_smallest_use_polygon(self):
+    def build_context(self, tags, areas):
         idx = land_fixtures.index(
-            areas=[(land_fixtures.sq(0, 0, 40, 40), {'landuse': 'industrial'})],
-            buildings=[(land_fixtures.sq(10, 20, 25, 30), {'building': 'yes'})])
+            areas=areas, buildings=[(land_fixtures.sq(10, 20, 25, 30), tags)])
         idx.buildings[0][1]['osm_way_id'] = '99'
         with mock.patch.object(F.osm_footprints, 'OSMIndex', return_value=idx):
-            builder = F.Build(fixtures.BuildPlanTest.spec(self), world=fixtures._StoneWorld())
-        self.assertEqual(builder.land_uses['A'], 'industrial')
+            return F.Build(fixtures.BuildPlanTest.spec(self), world=fixtures._StoneWorld())
+
+    def test_build_context_inherits_smallest_use_polygon_in_either_order(self):
+        areas = [(land_fixtures.sq(0, 0, 40, 40), {'landuse': 'industrial'}),
+                 (land_fixtures.sq(10, 15, 30, 35), {'landuse': 'retail'})]
+        for ordered in (areas, list(reversed(areas))):
+            with self.subTest(areas=ordered):
+                builder = self.build_context({'building': 'yes'}, ordered)
+                self.assertEqual(builder.land_uses['A'], 'commercial')
+
+    def test_build_context_inherits_before_house_number_fallback(self):
+        tags = {'building': 'yes', 'addr:housenumber': '4'}
+        areas = [(land_fixtures.sq(0, 0, 40, 40), {'landuse': 'industrial'})]
+        self.assertEqual(self.build_context(tags, areas).land_uses['A'], 'industrial')
+        self.assertEqual(self.build_context(tags, []).land_uses['A'], 'residential')
+
+    def test_build_context_own_class_tags_win_over_polygon(self):
+        for tags, cls, use in [({'building': 'house'}, 'residential', 'industrial'),
+                               ({'building': 'retail'}, 'commercial', 'industrial'),
+                               ({'building': 'warehouse'}, 'industrial', 'retail'),
+                               ({'building': 'yes', 'shop': 'bakery'}, 'commercial', 'industrial')]:
+            with self.subTest(tags=tags):
+                areas = [(land_fixtures.sq(0, 0, 40, 40), {'landuse': use})]
+                self.assertEqual(self.build_context(tags, areas).land_uses['A'], cls)
 
     def test_class_and_scale_without_office_or_small_shop_defaults(self):
         def rule(cls, building, columns=80, height=6):
