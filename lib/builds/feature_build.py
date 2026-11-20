@@ -2748,29 +2748,61 @@ class Build:
         print(f'{f.no} street face {rule["kind"]}: {len(fronts)} columns; name={name}')
 
     def _loading_bay(self, f: Feature, opening: list, fronts: dict, depth: int) -> None:
-        """Paint the perimeter of a shutter's loading bay on existing paving only."""
+        """Paint a bay on continuous forecourt, stopping before roads and obstacles."""
+        from ground_sources import ROAD_CLASSES, road_width
         paving = {'gray_concrete', 'black_concrete', 'light_gray_concrete', 'stone',
                   'smooth_stone', 'andesite', 'gravel', 'gray_terracotta'}
-        for i, c in enumerate(opening):
+        rays = []
+        for c in opening:
             dx, dz = DIRS[fronts[c]]
-            for step in range(1, depth + 1):
-                if i not in (0, len(opening) - 1) and step != depth:
-                    continue
-                x, z = c[0] + dx * step, c[1] + dz * step
-                if (x, z) in self.by_no_all_cells:
-                    continue
+            rays.append([(c[0] + dx * step, c[1] + dz * step) for step in range(1, depth + 1)])
+        if not rays:
+            return
+        cells = {c for ray in rays for c in ray}
+        x0, x1 = min(x for x, z in cells), max(x for x, z in cells)
+        z0, z1 = min(z for x, z in cells), max(z for x, z in cells)
+        roads = []
+        for highway, points, tags in self.streets:
+            if highway.removesuffix('_link') not in ROAD_CLASSES and highway not in (
+                    'service', 'living_street', 'track', 'road'):
+                continue
+            half = road_width(dict(tags, highway=highway)) / 2
+            for a, b in zip(points, points[1:]):
+                if (max(a[0], b[0]) + half >= x0 + 0.5 and min(a[0], b[0]) - half <= x1 + 0.5 and
+                        max(a[1], b[1]) + half >= z0 + 0.5 and min(a[1], b[1]) - half <= z1 + 0.5):
+                    roads.append((a, b, half))
+        surfaces = []
+        for c, ray in zip(opening, rays):
+            available = []
+            for x, z in ray:
+                if ((x, z) in self.by_no_all_cells or any(
+                        osm_footprints._seg_dist((x + 0.5, z + 0.5), a, b)[0] <= half
+                        for a, b, half in roads)):
+                    break
                 # Ground is beneath the opening; use local surface height on slopes.
                 floor = self._column_floor(f, c)
+                surface = None
                 for y in range(floor + 1, floor - 5, -1):
                     state = self.p.cells.get((x, y, z))
                     if state is None:
                         state = self.live.block(x, y, z)
                     state = state or 'minecraft:air'
                     if state not in ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'):
-                        if bid(state)[10:] in paving:
-                            self.set(x, y, z, 'yellow_concrete')
-                            self.keep.add((x, y, z))
+                        if (bid(state)[10:] in paving and
+                                not any(self._is_solid(x, y + dy, z) for dy in (1, 2))):
+                            surface = (x, y, z)
                         break
+                if surface is None:
+                    break
+                available.append(surface)
+            surfaces.append(available)
+        # One short ray limits the whole bay, including its far edge and unpainted interior.
+        available_depth = min(map(len, surfaces))
+        for i, ray in enumerate(surfaces):
+            for step, pos in enumerate(ray[:available_depth], 1):
+                if i in (0, len(opening) - 1) or step == available_depth:
+                    self.set(*pos, 'yellow_concrete')
+                    self.keep.add(pos)
 
     def glazed_share_report(self) -> list[str]:
         """Glazed share of each storey on every exposed face (dry-run photo compare).

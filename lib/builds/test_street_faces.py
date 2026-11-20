@@ -9,6 +9,7 @@ import numpy as np
 
 import facade_plan as FP
 import feature_build as F
+import ground_sources as G
 import land_use as L
 import test_feature_build as fixtures
 import test_facade_plan as facade_fixtures
@@ -222,6 +223,52 @@ class StreetFaceBuildTest(unittest.TestCase):
                 return 'minecraft:grass_block' if y == 49 else super().block(x, y, z)
         _, plan = self.build(world=Lawn())
         self.assertNotIn('minecraft:yellow_concrete', plan.cells.values())
+
+
+class LoadingBayTest(unittest.TestCase):
+    def marks(self, streets=(), occupied=(), world=None):
+        cells = {(x, z) for x in range(10, 25) for z in range(20, 30)}
+        builder = F.Build(fixtures.BuildPlanTest.spec(self), footprints={'A': cells},
+                          world=world or fixtures._StoneWorld(), streets=streets)
+        feature = builder.features[0]
+        feature.b = 50
+        builder.by_no_all_cells = cells | set(occupied)
+        opening = [(x, 20) for x in range(15, 19)]
+        builder._loading_bay(feature, opening, {c: 'N' for c in opening}, 5)
+        return {p for p, state in builder.p.cells.items() if state == 'minecraft:yellow_concrete'}
+
+    def test_shallow_forecourt_ends_before_carriageway_and_closes_far_edge(self):
+        for highway, tags, centre in [('service', {'width': '1'}, 17),
+                                       ('service', {}, 16),
+                                       ('residential', {}, 15),
+                                       ('living_street', {'width': '3 m'}, 16.5)]:
+            with self.subTest(highway=highway, tags=tags):
+                points = [(-30, centre), (50, centre)]
+                road = G.line_cells(points, G.road_width(dict(tags, highway=highway)) / 2)
+                marks = self.marks(streets=[street(points, highway, **tags)])
+                self.assertEqual(marks, {(x, 49, z) for x in range(15, 19) for z in (18, 19)
+                                         if x in (15, 18) or z == 18})
+                self.assertFalse({(x, z) for x, y, z in marks} & road.keys())
+
+    def test_marks_do_not_resume_behind_an_intervening_building(self):
+        occupied = {(16, 18)}  # An obstruction in the unpainted interior also limits the bay.
+        self.assertEqual(self.marks(occupied=occupied), {(x, 49, 19) for x in range(15, 19)})
+
+    def test_marks_stop_at_lawn_walls_or_missing_paving(self):
+        for obstacle in ('lawn', 'wall', 'gap'):
+            class Obstructed(fixtures._StoneWorld):
+                def block(self, x, y, z):
+                    if z == 18:
+                        if obstacle == 'lawn' and y == 49:
+                            return 'minecraft:grass_block'
+                        if obstacle == 'wall' and 49 <= y <= 53:
+                            return 'minecraft:stone'
+                        if obstacle == 'gap':
+                            return 'minecraft:air'
+                    return super().block(x, y, z)
+            with self.subTest(obstacle=obstacle):
+                self.assertEqual(self.marks(world=Obstructed()),
+                                 {(x, 49, 19) for x in range(15, 19)})
 
 
 if __name__ == '__main__':
