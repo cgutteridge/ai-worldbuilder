@@ -707,7 +707,7 @@ class TestPlanting(unittest.TestCase):
     def test_shrub_density_order_height_and_provenance(self):
         rows = self.planting()
         row = rows[0]
-        self.assertEqual(row['shrubs'], len(self.lawn) // 6)
+        self.assertEqual(row['shrubs'], 21)                          # edge-limited: well under len(lawn) // 6 == 30
         self.assertEqual(row['items'][0]['position'], [2, 51, 11])  # nearest wall, then boundary, then x,z
         for n, item in enumerate(self.items(row, 'shrubs'), 1):
             x, y, z = item['position']
@@ -721,6 +721,32 @@ class TestPlanting(unittest.TestCase):
         positions = [i['position'] for i in self.items(row, 'shrubs')]
         for n, (x, _, z) in enumerate(positions):
             self.assertTrue(all(max(abs(x - xx), abs(z - zz)) > 1 for xx, _, zz in positions[:n]))
+
+    def test_shrubs_stay_on_the_edge_and_leave_open_lawn_bare(self):
+        row = self.planting()[0]
+        walls, bounds = [(x, 12) for x in range(2, 20)], self.segments[(1, 'front')] + self.segments[(1, 'side_front')]
+        shrubs = [(i['position'][0], i['position'][2]) for i in self.items(row, 'shrubs')]
+        self.assertTrue(shrubs)
+        for x, z in shrubs:
+            near = min((x - a) ** 2 + (z - b) ** 2 for a, b in walls + bounds)
+            self.assertLessEqual(near, gl.SHRUB_EDGE_REACH_SQ, (x, z))
+        self.assertFalse(any(6 <= x <= 16 and 5 <= z <= 8 for x, z in shrubs))   # open middle of the lawn
+
+    def test_cover_mixes_grass_tufts_and_ferns_near_the_edge_without_crowding(self):
+        row = self.planting()[0]
+        cover = self.items(row, 'cover')
+        self.assertEqual(row['cover'], len(cover))
+        self.assertEqual({i['block'] for i in cover}, {'short_grass', 'fern'})
+        taken = {(i['position'][0], i['position'][2]) for i in self.items(row, 'shrubs') + self.items(row, 'flowers')}
+        walls, bounds = [(x, 12) for x in range(2, 20)], self.segments[(1, 'front')] + self.segments[(1, 'side_front')]
+        for item in cover:
+            x, y, z = item['position']
+            self.assertNotIn((x, z), taken)
+            self.assertEqual(y, 51)
+            self.assertLessEqual(min((x - a) ** 2 + (z - b) ** 2 for a, b in walls + bounds), gl.COVER_EDGE_REACH_SQ)
+            self.assertEqual(self.plan.cells[(x, y, z)], gl.full(item['block']))
+            self.assertEqual(item['label'], 'cover inference (#339)')
+            self.assertEqual((item['provenance']['source'], item['provenance']['confidence']), ('inference', 'low'))
 
     def test_shrubs_exclude_observed_or_non_grass_columns(self):
         observed = {(x, z) for x, z in self.lawn if x < 8}
@@ -768,7 +794,8 @@ class TestPlanting(unittest.TestCase):
         with mock.patch.object(land_use, 'planting_rule', side_effect=lambda cls, kind: (
                 {'per_columns': 12} if kind == 'shrubs' else None)) as rule:
             row = self.planting()[0]
-        self.assertEqual(rule.call_args_list, [mock.call('park', 'shrubs'), mock.call('park', 'flowers')])
+        self.assertEqual(rule.call_args_list, [mock.call('park', 'shrubs'), mock.call('park', 'flowers'),
+                                               mock.call('park', 'cover')])
         self.assertEqual(row['shrubs'], len(self.lawn) // 12)
         self.assertEqual(row['flowers'], 0)
 
@@ -922,7 +949,7 @@ class TestPlanting(unittest.TestCase):
         self.world = World(store=MemoryBlocks({**self.blocks, pos: 'oak_leaves[persistent=true]'}, default='air'))
         self.plan.set(*pos, 'air')
         row = self.planting()[0]
-        self.assertEqual(row['shrubs'], len(self.lawn) // 6)
+        self.assertGreater(row['shrubs'], 0)
         self.assertEqual(row['items'][0]['position'], [2, 51, 11])
 
     def test_shrub_clearance_reads_planned_air_over_protected_fence(self):
@@ -941,6 +968,7 @@ class TestPlanting(unittest.TestCase):
         first, stats = self.ground_plan(self.world)
         self.assertGreater(stats['shrubs'], 0)
         self.assertGreater(stats['flowers'], 0)
+        self.assertGreater(stats['cover'], 0)
         after = World(store=MemoryBlocks({**self.blocks, **first.cells}, default='air'))
         second, again = self.ground_plan(after)
         self.assertEqual(first.cells, second.cells)
@@ -949,9 +977,10 @@ class TestPlanting(unittest.TestCase):
         strip_foliage_above_surface(strip, after, self.lawn)
         leaves = {p for p, b in first.cells.items() if 'leaves' in b}
         flowers = {tuple(item['position']) for row in stats['planting'] for item in self.items(row, 'flowers')}
-        self.assertEqual(set(strip.cells), leaves | flowers)
+        cover = {tuple(item['position']) for row in stats['planting'] for item in self.items(row, 'cover')}
+        self.assertEqual(set(strip.cells), leaves | flowers | cover)
         self.assertTrue(all(b == 'minecraft:air' for b in strip.cells.values()))
-        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves | flowers))
+        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves | flowers | cover))
 
 
 class TestWarmSurfaceProbe(unittest.TestCase):

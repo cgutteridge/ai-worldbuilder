@@ -136,8 +136,8 @@ def validate_table(doc: dict) -> dict:
 
             if not fr['inference']:
                 raise TableError(f'{cid}: this class allows no planting inference')
-            if not isinstance(planting, dict) or set(planting) != {'shrubs', 'flowers', 'pond'}:
-                raise TableError(f'{cid}: planting must be null or {{shrubs, flowers, pond}}')
+            if not isinstance(planting, dict) or set(planting) != {'shrubs', 'flowers', 'cover', 'pond'}:
+                raise TableError(f'{cid}: planting must be null or {{shrubs, flowers, cover, pond}}')
             shrubs = planting['shrubs']
             if shrubs is not None:
                 if not isinstance(shrubs, dict) or set(shrubs) != {'per_columns'}:
@@ -154,6 +154,16 @@ def validate_table(doc: dict) -> dict:
                 if not isinstance(kinds, list) or not 1 <= len(kinds) <= 2 or any(
                         not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds):
                     raise TableError(f'{cid}: flowers kinds must be 1-2 names from foliage.REFINE_PLANTS')
+            cover = planting['cover']
+            if cover is not None:
+                if not isinstance(cover, dict) or set(cover) != {'share', 'kinds'}:
+                    raise TableError(f'{cid}: cover must be null or {{share, kinds}}')
+                share, kinds = cover['share'], cover['kinds']
+                if isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share <= 0.3:
+                    raise TableError(f'{cid}: cover share must be above 0 and at most 0.3')
+                if not isinstance(kinds, list) or not 1 <= len(kinds) <= 3 or any(
+                        not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds) or len(set(kinds)) != len(kinds):
+                    raise TableError(f'{cid}: cover kinds must be 1-3 different names from foliage.REFINE_PLANTS')
             if planting['pond'] is not None:
                 raise TableError(f'{cid}: planting pond must stay null')
         furniture = row['furniture']

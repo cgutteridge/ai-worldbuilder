@@ -43,6 +43,7 @@
    "planting": {
     "shrubs": {"per_columns": 6},
     "flowers": {"share": 0.08, "kinds": ["poppy", "dandelion"]},
+    "cover": {"share": 0.12, "kinds": ["short_grass", "fern"]},
     "pond": null
    },
    "furniture": null,
