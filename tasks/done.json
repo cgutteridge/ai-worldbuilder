@@ -2873,5 +2873,15 @@
       ],
       "notes": "Cause (reported by trial #258 from the 50,-35 ground pass, not independently verified): the ground layer does not read amenity=parking (surface car parks) as a surface, because land-use classes are kept out of ground paint (task #158 keeps landuse=residential, retail, commercial, industrial unread so they never paint under houses). So a car park comes out as aerial-coloured grass and tarmac patches: 50,-35 plan was tarmac 2,060, paving 3,493, forecourt 1,283, grass 2,728 columns, and the owner saw grass in a car park where the aerial shows none (issue I-054, snag S-096). Deliverable: ground layer maps amenity=parking (surface, and not multi-storey or underground) to tarmac, with bay lines left to task 336; a narrow exception to the #158 rule recorded in the rules and the land-use notes. Check: re-run ground on 50,-35 (needs the surface-probe fix #315 first, or the cell reads as empty below Y 31): the car park behind the high street is tarmac with no grass patches; a fixture test with an amenity=parking polygon and one with a multi-storey parking polygon. Source: docs/plans/industrial-commercial.md section 8.\n\n\nReturned to todo: Waits for #336 (car-park bay lines): both edit the ground layer; run one after the other.\n\n[tasks CLI] Status update recorded; subject to human review.\n\nClosed at 79d55dbbccc124cbbfc9e42382a5570369cd81d6: Merged task/338-surface-car-parks-tarmac. Real cause differed from the ticket: ground_sources already painted surface car parks tarmac; classify turned those soft columns to grass on mosaic lawn/shade/tint. Fix keeps tarmac unless the aerial is a sharp registered lawn; parking=rooftop paints nothing; #158 exception recorded. Live 50,-35 check still to do (needs #315).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 339,
+      "title": "Shrubs on plot edges only, with grass tufts and ferns",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Shrub inference (#265) fills every guessed-lawn column of a residential plot, so open lawn gets evenly scattered leaf cubes (seen at 7 Hartley Avenue, plot 514, 20 shrubs on 133 columns). Plant shrubs only within one column of the plot boundary or house wall. Add a planting.cover rule (share, kinds short_grass and fern) so the edge band and lawn are varied with grass tufts and ferns, label 'cover inference'. Touch: lib/layers/ground_layer.py plan_planting, lib/sources/land_use.py planting schema, config/land-use-classes.json, docs/plans/land-use-classes.md, tests in lib/layers/test_ground_layer.py and lib/sources/test_land_use.py.\n\nClosed at bfc48a9a687b9d782d565c7d299653660f0ea067: Shrubs only within one column of house wall or plot boundary; planting.cover adds short grass and ferns in the two-column edge band. Needs a ground-layer rerun to show in the world.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
