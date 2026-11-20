@@ -689,6 +689,79 @@ class ReadinessTest(unittest.TestCase):
             self.assertNotEqual(first, report['revision'])
             self.assertIn('validation stale (evidence facts changed)', report['blockers'])
 
+    def test_build_spec_writes_preserve_neighbour_evidence_between_feature_applies(self):
+        import json
+        from unittest import mock
+        import aerial_coverage
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir()
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        clip = root / 'reference' / 'vector_map' / 'fixture' / 'buildings-bbox-0-0-255-127.geojson'
+        clip.parent.mkdir(parents=True)
+        clip.write_text('{"type":"FeatureCollection","features":[]}')
+        for cell in ((0, 0), (1, 0)):
+            self.world.seed(cell, ghost_ground=True)
+        for fid in ('first', 'crossing'):
+            self.world.reg.change(Note((0, 0), 'plan_feature', fid, fid))
+        specs = root / 'site' / 'builds'
+        specs.mkdir(parents=True)
+        with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
+                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            policy.validate((0, 0))
+            before = policy.validate_evidence((1, 0))['revision_parts']
+            for fid, cells in (('first', {(5, 61, 5): 'minecraft:bricks'}),
+                               ('crossing', {(127, 61, 5): 'minecraft:bricks',
+                                             (128, 61, 5): 'minecraft:bricks'})):
+                # A builder saves its handoff spec after preparation, then a fresh
+                # apply adapter audits the inputs again under the lock.
+                (specs / f'{fid}.json').write_text(json.dumps({'id': fid, 'height': 8}))
+                policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+                report = policy.check((1, 0), neighbour=True)
+                self.assertEqual(before, report['revision_parts'])
+                self.assertTrue(report['ready'], report['blockers'])
+                home = policy.check((0, 0))
+                self.assertTrue(home['validated'], home['blockers'])
+                self.world.reg.build_policy = policy.enforce
+                receipt = self.world.reg.change(Build(fid, 'feature', cells, cell=(0, 0),
+                    meta={'evidence_revision': home['source_revision'],
+                          'journal_revision': home['journal_revision']}), self.world.apply)
+                self.assertEqual(receipt.status, 'landed')
+            before = policy.check((1, 0), neighbour=True)['revision_parts']
+            spec = specs / 'first.json'
+            for contents in ('{"id":"first","height":12}', None):
+                if contents is None:
+                    spec.unlink()
+                else:
+                    spec.write_text(contents)
+                policy = ReadinessPolicy(self.world.reg, LocalEvidence(root))
+                report = policy.check((1, 0), neighbour=True)
+                self.assertEqual(before, report['revision_parts'])
+                self.assertTrue(report['ready'], report['blockers'])
+
+    def test_source_revision_tracks_evidence_files_and_additions(self):
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        previous = LocalEvidence(root).source_revision()
+        for relative in ('config/world-frame.json', 'reference/map.geojson',
+                         'reference/aerial.png', 'downloads/terrain.tif'):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            for contents in (b'original evidence', b'changed evidence', None):
+                with self.subTest(path=relative, contents=contents):
+                    if contents is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(contents)
+                    revision = LocalEvidence(root).source_revision()
+                    self.assertNotEqual(previous, revision)
+                    previous = revision
+
     def test_prepared_features_and_ground_can_land_in_either_order(self):
         """Both orders land; ground first leaves the ground stale until it is redone (task 285)."""
         from cell_journal import Note

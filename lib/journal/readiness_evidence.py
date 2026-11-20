@@ -55,9 +55,9 @@ class LocalEvidence:
         return self._file_ids[path]
 
     def source_revision(self):
-        """Hash the evidence manifest and source inputs once at run startup."""
+        """Hash evidence inputs once at run startup; build specs belong to plans."""
         if self._revision is None:
-            roots = [self.root / 'config', self.root / 'reference', self.root / 'site' / 'builds']
+            roots = [self.root / 'config', self.root / 'reference']
             paths = sorted({p for directory in roots for p in directory.rglob('*')
                             if p.is_file() and p.suffix.lower() in ('.json', '.jsonl', '.geojson', '.png')})
             paths += sorted(p for p in (self.root / 'downloads').rglob('*')
