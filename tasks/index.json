@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 325,
+  "nextTaskId": 328,
   "tasks": [
     
     {
@@ -190,6 +190,37 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Cause: _outbuilding_items in lib/layers/decor_plan.py does not put water columns in lidar_items(exclude=...). place_outbuildings already refuses water columns when applying, so nothing was built; the garage at (8117,-5733) in the Itchen shows as unresolved. Deliverable: exclude mapped water columns when proposing. Check: unit test; 63,-45 decor report has no outbuilding-lidar-8117-m5733 in unresolved_items."
+    },
+    {
+      "id": 325,
+      "title": "Widen a mapped path to the paving seen beside it",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        316
+      ],
+      "notes": "Cause partly unverified: the riverside path in 63,-45 has est_width 1.75 and surface asphalt, and the aerial width was lost, so it reads as a coarse-dirt band with a thin grey strip (owner noted this as a fault). Deliverable: widen a mapped way to the paving seen beside it in the aerial, per class. Check: in game the riverside path in cell 63,-45 reads as one path of the aerial width."
+    },
+    {
+      "id": 326,
+      "title": "River water level from lidar along the reach",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [
+        321
+      ],
+      "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
+    },
+    {
+      "id": 327,
+      "title": "Dressing must not write ground-layer work onto a cell with no real ground pass",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause (found with the owner in trial #258): class dressing wrote white_concrete car-park bay lines (a ground-layer marking, craftsmanship section 3a) onto cell 50,-35 of southampton-build, which had only ghost ground. The throwaway car_park() clipped to a box spanning two cells and gated only on the approved-cell list; the approval for that cell covered buildings and ghost ground, not the ground layer. Deliverable: dressing and any pass that writes ground-layer things must refuse, or run the ground pass first, on a cell without real ground; cell approvals say which layers they cover. Check: test with a ghost-only cell: dressing refuses and writes nothing; cell 50,-35's lines resolved by the owner's choice (ground pass there, or removed)."
     }
   ]
 }
