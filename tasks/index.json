@@ -138,17 +138,7 @@
       "notes": "Mapped natural=tree_row is already read (#157) and the tree gate must keep it. Gap: hedgerow tree lines and tree belts that are not mapped are lost by the open-land gate. Deliverable: findings in docs/plans/ on whether aerial plus lidar evidence along mapped hedges and lanes can place them, with a go or no-go. Check: the hedge on 87,-48 and the unmapped north-east tree belt in that cell get trees from evidence in the prototype."
     },
     
-    {
-      "id": 325,
-      "title": "Widen a mapped path to the paving seen beside it",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "Cause partly unverified: the riverside path in 63,-45 has est_width 1.75 and surface asphalt, and the aerial width was lost, so it reads as a coarse-dirt band with a thin grey strip (owner noted this as a fault). Deliverable: widen a mapped way to the paving seen beside it in the aerial, per class. Check: in game the riverside path in cell 63,-45 reads as one path of the aerial width."
-    },
+    
     {
       "id": 326,
       "title": "River water level from lidar along the reach",
@@ -248,7 +238,7 @@
     {
       "id": 338,
       "title": "Surface car parks paint as tarmac in the ground layer",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [

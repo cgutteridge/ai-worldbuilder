@@ -2837,5 +2837,17 @@
       "blockedBy": [],
       "notes": "Cause (found with the owner in trial #258): class dressing wrote white_concrete car-park bay lines (a ground-layer marking, craftsmanship section 3a) onto cell 50,-35 of southampton-build, which had only ghost ground. The throwaway car_park() clipped to a box spanning two cells and gated only on the approved-cell list; the approval for that cell covered buildings and ghost ground, not the ground layer. Deliverable: dressing and any pass that writes ground-layer things must refuse, or run the ground pass first, on a cell without real ground; cell approvals say which layers they cover. Check: test with a ghost-only cell: dressing refuses and writes nothing; cell 50,-35's lines resolved by the owner's choice (ground pass there, or removed).\n\nClosed at d5da688ad279fca22bcf28f3c0ceb9a78554627a: Merged task/327-dressing-needs-ground-pass: ground-layer plans refused unless every written cell has a landed ground pass (Build.ground_layer, Plan.ground_marking API); approval notes record layers (cell_registry.py approve). Cell 50,-35 bay lines still the owner's call.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 325,
+      "title": "Widen a mapped path to the paving seen beside it",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "Cause partly unverified: the riverside path in 63,-45 has est_width 1.75 and surface asphalt, and the aerial width was lost, so it reads as a coarse-dirt band with a thin grey strip (owner noted this as a fault). Deliverable: widen a mapped way to the paving seen beside it in the aerial, per class. Check: in game the riverside path in cell 63,-45 reads as one path of the aerial width.\n\nClosed at ea61bd677ebd930df8409e9b4a083e1d29659aab: Merged task/325-widen-mapped-path: per-class surface.path_widen (park 3, max 6); aerial paving beside a mapped path takes the path's surface. Live 63,-45 riverside path check still to do.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
