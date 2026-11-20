@@ -34,7 +34,7 @@
     {
       "id": 236,
       "title": "reapply_feature refuses legacy house builds with no recorded builder; house_build apply bypasses the guard",
-      "status": "blocked",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
