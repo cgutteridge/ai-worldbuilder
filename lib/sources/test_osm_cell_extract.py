@@ -72,13 +72,15 @@ class CellExtractJobList(unittest.TestCase):
             self.assertIn(tag, where)
         self.assertEqual(presets['landclass'][0][0], 'multipolygons')
 
-    def test_does_not_fetch_kerb_or_crossing_nodes(self):
-        """Kerb / crossing points stay out of the standard extract jobs."""
-        blob = ' '.join(
-            where for jobs in oce.landscape_layer_presets().values() for _g, where, _m in jobs
-        ).lower()
+    def test_kerb_nodes_stay_out_and_crossings_come_only_through_furniture(self):
+        """Kerb points stay out of the standard extract jobs; crossing nodes are street furniture (#334)."""
+        jobs = oce.landscape_layer_presets()
+        blob = ' '.join(where for name, js in jobs.items() if name != 'furniture' for _g, where, _m in js).lower()
         self.assertNotIn('kerb', blob)
         self.assertNotIn('crossing', blob)
+        furniture = ' '.join(where for _g, where, _m in jobs['furniture']).lower()
+        self.assertNotIn('kerb', furniture)
+        self.assertIn('crossing', furniture)
 
     def test_install_writes_landscape_presets(self):
         presets: dict = {

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Street furniture kinds for the decor pass: map points, recipes, designer specs.
 
-Mapped OSM point tags (bench, bin, bike rack, lamp, bollard, sign, picnic table) become one
-furniture kind each. The decor layer places a small block recipe on paving at
+Mapped OSM point tags (bench, bin, bike rack, lamp, bollard, sign, picnic table, traffic signals,
+pedestrian crossing, traffic island) become one furniture kind each. The decor layer places a small block recipe on paving at
 that column. When the map has no points, a designer writes
 ``reference/decor-furniture.json`` (same idea as trees-extra-crowns.json).
 
@@ -29,6 +29,9 @@ KINDS = (
     'sign',
     'picnic_table',
     'picnic_table_round',
+    'traffic_signals',
+    'crossing',
+    'traffic_island',
 )
 
 # Block stacks relative to the live surface: (dy_above_surface, block).
@@ -40,7 +43,19 @@ RECIPES: dict[str, list[tuple[int, str]]] = {
     'street_lamp': [(1, 'oak_fence'), (2, 'oak_fence'), (3, 'lantern')],
     'bollard': [(1, 'stone_brick_wall')],
     'sign': [(1, 'oak_sign')],
+    # Road-edge kinds (#334). Signal pole and head; a Belisha-style beacon post for a crossing without
+    # signals; a raised kerb slab for a mapped island (the only kind that stands on the carriageway).
+    'traffic_signals': [(1, 'andesite_wall'), (2, 'andesite_wall'), (3, 'black_concrete')],
+    'crossing': [(1, 'white_concrete'), (2, 'orange_concrete')],
+    'traffic_island': [(1, 'stone_brick_slab[type=bottom]')],
 }
+
+# OSM puts a signal or crossing node on the carriageway centreline, where no post can stand. These kinds
+# move to the nearest column the usual checks accept, at most ROADSIDE_REACH blocks away (#334).
+ROADSIDE_KINDS = frozenset({'traffic_signals', 'crossing'})
+ROADSIDE_REACH = 4
+# A mapped island is a raised bed in the road: it skips the path-line and carriageway refusals.
+ON_ROAD_KINDS = frozenset({'traffic_island'})
 
 # Multi-block kinds (#305, docs/specs/decor-furniture-footprints.md): rows ``(dx, dz, dy, block)``
 # anchored at the centre column (0, 0), canonical rotation 0 (long axis along x). Every column is
@@ -65,6 +80,7 @@ REAL_WALL_BLOCKS = frozenset({
     'brick_wall',
     'stone_brick_wall',
     'cobblestone_wall',
+    'andesite_wall',
 })
 
 # GDAL OSM extract jobs: (gdal_layer, SQL WHERE, default model tags).
@@ -78,6 +94,8 @@ EXTRACT_JOBS: list[tuple[str, str, list[str]]] = [
             "OR highway = 'street_lamp' "
             "OR other_tags LIKE '%\"leisure\"=>\"picnic_table\"%' "
             "OR barrier = 'bollard' "
+            "OR highway IN ('traffic_signals','crossing') "
+            "OR other_tags LIKE '%\"traffic_calming\"=>\"island\"%' "
             "OR traffic_sign IS NOT NULL "
             "OR information IS NOT NULL"
         ),
@@ -106,6 +124,10 @@ DESIGNER_SPEC = ROOT / 'reference' / 'decor-furniture.json'
 ROAD_KINDS = frozenset({'tarmac', 'mark', 'kerb'})
 
 
+# ``crossing=*`` values of a highway=crossing node that carries signals (current and legacy UK names).
+SIGNALLED_CROSSINGS = frozenset({'traffic_signals', 'pelican', 'puffin', 'toucan', 'pegasus'})
+
+
 def classify(tags: dict) -> str | None:
     """Map OSM tags to a furniture kind, or None when not street furniture.
 
@@ -125,9 +147,32 @@ def classify(tags: dict) -> str | None:
         return 'bollard'
     if tags.get('leisure') == 'picnic_table':
         return 'picnic_table'
+    if tags.get('highway') == 'traffic_signals':
+        return 'traffic_signals'
+    if tags.get('highway') == 'crossing':
+        crossing = tags.get('crossing')
+        if crossing == 'unmarked':                       # a dropped kerb, nothing to stand
+            return None
+        if crossing in SIGNALLED_CROSSINGS or tags.get('crossing:signals') == 'yes':
+            return 'traffic_signals'
+        return 'crossing'
+    if tags.get('traffic_calming') == 'island':
+        return 'traffic_island'
     if tags.get('traffic_sign') or tags.get('information') or tags.get('tourism') == 'information':
         return 'sign'
     return None
+
+
+def roadside_candidates(x: int, z: int, reach: int = ROADSIDE_REACH) -> list[tuple[int, int]]:
+    """Columns within ``reach`` blocks of ``(x, z)``, nearest first (ties by x, then z), anchor excluded.
+
+    @param x: mapped node column
+    @param z: mapped node column
+    @param reach: largest straight-line distance in blocks
+    """
+    ring = [(x + dx, z + dz) for dx in range(-reach, reach + 1) for dz in range(-reach, reach + 1)
+            if (dx or dz) and dx * dx + dz * dz <= reach * reach]
+    return sorted(ring, key=lambda q: ((q[0] - x) ** 2 + (q[1] - z) ** 2, q))
 
 
 def recipe(kind: str) -> list[tuple[int, str]]:
