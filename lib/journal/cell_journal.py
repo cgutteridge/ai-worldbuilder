@@ -66,7 +66,10 @@ PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # neighbour's evidence check, which validates no plans (task 292).
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
               'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness',
-              'readiness_evidence', 'builder_registration')
+              'readiness_evidence', 'builder_registration', 'approval')
+# Layers a cell approval can cover (#327). An approval says which of these the owner signed off;
+# it never stands in for the pass itself (ground-layer work needs a landed ground pass).
+APPROVAL_LAYERS = ('ghost', 'buildings', 'ground', 'trees', 'decor', 'dressing')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
@@ -143,6 +146,8 @@ class Build:
     @param meta: small JSON-able dict journalled on the ``begin`` line (structure backup, notes ...)
     @param signs: ``((pos, lines, colour, glow), ...)`` journalled and replayed on reconcile/recover
     @param entities: ``((entity_type, pos, snbt|None), ...)`` journalled and replayed on reconcile/recover
+    @param ground_layer: the plan writes ground-layer things (markings, surfaces); refused unless every
+        cell it writes into has a landed ground pass (#327). Moot for the ground pass itself.
     """
 
     plan: str
@@ -157,6 +162,7 @@ class Build:
     meta: Mapping[str, Any] | None = None
     signs: tuple = ()
     entities: tuple = ()
+    ground_layer: bool = False
 
 
 @dataclass(frozen=True, eq=False)
@@ -180,7 +186,7 @@ class Note:
     @param cell: (tx, tz)
     @param kind: one of :data:`NOTE_KINDS`
     @param body: ``up|none`` (marker), reason (hold, coverage-dismiss, plan_feature-dismiss),
-        label (plan_feature), text otherwise
+        label (plan_feature), comma-separated :data:`APPROVAL_LAYERS` (approval), text otherwise
     @param ref: warning / feature / note id (coverage, coverage-dismiss, plan_feature,
         plan_feature-dismiss, review, issue, close)
     """
@@ -1066,7 +1072,7 @@ class CellRegistry:
             return self._note_cache
         st: dict = {
             'marker': None, 'holds': {}, 'warn': {}, 'open': {}, 'cells': set(),
-            'plan': {}, 'plan_dismissed': {}, 'clip_dismissed': set(),
+            'plan': {}, 'plan_dismissed': {}, 'clip_dismissed': set(), 'approved': {},
         }
         for n in self._notes:
             cell, kind, ref, body = tuple(n['cell']), n['kind'], n.get('ref', ''), n.get('body', '')
@@ -1087,6 +1093,8 @@ class CellRegistry:
                 st['warn'].get(cell, {}).pop(ref, None)
             elif kind == 'clip_coverage-dismiss':
                 st['clip_dismissed'].add(cell)
+            elif kind == 'approval':              # latest approval replaces: it names the layers now covered
+                st['approved'][cell] = frozenset(x for x in body.split(',') if x)
             elif kind == 'plan_feature':
                 st['plan'].setdefault(cell, {})[ref] = body
                 st['plan_dismissed'].get(cell, {}).pop(ref, None)
@@ -1283,6 +1291,13 @@ class CellRegistry:
             raise Refused(f'{b.pass_} only on generated ground (cell {list(primary)} has ground={view.ground})')
         if b.pass_ == 'ghost-ground' and view.ground == 'generated':
             raise Refused(f'ghost ground over real ground (cell {list(primary)})')
+        if b.ground_layer and b.pass_ != 'ground' and b.pass_ not in GHOST_PASSES:
+            bare = sorted(c for c in self._cells_of(positions) | {primary} if self._derive(c).ground != 'generated')
+            if bare:
+                state = ', '.join(f'{list(c)} ground={self._derive(c).ground} '
+                                  f'approved={sorted(self.approved_layers(c))}' for c in bare)
+                raise Refused(f'{b.plan}: ground-layer work needs a landed ground pass first ({state}); '
+                              'run the ground pass there, or drop the ground-layer blocks')
         if b.pass_ == 'ghost-features':
             raise Refused('ghost-features is withdrawn; use coloured ghost ground tops (task #68)')
         owners = self._owners_in(positions, exclude=frozenset(b.modifies) | {b.plan})
@@ -1502,6 +1517,11 @@ class CellRegistry:
             open_ids = self._plan_feature_ids(cell)
             if n.ref not in open_ids:
                 raise Refused(f'no planned feature {n.ref!r} on cell {list(cell)}')
+        if n.kind == 'approval':
+            layers = [x for x in n.body.split(',') if x]
+            bad = [x for x in layers if x not in APPROVAL_LAYERS]
+            if not layers or bad:
+                raise Refused(f'approval body must list layers from {list(APPROVAL_LAYERS)}, got {n.body!r}')
         if n.kind == 'clip_coverage-dismiss' and not n.body.strip():
             raise Refused('dismissing clip query coverage needs a reason')
         if n.kind == 'builder_registration':
@@ -1533,6 +1553,15 @@ class CellRegistry:
         flying = [seq for seq in self._begun if set(self._entries[seq].cells) & set(e.cells)]
         if flying:
             raise InFlight(e.cells, flying)
+
+    def approved_layers(self, cell: Cell) -> frozenset[str]:
+        """Layers the latest approval note for this cell covers (#327).
+
+        @param cell: (tx, tz)
+        @returns: layer names from :data:`APPROVAL_LAYERS`; empty when the cell has no approval note
+        """
+        self._sync()
+        return self._note_state()['approved'].get(tuple(cell), frozenset())
 
     def clip_coverage_dismissed(self, cell: Cell) -> bool:
         """Whether incomplete query coverage was deliberately accepted for this cell.

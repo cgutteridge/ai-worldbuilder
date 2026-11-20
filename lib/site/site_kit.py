@@ -182,6 +182,7 @@ class Plan:
     def __init__(self, name):
         from readiness_evidence import planning_inputs
         self.evidence_revision, self.journal_revision = planning_inputs()
+        self.ground_layer = False   # True: writes ground-layer things (markings, surfaces); journal refuses without a landed ground pass (#327)
         self.parent_feature = None  # explicit built parent for named follow-ups; also list it in modifies
         self.name = name
         self.cells = {}
@@ -1198,7 +1199,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         mask_ref = {'pass': mask['pass'], 'cell': list(mask['cell']), 'plan': mask['plan'],
                     'count': mask.get('count'), 'sha256': mask.get('sha256')}
     build = Build(plan.name, pass_, dict(plan.cells), modifies=tuple(sorted(set(modifies))), strict=bool(strict),
-                  mask=mask_ref, cell=cell, payload=plan, meta=record)
+                  mask=mask_ref, cell=cell, payload=plan, meta=record,
+                  ground_layer=bool(getattr(plan, 'ground_layer', False)))
     try:
         with timed_stage('registry.begin guard reads and journal write', timings):
             ticket = registry.begin(build)       # journal 'begun' (fsynced) before the first block write
