@@ -179,6 +179,114 @@ def contrasting_sign_colour(fascia: str) -> str:
     @returns: ``black`` on a light band, otherwise ``white``
     """
     return 'black' if fascia in LIGHT_FASCIA else 'white'
+
+
+# A stair-step notch is filled. A deeper recess starts another run, so a long
+# diagonal does not pour one wedge out to the streetward corner.
+MAX_SHOP_STEP = 2
+
+
+def fit_straight_runs(fronts: dict) -> list[dict]:
+    """Square shop-front columns into straight runs and name the cells that fill the steps.
+
+    One run per stretch of a connected front whose recess is at most
+    :data:`MAX_SHOP_STEP` blocks. An already straight front is unchanged. Each
+    stretch snaps to its own streetward edge, and every block between a recessed
+    column and that edge is fill, so a later awning or sign meets wall rather
+    than a gap. The owner would rather have that extra thickness than a hover.
+
+    @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}``
+    @returns: list of ``{'face', 'line', 'fill', 'sources'}``; ``line`` is ordered
+        along the run, ``fill`` is the cells to build that are not already front
+        columns, ``sources`` is the front columns the run came from
+    """
+    if not fronts:
+        return []
+    remaining = set(fronts)
+    runs = []
+    while remaining:
+        start = min(remaining)
+        comp = {start}
+        remaining.remove(start)
+        todo = [start]
+        while todo:
+            x, z = todo.pop()
+            for dx in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if not dx and not dz:
+                        continue
+                    nxt = (x + dx, z + dz)
+                    if nxt in remaining:
+                        remaining.remove(nxt)
+                        comp.add(nxt)
+                        todo.append(nxt)
+        runs.extend(_runs_within_step(comp, fronts))
+    return runs
+
+
+def _runs_within_step(cells: set, fronts: dict) -> list[dict]:
+    """Split one connected front wherever the recess exceeds :data:`MAX_SHOP_STEP`.
+
+    @param cells: front columns in one component
+    @param fronts: face of every front column
+    @returns: straight runs, each no deeper than the step limit
+    """
+    horizontal = sum(fronts[c] in 'NS' for c in cells) >= sum(fronts[c] in 'EW' for c in cells)
+
+    def cross(cell):
+        return cell[1] if horizontal else cell[0]
+
+    def along(cell):
+        return cell[0] if horizontal else cell[1]
+
+    ordered = sorted(cells, key=lambda cell: (along(cell), cross(cell)))
+    groups = []
+    current = []
+    for cell in ordered:
+        trial = current + [cell]
+        span = max(cross(c) for c in trial) - min(cross(c) for c in trial)
+        if current and span > MAX_SHOP_STEP:
+            groups.append(current)
+            current = [cell]
+        else:
+            current.append(cell)
+    if current:
+        groups.append(current)
+    return [_straight_run(set(group), fronts) for group in groups]
+
+
+def _straight_run(cells: set, fronts: dict) -> dict:
+    """Snap one connected front onto its streetward edge.
+
+    @param cells: front columns in one component
+    @param fronts: face of every front column
+    @returns: ``{'face', 'line', 'fill', 'sources'}``
+    """
+    horizontal = sum(fronts[c] in 'NS' for c in cells) >= sum(fronts[c] in 'EW' for c in cells)
+    if horizontal:
+        face = 'N' if sum(fronts[c] == 'N' for c in cells) >= sum(fronts[c] == 'S' for c in cells) else 'S'
+        street_low = face == 'N'
+        alongs = sorted({c[0] for c in cells})
+        outer = min(c[1] for c in cells) if street_low else max(c[1] for c in cells)
+        line = [(along, outer) for along in alongs]
+    else:
+        face = 'W' if sum(fronts[c] == 'W' for c in cells) >= sum(fronts[c] == 'E' for c in cells) else 'E'
+        street_low = face == 'W'
+        alongs = sorted({c[1] for c in cells})
+        outer = min(c[0] for c in cells) if street_low else max(c[0] for c in cells)
+        line = [(outer, along) for along in alongs]
+    step = -1 if street_low else 1
+    fill = set()
+    for cell in cells:
+        cursor = cell[1] if horizontal else cell[0]
+        along = cell[0] if horizontal else cell[1]
+        while cursor != outer:
+            cursor += step
+            fill.add((along, cursor) if horizontal else (cursor, along))
+    fill -= set(cells)
+    return {'face': face, 'line': line, 'fill': fill, 'sources': set(cells)}
+
+
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
 N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
@@ -2732,67 +2840,136 @@ class Build:
         fronts = self._fronts_for(f)
         return bool(fronts) and self._shop_front_fits(f, fronts, rule)
 
-    def _longest_front_run(self, cells: set) -> list:
-        """Longest 4-connected front run, sorted along its long axis.
+    def _shop_column_ok(self, f: Feature, cell: tuple[int, int]) -> bool:
+        """False when a squared-front cell belongs to another building or the room inside.
 
-        @param cells: front columns
-        @returns: cells of the winning run, along X or along Z
+        @param f: feature mass
+        @param cell: ``(x, z)``
+        @returns: whether the shop front may build here
         """
-        remaining = set(cells)
-        runs = []
-        while remaining:
-            start = min(remaining)
-            run = {start}
-            remaining.remove(start)
-            todo = [start]
-            while todo:
-                x, z = todo.pop()
-                for dx, dz in N4:
-                    nxt = (x + dx, z + dz)
-                    if nxt in remaining:
-                        remaining.remove(nxt)
-                        run.add(nxt)
-                        todo.append(nxt)
-            runs.append(run)
-        chosen = max(runs, key=lambda run: (len(run), sorted(run)))
-        ordered = list(chosen)
-        span_z = max(z for _, z in ordered) - min(z for _, z in ordered)
-        span_x = max(x for x, _ in ordered) - min(x for x, _ in ordered)
-        if span_z > span_x:
-            ordered.sort(key=lambda cell: (cell[1], cell[0]))
-        else:
-            ordered.sort(key=lambda cell: (cell[0], cell[1]))
-        return ordered
+        if cell in getattr(f, 'inner', ()):
+            return False
+        if cell in f.cells:
+            return True
+        return cell not in self.by_no_all_cells
+
+    def _placed_door(self, cell: tuple[int, int]):
+        """Block id, floor y and face of a door leaf already written on ``cell``.
+
+        @param cell: wall ``(x, z)``
+        @returns: ``(block, floor_y, face)`` or ``None``
+        """
+        facing = {'north': 'N', 'south': 'S', 'east': 'E', 'west': 'W'}
+        for (x, y, z), state in self.p.cells.items():
+            if (x, z) != cell or '_door[' not in state or 'half=lower' not in state:
+                continue
+            block = state.split('[', 1)[0].removeprefix('minecraft:')
+            face = next((letter for name, letter in facing.items() if f'facing={name}' in state), 'N')
+            return block, y - 1, face
+        return None
+
+    def _release_recessed_door(self, cell: tuple[int, int], face: str, floor: int) -> None:
+        """Take a door off a recessed column so the straight run can hold the one door.
+
+        Drops the keep marks on the leaf, its stoop and its inward clear, and turns
+        the leaf back into wall. The stoop is often the run line, and a kept air
+        block there would stop the fascia.
+
+        @param cell: recessed door ``(x, z)``
+        @param face: door facing letter
+        @param floor: floor y under the leaf
+        """
+        dx, dz = DIRS[face]
+        for y in range(floor, floor + 4):
+            for ox, oz in ((0, 0), (dx, dz), (-dx, -dz)):
+                pos = (cell[0] + ox, y, cell[1] + oz)
+                self.keep.discard(pos)
+                if '_door[' in self.p.cells.get(pos, ''):
+                    self.p.cells[pos] = self.wall
+
+    def _shop_line_for_door(self, runs: list, door: tuple[int, int]):
+        """Line cell in front of a door that sits on a squared run.
+
+        @param runs: dressed runs with ``sources`` and ``line``
+        @param door: registered door ``(x, z)``
+        @returns: ``(line_cell, face)`` or ``None`` when the door is not on this front
+        """
+        for run in runs:
+            owned = set(run['sources']) | set(run['line']) | set(run['fill'])
+            if door not in owned:
+                continue
+            horizontal = run['face'] in 'NS'
+            along = door[0] if horizontal else door[1]
+            for cell in run['line']:
+                if (cell[0] if horizontal else cell[1]) == along:
+                    return cell, run['face']
+        return None
 
     def _dress_shop_front(self, f: Feature, fronts: dict, rule: dict, name: str) -> None:
         """Glass, a pavement-level door, fascia, a contrasting sign, and a continuous awning.
 
-        Only columns in ``fronts`` are dressed, so a side, alley or party wall stays shell.
-        Glass fills the ground-floor opening. The door stands on the column floor (the
-        pavement), not a block below it. The fascia is two rows: the lower row is the
-        lintel and carries a trapdoor one block outside every front column when this shop
-        kind takes an awning; the upper row carries the wrapped name. The trapdoor touches
-        that column and is never a storey above the opening.
+        Stepped fronts are squared onto straight runs first (:func:`fit_straight_runs`).
+        Glass, the door, the fascia, the sign and the awning sit on that line. The
+        stair-step between a recessed column and the line is filled solid, so the
+        awning and the sign touch the wall. Side, alley and party walls are not in
+        ``fronts`` and stay shell. The door stands on the column floor, and its jambs
+        are the line's neighbours, which a straight run always has.
 
         @param f: feature mass
         @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}`` from :func:`facade_plan.front_columns`
         @param rule: shop recipe from :func:`land_use.street_face_defaults`
         @param name: mapped name; empty skips the sign
         """
-        run = self._longest_front_run(set(fronts))
-        existing = [cell for cell in getattr(f, 'door_cells', ()) if cell in fronts]
-        door_cell = existing[0] if existing else run[len(run) // 2]
-        face = fronts[door_cell]
-        lateral = (1, 0) if face in 'NS' else (0, 1)
-        jambs = {
-            (door_cell[0] + lateral[0] * side, door_cell[1] + lateral[1] * side)
-            for side in (1, -1)
-        }
+        runs = []
+        for run in fit_straight_runs(fronts):
+            line = [cell for cell in run['line'] if self._shop_column_ok(f, cell)]
+            if not line:
+                continue
+            runs.append({
+                'face': run['face'],
+                'line': line,
+                'fill': {cell for cell in run['fill'] if self._shop_column_ok(f, cell)},
+                'sources': set(run['sources']),
+            })
+        if not runs:
+            return
+        face_of = {cell: run['face'] for run in runs for cell in run['line']}
+        line_cells = set(face_of)
+        longest = max(runs, key=lambda run: (len(run['line']), run['line']))
+        door_line = []
+        for door in list(getattr(f, 'door_cells', ()) or ()):
+            hit = self._shop_line_for_door(runs, door)
+            if hit is None:
+                continue
+            line_cell, face = hit
+            if line_cell != door:
+                placed = self._placed_door(door)
+                block = placed[0] if placed else rule['door']
+                old_floor = placed[1] if placed else self._column_floor(f, door)
+                old_face = placed[2] if placed else fronts.get(door, face)
+                self._release_recessed_door(door, old_face, old_floor)
+                f.door_cells.discard(door)
+                if getattr(f, 'door', None) == door:
+                    f.door = line_cell
+                self._set_door_leaf(line_cell, face, block, 'left', self._column_floor(f, line_cell))
+                f.door_cells.add(line_cell)
+            door_line.append(line_cell)
+        place_centre = not door_line
+        door_cell = longest['line'][len(longest['line']) // 2] if place_centre else None
+        if door_cell is not None:
+            door_line.append(door_cell)
+        jambs = set()
+        for cell in door_line:
+            face = face_of[cell]
+            lateral = (1, 0) if face in 'NS' else (0, 1)
+            jambs.update(
+                (cell[0] + lateral[0] * side, cell[1] + lateral[1] * side) for side in (1, -1)
+            )
         colour = fascia_colour(name or f.no)
         fascia = f'{colour}_concrete'
         glass_h = rule['glass_height']
         rows = {}
-        for cell in fronts:
+        for cell in line_cells:
             if not self._shop_band_fits(f, cell, glass_h):
                 continue
             floor = self._column_floor(f, cell)
@@ -2813,13 +2990,24 @@ class Build:
             if y < roof_y and pos not in protected and cell not in doors:
                 self.set(*pos, state)
 
+        for run in runs:
+            sample = next((cell for cell in run['line'] if cell in rows), None)
+            if sample is None:
+                continue
+            floor, _awning_y, sign_y = rows[sample]
+            for cell in run['fill']:
+                if cell in line_cells:
+                    write(cell, floor, self.wall)
+                    continue
+                for y in range(floor, sign_y + 1):
+                    write(cell, y, self.wall)
         for cell, (floor, awning_y, _sign_y) in rows.items():
             if cell != door_cell and cell not in jambs:
                 for y in range(floor + 1, awning_y):
                     write(cell, y, 'glass')
-        if door_cell is not None and not existing:
+        if place_centre and door_cell is not None:
             floor = rows[door_cell][0]
-            self._set_door_leaf(door_cell, face, rule['door'], 'left', floor)
+            self._set_door_leaf(door_cell, face_of[door_cell], rule['door'], 'left', floor)
             f.door_cells.add(door_cell)
             if getattr(f, 'door', None) is None:
                 f.door = door_cell
@@ -2831,14 +3019,14 @@ class Build:
             cz = statistics.mean(z for _x, z in rows)
             for cell in sorted(rows, key=lambda c: (abs(c[0] - cx) + abs(c[1] - cz), c)):
                 _floor, _awning_y, sign_y = rows[cell]
-                dx, dz = DIRS[fronts[cell]]
+                dx, dz = DIRS[face_of[cell]]
                 pos = (cell[0] + dx, sign_y, cell[1] + dz)
                 outside = self.p.cells.get(pos)
                 if outside is None:
                     outside = self.live.block(*pos)
                 wall = self.p.cells.get((cell[0], sign_y, cell[1]))
                 if wall == bid(fascia) and outside in ('minecraft:air', 'minecraft:cave_air'):
-                    self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[cell]]}]')
+                    self.set(*pos, f'oak_wall_sign[facing={FACE[face_of[cell]]}]')
                     self.p.sign(
                         pos, textwrap.wrap(name, width=rule['sign_wrap'])[:4],
                         colour=contrasting_sign_colour(colour), glow=False,
@@ -2847,7 +3035,7 @@ class Build:
         if rule['awning']:
             hinge_for = {'N': 'south', 'S': 'north', 'E': 'west', 'W': 'east'}
             for cell, (_floor, awning_y, _sign_y) in rows.items():
-                dx, dz = DIRS[fronts[cell]]
+                dx, dz = DIRS[face_of[cell]]
                 outside_col = (cell[0] + dx, cell[1] + dz)
                 if outside_col in self.by_no_all_cells:
                     continue
@@ -2857,7 +3045,7 @@ class Build:
                     outside = self.live.block(*pos)
                 if outside not in ('minecraft:air', 'minecraft:cave_air'):
                     continue
-                hinge = hinge_for[fronts[cell]]
+                hinge = hinge_for[face_of[cell]]
                 self.set(*pos, f'oak_trapdoor[facing={hinge},half=top,open=false]')
 
     def street_face(self, f: Feature) -> None:
