@@ -56,6 +56,20 @@ class Base(unittest.TestCase):
 
 
 class CacheBoundsTest(Base):
+    def test_undo_decodes_oversized_prior_once_without_retaining_it(self):
+        prior = plan(0, 0, DIRT)
+        self.blocks.write_many(prior)
+        self.blocks.flush()
+        self.build('box', 'feature', plan(0, 0, STONE))
+        entry = self.reg._entries[self.reg.entries(plan='box')[0].seq]
+        self.reg._blob_cache.clear()
+        with mock.patch('cell_journal.MAX_CACHED_BLOB_BLOCKS', 1), mock.patch.object(
+                self.reg, '_read_blob_bytes', wraps=self.reg._read_blob_bytes) as reads:
+            prepared = self.reg._prepare(Undo('box'))
+            self.assertEqual(prepared.writes.cells, prior)
+            self.assertLessEqual(sum(map(len, self.reg._blob_cache.values())), 1)
+            self.assertEqual(sum(call.args[0] == entry.prior for call in reads.call_args_list), 1)
+
     def test_multi_cell_reconcile_bounds_decoded_plans_and_ownership(self):
         for x in range(5):
             self.build(f'cell_{x}', 'feature', plan(x, 0, STONE), cell=(x, 0))
