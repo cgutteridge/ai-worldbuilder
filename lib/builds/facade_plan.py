@@ -55,11 +55,17 @@ Relation to neighbouring work:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
+import math
 from typing import Any
 
 import provenance as prov
 
 FACES = ('N', 'S', 'E', 'W')
+_OUTWARD = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}
+_FRONT_HIGHWAYS = frozenset({
+    'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street',
+    'service', 'pedestrian',
+})
 # Entrance cover kinds. ``porch_roof`` replaces the old kind value ``canopy``
 # (tree-ambiguous); ``awning`` is fabric-style; ``covered_area`` is a recess /
 # soffit; ``none`` is flush with no cover.
@@ -73,6 +79,83 @@ _FACE_RESERVED = ('roof_edge', 'detail')
 
 class FacadePlanError(ValueError):
     """Refused facade_plan input (shape, entrance, glazing, or portal coverage)."""
+
+
+def front_columns(footprint: set, streets: Sequence, *, occupied=(), street_name=None) -> dict:
+    """Find exposed wall columns whose outside neighbour is nearer a mapped street line.
+
+    Street rows are ``(highway, points, flattened tags)``. Alleys, driveways and parking aisles
+    cannot choose a frontage. A matching address street wins when present. Segment endpoints
+    cannot turn a side wall into a front, and the route to the line must clear all footprints.
+    Both step directions of a rotated frontage are supported; each column gets one outward face.
+
+    @param footprint: building's columns
+    @param streets: mapped street rows (e.g. ``footprint_overlap.streets_from_index``)
+    @param occupied: all building columns, including this footprint and party-wall neighbours
+    @param street_name: optional mapped ``addr:street``
+    @returns: ``{(x, z): 'N'|'S'|'E'|'W'}``; empty without a usable street
+    """
+    rows = [(pts, tags) for highway, pts, tags in streets
+            if highway in _FRONT_HIGHWAYS and tags.get('service') not in
+            ('alley', 'driveway', 'parking_aisle') and len(pts) > 1]
+    named = [(pts, tags) for pts, tags in rows if street_name and tags.get('name') == street_name]
+    segments = [(a, b) for pts, _tags in (named or rows) for a, b in zip(pts, pts[1:]) if a != b]
+    if not segments:
+        return {}
+    blocked = set(occupied) | footprint
+
+    def nearest(p):
+        choices = []
+        for (ax, az), (bx, bz) in segments:
+            dx, dz = bx - ax, bz - az
+            t = ((p[0] - ax) * dx + (p[1] - az) * dz) / (dx * dx + dz * dz)
+            if 0 <= t <= 1:
+                q = (ax + t * dx, az + t * dz)
+                choices.append((math.dist(p, q), q))
+        return min(choices, default=None)
+
+    result = {}
+    for x, z in sorted(footprint):
+        p = (x + 0.5, z + 0.5)
+        hit = nearest(p)
+        if hit is None or hit[0] < 1:
+            continue
+        distance, q = hit
+        faces = []
+        for face, (dx, dz) in _OUTWARD.items():
+            if (x + dx, z + dz) in blocked:
+                continue
+            outside = (p[0] + dx, p[1] + dz)
+            gain = distance - math.dist(outside, q)
+            if gain > 1e-6:
+                faces.append((gain, face))
+        if not faces:
+            continue
+        # Average the nearby stepped edge's normal, so a diagonal street does not dress
+        # a long perpendicular side wall merely because one step reduces the distance.
+        nx = nz = 0
+        for sx in range(x - 1, x + 2):
+            for sz in range(z - 1, z + 2):
+                if (sx, sz) in footprint:
+                    for dx, dz in _OUTWARD.values():
+                        if (sx + dx, sz + dz) not in footprint:
+                            nx += dx
+                            nz += dz
+        normal = math.hypot(nx, nz)
+        alignment = ((nx * (q[0] - p[0]) + nz * (q[1] - p[1])) / (normal * distance)
+                     if normal else 0)
+        cardinal = max((_OUTWARD[face][0] * (q[0] - p[0]) +
+                        _OUTWARD[face][1] * (q[1] - p[1])) / distance for _, face in faces)
+        if max(alignment, cardinal) < 0.9:
+            continue
+        # Trace from just outside the wall to the street, including narrow intervening buildings.
+        steps = max(1, math.ceil(distance * 2))
+        route = {(math.floor(p[0] + (q[0] - p[0]) * i / steps),
+                  math.floor(p[1] + (q[1] - p[1]) * i / steps)) for i in range(1, steps + 1)}
+        route.discard((x, z))
+        if not route & blocked:
+            result[(x, z)] = max(faces)[1]
+    return result
 
 
 def glazing_by_face(plan: Mapping[str, Any] | None, label: str) -> dict:

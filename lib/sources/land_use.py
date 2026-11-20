@@ -89,6 +89,16 @@ def validate_table(doc: dict) -> dict:
                         raise TableError(f'{key}={value} maps to {seen_area[(key, value)]} and {cid}')
                     seen_area[(key, value)] = cid
         fr = row['frontage']
+        face = row.get('street_face')
+        if face is not None:
+            expected = {'industrial': 'industrial', 'commercial': 'big_box'}.get(cid)
+            if not isinstance(face, dict) or face.get('kind') != expected or expected is None:
+                raise TableError(f'{cid}: street_face must be an industrial or big_box recipe on its class')
+            fields = ('shutter_width', 'shutter_height', 'bay_depth') if cid == 'industrial' else (
+                'min_columns', 'min_height', 'glazed_storeys')
+            for field in fields:
+                if type(face.get(field)) is not int or face[field] < 1:
+                    raise TableError(f'{cid}: street_face {field} must be an integer >= 1')
         for col in ('inference', 'requires', 'boundary', 'private_surface', 'opening'):
             if col not in fr:
                 raise TableError(f'{cid}: frontage is missing {col!r}')
@@ -297,6 +307,28 @@ def classify_column(hit: tuple | None, *, checked: bool) -> dict:
     if hit:
         return {'class': hit[0], 'reason': f'{hit[2]}_polygon', 'ref': hit[1]}
     return _unknown('unmapped' if checked else 'not_checked')
+
+
+def street_face_defaults(cls: str, tags: dict, *, columns: int, height: float) -> dict | None:
+    """Accepted industrial / big-box recipes; shops and offices keep their own facade plans.
+
+    @param cls: classified land use (including an inherited use polygon)
+    @param tags: flattened building tags
+    @param columns: footprint area in block columns
+    @param height: shell height in blocks (lidar height when zoned)
+    @returns: class recipe, or None when no accepted default applies
+    """
+    recipe = defaults(cls).get('street_face')
+    if not recipe:
+        return None
+    if recipe['kind'] == 'big_box':
+        if tags.get('building') not in ('retail', 'supermarket', 'yes', None):
+            return None
+        if tags.get('office') or tags.get('tourism'):
+            return None
+        if columns < recipe['min_columns'] and height < recipe['min_height']:
+            return None
+    return recipe
 
 
 def pavement_width(cls: str | None = None, row: dict | None = None) -> float:
