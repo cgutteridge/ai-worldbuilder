@@ -58,33 +58,35 @@ Apply each accepted change. Commit nothing yet beyond what Close the case says.
 
 Switch to 🕵️. `issues.py sync`, then `digest`. For every issue at `fix-landed`, run the `snag` skill's survey (section B): grouping check first, then one card per snag, one question at a time. Keep going until no issue is left at `fix-landed`, or the owner stops. A "not fixed" verdict that shows a new cause sends you back to 🔍; a task idea sends you to 🔧.
 
-Issues that are only `open` are never reviewed; if their fix is logged but the element is `not-rebuilt`, they go into the builds handoff.
+Issues that are only `open` are never reviewed; if their fix is logged but the element is `not-rebuilt`, they enter the gate's rebuild list (stage 4).
 
 ## 4. The gate, then handoffs, then ✅
 
 When nothing is left that the AI can do without a build or a task running, run the **gate**: decide whether the owner's next move is code, builds, both or neither. A rebuild is **held** while a pending task will change what it builds; building then spends the owner's review on output about to be replaced.
 
-1. **List the rebuilds wanted**: every element with a landed fix not yet rebuilt (`not-rebuilt`), every stale element a diagnosis names, and the redesigns the open issues need.
-2. **List the pending work**: tasks in `tasks/index.json` that are `todo`, `doing` or `blocked`, plus any task you added this run.
-3. **Match.** A task **reaches** an element when it names the element's issue, or edits the code stage the issue's `stages` field names (tasks name their files and issues in their notes). Where the match is unclear, ask the owner one question: "will [task title] change how [element] is built?"
-4. **Sort each rebuild** into one of three:
+1. **List the rebuilds wanted**: every element with a landed fix not yet rebuilt (`not-rebuilt`), every element a diagnosis names for rebuild, and the redesigns the open issues need. Done when you hold a named list, even if empty.
+2. **List the pending work**: tasks in `tasks/index.json` that are `todo`, `doing` or `blocked`, plus any task you added this run. Done when the list is read from the file, even if empty.
+3. **Match.** A task **reaches** an element when it names the element's issue, or edits the code stage the issue's `stages` field names (tasks name their files and issues in their notes). Where the match is unclear, ask the owner, one question at a time: "will [task title] change how [element] is built?" Done when every pending task is checked against every rebuild and no pair is left unclear.
+4. **Sort each rebuild** into one class:
+   - **evidence**: a diagnosis or task needs fresh output to test a hypothesis, even with work pending; name the question the rebuild answers. Evidence wins over held; if a pending task also reaches the element, the handoff says it is rebuilt again after that task.
+   - **held**: a pending task reaches it; name that task. A held element is rebuilt once, after the last task that reaches it. When every task holding it is `blocked` on something outside the tool (owner input, a data source), ask the owner whether to wait or build; a "build" makes it ready.
    - **ready**: no pending task reaches it.
-   - **held**: a pending task reaches it; name that task. Each element is rebuilt once, after the last task that reaches it.
-   - **evidence**: a diagnosis or task needs fresh output to test a hypothesis, even with work pending; name the question the rebuild answers.
-5. **Verdict**, with one line of reason the owner can overrule (e.g. "code first: #330, #331 and #332 change every shop front"):
-   - **code first**: pending tasks reach most rebuilds. Write the tasks handoff; the held rebuilds go in it as a list.
-   - **builds first**: the ready and evidence rebuilds outnumber the held ones, or no pending task reaches them. Write the builds handoff, with the held rebuilds listed.
-   - **both**: the ready rebuilds and the pending tasks touch different elements and stages, so neither invalidates the other. Write both handoffs.
-   - **neither**: no rebuild is wanted and no task is pending.
+
+   Done when each rebuild sits in exactly one class.
+5. **Verdict.** The **build set** is the ready and evidence rebuilds. The **task set** is the pending tasks to hand off, which include every task that holds a rebuild.
+   - **builds first**: build set non-empty, task set empty.
+   - **code first**: task set non-empty, build set empty (every rebuild held, or none wanted).
+   - **both**: both sets non-empty; the build set is by definition untouched by the task set, so neither invalidates the other.
+   - **neither**: both sets empty; say "no handoffs; the case is closed".
+
+   Give the verdict with one line of reason, titles first (e.g. "code first: the shop street-face rules (#331) and fit-straight-runs (#332) change every shop front"). If the owner overrules, re-sort the rebuilds and re-issue the handoffs the overruled verdict calls for.
 
 Write only the handoffs the verdict calls for, as plain copyable text in the reply (one fenced block each), for the owner to paste into new threads. Write no files. Keep them short: most of the detail already lives in the tasks and issues, so reference them by title, then ID. Plain titles first, always.
 
-1. **Builds handoff** (for a thread that orchestrates rebuilds): the ready and evidence rebuilds in order (feature plans, ground/trees/decor per cell), what each is for (the issues and check lines it makes reviewable, or the hypothesis it tests), cautions (known faults that will recur, other sessions touching the world, site lock), then the **held** list: each held element with the task that releases it. End with "after the rebuilds, run `sherlock` again to check the fixes".
-2. **Tasks handoff** (for a thread that orchestrates the tool backlog, usually with `parallel-task-wave`): the open tasks to work, in order, with blocked-by relations, which can run in parallel, which are spikes, and which issues each one unblocks or fixes. The thread logs each fix on its issue (`issues.py fix`) with a check line per snag. When the verdict is code first, add the held rebuilds and the line "when these merge, run `sherlock` again: it re-runs the gate and releases the held rebuilds".
+1. **Builds handoff** (the build set, for a thread that orchestrates rebuilds): the rebuilds in order (feature plans, ground/trees/decor per cell), what each is for (the issues and check lines it makes reviewable, or the hypothesis it tests), cautions (known faults that will recur, other sessions touching the world, site lock). End with "after the rebuilds, run `sherlock` again to check the fixes".
+2. **Tasks handoff** (the task set, for a thread that orchestrates the tool backlog, usually with `parallel-task-wave`): the tasks to work, in order, with blocked-by relations, which can run in parallel, which are spikes, and which issues each one unblocks or fixes. The thread logs each fix on its issue (`issues.py fix`) with a check line per snag. When rebuilds are held, add the **held** list, each held element with the task that releases it, and the line "when these merge, run `sherlock` again: it re-runs the gate and releases the held rebuilds".
 
 Each return to `sherlock` re-runs the gate, so held rebuilds become ready as their tasks merge.
-
-Then close the case.
 
 ## Close the case
 
@@ -94,8 +96,8 @@ Committing your own records is part of the job, not a code change.
 2. **Archive closed issues automatically.** Run `python3 scripts/issues.py --world <world> archive`, then `python3 scripts/issues.py --world <world> verify` again. If either fails, report it and stop here. Report one line: "archived N closed issues". This moves confirmed/wontfix records to `registry/issues-closed.json` and their pictures to `registry/issues/img-closed/`; open/fix-landed records stay live.
 3. **Commit the world's issue records only.** The world checkout is shared with other sessions and its index may already hold their changes. From `registry/issues.json`, `registry/issues-closed.json`, `registry/issues/img`, and `registry/issues/img-closed`, select only paths that exist, then name that exact set in both `git -C <world> add <paths>` and `git -C <world> commit -m "Issues: <what this run changed>" -- <paths>`. Leave `_intake-pending.png` (the snag skill's scratch) and everything else alone. Push only to an explicitly authorised world destination; a configured remote alone is not authorisation.
 4. **Commit tracker edits** (tasks you added with the owner's yes) straight to `main` in the tool repo. Do not commit tracker files other sessions have left modified. Push only to an explicitly authorised destination. A push the hooks or remote refuse is reported, not forced.
-5. **Rename the thread** with ✅ once steps 1-4 have committed everything and the gate's handoffs are given.
-6. **Wrap up in Holmes's voice, lightly**: one deduction, then what the owner does next, by name, following the verdict: paste the tasks handoff into a new thread (code first), the builds handoff (builds first), or both into separate threads, then call sherlock back to re-run the gate and check the fixes. If nothing is left: "no further work; the case is closed".
+5. **Rename the thread** with ✅ once steps 1-4 have committed everything and the gate's handoffs are given (for "neither", once the verdict is stated).
+6. **Wrap up in Holmes's voice, lightly**: one deduction, then what the owner does next, by name, following the verdict: paste the tasks handoff into a new thread (code first), the builds handoff (builds first), or both into separate threads, then call sherlock back to re-run the gate and check the fixes. For "neither": "no further work; the case is closed".
 7. Play the `done` sound cue.
 
 ## Name things, never just number them
