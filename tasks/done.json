@@ -2733,5 +2733,15 @@
       "blockedBy": [],
       "notes": "The session for cell 52,-42 downloaded 10 Google z19 tiles (1.47 MB, reference/aerial/cell-52-42-z19/) although its brief said downloads were not authorized; the owner then approved keeping them. AGENTS/cell-orchestrator say tile downloads need stated source, filename, size and human authorization. Decide whether google_aerial/prepare tooling should enforce an explicit authorization flag rather than rely on briefs. Decision 2026-11-20: owner approved an explicit download-authorization flag; implement and test offline without world edits.\n\nClosed at 74d040b4ed54b9dc6ffa987263eabdb8a8d1b1a6: Require --download-authorized for Google aerial sheet/window commands and Python download APIs; add network-free --dry-run source, filename, tile count and labelled size estimates. Updated cell-source guidance. Focused offline tests, full pre-commit suite, fresh review and full branch/main merge suites passed. Merged locally; no world edits or imagery downloads.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 236,
+      "title": "reapply_feature refuses legacy house builds with no recorded builder; house_build apply bypasses the guard",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Owner decision 2026-11-20: allow explicit registration of verified legacy builders and require an override for direct applies over existing builds. Implement a dry-run-first registration command for legacy spec-backed features (house_build and feature_build), validating the named spec and binding an append-only registration to the reviewed live build entry. Require a verification reason; preserve unknown historical provenance. Reapply accepts explicit registrations and retains validation-before-undo. house_build direct apply refuses an existing landed build unless --overwrite is explicit, matching feature_build. Cover registration/refusal, journal persistence, builder identity, and overwrite/undo behavior with synthetic fixtures; no live-world changes. Original report: houses_kitchener_road_w176658416 lacked a recorded builder; owner-authorized direct house_build apply wrote 31905 positions with zero mismatches. Related #225, #228. Current house_build already records provenance for new applies.\n\nClosed at 0b143a13b0e8d6e525d9a9be9a6e9befabe25578: Completed 2026-11-20: explicit dry-run-first legacy spec registration bound to the reviewed live build sequence, with a verification reason and append-only journal note; reapply accepts registered builders while historical provenance stays unknown. Direct house apply now requires --overwrite over a landed build. Independent review approved; all 2194 tests passed in a clean checkout and the ship-branch merge gate passed. No live-world changes or push. The primary checkout still has pre-existing untracked planning documents that fail the terminology audit; they were preserved.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

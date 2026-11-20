@@ -32,15 +32,6 @@
       "notes": "NEEDS USER INPUT (policy). Applying houses_kitchener_road_w176634502 (footprint z -5382..-5343) reached 5 blocks into finished cell 53,-43 and marked its trees/decor stale (trees=False, decor=False). An earlier apply also generated a lidar ghost cell at 56,-40 (230k blocks, 'ghost-ground' journal seq 620) that the user did not ask for. Decide: warn/confirm before an apply touches a done neighbour; keep or drop frontier ghost generation on feature applies; whether edge fringe (roof overhang) should invalidate trees/decor at all."
     },
     {
-      "id": 236,
-      "title": "reapply_feature refuses legacy house builds with no recorded builder; house_build apply bypasses the guard",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Owner decision 2026-11-20: allow explicit registration of verified legacy builders and require an override for direct applies over existing builds. Implement a dry-run-first registration command for legacy spec-backed features (house_build and feature_build), validating the named spec and binding an append-only registration to the reviewed live build entry. Require a verification reason; preserve unknown historical provenance. Reapply accepts explicit registrations and retains validation-before-undo. house_build direct apply refuses an existing landed build unless --overwrite is explicit, matching feature_build. Cover registration/refusal, journal persistence, builder identity, and overwrite/undo behavior with synthetic fixtures; no live-world changes. Original report: houses_kitchener_road_w176658416 lacked a recorded builder; owner-authorized direct house_build apply wrote 31905 positions with zero mismatches. Related #225, #228. Current house_build already records provenance for new applies."
-    },
-    {
       "id": 237,
       "title": "World provider osm_extract.py: ogr2ogr ran without OSM_CONFIG_FILE; duplicates lib/sources",
       "status": "blocked",
