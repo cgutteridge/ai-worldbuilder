@@ -242,7 +242,12 @@ probe floor (#315). The low-floor run planned 9,986 (tarmac 2,060, paving 3,493,
 and landed with 0 mismatches (journal seq 1341, LIDAR_GHOST_RING=0, 50,-35 only). The bay lines did **not**
 end up on tarmac: of 625 line blocks, 378 touch grass, 192 sit in tarmac and 55 in paving. The ground pass
 does not read `amenity=parking` as a surface (the #158 rule keeps land use out of ground paint), so the car
-park came out as aerial-coloured grass and tarmac patches, and the grid-aligned bays run across both. Rule for the productionised version: dressing that writes
+park came out as aerial-coloured grass and tarmac patches, and the grid-aligned bays run across both. The owner
+judged the bay lines "a muddle" that "don't match the real car park" and noted there is no grass in the
+aerial photo; instruction "Remove lines, file both" (the orchestrator filed the snags; task #336 covers a
+real car-park layout). The 557 bay-line blocks were replaced with tarmac (`gray_concrete`) as the journalled
+follow-up `w1480342683_carpark_lines_removed` (0 mismatches). 50,-35 now holds 69 white blocks: the ground
+pass's 68 road markings and one shop-fascia block. The grass patches were left for their own snag. Rule for the productionised version: dressing that writes
 ground-layer things (markings, surfaces) must have a real ground pass under it or refuse, and cell
 approvals must say which layers they cover.
 
@@ -302,7 +307,8 @@ All in `southampton-build` (world repo and save), none on the tool's main branch
   `highfield_50_m36_ground`, `highfield_43_m16_ground`; dressing follow-ups `w241498208_dressing`,
   `w160637268_dressing_v2` (v1 `w160637268_dressing` undone and its plan dismissed), `w465660355_dressing`.
   All read back with 0 mismatches. The high-street dressing painted car-park bay lines onto ghost ground in
-  50,-35 (section 8); undo `w160637268_dressing_v2` removes them with the shop fronts. Specs are in
+  50,-35 (section 8); on the owner's instruction they were replaced with tarmac by
+  `w1480342683_carpark_lines_removed`, and 50,-35 then got its own ground pass (`highfield_50_m35_ground`). Specs are in
   `site/builds/`. Each is undoable with `element_undo.py`.
 - Unit plan ids covered by a grouped spec were dismissed with the reason "built inside grouped trial #258
   spec <id>" (problem 2). Units left out of the windows stay planned.
