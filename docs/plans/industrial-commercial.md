@@ -186,7 +186,7 @@ railings is one site's evidence and belongs in a district profile (#255), not th
 | commercial: big box (`building=retail` single way, footprint over about 2,000 columns or lidar over 15 m) | One mass from lidar, plain cladding | Glazed two-storey base on the faces toward pedestrian space or the street, fascia, name sign (trial) | Flat; PV/plant greeblies where the aerial shows them (trial) | `paving` plaza where mapped `highway=pedestrian` | null | benches and bins where mapped | size, lidar, aerial roof, `highway=pedestrian` |
 | commercial: civic/landmark (church, cinema, shopping centre, `building=civic`) | Tier A: street-level check before building (owner: the "church" is a former bingo hall with a facade, steps and a canopy) | from that check | from that check | `paving` | from that check | from that check | street-level imagery (owner-authorised) |
 | parking (`amenity=parking`, surface) | none | none | none | tarmac (trial: the ground pass already paints it) | null | lamps along aisles (inference, untested) | `amenity=parking`, `parking=surface`, `service=parking_aisle` |
-| parking: markings | n/a | n/a | n/a | white bay lines 3 blocks apart in 5-deep rows either side of 6-wide aisles (trial, grid-aligned; follow-up: align to the aisle line) | | | `service=parking_aisle` lines |
+| parking: markings | n/a | n/a | n/a | white bay lines 3 blocks apart in 5-deep rows either side of 6-wide aisles (trial was grid-aligned; bay lines now follow the aisle line, #336; no lines in the wedge outside a bend) | | | `service=parking_aisle` lines |
 
 ## 8. Owner verdicts
 
@@ -279,15 +279,16 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
    (`highway=traffic_signals`, `crossing`), lamps, bollards, bike racks, traffic islands; a density per class.
 9. **Landmark street-level step** (owner). For civic/church/cinema/shopping-centre classes, nominate as tier A
    and require one street-level check (owner-authorised imagery) before the build.
-10. **Car-park markings along the aisle** (parking class). Orient bay rows to `service=parking_aisle`, not the
-    block grid.
+10. **Car-park markings along the aisle** (parking class, done in #336). Bay rows are oriented to
+    `service=parking_aisle`, not the block grid, and drawn by the ground layer (`lib/layers/bay_lines.py`); each
+    column follows its nearest aisle segment, and the outer wedge of a bend gets no lines.
 11. **Ground-layer dressing needs a ground pass, and approvals name layers** (orchestrator finding,
     section 8). Markings and surfaces refuse on a cell with no landed ground; a cell approval records which
     layers it covers (ghost, buildings crossing in, ground, dressing). Contract (#327): ground-layer
     markings must be written through `Plan.ground_marking` / `Plan.ground_marking_fill`, which flag the
     plan so `site_kit.apply` makes the journal refuse it (nothing written) unless every cell it writes
-    into has a landed ground pass; plain `plan.set` is not gated. Future consumers: car-park bay lines
-    (#336, item 10 here). Approvals are written with `cell_registry.py approve <cell> --layers ...` and
+    into has a landed ground pass; plain `plan.set` is not gated. Consumers: car-park bay lines
+    (#336, item 10 here) are drawn by the ground pass itself, so they sit outside this gate. Approvals are written with `cell_registry.py approve <cell> --layers ...` and
     never stand in for the ground pass. The 50,-35 run also shows that a mapped surface car park
     (`amenity=parking`, `parking=surface`) needs a tarmac surface rule before markings make sense; that is an
     exception to the #158 "land use never paints surfaces" rule, so it is the owner's call.

@@ -71,11 +71,45 @@ class TestBayLineGeometry(unittest.TestCase):
         lines = bl.bay_line_columns([area], [n, s])
         self.assertEqual(lines, bl.bay_line_columns([area], [n]) | bl.bay_line_columns([area], [s]))
 
-    def test_a_bend_does_not_double_a_column(self):
+    def test_an_aisle_crossing_the_cell_edge_keeps_its_lines_in_the_small_part(self):
+        half_area = box(0, 0, 30, 20)                                # the cell's clipped slice of a larger car park
+        long_aisle = {'points': [(-60.0, 10.0), (31.0, 10.0)], 'half': 2.5}
+        short_aisle = {'points': [(-20.0, 10.0), (31.0, 10.0)], 'half': 2.5}
+        whole = box(-80, 0, 30, 20)                                  # the unclipped car park
+        for aisle, expect in ((long_aisle, range(2, 30, 3)), (short_aisle, range(0, 31, 3))):
+            lines = bl.bay_line_columns([half_area], [aisle])
+            self.assertEqual(sorted({x for x, _ in lines}), list(expect))
+            clipped = {q for q in bl.bay_line_columns([whole], [aisle]) if q in half_area}
+            self.assertEqual(lines, clipped)                         # same lines as the unclipped car park draws here
+
+    def test_a_bend_gives_every_column_to_its_nearest_segment(self):
+        pts = [(0.0, 10.0), (15.0, 10.0), (15.0, 25.0)]
+        half, area = 2.5, box(0, 0, 30, 30)
+        lines = bl.bay_line_columns([area], [{'points': pts, 'half': half}])
+        self.assertTrue(lines)
+        segs = bl._segments([{'points': pts, 'half': half}])
+        for q in lines:
+            dists = [bl._frame(s, *q)[2] for s in segs]
+            owner = segs[dists.index(min(dists))]
+            along, off, _ = bl._frame(owner, *q)
+            self.assertTrue(0.0 <= along <= owner[3], q)             # beside the nearest segment, not past its end
+            self.assertTrue(half < off <= half + bl.BAY_DEPTH, q)
+            self.assertLessEqual(abs(along - round(along / bl.BAY_PITCH) * bl.BAY_PITCH), 0.5, q)
+        # the first leg runs east-west (lines vary in z at a fixed x); the second north-south (vary in x at a fixed z)
+        inner = {(x, z) for x, z in lines if x < 15 and z > 10 or x > 15 and z < 10}
+        self.assertFalse(inner and {q for q in inner if _crosses(lines, q)})
+        self.assertFalse({q for q in lines if _crosses(lines, q)})
+
+    def test_the_outside_of_a_bend_gets_no_wedge_lines(self):
         bend = {'points': [(0.0, 10.0), (15.0, 10.0), (15.0, 25.0)], 'half': 2.5}
         lines = bl.bay_line_columns([box(0, 0, 30, 30)], [bend])
-        self.assertTrue(lines)
-        self.assertEqual(len(lines), len(set(lines)))
+        self.assertFalse({(x, z) for x, z in lines if x > 17 and z < 8})   # the outside-corner wedge stays clear
+
+
+def _crosses(lines, q) -> bool:
+    """True when ``q`` has line neighbours on both axes (a '+' where two orientations meet)."""
+    x, z = q
+    return (((x - 1, z) in lines or (x + 1, z) in lines) and ((x, z - 1) in lines or (x, z + 1) in lines))
 
 
 class TestMarkCarParkBays(unittest.TestCase):
