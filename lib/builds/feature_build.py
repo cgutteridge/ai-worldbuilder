@@ -59,7 +59,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  ``details`` / ``roofs.edge`` (#132) — entrance awning_like is
                  here (not a tree canopy; legacy entrance key ``canopy`` is
                  refused).
-  Windows use facade_plan[label].faces[face].glazing only. Panes need solid
+  Explicit windows use facade_plan[label].faces[face].glazing. Without face plans,
+  accepted industrial / big-box street faces come from the land-use class table,
+  mapped building tags and street lines. Other classes keep the legacy window rhythm.
+  Panes need solid
   framing on both sides, above and below; missing frames are reported. The
   dry run prints glazed share per exposed face/storey and marks missing rows
   as no evidence read. Legacy top-level window tables are refused.
@@ -117,6 +120,7 @@ Begun / mismatched entries do not block (site_recover / reconcile own those).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import statistics
@@ -133,6 +137,7 @@ import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 from chimney import chimney_layers, validate_chimney
 import facade_plan as facade_plan_mod  # noqa: E402
+import land_use  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
     Plan, apply, bid, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs,
@@ -1622,6 +1627,8 @@ class Build:
         osm_root=None,
         zone_data: dict | None = None,
         aerial_rgb: dict | None = None,
+        building_tags: dict | None = None,
+        streets: list | None = None,
     ):
         """
         @param spec: validated feature spec
@@ -1637,6 +1644,8 @@ class Build:
             Unzoned labels may inject ground_y without dsm. When omitted, zoned labels fetch composite lidar via ``lidar_provider.mc_heights``.
         @param aerial_rgb: optional ``{(x, z): (r, g, b) 0..1}`` for roof-colour
             dry-run lines (tests). When omitted, samples the place aerial mosaic.
+        @param building_tags: optional flattened tags by label (synthetic fixtures)
+        @param streets: optional ``(highway, points, tags)`` rows (synthetic fixtures)
         """
         self.spec = spec
         self.name = spec['name']
@@ -1659,6 +1668,26 @@ class Build:
             self.idx = idx
         else:
             self.idx = None
+        self.building_tags = dict(building_tags or {})
+        self.land_uses = {}
+        if self.idx is not None:
+            for rings, props in self.idx.buildings:
+                label = spec['ways'].get(str(props.get('osm_way_id') or props.get('osm_id')))
+                if label is None:
+                    continue
+                tags = osm_footprints.osm_tags(props)
+                self.building_tags.setdefault(label, tags)
+                if getattr(self.idx, 'areas', None):
+                    from coverage import building_land_use
+                    cls = building_land_use(self.idx, rings, props)['class']
+                else:
+                    cls = land_use.classify_building(tags)['class']
+                self.land_uses[label] = cls
+        self.streets = (streets if streets is not None else
+                        footprint_overlap.streets_from_index(self.idx) if self.idx is not None and
+                        hasattr(self.idx, 'streets') else [])
+        self.streets = [(highway, pts, osm_footprints.osm_tags(tags))
+                        for highway, pts, tags in self.streets]
         self.excluded: set = set()
         for lab, boxes in (spec.get('exclude') or {}).items():
             if lab in by_no:
@@ -2565,6 +2594,8 @@ class Build:
         from floor_reference import outside_ground
         from window_openings import Window, DIRECTIONS, choose_windows, report_lines
         facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
+        if not facades and self._street_face_rule(f):
+            return  # class street faces replace the unevidenced all-face storey grid
         door = self._door_keepout(f)
         candidates = []
         # Preserve actual door leaves and their lateral framing, including jambs
@@ -2617,6 +2648,162 @@ class Build:
             self.set(*pos, state)
         self._window_lines.extend(report_lines(f.no, report))
 
+    def _street_face_rule(self, f: Feature) -> dict | None:
+        tags = self.building_tags.get(f.no, {})
+        cls = self.land_uses.get(f.no, land_use.classify_building(tags)['class'])
+        roof = getattr(f, 'zone_roof', None)
+        height = max(roof[c] - self._column_floor(f, c) for c in f.cells) if roof else f.storeys * STOREY_H
+        return land_use.street_face_defaults(cls, tags, columns=len(f.cells), height=height)
+
+    def street_face(self, f: Feature) -> None:
+        """Dress an inferred industrial or big-box street face, leaving evidenced facades first.
+
+        Uses mapped names, street lines and the class table only. Full glass blocks support
+        diagonal frontages; all writes stay below each column's roof and preserve door frames.
+        Loading marks replace existing yard surfaces, never buildings or an unevidenced lawn.
+        """
+        rule = self._street_face_rule(f)
+        if not rule or (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
+            return
+        tags = self.building_tags.get(f.no, {})
+        fronts = facade_plan_mod.front_columns(
+            f.cells, self.streets, occupied=self.by_no_all_cells, street_name=tags.get('addr:street'))
+        if not fronts:
+            print(f'{f.no} street face {rule["kind"]}: no mapped street front')
+            return
+        name = tags.get('name') or tags.get('brand') or tags.get('addr:unit') or ''
+        palette = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
+        colour = palette[int.from_bytes(hashlib.sha256((name or f.no).encode()).digest()[:4], 'big') % len(palette)]
+        fascia = f'{colour}_concrete'
+        doors = self._door_keepout(f)
+        protected = set(self.keep)
+        for (x, y, z), state in self.p.cells.items():
+            if '_door[' in state:
+                protected.update((x + dx, y, z + dz) for dx, dz in ((0, 0), *N4))
+
+        def write(c, y, state):
+            roof_y = self._column_roof_y(f, c)
+            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+            pos = (c[0], y, c[1])
+            if y < roof_y and pos not in protected and c not in doors:
+                self.set(*pos, state)
+
+        fascia_h = (rule['shutter_height'] + 1 if rule['kind'] == 'industrial' else
+                    rule['glazed_storeys'] * STOREY_H)
+        fascia_y = {}
+        for c in fronts:
+            floor = self._column_floor(f, c)
+            roof_y = self._column_roof_y(f, c)
+            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+            fascia_y[c] = min(floor + fascia_h, roof_y - 1)
+            if rule['kind'] == 'big_box':
+                for y in range(floor + 1, fascia_y[c]):
+                    write(c, y, 'light_blue_stained_glass')
+            write(c, fascia_y[c], fascia)
+        if rule['kind'] == 'industrial':
+            # The longest connected frontage gives each mapped unit one central shutter.
+            remaining = set(fronts) - doors
+            runs = []
+            while remaining:
+                run = {remaining.pop()}
+                todo = list(run)
+                while todo:
+                    x, z = todo.pop()
+                    for dx, dz in N8:
+                        c = (x + dx, z + dz)
+                        if c in remaining:
+                            remaining.remove(c)
+                            run.add(c)
+                            todo.append(c)
+                runs.append(run)
+            if runs:
+                run = sorted(max(runs, key=lambda r: (len(r), sorted(r))))
+                if max(z for x, z in run) - min(z for x, z in run) > max(x for x, z in run) - min(x for x, z in run):
+                    run.sort(key=lambda c: (c[1], c[0]))
+                width = min(rule['shutter_width'], max(0, len(run) - 2))
+                start = (len(run) - width) // 2
+                opening = run[start:start + width]
+                for c in opening:
+                    for y in range(self._column_floor(f, c) + 1, fascia_y[c]):
+                        write(c, y, 'gray_concrete')
+                if opening:
+                    self._loading_bay(f, opening, fronts, rule['bay_depth'])
+        elif name:
+            # A wall sign is attached to a real fascia cell, including on stepped frontages.
+            cx = statistics.mean(x for x, z in fronts)
+            cz = statistics.mean(z for x, z in fronts)
+            for c in sorted(fronts, key=lambda c: (abs(c[0] - cx) + abs(c[1] - cz), c)):
+                y = fascia_y[c]
+                dx, dz = DIRS[fronts[c]]
+                pos = (c[0] + dx, y, c[1] + dz)
+                outside = self.p.cells.get(pos)
+                if outside is None:
+                    outside = self.live.block(*pos)
+                if (self.p.cells.get((c[0], y, c[1])) == bid(fascia) and
+                        outside in ('minecraft:air', 'minecraft:cave_air')):
+                    import textwrap
+                    self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[c]]}]')
+                    self.p.sign(pos, textwrap.wrap(name, width=15)[:4], colour='white', glow=True)
+                    break
+        print(f'{f.no} street face {rule["kind"]}: {len(fronts)} columns; name={name}')
+
+    def _loading_bay(self, f: Feature, opening: list, fronts: dict, depth: int) -> None:
+        """Paint a bay on continuous forecourt, stopping before roads and obstacles."""
+        from ground_sources import ROAD_CLASSES, road_width
+        paving = {'gray_concrete', 'black_concrete', 'light_gray_concrete', 'stone',
+                  'smooth_stone', 'andesite', 'gravel', 'gray_terracotta'}
+        rays = []
+        for c in opening:
+            dx, dz = DIRS[fronts[c]]
+            rays.append([(c[0] + dx * step, c[1] + dz * step) for step in range(1, depth + 1)])
+        if not rays:
+            return
+        cells = {c for ray in rays for c in ray}
+        x0, x1 = min(x for x, z in cells), max(x for x, z in cells)
+        z0, z1 = min(z for x, z in cells), max(z for x, z in cells)
+        roads = []
+        for highway, points, tags in self.streets:
+            if highway.removesuffix('_link') not in ROAD_CLASSES and highway not in (
+                    'service', 'living_street', 'track', 'road'):
+                continue
+            half = road_width(dict(tags, highway=highway)) / 2
+            for a, b in zip(points, points[1:]):
+                if (max(a[0], b[0]) + half >= x0 + 0.5 and min(a[0], b[0]) - half <= x1 + 0.5 and
+                        max(a[1], b[1]) + half >= z0 + 0.5 and min(a[1], b[1]) - half <= z1 + 0.5):
+                    roads.append((a, b, half))
+        surfaces = []
+        for c, ray in zip(opening, rays):
+            available = []
+            for x, z in ray:
+                if ((x, z) in self.by_no_all_cells or any(
+                        osm_footprints._seg_dist((x + 0.5, z + 0.5), a, b)[0] <= half
+                        for a, b, half in roads)):
+                    break
+                # Ground is beneath the opening; use local surface height on slopes.
+                floor = self._column_floor(f, c)
+                surface = None
+                for y in range(floor + 1, floor - 5, -1):
+                    state = self.p.cells.get((x, y, z))
+                    if state is None:
+                        state = self.live.block(x, y, z)
+                    state = state or 'minecraft:air'
+                    if state not in ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'):
+                        if (bid(state)[10:] in paving and
+                                not any(self._is_solid(x, y + dy, z) for dy in (1, 2))):
+                            surface = (x, y, z)
+                        break
+                if surface is None:
+                    break
+                available.append(surface)
+            surfaces.append(available)
+        # One short ray limits the whole bay, including its far edge and unpainted interior.
+        available_depth = min(map(len, surfaces))
+        for i, ray in enumerate(surfaces):
+            for step, pos in enumerate(ray[:available_depth], 1):
+                if i in (0, len(opening) - 1) or step == available_depth:
+                    self.set(*pos, 'yellow_concrete')
+                    self.keep.add(pos)
+
     def glazed_share_report(self) -> list[str]:
         """Glazed share of each storey on every exposed face (dry-run photo compare).
 
@@ -2652,7 +2839,9 @@ class Build:
                     if total == 0:
                         continue
                     pct = 100 * glazed // total
-                    suffix = ' — no evidence read' if not has_rows else ''
+                    rule = self._street_face_rule(f)
+                    suffix = (f' — {rule["kind"]} class default' if rule and not facades else
+                              ' — no evidence read' if not has_rows else '')
                     lines.append(
                         f'{f.no} face {face} storey {s + 1}: '
                         f'glazed {glazed}/{total} ({pct}%){suffix}')
@@ -2828,7 +3017,11 @@ class Build:
         # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
         self.entrance_covers()
+        for f in self.features:
+            self.street_face(f)
+        self.p.keep = set(self.keep)
         self._preserve_real_owners()
+        self.p.signs = [row for row in self.p.signs if '_wall_sign[' in self.p.cells.get(row[0], '')]
         for line in self._zone_pad_lines:
             print(line)
         for line in self._roof_warnings:

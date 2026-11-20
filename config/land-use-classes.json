@@ -50,6 +50,12 @@
   },
   {
    "id": "commercial",
+   "street_face": {
+    "kind": "big_box",
+    "min_columns": 2000,
+    "min_height": 15,
+    "glazed_storeys": 2
+   },
    "match": {
     "building": [
      "retail",
@@ -105,6 +111,12 @@
   },
   {
    "id": "industrial",
+   "street_face": {
+    "kind": "industrial",
+    "shutter_width": 4,
+    "shutter_height": 4,
+    "bay_depth": 5
+   },
    "match": {
     "building": [
      "industrial",
