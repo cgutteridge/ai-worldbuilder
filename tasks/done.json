@@ -2849,5 +2849,17 @@
       ],
       "notes": "Cause partly unverified: the riverside path in 63,-45 has est_width 1.75 and surface asphalt, and the aerial width was lost, so it reads as a coarse-dirt band with a thin grey strip (owner noted this as a fault). Deliverable: widen a mapped way to the paving seen beside it in the aerial, per class. Check: in game the riverside path in cell 63,-45 reads as one path of the aerial width.\n\nClosed at ea61bd677ebd930df8409e9b4a083e1d29659aab: Merged task/325-widen-mapped-path: per-class surface.path_widen (park 3, max 6); aerial paving beside a mapped path takes the path's surface. Live 63,-45 riverside path check still to do.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 336,
+      "title": "Car-park bay lines from the ground layer, along the mapped aisle",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "No bay-line code exists in the repo; the lines were only in the throwaway dress.py, which oriented bays to the block grid and wrote them onto a ghost-only cell (see #327). Deliverable: ground layer draws white_concrete bay markings in the parking class, rows perpendicular to the mapped service=parking_aisle (width exists in ground_sources). Files: lib/layers/ground_layer.py, lib/sources/ground_sources.py. Check: a car park in a trial cell has bays perpendicular to its aisle; test with an aisle fixture. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at 81faf7e69659847d98e461836be9edd83725cac4: Merged task/336-car-park-bay-lines: ground pass draws white_concrete bay lines perpendicular to the mapped parking aisle (lib/layers/bay_lines.py), tarmac parking columns only; lines come from the ground pass itself so they sit outside the #327 gate. Bay depth 5 and pitch 3 unchecked in game.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

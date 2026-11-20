@@ -213,17 +213,7 @@
       "blockedBy": [],
       "notes": "Owner: the 'church' on the high street was an old bingo hall with a big facade, steps and a permanent awning; street view would have shown it. Tier A is owner-nominated in docs/plans/vibe-at-scale.md section 2. Deliverable: propose-features flags church, cathedral, chapel, cinema and shopping-centre candidates as landmark; apply refuses until a street-level image source is recorded (cell_sources.py --record), with a reasoned override flag; document in rules/building-review.md. Generic wording: an image source the owner supplies, never a vendor. Check: a flagged candidate refuses with the command to run; a test covers both paths. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
-    {
-      "id": 336,
-      "title": "Car-park bay lines from the ground layer, along the mapped aisle",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "No bay-line code exists in the repo; the lines were only in the throwaway dress.py, which oriented bays to the block grid and wrote them onto a ghost-only cell (see #327). Deliverable: ground layer draws white_concrete bay markings in the parking class, rows perpendicular to the mapped service=parking_aisle (width exists in ground_sources). Files: lib/layers/ground_layer.py, lib/sources/ground_sources.py. Check: a car park in a trial cell has bays perpendicular to its aisle; test with an aisle fixture. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
     {
       "id": 337,
       "title": "Big-box roof follows the aerial (spike first)",
@@ -238,7 +228,7 @@
     {
       "id": 338,
       "title": "Surface car parks paint as tarmac in the ground layer",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [
