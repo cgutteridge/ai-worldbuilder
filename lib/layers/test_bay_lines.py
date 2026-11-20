@@ -167,11 +167,13 @@ class TestGroundPassBayLines(SyntheticGroundBox, unittest.TestCase):
         self.assertEqual(plan.cells[(3, self.lidar(3, 6), 6)], 'minecraft:gray_concrete')   # between two lines
         self.assertFalse(plan.ground_layer)                           # ground pass's own plan: exempt, not Plan.ground_marking
 
-    def test_a_car_park_the_aerial_shows_as_lawn_gets_no_lines(self):
+    def test_a_mapped_car_park_the_mosaic_reads_as_lawn_still_gets_lines(self):
+        """#338: the car park stays tarmac against lawn-coloured mosaic, so bay lines draw on it."""
         plan, stats, kind, _ = self.run_plan(self.car_park(soft=True))
-        self.assertNotIn('mark', set(kind.values()))
-        self.assertNotIn('minecraft:white_concrete', plan.cells.values())
-
+        marks = {q for q, k in kind.items() if k == 'mark'}
+        self.assertEqual({x for x, _ in marks}, {2, 5, 8, 11, 14})
+        self.assertNotIn('grass', {kind[q] for q in box(0, 0, 15, 7)})
+        self.assertIn('minecraft:white_concrete', plan.cells.values())
 
 if __name__ == '__main__':
     unittest.main()

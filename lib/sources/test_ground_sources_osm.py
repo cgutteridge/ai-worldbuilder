@@ -389,6 +389,41 @@ class GroundAreaTagsTest(unittest.TestCase):
                                  f'landuse={lu}+surface must still leave kind empty')
 
 
+class SurfaceCarParkTest(unittest.TestCase):
+    """#338: a surface amenity=parking polygon is tarmac at PRI['parking']; covered parking is not ground paint."""
+
+    SQUARE = [[[10.0, 10.0], [30.0, 10.0], [30.0, 30.0], [10.0, 30.0], [10.0, 10.0]]]
+
+    def ground(self, tags):
+        return _ground_from_features([{'type': 'Feature', 'properties': dict(tags, osm_id='7'),
+                                       'geometry': {'type': 'Polygon', 'coordinates': self.SQUARE}}])
+
+    def test_surface_car_park_is_tarmac_at_parking_priority(self):
+        for tags in ({'amenity': 'parking'}, {'amenity': 'parking', 'parking': 'surface'}):
+            g = self.ground(tags)
+            self.assertTrue(g.kind)
+            self.assertEqual({g.kind[q] for q in g.kind}, {'tarmac'})
+            self.assertEqual({g.pri[q] for q in g.kind}, {GS.PRI['parking']})
+            self.assertEqual(g.soft, set(g.kind))
+            self.assertEqual(len(g.parking_areas), 1)
+
+    def test_multi_storey_underground_and_rooftop_parking_paint_nothing(self):
+        for kind in ('multi-storey', 'underground', 'rooftop'):
+            g = self.ground({'amenity': 'parking', 'parking': kind})
+            self.assertFalse(g.kind, kind)
+            self.assertFalse(g.soft, kind)
+            self.assertFalse(g.parking_areas, kind)
+
+    def test_car_park_through_classify_stays_tarmac_under_mosaic_lawn_colour(self):
+        import ground_layer as gl
+        g = self.ground({'amenity': 'parking'})
+        cols = sorted(g.kind)
+        live = {q: (50, 'stone') for q in cols}
+        for colour in ((0.64, 0.60, 0.54), (0.84, 0.76, 0.69), (0.44, 0.39, 0.27)):
+            kind, _ = gl.classify((0, 0), live, g, {q: colour for q in cols})
+            self.assertEqual({kind[q] for q in cols}, {'tarmac'}, colour)
+
+
 class WayLinesForFurnitureTest(unittest.TestCase):
     """#260: OSMGround keeps each mapped carriageway and path as a line for lamp and bench inference."""
 

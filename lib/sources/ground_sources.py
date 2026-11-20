@@ -374,7 +374,7 @@ class OSMGround:
         self.hedge: set = set()
         self.wall: set = set()
         self.fence: set = set()
-        self.soft: set = set()        # mapped parking polygon: the aerial may show it is really lawn
+        self.soft: set = set()        # mapped surface car park columns: only a sharp registered aerial lawn overrides tarmac (#338)
         self.parking_areas: list = []  # one column set per surface car park polygon (#336, bay lines)
         self.parking_aisles: list = []  # {'points', 'half'} per service=parking_aisle centreline (#336)
         self.trees: list = []         # (x, z) natural=tree points
@@ -423,7 +423,8 @@ class OSMGround:
                     self.water_refs[q] = ref
         elif t.get('highway') == 'pedestrian' or t.get('area:highway'):
             self._put(poly_cells(polys), SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
-        elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey'):
+        elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey', 'rooftop'):
+            # surface car park: tarmac (#338; a narrow exception to #158, which keeps land use out of ground paint)
             cs = poly_cells(polys)
             x0, z0, x1, z1 = cell_box(self.cell, MARGIN)
             self.parking_areas.append({q for q in cs if x0 <= q[0] <= x1 and z0 <= q[1] <= z1})

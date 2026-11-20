@@ -379,6 +379,38 @@ class TestGroundDecisions(unittest.TestCase):
         kind, _ = gl.classify(cell, live, osm, blurry)
         self.assertTrue(all(kind[q] == 'paving' for q in cols))
 
+    def test_mosaic_aerial_never_turns_a_mapped_surface_car_park_to_grass(self):
+        """#338: aerial lawn, brick, shade and tinted paving inside a surface car park stay tarmac."""
+        import ground_sources as gs
+        cell = (47, -45)
+        x0, z0 = 6130, -5740
+        cols = [(x0 + i, z0 + j) for i in range(8) for j in range(8)]
+        live = {q: (50, 'stone') for q in cols}
+        osm = self.Osm({q: 'tarmac' for q in cols}, {q: gs.PRI['parking'] for q in cols})
+        osm.soft = set(cols)
+        for colour in ((0.64, 0.60, 0.54), (0.84, 0.76, 0.69), (0.44, 0.39, 0.27), (0.62, 0.60, 0.56)):
+            kind, how = gl.classify(cell, live, osm, {q: colour for q in cols})
+            self.assertTrue(all(kind[q] == 'tarmac' for q in cols), colour)
+            self.assertEqual(how['vector map surface'], len(cols))
+            self.assertEqual(how['aerial lawn inside mapped car park'], 0)
+
+    def test_sharp_registered_aerial_lawn_still_shows_through_a_mapped_car_park(self):
+        """Observed difference kept: a sharp registered aerial that shows lawn is grass (as in a plaza)."""
+        import ground_sources as gs
+        cell = (47, -45)
+        x0, z0 = 6130, -5740
+        cols = [(x0 + i, z0 + j) for i in range(8) for j in range(8)]
+        live = {q: (50, 'stone') for q in cols}
+        osm = self.Osm({q: 'tarmac' for q in cols}, {q: gs.PRI['parking'] for q in cols})
+        osm.soft = set(cols)
+        kind, how = gl.classify(cell, live, osm, {q: gs.RegRGB((0.35, 0.45, 0.35)) for q in cols})
+        self.assertTrue(all(kind[q] == 'grass' for q in cols))
+        self.assertEqual(how['aerial lawn inside mapped car park'], len(cols))
+        aisle = {q: gs.PRI['service'] for q in cols}                      # a mapped aisle through it stays tarmac
+        osm.pri = aisle
+        kind, _ = gl.classify(cell, live, osm, {q: gs.RegRGB((0.35, 0.45, 0.35)) for q in cols})
+        self.assertTrue(all(kind[q] == 'tarmac' for q in cols))
+
     def test_poly_cells_matches_the_per_column_reference(self):
         """The numpy even-odd fill must equal the old pure-Python scan, column for column."""
         import math

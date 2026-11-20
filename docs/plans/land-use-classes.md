@@ -54,6 +54,12 @@ polygons that would otherwise beat the campus they sit in:
 | parking | `amenity=parking` (not `parking=underground`), `motorcycle_parking` | |
 | unknown | `landuse=military`, `construction`, `brownfield`, `greenfield` (listed so it is a decision, not an omission) | |
 
+Ground paint (#338): `amenity=parking` is the one land-use polygon that paints a ground surface, a narrow
+exception to the #158 rule that the class keys (`landuse=residential`, `retail`, `commercial`, `industrial`,
+and the rest of this table) stay out of ground paint. A surface car park (not `parking=multi-storey`,
+`underground` or `rooftop`) is tarmac at the car-park priority, and the mosaic aerial does not turn it to grass;
+covered parking paints nothing. Every other class remains unread by the ground layer.
+
 One polygon with several keys: first match in the order `amenity`, `leisure`, `landuse`, `natural`, then
 the rest. A value not in the table is `unknown` and is counted in the classifier report so new rows are
 driven by what trials meet.
