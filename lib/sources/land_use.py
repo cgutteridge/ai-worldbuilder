@@ -27,6 +27,12 @@ UNKNOWN_REASONS = ('not_checked', 'unmapped', 'unlisted')
 BOUNDARY_ROLES = ('front', 'side_front', 'side_back', 'rear', 'perimeter')
 PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
+# Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
+# validate_table) so an unknown key is still refused; later keys (trees, ground_texture) follow
+# the surface pattern: absent or null means "infer nothing", the shipped behaviour.
+OPTIONAL_COLUMNS = ('surface',)
+SURFACE_KEYS = ('unmapped_paving',)
+UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
 NO_INFERENCE = ('rural', 'natural', 'water', 'unknown')
 
@@ -74,6 +80,16 @@ def validate_table(doc: dict) -> dict:
         for col in ('match', 'frontage', 'planting', 'furniture'):
             if col not in row:
                 raise TableError(f'{cid}: missing column {col!r}')
+        extra = set(row) - {'id', 'match', 'frontage', 'planting', 'furniture', *OPTIONAL_COLUMNS}
+        if extra:
+            raise TableError(f'{cid}: unknown column {sorted(extra)}')
+        surface = row.get('surface')
+        if surface is not None:
+            if not isinstance(surface, dict) or set(surface) - set(SURFACE_KEYS):
+                raise TableError(f'{cid}: surface must be null or a map with keys from {SURFACE_KEYS}')
+            paving = surface.get('unmapped_paving')
+            if paving is not None and paving not in UNMAPPED_PAVING_KINDS:
+                raise TableError(f'{cid}: surface.unmapped_paving {paving!r} not null or in {UNMAPPED_PAVING_KINDS}')
         match = row['match']
         for col in ('building', 'use', 'cover'):
             if col not in match:
@@ -181,6 +197,18 @@ def planting_rule(cls: str, kind: str) -> dict | None:
     if not row['frontage']['inference'] or row['planting'] is None:
         return None
     return row['planting'].get(kind)
+
+
+def unmapped_paving(cls: str) -> str | None:
+    """Surface kind that aerial "paving" takes in this class where no mapped way lies (``surface.unmapped_paving``).
+
+    ``dirt`` (park) or ``grass`` (rural, natural) replace shade, undergrowth and worn grass that the
+    aerial reads as concrete; None (every other class, and residential) keeps the aerial paving.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: ``'dirt'``, ``'grass'`` or None
+    """
+    return (defaults(cls).get('surface') or {}).get('unmapped_paving')
 
 
 @lru_cache(maxsize=1)

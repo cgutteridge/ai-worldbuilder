@@ -1,5 +1,5 @@
 {
- "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Furniture (#260): park ships bench_per_100m (benches on its paths); every other class ships null. highways is the default lamp spacing in blocks along the way, staggered either side, per OSM highway class; a class absent here (service, path, cycleway, steps, links) is not lit by inference, and a district profile or street convention beats it. Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
+ "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Furniture (#260): park ships bench_per_100m (benches on its paths); every other class ships null. highways is the default lamp spacing in blocks along the way, staggered either side, per OSM highway class; a class absent here (service, path, cycleway, steps, links) is not lit by inference, and a district profile or street convention beats it. Surface (#316): surface.unmapped_paving is the kind aerial paving takes off a mapped way (dirt, grass, or null to keep the aerial paving); new per-class keys join land_use.OPTIONAL_COLUMNS. Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
  "classes": [
   {
    "id": "residential",
@@ -45,7 +45,8 @@
     "flowers": {"share": 0.08, "kinds": ["poppy", "dandelion"]},
     "pond": null
    },
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "commercial",
@@ -99,7 +100,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "industrial",
@@ -146,7 +148,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "civic",
@@ -212,7 +215,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "park",
@@ -266,7 +270,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": {"bench_per_100m": 1.5}
+   "furniture": {"bench_per_100m": 1.5},
+   "surface": {"unmapped_paving": "dirt"}
   },
   {
    "id": "rural",
@@ -308,7 +313,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": "grass"}
   },
   {
    "id": "natural",
@@ -354,7 +360,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": "grass"}
   },
   {
    "id": "water",
@@ -391,7 +398,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "transport",
@@ -436,7 +444,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "parking",
@@ -469,7 +478,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   },
   {
    "id": "unknown",
@@ -500,7 +510,8 @@
     "pavement": 2.5
    },
    "planting": null,
-   "furniture": null
+   "furniture": null,
+   "surface": {"unmapped_paving": null}
   }
  ],
  "highways": {

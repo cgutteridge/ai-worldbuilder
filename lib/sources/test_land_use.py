@@ -195,6 +195,30 @@ class Table(unittest.TestCase):
         with self.assertRaisesRegex(L.TableError, 'no inference'):
             L.validate_table(self.doc)
 
+    def test_shipped_unmapped_paving_per_class(self):
+        got = {cid: L.unmapped_paving(cid) for cid in L.CLASSES}
+        self.assertEqual({k: v for k, v in got.items() if v},
+                         {'park': 'dirt', 'rural': 'grass', 'natural': 'grass'})
+        self.assertIsNone(L.unmapped_paving('residential'))
+        self.assertIsNone(L.unmapped_paving('banana'))
+
+    def test_unmapped_paving_is_optional_and_checked(self):
+        del self.row('park')['surface']
+        L.validate_table(self.doc)                                  # a missing surface column infers nothing
+        self.row('park')['surface'] = {'unmapped_paving': 'concrete'}
+        with self.assertRaisesRegex(L.TableError, 'unmapped_paving'):
+            L.validate_table(self.doc)
+        self.row('park')['surface'] = {'unmapped_paving': 'dirt', 'floor': 'podzol'}
+        with self.assertRaisesRegex(L.TableError, 'surface must be'):
+            L.validate_table(self.doc)
+        self.row('park')['surface'] = {'unmapped_paving': None}
+        L.validate_table(self.doc)
+
+    def test_unknown_row_column_refused(self):
+        self.row('park')['ground_texture'] = None
+        with self.assertRaisesRegex(L.TableError, 'unknown column'):
+            L.validate_table(self.doc)
+
     def test_shipped_planting_rules_and_null_classes(self):
         self.assertEqual(L.planting_rule('residential', 'shrubs'), {'per_columns': 6})
         self.assertEqual(L.planting_rule('residential', 'flowers'),

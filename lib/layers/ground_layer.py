@@ -487,7 +487,8 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
              fp: set | None = None, private_frontage: set | frozenset = frozenset(),
              frontage_route: set | frozenset = frozenset(),
              pavement: set | frozenset = frozenset(),
-             guessed_out: set | None = None) -> tuple[dict, Counter]:
+             guessed_out: set | None = None,
+             unmapped_paving: dict | None = None) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
 
     ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
@@ -500,7 +501,12 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     guessed lawn there is pavement. ``private_frontage`` also holds the front extent of classes that
     keep their lawn (park, rural, natural), so guessed lawn there is never paved.
     ``guessed_out``, when supplied, receives only guessed-lawn columns still classified as grass
-    after all paving conversions and denoising. The return value is unchanged."""
+    after all paving conversions and denoising. The return value is unchanged.
+    ``unmapped_paving`` (#316, ``land_use.unmapped_paving`` per column) is ``{column: kind}`` for columns
+    of a class that sets ``surface.unmapped_paving`` (park ``dirt``, rural and natural ``grass``). Aerial
+    paving there that is not on a mapped way (``vmap.pri`` below 40) is shade, undergrowth or worn grass,
+    so it takes that kind, and grass inside a mapped wood or scrub polygon. Columns outside the map
+    (residential, unlisted classes) keep the aerial paving."""
     free = set(live)
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
@@ -532,6 +538,13 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                 kind[q] = 'grass'
                 soft_grass.add(q)
                 how['aerial brick away from paths -> lawn'] += 1
+        elif a in ('light', 'dark') and unmapped_paving and q in unmapped_paving:
+            if vmap.pri.get(q) == PRI['wood']:
+                kind[q] = 'grass'
+                how['aerial paving in mapped wood -> grass'] += 1
+            else:
+                kind[q] = unmapped_paving[q]
+                how[f'aerial paving off a mapped way -> {unmapped_paving[q]}'] += 1
         elif a in ('light', 'dark'):
             kind[q] = 'paving'
             how['aerial paving'] += 1
@@ -1092,6 +1105,21 @@ def settled_footprint(cell: tuple[int, int]) -> set:
     return settled_footprint_columns(cell_box(cell, 2))
 
 
+def unmapped_paving_columns(cell: tuple[int, int], idx) -> dict:
+    """``{column: kind}`` for columns of the cell whose land-use class sets ``surface.unmapped_paving`` (#316).
+
+    @param cell: ``(tx, tz)``
+    @param idx: ``OSMIndex``
+    @returns: only columns whose class has a non-null setting; residential and other classes are absent
+    """
+    from coverage import area_classes
+    import land_use
+
+    kinds = {c: land_use.unmapped_paving(c) for c in land_use.CLASSES}
+    return {q: kinds[hit[0]] for q, hit in area_classes(idx, cell_box(cell, MARGIN)).items()
+            if kinds.get(hit[0])}
+
+
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
               evidence=None, *, owned_air: set = frozenset(), settled_fp: set = frozenset(),
               owned_states: dict | None = None):
@@ -1111,7 +1139,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     vmap = ev.get('vmap') or OSMGround(cell)
     rgb = ev.get('rgb') or aerial_rgb(cell)
     x0, z0, x1, z1 = cell_box(cell, 2)
-    fp = {q for q in OSMIndex().cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
+    idx = OSMIndex()
+    fp = {q for q in idx.cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
     floors = owned_floors(owned_states, owned_cols) if owned_states else {}
     floors = {q: y for q, y in floors.items() if cell_contains(cell, *q)}
@@ -1131,7 +1160,9 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     forecourt = set(ev['forecourt']) if 'forecourt' in ev else gs.forecourt_columns(frontages)
     pavement = set(ev['pavement']) if 'pavement' in ev else gs.pavement_columns(frontages)
     guessed = set()
-    kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement, guessed_out=guessed)
+    unmapped = ev['unmapped_paving'] if 'unmapped_paving' in ev else unmapped_paving_columns(cell, idx)
+    kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement, guessed_out=guessed,
+                         unmapped_paving=unmapped)
     how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
