@@ -76,7 +76,7 @@
     {
       "id": 316,
       "title": "Per-class setting for aerial paving that is not on a mapped way",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -137,7 +137,7 @@
     {
       "id": 322,
       "title": "Park bench inference placed nothing: decide class precedence for furniture",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
@@ -154,15 +154,7 @@
       ],
       "notes": "Mapped natural=tree_row is already read (#157) and the tree gate must keep it. Gap: hedgerow tree lines and tree belts that are not mapped are lost by the open-land gate. Deliverable: findings in docs/plans/ on whether aerial plus lidar evidence along mapped hedges and lanes can place them, with a go or no-go. Check: the hedge on 87,-48 and the unmapped north-east tree belt in that cell get trees from evidence in the prototype."
     },
-    {
-      "id": 324,
-      "title": "Lidar outbuilding candidates must not be proposed on mapped water",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause: _outbuilding_items in lib/layers/decor_plan.py does not put water columns in lidar_items(exclude=...). place_outbuildings already refuses water columns when applying, so nothing was built; the garage at (8117,-5733) in the Itchen shows as unresolved. Deliverable: exclude mapped water columns when proposing. Check: unit test; 63,-45 decor report has no outbuilding-lidar-8117-m5733 in unresolved_items."
-    },
+    
     {
       "id": 325,
       "title": "Widen a mapped path to the paving seen beside it",
@@ -188,7 +180,7 @@
     {
       "id": 327,
       "title": "Dressing must not write ground-layer work onto a cell with no real ground pass",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -249,7 +241,7 @@
     {
       "id": 334,
       "title": "Traffic signals and crossings as street furniture kinds",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [],
