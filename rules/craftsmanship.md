@@ -168,6 +168,12 @@ rule-file copy.
     approval (`cell_registry.py approve <cell> --layers ...`) only records which layers the owner
     signed off. Consumers: car-park bay lines (#336), kerb/crossing paint, tarmac surfaces. The
     ground pass itself and ghost passes are exempt (#327).
+  - Surface car parks (#338): `amenity=parking` polygons (not `parking=multi-storey`, `underground` or
+    `rooftop`) paint tarmac at `PRI['parking']`. This is the one narrow exception to the #158 rule that land
+    use never paints surfaces (so it never paints under houses): every other land-use class stays unread.
+    The blurry mosaic never turns the car park to grass (sun-bleached tarmac reads khaki, parked cars and
+    trees read orange or dark); only a sharp registered aerial that reads lawn does, as in a plaza. A mapped
+    aisle inside it stays tarmac. Bay lines (#336) read this kept tarmac.
   - Car-park bay lines (#336, lib/layers/bay_lines.py) are drawn by the ground pass itself as `mark`
     (white_concrete) columns, so they are exempt from that gate and do not use `Plan.ground_marking`. One
     column every 3 blocks along each mapped `service=parking_aisle`, 5 deep either side of the aisle edge,

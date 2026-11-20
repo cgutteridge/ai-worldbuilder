@@ -522,6 +522,10 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     paving there that is not on a mapped way (``vmap.pri`` below 40) is shade, undergrowth or worn grass,
     so it takes that kind, and grass inside a mapped wood or scrub polygon. Columns outside the map
     (residential, unlisted classes) keep the aerial paving.
+    A mapped surface car park (``vmap.soft``, #338) stays tarmac against the blurry mosaic: its lawn-coloured,
+    orange, shaded and tinted-grey columns are sun-bleached tarmac, parked cars and tree shade, not open ground.
+    Only a sharp registered aerial (``RegRGB``) that reads lawn there makes grass, as in a mapped plaza; a mapped
+    aisle (``PRI['service']``) through it always stays tarmac. Bay lines (#336) rely on the kept tarmac.
     ``path_widen`` (#325, ``land_use.path_widen`` per column) is ``{column: reach}`` for columns of a class
     that sets ``surface.path_widen`` (park 3). Aerial paving within ``reach`` blocks of a mapped path
     (not on it) is that path drawn wider than the map says, so it takes the nearest path's own surface
@@ -538,9 +542,8 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     for q in free:
         a = aer.get(q)
         ok = vmap.kind.get(q)
-        if ok and vmap.pri[q] in (50, 70) and q in vmap.soft and (a in ('lawn', 'brick', 'shade') or (
-                a in ('light', 'dark') and q in rgb and hsv(rgb[q])[1] >= 0.07)):
-            kind[q] = 'grass'                             # mapped car park, but the aerial shows open ground
+        if ok and vmap.pri[q] == PRI['parking'] and q in vmap.soft and a == 'lawn' and isinstance(rgb.get(q), RegRGB):
+            kind[q] = 'grass'                             # a sharp registered aerial shows open ground inside the mapped car park (#338)
             how['aerial lawn inside mapped car park'] += 1
         elif ok and vmap.pri[q] == PRI['pedestrian'] and a == 'lawn' and isinstance(rgb.get(q), RegRGB):
             kind[q] = 'grass'                             # lawn strip/planter inside a mapped plaza, seen in a sharp registered aerial

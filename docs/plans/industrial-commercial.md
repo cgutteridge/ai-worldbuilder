@@ -292,6 +292,9 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
     never stand in for the ground pass. The 50,-35 run also shows that a mapped surface car park
     (`amenity=parking`, `parking=surface`) needs a tarmac surface rule before markings make sense; that is an
     exception to the #158 "land use never paints surfaces" rule, so it is the owner's call.
+    Done (#338): the rule already existed in `ground_sources`; the grass came from `classify` turning aerial
+    lawn, brick, shade and tinted paving inside the polygon to grass. That override now needs a sharp registered
+    aerial; recorded as the narrow #158 exception in `rules/craftsmanship.md` and `docs/plans/land-use-classes.md`.
 12. **Shop rule v2 faults** (owner, section 8): anchor awnings and signs to the wall on non-axis fronts
     (depends on 6); frame doors on stepped faces; apply shop fronts only to the street face, never to side
     or alley walls.
