@@ -35,10 +35,10 @@ Tree crowns overhang into the air above the neighbouring cells by design. The fa
 
 | Source | Files | Size |
 | --- | --- | --- |
-| Google satellite z19 tiles (the `google_aerial` tile URL and fetch code), park | 16 tiles stitched to `worlds/southampton-build/reference/aerial/cell-63-45-z19/mosaic-z19-4x4-260147-175667.png` | 293,865 bytes downloaded; mosaic 2,217,773 bytes |
+| Aerial z19 tiles (the aerial tile URL and fetch code), park | 16 tiles stitched to `worlds/southampton-build/reference/aerial/cell-63-45-z19/mosaic-z19-4x4-260147-175667.png` | 293,865 bytes downloaded; mosaic 2,217,773 bytes |
 | same, farmland | 12 tiles stitched to `reference/aerial/cell-87-48-z19/mosaic-z19-4x3-260211-175660.png` | 208,003 bytes downloaded; mosaic 1,585,903 bytes |
 | same, review sheet from `google_aerial sheet --cell 63,-45`, which fetches its own tiles | the 16 park tiles again, written to `instance/google-aerial/63_-45.png` | about 0.3 MB downloaded; sheet 2,224,955 bytes |
-| Defra lidar composite 2022 (DTM and last-return DSM), tile SU4515, `environment.data.gov.uk`, via `lidar_extremes --cell 87,-48 --fetch`. Approved by the owner during the trial. | `downloads/defra-lidar/DTM/SU41ne_DTM_1m.tif`, `downloads/defra-lidar/DSM/SU41ne_LZ_DSM_1m.tif` | 66,028,436 + 68,987,998 bytes; took 263 s |
+| National lidar composite 2022 (DTM and last-return DSM), tile SU4515, `environment.data.gov.uk`, via `lidar_extremes --cell 87,-48 --fetch`. Approved by the owner during the trial. | `downloads/defra-lidar/DTM/SU41ne_DTM_1m.tif`, `downloads/defra-lidar/DSM/SU41ne_LZ_DSM_1m.tif` | 66,028,436 + 68,987,998 bytes; took 263 s |
 
 That makes 44 tile requests in all. No other downloads; the park cell already had cached lidar.
 
@@ -66,7 +66,7 @@ That makes 44 tile requests in all. No other downloads; the park cell already ha
 Two scratch hooks, loaded through a `sitecustomize` on `PYTHONPATH`:
 
 - **Surfaces.** After `ground_layer.classify`, any `paving` column that is not on a mapped way (`vmap.pri < 40`) becomes:
-  - `grass` inside a rasterised OSM `natural=wood|scrub` polygon;
+  - `grass` inside a rasterised mapped `natural=wood|scrub` polygon;
   - otherwise the open-land kind of the cell: `dirt` (coarse dirt, worn ground) in the park, `grass` on farmland.
 - **Trees.** After `trees_layer.planning_inputs`, a crown is kept only when it is:
   - a mapped tree, or
@@ -103,7 +103,7 @@ Viewed in game on 2026-11-20 from walking height and from a raised spectator vie
 ### Rough grass without spoiling lawns: proposal
 
 1. **Gate by tags and land-use class, never by colour alone.**
-   - Rough treatment only where OSM says `landuse=meadow|farmland` (pasture), `natural=grassland|heath|scrub`, `leisure=nature_reserve`, or the class is rural or natural.
+   - Rough treatment only where map data says `landuse=meadow|farmland` (pasture), `natural=grassland|heath|scrub`, `leisure=nature_reserve`, or the class is rural or natural.
    - Lawns stay clean on `landuse=grass` (mown verges), `leisure=pitch|golf_course|garden|playground`, residential, civic and commercial classes, and every private frontage.
    - A `leisure=park` area with no meadow tag gets a light touch only (about 3% tufts).
 2. **Let the aerial place it, not random noise.** The z19 texture signal that wrongly spawned trees is a good "rough grass" signal on open land:
@@ -163,10 +163,10 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
 | --- | --- | --- |
 | `frontage.boundary.perimeter` | `null` (keep) | Riverside Park has no perimeter fence along the river or meadow; boundaries only from mapped `barrier=*` |
 | `frontage.private_surface` | `keep` | as shipped |
-| `furniture` | keep `{bench_per_100m: 1.5}`, but mapped points first | OSM benches, picnic tables and bins were placed exactly. The per-100 m inference placed nothing on 2 mapped paths; check why (follow-up) |
+| `furniture` | keep `{bench_per_100m: 1.5}`, but mapped points first | Mapped benches, picnic tables and bins were placed exactly. The per-100 m inference placed nothing on 2 mapped paths; check why (follow-up) |
 | `planting` | `null` until rough-grass rules exist | — |
 | proposed `surface.unmapped_paving` | `dirt` (coarse dirt, worn ground), never concrete; unless within 3 blocks of a mapped way, which then widens to the way's surface | variant B; owner accepted |
-| proposed `surface.path_by_tag` | OSM `surface`: `asphalt` → tarmac, `grass` → grass (no path block), `gravel`/`compacted`/`fine_gravel` → gravel, `dirt`/`ground` → coarse dirt; untagged footway in park → gravel | `ground_sources` already maps `surface`; the riverside path is the counter-example (aerial width lost) |
+| proposed `surface.path_by_tag` | Mapped `surface`: `asphalt` → tarmac, `grass` → grass (no path block), `gravel`/`compacted`/`fine_gravel` → gravel, `dirt`/`ground` → coarse dirt; untagged footway in park → gravel | `ground_sources` already maps `surface`; the riverside path is the counter-example (aerial width lost) |
 | proposed `trees.sources` | mapped trees, wood or scrub polygons, lidar height ≥ 2 m; no texture-only crowns on open grass | variant B: 258 false crowns removed, owner accepted |
 | proposed `ground_texture` | lawn: none; with `landuse=meadow`: meadow palette above | owner request |
 | water (river) | water 1 block below lidar bank, depth 3, mud bed, grass bank `rise: 1`, clipped per cell with no bank on clip edges | built; owner accepted |
@@ -195,14 +195,14 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
 
 | Evidence | UK-wide? | Notes from this trial |
 | --- | --- | --- |
-| OSM land use (`landuse`, `leisure`, `natural`) | yes; reliable for parks, patchier in the countryside | Both cells had park/meadow/wood polygons. Rural OSM is sparse: the north-east tree belt in the farmland cell is not mapped as wood, so the gate lost it. |
-| OSM paths and `surface` | yes; `surface` often missing | The riverside path had `surface=asphalt` and `est_width=1.75`; desire lines were tagged `surface=grass`. Untagged paths need a class default. |
-| OSM furniture (benches, picnic tables, bins) | patchy, good in urban parks | 6 points in the park, 5 placed. Farmland has none, as expected. |
-| OSM hedges | patchy | one hedge in the farmland cell; most field boundaries are unmapped. |
-| OSM water polygons | yes for rivers and lakes | the Itchen polygon spans 12 cells and 22,824 columns. |
-| Defra lidar DTM, 1 m | England only | Height source outside England is still unverified: Scotland (Remote Sensing Data portal), Wales (DataMapWales) and Northern Ireland have their own products with different licences and coverage. |
-| Defra lidar DSM | England only; **last-return only** in the composite the tool downloads (`lidar_composite_last_return_dsm`) | Last return goes through foliage. Only 6% of the park cell reads ≥ 3 m standing height, even under the wood, so "canopy from lidar" needs the first-return DSM. |
-| Aerial z19 (Google, owner-authorised per cell) | yes, but not a keepable licence; bulk use not allowed | Good for crowns and texture; misreads shade, brown undergrowth and worn grass as paving. |
+| Mapped land use (`landuse`, `leisure`, `natural`) | yes; reliable for parks, patchier in the countryside | Both cells had park/meadow/wood polygons. Rural map data is sparse: the north-east tree belt in the farmland cell is not mapped as wood, so the gate lost it. |
+| Mapped paths and `surface` | yes; `surface` often missing | The riverside path had `surface=asphalt` and `est_width=1.75`; desire lines were tagged `surface=grass`. Untagged paths need a class default. |
+| Mapped furniture (benches, picnic tables, bins) | patchy, good in urban parks | 6 points in the park, 5 placed. Farmland has none, as expected. |
+| Mapped hedges | patchy | one hedge in the farmland cell; most field boundaries are unmapped. |
+| Mapped water polygons | yes for rivers and lakes | the Itchen polygon spans 12 cells and 22,824 columns. |
+| National lidar DTM, 1 m | England only | Height source outside England is still unverified: Scotland (Remote Sensing Data portal), Wales (DataMapWales) and Northern Ireland have their own products with different licences and coverage. |
+| National lidar DSM | England only; **last-return only** in the composite the tool downloads (`lidar_composite_last_return_dsm`) | Last return goes through foliage. Only 6% of the park cell reads ≥ 3 m standing height, even under the wood, so "canopy from lidar" needs the first-return DSM. |
+| Aerial z19 (owner-authorised per cell) | yes, but not a keepable licence; bulk use not allowed | Good for crowns and texture; misreads shade, brown undergrowth and worn grass as paving. |
 
 ## Cost
 
@@ -242,12 +242,12 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
    - Owner: "trees probably need a bit more density".
 5. **Rough grass and mottled ground on non-lawn grass**, gated by tag and class as in the proposal above, placed from aerial texture, removable through the masks.
    - Owner request; the owner accepted the prototype ("Yes, use it") as the proposed default for non-lawn rural grass. Filed as #319. The palette shares in the prototype section are the owner-accepted starting values.
-6. **First-return lidar for canopy.** Add the Defra first-return DSM (or note when it is unavailable) so lidar standing height can confirm trees. The last-return composite misses most canopy.
+6. **First-return lidar for canopy.** Add the national first-return DSM (or note when it is unavailable) so lidar standing height can confirm trees. The last-return composite misses most canopy.
 7. **Rivers across cells.** Today `water_body` proposes a body only in its home cell, and builds it whole. The Itchen spans 12 cells and 22,824 columns.
    - Wanted: build per cell, clipped, with no bank ring on clip edges, and the plan recorded per cell. The trial used a scratch clip wrapper and a manual `plan_feature` note.
    - Also: river water level from lidar along the reach, not one integer per body.
 8. **Park bench inference placed nothing.** `bench_per_100m: 1.5` gave 0 inferred benches along about 250 m of mapped park paths. Find out why (lit paths only? mapped benches suppress it?) and record the rule.
-9. **Hedgerow trees and unmapped tree belts.** Rural tree lines along hedges or lanes that OSM does not map as wood are lost by the gate. Consider `natural=tree_row` plus aerial-and-lidar evidence along mapped hedges.
+9. **Hedgerow trees and unmapped tree belts.** Rural tree lines along hedges or lanes that map data does not mark as wood are lost by the gate. Consider `natural=tree_row` plus aerial-and-lidar evidence along mapped hedges.
 10. **Lidar "outbuilding" candidate over water.** Decor proposed a lidar garage inside the river (8117,-5733). Candidates on mapped water should be rejected.
 11. **A one-cell apply regenerates ghosts far away.**
     - What happened: after the rough-grass decor apply on 87,-48 landed, the frontier ghost follow-up announced 108 ghost cells to regenerate, starting with distant cells around 40,-18.

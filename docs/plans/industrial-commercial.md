@@ -5,7 +5,7 @@ Verdicts: industrial defaults accepted; big-box base accepted (roof fault); shop
 not yet accepted. Follow-ups: section 9.
 Plan: [vibe-at-scale.md](vibe-at-scale.md) section 6. Classes: [land-use-classes.md](land-use-classes.md) (#253).
 Owner decisions (2026-11-20, relayed by the orchestrator session): world `southampton-build`; three empty
-study cells may be overwritten; Google z19 aerial authorised for those cells; later the same day the owner
+study cells may be overwritten; z19 aerial authorised for those cells; later the same day the owner
 approved three neighbour cells (51,-36, 50,-35, 42,-16) for aerial, lidar ghost and cross-cell buildings.
 
 ## 1. Study areas and build windows
@@ -14,17 +14,16 @@ approved three neighbour cells (51,-36, 50,-35, 42,-16) for aerial, lidar ghost 
 | --- | --- | --- | --- |
 | Industrial estate (Belgrave Industrial Estate, Portswood) | 50.93113,-1.38412 -> 7129,-5205 | 55,-41 | The estate core inside 55,-41 (x 7082-7167, z -5243..-5121): west shed (units 1-4), east shed (units 7-18), Monarch Laundry (unit 20); estate road and yards. Units 5, 6 and 19 and Regal Auto Sport cross into 55,-42 / 56,-41 and were left out |
 | High street (Portswood Road) | 50.92524,-1.39336 -> 6485,-4544 | 50,-36, plus 51,-36 and 50,-35 | The junction: west shop parade (9 buildings), east shop parade (10, red brick), The Victory Centre (church), The Portswood Centre (shopping centre) and its car park. Mountbatten, Betfred, Viceroy and Scope left out (their eaves reach 50,-37) |
-| Retail big box (Westquay South / Watermark) | 50.90237,-1.40663 -> 5573,-1993 | 43,-16, plus 42,-16 | Westquay South (one OSM way, many leisure and food units in one structure) and its plaza edge |
+| Retail big box (Westquay South / Watermark) | 50.90237,-1.40663 -> 5573,-1993 | 43,-16, plus 42,-16 | Westquay South (one mapped way, many leisure and food units in one structure) and its plaza edge |
 
 Windows are "the named buildings plus their street", not whole cells. The ground pass ran over the
 three study cells; the neighbour cells keep lidar ghost ground outside the buildings that cross into them.
 
 ## 2. Evidence and downloads
 
-Downloads (owner-authorised, Google satellite, `https://mt1.google.com/vt/lyrs=s`, zoom 19, fetched with
-`providers/google-satellite` `fetch_tile` through a scratch stitcher). Saved as local, gitignored mosaics
+Downloads (owner-authorised, aerial tiles at zoom 19, fetched with the system aerial tile fetcher (`fetch_tile`) through a scratch stitcher). Saved as local, gitignored mosaics
 under `worlds/southampton-build/reference/aerial/google-trial-258/`, with no manifest row and no hash
-(Google ToS: look-only); the readiness check counts them as aerial coverage.
+(provider terms: look-only); the readiness check counts them as aerial coverage.
 
 | Cell | File | Tiles | Bytes |
 | --- | --- | ---: | ---: |
@@ -37,18 +36,18 @@ under `worlds/southampton-build/reference/aerial/google-trial-258/`, with no man
 | Total | 6 files | 92 | 12,521,713 |
 
 No other downloads. Map data came from the existing local Geofabrik Hampshire PBF (`prepare` extracts
-it; no fetch). Lidar came from the cached DEFRA tile SU41sw.
+it; no fetch). Lidar came from the cached national lidar tile SU41sw.
 
 What the evidence says per class, and whether it exists anywhere in the UK:
 
 | Evidence | Industrial | Commercial / retail | Parking | UK-wide? |
 | --- | --- | --- | --- | --- |
-| OSM `building=*` | `industrial` on every Belgrave unit; one way per unit (20) | `retail` on every shop; `church`; one way for Westquay South | n/a | Yes, coverage varies; units often one way per lettable unit |
-| OSM `landuse` / `amenity` | `landuse=industrial` (named estate) | `landuse=retail`; `shop=*` / `amenity=*` on the building | `amenity=parking` + `access` + `parking=surface`, `service=parking_aisle` | Yes, common in towns |
-| OSM `name`, `addr:*` | Company names on most units | Shop names on nearly every shop | rarely | Common in towns, thin in estates |
-| OSM `building:levels`, `height`, `roof:*` | None | None (only Addis Square flats) | n/a | Sparse; do not rely on it |
-| OSM `barrier=*` | One fence, on the residential side | none | none | Sparse |
-| Lidar DSM-DTM | 5-6 m sheds | 6-9 m parades with low rear extensions; church 16-18 m; centre 8-10 m; Westquay 30 m | flat | England (DEFRA), Wales and Scotland have equivalents |
+| Mapped `building=*` | `industrial` on every Belgrave unit; one way per unit (20) | `retail` on every shop; `church`; one way for Westquay South | n/a | Yes, coverage varies; units often one way per lettable unit |
+| Mapped `landuse` / `amenity` | `landuse=industrial` (named estate) | `landuse=retail`; `shop=*` / `amenity=*` on the building | `amenity=parking` + `access` + `parking=surface`, `service=parking_aisle` | Yes, common in towns |
+| Mapped `name`, `addr:*` | Company names on most units | Shop names on nearly every shop | rarely | Common in towns, thin in estates |
+| Mapped `building:levels`, `height`, `roof:*` | None | None (only Addis Square flats) | n/a | Sparse; do not rely on it |
+| Mapped `barrier=*` | One fence, on the residential side | none | none | Sparse |
+| Lidar DSM-DTM | 5-6 m sheds | 6-9 m parades with low rear extensions; church 16-18 m; centre 8-10 m; Westquay 30 m | flat | England (national programme), Wales and Scotland have equivalents |
 | Aerial | Pale ribbed roofs, yard parking, roller doors not visible from above | Roof colour per parade, awnings faintly | Bay lines and rows visible | Everywhere |
 
 ## 3. What was built, and how
@@ -67,7 +66,7 @@ Two variants per area, compared from the street:
   | Class | Dressing tried |
   | --- | --- |
   | industrial | one 4x4 roller shutter (gray concrete) per unit on the yard face; fascia colour band per unit (colour from the company name); yellow loading-bay box in front of each shutter |
-  | commercial (shops) | ground-floor glass on the street face; one door; fascia colour band; oak wall sign with the OSM name; trapdoor awning for cafes, restaurants, takeaways and food shops |
+  | commercial (shops) | ground-floor glass on the street face; one door; fascia colour band; oak wall sign with the mapped name; trapdoor awning for cafes, restaurants, takeaways and food shops |
   | commercial (big box) | two glazed storeys on the plaza face; fascia band; roof PV arrays (daylight detectors) where the aerial shows them |
   | parking | white bay lines every 3 blocks in 5-deep rows either side of 6-wide aisles |
 
@@ -87,7 +86,7 @@ What a player saw (screenshots kept in the session scratchpad, not committed):
    sign. That is one generic rule per class, not per-building design.
 2. **The street face can be found generically.** A footprint column whose outside neighbour is nearer the
    mapped street line is a front column. That worked for 17 units, 19 shops and a big box, at any
-   rotation, from OSM data that exists UK-wide (building ways and highway lines).
+   rotation, from map data that exists UK-wide (building ways and highway lines).
 3. **Industrial reads from shutters and a colour per unit, not windows.** One roller shutter per unit, a
    fascia colour keyed to the company name and yellow bay boxes passed first time. The default window grid
    actively hurt.
@@ -99,7 +98,7 @@ What a player saw (screenshots kept in the session scratchpad, not committed):
 5. **Shop fronts want a straight plane.** On a parade rotated about 35° the stepped face scatters glass,
    jambs and awnings (owner: "square off shop fronts"). The front should be regularised to straight runs
    along the street, as house fronts are.
-6. **Signs: name, contrast, room.** Names from OSM are on every shop and were liked. A wooden sign reads as
+6. **Signs: name, contrast, room.** Names from map data are on every shop and were liked. A wooden sign reads as
    wood; it needs a contrasting board and wrapped text on the fascia (15 characters a line).
 7. **Awnings by shop kind are right, but continuous.** Cafes, restaurants, takeaways and food shops got
    awnings; a single trapdoor reads as a hatch, so the canopy must run the whole frontage.
@@ -107,7 +106,7 @@ What a player saw (screenshots kept in the session scratchpad, not committed):
    a big facade, steps and a permanent canopy; the aerial and tags could not say so. Civic, church,
    cinema and shopping-centre classes are tier A candidates: one street-level check before building.
 9. **Street furniture is part of the high-street vibe.** The owner missed traffic lights, lamp posts, bike
-   racks, bollards and the traffic island. These come from the decor layer and OSM points (#260), which
+   racks, bollards and the traffic island. These come from the decor layer and mapped points (#260), which
    this trial did not run.
 10. **Big box: a glazed base is enough to stop it reading as offices.** The rest of a 30 m box is fine plain.
 
@@ -122,7 +121,7 @@ Ranked by how much they block non-residential builds at scale.
    valleys and the west of the centre, which is where most industrial and big-box retail sits. Trees and
    decor import the same probe. The trial ran the ground pass through a scratch wrapper with the floor at
    -60 (10,585 columns planned, 0 mismatches). Not a #258 design question: a correctness bug.
-2. **One structure, many mapped units.** OSM maps an estate shed or a shop terrace as one way per lettable
+2. **One structure, many mapped units.** Map data holds an estate shed or a shop terrace as one way per lettable
    unit (Belgrave: 20 ways; Portswood parades: 19). `propose-features` plans one feature per way, and a
    feature apply must be named after a planned id (`needs-prep: feature <name> has no cell plan`). A
    grouped spec (one shed, one parade) is the cheap tier-B unit, but it covers ways whose plan ids then
@@ -183,7 +182,7 @@ railings is one site's evidence and belongs in a district profile (#255), not th
 | Class | Body (builder) | Street face | Roof | Ground / private surface | Boundary | Furniture | Evidence that drives it |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | industrial | Grouped shed per run of `building=industrial` units; one tall volume, height from lidar; no storey window grid; small office window strip only (trial) | Per unit on the yard/road face: one roller shutter about 4x4, a fascia band coloured from the unit name, yellow loading-bay box in front (trial, owner: yes) | Flat or low pitch, pale (aerial) | `paving` (today) for yards; tarmac where mapped | null; palisade only where `barrier=fence` is mapped | none inferred | `building=industrial`, `landuse=industrial`, unit `name`, lidar, aerial |
-| commercial: shop (`building=retail` or `shop=*` in a parade) | Terrace-house body (follow-up): storeys from lidar eave and ridge, pitched roof, dormer top floor and upper bay windows where the ridge says so (owner) | Ground floor squared to the street (owner): glass, door at pavement level, fascia band, contrasting name sign wrapped to 15 characters, continuous awning for cafe/restaurant/fast_food/food shops (trial v2) | Pitched, colour from aerial | `paving` forecourt (today) | null (district profile may add low wall + railings) | lamps, bollards, bike racks, traffic signals and islands from OSM points and highway class (#260) | `building=retail`, `shop`, `amenity`, `name`, lidar eave/ridge, aerial roof colour |
+| commercial: shop (`building=retail` or `shop=*` in a parade) | Terrace-house body (follow-up): storeys from lidar eave and ridge, pitched roof, dormer top floor and upper bay windows where the ridge says so (owner) | Ground floor squared to the street (owner): glass, door at pavement level, fascia band, contrasting name sign wrapped to 15 characters, continuous awning for cafe/restaurant/fast_food/food shops (trial v2) | Pitched, colour from aerial | `paving` forecourt (today) | null (district profile may add low wall + railings) | lamps, bollards, bike racks, traffic signals and islands from map data points and highway class (#260) | `building=retail`, `shop`, `amenity`, `name`, lidar eave/ridge, aerial roof colour |
 | commercial: big box (`building=retail` single way, footprint over about 2,000 columns or lidar over 15 m) | One mass from lidar, plain cladding | Glazed two-storey base on the faces toward pedestrian space or the street, fascia, name sign (trial) | Flat; PV/plant greeblies where the aerial shows them (trial) | `paving` plaza where mapped `highway=pedestrian` | null | benches and bins where mapped | size, lidar, aerial roof, `highway=pedestrian` |
 | commercial: civic/landmark (church, cinema, shopping centre, `building=civic`) | Tier A: street-level check before building (owner: the "church" is a former bingo hall with a facade, steps and a canopy) | from that check | from that check | `paving` | from that check | from that check | street-level imagery (owner-authorised) |
 | parking (`amenity=parking`, surface) | none | none | none | tarmac (trial: the ground pass already paints it) | null | lamps along aisles (inference, untested) | `amenity=parking`, `parking=surface`, `service=parking_aisle` |
@@ -276,7 +275,7 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
    placing glazing, doors and awnings.
 7. **Shop typology = terrace-house body with a shopfront ground floor** (owner; feeds #257). Storeys and
    dormers from lidar eave and ridge, pitched roofs, upper bay windows; reuse the terrace builder.
-8. **Street furniture for commercial streets** (owner; with #260). Traffic signals and crossings from OSM
+8. **Street furniture for commercial streets** (owner; with #260). Traffic signals and crossings from map data
    (`highway=traffic_signals`, `crossing`), lamps, bollards, bike racks, traffic islands; a density per class.
 9. **Landmark street-level step** (owner). For civic/church/cinema/shopping-centre classes, nominate as tier A
    and require one street-level check (owner-authorised imagery) before the build.
