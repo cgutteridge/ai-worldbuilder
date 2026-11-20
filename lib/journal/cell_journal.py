@@ -1352,6 +1352,7 @@ class CellRegistry:
         current = self._owners_in(positions)
         under = self._owners_in(positions, skip=tseqs)
         erase: dict[Pos, str] = {}
+        by_prior: dict[str, list[Pos]] = {}
         for p, o in current.items():
             if o.seq not in tseqs:
                 continue
@@ -1360,9 +1361,15 @@ class CellRegistry:
             else:
                 src = earliest.get(p, self._entries[o.seq])
                 if src.prior is not None:
-                    erase[p] = self._blob(src.prior).get(p, AIR)
+                    by_prior.setdefault(src.prior, []).append(p)
                 else:
                     erase[p] = AIR                      # legacy begin: no prior blob
+        for prior, fallback in by_prior.items():
+            # A prior larger than the cache budget is evicted immediately. Hold it only
+            # for this group so undo decodes it once, without retaining all prior blobs.
+            prior_cells = self._blob(prior)
+            erase.update((p, prior_cells.get(p, AIR)) for p in fallback)
+            del prior_cells
         # A feature built before its cell's ghost left those columns outside the ghost plan, so
         # nothing owns them and the prior is air: undo would dig a pit under the footprint.
         # Fall back to the ghost (lidar height) the cell is meant to have.
