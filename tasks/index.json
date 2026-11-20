@@ -70,28 +70,8 @@
       "blockedBy": [],
       "notes": "NEEDS USER INPUT: the owner names the world and three study streets, and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md sections 2 and 6. Today houses use scripts/house_build.py (already a rule-based footprint builder with a small spec) and non-house buildings use a full hand-written spec in site/builds/<name>.json built by feature_build.py. Question: how much of a real district can rules cover well, using footprint, lidar height, OSM tags (building, building:levels, roof:shape) and a small per-district choice of palette and roof form. This is a spike. The prototype generates minimal specs for the existing builders (house_build and feature_build); it does not add a third builder. Baseline is house_build with a minimal spec versus a full feature_build spec for the same buildings. Study streets: a terrace, a semi-detached or detached estate street, a shop parade. Build about 20 buildings per street with the prototype and compare with the current path, noting minutes and session tokens per building (method stated) and what the player sees from the street. Pitched roofs use pitched_roof_states as it is today. Deliver findings in docs/plans/typology-buildings.md: which building classes the rules cover, what still needs a designer, cost per building under each path, and a recommendation, including whether roof and facade detail (I-006) and glazing become class recipes. File implementation tasks from the findings, not before. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and table rows; the owner's in-game verdict on whether the rule-built streets read as the real ones is recorded in it."
     },
-    {
-      "id": 258,
-      "title": "Trial: industrial estate, retail park and high street (owner picks study areas)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "NEEDS USER INPUT: the owner names the world, an industrial estate or retail park and a high street, and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md section 6. Owner direction 2026-11-10: the world will need industrial and commercial districts. Spike. Using the #253 land-use classes, try per-class defaults by hand and with a throwaway prototype where cheap, reusing lib/layers/outbuildings.py for sheds and feature_build.py for larger massing: yard and car-park surfaces, fence and gate lines, loading bays, simple shed and warehouse massing with lidar height, shop frontages and awnings, forecourts, signage as plain colour blocks. Compare variants by what a player sees from the street. Deliver findings in docs/plans/industrial-commercial.md: which defaults carry the vibe, which evidence exists for them anywhere in the UK (OSM tags, aerial), cost in minutes and session tokens (method stated), a recommended defaults table for the #253 classes retail/commercial, industrial and car park, and follow-up tasks to file from the findings. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and recommended-table rows; the owner's in-game verdict is recorded in it."
-    },
-    {
-      "id": 259,
-      "title": "Trial: park and rural patch (owner picks study areas)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "NEEDS USER INPUT: the owner names the world, a park with paths and pitches and a rural patch with fields, hedges and woodland (water or coast welcome if close), and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md section 6. Owner direction 2026-11-10: any UK place, so open land matters. Spike. Using the #253 classes, try defaults by hand and with a throwaway prototype where cheap: field boundaries (hedge, fence, gate), path surfaces, pitch markings, woodland edge and scrub, grass colour variation, ponds and streams via the water_body feature (#163), bench and lamp placement from OSM points or labelled inference. Compare variants by what a player sees walking through and from a hill. Deliver findings in docs/plans/park-rural.md: recommended defaults rows for the park/leisure, farmland/rural and woodland classes, which evidence exists UK-wide and where it is thin (sparse OSM; height source outside England unverified), cost in minutes and session tokens (method stated), and follow-up tasks to file from the findings. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and recommended-row table; the owner's in-game verdict is recorded in it."
-    },
+    
+    
     {
       "id": 315,
       "title": "Ship the surface-probe floor fix (branch task/low-ground-probe-floor)",

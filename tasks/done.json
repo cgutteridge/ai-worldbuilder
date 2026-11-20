@@ -2743,5 +2743,29 @@
       "blockedBy": [],
       "notes": "Owner decision 2026-11-20: allow explicit registration of verified legacy builders and require an override for direct applies over existing builds. Implement a dry-run-first registration command for legacy spec-backed features (house_build and feature_build), validating the named spec and binding an append-only registration to the reviewed live build entry. Require a verification reason; preserve unknown historical provenance. Reapply accepts explicit registrations and retains validation-before-undo. house_build direct apply refuses an existing landed build unless --overwrite is explicit, matching feature_build. Cover registration/refusal, journal persistence, builder identity, and overwrite/undo behavior with synthetic fixtures; no live-world changes. Original report: houses_kitchener_road_w176658416 lacked a recorded builder; owner-authorized direct house_build apply wrote 31905 positions with zero mismatches. Related #225, #228. Current house_build already records provenance for new applies.\n\nClosed at 0b143a13b0e8d6e525d9a9be9a6e9befabe25578: Completed 2026-11-20: explicit dry-run-first legacy spec registration bound to the reviewed live build sequence, with a verification reason and append-only journal note; reapply accepts registered builders while historical provenance stays unknown. Direct house apply now requires --overwrite over a landed build. Independent review approved; all 2194 tests passed in a clean checkout and the ship-branch merge gate passed. No live-world changes or push. The primary checkout still has pre-existing untracked planning documents that fail the terminology audit; they were preserved.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 258,
+      "title": "Trial: industrial estate, retail park and high street (owner picks study areas)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "NEEDS USER INPUT: the owner names the world, an industrial estate or retail park and a high street, and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md section 6. Owner direction 2026-11-10: the world will need industrial and commercial districts. Spike. Using the #253 land-use classes, try per-class defaults by hand and with a throwaway prototype where cheap, reusing lib/layers/outbuildings.py for sheds and feature_build.py for larger massing: yard and car-park surfaces, fence and gate lines, loading bays, simple shed and warehouse massing with lidar height, shop frontages and awnings, forecourts, signage as plain colour blocks. Compare variants by what a player sees from the street. Deliver findings in docs/plans/industrial-commercial.md: which defaults carry the vibe, which evidence exists for them anywhere in the UK (OSM tags, aerial), cost in minutes and session tokens (method stated), a recommended defaults table for the #253 classes retail/commercial, industrial and car park, and follow-up tasks to file from the findings. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and recommended-table rows; the owner's in-game verdict is recorded in it.\n\nClosed at 8a34a15f1282131c643e4315086e7a3ce33d0822: Trial done. Findings in docs/plans/industrial-commercial.md with owner verdicts (industrial accepted; shops v2 better with three faults; big box accepted, roof a fault). 13 follow-ups reviewed and filed as #315, #327-#337 (two were already filed: probe floor #315 and ground-layer dressing #327).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 259,
+      "title": "Trial: park and rural patch (owner picks study areas)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "NEEDS USER INPUT: the owner names the world, a park with paths and pitches and a rural patch with fields, hedges and woodland (water or coast welcome if close), and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md section 6. Owner direction 2026-11-10: any UK place, so open land matters. Spike. Using the #253 classes, try defaults by hand and with a throwaway prototype where cheap: field boundaries (hedge, fence, gate), path surfaces, pitch markings, woodland edge and scrub, grass colour variation, ponds and streams via the water_body feature (#163), bench and lamp placement from OSM points or labelled inference. Compare variants by what a player sees walking through and from a hill. Deliver findings in docs/plans/park-rural.md: recommended defaults rows for the park/leisure, farmland/rural and woodland classes, which evidence exists UK-wide and where it is thin (sparse OSM; height source outside England unverified), cost in minutes and session tokens (method stated), and follow-up tasks to file from the findings. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and recommended-row table; the owner's in-game verdict is recorded in it.\n\nClosed at ea2d78c70489af22a5a4480fdf248b2cbb8530ad: Trial done. Findings in docs/plans/park-rural.md with owner verdicts (park accepted as default; farmland close, needs fixes). Ten follow-ups reviewed and filed as #315-#324; rough-grass prototype for farmland cell 87,-48 not yet applied or reviewed in game (see #319).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
