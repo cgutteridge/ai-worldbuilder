@@ -127,6 +127,8 @@ Viewed in game on 2026-11-20 from walking height and from a raised spectator vie
 
 ### Rough-grass prototype (farmland cell, in game now)
 
+Owner verdict, viewed in game over cell 87,-48: **"Yes, use it"**. It is accepted as the proposed default for non-lawn rural grass (task #319) and woodland floors (task #318). The palette shares below are the owner-accepted starting values.
+
 At the owner's request the proposal was built on cell 87,-48 as one decor build, `trial259_roughgrass_87_m48` (journal seq 1326, 6,762 blocks, 0 mismatches). The code was a throwaway scratch script, not committed.
 
 - **Gates:**
@@ -234,12 +236,12 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
    - Wanted: a per-class `surface.unmapped_paving`; widen a mapped way to the paving seen beside it; a woodland-floor kind.
    - Scope by land-use class, UK-wide.
 3. **Trees on open grass.** The texture-only crown detector and dense fill plant meadow and pasture as forest. Gate crowns on open land to mapped trees, wood or scrub polygons, or lidar standing height (variant B rule).
-4. **Woodland treatment.**
+4. **Woodland treatment** (filed as #318; the prototype's woodland floor is the owner-accepted starting palette).
    - Dense fill to aerial canopy cover inside wood polygons.
    - Mixed species and heights, an understorey of bushes and ferns, and a podzol/moss floor.
    - Owner: "trees probably need a bit more density".
 5. **Rough grass and mottled ground on non-lawn grass**, gated by tag and class as in the proposal above, placed from aerial texture, removable through the masks.
-   - Owner request; the owner accepted the prototype palette ("Yes, use it"). Start from the prototype rules above.
+   - Owner request; the owner accepted the prototype ("Yes, use it") as the proposed default for non-lawn rural grass. Filed as #319. The palette shares in the prototype section are the owner-accepted starting values.
 6. **First-return lidar for canopy.** Add the Defra first-return DSM (or note when it is unavailable) so lidar standing height can confirm trees. The last-return composite misses most canopy.
 7. **Rivers across cells.** Today `water_body` proposes a body only in its home cell, and builds it whole. The Itchen spans 12 cells and 22,824 columns.
    - Wanted: build per cell, clipped, with no bank ring on clip edges, and the plan recorded per cell. The trial used a scratch clip wrapper and a manual `plan_feature` note.
