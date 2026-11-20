@@ -98,6 +98,7 @@ Viewed in game on 2026-11-20 from walking height and from a raised spectator vie
 | --- | --- | --- |
 | Park (variant B) | **Good enough as a default** | Accepted with the known faults left as follow-ups: the riverside asphalt path reads as a coarse-dirt band with a thin grey strip, and the wood across the river is thinner than the aerial. |
 | Farmland (variant B) | **Close, needs fixes** | "Trees probably need a bit more density. The plain grass feels a bit bland; if it's not a lawn maybe it needs grass tufts. The aerial shows mottled ground, not clean grass." The owner asked for ideas that don't mess up real lawns and other short, tidy grass (answered below). |
+| Farmland rough-grass prototype | **Yes, use it** | Accepted as the default for non-lawn rural grass and woodland floors, with the palette as built (below). |
 
 ### Rough grass without spoiling lawns: proposal
 
@@ -123,6 +124,29 @@ Viewed in game on 2026-11-20 from walking height and from a raised spectator vie
    - understorey bushes (persistent leaves at Y+1 to Y+2) and ferns;
    - a `podzol` / `coarse_dirt` / `moss_block` floor, with grass only at the edges.
 5. **Everything is labelled inference and removable.** Put it in the existing foliage or decor masks, so a redo strips it and the report counts it, like shrubs and flowers (#265, #266).
+
+### Rough-grass prototype (farmland cell, in game now)
+
+At the owner's request the proposal was built on cell 87,-48 as one decor build, `trial259_roughgrass_87_m48` (journal seq 1326, 6,762 blocks, 0 mismatches). The code was a throwaway scratch script, not committed.
+
+- **Gates:**
+  - wood = `natural=wood|scrub` or `landuse=forest`;
+  - lawn = `landuse=grass` or `leisure=pitch|golf_course|garden|playground` (left untouched: 1,342 columns skipped);
+  - meadow = `landuse=meadow` or `natural=grassland` (the only place flowers go).
+  - Columns where the trees or decor plans already own blocks are skipped.
+- **Aerial texture:** local brightness spread over ±8 px, scaled between the cell's 10th and 90th percentiles. Pale or brown pixels (brightness above the 85th percentile, or red ≥ 0.98 × green) mark dry or bare ground. Each column has a fixed seed, so reruns give the same result.
+- **Open grass:**
+  - `short_grass` tufts at 8–30% (rising with texture);
+  - `tall_grass` at 1–7%;
+  - `coarse_dirt` or `rooted_dirt` on pale/brown spots;
+  - 1.5% `oxeye_daisy` / `cornflower` / `dandelion` in meadow.
+- **Woodland floor:**
+  - 30% `podzol`, 10% `coarse_dirt`, 8% `moss_block`;
+  - 7% low bushes (persistent `oak_leaves`, 40% two blocks high);
+  - otherwise 15% `fern` and 8% `short_grass`.
+- **Placed:** 1,492 tufts, 108 tall grass, 125 flowers, 270 dirt patches, 1,950 podzol, 533 moss, 619 coarse-dirt floor, 947 ferns, 432 bushes.
+- **Not used:** Minecraft 26.2's `short_dry_grass`, `tall_dry_grass`, `leaf_litter` and `bush`. `surface_probe`'s plant list does not know them yet, so the probe would read them as ground. Add them there before using them; they suit pasture and woodland floors.
+- **Gotcha:** the journal refuses ordinary builds in the `other` pass, so this went in as `decor`. A decor apply also triggers the frontier ghost follow-up unless `LIDAR_GHOST_RING=0` is set (see follow-up 11).
 
 ## Recommended defaults rows
 
@@ -215,8 +239,7 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
    - Mixed species and heights, an understorey of bushes and ferns, and a podzol/moss floor.
    - Owner: "trees probably need a bit more density".
 5. **Rough grass and mottled ground on non-lawn grass**, gated by tag and class as in the proposal above, placed from aerial texture, removable through the masks.
-   - Owner request.
-   - Needs an owner decision on the palette shares.
+   - Owner request; the owner accepted the prototype palette ("Yes, use it"). Start from the prototype rules above.
 6. **First-return lidar for canopy.** Add the Defra first-return DSM (or note when it is unavailable) so lidar standing height can confirm trees. The last-return composite misses most canopy.
 7. **Rivers across cells.** Today `water_body` proposes a body only in its home cell, and builds it whole. The Itchen spans 12 cells and 22,824 columns.
    - Wanted: build per cell, clipped, with no bank ring on clip edges, and the plan recorded per cell. The trial used a scratch clip wrapper and a manual `plan_feature` note.
@@ -224,3 +247,8 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
 8. **Park bench inference placed nothing.** `bench_per_100m: 1.5` gave 0 inferred benches along about 250 m of mapped park paths. Find out why (lit paths only? mapped benches suppress it?) and record the rule.
 9. **Hedgerow trees and unmapped tree belts.** Rural tree lines along hedges or lanes that OSM does not map as wood are lost by the gate. Consider `natural=tree_row` plus aerial-and-lidar evidence along mapped hedges.
 10. **Lidar "outbuilding" candidate over water.** Decor proposed a lidar garage inside the river (8117,-5733). Candidates on mapped water should be rejected.
+11. **A one-cell apply regenerates ghosts far away.**
+    - What happened: after the rough-grass decor apply on 87,-48 landed, the frontier ghost follow-up announced 108 ghost cells to regenerate, starting with distant cells around 40,-18.
+    - It was stopped after six (40,-18 to 40,-14 and 41,-18). Each replaced only its own earlier ghost ground, all landed with 0 mismatches, and they were left in place.
+    - Wanted: a single-cell apply should only ghost its own ring, and any wider refresh should be a separate, announced command.
+    - Check `site_kit.apply`'s frontier step and `lidar_ghost`'s stale selection.
