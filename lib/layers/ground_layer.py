@@ -483,12 +483,26 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
 
 
 # --- 2. what is on the ground ------------------------------------------------------------
+def nearest_path_kind(q: tuple[int, int], reach: int, path_kind: dict) -> str | None:
+    """Surface kind of the mapped path column nearest to ``q`` within ``reach`` blocks (#325), else None.
+
+    @param q: ``(x, z)`` column
+    @param reach: whole blocks, Euclidean
+    @param path_kind: ``{column: kind}`` of mapped path columns
+    @returns: the kind; ties go to the lowest column so reruns agree
+    """
+    best = min(((i * i + j * j, (q[0] + i, q[1] + j)) for i in range(-reach, reach + 1) for j in range(-reach, reach + 1)
+                if i * i + j * j <= reach * reach and (q[0] + i, q[1] + j) in path_kind), default=None)
+    return path_kind[best[1]] if best else None
+
+
 def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
              fp: set | None = None, private_frontage: set | frozenset = frozenset(),
              frontage_route: set | frozenset = frozenset(),
              pavement: set | frozenset = frozenset(),
              guessed_out: set | None = None,
-             unmapped_paving: dict | None = None) -> tuple[dict, Counter]:
+             unmapped_paving: dict | None = None,
+             path_widen: dict | None = None) -> tuple[dict, Counter]:
     """Surface kind per free column: vector map first, aerial where the map is silent, fill under shade.
 
     ``private_frontage`` (shared residential frontage from ``garden_sources``, #240) are columns of an
@@ -506,8 +520,14 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     of a class that sets ``surface.unmapped_paving`` (park ``dirt``, rural and natural ``grass``). Aerial
     paving there that is not on a mapped way (``vmap.pri`` below 40) is shade, undergrowth or worn grass,
     so it takes that kind, and grass inside a mapped wood or scrub polygon. Columns outside the map
-    (residential, unlisted classes) keep the aerial paving."""
+    (residential, unlisted classes) keep the aerial paving.
+    ``path_widen`` (#325, ``land_use.path_widen`` per column) is ``{column: reach}`` for columns of a class
+    that sets ``surface.path_widen`` (park 3). Aerial paving within ``reach`` blocks of a mapped path
+    (not on it) is that path drawn wider than the map says, so it takes the nearest path's own surface
+    kind, before ``unmapped_paving`` is applied. Absent or empty changes nothing."""
     free = set(live)
+    path_kind = {q: vmap.kind[q] for q in vmap.feat if vmap.pri.get(q) == PRI['path'] and q in vmap.kind} \
+        if path_widen else {}
     x0, z0, x1, z1 = cell_box(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     raw = aer
@@ -538,6 +558,10 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
                 kind[q] = 'grass'
                 soft_grass.add(q)
                 how['aerial brick away from paths -> lawn'] += 1
+        elif a in ('light', 'dark') and path_widen and q in path_widen and (
+                near := nearest_path_kind(q, path_widen[q], path_kind)):
+            kind[q] = near
+            how['aerial paving beside a mapped path -> the path surface'] += 1
         elif a in ('light', 'dark') and unmapped_paving and q in unmapped_paving:
             if vmap.pri.get(q) == PRI['wood']:
                 kind[q] = 'grass'
@@ -1105,19 +1129,38 @@ def settled_footprint(cell: tuple[int, int]) -> set:
     return settled_footprint_columns(cell_box(cell, 2))
 
 
-def unmapped_paving_columns(cell: tuple[int, int], idx) -> dict:
+def unmapped_paving_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
     """``{column: kind}`` for columns of the cell whose land-use class sets ``surface.unmapped_paving`` (#316).
 
     @param cell: ``(tx, tz)``
     @param idx: ``OSMIndex``
+    @param classes: ``coverage.area_classes`` result when the caller already has it
     @returns: only columns whose class has a non-null setting; residential and other classes are absent
     """
-    from coverage import area_classes
     import land_use
 
+    if classes is None:
+        from coverage import area_classes
+        classes = area_classes(idx, cell_box(cell, MARGIN))
     kinds = {c: land_use.unmapped_paving(c) for c in land_use.CLASSES}
-    return {q: kinds[hit[0]] for q, hit in area_classes(idx, cell_box(cell, MARGIN)).items()
-            if kinds.get(hit[0])}
+    return {q: kinds[hit[0]] for q, hit in classes.items() if kinds.get(hit[0])}
+
+
+def path_widen_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
+    """``{column: reach}`` for columns of the cell whose land-use class sets ``surface.path_widen`` (#325).
+
+    @param cell: ``(tx, tz)``
+    @param idx: ``OSMIndex``
+    @param classes: ``coverage.area_classes`` result when the caller already has it
+    @returns: only columns whose class has a non-null setting; residential and other classes are absent
+    """
+    import land_use
+
+    if classes is None:
+        from coverage import area_classes
+        classes = area_classes(idx, cell_box(cell, MARGIN))
+    reach = {c: land_use.path_widen(c) for c in land_use.CLASSES}
+    return {q: reach[hit[0]] for q, hit in classes.items() if reach.get(hit[0])}
 
 
 def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: Plan, world: World,
@@ -1160,9 +1203,14 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     forecourt = set(ev['forecourt']) if 'forecourt' in ev else gs.forecourt_columns(frontages)
     pavement = set(ev['pavement']) if 'pavement' in ev else gs.pavement_columns(frontages)
     guessed = set()
-    unmapped = ev['unmapped_paving'] if 'unmapped_paving' in ev else unmapped_paving_columns(cell, idx)
+    classes = None
+    if 'unmapped_paving' not in ev or 'path_widen' not in ev:
+        from coverage import area_classes
+        classes = area_classes(idx, cell_box(cell, MARGIN))
+    unmapped = ev['unmapped_paving'] if 'unmapped_paving' in ev else unmapped_paving_columns(cell, idx, classes)
+    widen = ev['path_widen'] if 'path_widen' in ev else path_widen_columns(cell, idx, classes)
     kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement, guessed_out=guessed,
-                         unmapped_paving=unmapped)
+                         unmapped_paving=unmapped, path_widen=widen)
     how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands

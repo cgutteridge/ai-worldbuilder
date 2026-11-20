@@ -247,6 +247,66 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertTrue(all(kind[q] == 'dirt' for q in cols if q not in set(wood)))
         self.assertEqual(how['aerial paving in mapped wood -> grass'], len(wood))
 
+    def _riverside_path(self):
+        """Riverside path fixture (#325): a mapped asphalt path 2 wide along z0+5..6, an aerial paving band 6 wide
+        (z0+3..8, the width the aerial shows) between lawn, and a worn paving-coloured strip far from the path (z0 and north)."""
+        x0, z0 = 6144, -5632
+        way = [(x0 + i, z0 + j) for i in range(12) for j in (5, 6)]
+        cell, osm, live, rgb, cols = self._paving_field(mapped=way)
+        for q in way:
+            osm.kind[q], osm.feat[q] = 'tarmac', 1
+        band = {(x0 + i, z0 + j) for i in range(-4, 16) for j in range(3, 9)}
+        worn = {q for q in rgb if q[1] <= z0}
+        rgb = {q: (0.85, 0.85, 0.85) if q in band | worn else (0.64, 0.60, 0.54) for q in rgb}
+        return cell, osm, live, rgb, cols, way, band
+
+    def test_path_widen_takes_the_path_surface_beside_a_mapped_path(self):
+        """A park path reads as one path of the aerial width, not asphalt in a coarse-dirt band (#325)."""
+        cell, osm, live, rgb, cols, way, band = self._riverside_path()
+        wide = {q: 3 for q in cols}
+        dirt = {q: 'dirt' for q in cols}
+        kind, how = gl.classify(cell, live, osm, rgb, unmapped_paving=dirt, path_widen=wide)
+        inside = band & set(cols)
+        self.assertTrue(all(kind[q] == 'tarmac' for q in inside), {kind[q] for q in inside})
+        self.assertEqual(how['aerial paving beside a mapped path -> the path surface'], len(inside) - len(way))
+        self.assertTrue(all(kind[q] == 'dirt' for q in cols if q[1] <= -5632))  # worn ground beyond the reach
+        self.assertTrue(all(kind[q] == 'grass' for q in cols if q[1] in (-5632 + 1, -5632 + 9)))   # lawn is untouched
+        before, _ = gl.classify(cell, live, osm, rgb, unmapped_paving=dirt)         # without the key: the bug
+        self.assertEqual({before[q] for q in inside if q not in way}, {'dirt'})
+
+    def test_path_widen_stops_at_its_reach_and_takes_the_nearest_path(self):
+        cell, osm, live, rgb, cols, way, band = self._riverside_path()
+        x0, z0 = 6144, -5632
+        kind, _ = gl.classify(cell, live, osm, rgb, unmapped_paving={q: 'dirt' for q in cols},
+                              path_widen={q: 1 for q in cols})
+        self.assertEqual([kind[(x0 + 4, z0 + j)] for j in range(3, 9)],
+                         ['dirt', 'tarmac', 'tarmac', 'tarmac', 'tarmac', 'dirt'])    # one block off the way, not two
+        self.assertEqual(gl.nearest_path_kind((x0, z0 + 4), 3, {(x0, z0 + 5): 'gravel', (x0, z0 + 6): 'tarmac'}), 'gravel')
+        self.assertIsNone(gl.nearest_path_kind((x0, z0), 3, {(x0, z0 + 5): 'gravel'}))
+
+    def test_path_widen_unlisted_columns_and_roads_are_unchanged(self):
+        cell, osm, live, rgb, cols, way, band = self._riverside_path()
+        base = gl.classify(cell, live, osm, rgb)
+        for mapping in (None, {}):
+            self.assertEqual(gl.classify(cell, live, osm, rgb, path_widen=mapping), base)
+        x0, z0 = 6144, -5632
+        listed = {q: 3 for q in cols if q[0] >= x0 + 6}                                # residential west half: not listed
+        kind, _ = gl.classify(cell, live, osm, rgb, path_widen=listed)
+        inside = band & set(cols)
+        self.assertTrue(all(kind[q] == 'paving' for q in inside if q[0] < x0 + 6 and q not in way))
+        self.assertTrue(all(kind[q] == 'tarmac' for q in inside if q[0] >= x0 + 6))
+        for q in way:                                                                   # a mapped road is not a path to widen
+            osm.pri[q] = 90
+        kind, how = gl.classify(cell, live, osm, rgb, path_widen={q: 3 for q in cols})
+        self.assertEqual(how['aerial paving beside a mapped path -> the path surface'], 0)
+
+    def test_path_widen_columns_follow_the_land_use_class(self):
+        from unittest import mock
+        classes = {(0, 0): ('park', 'w1', 'use'), (1, 0): ('rural', 'w2', 'use'), (2, 0): ('residential', 'w4', 'use')}
+        with mock.patch('coverage.area_classes', return_value=classes):
+            self.assertEqual(gl.path_widen_columns((0, 0), object()), {(0, 0): 3})
+        self.assertEqual(gl.path_widen_columns((0, 0), object(), classes), {(0, 0): 3})
+
     def test_unmapped_paving_columns_follow_the_land_use_class(self):
         from unittest import mock
         classes = {(0, 0): ('park', 'w1', 'use'), (1, 0): ('rural', 'w2', 'use'), (2, 0): ('natural', 'w3', 'cover'),
@@ -776,7 +836,7 @@ class TestPlanting(unittest.TestCase):
         live = {q: (50, 'grass_block') for q in self.lawn}
         ev = {'vmap': vmap if vmap is not None else TestGroundDecisions.Osm(),
               'rgb': rgb if rgb is not None else {q: (.44, .39, .27) for q in self.lawn},
-              'private_frontage': self.lawn, 'unmapped_paving': {}, 'frontages': frontages, 'plots': self.plots, 'segments': self.segments,
+              'private_frontage': self.lawn, 'unmapped_paving': {}, 'path_widen': {}, 'frontages': frontages, 'plots': self.plots, 'segments': self.segments,
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': 50)}
         plan = Plan('ground-planting-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
@@ -956,7 +1016,7 @@ class SyntheticGroundBox:
         cols = [(x, z) for x in range(x0 - 4, x1 + 5) for z in range(z0 - 4, z1 + 5)]
         ev = {'vmap': vmap, 'rgb': {q: (.64, .60, .54) for q in cols},
               'private_frontage': set(), 'frontage_route': set(), 'forecourt': set(), 'pavement': set(),
-              'unmapped_paving': {}, 'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
+              'unmapped_paving': {}, 'path_widen': {}, 'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': self.lidar(x, z))}
         plan = Plan('steps-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set(fp))), \
@@ -1279,7 +1339,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
         cols = [(a, b) for a in range(x0 - 4, x1 + 5) for b in range(z0 - 4, z1 + 5)]
         ev = {'vmap': self.Osm(), 'rgb': {q: (.64, .60, .54) for q in cols},
               'private_frontage': set(), 'frontage_route': set(), 'forecourt': set(), 'pavement': set(),
-              'unmapped_paving': {}, 'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
+              'unmapped_paving': {}, 'path_widen': {}, 'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
               'lidar_maps': SimpleNamespace(get=lambda a, b, field='h': 49)}
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set())), \
                 mock.patch.object(gl, 'cell_box', side_effect=lambda c, m=0: (x0 - m, z0 - m, x1 + m, z1 + m)), \

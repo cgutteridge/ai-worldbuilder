@@ -31,8 +31,9 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 # validate_table) so an unknown key is still refused; later keys (trees, ground_texture) follow
 # the surface pattern: absent or null means "infer nothing", the shipped behaviour.
 OPTIONAL_COLUMNS = ('surface',)
-SURFACE_KEYS = ('unmapped_paving',)
+SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
+MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
 DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
 NO_INFERENCE = ('rural', 'natural', 'water', 'unknown')
 
@@ -90,6 +91,10 @@ def validate_table(doc: dict) -> dict:
             paving = surface.get('unmapped_paving')
             if paving is not None and paving not in UNMAPPED_PAVING_KINDS:
                 raise TableError(f'{cid}: surface.unmapped_paving {paving!r} not null or in {UNMAPPED_PAVING_KINDS}')
+            widen = surface.get('path_widen')
+            if widen is not None and (isinstance(widen, bool) or not isinstance(widen, int)
+                                      or not 1 <= widen <= MAX_PATH_WIDEN):
+                raise TableError(f'{cid}: surface.path_widen {widen!r} not null or a whole number of blocks 1..{MAX_PATH_WIDEN}')
         match = row['match']
         for col in ('building', 'use', 'cover'):
             if col not in match:
@@ -209,6 +214,18 @@ def unmapped_paving(cls: str) -> str | None:
     @returns: ``'dirt'``, ``'grass'`` or None
     """
     return (defaults(cls).get('surface') or {}).get('unmapped_paving')
+
+
+def path_widen(cls: str) -> int | None:
+    """Blocks beside a mapped path where aerial paving takes the path's own surface (``surface.path_widen``, #325).
+
+    A mapped path is only 1.6-2.5 blocks wide; where the aerial shows paving beside it, the path is
+    wider than the map says. Park sets 3; None (every other class, and residential) widens nothing.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: reach in whole blocks, or None
+    """
+    return (defaults(cls).get('surface') or {}).get('path_widen')
 
 
 @lru_cache(maxsize=1)
