@@ -90,7 +90,7 @@
     {
       "id": 258,
       "title": "Trial: industrial estate, retail park and high street (owner picks study areas)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
@@ -101,7 +101,7 @@
     {
       "id": 259,
       "title": "Trial: park and rural patch (owner picks study areas)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
