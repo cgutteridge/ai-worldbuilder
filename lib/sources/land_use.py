@@ -30,7 +30,7 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; later keys (trees, ground_texture) follow
 # the surface pattern: absent or null means "infer nothing", the shipped behaviour.
-OPTIONAL_COLUMNS = ('surface',)
+OPTIONAL_COLUMNS = ('surface', 'street_face')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
@@ -110,16 +110,7 @@ def validate_table(doc: dict) -> dict:
                         raise TableError(f'{key}={value} maps to {seen_area[(key, value)]} and {cid}')
                     seen_area[(key, value)] = cid
         fr = row['frontage']
-        face = row.get('street_face')
-        if face is not None:
-            expected = {'industrial': 'industrial', 'commercial': 'big_box'}.get(cid)
-            if not isinstance(face, dict) or face.get('kind') != expected or expected is None:
-                raise TableError(f'{cid}: street_face must be an industrial or big_box recipe on its class')
-            fields = ('shutter_width', 'shutter_height', 'bay_depth') if cid == 'industrial' else (
-                'min_columns', 'min_height', 'glazed_storeys')
-            for field in fields:
-                if type(face.get(field)) is not int or face[field] < 1:
-                    raise TableError(f'{cid}: street_face {field} must be an integer >= 1')
+        _validate_street_face(cid, row.get('street_face'))
         for col in ('inference', 'requires', 'boundary', 'private_surface', 'opening'):
             if col not in fr:
                 raise TableError(f'{cid}: frontage is missing {col!r}')
@@ -354,8 +345,123 @@ def classify_column(hit: tuple | None, *, checked: bool) -> dict:
     return _unknown('unmapped' if checked else 'not_checked')
 
 
+def _validate_street_face(cid: str, face) -> None:
+    """Refuse a street-face recipe on the wrong class, or a shop recipe that is not keyed by kind.
+
+    Industrial carries a shutter recipe. Commercial carries a big-box scale test plus a shop
+    recipe whose awning flag is per shop or amenity kind (UK-wide tokens, not a place name).
+
+    @param cid: class id
+    @param face: the ``street_face`` object, or None when the class has none
+    @returns: None
+    """
+    if face is None:
+        return
+    expected = {'industrial': 'industrial', 'commercial': 'big_box'}.get(cid)
+    if not isinstance(face, dict) or face.get('kind') != expected or expected is None:
+        raise TableError(f'{cid}: street_face must be an industrial or big_box recipe on its class')
+    fields = ('shutter_width', 'shutter_height', 'bay_depth') if cid == 'industrial' else (
+        'min_columns', 'min_height', 'glazed_storeys')
+    for field in fields:
+        if type(face.get(field)) is not int or face[field] < 1:
+            raise TableError(f'{cid}: street_face {field} must be an integer >= 1')
+    shop = face.get('shop')
+    if cid != 'commercial':
+        if shop is not None:
+            raise TableError(f'{cid}: street_face.shop belongs on the commercial class')
+        return
+    allowed = {'glass_height', 'door', 'sign_wrap', 'kinds'}
+    if not isinstance(shop, dict) or set(shop) != allowed:
+        raise TableError(f'{cid}: street_face.shop must have keys {sorted(allowed)}')
+    if type(shop['glass_height']) is not int or shop['glass_height'] < 1:
+        raise TableError(f'{cid}: street_face.shop glass_height must be an integer >= 1')
+    if type(shop['sign_wrap']) is not int or shop['sign_wrap'] < 1:
+        raise TableError(f'{cid}: street_face.shop sign_wrap must be an integer >= 1')
+    if not isinstance(shop['door'], str) or not shop['door'].endswith('_door'):
+        raise TableError(f'{cid}: street_face.shop door must be a door block')
+    kinds = shop['kinds']
+    if not isinstance(kinds, dict) or not kinds:
+        raise TableError(f'{cid}: street_face.shop kinds must list shop and amenity kinds')
+    for kind, spec in kinds.items():
+        if not isinstance(kind, str) or not kind or kind != kind.strip() or any(ch.isspace() for ch in kind):
+            raise TableError(f'{cid}: shop kind {kind!r} must be a shop or amenity value')
+        if (not isinstance(spec, dict) or set(spec) != {'awning'}
+                or type(spec.get('awning')) is not bool):
+            raise TableError(f'{cid}: shop kind {kind!r} must be {{"awning": true or false}}')
+
+
+def _tag_token(tags: dict, key: str) -> str | None:
+    """One non-blank tag value.
+
+    @param tags: flattened building tags
+    @param key: tag key
+    @returns: the value, or None
+    """
+    value = tags.get(key)
+    if isinstance(value, str) and value.strip() and value == value.strip():
+        return value
+    return None
+
+
+def _big_box_applies(recipe: dict, tags: dict, *, columns: int, height: float) -> bool:
+    """True when a commercial shell is large enough to take the big-box recipe.
+
+    @param recipe: commercial ``street_face`` object
+    @param tags: flattened building tags
+    @param columns: footprint area in block columns
+    @param height: shell height in blocks
+    @returns: whether the big-box scale test passes
+    """
+    if tags.get('building') not in ('retail', 'supermarket', 'yes', None):
+        return False
+    if tags.get('office') or tags.get('tourism'):
+        return False
+    if columns < recipe['min_columns'] and height < recipe['min_height']:
+        return False
+    return True
+
+
+def _shop_recipe(table: dict | None, tags: dict) -> dict | None:
+    """Shop street-face recipe when the tags are a high-street shop.
+
+    Any ``shop`` value qualifies. An ``amenity`` qualifies only when that kind is listed
+    on the recipe (cafe, restaurant, fast food, food). ``building=retail``, ``kiosk`` or
+    ``supermarket`` qualifies with no shop tag. The awning flag comes from the kind.
+
+    @param table: ``street_face.shop`` object, or None
+    @param tags: flattened building tags
+    @returns: shop recipe, or None when this is not a shop
+    """
+    if not isinstance(table, dict):
+        return None
+    if tags.get('office') or tags.get('tourism'):
+        return None
+    kinds = table.get('kinds') or {}
+    kind = _tag_token(tags, 'shop')
+    if kind is None:
+        amenity = _tag_token(tags, 'amenity')
+        if amenity in kinds:
+            kind = amenity
+    if kind is None and tags.get('building') not in ('retail', 'kiosk', 'supermarket'):
+        return None
+    spec = kinds.get(kind) if isinstance(kind, str) else None
+    awning = bool(spec.get('awning')) if isinstance(spec, dict) else False
+    return {
+        'kind': 'shop',
+        'glass_height': table['glass_height'],
+        'door': table['door'],
+        'sign_wrap': table['sign_wrap'],
+        'awning': awning,
+        'shop_kind': kind,
+    }
+
+
 def street_face_defaults(cls: str, tags: dict, *, columns: int, height: float) -> dict | None:
-    """Accepted industrial / big-box recipes; shops and offices keep their own facade plans.
+    """Industrial, big-box or shop street-face recipe for one classified building.
+
+    A named shop kind other than ``supermarket`` stays a shop at any size. A large
+    retail shell or supermarket with no other shop kind is a big box. Offices and
+    anything the class table does not dress return None.
 
     @param cls: classified land use (including an inherited use polygon)
     @param tags: flattened building tags
@@ -366,14 +472,15 @@ def street_face_defaults(cls: str, tags: dict, *, columns: int, height: float) -
     recipe = defaults(cls).get('street_face')
     if not recipe:
         return None
-    if recipe['kind'] == 'big_box':
-        if tags.get('building') not in ('retail', 'supermarket', 'yes', None):
-            return None
-        if tags.get('office') or tags.get('tourism'):
-            return None
-        if columns < recipe['min_columns'] and height < recipe['min_height']:
-            return None
-    return recipe
+    if recipe.get('kind') != 'big_box':
+        return recipe
+    shop = _shop_recipe(recipe.get('shop'), tags)
+    named = shop.get('shop_kind') if shop else None
+    if shop and named not in (None, 'supermarket'):
+        return shop
+    if _big_box_applies(recipe, tags, columns=columns, height=height):
+        return {key: value for key, value in recipe.items() if key != 'shop'}
+    return shop
 
 
 def pavement_width(cls: str | None = None, row: dict | None = None) -> float:

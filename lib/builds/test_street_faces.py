@@ -87,16 +87,43 @@ class StreetFaceDefaultsTest(unittest.TestCase):
                 areas = [(land_fixtures.sq(0, 0, 40, 40), {'landuse': use})]
                 self.assertEqual(self.build_context(tags, areas).land_uses['A'], cls)
 
-    def test_class_and_scale_without_office_or_small_shop_defaults(self):
+    def test_class_and_scale_selects_industrial_big_box_or_shop(self):
         def rule(cls, building, columns=80, height=6):
             return L.street_face_defaults(cls, {'building': building}, columns=columns, height=height)
         self.assertEqual(rule('industrial', 'industrial')['kind'], 'industrial')
         self.assertEqual(rule('commercial', 'retail', columns=2200)['kind'], 'big_box')
         self.assertEqual(rule('commercial', 'retail', height=18)['kind'], 'big_box')
-        self.assertIsNone(rule('commercial', 'retail'))
+        shop = rule('commercial', 'retail')
+        self.assertEqual(shop['kind'], 'shop')
+        self.assertFalse(shop['awning'])
         self.assertIsNone(rule('commercial', 'office', height=30))
         self.assertIsNone(rule('residential', 'house', columns=3000))
         self.assertIsNone(rule('unknown', 'yes', columns=3000))
+
+    def test_awning_follows_shop_kind(self):
+        def rule(**tags):
+            tags.setdefault('building', 'retail')
+            return L.street_face_defaults('commercial', tags, columns=80, height=6)
+        for kind in ('cafe', 'restaurant', 'fast_food', 'food'):
+            with self.subTest(kind=kind):
+                dressed = rule(shop=kind)
+                self.assertEqual(dressed['shop_kind'], kind)
+                self.assertTrue(dressed['awning'])
+        self.assertTrue(rule(building='yes', amenity='cafe')['awning'])
+        self.assertFalse(rule(shop='books')['awning'])
+        self.assertFalse(rule(shop='newsagent')['awning'])
+        self.assertIsNone(L.street_face_defaults(
+            'commercial', {'building': 'yes'}, columns=80, height=6))
+        self.assertIsNone(L.street_face_defaults(
+            'commercial', {'building': 'hotel'}, columns=80, height=6))
+        tall_books = L.street_face_defaults(
+            'commercial', {'building': 'retail', 'shop': 'books'}, columns=80, height=18)
+        self.assertEqual(tall_books['kind'], 'shop')
+        self.assertEqual(L.street_face_defaults(
+            'commercial', {'building': 'supermarket'}, columns=80, height=18)['kind'], 'big_box')
+        self.assertEqual(L.street_face_defaults(
+            'commercial', {'building': 'retail', 'shop': 'supermarket'}, columns=80, height=18)['kind'],
+            'big_box')
 
     def test_table_refuses_misplaced_or_invalid_recipes(self):
         for cls, recipe in [('unknown', {'kind': 'industrial'}),
@@ -108,16 +135,42 @@ class StreetFaceDefaultsTest(unittest.TestCase):
             with self.subTest(cls=cls, recipe=recipe), self.assertRaises(L.TableError):
                 L.validate_table(doc)
 
+    def test_table_refuses_a_shop_recipe_that_is_not_keyed_by_kind(self):
+        doc = json.loads(L.TABLE_PATH.read_text())
+        commercial = next(r for r in doc['classes'] if r['id'] == 'commercial')
+        industrial = next(r for r in doc['classes'] if r['id'] == 'industrial')
+        bad_shop = {'glass_height': 2, 'door': 'oak_door', 'sign_wrap': 15,
+                    'kinds': {'High Street': {'awning': True}}}
+        cases = [
+            ('place name', commercial, bad_shop),
+            ('glass height', commercial, {**commercial['street_face']['shop'], 'glass_height': True}),
+            ('industrial shop', industrial, commercial['street_face']['shop']),
+        ]
+        for label, row, shop in cases:
+            trial = json.loads(json.dumps(doc))
+            target = next(r for r in trial['classes'] if r['id'] == row['id'])
+            if label == 'industrial shop':
+                target['street_face'] = {**target['street_face'], 'shop': shop}
+            else:
+                target['street_face']['shop'] = shop
+            with self.subTest(label=label), self.assertRaises(L.TableError):
+                L.validate_table(trial)
+
 
 class StreetFaceBuildTest(unittest.TestCase):
     def setUp(self):
         self.cells = {(x, z) for x in range(10, 25) for z in range(20, 30)}
 
-    def build(self, building='industrial', storeys=2, cells=None, streets=None, spec=None, world=None):
+    def build(self, building='industrial', storeys=2, cells=None, streets=None, spec=None, world=None,
+              tags=None, footprints=None, name='National Trade Supplies', zone_data=None):
         spec = spec or fixtures.BuildPlanTest.spec(self, storeys=storeys)
-        ground = {'A': {'ground_y': np.full((60, 60), 49), 'x0': -10, 'z0': -10}}
-        builder = F.Build(spec, footprints={'A': cells or self.cells}, world=world or fixtures._StoneWorld(),
-                          building_tags={'A': {'building': building, 'name': 'National Trade Supplies'}},
+        ground = zone_data or {'A': {'ground_y': np.full((60, 60), 49), 'x0': -10, 'z0': -10}}
+        body = {'building': building, 'name': name}
+        if tags:
+            body.update(tags)
+        builder = F.Build(spec, footprints=footprints or {'A': cells or self.cells},
+                          world=world or fixtures._StoneWorld(),
+                          building_tags={'A': body},
                           zone_data=ground,
                           streets=[street()] if streets is None else streets)
         with redirect_stdout(io.StringIO()):
@@ -223,6 +276,102 @@ class StreetFaceBuildTest(unittest.TestCase):
                 return 'minecraft:grass_block' if y == 49 else super().block(x, y, z)
         _, plan = self.build(world=Lawn())
         self.assertNotIn('minecraft:yellow_concrete', plan.cells.values())
+
+    def _shop(self, shop='books', **kwargs):
+        tags = {'shop': shop, 'building': 'retail'}
+        tags.update(kwargs.pop('tags', {}))
+        return self.build('retail', storeys=2, tags=tags, **kwargs)
+
+    def test_shop_front_is_glass_door_fascia_and_contrasting_sign(self):
+        name = next(candidate for candidate in (
+            'Cyan Cafe', 'Orange Cafe', 'Blue Cafe', 'A', 'B', 'C', 'D', 'E')
+            if F.fascia_colour(candidate) in F.LIGHT_FASCIA)
+        _, plan = self._shop(shop='books', name=name)
+        glass = {(x, y, z) for (x, y, z), state in plan.cells.items() if state == 'minecraft:glass'}
+        self.assertTrue(glass)
+        self.assertTrue(all(z == 20 and y in (51, 52) for x, y, z in glass))
+        doors = {(x, y, z) for (x, y, z), state in plan.cells.items()
+                 if state.startswith('minecraft:oak_door') and 'half=lower' in state}
+        self.assertEqual(len(doors), 1)
+        (dx, dy, dz), = doors
+        self.assertEqual((dy, dz), (51, 20))
+        self.assertNotIn((dx, 50, dz), {p for p, s in plan.cells.items() if 'door' in s})
+        for jx in (dx - 1, dx + 1):
+            for y in (51, 52):
+                self.assertEqual(plan.cells[(jx, y, 20)], 'minecraft:bricks')
+        fascia = plan.cells[(10, 54, 20)].removeprefix('minecraft:').removesuffix('_concrete')
+        self.assertIn(fascia, F.LIGHT_FASCIA)
+        self.assertEqual(len(plan.signs), 1)
+        pos, lines, colour, glow = plan.signs[0]
+        self.assertEqual(pos[1], 54)
+        self.assertEqual(colour, 'black')
+        self.assertFalse(glow)
+        self.assertTrue(all(len(line) <= 15 for line in lines))
+        self.assertIn('_concrete', plan.cells[(pos[0], pos[1], pos[2] + 1)])
+        self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
+        self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
+        self.assertEqual(plan.cells[(15, 51, 29)], 'minecraft:bricks')
+        self.assertEqual(plan.cells[(12, 55, 20)], 'minecraft:bricks')
+
+    def test_food_kinds_get_a_continuous_awning_on_the_street_face_only(self):
+        for shop in ('cafe', 'restaurant', 'fast_food', 'food'):
+            with self.subTest(shop=shop):
+                _, plan = self._shop(shop=shop)
+                awnings = {(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state}
+                self.assertEqual(awnings, {(x, 53, 19) for x in range(10, 25)})
+                self.assertTrue(all('half=top' in plan.cells[pos] for pos in awnings))
+                self.assertTrue(all(y <= 53 for x, y, z in awnings))
+                for x in range(10, 25):
+                    self.assertIn('_concrete', plan.cells[(x, 53, 20)])
+
+    def test_shop_front_stays_off_party_and_alley_walls(self):
+        spec = fixtures.BuildPlanTest.spec(self, storeys=2)
+        spec['ways']['98'] = 'B'
+        spec['storeys']['B'] = 2
+        spec['roofs']['B'] = {'kind': 'flat', 'material': 'smooth_stone'}
+        spec['groups'] = [{'nos': ['A', 'B'], 'front': 'S', 'mode': 'each'}]
+        neighbour = {(x, 19) for x in range(10, 15)}
+        streets = [street(), street(((30, 0), (30, 40)), service='alley')]
+        grid = {'ground_y': np.full((60, 60), 49), 'x0': -10, 'z0': -10}
+        _, plan = self._shop(
+            shop='books', spec=spec, streets=streets,
+            footprints={'A': self.cells, 'B': neighbour},
+            zone_data={'A': grid, 'B': grid},
+        )
+        for x in range(10, 15):
+            self.assertEqual(plan.cells[(x, 51, 20)], 'minecraft:bricks', x)
+        self.assertEqual(plan.cells[(16, 51, 20)], 'minecraft:glass')
+        self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
+        self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
+
+    def test_diagonal_shop_glass_and_awning_stay_on_front_columns(self):
+        cells = {(x, z) for x in range(10, 30) for z in range(10, 30) if 30 <= x + z <= 43}
+        builder, plan = self._shop(
+            shop='cafe', cells=cells,
+            streets=[street(((0, 20), (20, 0)), highway='pedestrian')])
+        front = FP.front_columns(cells, builder.streets)
+        glass = {(x, z) for (x, y, z), state in plan.cells.items() if state == 'minecraft:glass'}
+        self.assertTrue(glass)
+        self.assertTrue(glass <= set(front))
+        awnings = [(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state]
+        self.assertTrue(awnings)
+        for x, y, z in awnings:
+            self.assertLessEqual(y, 53)
+            self.assertTrue(any((x - dx, z - dz) in front for dx, dz in F.N4))
+
+    def test_explicit_facade_rows_skip_shop_dressing(self):
+        spec = fixtures.BuildPlanTest.spec(self, storeys=2)
+        spec['facade_plan'] = {'A': {'faces': {'N': {'glazing': [
+            {'storey': 1, 'glazed_h': 1, 'pier': 2}]}}}}
+        _, plan = self._shop(shop='cafe', spec=spec)
+        self.assertFalse(any('trapdoor' in state or 'oak_door' in state for state in plan.cells.values()))
+
+    def test_shop_without_a_street_is_not_dressed(self):
+        _, plan = self._shop(shop='cafe', streets=[])
+        self.assertFalse(any(
+            'glass' in state or 'trapdoor' in state or 'oak_door' in state
+            for state in plan.cells.values()))
+        self.assertEqual(plan.cells[(15, 52, 20)], 'minecraft:bricks')
 
 
 class LoadingBayTest(unittest.TestCase):

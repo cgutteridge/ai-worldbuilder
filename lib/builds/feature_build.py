@@ -124,6 +124,7 @@ import hashlib
 import json
 import math
 import statistics
+import textwrap
 import warnings
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -156,6 +157,28 @@ GROUND = (
     'minecraft:gray_concrete', 'minecraft:black_concrete',
 )
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+FASCIA_COLOURS = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
+# Light bands need black lettering; the rest stay white so the name reads against the bar.
+LIGHT_FASCIA = frozenset({'cyan', 'orange', 'lime', 'yellow', 'white', 'pink'})
+
+
+def fascia_colour(key: str) -> str:
+    """Stable fascia colour from a mapped name or feature label.
+
+    @param key: name, brand, unit or feature label
+    @returns: a concrete colour name
+    """
+    digest = hashlib.sha256(key.encode()).digest()
+    return FASCIA_COLOURS[int.from_bytes(digest[:4], 'big') % len(FASCIA_COLOURS)]
+
+
+def contrasting_sign_colour(fascia: str) -> str:
+    """Dye colour that reads against a fascia band.
+
+    @param fascia: concrete colour name from :func:`fascia_colour`
+    @returns: ``black`` on a light band, otherwise ``white``
+    """
+    return 'black' if fascia in LIGHT_FASCIA else 'white'
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
 N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
@@ -2655,12 +2678,143 @@ class Build:
         height = max(roof[c] - self._column_floor(f, c) for c in f.cells) if roof else f.storeys * STOREY_H
         return land_use.street_face_defaults(cls, tags, columns=len(f.cells), height=height)
 
-    def street_face(self, f: Feature) -> None:
-        """Dress an inferred industrial or big-box street face, leaving evidenced facades first.
+    def _longest_front_run(self, cells: set) -> list:
+        """Longest 4-connected front run, sorted along its long axis.
 
-        Uses mapped names, street lines and the class table only. Full glass blocks support
-        diagonal frontages; all writes stay below each column's roof and preserve door frames.
-        Loading marks replace existing yard surfaces, never buildings or an unevidenced lawn.
+        @param cells: front columns
+        @returns: cells of the winning run, along X or along Z
+        """
+        remaining = set(cells)
+        runs = []
+        while remaining:
+            start = min(remaining)
+            run = {start}
+            remaining.remove(start)
+            todo = [start]
+            while todo:
+                x, z = todo.pop()
+                for dx, dz in N4:
+                    nxt = (x + dx, z + dz)
+                    if nxt in remaining:
+                        remaining.remove(nxt)
+                        run.add(nxt)
+                        todo.append(nxt)
+            runs.append(run)
+        chosen = max(runs, key=lambda run: (len(run), sorted(run)))
+        ordered = list(chosen)
+        span_z = max(z for _, z in ordered) - min(z for _, z in ordered)
+        span_x = max(x for x, _ in ordered) - min(x for x, _ in ordered)
+        if span_z > span_x:
+            ordered.sort(key=lambda cell: (cell[1], cell[0]))
+        else:
+            ordered.sort(key=lambda cell: (cell[0], cell[1]))
+        return ordered
+
+    def _dress_shop_front(self, f: Feature, fronts: dict, rule: dict, name: str) -> None:
+        """Glass, a pavement-level door, fascia, a contrasting sign, and a continuous awning.
+
+        Only columns in ``fronts`` are dressed, so a side, alley or party wall stays shell.
+        Glass fills the ground-floor opening. The door stands on the column floor (the
+        pavement), not a block below it. The fascia is two rows: the lower row is the
+        lintel and carries a trapdoor one block outside every front column when this shop
+        kind takes an awning; the upper row carries the wrapped name. The trapdoor touches
+        that column and is never a storey above the opening.
+
+        @param f: feature mass
+        @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}`` from :func:`facade_plan.front_columns`
+        @param rule: shop recipe from :func:`land_use.street_face_defaults`
+        @param name: mapped name; empty skips the sign
+        """
+        run = self._longest_front_run(set(fronts))
+        existing = [cell for cell in getattr(f, 'door_cells', ()) if cell in fronts]
+        door_cell = existing[0] if existing else run[len(run) // 2]
+        face = fronts[door_cell]
+        lateral = (1, 0) if face in 'NS' else (0, 1)
+        jambs = {
+            (door_cell[0] + lateral[0] * side, door_cell[1] + lateral[1] * side)
+            for side in (1, -1)
+        }
+        colour = fascia_colour(name or f.no)
+        fascia = f'{colour}_concrete'
+        glass_h = rule['glass_height']
+        rows = {}
+        for cell in fronts:
+            floor = self._column_floor(f, cell)
+            roof_y = self._column_roof_y(f, cell)
+            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+            awning_y = floor + glass_h + 1
+            sign_y = awning_y + 1
+            if sign_y < roof_y:
+                rows[cell] = (floor, awning_y, sign_y)
+        if door_cell not in rows:
+            door_cell = None
+        doors = self._door_keepout(f)
+        protected = set(self.keep)
+        for (x, y, z), state in self.p.cells.items():
+            if '_door[' in state:
+                protected.update((x + dx, y, z + dz) for dx, dz in ((0, 0), *N4))
+
+        def write(cell, y, state):
+            roof_y = self._column_roof_y(f, cell)
+            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+            pos = (cell[0], y, cell[1])
+            if y < roof_y and pos not in protected and cell not in doors:
+                self.set(*pos, state)
+
+        for cell, (floor, awning_y, _sign_y) in rows.items():
+            if cell != door_cell and cell not in jambs:
+                for y in range(floor + 1, awning_y):
+                    write(cell, y, 'glass')
+        if door_cell is not None and not existing:
+            floor = rows[door_cell][0]
+            self._set_door_leaf(door_cell, face, rule['door'], 'left', floor)
+            f.door_cells.add(door_cell)
+            if getattr(f, 'door', None) is None:
+                f.door = door_cell
+        for cell, (_floor, awning_y, sign_y) in rows.items():
+            write(cell, awning_y, fascia)
+            write(cell, sign_y, fascia)
+        if name and rows:
+            cx = statistics.mean(x for x, _z in rows)
+            cz = statistics.mean(z for _x, z in rows)
+            for cell in sorted(rows, key=lambda c: (abs(c[0] - cx) + abs(c[1] - cz), c)):
+                _floor, _awning_y, sign_y = rows[cell]
+                dx, dz = DIRS[fronts[cell]]
+                pos = (cell[0] + dx, sign_y, cell[1] + dz)
+                outside = self.p.cells.get(pos)
+                if outside is None:
+                    outside = self.live.block(*pos)
+                wall = self.p.cells.get((cell[0], sign_y, cell[1]))
+                if wall == bid(fascia) and outside in ('minecraft:air', 'minecraft:cave_air'):
+                    self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[cell]]}]')
+                    self.p.sign(
+                        pos, textwrap.wrap(name, width=rule['sign_wrap'])[:4],
+                        colour=contrasting_sign_colour(colour), glow=False,
+                    )
+                    break
+        if rule['awning']:
+            hinge_for = {'N': 'south', 'S': 'north', 'E': 'west', 'W': 'east'}
+            for cell, (_floor, awning_y, _sign_y) in rows.items():
+                dx, dz = DIRS[fronts[cell]]
+                outside_col = (cell[0] + dx, cell[1] + dz)
+                if outside_col in self.by_no_all_cells:
+                    continue
+                pos = (outside_col[0], awning_y, outside_col[1])
+                outside = self.p.cells.get(pos)
+                if outside is None:
+                    outside = self.live.block(*pos)
+                if outside not in ('minecraft:air', 'minecraft:cave_air'):
+                    continue
+                hinge = hinge_for[fronts[cell]]
+                self.set(*pos, f'oak_trapdoor[facing={hinge},half=top,open=false]')
+
+    def street_face(self, f: Feature) -> None:
+        """Dress an inferred industrial, big-box or shop street face.
+
+        Evidenced facade rows win. Uses mapped names, street lines and the class table
+        only. Shop kinds select the awning. Full blocks support diagonal frontages; writes
+        stay below each column's roof. Loading marks replace yard surfaces, never buildings
+        or an unevidenced lawn.
         """
         rule = self._street_face_rule(f)
         if not rule or (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
@@ -2672,8 +2826,14 @@ class Build:
             print(f'{f.no} street face {rule["kind"]}: no mapped street front')
             return
         name = tags.get('name') or tags.get('brand') or tags.get('addr:unit') or ''
-        palette = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
-        colour = palette[int.from_bytes(hashlib.sha256((name or f.no).encode()).digest()[:4], 'big') % len(palette)]
+        if rule['kind'] == 'shop':
+            self._dress_shop_front(f, fronts, rule, name)
+            print(
+                f'{f.no} street face shop: {len(fronts)} columns; '
+                f'kind={rule.get("shop_kind")}; awning={rule["awning"]}; name={name}'
+            )
+            return
+        colour = fascia_colour(name or f.no)
         fascia = f'{colour}_concrete'
         doors = self._door_keepout(f)
         protected = set(self.keep)
@@ -2741,7 +2901,6 @@ class Build:
                     outside = self.live.block(*pos)
                 if (self.p.cells.get((c[0], y, c[1])) == bid(fascia) and
                         outside in ('minecraft:air', 'minecraft:cave_air')):
-                    import textwrap
                     self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[c]]}]')
                     self.p.sign(pos, textwrap.wrap(name, width=15)[:4], colour='white', glow=True)
                     break
@@ -3019,6 +3178,8 @@ class Build:
         self.entrance_covers()
         for f in self.features:
             self.street_face(f)
+        # Shop doors are placed with the street face, after the earlier frame check.
+        guard_door_frames(self.p, self.live.block)
         self.p.keep = set(self.keep)
         self._preserve_real_owners()
         self.p.signs = [row for row in self.p.signs if '_wall_sign[' in self.p.cells.get(row[0], '')]

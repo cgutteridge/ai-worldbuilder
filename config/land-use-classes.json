@@ -54,7 +54,18 @@
     "kind": "big_box",
     "min_columns": 2000,
     "min_height": 15,
-    "glazed_storeys": 2
+    "glazed_storeys": 2,
+    "shop": {
+     "glass_height": 2,
+     "door": "oak_door",
+     "sign_wrap": 15,
+     "kinds": {
+      "cafe": {"awning": true},
+      "restaurant": {"awning": true},
+      "fast_food": {"awning": true},
+      "food": {"awning": true}
+     }
+    }
    },
    "match": {
     "building": [
