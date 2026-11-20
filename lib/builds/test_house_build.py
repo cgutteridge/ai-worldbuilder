@@ -9,6 +9,54 @@ from unittest import mock
 import numpy as np
 
 import house_build as H
+from journal_testkit import LiveApplyCase
+
+
+class DirectApplyTest(LiveApplyCase):
+    def test_existing_house_requires_override_and_undo_allows_a_clean_rebuild(self):
+        from site_kit import Plan
+        spec = {'name': 'demo', 'ways': {'1': 'A'}, 'roofs': {'A': 'bricks'},
+                'groups': [{'nos': ['A'], 'front': 'N'}]}
+        path = self.t / 'demo.json'
+        path.write_text(json.dumps(spec))
+        old = Plan('demo')
+        old.set(1, 60, 1, 'bricks')
+        old.set(2, 60, 1, 'bricks')
+        self.run_apply(old)
+        before = self.reg().journal_path.read_bytes()
+        new = Plan('demo')
+        new.set(1, 60, 1, 'stone')
+        with mock.patch.object(H, 'build', return_value=new) as planner, \
+                mock.patch.object(H, 'preview'), mock.patch('site_lock.check'), \
+                mock.patch('readiness_evidence.require_feature_ready'), redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(SystemExit, '--overwrite'):
+                H.main([str(path), '--apply'])
+            planner.assert_not_called()
+            self.assertEqual(self.reg().journal_path.read_bytes(), before)
+            H.main([str(path)])  # Dry runs remain available for an existing build.
+            self.assertEqual(self.reg().journal_path.read_bytes(), before)
+            H.main([str(path), '--apply', '--overwrite'])
+            self.assertEqual(self.blocks.read((1, 60, 1)), 'minecraft:stone')
+            self.assertEqual(self.blocks.read((2, 60, 1)), 'minecraft:bricks')
+            self.run_undo('demo')
+            H.main([str(path), '--apply'])
+        self.assertEqual(self.blocks.read((1, 60, 1)), 'minecraft:stone')
+        self.assertEqual(self.blocks.read((2, 60, 1)), 'minecraft:air')
+        self.assertEqual(self.entries('demo')[-1].meta['builder_name'], 'house_build')
+
+    def test_relative_house_spec_is_resolved_against_the_world(self):
+        from site_kit import Plan
+        spec = {'name': 'demo', 'ways': {'1': 'A'}, 'roofs': {'A': 'bricks'},
+                'groups': [{'nos': ['A'], 'front': 'N'}]}
+        (self.t / 'demo.json').write_text(json.dumps(spec))
+        plan = Plan('demo')
+        plan.set(1, 60, 1, 'bricks')
+        with mock.patch('active_world.world_root', return_value=self.t), \
+                mock.patch.object(H, 'build', return_value=plan), mock.patch.object(H, 'preview'), \
+                mock.patch('site_lock.check'), mock.patch('readiness_evidence.require_feature_ready'), \
+                redirect_stdout(io.StringIO()):
+            H.main(['demo.json', '--apply'])
+        self.assertEqual(self.entries('demo')[0].meta['spec_path'], 'demo.json')
 
 class SpecTest(unittest.TestCase):
     def write(self, spec):

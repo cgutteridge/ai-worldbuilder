@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-run a feature's recorded current builder without redesign (dry run by default)."""
+"""Re-run a feature's recorded or explicitly registered current builder without redesign."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +18,16 @@ def prepare(name: str, registry=None) -> list[str]:
         from cell_registry import view_registry
         registry = view_registry()
     builder = describe_builder(name, registry.entries(plan=name))
-    if builder['source'] != 'recorded':
+    if builder['source'] not in ('recorded', 'registered'):
         raise SystemExit(f'{name}: no replayable recorded builder; see the unrecorded listing '
-                         'from scripts/builder_audit.py --world <world> (#248), or use redo '
+                         'from scripts/builder_audit.py --world <world> (#248). Verify and explicitly '
+                         'register a legacy spec with scripts/register_builder.py --world <world>, or use redo '
                          '(redesign from evidence). Nothing undone.')
+    return builder_command(name, builder)
+
+
+def builder_command(name: str, builder: dict) -> list[str]:
+    """Validate an explicitly identified builder and return argv without executing it."""
     path = resolve_builder_path(builder['path'])
     if not builder['available']:
         raise SystemExit(f'{name}: recorded {builder["kind"]} missing: {path}; restore or correct the recorded builder before reapply. Nothing undone.')
@@ -38,7 +44,7 @@ def prepare(name: str, registry=None) -> list[str]:
             from feature_build import load_spec
         try:
             spec = load_spec(path)
-        except (OSError, ValueError, SystemExit) as exc:
+        except (OSError, ValueError, SystemExit, TypeError, KeyError, AttributeError) as exc:
             raise SystemExit(f'{name}: invalid builder spec {path}: {exc}; nothing undone') from exc
         if spec['name'] != name:
             raise SystemExit(f'{name}: recorded spec names {spec["name"]!r}; refusing undo')
