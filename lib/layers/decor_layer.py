@@ -64,9 +64,15 @@ def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
             cols.update((int(c[0]), int(c[1])) for c in item.get('cells') or [])
         elif item.get('role') == ob.KIND:
             cols.update((int(c[0]), int(c[1])) for c in item.get('cells') or [])
-    cols.update((int(i['x']), int(i['z'])) for i in furniture_items)
+    cols.update((int(i['x']), int(i['z'])) for i in furniture_items if i.get('kind') not in sf.ROADSIDE_KINDS)
     r = WARM_RING
-    return {(x + a, z + b) for x, z in cols for a in range(-r, r + 1) for b in range(-r, r + 1)}
+    out = {(x + a, z + b) for x, z in cols for a in range(-r, r + 1) for b in range(-r, r + 1)}
+    r = sf.ROADSIDE_REACH + WARM_RING                    # a post moves off the road node, so its neighbourhood is read
+    for i in furniture_items:
+        if i.get('kind') in sf.ROADSIDE_KINDS:
+            x, z = int(i['x']), int(i['z'])
+            out.update((x + a, z + b) for a in range(-r, r + 1) for b in range(-r, r + 1))
+    return out
 
 
 def warm_decor_columns(world, cols) -> int:
@@ -316,6 +322,12 @@ def place_furniture(
     item``) and, for a multi-block kind, not a planned barrier block (``overlaps a planned barrier``).
     Failed rows are returned as unplaced plan-shaped dicts, with ``blocked_column`` on a multi-block one.
 
+    Road-edge kinds (#334): ``traffic_signals`` and ``crossing`` come from OSM nodes on the carriageway, so
+    each stands at the nearest column (within :data:`street_furniture.ROADSIDE_REACH` blocks) that passes
+    every check above, reported with ``placed_at`` (``x``, ``z`` stay the mapped node) or refused with
+    ``no kerbside column within N blocks``. ``traffic_island`` (mapped only) skips the path-line and
+    carriageway refusals and stands where mapped.
+
     @param cell: (tx, tz)
     @param items: ``{x,z,kind,source}`` from the decor plan; ``rotation`` (degrees clockwise) for a multi-block kind
     @param world: live or planning world
@@ -334,59 +346,42 @@ def place_furniture(
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
     unplaced: list[dict] = []
-    for item in items:
-        x, z, kind = int(item['x']), int(item['z']), item['kind']
+
+    def attempt(item, x, z):
+        """Try one anchor column. Returns ``(voxels, tops, columns, None, None)`` or ``(None, None, columns, reason, column)``."""
+        kind = item['kind']
         allow = bool(item.get('allow_against_build'))
         multi = kind in sf.FOOTPRINTS
         rotation = int(item.get('rotation') or 0) % 360 if multi else 0
         rows = sf.footprint(kind, rotation)
         columns = list(dict.fromkeys((x + dx, z + dz) for dx, dz, _dy, _block in rows))
-
-        def refuse(reason, column=None, _item=item):
-            row = dplan.mark_unplaced(_item, reason)
-            if multi and column is not None:
-                row['blocked_column'] = list(column)
-            unplaced.append(row)
-
         if not cell_contains(cell, x, z):
-            refuse('outside cell')
-            continue
+            return None, None, columns, 'outside cell', None
         edge = next((q for q in columns if not cell_contains(cell, *q)), None)
         if edge is not None:
-            refuse('crosses the cell edge', edge)
-            continue
-        checks = (
-            (lambda q: q in keep_clear, 'entrance opening or route reserved'),
-            (lambda q: q in way, 'on path/road/water column'),
-            (lambda q: q in near1 and not allow, 'against build'),
-            (lambda q: column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS, 'on carriageway'),
-        )
-        failed = False
+            return None, None, columns, 'crosses the cell edge', edge
+        checks = [(lambda q: q in keep_clear, 'entrance opening or route reserved')]
+        if kind not in sf.ON_ROAD_KINDS:
+            checks.append((lambda q: q in way, 'on path/road/water column'))
+        checks.append((lambda q: q in near1 and not allow, 'against build'))
+        if kind not in sf.ON_ROAD_KINDS:
+            checks.append((lambda q: column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS, 'on carriageway'))
         for test, reason in checks:
             bad = next((q for q in columns if test(q)), None)
             if bad is not None:
-                refuse(reason, bad)
-                failed = True
-                break
-        if failed:
-            continue
+                return None, None, columns, reason, bad
         tops: dict[tuple[int, int], int] = {}
         for q in columns:
             top = ground_at(world, lidar_hm, q[0], q[1], owned, masked)
             if not top:
-                refuse(ground_missing_reason(lidar_hm, q[0], q[1], owned), q)
-                failed = True
-                break
+                return None, None, columns, ground_missing_reason(lidar_hm, q[0], q[1], owned), q
             tops[q] = top[0]
-        if failed:
-            continue
         if any(abs(tops[q] - tops[(x, z)]) > 1 for q in columns):
-            refuse('uneven ground', next(q for q in columns if abs(tops[q] - tops[(x, z)]) > 1))
-            continue
+            return None, None, columns, 'uneven ground', next(q for q in columns if abs(tops[q] - tops[(x, z)]) > 1)
         voxels: dict[tuple[int, int, int], str] = {}
-        why, bad_pos = '', None
         for dx, dz, dy, block in rows:
             pos = (x + dx, tops[(x + dx, z + dz)] + dy, z + dz)
+            why = ''
             if pos in owned:
                 why = 'feature above terrain'              # a feature's own block stands in this column over the ground
             elif pos in found:
@@ -396,19 +391,40 @@ def place_furniture(
             elif not is_air(world.block(*pos)) or pos in masked:
                 why = 'blocked by live or owned block'
             if why:
-                bad_pos = pos
-                break
+                return None, None, columns, why, (pos[0], pos[2])
             voxels[pos] = block
-        if why:
-            refuse(why, (bad_pos[0], bad_pos[2]))
+        return voxels, tops, columns, None, None
+
+    for item in items:
+        x, z, kind = int(item['x']), int(item['z']), item['kind']
+        multi = kind in sf.FOOTPRINTS
+        rotation = int(item.get('rotation') or 0) % 360 if multi else 0
+        voxels, tops, columns, why, bad = attempt(item, x, z)
+        at = (x, z)
+        if voxels is None and kind in sf.ROADSIDE_KINDS and why != 'outside cell':
+            # The mapped node is on the road: stand the post at the nearest column the checks accept.
+            for q in sf.roadside_candidates(x, z):
+                voxels, tops, columns, _why, _bad = attempt(item, *q)
+                if voxels is not None:
+                    at = q
+                    break
+            else:
+                why, bad = f'no kerbside column within {sf.ROADSIDE_REACH} blocks', None
+        if voxels is None:
+            row = dplan.mark_unplaced(item, why)
+            if multi and bad is not None:
+                row['blocked_column'] = list(bad)
+            unplaced.append(row)
             continue
         found.update(voxels)
         row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
                'blocks': len(voxels)}
+        if at != (x, z):
+            row['placed_at'] = list(at)                    # x, z stay the mapped node
         if multi:
             row['rotation'] = rotation
             row['footprint'] = [list(q) for q in columns]
-        if terrain_y(lidar_hm, x, z) is not None:
+        if terrain_y(lidar_hm, *at) is not None:
             row['on_terrain'] = True
             row['moved_to_terrain'] = any(
                 terrain_y(lidar_hm, *q) is not None and raised_over_terrain(world, q[0], q[1], tops[q])

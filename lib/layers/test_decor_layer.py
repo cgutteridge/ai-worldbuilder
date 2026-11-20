@@ -228,6 +228,88 @@ class TestFurnitureByProvenance(unittest.TestCase):
             'unplaced': {'inference': 1}})
 
 
+class TestRoadEdgeFurniture(unittest.TestCase):
+    """#334: signals and crossings come from nodes on the carriageway and stand at its edge; islands stand in it."""
+
+    GROUND = 64
+
+    def setUp(self):
+        # Tarmac carriageway on x <= 11, paving beyond; the whole tarmac area is a way column.
+        self.tarmac = {(x, z) for x in range(0, 12) for z in range(0, 60)}
+        self.world = mock.Mock()
+        self.world.block.side_effect = lambda x, y, z: 'minecraft:air' if y > self.GROUND else 'minecraft:stone'
+
+    def place(self, items, **kw):
+        kinds = lambda _w, x, z, _hm=None: 'tarmac' if (x, z) in self.tarmac else 'paving'
+        args = dict(way=set(self.tarmac), near1=set(), owned=set(), masked=set())
+        args.update(kw)
+        with mock.patch('decor_layer.column_ground_kind', side_effect=kinds), \
+                mock.patch('surface_probe.surface_y', return_value=(self.GROUND, 'stone')):
+            return dl.place_furniture((0, 0), items, self.world, **args)
+
+    def test_signal_node_on_the_road_stands_at_the_nearest_roadside_column(self):
+        found, report, unplaced = self.place([{'x': 9, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'}])
+        self.assertEqual(unplaced, [])
+        self.assertEqual([(r['x'], r['z'], r['placed_at']) for r in report], [(9, 20, [12, 20])])
+        self.assertEqual(found, {(12, 65, 20): 'andesite_wall', (12, 66, 20): 'andesite_wall',
+                                 (12, 67, 20): 'black_concrete'})
+
+    def test_crossing_post_uses_its_own_recipe(self):
+        found, report, _ = self.place([{'x': 10, 'z': 30, 'kind': 'crossing', 'source': 'vector_map'}])
+        self.assertEqual(report[0]['placed_at'], [12, 30])
+        self.assertEqual(set(found.values()), {'white_concrete', 'orange_concrete'})
+
+    def test_node_already_off_the_road_does_not_move(self):
+        found, report, _ = self.place([{'x': 14, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'}])
+        self.assertNotIn('placed_at', report[0])
+        self.assertIn((14, 65, 20), found)
+
+    def test_no_roadside_column_in_reach_is_refused_with_a_reason(self):
+        _, report, unplaced = self.place([{'x': 3, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'}])
+        self.assertEqual(report, [])
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced],
+                         [f'no kerbside column within {sf.ROADSIDE_REACH} blocks'])
+
+    def test_reserved_and_built_columns_are_skipped_when_moving(self):
+        _, report, _ = self.place(
+            [{'x': 10, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'}],
+            keep_clear={(12, z) for z in range(60)}, near1={(13, 20)})   # a reserved strip, then a built column
+        self.assertEqual(report[0]['placed_at'], [13, 19])
+
+    def test_two_signals_never_share_a_column(self):
+        found, report, unplaced = self.place([
+            {'x': 10, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'},
+            {'x': 10, 'z': 21, 'kind': 'crossing', 'source': 'vector_map'}])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(len({tuple(r['placed_at']) for r in report}), 2)
+
+    def test_signal_outside_the_cell_is_refused_without_a_search(self):
+        _, _, unplaced = self.place([{'x': 200, 'z': 20, 'kind': 'traffic_signals', 'source': 'vector_map'}])
+        self.assertEqual([u['provenance']['unresolved_reason'] for u in unplaced], ['outside cell'])
+
+    def test_mapped_island_stands_on_the_carriageway_where_mapped(self):
+        found, report, unplaced = self.place([{'x': 9, 'z': 20, 'kind': 'traffic_island', 'source': 'vector_map'}])
+        self.assertEqual(unplaced, [])
+        self.assertNotIn('placed_at', report[0])
+        self.assertEqual(found, {(9, 65, 20): 'stone_brick_slab[type=bottom]'})
+
+    def test_other_furniture_is_still_refused_on_the_carriageway(self):
+        _, report, unplaced = self.place([{'x': 9, 'z': 20, 'kind': 'bollard', 'source': 'vector_map'}])
+        self.assertEqual(report, [])
+        self.assertEqual(unplaced[0]['provenance']['unresolved_reason'], 'on path/road/water column')
+
+    def test_island_slab_is_kept_half_height(self):
+        found, _, _ = self.place([{'x': 9, 'z': 20, 'kind': 'traffic_island', 'source': 'vector_map'}])
+        self.assertEqual(dl.half_slab_positions(found, found), set(found))
+
+    def test_warm_columns_cover_the_search_area_of_a_road_node(self):
+        cols = dl.decor_columns([], [{'x': 50, 'z': 50, 'kind': 'traffic_signals'}])
+        self.assertIn((50 + sf.ROADSIDE_REACH, 50), cols)
+        self.assertIn((50 - sf.ROADSIDE_REACH - 1, 50 + sf.ROADSIDE_REACH + 1), cols)
+        near = dl.decor_columns([], [{'x': 50, 'z': 50, 'kind': 'bench'}])
+        self.assertNotIn((50 + sf.ROADSIDE_REACH, 50), near)
+
+
 class TestPicnicFootprints(unittest.TestCase):
     """#306: a picnic table is a whole footprint of columns, placed whole or refused whole with a reason."""
 

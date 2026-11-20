@@ -276,7 +276,7 @@ class TestBuildDecorPlan(unittest.TestCase):
         border = [(9, z) for z in range(10, 14)]  # west face, 4 columns
         rgb = {q: (0.1, 0.4, 0.1) for q in border}
 
-        map_furniture = [(20, 20, 'bench')]
+        map_furniture = [(20, 20, 'bench'), (30, 30, 'traffic_signals')]
         designer = [
             {'x': 21, 'z': 20, 'kind': 'bicycle_parking', 'source': 'designer',
              'note': 'bike-rack fences'},
@@ -309,6 +309,10 @@ class TestBuildDecorPlan(unittest.TestCase):
         self.assertIn(('hedge', 'barrier'), kinds)
         self.assertIn(('bench', 'furniture'), kinds)
         self.assertIn(('bicycle_parking', 'furniture'), kinds)
+        self.assertIn(('traffic_signals', 'furniture'), kinds)
+        signal = next(i for i in plan['items'] if i['kind'] == 'traffic_signals')
+        self.assertEqual(signal['cell'], [30, 30])                  # the mapped node, before any move off the road
+        self.assertEqual(signal['provenance']['source'], 'vector_map')
 
         bike = next(i for i in plan['items'] if i['kind'] == 'bicycle_parking')
         self.assertEqual(bike['provenance']['source'], 'aerial')

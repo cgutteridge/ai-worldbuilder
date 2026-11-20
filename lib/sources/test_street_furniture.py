@@ -20,6 +20,19 @@ class ClassifyAndRecipes(unittest.TestCase):
             ({'highway': 'street_lamp'}, 'street_lamp'),
             ({'barrier': 'bollard'}, 'bollard'),
             ({'leisure': 'picnic_table'}, 'picnic_table'),
+            ({'highway': 'traffic_signals'}, 'traffic_signals'),
+            ({'highway': 'traffic_signals', 'crossing': 'traffic_signals'}, 'traffic_signals'),
+            ({'highway': 'crossing', 'crossing': 'uncontrolled'}, 'crossing'),
+            ({'highway': 'crossing', 'crossing': 'zebra'}, 'crossing'),
+            ({'highway': 'crossing'}, 'crossing'),
+            ({'highway': 'crossing', 'crossing': 'traffic_signals'}, 'traffic_signals'),
+            ({'highway': 'crossing', 'crossing': 'toucan'}, 'traffic_signals'),
+            ({'highway': 'crossing', 'crossing:signals': 'yes'}, 'traffic_signals'),
+            ({'highway': 'crossing', 'crossing': 'unmarked'}, None),
+            ({'highway': 'give_way'}, None),
+            ({'traffic_calming': 'island'}, 'traffic_island'),
+            ({'traffic_calming': 'bump'}, None),
+            ({'highway': 'traffic_signals', 'traffic_sign': 'yes'}, 'traffic_signals'),
             ({'leisure': 'pitch'}, None),
             ({'traffic_sign': 'yes'}, 'sign'),
             ({'information': 'board'}, 'sign'),
@@ -41,6 +54,43 @@ class ClassifyAndRecipes(unittest.TestCase):
                         block, sf.REAL_WALL_BLOCKS,
                         f'{kind} recipe uses unknown wall block {block!r}',
                     )
+
+
+class RoadEdgeKinds(unittest.TestCase):
+    """#334: signals, crossings and mapped islands are single-column kinds with their own placement rules."""
+
+    def test_kinds_exist_with_recipes_and_distinct_blocks(self):
+        for kind in ('traffic_signals', 'crossing', 'traffic_island'):
+            self.assertIn(kind, sf.KINDS)
+            self.assertIn(kind, sf.FURNITURE_KINDS)
+            self.assertTrue(sf.recipe(kind))
+        self.assertNotEqual(sf.recipe('traffic_signals'), sf.recipe('street_lamp'))
+        self.assertGreater(len(sf.recipe('traffic_signals')), len(sf.recipe('crossing')))
+
+    def test_island_slab_is_a_bottom_half_so_decor_keeps_it_half_height(self):
+        ((_dy, block),) = sf.recipe('traffic_island')
+        self.assertTrue(block.endswith('[type=bottom]'))
+
+    def test_road_node_kinds_move_off_the_road_and_the_island_stays(self):
+        self.assertEqual(sf.ROADSIDE_KINDS, {'traffic_signals', 'crossing'})
+        self.assertEqual(sf.ON_ROAD_KINDS, {'traffic_island'})
+
+    def test_extract_where_names_the_new_tags(self):
+        where = ' '.join(job[1] for job in sf.EXTRACT_JOBS)
+        for needle in ('traffic_signals', 'crossing', 'traffic_calming', 'island'):
+            self.assertIn(needle, where)
+
+    def test_roadside_candidates_are_nearest_first_and_bounded(self):
+        cands = sf.roadside_candidates(10, 20)
+        self.assertNotIn((10, 20), cands)
+        self.assertEqual(cands[:4], [(9, 20), (10, 19), (10, 21), (11, 20)])
+        dists = [(x - 10) ** 2 + (z - 20) ** 2 for x, z in cands]
+        self.assertEqual(dists, sorted(dists))
+        self.assertLessEqual(max(dists), sf.ROADSIDE_REACH ** 2)
+
+    def test_map_items_keep_the_new_kinds(self):
+        items = sf.map_items([(1, 2, 'traffic_signals'), (3, 4, 'crossing'), (5, 6, 'traffic_island')])
+        self.assertEqual([i['kind'] for i in items], ['traffic_signals', 'crossing', 'traffic_island'])
 
 
 class Footprints(unittest.TestCase):
