@@ -42,7 +42,7 @@ def script_builder(plan_name: str) -> dict | None:
 
 
 def describe_builder(name: str, entries, inferred: Path | None = None) -> dict:
-    """Use the latest landed builder; label legacy filename matches as inferred."""
+    """Use the latest landed builder; distinguish explicit registration from build-time records."""
     for entry in reversed(entries):
         if entry.plan == name and entry.kind == 'build' and entry.status == 'landed' and not entry.undone:
             record = entry.meta.get('builder')
@@ -52,6 +52,11 @@ def describe_builder(name: str, entries, inferred: Path | None = None) -> dict:
             if (isinstance(record, dict) and record.get('kind') in ('spec', 'script')
                     and isinstance(record.get('path'), str) and record['path']):
                 return {**record, 'name': builder_name, 'source': 'recorded',
+                        'available': resolve_builder_path(record['path']).is_file()}
+            registration = entry.meta.get('builder_registration')
+            if registration:
+                record = registration['builder']
+                return {**record, 'source': 'registered', 'registration': registration,
                         'available': resolve_builder_path(record['path']).is_file()}
             break
     if inferred:

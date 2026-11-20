@@ -11,7 +11,8 @@ For the latest landed, not-undone feature build of each plan, the journal meta m
               now hashes differently from the recorded hash;
   current     recorded and neither condition holds;
   unrecorded  built before provenance was recorded (journal schema 1) or recorded without a sha/hash.
-              Listed separately; values are never inferred or backfilled.
+              Listed separately; historical values are never inferred or backfilled. Explicitly
+              registered reapply builders are annotated; historical provenance stays unrecorded.
 
 Writes nothing. ``reapply_feature`` is unchanged (#278).
 """
@@ -62,7 +63,8 @@ def audit(entries, since_ancestor=None, resolve=resolve_builder_path) -> dict:
         meta = e.meta
         st = provenance_status(meta, current_hash(meta, resolve), since_ancestor)
         row = {'plan': e.plan, 'seq': e.seq, 'schema': e.schema, 'builder': meta.get('builder_name'),
-               'builder_sha': meta.get('builder_sha'), 'reasons': st['reasons']}
+               'builder_sha': meta.get('builder_sha'), 'reasons': st['reasons'],
+               'registered_builder': meta.get('builder_registration', {}).get('builder')}
         out[st['state']].append(row)
     return out
 
@@ -79,7 +81,9 @@ def main(argv=None) -> int:
     for row in res['stale']:
         print(f'stale: {row["plan"]} ({row["builder"]} {str(row["builder_sha"])[:10]}) {", ".join(row["reasons"])}')
     for row in res['unrecorded']:
-        print(f'unrecorded: {row["plan"]} (seq {row["seq"]}, schema {row["schema"]})')
+        registered = row['registered_builder']
+        detail = f'; reapply builder registered: {registered["name"]}, historical provenance unknown' if registered else ''
+        print(f'unrecorded: {row["plan"]} (seq {row["seq"]}, schema {row["schema"]}){detail}')
     print(f'{len(res["stale"])} stale, {len(res["current"])} current, {len(res["unrecorded"])} unrecorded')
     return 0
 
