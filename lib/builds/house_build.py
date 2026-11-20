@@ -17,7 +17,8 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
   door_frame     true (default): doors only where the wall has a wall cell each side, so they are framed on angled walls
   keep_edits     true: stoop/step cells survive the earlier-build clash filter (needed when `modifies` a ground build)
 
-Usage:  .venv/bin/python scripts/house_build.py site/builds/<name>.json [--apply]   (dry run unless --apply)
+Usage: python3 scripts/house_build.py --world <world> site/builds/<name>.json [--apply [--overwrite]]
+Direct apply refuses an existing landed build unless --overwrite is explicit; undo first to remove old blocks.
 """
 from __future__ import annotations
 
@@ -482,21 +483,45 @@ def build(spec):
     return Build(spec).build()
 
 
-if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
-    ap.add_argument('spec', help='site/builds/<name>.json')
-    ap.add_argument('--apply', action='store_true')
-    a = ap.parse_args()
-    spec = load_spec(a.spec)
-    if a.apply:
+def run(spec_path, do_apply=False, overwrite=False):
+    """Preview or apply a world-relative spec; replacing a live build requires an override."""
+    from builder_provenance import resolve_builder_path, provenance
+    from cell_registry import view_registry
+    spec_path = resolve_builder_path(spec_path)
+    spec = load_spec(spec_path)
+    if do_apply and not overwrite:
+        seqs = [e.seq for e in view_registry().entries(plan=spec['name'])
+                if e.kind == 'build' and e.status == 'landed' and not e.undone]
+        if seqs:
+            raise SystemExit(
+                f'{spec["name"]}: already built (journal seq {seqs[-1]}). A re-apply writes only '
+                'the new plan, so old blocks outside it survive. Undo first: '
+                f'element_undo.py --world <world> {spec["name"]} --apply; '
+                'or pass --overwrite to apply over it anyway.')
+    if do_apply:
         from readiness_evidence import require_feature_ready
         require_feature_ready(spec['name'])
     plan = build(spec)
     out = ROOT / f'verification/site/{spec["name"]}-preview.png'
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
-    from builder_provenance import provenance
-    result = apply(plan, dry=not a.apply, modifies=tuple(spec['modifies']), strict=True,
-                   meta=provenance('house_build', a.spec))
+    result = apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']), strict=True,
+                   meta=provenance('house_build', spec_path))
     if result is not None:
         print(f'readback: {result["planned"]} planned, {result["mismatches"]} mismatches')
+    return plan
+
+
+def main(argv=None):
+    """Run the house builder CLI (world activation belongs to the scripts wrapper)."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument('spec', help='site/builds/<name>.json')
+    ap.add_argument('--apply', action='store_true')
+    ap.add_argument('--overwrite', action='store_true',
+                    help='apply over an existing build (leaves old blocks outside the new plan)')
+    a = ap.parse_args(argv)
+    run(a.spec, do_apply=a.apply, overwrite=a.overwrite)
+
+
+if __name__ == '__main__':
+    main()

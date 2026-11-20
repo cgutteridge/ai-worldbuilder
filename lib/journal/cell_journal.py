@@ -66,7 +66,7 @@ PASSES = ELEMENTS + GHOST_PASSES + NEUTRAL_PASSES
 # neighbour's evidence check, which validates no plans (task 292).
 NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue', 'close',
               'plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss', 'readiness',
-              'readiness_evidence')
+              'readiness_evidence', 'builder_registration')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
@@ -673,6 +673,13 @@ class CellRegistry:
             self._fold_finish(d)
         elif op == 'note':
             self._notes.append(d)
+            if d['kind'] == 'builder_registration':
+                try:
+                    entry = self._entries[int(d['ref'])]
+                    registration = dict(json.loads(d['body']), seq=seq, ts=d.get('ts', ''))
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise JournalError(f'invalid builder registration at seq {seq}') from exc
+                entry.meta['builder_registration'] = registration
         elif op == 'revive':
             self._fold_revive(d)
         elif op != 'repair':
@@ -1497,8 +1504,35 @@ class CellRegistry:
                 raise Refused(f'no planned feature {n.ref!r} on cell {list(cell)}')
         if n.kind == 'clip_coverage-dismiss' and not n.body.strip():
             raise Refused('dismissing clip query coverage needs a reason')
+        if n.kind == 'builder_registration':
+            self._check_builder_registration(n)
         seq = self._append({'op': 'note', 'cell': list(cell), 'kind': n.kind, 'ref': n.ref, 'body': n.body})
         return Receipt(seq, 'landed')
+
+    def _check_builder_registration(self, n: Note) -> None:
+        """Bind a registration to the reviewed live feature entry without rewriting its history."""
+        try:
+            target = int(n.ref)
+            body = json.loads(n.body)
+            builder = body['builder']
+            valid = (builder['kind'] == 'spec' and bool(builder['path'].strip())
+                     and bool(builder['name'].strip()) and bool(body['reason'].strip())
+                     and len(body['spec_hash']) == 64
+                     and all(c in '0123456789abcdef' for c in body['spec_hash']))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise Refused('builder registration needs a builder, spec hash and verification reason') from exc
+        if not valid:
+            raise Refused('builder registration needs a builder, spec hash and verification reason')
+        e = self._entries.get(target)
+        if (e is None or e.kind != 'build' or e.pass_ != 'feature' or e.status != 'landed'
+                or e.undone or self._latest(e.plan) is not e or tuple(n.cell) != e.cell):
+            raise Refused(f'entry {target} is not the latest live landed feature build in this cell')
+        if (e.meta.get('builder') or e.meta.get('builder_registration')
+                or (e.meta.get('builder_name') and e.meta.get('spec_path'))):
+            raise Refused(f'entry {target} already has a recorded or registered builder')
+        flying = [seq for seq in self._begun if set(self._entries[seq].cells) & set(e.cells)]
+        if flying:
+            raise InFlight(e.cells, flying)
 
     def clip_coverage_dismissed(self, cell: Cell) -> bool:
         """Whether incomplete query coverage was deliberately accepted for this cell.
