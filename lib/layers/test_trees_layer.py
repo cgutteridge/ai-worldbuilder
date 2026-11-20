@@ -799,7 +799,7 @@ class TestDryRunUndo(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict('os.environ', {'SITE_OWNER': 'unit-test'}), \
                 mock.patch('readiness_evidence.require_ready'), \
-                mock.patch.object(tl, 'World', return_value=FakeWorld()), \
+                mock.patch('site_kit.fresh_planning_world', return_value=FakeWorld()) as fresh, \
                 mock.patch.object(tl, 'plan_cell', return_value=(placed, report)), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}), \
                 mock.patch('layer_reports.artifact_path', side_effect=lambda n, a, **kw:
@@ -807,6 +807,7 @@ class TestDryRunUndo(unittest.TestCase):
                 redirect_stdout(io.StringIO()):
             self.assertEqual(tl.apply_cell((0, 0)), 0)
             self.assertEqual([p.name for p in Path(tmp).iterdir()], [tl.plan_name(0, 0) + '-report.json'])
+            fresh.assert_called_once_with(strict=True)   # plans from saved regions, not the live store
 
 
 if __name__ == '__main__':

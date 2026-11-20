@@ -29,8 +29,8 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ground_layer import (BLOCK_KIND, PROBE_Y_RANGE, bare, cell_contains, ignored_builds,  # noqa: E402
-                          is_air, neighbour_owned, load_masked_positions)
+from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds,  # noqa: E402
+                          is_air, neighbour_owned, load_masked_positions, probe_y_range)
 from block_store import SCAN_VOLUME_CAP  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
@@ -83,7 +83,7 @@ def warm_decor_columns(world, cols) -> int:
     warm = getattr(world, 'prefetch', None)
     if warm is None:
         return 0
-    ylo, yhi = PROBE_Y_RANGE
+    ylo, yhi = probe_y_range()
     per_col = yhi - ylo + 1
     ordered = sorted(cols)[:max(0, WARM_BUDGET // per_col)]
     for i in range(0, len(ordered), 64):
@@ -161,7 +161,7 @@ def snapshot_decor_columns(world, cols):
     """
     if getattr(world, 'prefetch', None) is None:
         return world
-    ylo, yhi = PROBE_Y_RANGE
+    ylo, yhi = probe_y_range()
     blocks: dict[tuple[int, int, int], str | None] = {}
     for group in snapshot_groups(cols, yhi - ylo + 1):
         world.prefetch((x, y, z) for x, z in group for y in range(ylo, yhi + 1))

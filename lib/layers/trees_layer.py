@@ -798,9 +798,16 @@ def run(cell: tuple[int, int]) -> int:
 
 
 def apply_cell(cell: tuple[int, int]) -> int:
-    """Live apply: lock first, re-plan from the live world, readback, then the mask."""
+    """Live apply: lock first, re-plan from the saved world, readback, then the mask.
+
+    Planning reads the region files right after a strict server save (``fresh_planning_world``), as
+    the ground apply does (#111, ADR 004); the readback stays on MCP. Planning from the live store
+    instead hung for tens of minutes: the cell warm-up (152 x 152 columns by the probe's Y range) is
+    over 30 times the live store's cache cap, so it evicted itself and every later read was its own
+    paced section scan.
+    """
     import os
-    from site_kit import apply
+    from site_kit import apply, fresh_planning_world
     from stage_timing import timed_stage
 
     if not os.environ.get('SITE_OWNER'):
@@ -810,7 +817,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     name = plan_name(tx, tz)
     require_ready([cell], 'trees', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name)
-    world = World()
+    world = fresh_planning_world(strict=True)
     with timed_stage('layer planning (includes surface warm-up)'):
         placed, rep = plan_cell(cell, plan, world)
     from layer_reports import reason_summary, write_report

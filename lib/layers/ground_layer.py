@@ -56,7 +56,7 @@ from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb, ce
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
 from site_kit import Plan, World, full  # noqa: E402
-from surface_probe import (PLANTS, is_tree_or_plant_block, is_water, short_id,  # noqa: E402,F401
+from surface_probe import (PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
                            surface_y)
 
 SCAN_TOP = 120          # highest y the clear step looks at (survey tops out near 110)
@@ -227,20 +227,32 @@ def load_masked_positions() -> dict:
 
 
 # --- 1. which columns are ours -----------------------------------------------------------
-PROBE_Y_RANGE = (31, SCAN_TOP)   # y levels read: ``surface_y`` (110 down to 31) and the clear step (up to SCAN_TOP)
 SUPPORT_RUN = 4                  # solid blocks in a row that count as ground under a surface (#296)
 PROBE_STRIP = 16                 # x columns warmed per prefetch (keeps each request's position list small)
 
 
-def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None:
-    """Prefetch every block ``surface_y`` can read, in batched scans.
+def probe_y_range() -> tuple[int, int]:
+    """Inclusive Y levels the probes read: ``surface_y`` (110 down to the world's probe floor) and the clear step.
 
-    Without this each ``world.block`` is its own paced MCP call (~1.1 s): hours per cell.
+    The low end is one above :func:`surface_probe.probe_floor`, so a warm-up over this range covers
+    every block ``surface_y`` reads, however low the world's ground lies.
+
+    @returns: ``(lowest y read, SCAN_TOP)``
+    """
+    return probe_floor() + 1, SCAN_TOP
+
+
+def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None:
+    """Prefetch every block ``surface_y`` can read (:func:`probe_y_range`), in batched scans.
+
+    Only worth it on a store that keeps what it read: a whole cell is far over the live store's
+    cache cap (``block_store.MAX_CACHE_BLOCKS``), which evicts the warm-up as it goes, so the layer
+    applies plan from saved region files (``fresh_planning_world``) instead of the live store.
     """
     warm = getattr(world, 'prefetch', None)
     if warm is None:
         return
-    ylo, yhi = PROBE_Y_RANGE
+    ylo, yhi = probe_y_range()
     from stage_timing import timed_stage
     with timed_stage('ground/tree surface warm-up'):
         for xs in range(x0, x1 + 1, PROBE_STRIP):
@@ -712,11 +724,11 @@ def support_y(block, x: int, top: int, z: int, floor: int | None = None) -> int 
     @param block: ``callable(x, y, z) -> state | None``
     @param top: the surface y; the search starts one below it
     @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``); None means the
-      probe floor, ``PROBE_Y_RANGE[0] - 1``
+      probe floor, :func:`surface_probe.probe_floor`
     @returns: y of the support's top block, or None when nothing holds the column up
     """
     if floor is None:
-        floor = PROBE_Y_RANGE[0] - 1
+        floor = probe_floor()
         if top - 1 <= floor:
             return floor
     for y in range(top - 1, floor, -1):
@@ -726,7 +738,7 @@ def support_y(block, x: int, top: int, z: int, floor: int | None = None) -> int 
 
 
 def hollow_ys(block, x: int, z: int, base: int | None, owned_floor: int | None = None,
-              floor: int = PROBE_Y_RANGE[0] - 1) -> list:
+              floor: int | None = None) -> list:
     """Air positions under a column's crust, down to the baseline floor (task 298).
 
     :func:`support_y` stops at the first solid run under the surface, so a crust of solid blocks
@@ -739,11 +751,13 @@ def hollow_ys(block, x: int, z: int, base: int | None, owned_floor: int | None =
     @param base: y of the support's top block (:func:`support_y`); None means there is none
     @param owned_floor: highest y a feature owns in the column (task 297); the feature answers for
       it and everything below
-    @param floor: highest y not read
+    @param floor: highest y not read; default :func:`surface_probe.probe_floor`
     @returns: ascending ``[y, ...]`` of air positions (``floor < y < base``) the ground may fill
     """
     if base is None:
         return []
+    if floor is None:
+        floor = probe_floor()
     low = floor if owned_floor is None else max(floor, owned_floor)
     return [y for y in range(low + 1, base) if is_air(block(x, y, z))]
 
@@ -770,7 +784,7 @@ def floating_tops(cells: dict, block, tops: dict, floors=None) -> list:
         base = support_y(block, x, gy, z)
         if floors and (x, z) in floors:
             base = floors[(x, z)] if base is None else max(base, floors[(x, z)])
-        low = PROBE_Y_RANGE[0] - 1 if base is None else base
+        low = probe_floor() if base is None else base
         air = sum(1 for y in range(low + 1, gy) if is_air(state(x, y, z)))
         if base is None or air:
             out.append({'x': x, 'z': z, 'surface_y': gy, 'support_y': base, 'air': air})
