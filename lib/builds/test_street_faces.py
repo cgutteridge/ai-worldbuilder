@@ -60,7 +60,10 @@ class StraightRunTest(unittest.TestCase):
     def test_straight_front_is_unchanged(self):
         fronts = {(x, 5): 'N' for x in range(4)}
         runs = F.fit_straight_runs(fronts)
-        self.assertEqual(runs, [{'face': 'N', 'line': [(0, 5), (1, 5), (2, 5), (3, 5)], 'fill': set()}])
+        self.assertEqual(runs, [{
+            'face': 'N', 'line': [(0, 5), (1, 5), (2, 5), (3, 5)],
+            'fill': set(), 'sources': set(fronts),
+        }])
 
     def test_one_block_step_fills_the_notch_on_the_street_side(self):
         fronts = {(0, 1): 'N', (1, 0): 'N'}
@@ -69,6 +72,28 @@ class StraightRunTest(unittest.TestCase):
         self.assertEqual(runs[0]['face'], 'N')
         self.assertEqual(runs[0]['line'], [(0, 0), (1, 0)])
         self.assertEqual(runs[0]['fill'], {(0, 0)})
+
+    def test_a_long_diagonal_stays_within_the_step_instead_of_a_street_wedge(self):
+        fronts = {(i, i): 'N' for i in range(9)}
+        runs = F.fit_straight_runs(fronts)
+        self.assertGreater(len(runs), 1)
+        self.assertLessEqual(sum(len(run['fill']) for run in runs), 9 * F.MAX_SHOP_STEP)
+        for run in runs:
+            depth = max(z for _x, z in run['sources']) - min(z for _x, z in run['sources'])
+            self.assertLessEqual(depth, F.MAX_SHOP_STEP)
+
+    def test_a_west_run_and_a_corner_do_not_fill_the_block(self):
+        west = {(5, z): 'W' for z in range(4)}
+        runs = F.fit_straight_runs(west)
+        self.assertEqual(runs[0]['face'], 'W')
+        self.assertEqual(runs[0]['line'], [(5, z) for z in range(4)])
+        self.assertEqual(runs[0]['fill'], set())
+        corner = {(x, 0): 'N' for x in range(6)}
+        corner.update({(0, z): 'W' for z in range(1, 6)})
+        runs = F.fit_straight_runs(corner)
+        self.assertLessEqual(sum(len(run['fill']) for run in runs), 2)
+        self.assertTrue(any(run['face'] == 'N' for run in runs))
+        self.assertTrue(any(run['face'] == 'W' for run in runs))
 
 
 class StreetFaceDefaultsTest(unittest.TestCase):
@@ -364,18 +389,19 @@ class StreetFaceBuildTest(unittest.TestCase):
 
     def test_stepped_front_squares_off_so_awning_sign_and_door_touch(self):
         cells = {(x, z) for x in range(10, 30) for z in range(10, 30) if 30 <= x + z <= 43}
-        _, plan = self._shop(
-            shop='cafe', cells=cells,
-            streets=[street(((0, 20), (20, 0)), highway='pedestrian')])
+        streets = [street(((0, 20), (20, 0)), highway='pedestrian')]
+        _, plan = self._shop(shop='cafe', cells=cells, streets=streets)
+        front = FP.front_columns(cells, streets)
         awnings = [(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state]
         self.assertGreaterEqual(len(awnings), 3)
-        self.assertTrue(len({x for x, y, z in awnings}) == 1 or len({z for x, y, z in awnings}) == 1)
         self.assertTrue(all(y <= 53 for x, y, z in awnings))
-        solid = {'glass', 'concrete', 'bricks', 'door'}
         for x, y, z in awnings:
             self.assertTrue(any(
-                any(kind in plan.cells.get((x + dx, y, z + dz), '') for kind in solid)
+                'concrete' in plan.cells.get((x + dx, y, z + dz), '')
+                or 'bricks' in plan.cells.get((x + dx, y, z + dz), '')
                 for dx, dz in F.N4))
+            self.assertTrue(any(max(abs(x - fx), abs(z - fz)) <= F.MAX_SHOP_STEP + 1
+                                for fx, fz in front))
         doors = [(x, y, z, state) for (x, y, z), state in plan.cells.items()
                  if 'oak_door' in state and 'half=lower' in state]
         self.assertEqual(len(doors), 1)
@@ -389,6 +415,24 @@ class StreetFaceBuildTest(unittest.TestCase):
         sx, sy, sz = signs[0]
         self.assertTrue(any('_concrete' in plan.cells.get((sx + dx, sy, sz + dz), '')
                             for dx, dz in F.N4))
+
+    def test_a_door_on_a_recessed_column_moves_onto_the_run(self):
+        cells = {(x, z) for x in range(10, 21) for z in range(20, 30)}
+        cells.remove((15, 20))
+        spec = fixtures.BuildPlanTest.spec(self, storeys=2)
+        spec['facade_plan'] = {'A': {'entrances': [facade_fixtures._entrance(
+            face='N', at=[15, 21], floor_offset=0)]}}
+        _, plan = self._shop(shop='books', cells=cells, spec=spec)
+        lowers = [(x, y, z, state) for (x, y, z), state in plan.cells.items()
+                  if '_door[' in state and 'half=lower' in state]
+        self.assertEqual(len(lowers), 1)
+        x, y, z, state = lowers[0]
+        self.assertEqual((x, y, z), (15, 51, 20))
+        self.assertIn('iron_door', state)
+        self.assertFalse(any('_door[' in plan.cells.get((15, yy, 21), '') for yy in range(48, 60)))
+        for jx in (14, 16):
+            self.assertIn('bricks', plan.cells[(jx, 51, 20)])
+            self.assertIn('bricks', plan.cells[(jx, 52, 20)])
 
     def test_explicit_facade_rows_skip_shop_dressing(self):
         spec = fixtures.BuildPlanTest.spec(self, storeys=2)
