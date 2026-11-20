@@ -351,6 +351,6 @@ The large Westquay undo exposed repeated decoding of an oversized prior snapshot
 synthetic cache-budget regression caught it; undo now reads each required prior once without
 raising the bounded cache limit. The original live undo then completed in 50.714 seconds;
 the rebuild completed in 178.089 seconds. Focused suites, full pre-commit suites and fresh
-read-only reviews passed. The owner accepted the Belgrave rebuild in game ("looks good"). Task 330 remains doing
-pending the Westquay in-game verdict.
+read-only reviews passed. The owner accepted both rebuilt examples in game: Belgrave
+("looks good") and Westquay ("yes"). Task 330 is complete; the roof remains outside its scope.
 First-person captures were deferred because another active build held the world lock.

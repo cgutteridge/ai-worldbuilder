@@ -161,15 +161,7 @@
       "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
     
-    {
-      "id": 330,
-      "title": "Industrial and big-box street-face rules by land-use class",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Owner accepted the industrial and big-box defaults in game (Belgrave 55,-41; Westquay South 43,-16, roof excluded). The prototype dress.py is not in the repo; nothing for shutters, fascia, bay marks or name signs exists in lib. The unwanted window grid is real: Builder.windows in lib/builds/feature_build.py falls to DIRECTIONS on all faces when facade_plan has no glazing. Deliverable: a shared front-column helper (a column whose outside neighbour is nearer the mapped street line, excluding side, alley and party walls); industrial shutter, fascia and bay marks with no storey window grid; big-box glazed base, fascia and name sign (no roof). Keyed by land-use class, UK-wide. Files: lib/builds/feature_build.py, lib/builds/facade_plan.py, lib/sources/land_use.py, config/land-use-classes.json. Relates to blocked spike #257 (file implementation after its findings; the owner has already accepted these two classes). Check: rebuild Belgrave 55,-41 and Westquay 43,-16 from rules only, no scratch script; owner verdict in game. Source: docs/plans/industrial-commercial.md (trial #258). Implementation and supporting fixes through e748d68 are on main via task 331 merge d7dc48d. All four normal locked rebuilds landed with zero mismatches (journal 1386, 1388, 1392, 1396); see docs/plans/industrial-commercial.md section 11. Full hook suites and independent reviews passed. Belgrave rebuild accepted by owner in game: \"looks good\". Remaining: Westquay in-game verdict; captures deferred while another build owns the world lock. Published to GitHub main with owner authorization; Belgrave accepted; final Westquay acceptance pending."
-    },
+    
     {
       "id": 331,
       "title": "Shop street-face rules by shop kind",
@@ -177,7 +169,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        330
+        
       ],
       "notes": "Deliverable: glass, door at pavement level, fascia, contrasting wrapped name sign, and continuous awning by shop kind (cafe/restaurant/fast_food/food), applied to the street face only, never to side or alley walls or walls abutting another building, using the front-column helper from the industrial and big-box task. Owner verdict on v2: better but not accepted as default. Fixes issues I-051 (shop front wraps onto party/side walls: snags S-091, S-094) and I-050 (floating trapdoors at y=41, S-090) when landed; log each fix with issues.py fix and a check line per snag. Relates to #257. Check: Daily Echo and October Books in 50,-36 after a rebuild have no front on side walls and no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
@@ -221,7 +213,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
-        330
+        
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     }

@@ -2883,5 +2883,15 @@
       "blockedBy": [],
       "notes": "Shrub inference (#265) fills every guessed-lawn column of a residential plot, so open lawn gets evenly scattered leaf cubes (seen at 7 Hartley Avenue, plot 514, 20 shrubs on 133 columns). Plant shrubs only within one column of the plot boundary or house wall. Add a planting.cover rule (share, kinds short_grass and fern) so the edge band and lawn are varied with grass tufts and ferns, label 'cover inference'. Touch: lib/layers/ground_layer.py plan_planting, lib/sources/land_use.py planting schema, config/land-use-classes.json, docs/plans/land-use-classes.md, tests in lib/layers/test_ground_layer.py and lib/sources/test_land_use.py.\n\nClosed at bfc48a9a687b9d782d565c7d299653660f0ea067: Shrubs only within one column of house wall or plot boundary; planting.cover adds short grass and ferns in the two-column edge band. Needs a ground-layer rerun to show in the world.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 330,
+      "title": "Industrial and big-box street-face rules by land-use class",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner accepted the industrial and big-box defaults in game (Belgrave 55,-41; Westquay South 43,-16, roof excluded). The prototype dress.py is not in the repo; nothing for shutters, fascia, bay marks or name signs exists in lib. The unwanted window grid is real: Builder.windows in lib/builds/feature_build.py falls to DIRECTIONS on all faces when facade_plan has no glazing. Deliverable: a shared front-column helper (a column whose outside neighbour is nearer the mapped street line, excluding side, alley and party walls); industrial shutter, fascia and bay marks with no storey window grid; big-box glazed base, fascia and name sign (no roof). Keyed by land-use class, UK-wide. Files: lib/builds/feature_build.py, lib/builds/facade_plan.py, lib/sources/land_use.py, config/land-use-classes.json. Relates to blocked spike #257 (file implementation after its findings; the owner has already accepted these two classes). Check: rebuild Belgrave 55,-41 and Westquay 43,-16 from rules only, no scratch script; owner verdict in game. Source: docs/plans/industrial-commercial.md (trial #258). Implementation and supporting fixes through e748d68 are on main via task 331 merge d7dc48d. All four normal locked rebuilds landed with zero mismatches (journal 1386, 1388, 1392, 1396); see docs/plans/industrial-commercial.md section 11. Full hook suites and independent reviews passed. Owner accepted both rebuilt examples in game: Belgrave \"looks good\" and Westquay \"yes\". Roof excluded. Published to GitHub main with owner authorization.\n\nClosed at d7dc48d5e1c5143a589e8ccd94c28c64bd011936: Owner accepted Belgrave and Westquay rebuilds in game. Four landed builds, zero readback mismatches; focused/full suites and independent reviews passed. Roof excluded.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
