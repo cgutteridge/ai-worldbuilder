@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 339,
+  "nextTaskId": 340,
   "tasks": [
     
     {
@@ -224,6 +224,15 @@
         330
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 339,
+      "title": "Shrubs on plot edges only, with grass tufts and ferns",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Shrub inference (#265) fills every guessed-lawn column of a residential plot, so open lawn gets evenly scattered leaf cubes (seen at 7 Hartley Avenue, plot 514, 20 shrubs on 133 columns). Plant shrubs only within one column of the plot boundary or house wall. Add a planting.cover rule (share, kinds short_grass and fern) so the edge band and lawn are varied with grass tufts and ferns, label 'cover inference'. Touch: lib/layers/ground_layer.py plan_planting, lib/sources/land_use.py planting schema, config/land-use-classes.json, docs/plans/land-use-classes.md, tests in lib/layers/test_ground_layer.py and lib/sources/test_land_use.py."
     }
   ]
 }
