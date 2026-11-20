@@ -2827,5 +2827,15 @@
       "blockedBy": [],
       "notes": "Owner noted little street furniture where the street has traffic lights, but the trial did not run decor, so that observation is unverified. Lamps, bollards and bike racks already exist (mapped points #127; lamp inference #260). Real gap: EXTRACT_JOBS in lib/sources/street_furniture.py omits highway=traffic_signals and crossing, and those kinds do not exist. Deliverable: add traffic_signals and crossing kinds (extract preset, recipe, decor placement); traffic island only where mapped. Run decor on 50,-36 first to see what is already missing. Depends in practice on blocked #237 (furniture preset fails under default GDAL) if that is still the case. Check: decor dry run on 50,-36 lists signals at the OSM signal nodes. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at f75ee23e46a33da2f90ac8964c714ebd16bf28c4: Merged task/334-traffic-signals-crossings: traffic_signals, crossing and traffic_island kinds; extract preset; kerbside snap placement (placed_at). Live 50,-36 decor dry run and world-local provider patch (#237) still to do.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 327,
+      "title": "Dressing must not write ground-layer work onto a cell with no real ground pass",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause (found with the owner in trial #258): class dressing wrote white_concrete car-park bay lines (a ground-layer marking, craftsmanship section 3a) onto cell 50,-35 of southampton-build, which had only ghost ground. The throwaway car_park() clipped to a box spanning two cells and gated only on the approved-cell list; the approval for that cell covered buildings and ghost ground, not the ground layer. Deliverable: dressing and any pass that writes ground-layer things must refuse, or run the ground pass first, on a cell without real ground; cell approvals say which layers they cover. Check: test with a ghost-only cell: dressing refuses and writes nothing; cell 50,-35's lines resolved by the owner's choice (ground pass there, or removed).\n\nClosed at d5da688ad279fca22bcf28f3c0ceb9a78554627a: Merged task/327-dressing-needs-ground-pass: ground-layer plans refused unless every written cell has a landed ground pass (Build.ground_layer, Plan.ground_marking API); approval notes record layers (cell_registry.py approve). Cell 50,-35 bay lines still the owner's call.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

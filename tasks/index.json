@@ -160,15 +160,7 @@
       ],
       "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
     },
-    {
-      "id": 327,
-      "title": "Dressing must not write ground-layer work onto a cell with no real ground pass",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause (found with the owner in trial #258): class dressing wrote white_concrete car-park bay lines (a ground-layer marking, craftsmanship section 3a) onto cell 50,-35 of southampton-build, which had only ghost ground. The throwaway car_park() clipped to a box spanning two cells and gated only on the approved-cell list; the approval for that cell covered buildings and ghost ground, not the ground layer. Deliverable: dressing and any pass that writes ground-layer things must refuse, or run the ground pass first, on a cell without real ground; cell approvals say which layers they cover. Check: test with a ghost-only cell: dressing refuses and writes nothing; cell 50,-35's lines resolved by the owner's choice (ground pass there, or removed)."
-    },
+    
     {
       "id": 328,
       "title": "Group touching non-house buildings into one feature candidate",
@@ -234,11 +226,11 @@
     {
       "id": 336,
       "title": "Car-park bay lines from the ground layer, along the mapped aisle",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
-        327
+        
       ],
       "notes": "No bay-line code exists in the repo; the lines were only in the throwaway dress.py, which oriented bays to the block grid and wrote them onto a ghost-only cell (see #327). Deliverable: ground layer draws white_concrete bay markings in the parking class, rows perpendicular to the mapped service=parking_aisle (width exists in ground_sources). Files: lib/layers/ground_layer.py, lib/sources/ground_sources.py. Check: a car park in a trial cell has bays perpendicular to its aisle; test with an aisle fixture. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
