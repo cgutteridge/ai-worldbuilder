@@ -710,6 +710,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
             land_classes=land_classes,
             carriageway=set(vmap.road) | set(vmap.marks),
             furniture_avoid=way | near1,
+            water=set(vmap.water) | set(vmap.water_line),
         )
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):

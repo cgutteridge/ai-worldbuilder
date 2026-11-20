@@ -31,14 +31,14 @@ def rise_grid(blobs, size=140):
 
 
 def plan_for(cell=(0, 0), *, footprints=(), rise=None, rgb=None, footprint=None, canopy=None,
-             plot_owner=None, designer=(), openings=None):
+             plot_owner=None, designer=(), openings=None, water=None):
     """Decor plan with every source injected (no map, aerial or lidar read)."""
     return dp.build_decor_plan(
         cell, map_barriers={'hedge': set(), 'wall': set(), 'fence': set()}, map_furniture=[],
         designer_items=designer, photo_observations=[], garden={}, rgb=rgb or {},
         canopy=canopy or set(), footprint=footprint or set(),
         outbuilding_footprints=footprints, lidar_rise=rise, plot_owner=plot_owner,
-        openings=openings)
+        openings=openings, water=water)
 
 
 def only(plan, role='outbuilding'):
@@ -149,6 +149,17 @@ class TestLidarBlob(unittest.TestCase):
 
     def test_blob_on_an_edge_of_the_cell_is_not_planned_by_the_neighbour(self):
         self.assertEqual(only(blob_plan(rect(130, 30, 3, 3), cell=(0, 0))), [])
+
+    def test_blob_on_mapped_water_is_not_proposed(self):
+        # a garage-sized lump in a river (#324): not a candidate, so not unresolved either
+        cells = rect(30, 30, 4, 4)
+        self.assertEqual(len(only(blob_plan(cells))), 1)                # control: same blob on land
+        self.assertEqual(only(blob_plan(cells, water=set(cells))), [])
+        self.assertEqual(dp.unresolved_items(blob_plan(cells, water=set(cells))), [])
+        # water over part of a blob takes only those columns out of the evidence
+        (trimmed,) = only(blob_plan(cells, water={(30, 30), (31, 30)}))
+        self.assertNotIn([30, 30], trimmed['evidence_cells'])
+        self.assertEqual(len(trimmed['evidence_cells']), 14)
 
     def test_no_lidar_no_blobs(self):
         self.assertEqual(only(plan_for(rise=None)), [])

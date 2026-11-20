@@ -481,6 +481,7 @@ def build_decor_plan(
     land_classes: Mapping[tuple[int, int], str] | None = None,
     carriageway: set[tuple[int, int]] | None = None,
     furniture_avoid: set[tuple[int, int]] | None = None,
+    water: set[tuple[int, int]] | None = None,
     district_profile: Mapping[str, Any] | None = None,
     evidence_ids: Sequence[str] = (),
     root=None,
@@ -514,6 +515,7 @@ def build_decor_plan(
         picks the class that decides a way's lamp spacing and bench density
     @param carriageway: road columns no inferred furniture may stand on
     @param furniture_avoid: further columns inferred furniture skips (buildings, paths, water)
+    @param water: mapped water columns; no lidar outbuilding candidate is proposed on them (#324)
     @param district_profile: district profile for the cell; loaded from the world when omitted and
         any ways are given
     @param evidence_ids: default evidence ids for aerial-derived rows
@@ -703,7 +705,7 @@ def build_decor_plan(
         cell, footprints=outbuilding_footprints, designer=designer_items, rise=lidar_rise,
         building_columns=building_columns if building_columns is not None else footprint,
         taken=object_columns, canopy=canopy, rgb=rgb, route=route,
-        plot_owner=plot_owner, evidence_ids=evidence_ids, root=root))
+        plot_owner=plot_owner, evidence_ids=evidence_ids, root=root, water=water or set()))
     for i, obs in enumerate(photo_observations):
         if obs.get('cell') and tuple(obs['cell']) in object_columns:
             continue
@@ -1000,8 +1002,13 @@ def _outbuilding_items(
     plot_owner: Mapping[tuple[int, int], int] | None,
     evidence_ids: Sequence[str],
     root=None,
+    water: set[tuple[int, int]] = frozenset(),
 ) -> list[dict[str, Any]]:
-    """Outbuilding plan items in evidence order: mapped, lidar blob, designer trace (#251)."""
+    """Outbuilding plan items in evidence order: mapped, lidar blob, designer trace (#251).
+
+    Mapped water columns never take a lidar blob (#324): the placer refuses them, so a blob
+    there (a boat or pontoon on a river) would only show as an unresolved item.
+    """
     from ground_sources import cell_box
 
     mapped_cols = {tuple(c) for f in footprints for c in f['cells']}
@@ -1011,7 +1018,7 @@ def _outbuilding_items(
     ring = {(x + a, z + b) for x, z in building_columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
     mapped = ob.mapped_items(footprints, evidence_ids=evidence_ids, root=root, **common)
     lidar = ob.lidar_items(
-        rise, exclude=ring | taken, canopy=canopy, rgb=rgb, cell_box=cell_box(cell),
+        rise, exclude=ring | taken | set(water), canopy=canopy, rgb=rgb, cell_box=cell_box(cell),
         evidence_ids=evidence_ids, root=root, targets=targets, plot_owner=plot_owner)
     traced = ob.designer_items(
         [r for r in designer if r.get('kind') in ob.DESIGNER_KINDS],
