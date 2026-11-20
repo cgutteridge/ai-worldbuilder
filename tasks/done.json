@@ -2797,5 +2797,15 @@
       "blockedBy": [],
       "notes": "Cause: _outbuilding_items in lib/layers/decor_plan.py does not put water columns in lidar_items(exclude=...). place_outbuildings already refuses water columns when applying, so nothing was built; the garage at (8117,-5733) in the Itchen shows as unresolved. Deliverable: exclude mapped water columns when proposing. Check: unit test; 63,-45 decor report has no outbuilding-lidar-8117-m5733 in unresolved_items.\n\nClosed at 5dc671cc3efc0953c4f64e137b63c63a4051332f: Merged task/324-outbuilding-not-on-water: water columns excluded from lidar outbuilding proposals; unit test with water fixture. Live 63,-45 report check still to run.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 322,
+      "title": "Park bench inference placed nothing: decide class precedence for furniture",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause (from the 63,-45 decor report): ways_skipped 'no bench density for the adjoining class' 5, 0 candidates. Hypothesis, not verified: land_class_columns uses the smallest-polygon rule, so a path through meadow or beside wood classes as rural or natural and only the park row has bench_per_100m (config/land-use-classes.json, used in lib/layers/decor_plan.py, BENCH_PATHS footway, path, pedestrian). Owner choice needed: should a path inside a leisure=park polygon take park furniture when the nearer polygon is meadow or wood? Deliverable: check the five ways' classes, then change adjoining_class or the class precedence, or record the rule. Check: named test; re-run on 63,-45 gives benches at the stated density.\n\nClosed at 305e38946219dae158fe32663a3a76e27bb1555d: Merged task/322-bench-class-precedence: a park-class polygon is an umbrella over nested rural/natural land for decor furniture class; rule in rules/frontage-and-evidence.md. Live 63,-45 decor re-run still to check.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

@@ -134,15 +134,7 @@
       "blockedBy": [],
       "notes": "Cause (verified): water_body items carry one cells entry and propose takes one cell, building the body whole; the Itchen spans 12 cells and 22,824 columns. The trial used a scratch clip wrapper and a manual plan_feature note. Deliverable: build per cell, clipped, no bank ring on clip edges, plan recorded per cell. Same edge policy as blocked task 234 (building across a cell edge). Test on a two-cell fixture. Check: Itchen reach across 63,-45 and its neighbour joins without a seam or bank wall. Water level along the reach is a separate task."
     },
-    {
-      "id": 322,
-      "title": "Park bench inference placed nothing: decide class precedence for furniture",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Cause (from the 63,-45 decor report): ways_skipped 'no bench density for the adjoining class' 5, 0 candidates. Hypothesis, not verified: land_class_columns uses the smallest-polygon rule, so a path through meadow or beside wood classes as rural or natural and only the park row has bench_per_100m (config/land-use-classes.json, used in lib/layers/decor_plan.py, BENCH_PATHS footway, path, pedestrian). Owner choice needed: should a path inside a leisure=park polygon take park furniture when the nearer polygon is meadow or wood? Deliverable: check the five ways' classes, then change adjoining_class or the class precedence, or record the rule. Check: named test; re-run on 63,-45 gives benches at the stated density."
-    },
+    
     {
       "id": 323,
       "title": "Spike: tree lines along hedges and lanes that OSM does not map",
