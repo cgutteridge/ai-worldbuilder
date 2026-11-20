@@ -206,7 +206,7 @@
     {
       "id": 329,
       "title": "Evidence revision must not hash build specs",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
