@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 328,
+  "nextTaskId": 338,
   "tasks": [
     
     {
@@ -221,6 +221,106 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Cause (found with the owner in trial #258): class dressing wrote white_concrete car-park bay lines (a ground-layer marking, craftsmanship section 3a) onto cell 50,-35 of southampton-build, which had only ghost ground. The throwaway car_park() clipped to a box spanning two cells and gated only on the approved-cell list; the approval for that cell covered buildings and ghost ground, not the ground layer. Deliverable: dressing and any pass that writes ground-layer things must refuse, or run the ground pass first, on a cell without real ground; cell approvals say which layers they cover. Check: test with a ghost-only cell: dressing refuses and writes nothing; cell 50,-35's lines resolved by the owner's choice (ground pass there, or removed)."
+    },
+    {
+      "id": 328,
+      "title": "Group touching non-house buildings into one feature candidate",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 329,
+      "title": "Evidence revision must not hash build specs",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Cause (read from code, not yet confirmed as the trial's exact trigger): LocalEvidence.source_revision() in lib/journal/readiness_evidence.py hashes every json/png under the world's config/, reference/ and site/builds/, so every new or changed build spec changes the evidence revision of every cell: landing a feature stales its neighbours (the trial re-ran prepare --evidence-only by hand; the sheds and Westquay neighbours went stale). Probably also the unexplained cause in blocked task #232 ('did not find which input changes'); relates to #234, do not set blockedBy. The site/builds hash was added in 88ac28d with no recorded reason; spec content is already covered by plan identity and plan_refs. Deliverable: drop site/builds from source_revision (evidence only). Confirm first by diffing revision_parts before and after a spec write. Check: test: write a spec under site/builds, evidence revisions of other cells do not change; live: apply a feature crossing into 51,-36 straight after another landed, with no 'evidence facts changed' refusal and no manual prepare. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 330,
+      "title": "Industrial and big-box street-face rules by land-use class",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner accepted the industrial and big-box defaults in game (Belgrave 55,-41; Westquay South 43,-16, roof excluded). The prototype dress.py is not in the repo; nothing for shutters, fascia, bay marks or name signs exists in lib. The unwanted window grid is real: Builder.windows in lib/builds/feature_build.py falls to DIRECTIONS on all faces when facade_plan has no glazing. Deliverable: a shared front-column helper (a column whose outside neighbour is nearer the mapped street line, excluding side, alley and party walls); industrial shutter, fascia and bay marks with no storey window grid; big-box glazed base, fascia and name sign (no roof). Keyed by land-use class, UK-wide. Files: lib/builds/feature_build.py, lib/builds/facade_plan.py, lib/sources/land_use.py, config/land-use-classes.json. Relates to blocked spike #257 (file implementation after its findings; the owner has already accepted these two classes). Check: rebuild Belgrave 55,-41 and Westquay 43,-16 from rules only, no scratch script; owner verdict in game. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 331,
+      "title": "Shop street-face rules by shop kind",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        330
+      ],
+      "notes": "Deliverable: glass, door at pavement level, fascia, contrasting wrapped name sign, and continuous awning by shop kind (cafe/restaurant/fast_food/food), applied to the street face only, never to side or alley walls or walls abutting another building, using the front-column helper from the industrial and big-box task. Owner verdict on v2: better but not accepted as default. Fixes issues I-051 (shop front wraps onto party/side walls: snags S-091, S-094) and I-050 (floating trapdoors at y=41, S-090) when landed; log each fix with issues.py fix and a check line per snag. Relates to #257. Check: Daily Echo and October Books in 50,-36 after a rebuild have no front on side walls and no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 332,
+      "title": "Fit straight runs to stepped shop fronts so awnings, signs and doors attach",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        331
+      ],
+      "notes": "Owner: square off shop fronts; awnings on angled walls leave gaps to the wall and signs hover; the door near Dido's is not fully framed (door jamb rule _door_jambs_solid assumes a straight run); the Admiral side is a mess. Same cause: items placed one block out from a stepped face. Deliverable: fit straight runs to the stepped front columns and place glass, door, fascia, sign and awning on the run line, filling stair-step gaps so awnings and signs touch the wall (owner: better thick than gaps) and doors on stepped faces get full jambs. Fixes I-052 (awnings leave gaps, S-093) when landed; log the fix with a check line per snag. Check: Admiral and Dido's fronts in 50,-36: no hovering sign, awning touches the wall, the door near Dido's fully framed, no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 333,
+      "title": "Shop typology: terrace-house body over a shopfront ground floor",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        257
+      ],
+      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 334,
+      "title": "Traffic signals and crossings as street furniture kinds",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner noted little street furniture where the street has traffic lights, but the trial did not run decor, so that observation is unverified. Lamps, bollards and bike racks already exist (mapped points #127; lamp inference #260). Real gap: EXTRACT_JOBS in lib/sources/street_furniture.py omits highway=traffic_signals and crossing, and those kinds do not exist. Deliverable: add traffic_signals and crossing kinds (extract preset, recipe, decor placement); traffic island only where mapped. Run decor on 50,-36 first to see what is already missing. Depends in practice on blocked #237 (furniture preset fails under default GDAL) if that is still the case. Check: decor dry run on 50,-36 lists signals at the OSM signal nodes. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 335,
+      "title": "Landmark buildings need a street-level check before building",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner: the 'church' on the high street was an old bingo hall with a big facade, steps and a permanent awning; street view would have shown it. Tier A is owner-nominated in docs/plans/vibe-at-scale.md section 2. Deliverable: propose-features flags church, cathedral, chapel, cinema and shopping-centre candidates as landmark; apply refuses until a street-level image source is recorded (cell_sources.py --record), with a reasoned override flag; document in rules/building-review.md. Generic wording: an image source the owner supplies, never a vendor. Check: a flagged candidate refuses with the command to run; a test covers both paths. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 336,
+      "title": "Car-park bay lines from the ground layer, along the mapped aisle",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [
+        327
+      ],
+      "notes": "No bay-line code exists in the repo; the lines were only in the throwaway dress.py, which oriented bays to the block grid and wrote them onto a ghost-only cell (see #327). Deliverable: ground layer draws white_concrete bay markings in the parking class, rows perpendicular to the mapped service=parking_aisle (width exists in ground_sources). Files: lib/layers/ground_layer.py, lib/sources/ground_sources.py. Check: a car park in a trial cell has bays perpendicular to its aisle; test with an aisle fixture. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 337,
+      "title": "Big-box roof follows the aerial (spike first)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        330
+      ],
+      "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     }
   ]
 }
