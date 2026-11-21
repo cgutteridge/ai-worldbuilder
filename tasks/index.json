@@ -134,7 +134,7 @@
     {
       "id": 344,
       "title": "Task CLI: verify Cursor Claude identifiers and cover legacy scope-update edges",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
