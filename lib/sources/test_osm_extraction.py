@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import contextlib
+import configparser
 import io
 import json
 import runpy
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +20,44 @@ import osm_extraction as extraction
 
 PROVIDER = {'source': 'test-region', 'pbf_filename': 'test-region.osm.pbf',
             'pbf_url': 'https://example.test/region.osm.pbf', 'metadata_key': 'legacy_metadata'}
+
+
+class ShopSchemaTests(unittest.TestCase):
+    def test_shop_queries_have_promoted_fields_for_both_layers(self):
+        schema = configparser.ConfigParser(interpolation=None)
+        # GDAL has unsectioned global settings; a named section also works on Python 3.10.
+        schema.read_string('[general]\n' + extraction.OSM_CONFIG.read_text())
+        queries = extraction.LAYER_PRESETS['shops']
+        self.assertEqual({layer for layer, _where, _tags in queries}, {'points', 'multipolygons'})
+        for layer, _where, _tags in queries:
+            with self.subTest(layer=layer):
+                promoted = {name.strip() for name in schema[layer]['attributes'].split(',')}
+                self.assertIn('shop', promoted, f'{layer} shop query requires a promoted shop field')
+
+    @unittest.skipUnless(shutil.which('ogr2ogr'), 'optional GDAL smoke check requires ogr2ogr')
+    def test_real_gdal_shop_queries_select_point_and_polygon(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'shops.osm'
+            source.write_text('''<osm version="0.6" generator="synthetic-test">
+              <node id="1" lat="0.1" lon="0.1"><tag k="shop" v="convenience"/></node>
+              <node id="2" lat="0.2" lon="0.2"/>
+              <node id="3" lat="0.2" lon="0.3"/>
+              <node id="4" lat="0.3" lon="0.3"/>
+              <node id="5" lat="0.3" lon="0.2"/>
+              <way id="10"><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="5"/><nd ref="2"/>
+                <tag k="building" v="yes"/><tag k="shop" v="supermarket"/>
+              </way>
+            </osm>''')
+            for layer, where, _tags in extraction.LAYER_PRESETS['shops']:
+                with self.subTest(layer=layer):
+                    output = root / f'{layer}.geojson'
+                    extraction.run_ogr2ogr(source, output, layer, where, (0, 0, 1, 1),
+                                          schema=extraction.OSM_CONFIG)
+                    features = json.loads(output.read_text())['features']
+                    self.assertEqual(len(features), 1)
+                    expected = 'convenience' if layer == 'points' else 'supermarket'
+                    self.assertEqual(features[0]['properties']['shop'], expected)
 
 
 class CombinedExtractionTests(unittest.TestCase):
