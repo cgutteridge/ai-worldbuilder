@@ -3210,5 +3210,16 @@
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at fa3826d701e0d8fa0a5cd2da415449e81fd9f10c: Spike go: at 0.19 m/px the PV arrays separate from the light roof; detection is clean down to 0.38 m/px and refused above 0.4. Built: roof_aerial deriver/CLI, pv_arrays daylight_detector rows on flat roofs, and detector power ignored in readback. Live: Westquay South re-applied (seq 1693) with 1,017 detectors in 43,-16, after prepares of 42,-16 and 43,-16 (registry only). Owner verdict on the top-down capture vs the aerial: ok for now. The owner later hand-removed a SW patch; on the owner's choice, reconcile --fix restored it (4,997 blocks) and landed 1693. Reviewed in 2 rounds, APPROVE. Follow-ups filed.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "requiresClaude": true}
+  ,
+    {
+      "id": 363,
+      "title": "Woodland decor: preserve existing plants with literal-air checks",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Follow-up blocker found while closing the owner-authorized woodland wave (#347-#351). In #351 plan_woodland_decor.free_air calls ground_layer.is_air, which treats PLANTS as air. As a result it may overwrite an existing unowned plant above otherwise eligible woodland ground, contrary to the ticket air-only rule.\n\nScope: require literal Minecraft air/cave_air/void_air for woodland placement voxels; preserve existing plant blocks, including upper voxels of tall bushes/ferns. Keep other decor/ground callers and configuration shares unchanged. Add synthetic regression tests for an existing plant at surface+1 and at a required upper voxel, and retain successful placement in true air. Run focused decor/land-use tests, fresh read-only review, then required ship-branch merge locally (--no-push). No live-world reads/builds, registry/schema changes or new plant-state guesses; requiresClaude false. This is a small single-layer predicate fix, not a stretch.\n\n\nClosed at 88fd56ce4e5cfe883956183a535f08cf9f2b3c4a: Resolved #351 close-review blocker: woodland decor requires known literal air and preserves existing plants at lower/upper voxels. Six red cases reproduced before fix; focused decor/land-use, full precommit and tip/main suites green; fresh review APPROVE; local merge only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
