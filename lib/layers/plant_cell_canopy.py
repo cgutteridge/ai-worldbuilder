@@ -353,7 +353,7 @@ def build_plan(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
     rnd = random.Random(RNG_SEED)
     w = fresh_planning_world()
     taken = owned_cells(cell)
-    plan = Plan(CANOPY_PLAN_PREFIX)
+    plan = Plan(CANOPY_PLAN_PREFIX, input_cells=[cell])
     trees, bushes = [], []
     for blob in sorted(blobs, key=len, reverse=True):
         cx = sum(p[0] for p in blob) / len(blob)
@@ -410,7 +410,7 @@ def plan_hand(area: str, cell: tuple[int, int], kinds: tuple[str, ...]):
     corridors = set(corridor_columns_in_cell(area, cell, margin=0))
     w = fresh_planning_world()
     taken = owned_cells(cell)
-    plan = Plan(CANOPY_PLAN_PREFIX)
+    plan = Plan(CANOPY_PLAN_PREFIX, input_cells=[cell])
     trees, bushes, skipped = [], [], []
     for x, z, r in hand_anchors():
         surf = surface_y(w, x, z)

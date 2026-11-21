@@ -46,3 +46,50 @@ class MosaicCoverageTest(unittest.TestCase):
                 self.assertEqual(aerial.coverage((0, 0), [mosaic]), 1.0)
                 self.assertEqual(len(aerial.sample_rgb((0, 0), [mosaic])), 128 * 128)
 
+    def test_rgb_cache_returns_the_same_array_inside_one_run(self):
+        import aerial_coverage as aerial
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'tile.png'
+            Image.new('RGB', (8, 6), (10, 20, 30)).save(path)
+            opens = []
+            real_open = Image.open
+
+            def counting_open(file, *args, **kwargs):
+                opens.append(Path(file))
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch.object(Image, 'open', counting_open):
+                with aerial.rgb_cache():
+                    first = aerial.load_rgb(path)
+                    second = aerial.load_rgb(path)
+                self.assertIs(first, second)
+                self.assertEqual(opens, [path])
+                again = aerial.load_rgb(path)
+            self.assertIsNot(again, first)
+            self.assertEqual(len(opens), 2)
+            self.assertTrue((again == first).all())
+            self.assertEqual(tuple(again[0, 0]), (10, 20, 30))
+
+    def test_one_trees_run_decodes_each_mosaic_once(self):
+        import aerial_coverage as aerial
+        import trees_layer
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mosaic.png'
+            Image.new('RGB', (128, 128), (40, 90, 30)).save(path)
+            source = aerial.Mosaic(path, 19, 0, 0)
+            opens = []
+            real_open = Image.open
+
+            def counting_open(file, *args, **kwargs):
+                opens.append(Path(file))
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch.object(aerial, 'mosaics', return_value=[source]), \
+                    mock.patch.object(aerial.Mosaic, 'pixels',
+                                      lambda self, pts: {p: (p[0], p[1]) for p in pts}), \
+                    mock.patch.object(Image, 'open', counting_open):
+                with aerial.rgb_cache():
+                    trees_layer.canopy_grid((0, 0))
+                    trees_layer.cover_grid((0, 0))
+            self.assertEqual(opens, [path])
+

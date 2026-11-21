@@ -66,9 +66,27 @@ class PlanRefsTest(unittest.TestCase):
         self.assertFalse(PR.candidate_covered(building('w1'), covered))
         self.assertEqual(PR.plan_refs(self.root, 'houses_kitchener_road')[1], 'none')
 
-    def test_house_groups_are_never_matched_by_ref(self):
+    def test_house_plan_name_suffix_is_not_coverage(self):
+        """#233: specless houses_*_<ref> does not recover the trailing ref as the group's extent."""
+        self.assertEqual(PR.plan_refs(self.root, 'houses_kitchener_road_w13'), (set(), 'none'))
+        terrace = {'kind': 'houses', 'label': 'Kitchener Road (6 houses)', 'street': 'Kitchener Road',
+                   'refs': ['w10', 'w11', 'w12', 'w13', 'w14', 'w15'], 'bbox': (0, 0, 1, 1),
+                   'area': 6, 'portals': [], 'pictures': []}
+        covered = PR.covered_by_plans(self.root, ['houses_kitchener_road_w13'])
+        self.assertFalse(PR.candidate_covered(terrace, covered))
+        self.assertEqual(PR.uncovered_candidates(terrace, covered), [terrace])
+
+    def test_house_groups_match_by_map_ref_like_other_groups(self):
+        """#233: house groups are covered by recorded map refs, not excluded from matching."""
         covered = PR.covered_by_plans(self.root, ['west_w5'])
-        self.assertFalse(PR.candidate_covered(building('w5', 'houses'), covered))
+        self.assertTrue(PR.candidate_covered(building('w5', 'houses'), covered))
+        terrace = {'kind': 'houses', 'label': 'Kitchener Road (2 houses)', 'street': 'Kitchener Road',
+                   'refs': ['w5', 'w6'], 'bbox': (0, 0, 1, 1), 'area': 4, 'portals': [], 'pictures': []}
+        self.assertFalse(PR.candidate_covered(terrace, covered))
+        self.assertEqual(PR.uncovered_candidates(terrace, {'w5'}),
+                         [{'kind': 'houses', 'label': 'Kitchener Road (1 houses)',
+                           'street': 'Kitchener Road', 'refs': ['w6'], 'bbox': (0, 0, 1, 1),
+                           'area': 2, 'portals': [], 'pictures': []}])
 
     # --- call sites ---------------------------------------------------------------------------
     def test_propose_and_record_skip_a_candidate_covered_by_a_prefixed_plan(self):

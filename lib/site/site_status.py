@@ -8,7 +8,7 @@ journal (ADR 004): every journal entry is shown as a stage record of its primary
   .venv/bin/python scripts/site_status.py status                       # grid of cells by ring, marker, lock
   .venv/bin/python scripts/site_status.py since "2026-10-15 17:00"     # every journal entry begun since then
   .venv/bin/python scripts/site_status.py log --cell 47,-45 --did "..." --look "6139,-5742: oak" --problem "..."
-  .venv/bin/python scripts/site_status.py morning [--since "2026-10-15 17:00"]   # run log + stage activity + eye list
+  .venv/bin/python scripts/site_status.py morning [--since "2026-10-15 17:00"]   # run log + stage activity + eye list + builds of 8 minutes or more
 
 `status` shows whether ground, trees and decor are applied (layers only). `status --gaps` adds the real done-bar,
 `site_handoff.cell_gaps`, per cell (about 20 s).
@@ -29,6 +29,8 @@ CELLS = ROOT / 'site/cells'
 MARKER = ROOT / 'site/CURRENT-CELL.json'
 LOCK = ROOT / 'site/LOCK.json'
 RUN_LOG = ROOT / 'site/RUN-LOG.md'
+RUN_BUDGET = ROOT / 'site/run-budget.jsonl'
+BUDGET_REPORT_SEC = 8 * 60
 STAMP = re.compile(r'(\d{4}-\d\d-\d\d)[ T](\d\d:\d\d)(?::(\d\d))?')
 
 
@@ -311,6 +313,49 @@ def stale_ground_lines(cells) -> list[str]:
     return lines
 
 
+def load_budget_records() -> list[dict]:
+    """Budget verdicts written by ``site_lock.run`` when a budget was set.
+
+    @returns: one dict per well-formed line (blank and broken lines skipped)
+    """
+    if not RUN_BUDGET.exists():
+        return []
+    records = []
+    for line in RUN_BUDGET.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def over_budget_lines(since: datetime | None) -> list[str]:
+    """Builds that took 8 minutes or more, for the morning report.
+
+    @param since: keep records at or after this time; a year of 1970 or earlier means all of them
+    @returns: report lines (empty when none qualify)
+    """
+    lines = []
+    filtering = since is not None and since.year > 1970
+    for record in load_budget_records():
+        elapsed = record.get('elapsed_sec')
+        if not isinstance(elapsed, (int, float)) or elapsed < BUDGET_REPORT_SEC:
+            continue
+        if filtering:
+            stamped = parse_stamp(record.get('ts'))
+            if stamped is None or stamped < since:
+                continue
+        cell = record.get('cell') or '?'
+        verdict = record.get('verdict') or '?'
+        task = record.get('task') or ''
+        lines.append(f'  {cell}  {elapsed:.0f}s  {verdict}  {task}')
+    return lines
+
+
 def cmd_morning(stages: dict, since: datetime | None) -> str:
     since = since or datetime.fromtimestamp(0)
     blocks = run_log_blocks(since)
@@ -322,6 +367,9 @@ def cmd_morning(stages: dict, since: datetime | None) -> str:
     lines += blocks or ['  (no run-log entries: use `site_status.py since` for raw stage activity)']
     if probs:
         lines += ['', 'PROBLEMS / OPEN:'] + [f'  {p}' for p in probs]
+    budgets = over_budget_lines(since)
+    if budgets:
+        lines += ['', 'OVER BUDGET (8 minutes or more):'] + budgets
     if looks:
         lines += ['', 'NEEDS YOUR EYE:'] + [f'  {l}' for l in looks]
     stale = stale_ground_lines(stages)

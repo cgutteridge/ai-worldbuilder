@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import contextlib
+import io
 from pathlib import Path
 from unittest import mock
 
@@ -97,6 +99,82 @@ class ScaffoldTests(unittest.TestCase):
                 'buildings.geojson', 'trees-0.geojson', 'trees-1.geojson'])
             self.assertIn(str(package / 'osmconf.ini'), calls[0])
             self.assertIn('-clipsrc', calls[0])
+
+
+class PerLayerExtractionTests(unittest.TestCase):
+    def setUp(self):
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.root = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.package = gp.scaffold(self.root, 'test-region', (1, 1, 3, 3), index())
+        self.provider = runpy.run_path(str(self.package / 'osm_extract.py'))
+        self.pbf = self.root / 'source.pbf'
+        self.pbf.touch()
+        self.output = self.root / 'reference/vector_map/survey'
+        self.stack.enter_context(mock.patch.object(gp.shutil, 'which', return_value='/bin/ogr2ogr'))
+        self.stack.enter_context(mock.patch.object(gp, 'place_clip_dir', return_value=self.output))
+        self.run = self.stack.enter_context(mock.patch.object(gp.subprocess, 'run', side_effect=self.write_extract))
+        self.stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        self.stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+
+    @staticmethod
+    def write_extract(command, **kwargs):
+        Path(command[-3]).write_text('{"type":"FeatureCollection","features":[]}')
+        return subprocess.CompletedProcess(command, 0, '', '')
+
+    def invoke(self, *args):
+        return self.provider['main'](['--place', 'survey', '--bbox-wgs84', '1,1,3,3',
+                                     '--pbf', str(self.pbf), *args])
+
+    def test_scaffolded_entry_point_uses_adjacent_schema_and_shared_furniture_queries(self):
+        self.assertEqual(self.invoke('--layers', 'furniture'), 0)
+        command = self.run.call_args.args[0]
+        self.assertEqual(command[command.index('OSM_CONFIG_FILE') + 1],
+                         str(self.package / 'osmconf.ini'))
+        self.assertIn('amenity', command[command.index('-where') + 1])
+        self.assertIn('-clipsrc', command)
+        self.assertNotIn('COORDINATE_PRECISION=7', command)
+        self.assertTrue((self.output / 'furniture.geojson').is_file())
+        self.assertFalse((self.root / 'reference/manifest.jsonl').exists())
+
+    def test_schema_falls_back_to_tool_when_provider_copy_absent(self):
+        (self.package / 'osmconf.ini').unlink()
+        self.assertEqual(self.invoke('--layers', 'buildings'), 0)
+        command = self.run.call_args.args[0]
+        self.assertEqual(command[command.index('OSM_CONFIG_FILE') + 1], str(gp.OSM_CONFIG))
+
+    def test_failed_query_preserves_existing_layer_and_reports_gdal_error(self):
+        self.output.mkdir(parents=True)
+        path = self.output / 'furniture.geojson'
+        path.write_bytes(b'previous-good-evidence')
+        self.run.side_effect = subprocess.CalledProcessError(1, 'ogr2ogr', stderr='missing amenity')
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error), self.assertRaises(SystemExit) as caught:
+            self.invoke('--layers', 'furniture')
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn('missing amenity', error.getvalue())
+        self.assertEqual(path.read_bytes(), b'previous-good-evidence')
+        self.assertEqual(list(self.output.iterdir()), [path])
+
+    def test_existing_custom_query_interface_and_per_layer_names(self):
+        self.assertEqual(self.invoke('--gdal-layer', 'points', '--where', "amenity = 'bench'"), 0)
+        self.assertEqual([p.name for p in self.output.iterdir()], ['points.geojson'])
+        command = self.run.call_args.args[0]
+        self.assertEqual(command[command.index('-where') + 1], "amenity = 'bench'")
+        self.assertEqual(command[-1], 'points')
+
+    def test_default_layers_and_radius_remain_the_modern_defaults(self):
+        with mock.patch('world_frame.mc_to_wgs84', side_effect=lambda x, z: (z / 1000, x / 1000)):
+            self.assertEqual(self.provider['main'](['--place', 'survey', '--at', '10,20',
+                                                   '--pbf', str(self.pbf)]), 0)
+        command = self.run.call_args_list[0].args[0]
+        offset = command.index('-spat')
+        self.assertEqual(command[offset + 1:offset + 5], ['-0.118', '-0.108', '0.138', '0.148'])
+        names = {p.name for p in self.output.iterdir()}
+        self.assertIn('buildings.geojson', names)
+        self.assertIn('furniture.geojson', names)
+        self.assertIn('trees-0.geojson', names)
+        self.assertIn('trees-1.geojson', names)
 
 
 class ShimTests(unittest.TestCase):

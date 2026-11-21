@@ -1,14 +1,17 @@
-"""Which map refs a planned or built feature covers (task 293).
+"""Which map refs a planned or built feature covers (tasks 293, 328, 233).
 
 A feature plan is named for what it is, not always for the map way it builds: ``west_w34391673``
 builds way ``w34391673``, and the candidate list proposes that way as ``w34391673``. Comparing plan
 ids with candidate ids literally proposed it a second time. Every "is this candidate already
-accounted for" check asks this module instead.
+accounted for" check asks this module instead — including house groups, which match by recorded
+building refs rather than street name alone (#233).
 
 Refs come from the plan's hand-off spec (``site/builds/<plan>.json``, its ``ways``): that is what the
-build actually covers. Only a plan with no readable spec falls back to the trailing ``w<id>`` or
-``r<id>`` of its name; a spec's ways always win over the name.
+build actually covers. A non-house plan with no readable spec falls back to the trailing ``w<id>`` or
+``r<id>`` of its name; a spec's ways always win over the name. House plans (``houses_*``) never use
+that name fallback: a trailing ref is not a reliable record of a terrace's extent (#233).
 """
+
 from __future__ import annotations
 
 import json
@@ -46,11 +49,15 @@ def plan_refs(root, plan_id: str) -> tuple[set[str], str]:
     @param root: world root
     @param plan_id: feature plan id
     @returns: ``(refs, source)``; source is ``spec`` (refs stored on the build spec), ``name`` (no
-        refs stored: the trailing ref of the plan name) or ``none`` (neither; refs is empty)
+        refs stored: the trailing ref of a non-house plan name) or ``none`` (neither; refs is empty).
+        House plans without a readable ``ways`` list always return ``none`` (#233).
     """
     refs = spec_refs(root, plan_id)
     if refs:
         return refs, SPEC_REFS
+    # A houses_<street>[_<ref>] name does not record which buildings the plan holds.
+    if str(plan_id).startswith('houses_'):
+        return set(), NO_REFS
     m = NAME_REF.search(plan_id)
     return ({m.group(1)}, NAME_REFS) if m else (set(), NO_REFS)
 
@@ -73,39 +80,63 @@ def covered_by_plans(root, plan_ids) -> set[str]:
 
 
 def candidate_covered(item, covered) -> bool:
-    """Whether a non-house candidate is fully covered by planned/built refs.
+    """Whether a candidate is fully covered by planned/built refs.
 
-    House groups key by street, not by a global map ref (see ``plan_ids_for_candidates``), so they
-    are never matched here. A ``kind: group`` is covered only when every ref is covered; a
-    single building or water body matches if its id or any ref is covered (#328).
+    House groups and ``kind: group`` rows are covered only when every ref is covered (#233, #328).
+    A single building or water body matches if its id or any ref is covered. Street name alone
+    never covers a house group: matching is by handoff ``ways`` (house plans do not recover a
+    trailing name ref as coverage).
 
     @param item: candidate dict (``kind``, ``id`` and/or ``refs``)
     @param covered: :func:`covered_by_plans` result
     @returns: bool
     """
-    if item.get('kind') == 'houses':
-        return False
     refs = {norm_ref(r) for r in item.get('refs') or () if r}
-    if item.get('kind') == 'group':
+    if item.get('kind') in ('houses', 'group'):
         return bool(refs) and refs <= set(covered)
     keys = {str(item['id'])} if item.get('id') else set()
     keys |= refs
     return bool(keys & covered)
 
 
+def _houses_remainder(item, left: list) -> dict:
+    """A house-group candidate keeping only still-uncovered map refs (#233).
+
+    @param item: original ``kind: houses`` candidate
+    @param left: uncovered map refs (same spelling as ``item['refs']``)
+    @returns: houses candidate with ``refs``/``label`` (and proportional ``area``) updated
+    """
+    street = item.get('street')
+    n = len(left)
+    out = dict(item)
+    out['refs'] = left
+    out['label'] = f'{street or "unnamed street"} ({n} houses)'
+    if 'area' in item:
+        total = max(1, len([r for r in (item.get('refs') or ()) if r]))
+        out['area'] = max(1, int(item.get('area') or 0) * n // total)
+    return out
+
+
 def uncovered_candidates(item, covered) -> list:
     """Still-needed candidates after plans in ``covered``: drop full hits; split partial groups.
 
     A ``kind: group`` whose refs are only partly covered becomes one ``kind: building`` row
-    per uncovered ref (regrouping happens on the next propose from the map). Fully covered
-    candidates yield an empty list; untouched candidates are returned unchanged.
+    per uncovered ref (regrouping happens on the next propose from the map). A ``kind: houses``
+    row that is only partly covered keeps one houses candidate with the uncovered refs (#233).
+    Fully covered candidates yield an empty list; untouched candidates are returned unchanged.
 
     @param item: candidate dict (``kind``, ``refs``, …)
     @param covered: :func:`covered_by_plans` result
     @returns: zero or more candidate dicts
     """
     if item.get('kind') == 'houses':
-        return [item]
+        refs = [r for r in (item.get('refs') or ()) if r]
+        left = [r for r in refs if norm_ref(r) not in covered]
+        if not left:
+            return []
+        if len(left) == len(refs):
+            return [item]
+        return [_houses_remainder(item, left)]
     if item.get('kind') == 'group':
         refs = [r for r in (item.get('refs') or ()) if r]
         left = [r for r in refs if norm_ref(r) not in covered]

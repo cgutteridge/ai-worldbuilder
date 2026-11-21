@@ -67,6 +67,95 @@ class TestFillDense(unittest.TestCase):
         self.assertEqual(tl.fill_dense(cover(), [], seed=3), tl.fill_dense(cover(), [], seed=3))
 
 
+class TestLidarFill(unittest.TestCase):
+    def test_dark_tall_blob_gets_crowns_without_aerial_cover(self):
+        ndsm = np.zeros((128, 128))
+        ndsm[20:45, 20:45] = 8.
+        crowns = tl.lidar_fill(ndsm, [], np.zeros_like(ndsm), seed=7)
+        self.assertGreater(len(crowns), 5)
+        self.assertTrue(all(ndsm[i, j] >= tl.MIN_NDSM for i, j, _r in crowns))
+        self.assertTrue(all(r in tl.FILL_RADII for _i, _j, r in crowns))
+
+    def test_existing_crown_covers_the_blob(self):
+        ii, jj = np.indices((128, 128))
+        ndsm = np.where((ii - 30) ** 2 + (jj - 30) ** 2 <= 7 ** 2, 8., 0.)
+        self.assertEqual(tl.lidar_fill(ndsm, [(30, 30, 7.)], np.ones_like(ndsm)), [])
+
+    def test_low_and_unknown_lidar_overrides_high_aerial_cover(self):
+        for height in (tl.MIN_NDSM - .01, np.nan, np.inf):
+            with self.subTest(height=height):
+                ndsm = np.full((128, 128), height)
+                self.assertEqual(tl.fill_dense(cover(1., 1.), [], ndsm=ndsm), [])
+                self.assertEqual(tl.lidar_fill(ndsm, [], cover(1., 1.)), [])
+
+    def test_deterministic_separated_crowns_and_unmodified_inputs(self):
+        ndsm = np.full((128, 128), tl.MIN_NDSM)
+        aerial = cover(1., .2)
+        existing = [(30, 30, 7.)]
+        crowns = tl.lidar_fill(ndsm, existing, aerial, seed=3)
+        self.assertEqual(crowns, tl.lidar_fill(ndsm, existing, aerial, seed=3))
+        self.assertNotEqual(crowns, tl.lidar_fill(ndsm, existing, aerial, seed=4))
+        for index, (i, j, r) in enumerate(crowns):
+            for ci, cj, cr in existing + crowns[:index]:
+                distance2 = (i - ci) ** 2 + (j - cj) ** 2
+                self.assertGreater(distance2, max(r, cr) ** 2)
+                self.assertGreater(distance2, tl.LIDAR_FILL_SPACING ** 2)
+        np.testing.assert_array_equal(ndsm, np.full((128, 128), tl.MIN_NDSM))
+        np.testing.assert_array_equal(aerial, cover(1., .2))
+        self.assertEqual(existing, [(30, 30, 7.)])
+
+    def planning_inputs(self, ndsm, aerial, *, mapped=()):
+        idx = types.SimpleNamespace(cells=lambda: set(), areas=[])
+        ground = types.SimpleNamespace(trees=list(mapped), tree_rows=[])
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', return_value=aerial), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'cell_ndsm', side_effect=lambda c, margin=0:
+                                  None if ndsm is None else np.pad(ndsm, margin)), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            return tl.planning_inputs((0, 0), osm_ground=ground)
+
+    def test_missing_lidar_preserves_original_aerial_output_in_planning(self):
+        aerial = np.zeros((128, 128))
+        aerial[:12, :12] = 1.
+        # Recorded from the pre-#349 fill_dense, rather than another call to the new helper.
+        expected = [(2, 2, 3.0), (2, 6, 3.0), (3, 11, 3.5), (8, 3, 2.5),
+                    (8, 8, 3.0), (7, 11, 2.5), (11, 1, 2.5)]
+        self.assertEqual(tl.fill_dense(aerial, [], seed=3, ndsm=None), expected)
+        self.assertEqual(tl.lidar_fill(None, [], aerial), [])
+        inputs = self.planning_inputs(None, aerial)
+        self.assertEqual(inputs.crowns, tl.fill_dense(aerial, [], seed=0))
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': len(inputs.crowns),
+                                                'lidar_fill': 0, 'mapped': 0})
+
+    def test_planning_uses_lidar_when_aerial_is_dark_and_mapped_crowns_win(self):
+        ndsm = np.zeros((128, 128))
+        ndsm[10, 10] = 8.
+        aerial = np.zeros_like(ndsm)
+        inputs = self.planning_inputs(ndsm, aerial)
+        self.assertEqual(len(inputs.crowns), 1)
+        self.assertEqual(inputs.crowns[0][:2], (10, 10))
+        inputs = self.planning_inputs(ndsm, aerial, mapped=[(10, 10)])
+        self.assertEqual(inputs.crowns, [(10, 10, tl.MAPPED_TREE_R)])
+        self.assertEqual(inputs.crown_origins, [(10, 10)])
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': 0, 'lidar_fill': 1, 'mapped': 1})
+        with mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')):
+            _placed, report = tl.plan_cell((0, 0), types.SimpleNamespace(set=lambda *a: None), FakeWorld(), inputs)
+        self.assertEqual(report['crown_sources'], inputs.source_counts)
+
+    def test_planning_does_not_add_high_cover_crowns_on_low_lidar(self):
+        inputs = self.planning_inputs(np.zeros((128, 128)), cover(1., 1.))
+        self.assertEqual(inputs.crowns, [])
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': 0, 'lidar_fill': 0, 'mapped': 0})
+
+
 class TestTreeSources(unittest.TestCase):
     """Mapped open pasture must not become woodland from aerial texture alone (#317)."""
 
@@ -181,7 +270,7 @@ class TestTreeSources(unittest.TestCase):
             inputs = tl.planning_inputs(CELL, osm_ground=ground)
         self.assertEqual({(x0 + i, z0 + j) for i, j, _r in inputs.crowns},
                          inputs.mapped | {(x0 + 127, z0 + 50)})
-        self.assertGreater(len(inputs.source_rejections), 100)    # dense texture fill was also removed
+        self.assertEqual(len(inputs.source_rejections), 3)  # low lidar prevents aerial fill before this gate
         self.assertEqual(len(inputs.crown_origins), len(inputs.crowns))
         self.assertGreaterEqual(len(inputs.mapped), 4)             # young mapped point and row survive
 
@@ -201,6 +290,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
         plan = types.SimpleNamespace(set=lambda *a: None)
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: cover(1.0, 1.0)), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c, margin=0: None), \
                 mock.patch.object(tl, 'surface_y', surface), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
@@ -927,6 +1017,111 @@ class TestDryRunUndo(unittest.TestCase):
             self.assertEqual(tl.apply_cell((0, 0)), 0)
             self.assertEqual([p.name for p in Path(tmp).iterdir()], [tl.plan_name(0, 0) + '-report.json'])
             fresh.assert_called_once_with(strict=True)   # plans from saved regions, not the live store
+
+
+def _box_oracle(a, k):
+    """The shifted-copy box mean ``_box`` used to compute. Test oracle only."""
+    pad = np.pad(a, k // 2, mode='edge')
+    h, w = a.shape
+    return sum(pad[i:i + h, j:j + w] for i in range(k) for j in range(k)) / (k * k)
+
+
+def _threshold_masks(values):
+    """The comparisons callers apply to a box mean."""
+    return (values > 0.5, values > 0.999, values > 1e-6, values >= 0.035)
+
+
+def _canopy_oracle(img_path):
+    """``canopy_pixels`` with the shifted-copy box, for mask equality."""
+    from PIL import Image
+    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    r, g = a[..., 0], a[..., 1]
+    mx, mn = a.max(2), a.min(2)
+    d = mx - mn
+    s = np.where(mx > 0, d / np.maximum(mx, 1e-9), 0)
+    h = np.zeros_like(mx)
+    m = d > 0
+    b = a[..., 2]
+    idx = m & (mx == r)
+    h[idx] = ((g - b)[idx] / d[idx]) % 6
+    idx = m & (mx == g)
+    h[idx] = ((b - r)[idx] / d[idx]) + 2
+    idx = m & (mx == b)
+    h[idx] = ((r - g)[idx] / d[idx]) + 4
+    h *= 60
+    lum = a.mean(2)
+    mu = _box_oracle(lum, 7)
+    sd = np.sqrt(np.maximum(_box_oracle(lum ** 2, 7) - mu ** 2, 0))
+    fm = img_path.with_name(img_path.stem + '-mask.png')
+    filled = np.asarray(Image.open(fm).convert('L')) > 0 if fm.exists() else np.zeros(sd.shape, bool)
+    mask = (sd >= np.where(filled, 0.0, 0.035)) & (g >= r * 0.93) & (s >= 0.14) & (mx <= 0.85) & (h >= 38) & (h <= np.where(filled, 200, 140))
+    dil = _box_oracle(mask.astype(float), 9) > 1e-6
+    return _box_oracle(dil.astype(float), 9) > 0.999
+
+
+def _cover_oracle(img_path):
+    """``cover_pixels`` with the shifted-copy box, for mask equality."""
+    from PIL import Image
+    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    mx, mn = a.max(2), a.min(2)
+    s = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-9), 0)
+    mask = (s >= 0.22) & (mx <= 0.62) & (g > b + 0.02) & (g >= r * 0.8)
+    return _box_oracle(_box_oracle(mask.astype(float), 5), 5) > 0.5
+
+
+class TestBoxFilter(unittest.TestCase):
+    """The running-sum box matches the shifted-copy mean, including thresholds."""
+
+    def arrays(self):
+        rng = np.random.default_rng(345)
+        edge = np.zeros((40, 50))
+        edge[0, :] = 1
+        edge[-1, :] = 1
+        edge[:, 0] = 1
+        edge[:, -1] = 1
+        edge[0, 0] = 5
+        edge[-1, -1] = -3
+        edge[3:9, 4:11] = 0.2
+        return {
+            'random': rng.random((80, 70)),
+            'smaller_than_window': rng.random((20, 15)),
+            'edge': edge,
+            'binary': rng.integers(0, 2, size=(36, 28)).astype(float),
+        }
+
+    def test_running_sum_matches_shifted_copies_and_thresholds(self):
+        for name, array in self.arrays().items():
+            for k in (5, 7, 9, 35):
+                with self.subTest(array=name, k=k):
+                    got = tl._box(array, k)
+                    old = _box_oracle(array, k)
+                    self.assertEqual(got.shape, array.shape)
+                    self.assertTrue(np.allclose(got, old, rtol=1e-9, atol=1e-12))
+                    for new_mask, old_mask in zip(_threshold_masks(got), _threshold_masks(old)):
+                        self.assertTrue(np.array_equal(new_mask, old_mask))
+                    if name == 'binary':
+                        self.assertTrue(np.array_equal(got, old))
+
+    def test_canopy_and_cover_masks_match_the_shifted_box(self):
+        from PIL import Image
+        rng = np.random.default_rng(345)
+        img = np.zeros((48, 72, 3), np.uint8)
+        canopy = rng.integers(15, 70, size=(48, 36, 3), dtype=np.uint8)
+        canopy[..., 1] = np.clip(canopy[..., 0].astype(int) + 45, 0, 180)
+        canopy[..., 2] = 25
+        img[:, :36] = canopy
+        img[:, 36:54] = (150, 40, 40)
+        img[:, 54:] = (90, 80, 40)
+        img[0, :] = (255, 255, 255)
+        img[-1, :] = (0, 0, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mosaic.png'
+            Image.fromarray(img).save(path)
+            self.assertTrue(np.array_equal(tl.canopy_pixels(path), _canopy_oracle(path)))
+            self.assertTrue(np.array_equal(tl.cover_pixels(path), _cover_oracle(path)))
+            self.assertGreater(tl.canopy_pixels(path)[:, :30].mean(), 0.5)
+            self.assertEqual(tl.cover_pixels(path)[:, 36:54].mean(), 0)
 
 
 if __name__ == '__main__':

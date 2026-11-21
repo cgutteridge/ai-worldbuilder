@@ -92,9 +92,10 @@ def planned_elsewhere(reg, cell):
     """Feature ids and map refs planned or dismissed in any other cell: a cross-cell feature is one thing (task 288).
 
     A map-ref feature (a building or water body) planned, or deliberately dismissed, in its
-    home cell is accounted for in every other cell its footprint touches. House groups key by
-    street, not by a global map ref, so callers apply this only to non-house candidates. A plan
-    named ``<prefix>_w<osmid>`` covers ``w<osmid>`` too (task 293, see ``plan_refs``).
+    home cell is accounted for in every other cell its footprint touches. House groups match
+    by the same recorded map refs (#233), so two terraces that share a street name stay
+    distinct when their ways differ. A plan named ``<prefix>_w<osmid>`` covers ``w<osmid>``
+    too (task 293, see ``plan_refs``).
 
     @param reg: cell journal
     @param cell: ``(tx, tz)``
@@ -223,6 +224,8 @@ def validation_staleness(accepted, parts):
                 [n for n in new['notes'] if n['kind'] == 'clip_coverage-dismiss']):
             details.append('coverage dismissal changed')
         causes.append('plan identity changed' + (': ' + '; '.join(details) if details else ''))
+    if not causes and accepted.get('revision') != content_id([parts['policy'], parts['evidence'], parts['plans']]):
+        causes.append('revision identity changed')
     return 'validation stale (' + '; '.join(causes) + ')'
 
 
@@ -396,7 +399,7 @@ class ReadinessPolicy:
                                              owner_cell=e.cell if e else None, stale=stale)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                 **facts, 'revision': revision, 'revision_parts': parts, 'evidence_revision': facts['revision'],
-                'journal_revision': self.reg.planning_revision(),
+                'journal_revision': self.reg.planning_revision([cell]),
                 'validated': validated, 'evidence_validated': evidence_validated,
                 'scope': 'evidence' if neighbour else 'full', 'operation': operation, 'ground': v.ground,
                 'candidates': candidates, 'next_actions': actions,
@@ -436,6 +439,33 @@ class ReadinessPolicy:
                 {'revision': evidence_identity(parts), 'revision_parts': parts, 'policy': POLICY_VERSION})))
         return self.check(cell, neighbour=True)
 
+    def _plan_stamp_cells(self, build, primary, required):
+        """Cells whose evidence/journal identity the plan stamped.
+
+        Feature re-apply enlarges ``touched`` with the previous build's cells so undo
+        and flight cover overhang that the new plan no longer writes. Identity
+        comparison must still use the plan's own stamp (``Plan._input_cells`` or the
+        new geometry), otherwise a smaller re-apply is refused as stale forever
+        (task 232). Trees keep the readiness scope (trunk + non-leaf writes), not
+        leaf-only neighbour cells.
+
+        @param build: the ``Build`` about to begin
+        @param primary: owning ``(tx, tz)``
+        @param required: cells that readiness already checked for this apply
+        @returns: sorted list of ``(tx, tz)`` cells for stamp comparison
+        """
+        payload = build.payload
+        stamped = getattr(payload, '_input_cells', None) if payload is not None else None
+        if stamped is not None:
+            return sorted({tuple(c) for c in stamped})
+        if build.pass_ == 'trees':
+            return sorted(required)
+        import cellmath
+        cells = {tuple(primary)}
+        if build.cells:
+            cells |= {cellmath.cell_of(x, z, self.reg.cell_size) for x, _y, z in build.cells}
+        return sorted(cells)
+
     def enforce(self, build, touched):
         """Guard readiness before begin; tree leaf overhang needs only its owning cell ready.
 
@@ -474,10 +504,16 @@ class ReadinessPolicy:
                                     if not block_id(state).endswith('_leaves')}
         # A feature is one build across cell lines (tasks 288, 292): each touched neighbour needs
         # current evidence, not its own feature groups planned or its plans validated.
-        reports = [self.check(c, build.pass_, redoing=(build.plan,),
-                              neighbour=build.pass_ == 'feature' and c != primary)
-                   for c in sorted(required)]
-        for report, cell in zip(reports, sorted(required)):
+        # Apply re-runs checks under the lock and refreshes validation when those checks pass
+        # (task 232); hold/coverage/recovery blockers still refuse, and plan identities are
+        # checked after refresh so an outdated plan is never approved by a fresh readiness note.
+        reports = []
+        for cell in sorted(required):
+            neighbour = build.pass_ == 'feature' and cell != primary
+            report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour)
+            if not report['ready'] and self._refresh_validation_if_ready(cell, build.pass_,
+                    redoing=(build.plan,), neighbour=neighbour):
+                report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour)
             if build.pass_ == 'feature' and cell == primary:
                 features = {f.id: f.status for f in self.reg.cell(cell).features}
                 if parent:
@@ -489,22 +525,70 @@ class ReadinessPolicy:
                     report['blockers'].append(f'feature plan {build.plan} absent from cell plan')
             if report['blockers']:
                 raise Refused(f"needs-prep {report['cell']}: " + describe_blockers(report), report)
-            expected = (build.meta or {}).get('evidence_revision') or getattr(build.payload, 'evidence_revision', None)
-            if self.require_plan_identity and not expected:
-                raise Refused('plan has no evidence identity; construct Plan against current inputs '
-                              'or supply Build.meta evidence_revision from check source_revision')
-            if expected and expected != report.get('source_revision', report['evidence_revision']):
+            reports.append(report)
+        expected = (build.meta or {}).get('evidence_revision') or getattr(build.payload, 'evidence_revision', None)
+        if self.require_plan_identity and not expected:
+            raise Refused('plan has no evidence identity; construct Plan against current inputs '
+                          'or supply Build.meta evidence_revision from check source_revision')
+        # Compare identities against the plan stamp's cells, not previous.cells on re-apply.
+        stamp_cells = self._plan_stamp_cells(build, primary, required) or sorted(required)
+        report_by_cell = {tuple(map(int, r['cell'].split(','))): r for r in reports}
+        evidence_now = []
+        for cell in stamp_cells:
+            report = report_by_cell.get(cell)
+            if report is None:
+                evidence_now.append(self.evidence.facts(cell)['revision'])
+            else:
+                evidence_now.append(report.get('source_revision', report['evidence_revision']))
+        evidence_id = evidence_now[0] if len(evidence_now) == 1 else content_id(evidence_now)
+        if expected and expected != evidence_id:
+            # Legacy Plan(name) (no cell list) stamps whole-world source_revision(); accept
+            # that stamp when it still matches so water_body / reset_to_base / hand plans
+            # apply until callers re-scope via capture_inputs (task 232).
+            whole_evidence = getattr(self.evidence, 'source_revision', None)
+            if not (callable(whole_evidence) and expected == whole_evidence()):
                 raise Refused('stale plan: evidence changed since planning; re-plan against current inputs')
-            expected_journal = ((build.meta or {}).get('journal_revision')
-                                or getattr(build.payload, 'journal_revision', None))
-            if self.require_plan_identity and not expected_journal:
-                raise Refused('plan has no journal identity; construct Plan against current inputs '
-                              'or supply Build.meta journal_revision from check')
-            if expected_journal and expected_journal != report['journal_revision']:
+        expected_journal = ((build.meta or {}).get('journal_revision')
+                            or getattr(build.payload, 'journal_revision', None))
+        if self.require_plan_identity and not expected_journal:
+            raise Refused('plan has no journal identity; construct Plan against current inputs '
+                          'or supply Build.meta journal_revision from check')
+        journal_now = self.reg.planning_revision(stamp_cells)
+        if expected_journal and expected_journal != journal_now:
+            if expected_journal != self.reg.planning_revision():
                 raise Refused('stale plan: journal geometry or planning assumptions changed; re-plan')
         revisions = {r['cell']: r['revision'] for r in reports}
         return {'readiness_revision': revisions[f'{primary[0]},{primary[1]}'],
                 'readiness_cells': revisions, **({'parent_feature': parent} if parent else {})}
+
+    def _refresh_validation_if_ready(self, cell, operation, *, redoing=(), neighbour=False):
+        """Rewrite a stale readiness note when every non-validation check already passes.
+
+        Only refreshes when a previous readiness / readiness_evidence note exists: a cell
+        that was never prepared still needs an explicit prepare. Hold, coverage and
+        recovery blockers are preserved because the probe keeps them.
+
+        @returns: True when a readiness or readiness_evidence note was written
+        """
+        if neighbour:
+            prior = self.reg.notes(cell, kinds=('readiness_evidence', 'readiness'))
+        else:
+            prior = self.reg.notes(cell, kinds=('readiness',))
+        if not prior:
+            return False
+        probe = self.check(cell, operation, require_validation=False, redoing=redoing,
+                           neighbour=neighbour)
+        if not probe['ready']:
+            return False
+        if neighbour:
+            if probe['evidence_validated']:
+                return False
+            self.validate_evidence(cell)
+            return True
+        if probe['validated']:
+            return False
+        self.validate(cell)
+        return True
 
 
 def format_readiness(report):
