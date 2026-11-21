@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 340,
+  "nextTaskId": 341,
   "tasks": [
     
     {
@@ -180,6 +180,15 @@
         
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    },
+    {
+      "id": 340,
+      "title": "Roof half-height snapping must not erode a pitched ridge crest",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: full measurement is on issue I-047 (cause text); in short, `snap_lone_odd_half_heights` (introduced by #302; its docstring says it keeps a clean ridge line) lowers a real ridge crest on West from 12 to 6 half-steps over about six rows. Loop 1 (snap a lone odd cell to its nearest same-zone neighbour, then re-cap with `regularise_roof_half_heights`) does most of it: 194 columns, from 116 lone-odd cells going in. Loop 2 (drop a still-lone odd cell one half-step) changes 44 more. A clean drifting ridge is untouched; the trigger is odd float noise on the flanks, which West has plenty of. The owner sees mush with a dipping ridge (S-099). Measured on one roof only; the measurement was read-only (West's pipeline run in memory against the lidar DSM) and reviewed by an independent subagent on 2026-11-21.\n\nDeliverable: a pitched roof's crest keeps its regularised height through the snap, for any ridge (straight, drifting, diagonal) with odd float noise on its flanks. Rule, not a West tweak. Agent suggestion only, loop 1 being the main cause: resolve a lone odd cell without pulling a higher neighbour down (snap upwards when the 2 half-step cliff cap allows, or never let a snap lower a local maximum), then re-cap from the crest.\n\nCheck: (1) fixture test, written to fail first on today's code: a ridge of 12 half-steps with +-1 odd noise on the flanks and a crest that shifts a column every 4 rows keeps every row's crest within 1 half-step of its regularised height; the existing speckle tests (test_lone_odd_cell_snaps_to_its_neighbours, the noisy-ridge no-lone-odd test) stay green. (2) After the owner's West rebuild, read the recorded plan's roof tops (the _tops helper in lib/audit/roof_lint.py): the crest on z-5608..-5602 is at or above 11 half-steps. (3) Owner verdict in game on I-047 S-099 (the mush and dip) and S-083.\n\nCovers: I-047 (S-099; S-083 stays open until re-reviewed). May affect I-009 and I-019 on other pitched roofs; not measured.\n\nNot covered: the 4-5-wide strip of mixed bottom-half slabs and full blocks along the crest top, I-022 S-029 (stair gaps) and I-048 S-088 (stairs on the flat black roof). None is explained by this.\n"
     }
   ]
 }
