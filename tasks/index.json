@@ -142,10 +142,10 @@
     {
       "id": 359,
       "title": "Tree heights: rural build trial of first-return reader",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [367],
+      "blockedBy": [],
       "requiresClaude": true,
       "notes": "Split 2026-11-21: the production first-return reader, authoritative fallback/source contract, circular-gate parity, missing-data regression tests and #350 crown-format compatibility are now fixture-only task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. No new height reader or parallel tree planner is needed.\n\nContext: spike #323 (merged eb5549c; docs/plans/323-unmapped-tree-lines.md) showed the last-return gate dropping real belt/hedge crowns, including 21 of 62 designer crowns in the trial. #320 evaluated the first-return source. The implementation task covers the prototype's square-window mismatch, mc_heights_float versus mc_heights()['diff'] authority, reader failure paths and trial-script internals after #350.\n\nScope here: after #367 lands, choose a representative rural proving cell from real evidence, run the normal trees build with the first-return reader, and compare supported belt/hedge crowns with the prior rejection behavior. Inspect the result in game and record source availability/fallback and any tuning needed in the world's trial notes. Use the site lock and normal world-work authorization for the build.\n\nAcceptance: supported belt/hedge crowns survive the normal gate, unsupported open pasture remains clear, and the owner/in-game verdict is recorded. This trial may validate the reader using existing crown inputs; the separate new hedge/belt source remains #360. #360 keeps its dependency on this completed reader trial, while its offline source implementation may depend on #367 directly.\n\nrequiresClaude true: this is a representative real-world build and in-game evaluation. Fixture completion is not its acceptance result."
     },
@@ -181,23 +181,14 @@
     },
     
     
-    {
-      "id": 367,
-      "title": "Trees: first-return standing-height reader and gate fixtures",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Split from #359 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. The #323 findings and original #359 identify the production reader's last-return height as a cause of rejected hedge/belt crowns.\n\nScope: wire the existing first-return standing-height reader into lib/layers/trees_layer.py using lib/layers/tree_lines.py rather than adding another height reader. Establish and document one authoritative height/fallback contract, including the current mc_heights_float versus mc_heights()['diff'] discrepancy. Use cached first-return data where available and make missing-data/source provenance explicit. Align tree_lines.gated_crowns with the production gate's circular neighborhood instead of the prototype's square 5x5 window. Add coverage for missing first-return tiles, sample failures, a client lacking missing/sample, absent data, nonfinite samples, fallback and halo alignment. Update or retire scripts/tree_lines_trial.py's dependence on old tree-layer internals and pre-#350 crown tuples; reuse the current crown/species representation.\n\nAcceptance, synthetic only: fake clients/arrays prove first-return crown support is retained, source/fallback reporting is accurate, the gate helper agrees with the production circular gate including corner-only height, and missing evidence does not admit unsupported open-pasture crowns. Focused tests for tree_lines and trees_layer pass. No provider downloads, real cell reads, representative build dry runs/apply, interpretation of place evidence, or in-game judgment. Do not add the hedge/belt evidence source here; that is the paired follow-up split from #360.\n\nrequiresClaude false: reader/gate code plus synthetic regression tests. #359 retains the required normal rural-cell build trial and in-game verdict."
-    },
+    
     {
       "id": 368,
       "title": "Trees: class-configured hedge and belt evidence source",
-      "status": "blocked",
+      "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [367],
+      "blockedBy": [],
       "requiresClaude": false,
       "notes": "Split from #360 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. Depends on the offline first-return reader split from #359; the implementation can proceed after that code lands without waiting for #359's in-game trial. #360 itself retains its existing dependency on #359's completed trial.\n\nScope: integrate the existing lib/layers/tree_lines.py hedge/lane corridors and unmapped-belt evidence into the production trees gate. Configure permitted sources per land-use class through the existing config/land-use-classes.json trees.sources and land_use.tree_sources interface. Derive gated classes and standing-height thresholds from that configuration and shared constants; remove duplicate hardcoded GATED_CLASSES/MIN_STANDING_M policy from the prototype path where it duplicates the production contract. First-return standing-height support is required for the new source; aerial darkness alone must not admit a shadow band. Reuse the existing tree planner, source gate and crown/species representation. Preserve unrelated source behavior and exclusions.\n\nAcceptance, synthetic only: hedge and lane corridors admit supported crowns; an unmapped belt with first-return support is kept; a dark but low shadow band and unsupported open pasture stay clear; class opt-in/opt-out works; missing first-return evidence cannot silently turn darkness into this new source; output is deterministic and compatible with neighboring-cell evidence and existing crown/species tuples. Extend tree_lines, trees_layer and land_use tests as applicable. No real-world evidence selection or threshold tuning, representative dry run/apply, downloads or in-game checks.\n\nrequiresClaude false: source integration and fixture tests only. This remains a stretch planner change at dispatch; the usual model/effort rules apply. #360 retains choosing/tuning against real evidence, the normal rural-cell build trial and owner verdict."
     }
