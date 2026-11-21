@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 362,
+  "nextTaskId": 363,
   "tasks": [
     
     
@@ -95,17 +95,7 @@
     
     
     
-    {
-      "id": 337,
-      "title": "Big-box roof follows the aerial (spike first)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [
-        
-      ],
-      "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    , "requiresClaude": true},
+    
         
     
     
@@ -182,6 +172,16 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "Found in spike #323: the aerial cover test reads backwards on rural classes in shade. On 87,-48 it scored bright meadow 0.93 and a dark tree belt 0.16. Find out why (likely brightness or shadow handling) and fix it for rural and park classes with synthetic fixtures. Make it generic and UK-wide, keyed by land-use class.\n"
+    },
+    {
+      "id": 362,
+      "title": "Roof PV from aerial: shared palette, dark arrays, CLI hardening",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Follow-ups from #337 (big-box roof follows the aerial, merged in fa3826d; findings in docs/plans/bigbox-roof-aerial.md):\n1. The roof_aerial palette should come from the shared roof-material catalogue (#355, config/roof-materials.json). 5 of its 9 materials are missing there: polished_andesite, polished_diorite, smooth_quartz, polished_deepslate, smooth_sandstone.\n2. PV detection needs blue minus red of at least 30, so black-cell or dark-grey UK arrays are never found. Expose blue_margin and min_cells on the CLI, or detect dark arrays too.\n3. The 0.4 m/px resolution gate (ppb < 2.5) can refuse exactly 0.4 m/px through float noise. Compare with an epsilon and test the boundary.\n4. Arrays at an angle to the block grid are laid as their rectangular outline. Arrays clipped at a cell edge (the western ends of Westquay's NW and SW arrays, in 42,-16) are dropped.\n5. Small CLI points:\n   - --replace-pv without --write does nothing silently;\n   - the mosaic name cross-check is skipped silently when the name has no zNN-WxH-TX-TY pattern;\n   - main() has no docstring;\n   - main, _footprint, _mosaic_affine and review_sheet have no tests.\n6. feature_build PvArraysTest gaps: a box spanning two roof levels (commonest-deck filter), zone_materials, a top block that is not roof material, and a no-pv_arrays build equal to the old output. Also fix the stale \"cell above is still free\" wording in the pv_rows docstring.\n"
     }
   ]
 }
