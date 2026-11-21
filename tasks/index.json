@@ -182,7 +182,7 @@
     {
       "id": 365,
       "title": "River builder: per-segment water levels with synthetic fixtures",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "l",
       "blockedBy": [],
@@ -192,7 +192,7 @@
     {
       "id": 366,
       "title": "House builder: shared roof materials and pitched-roof geometry",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
@@ -202,7 +202,7 @@
     {
       "id": 367,
       "title": "Trees: first-return standing-height reader and gate fixtures",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
