@@ -3127,5 +3127,16 @@
       "requiresClaude": false,
       "notes": "Split from #326 so a non-Claude runner can do the offline half. Deliverable: a pure function in lib/builds (new module, for example water_level.py) that turns lidar surface samples taken along a river reach into a stepped integer water level per segment. Input: ordered (distance along reach, lidar surface height) samples, plus a minimum step length. Output: list of (start_distance, end_distance, level) with these rules, each covered by a test on synthetic fixtures: levels never rise going downstream; noise under one block does not create a step; a short dip (bridge deck, culvert) is ignored rather than stepping; a gentle slope produces steps no shorter than the minimum length; a flat reach returns one segment equal to today's single level. No spec schema change, no build, no world access and no lidar reading: the caller supplies the samples. Check: python3 scripts/run_tests.py --only test_water_level passes. Do not touch lib/builds/water_body.py; the integration (spec field, step shape in the build, sampling real lidar for the Itchen) stays in #326, which is blocked by this task.\n\n\nClosed at 4351eb1fd006ce15e1e5b4774ca4644f23c305c6: Merged task/354-water-level-profile: water_level_profile pure function + fixture tests.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 353,
+      "title": "Water-body clips: guard specs without clip, bank-only candidates by bank width",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Review nits from #321 (per-cell clipped water bodies, merged in 6e33f44). Fix with synthetic fixtures:\n1. A spec that copies a clip candidate's outline but omits `clip` builds the neighbour's water out to the 8-block reach, with a bank ring on that artificial edge. Fix: reject it in lib/builds/water_body.py when the name matches a clip id, or put `clip` into the spec at propose time.\n2. `_validate_clip` (water_body.py:124) raises a bare ValueError for a non-integer clip cell; raise WaterBodyError instead.\n3. Bank-only clip candidates are proposed by CLIP_REACH (8), not by bank width. At width 1, water 2-8 blocks from a cell line yields a candidate that load_spec_dict refuses, and readiness shows it unaccounted until it is dismissed. Avoid proposing these where the default width can't reach, or document the dismissal better.\n4. A built bank-only clip still shows in missing_water_bodies / missing_features (column-based, empty outline). Harmless today, but site_handoff.layers_done would never go true for that cell.\n5. Add tests for bank.width greater than 1, diagonal-corner bodies, and a note in rules/water-body-builds.md on legacy whole plans.\n\n\nClosed at e59796c72111a019c5102d1879f0a7263c832f24: Merged task/353-water-body-clip-guards: clip-id requires clip, bank-only by default width, built bank-only covered.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

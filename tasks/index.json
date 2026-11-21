@@ -162,16 +162,7 @@
       "requiresClaude": true,
       "notes": "Live check left over from #321 (per-cell clipped water bodies, merged in 6e33f44). Check: the Itchen reach across 63,-45 joins its neighbours 62,-45 and 64,-45 in game with no seam and no bank wall. Offline, both joins already equal the whole-river build with 0 bank blocks over water. The world still holds the old trial build of 63,-45, which put 36 grass bank blocks on the river at x 8063 and x 8192.\nBlockers (cell_registry check, 2026-11-21):\n- 63,-45: validation stale; needs prepare --apply.\n- 64,-45 and 62,-45: validation required; the river clip is unaccounted for; map query coverage is 0.0%; aerial coverage is 24.6% and 26.2%.\n- Each neighbour needs the owner to supply local aerial data (source, filename and size approved before any download) and either a fix to the map extract or dismiss-clip-coverage with a reason.\nSteps, once those are settled: prepare all three cells, then run the README steps from #321's notes (specs plus make_itchen_clip_specs.py; ask the orchestrator for the path, or regenerate them) under site_lock.py run. Dry-run each cell first. Build 62,-45 too if the bank at x=8063 has to go.\n"
     },
-    {
-      "id": 353,
-      "title": "Water-body clips: guard specs without clip, bank-only candidates by bank width",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Review nits from #321 (per-cell clipped water bodies, merged in 6e33f44). Fix with synthetic fixtures:\n1. A spec that copies a clip candidate's outline but omits `clip` builds the neighbour's water out to the 8-block reach, with a bank ring on that artificial edge. Fix: reject it in lib/builds/water_body.py when the name matches a clip id, or put `clip` into the spec at propose time.\n2. `_validate_clip` (water_body.py:124) raises a bare ValueError for a non-integer clip cell; raise WaterBodyError instead.\n3. Bank-only clip candidates are proposed by CLIP_REACH (8), not by bank width. At width 1, water 2-8 blocks from a cell line yields a candidate that load_spec_dict refuses, and readiness shows it unaccounted until it is dismissed. Avoid proposing these where the default width can't reach, or document the dismissal better.\n4. A built bank-only clip still shows in missing_water_bodies / missing_features (column-based, empty outline). Harmless today, but site_handoff.layers_done would never go true for that cell.\n5. Add tests for bank.width greater than 1, diagonal-corner bodies, and a note in rules/water-body-builds.md on legacy whole plans.\n"
-    },
+    
     
     {
       "id": 355,
