@@ -22,7 +22,7 @@ or a Web Mercator mosaic named by its zoom and top-left tile.
       --spec site/builds/w465660355.json --label WS [--shift 0,0] [--sheet out.png] [--write]
   python3 scripts/roof_aerial.py derive --image IMG --registration IMG.registration.json --box x0,z0,x1,z1
 
-``--write`` sets ``roofs[label].material`` and ``roofs[label].pv_arrays`` in the
+``--write`` sets ``roofs[label].material`` and ``roofs[label].pv_arrays`` in a flat roof of the
 spec; ``feature_build`` lays the arrays as daylight_detector rows. Look-only
 aerials stay outside the repo; only the derived boxes go into the spec.
 """
@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from collections import deque
 from pathlib import Path
@@ -45,6 +46,7 @@ AXIS_TIE = 0.1           # periodicity difference below which the long side pick
 EDGE_FILL = 0.5          # trim box edge lines with less PV than this
 MAX_GROW = 3             # lines a box may regrow a side (the window erodes about WINDOW_BLOCKS)
 COLOUR_BIN = 16          # membrane colour histogram bin (0..255 per channel)
+MIN_COVERAGE = 0.9       # share of roof columns the aerial must cover (else the registration is wrong)
 
 # Flat-roof material families (all have slabs) with approximate texture colours.
 FLAT_ROOF_PALETTE: list[tuple[str, tuple[int, int, int]]] = [
@@ -235,8 +237,9 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
     @param blue_margin: blue minus red a PV column needs (0..255)
     @param min_cells: smallest array kept (columns)
     @param source_note: evidence note appended to each array's ``source``
-    @returns: ``{px_per_block, rotation_deg, shift, roof_rgb, material, pv_share, pv_arrays}``
-    @raises ValueError: on an aerial too coarse to resolve PV rows, or an empty footprint
+    @returns: ``{px_per_block, rotation_deg, shift, roof_rgb, material, coverage, pv_share, pv_arrays}``
+    @raises ValueError: on an aerial too coarse to resolve PV rows, an empty footprint, or one
+        the aerial covers less than ``MIN_COVERAGE`` of (a wrong registration)
     """
     A = np.asarray(A, float)
     rgb = np.asarray(rgb, float)
@@ -269,6 +272,11 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
         score_rx[(x, z)], lag_rx[(x, z)] = period_score(win.mean(axis=1), lo, hi)
         score_rz[(x, z)], lag_rz[(x, z)] = period_score(win.mean(axis=0), lo, hi)
 
+    coverage = len(score_rx) / len(footprint)
+    if coverage < MIN_COVERAGE:
+        raise ValueError(
+            f'aerial covers only {coverage:.0%} of the roof columns (needs {MIN_COVERAGE:.0%}); '
+            'check the registration or mosaic tiles and --shift')
     pv = {
         c for c in score_rx
         if min(score_rx[c], score_rz[c]) >= threshold and colour[c][2] - colour[c][0] >= blue_margin
@@ -325,30 +333,85 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
         'shift': list(shift),
         'roof_rgb': roof_rgb,
         'material': nearest_roof_material(roof_rgb) if roof_rgb else None,
+        'coverage': round(coverage, 3),
         'pv_share': round(len(in_arrays) / len(footprint), 3),
         'pv_arrays': arrays,
     }
 
 
-def patch_spec(path, label: str, derived: dict) -> None:
-    """Write derived ``material`` and ``pv_arrays`` into ``roofs[label]``; other roof keys stay.
+def patch_spec(path, label: str, derived: dict, *, replace: bool = False) -> None:
+    """Write derived ``material`` and ``pv_arrays`` into a flat ``roofs[label]``; other keys stay.
+
+    Refuses (and leaves the file untouched) when the roof is not flat, when no
+    arrays were found, or when the roof already has ``pv_arrays`` and ``replace``
+    is not set, so a re-run or a blank crop never erases hand-added boxes.
 
     @param path: feature spec JSON
     @param label: roof label
     @param derived: ``derive`` result
-    @raises SystemExit: when the spec has no ``roofs[label]``
+    @param replace: overwrite existing ``pv_arrays``
+    @raises SystemExit: on any refusal above, or when the spec has no ``roofs[label]``
     """
     path = Path(path)
     spec = json.loads(path.read_text())
     roof = (spec.get('roofs') or {}).get(label)
     if not isinstance(roof, dict):
         raise SystemExit(f'{path}: no roofs[{label}]')
+    if roof.get('kind') != 'flat':
+        raise SystemExit(f'{path}: roofs[{label}] is {roof.get("kind")!r}; PV arrays need a flat roof')
+    if not derived.get('pv_arrays'):
+        raise SystemExit(f'{path}: no PV arrays found; spec left unchanged')
+    if roof.get('pv_arrays') and not replace:
+        raise SystemExit(
+            f'{path}: roofs[{label}] already has {len(roof["pv_arrays"])} pv_arrays; '
+            'pass --replace-pv to overwrite them')
     if derived.get('material'):
         roof['material'] = derived['material']
     roof['pv_arrays'] = [
         {k: a[k] for k in ('box', 'rows', 'pitch', 'source')} for a in derived['pv_arrays']
     ]
     path.write_text(json.dumps(spec, indent=1) + '\n')
+
+
+def check_registration(reg: dict, image: Path, size: tuple[int, int]) -> None:
+    """Refuse a registration made for another image, or whose tie points fall off it.
+
+    @param reg: registration JSON (``image``, ``ties``)
+    @param image: aerial image path given on the command line
+    @param size: (width, height) of that image
+    @raises SystemExit: on a name mismatch or a tie point outside the image
+    """
+    named = reg.get('image')
+    if named and Path(named).name != Path(image).name:
+        raise SystemExit(f'registration names {named!r}, not {Path(image).name!r}')
+    w, h = size
+    off = [t['px'] for t in reg.get('ties') or [] if not (0 <= t['px'][0] <= w and 0 <= t['px'][1] <= h)]
+    if off:
+        raise SystemExit(f'registration tie points outside the {w}x{h} image: {off[:3]}')
+
+
+_MOSAIC_NAME = re.compile(r'z(\d+)-(\d+)x(\d+)-(\d+)-(\d+)')
+
+
+def check_mosaic(image: Path, size: tuple[int, int], spec: str) -> None:
+    """Refuse a mosaic whose size is not whole 256 px tiles, or whose name disagrees with ``--mosaic``.
+
+    @param image: mosaic path; a name like ``mosaic-z19-4x4-260093-175744.png`` is cross-checked
+    @param size: (width, height) of the image
+    @param spec: ``--mosaic`` value ``Z,TX0,TY0``
+    @raises SystemExit: on a size or tile mismatch
+    """
+    w, h = size
+    if w % 256 or h % 256:
+        raise SystemExit(f'mosaic {w}x{h} is not whole 256 px tiles')
+    m = _MOSAIC_NAME.search(Path(image).name)
+    if not m:
+        return
+    zoom, nx, ny, tx0, ty0 = (int(v) for v in m.groups())
+    if (zoom, tx0, ty0) != tuple(int(v) for v in spec.split(',')):
+        raise SystemExit(f'--mosaic {spec} disagrees with the file name tile z{zoom} {tx0},{ty0}')
+    if (w, h) != (nx * 256, ny * 256):
+        raise SystemExit(f'mosaic size {w}x{h} does not match its name ({nx}x{ny} tiles)')
 
 
 def review_sheet(rgb, A, footprint, derived: dict, out, scale: int = 2) -> Path:
@@ -445,6 +508,7 @@ def main(argv=None) -> int:
     d.add_argument('--threshold', type=float, default=0.5, help='periodicity needed on both axes')
     d.add_argument('--sheet', help='write a review PNG with arrays and rows drawn on')
     d.add_argument('--write', action='store_true', help='patch roofs[label] in --spec')
+    d.add_argument('--replace-pv', action='store_true', help='with --write: overwrite existing pv_arrays')
     args = ap.parse_args(argv)
     if args.spec and not args.label:
         ap.error('--spec needs --label')
@@ -456,10 +520,13 @@ def main(argv=None) -> int:
     if not foot:
         raise SystemExit('no roof columns (label has no mapped way in the vector map?)')
     bbox = (min(c[0] for c in foot), min(c[1] for c in foot), max(c[0] for c in foot), max(c[1] for c in foot))
+    size = (rgb.shape[1], rgb.shape[0])
     if args.registration:
         from aerial_registered import load
-        _, A = load(args.registration)
+        reg, A = load(args.registration)
+        check_registration(reg, Path(args.image), size)
     else:
+        check_mosaic(Path(args.image), size, args.mosaic)
         A = _mosaic_affine(args.mosaic, bbox)
     shift = tuple(int(v) for v in args.shift.split(','))
     try:
@@ -471,7 +538,7 @@ def main(argv=None) -> int:
         out['sheet'] = str(review_sheet(rgb, A, foot, out, args.sheet))
     print(json.dumps(out, indent=1))
     if args.write:
-        patch_spec(args.spec, args.label, out)
+        patch_spec(args.spec, args.label, out, replace=args.replace_pv)
         print(f'wrote roofs[{args.label}] material + {len(out["pv_arrays"])} pv_arrays to {args.spec}')
     return 0
 

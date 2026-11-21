@@ -129,6 +129,21 @@ class DeriveTest(unittest.TestCase):
         self.assertEqual(len(cut), 1)
         self.assertEqual(cut[0]['box'][2], 139)
 
+    def test_reports_full_coverage_of_the_footprint(self):
+        img, foot, _ = _fixture()
+        self.assertEqual(R.derive(img, _affine(), foot)['coverage'], 1.0)
+
+    def test_footprint_mostly_off_the_aerial_is_refused(self):
+        img, foot, _ = _fixture()
+        # a wrong registration: the roof lands half off the image
+        with self.assertRaisesRegex(ValueError, 'covers only'):
+            R.derive(img, _affine(x0=X0 + 30), foot)
+
+    def test_footprint_entirely_off_the_aerial_is_refused(self):
+        img, foot, _ = _fixture()
+        with self.assertRaisesRegex(ValueError, 'covers only 0%'):
+            R.derive(img, _affine(x0=X0 + 500, z0=Z0 + 500), foot)
+
     def test_too_coarse_aerial_is_refused(self):
         img, foot, _ = _fixture()
         with self.assertRaisesRegex(ValueError, 'too coarse'):
@@ -213,6 +228,75 @@ class SpecPatchTest(unittest.TestCase):
             path.write_text(json.dumps({'roofs': {'A': {'kind': 'flat', 'material': 'stone'}}}))
             with self.assertRaisesRegex(SystemExit, 'no roofs'):
                 R.patch_spec(path, 'B', {'material': 'stone', 'pv_arrays': []})
+
+
+class SpecPatchGuardTest(unittest.TestCase):
+    """Seam: patch_spec never wipes or corrupts a spec."""
+
+    ARRAY = {'box': [1, 2, 3, 4], 'rows': 'x', 'pitch': 2, 'source': 'new', 'row_pitch_m': 1.4, 'score': 0.7, 'cells': 9}
+    HAND = {'box': [9, 9, 12, 12], 'rows': 'z', 'pitch': 2, 'source': 'hand-added'}
+
+    def run_patch(self, roof, derived, **kw):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'w1.json'
+            text = json.dumps({'roofs': {'WS': roof}})
+            path.write_text(text)
+            try:
+                R.patch_spec(path, 'WS', derived, **kw)
+            finally:
+                after = path.read_text()
+        return text, after
+
+    def test_refuses_a_pitched_roof_and_leaves_the_file(self):
+        roof = {'kind': 'pitched', 'material': 'brick'}
+        with self.assertRaisesRegex(SystemExit, 'flat'):
+            self.run_patch(roof, {'material': 'smooth_stone', 'pv_arrays': [self.ARRAY]})
+
+    def test_no_arrays_found_writes_nothing(self):
+        roof = {'kind': 'flat', 'material': 'smooth_stone', 'pv_arrays': [self.HAND]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'w1.json'
+            path.write_text(json.dumps({'roofs': {'WS': roof}}))
+            before = path.read_text()
+            with self.assertRaisesRegex(SystemExit, 'no PV arrays'):
+                R.patch_spec(path, 'WS', {'material': 'polished_diorite', 'pv_arrays': []}, replace=True)
+            self.assertEqual(path.read_text(), before)
+
+    def test_existing_arrays_need_replace(self):
+        roof = {'kind': 'flat', 'material': 'smooth_stone', 'pv_arrays': [self.HAND]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'w1.json'
+            path.write_text(json.dumps({'roofs': {'WS': roof}}))
+            before = path.read_text()
+            with self.assertRaisesRegex(SystemExit, 'replace'):
+                R.patch_spec(path, 'WS', {'material': 'stone', 'pv_arrays': [self.ARRAY]})
+            self.assertEqual(path.read_text(), before)
+            R.patch_spec(path, 'WS', {'material': 'stone', 'pv_arrays': [self.ARRAY]}, replace=True)
+            got = json.loads(path.read_text())['roofs']['WS']
+        self.assertEqual([a['source'] for a in got['pv_arrays']], ['new'])
+        self.assertEqual(got['material'], 'stone')
+
+
+class CrossCheckTest(unittest.TestCase):
+    """Seam: the CLI refuses an image that does not fit its registration or mosaic grid."""
+
+    def test_registration_must_name_the_image_and_fit_it(self):
+        reg = {'image': 'aerial/site/roof.png', 'ties': [{'mc': [0, 0], 'px': [10, 10]}, {'mc': [5, 5], 'px': [90, 60]}]}
+        R.check_registration(reg, Path('/x/roof.png'), (100, 80))
+        with self.assertRaisesRegex(SystemExit, 'names'):
+            R.check_registration(reg, Path('/x/other.png'), (100, 80))
+        with self.assertRaisesRegex(SystemExit, 'outside'):
+            R.check_registration(reg, Path('/x/roof.png'), (50, 50))
+
+    def test_mosaic_size_and_name_must_match_the_tile_grid(self):
+        R.check_mosaic(Path('mosaic-z19-4x4-260093-175744.png'), (1024, 1024), '19,260093,175744')
+        R.check_mosaic(Path('crop.png'), (512, 768), '19,1,2')          # unnamed: size only
+        with self.assertRaisesRegex(SystemExit, '256'):
+            R.check_mosaic(Path('crop.png'), (500, 512), '19,1,2')
+        with self.assertRaisesRegex(SystemExit, 'tile'):
+            R.check_mosaic(Path('mosaic-z19-4x4-260093-175744.png'), (1024, 1024), '19,260091,175744')
+        with self.assertRaisesRegex(SystemExit, 'size'):
+            R.check_mosaic(Path('mosaic-z19-4x4-260093-175744.png'), (768, 1024), '19,260093,175744')
 
 
 if __name__ == '__main__':
