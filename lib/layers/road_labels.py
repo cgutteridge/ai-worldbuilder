@@ -615,11 +615,17 @@ def _print_plan(plan: LabelPlan) -> None:
 
 
 def _live_callbacks():
+    """Lidar heights, and blocks from the saved world.
+
+    A live scan lists an unloaded chunk as air, so a label would be planned
+    inside a tree whenever the player is too far away to have the cell loaded.
+    The saved world returns None for a missing chunk, and None is not clear air.
+    """
     from lidar_heightmap import Maps
-    from site_kit import World
+    from site_kit import fresh_planning_world
 
     maps = Maps()
-    world = World()
+    world = fresh_planning_world()
 
     def ground_y(x: int, z: int) -> int | None:
         for field in ('terrain', 'base'):

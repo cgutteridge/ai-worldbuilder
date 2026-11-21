@@ -44,7 +44,9 @@ way with the same name just over the edge does not add another label inside 60 b
 
 The three blocks above the lidar surface, including the label's own block, must be
 air. Leaves, trunks, and any other block count as blocked, so a label does not sit
-in a tree. A column within 6 blocks of a bridge or raised centreline is blocked even
+in a tree. Those blocks are read from the saved world after a flush. A missing
+chunk is not air: an area that was never saved is skipped, rather than labelled
+as if it were open sky. A column within 6 blocks of a bridge or raised centreline is blocked even
 when the air is clear, so a label does not hang under a deck.
 
 If the chosen point is blocked, walk along that way up to 20 blocks either side and

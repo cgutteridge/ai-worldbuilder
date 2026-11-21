@@ -128,6 +128,17 @@ class TestClearAir(unittest.TestCase):
         self.assertEqual(result.labels, ())
         self.assertEqual(result.skipped[0].reason, 'no clear air')
 
+    def test_a_missing_chunk_is_not_treated_as_air(self):
+        def block_at(x, y, z):
+            return None
+
+        result = rl.plan_labels(
+            [way('1', 'Lane', [(0, 0), (40, 0)])],
+            ground_y=lambda x, z: 64, block_at=block_at, bridge_at=lambda x, z: False,
+        )
+        self.assertEqual(result.labels, ())
+        self.assertEqual(result.skipped[0].reason, 'no clear air')
+
     def test_missing_lidar_ground_is_not_clear(self):
         def ground_y(x, z):
             return None
