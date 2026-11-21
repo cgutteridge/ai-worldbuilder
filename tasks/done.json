@@ -3116,5 +3116,16 @@
       "blockedBy": [],
       "notes": "Cause (verified): water_body items carry one cells entry and propose takes one cell, building the body whole; the Itchen spans 12 cells and 22,824 columns. The trial used a scratch clip wrapper and a manual plan_feature note. Deliverable: build per cell, clipped, no bank ring on clip edges, plan recorded per cell. Same edge policy as blocked task 234 (building across a cell edge). Test on a two-cell fixture. Check: Itchen reach across 63,-45 and its neighbour joins without a seam or bank wall. Water level along the reach is a separate task.\n\nClosed at 6e33f449c3647fa235f8fcb5b11f79f4f82c84aa: Per-cell clipped water bodies, including bank-only clips for dry cells the bank reaches. Reviewed (2 rounds, APPROVE) and merged. Offline, both Itchen joins at 63,-45 equal the whole-river build. The live in-game check is blocked on neighbour prep and owner aerial data, and is filed as its own task.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "requiresClaude": true}
+  ,
+    {
+      "id": 354,
+      "title": "Water level profile: stepped river level from lidar samples (pure function)",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Split from #326 so a non-Claude runner can do the offline half. Deliverable: a pure function in lib/builds (new module, for example water_level.py) that turns lidar surface samples taken along a river reach into a stepped integer water level per segment. Input: ordered (distance along reach, lidar surface height) samples, plus a minimum step length. Output: list of (start_distance, end_distance, level) with these rules, each covered by a test on synthetic fixtures: levels never rise going downstream; noise under one block does not create a step; a short dip (bridge deck, culvert) is ignored rather than stepping; a gentle slope produces steps no shorter than the minimum length; a flat reach returns one segment equal to today's single level. No spec schema change, no build, no world access and no lidar reading: the caller supplies the samples. Check: python3 scripts/run_tests.py --only test_water_level passes. Do not touch lib/builds/water_body.py; the integration (spec field, step shape in the build, sampling real lidar for the Itchen) stays in #326, which is blocked by this task.\n\n\nClosed at 4351eb1fd006ce15e1e5b4774ca4644f23c305c6: Merged task/354-water-level-profile: water_level_profile pure function + fixture tests.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

@@ -81,7 +81,7 @@
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
-        354
+        
       ],
       "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game.\nSplit 2026-11-21: the offline function (lidar samples along the reach to a stepped level profile, fixture-tested) is #354, which any runner can take, and blocks this task. What stays here needs Claude: the spec field for per-segment levels and how a step looks in the build (lib/builds/water_body.py, a schema change, so a stretch: ask before raising model or effort), sampling real lidar along the Itchen, and the in-game check across two cells. Requires Claude because it runs a build and judges the result in game.\n"
     , "requiresClaude": true},
@@ -172,16 +172,7 @@
       "requiresClaude": false,
       "notes": "Review nits from #321 (per-cell clipped water bodies, merged in 6e33f44). Fix with synthetic fixtures:\n1. A spec that copies a clip candidate's outline but omits `clip` builds the neighbour's water out to the 8-block reach, with a bank ring on that artificial edge. Fix: reject it in lib/builds/water_body.py when the name matches a clip id, or put `clip` into the spec at propose time.\n2. `_validate_clip` (water_body.py:124) raises a bare ValueError for a non-integer clip cell; raise WaterBodyError instead.\n3. Bank-only clip candidates are proposed by CLIP_REACH (8), not by bank width. At width 1, water 2-8 blocks from a cell line yields a candidate that load_spec_dict refuses, and readiness shows it unaccounted until it is dismissed. Avoid proposing these where the default width can't reach, or document the dismissal better.\n4. A built bank-only clip still shows in missing_water_bodies / missing_features (column-based, empty outline). Harmless today, but site_handoff.layers_done would never go true for that cell.\n5. Add tests for bank.width greater than 1, diagonal-corner bodies, and a note in rules/water-body-builds.md on legacy whole plans.\n"
     },
-    {
-      "id": 354,
-      "title": "Water level profile: stepped river level from lidar samples (pure function)",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Split from #326 so a non-Claude runner can do the offline half. Deliverable: a pure function in lib/builds (new module, for example water_level.py) that turns lidar surface samples taken along a river reach into a stepped integer water level per segment. Input: ordered (distance along reach, lidar surface height) samples, plus a minimum step length. Output: list of (start_distance, end_distance, level) with these rules, each covered by a test on synthetic fixtures: levels never rise going downstream; noise under one block does not create a step; a short dip (bridge deck, culvert) is ignored rather than stepping; a gentle slope produces steps no shorter than the minimum length; a flat reach returns one segment equal to today's single level. No spec schema change, no build, no world access and no lidar reading: the caller supplies the samples. Check: python3 scripts/run_tests.py --only test_water_level passes. Do not touch lib/builds/water_body.py; the integration (spec field, step shape in the build, sampling real lidar for the Itchen) stays in #326, which is blocked by this task.\n"
-    },
+    
     {
       "id": 355,
       "title": "Shared roof-material module and flat(ish)/pitched rule (I-057 S-104)",
