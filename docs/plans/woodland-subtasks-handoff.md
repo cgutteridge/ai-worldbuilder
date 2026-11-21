@@ -4,7 +4,7 @@ For any agentic AI that can run shell commands and git worktrees (Cursor, Claude
 
 Written 2026-11-21. Read the live tracker before acting; this file may be out of date.
 
-> **Wave lock handed over, 2026-11-21 17:27 UTC.** While this wave waits about 3 hours for tokens, the owner gave the wave lock to a Claude Code orchestrator: wave `claude-1`, holder `orch-claude-0bec0f19`, running #321, #323 and #337. Woodland branches and worktrees (#347, #349) were left untouched. When you resume, if `wave-lock-acquire` refuses because `claude-1` holds the lock, ask the owner before going on. Don't release that lock yourself.
+> **Wave lock handed over and returned, 2026-11-21.** The owner lent the wave lock to Claude Code wave `claude-1` (#321, #323, #337) from 17:27 UTC. That wave finished: all three are merged and closed, and the lock was released. The lock is free again; acquire it as usual if this wave still needs it.
 
 ## What this wave is, and is not
 
