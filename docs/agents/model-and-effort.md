@@ -28,6 +28,14 @@ budget. Unknown or exhausted budget leaves the task pending. Budget/access failu
 mid-task stops further work; report the reason and hand off to an eligible runner.
 Recheck on retry or handoff. Never silently substitute another model family.
 
+Local identifier verification for #344 (2026-11-21): installed `cursor-agent`
+version `2025.09.12-4852336` maps its `sonnet` command to `sonnet-4` and its
+`opus` command to `opus`; its `--model` help also advertises
+`sonnet-4-thinking`. These identifiers already pass the gate and now have
+synthetic CLI coverage. No version-first Claude identifiers were found in this
+runner, so no additional identifier format was added. This checks local naming
+only, without a model call; it does not establish current access or budget.
+
 Run the read-only gate using the actual intended runner, for example:
 
 ```sh
