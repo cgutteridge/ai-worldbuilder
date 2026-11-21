@@ -682,11 +682,269 @@ def furniture_by_provenance(decor: Mapping[str, Any], report: list[dict], unplac
     }
 
 
+# Woodland understorey (#351): OSM tags that take woodland_decor when the class ships it.
+WOODLAND_DECOR_TAGS = frozenset({
+    ('natural', 'wood'),
+    ('natural', 'scrub'),
+    ('landuse', 'forest'),
+})
+# Exclusive roll order after bushes; shares come from config/land-use-classes.json.
+WOODLAND_PLANT_ROLL = (
+    'fern', 'large_fern', 'short_grass', 'short_dry_grass', 'tall_dry_grass', 'leaf_litter',
+)
+_LEAF_LITTER_FACINGS = ('north', 'south', 'east', 'west')
+
+
+def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
+    """``{column: class id}`` for woodland understorey columns gated by OSM tag (#351).
+
+    Eligible when the column's land-use class ships ``woodland_decor``, the column sits in
+    ``natural=wood``, ``landuse=forest``, or (when that class sets ``scrub`` true)
+    ``natural=scrub``, and it is not a lawn. Does not use ``planting`` (null when
+    ``frontage.inference`` is false).
+
+    @param cell: ``(tx, tz)``
+    @param idx: ``OSMIndex``
+    @param classes: ``coverage.area_classes`` result when the caller already has it
+    @returns: eligible columns (empty when no class ships woodland decor)
+    """
+    import land_use
+    from coverage import scan_polygon
+    from ground_sources import MARGIN, cell_box
+    from ground_layer import LAWN_TAGS
+    from osm_footprints import osm_tags
+
+    if classes is None:
+        from coverage import area_classes
+        classes = area_classes(idx, cell_box(cell, MARGIN))
+    rules = {}
+    for cid in land_use.CLASSES:
+        rule = land_use.woodland_decor(cid)
+        if rule:
+            rules[cid] = rule
+    if not rules:
+        return {}
+    bbox = cell_box(cell, MARGIN)
+    lawn: set = set()
+    wood: set = set()
+    scrub: set = set()
+    areas = getattr(idx, 'areas', None)
+    if not isinstance(areas, (list, tuple)):
+        areas = ()
+    for rings, props in areas:
+        tags = osm_tags(props)
+        pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
+        if any(pair in LAWN_TAGS for pair in pairs):
+            lawn.update(scan_polygon(rings, bbox))
+            continue
+        if any(pair in WOODLAND_DECOR_TAGS and pair != ('natural', 'scrub') for pair in pairs):
+            wood.update(scan_polygon(rings, bbox))
+        if ('natural', 'scrub') in pairs:
+            scrub.update(scan_polygon(rings, bbox))
+    wood -= lawn
+    scrub -= lawn
+    eligible = {}
+    for q in wood:
+        hit = classes.get(q)
+        if hit and hit[0] in rules:
+            eligible[q] = hit[0]
+    for q in scrub:
+        if q in wood:
+            continue
+        hit = classes.get(q)
+        if not hit or hit[0] not in rules or not rules[hit[0]].get('scrub'):
+            continue
+        eligible[q] = hit[0]
+    return eligible
+
+
+def _tree_solid(block: str | None) -> bool:
+    """True when a live block is a trunk or crown solid that understorey must not enter.
+
+    @param block: full or short block id
+    @returns: whether the voxel is owned by a tree body
+    """
+    if not block or is_air(block):
+        return False
+    name = bare(block)
+    short = name.split(':')[-1]
+    return '_log' in short or 'leaves' in short or short.endswith('_wood')
+
+
+def _woodland_plant_block(kind: str, rnd) -> str | tuple[str, str]:
+    """Block id (or lower/upper pair) for one woodland ground-cover kind.
+
+    ``leaf_litter`` uses the historical facing/segment_amount shape from older Mojang
+    assets; 26.2 states remain unverified (#347), so the shipped share stays 0 until #318.
+
+    @param kind: plant kind key
+    @param rnd: seeded RNG for litter facing
+    @returns: one block string, or ``(lower, upper)`` for two-block ferns
+    """
+    if kind == 'fern':
+        return 'fern'
+    if kind == 'large_fern':
+        return ('large_fern[half=lower]', 'large_fern[half=upper]')
+    if kind == 'short_grass':
+        return 'short_grass'
+    if kind == 'short_dry_grass':
+        return 'short_dry_grass'
+    if kind == 'tall_dry_grass':
+        return 'tall_dry_grass'
+    if kind == 'leaf_litter':
+        facing = _LEAF_LITTER_FACINGS[rnd.randrange(4)]
+        return f'leaf_litter[facing={facing},segment_amount=1]'
+    raise ValueError(f'unknown woodland plant kind: {kind}')
+
+
+def plan_woodland_decor(
+    plan: Plan,
+    world: World,
+    cell: tuple[int, int],
+    columns: dict,
+    *,
+    lidar_hm=None,
+    masked=(),
+    owned=(),
+    clear=(),
+    way=(),
+    near1=(),
+    taken=(),
+) -> tuple[dict, dict]:
+    """Place woodland understorey bushes and ground cover inside wood polygons (#351).
+
+    Driven by ``woodland_decor`` shares, not by ``planting``. One kind per column, seeded
+    per cell and column. Bushes reuse :func:`plant_cell_canopy.bush_voxels` (height 1 or 2
+    from ``bush_tall``). Skips roads, water, footprints, clearance, neighbour/feature ownership,
+    tree and other pass masks, and any voxel that is not air or that sits in a trunk or crown.
+    Counts land in the decor report per kind; placements join the decor mask.
+
+    @param plan: decor plan under construction
+    @param world: live world reader (after trees)
+    @param cell: ``(tx, tz)`` for seeds
+    @param columns: ``{column: class id}`` from :func:`woodland_decor_columns`
+    @param lidar_hm: lidar heightmap for terrain Y
+    @param masked: tree/decor/other mask positions
+    @param owned: feature and neighbour owned positions
+    @param clear: reserved route, opening and footprint columns
+    @param way: road, path and water columns
+    @param near1: building-neighbour clearance columns
+    @param taken: positions already claimed by this decor pass
+    @returns: ``(placements, report)`` with per-kind counts and item rows
+    """
+    import random
+    import land_use
+    import provenance as prov
+    from plant_cell_canopy import bush_voxels
+    from surface_probe import ground_at
+
+    report = {k: 0 for k in ('bushes',) + WOODLAND_PLANT_ROLL}
+    report.update({'skipped': 0, 'items': []})
+    found: dict[tuple[int, int, int], str] = {}
+    if not columns:
+        return found, report
+    tx, tz = cell
+    protected = set(masked) | set(owned) | set(taken)
+    blocked = set(clear) | set(way) | set(near1) | {(x, z) for x, _y, z in protected}
+    rules: dict = {}
+
+    def live(p):
+        return found[p] if p in found else (plan.cells[p] if p in plan.cells else world.block(*p))
+
+    def free_air(p):
+        if p in protected or p in found:
+            return False
+        return is_air(live(p)) and not _tree_solid(live(p))
+
+    for q in sorted(columns):
+        if q in blocked or not cell_contains(cell, *q):
+            report['skipped'] += 1
+            continue
+        x, z = q
+        top = ground_at(world, lidar_hm, x, z, owned, masked)
+        if not top:
+            report['skipped'] += 1
+            continue
+        gy, ground = top
+        if _tree_solid(ground) or bare(ground).endswith('water'):
+            report['skipped'] += 1
+            continue
+        cid = columns[q]
+        if cid not in rules:
+            rules[cid] = land_use.woodland_decor(cid)
+        rule = rules[cid]
+        if not rule:
+            report['skipped'] += 1
+            continue
+        rnd = random.Random(f'woodland_decor:{tx}:{tz}:{x}:{z}')
+        roll = rnd.random()
+        kind = None
+        if roll < rule['bushes']:
+            kind = 'bushes'
+        else:
+            cursor = rule['bushes']
+            for name in WOODLAND_PLANT_ROLL:
+                cursor += rule[name]
+                if roll < cursor:
+                    kind = name
+                    break
+        if kind is None:
+            continue
+        if kind == 'bushes':
+            tall = rnd.random() < rule['bush_tall']
+            # Reuse bush_voxels for leaf id and Y+1/+2; keep only this column so neighbours
+            # do not fight over the clump's cardinals (trial: 1 or 2 leaf blocks high).
+            voxels = {p: b for p, b in bush_voxels(x, z, gy).items() if p[0] == x and p[2] == z}
+            if not tall:
+                voxels.pop((x, gy + 2, z), None)
+            if not voxels or any(not free_air(pos) or _tree_solid(live(pos)) for pos in voxels):
+                report['skipped'] += 1
+                continue
+            for pos, block in voxels.items():
+                found[pos] = block
+                plan.set(*pos, block)
+            report['bushes'] += 1
+            report['items'].append({
+                'kind': 'bushes', 'position': [x, gy + 1, z], 'block': 'oak_leaves',
+                'tall': tall, 'label': 'woodland understorey bush (#351)',
+                'provenance': prov.provenance_record(source='inference', confidence='low'),
+            })
+            continue
+        plant = (x, gy + 1, z)
+        if not free_air(plant):
+            report['skipped'] += 1
+            continue
+        block = _woodland_plant_block(kind, rnd)
+        if isinstance(block, tuple):
+            upper = (x, gy + 2, z)
+            if not free_air(upper):
+                report['skipped'] += 1
+                continue
+            lower_b, upper_b = block
+            found[plant] = lower_b
+            found[upper] = upper_b
+            plan.set(*plant, lower_b)
+            plan.set(*upper, upper_b)
+            placed_block = lower_b.split('[')[0]
+        else:
+            found[plant] = block
+            plan.set(*plant, block)
+            placed_block = block.split('[')[0]
+        report[kind] += 1
+        report['items'].append({
+            'kind': kind, 'position': list(plant), 'block': placed_block,
+            'label': f'woodland ground cover {kind} (#351)',
+            'provenance': prov.provenance_record(source='inference', confidence='low'),
+        })
+    return found, report
+
+
 def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict | None = None):
-    """Plan barriers and street furniture for one cell. Returns (placements, stats).
+    """Plan barriers, street furniture and woodland understorey for one cell.
 
     Builds a decor plan (#150) from aerial, photos, map and designer, then places
-    resolved rows. Unresolved plan items and failed placements are listed in stats.
+    resolved rows plus woodland decor (#351). Unresolved plan items and failed
+    placements are listed in stats.
     """
     from ground_sources import OSMGround
     from coverage import OUTBUILDINGS
@@ -710,6 +968,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         from ground_sources import cell_box
 
         land_classes = dplan.land_class_columns(idx, cell_box(cell, 12))
+        wood_columns = woodland_decor_columns(cell, idx, land_classes)
         decor = dplan.build_decor_plan(
             cell,
             map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
@@ -730,8 +989,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         )
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):
-        world = snapshot_decor_columns(                                      # batch reads (#110)
-            world, decor_columns(decor['items'], dplan.resolved_furniture(decor)))
+        warm_cols = decor_columns(decor['items'], dplan.resolved_furniture(decor)) | set(wood_columns)
+        world = snapshot_decor_columns(world, warm_cols)                      # batch reads (#110)
 
     reserved_gap = {tuple(q) for q in (decor.get('reserved') or {}).get('openings', ())}
     houses = {q for q, k in idx.cells().items()
@@ -777,6 +1036,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     overlap_positions = len(found.keys() & furniture.keys())
     found.update(furniture)
     found.update(outbuilding_found)
+    woodland_found, woodland_report = plan_woodland_decor(
+        plan, world, cell, wood_columns, lidar_hm=lidar_hm, masked=masked, owned=owned,
+        clear=reserved_gap | set(fp), way=way, near1=near1, taken=found,
+    )
+    found.update(woodland_found)
 
     stats: Counter = Counter()
     stats['candidate_items'] = len(decor['items'])
@@ -799,6 +1063,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     stats['barrier_partial_columns'] = sum(1 for r in barrier_report if r.get('partial'))
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
+    stats['woodland_decor'] = {k: woodland_report[k] for k in woodland_report if k != 'items'}
+    stats['woodland_decor_items'] = woodland_report.get('items') or []
     furniture_unplaced = list(furniture_unplaced)
     stats['furniture_by_provenance'] = furniture_by_provenance(decor, furniture_report, furniture_unplaced)
     if decor.get('furniture_inference') is not None:
@@ -899,14 +1165,18 @@ def run(cell: tuple[int, int]) -> int:
     unplaced = stats.pop('unplaced_items', [])
     stats.pop('decor_plan', None)
     stats.pop('clipped_positions', None)
+    stats.pop('woodland_decor_items', None)
     kinds = Counter(placed.values())
     by_provenance = stats.pop('furniture_by_provenance', None)
     inference = stats.pop('furniture_inference', None)
+    woodland = stats.pop('woodland_decor', None)
     print(f'{name}: {dict(stats)}' + (' (empty decor plan)' if not placed else ''))
     if by_provenance is not None:
         print(f'  furniture by provenance: {by_provenance}')
     if inference is not None:
         print(f'  furniture inference: {inference}')
+    if woodland is not None:
+        print(f'  woodland decor: {woodland}')
     print(f'  by block: {dict(kinds)}')
     _print_plan_notes({
         'furniture_report': furniture_report,
@@ -952,6 +1222,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     unplaced = stats.pop('unplaced_items', [])
     decor = stats.pop('decor_plan', None)
     stats.pop('clipped_positions', None)
+    stats.pop('woodland_decor_items', None)
     warm = getattr(world, 'prefetch', None)
     if warm is not None:
         warm(placed)                                                       # mask air check, batched
