@@ -32,6 +32,13 @@ def gable(cells, ridge_x, z0, z1, y=50, half=4, cap=f'{T}s'):
 
 
 class RidgeJogTest(unittest.TestCase):
+    def test_woodland_plants_do_not_hide_a_roof_ridge(self):
+        cells = gable({}, 10, 0, 8)
+        for z, state in enumerate(('short_dry_grass', 'tall_dry_grass', 'bush',
+                                   'leaf_litter[facing=east,segment_amount=4]')):
+            cells[(10, 51, z)] = f'minecraft:{state}'
+        self.assertEqual(ridge_jogs(cells), [])
+
     def test_straight_gable_is_clean(self):
         self.assertEqual(ridge_jogs(gable({}, 10, 0, 8)), [])
 

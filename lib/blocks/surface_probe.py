@@ -7,9 +7,22 @@ from __future__ import annotations
 from site_kit import World
 
 # Small plants: counted as air when finding the surface, and by the ground clear step.
-PLANTS = (
+# IDs are confirmed by config/minecraft-block-ids-26.2.txt (Mojang client blockstates).
+# The older Mojang 1.21.11 client has single-block models for the four woodland
+# additions (even tall_dry_grass); leaf_litter has facing/segment_amount states.
+# This is older-version evidence ONLY: 26.2 placement states remain unverified.
+# Recognition is state-agnostic and does not authorize placing those states.
+# ``flower`` and ``daisy`` are legacy classification patterns, not placement IDs.
+_LEGACY_PLANT_PATTERNS = (
     'short_grass', 'tall_grass', 'fern', 'large_fern', 'flower', 'poppy', 'dandelion', 'daisy',
     'cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'red_tulip', 'white_tulip',
+)
+PLANTS = _LEGACY_PLANT_PATTERNS + (
+    'blue_orchid', 'orange_tulip', 'pink_tulip', 'lily_of_the_valley', 'wither_rose',
+    'sunflower', 'rose_bush', 'peony', 'lilac', 'pitcher_plant', 'torchflower',
+    'short_dry_grass', 'tall_dry_grass', 'leaf_litter', 'bush', 'firefly_bush',
+    'wildflowers', 'pink_petals', 'open_eyeblossom', 'closed_eyeblossom',
+    'dead_bush', 'sweet_berry_bush', 'brown_mushroom', 'red_mushroom',
 )
 JUNK_ABOVE = ('_log', 'leaves', '_carpet', 'sapling')
 # Cell-marker hazard tape (cell_marker.WOOL): ~30 above ground, so any height, not just high ones.
@@ -74,7 +87,7 @@ def surface_y(w: World, x: int, z: int, top: int = 110, floor: int | None = None
         if b.endswith('air'):
             y -= 1
             continue
-        if any(p in b for p in PLANTS) or 'leaves' in b or '_log' in b:
+        if short_id(b) in PLANTS or any(p in b for p in _LEGACY_PLANT_PATTERNS) or 'leaves' in b or '_log' in b:
             y -= 1
             continue
         if short_id(b) in MARKER_WOOL:
@@ -123,7 +136,8 @@ def ground_at(w: World, hm, x: int, z: int, owned=(), masked=(), fallback=None) 
         return (fallback or surface_y)(w, x, z)
     b = w.block(x, y, z) or 'minecraft:air'
     if not is_water(b):
-        if b.endswith('air') or any(p in b for p in PLANTS) or 'leaves' in b or '_log' in b \
+        if b.endswith('air') or short_id(b) in PLANTS or any(p in b for p in _LEGACY_PLANT_PATTERNS) \
+                or 'leaves' in b or '_log' in b \
                 or short_id(b) in MARKER_WOOL:
             return None
     if (x, y, z) in owned or (x, y, z) in masked:

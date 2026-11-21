@@ -4,6 +4,7 @@ from __future__ import annotations
 import unittest
 
 from foliage import (
+    REFINE_PLANTS,
     assert_canopy_replant_ok,
     expand_tree,
     is_refine_foliage,
@@ -25,6 +26,23 @@ class TestFoliageAllowlist(unittest.TestCase):
         self.assertTrue(is_refine_foliage('minecraft:poppy'))
         self.assertFalse(is_refine_foliage('minecraft:grass_block'))
         self.assertTrue(is_refine_foliage('minecraft:oak_sapling'))
+
+    def test_woodland_plant_states_are_strip_targets(self):
+        for state in ('short_dry_grass', 'tall_dry_grass', 'bush',
+                      'leaf_litter[facing=west,segment_amount=4]',
+                      'leaf_litter[facing=north,segment_amount=1]',
+                      'large_fern[half=upper]', 'pitcher_plant[half=lower]',
+                      'pitcher_plant[half=upper]'):
+            with self.subTest(state=state):
+                self.assertTrue(is_refine_foliage(f'minecraft:{state}'))
+                self.assertTrue(should_strip_corridor_canopy(f'minecraft:{state}'))
+
+    def test_recognition_does_not_authorize_unverified_placement_states(self):
+        for plant in ('short_dry_grass', 'tall_dry_grass', 'leaf_litter', 'bush',
+                      'wildflowers', 'pink_petals', 'large_fern', 'pitcher_plant'):
+            with self.subTest(plant=plant):
+                self.assertNotIn(plant, REFINE_PLANTS)
+                self.assertTrue(is_refine_foliage(plant))
 
 
 class TestTreeVoxels(unittest.TestCase):
@@ -84,6 +102,23 @@ class TestCorridorStrip(unittest.TestCase):
 
 
 class TestStrip(unittest.TestCase):
+    def test_strip_clears_woodland_cover_without_changing_floor(self):
+        class Column:
+            def __init__(self, plant):
+                self.plant = plant
+
+            def block(self, x, y, z):
+                return {40: 'minecraft:podzol', 41: self.plant}.get(y, 'minecraft:air')
+
+        for state in ('short_dry_grass', 'tall_dry_grass', 'bush',
+                      'leaf_litter[facing=west,segment_amount=4]',
+                      'leaf_litter[facing=north,segment_amount=1]'):
+            with self.subTest(state=state):
+                plan = Plan('strip')
+                count = strip_foliage_above_surface(plan, Column(f'minecraft:{state}'), {(0, 0)}, y_top=43)
+                self.assertEqual(count, 1)
+                self.assertEqual(plan.cells, {(0, 41, 0): 'minecraft:air'})
+
     def test_sapling_forbidden_on_plan(self):
         plan = Plan('t')
         with self.assertRaises(SystemExit):

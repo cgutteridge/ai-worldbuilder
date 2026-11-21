@@ -758,6 +758,7 @@ class World:
         @param bottom: scan floor Y
         @returns: ground Y, or ``bottom`` when none found
         """
+        from surface_probe import PLANTS, short_id
         skip = ('water', 'leaves', '_log', 'short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy',
                 'dandelion', 'kelp', 'seagrass', 'bush', 'litter', 'vine', 'daisy', 'bluet', 'orchid',
                 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom')
@@ -773,7 +774,7 @@ class World:
                 return self.block(x, yy, z)
         for y in range(top, bottom, -1):
             b = at(y)
-            if b and b.split('[')[0].removeprefix('minecraft:') not in AIR_IDS and not any(k in b for k in skip):
+            if b and short_id(b) not in AIR_IDS and short_id(b) not in PLANTS and not any(k in b for k in skip):
                 return y
         return bottom
 

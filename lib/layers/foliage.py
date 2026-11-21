@@ -8,11 +8,14 @@ import random
 import sys
 from typing import Iterable
 
-from surface_probe import is_tree_or_plant_block, short_id, surface_y
+from surface_probe import PLANTS, is_tree_or_plant_block, short_id, surface_y
 from site_kit import Plan, World
 
 # Canonical block short names / property patterns refine may place above ground surfaces.
 LOG_SPECIES = frozenset({'oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry'})
+# Preserve the existing placement allowlist: newly recognized 26.2 IDs do not
+# yet have confirmed placement states (notably halves and segmented litter).
+# Classification/clearing use PLANTS independently of placement permission.
 REFINE_PLANTS = frozenset({
     'short_grass', 'tall_grass', 'fern', 'flower', 'poppy', 'dandelion', 'daisy',
     'cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'red_tulip', 'white_tulip',
@@ -22,7 +25,7 @@ REFINE_PLANTS = frozenset({
 DEFAULT_LOG = 'oak_log'
 DEFAULT_LEAVES = 'oak_leaves[persistent=true]'
 # Small plants + saplings (for strip); logs/leaves handled in ``is_refine_foliage``.
-REFINE_FOLIAGE = REFINE_PLANTS
+REFINE_FOLIAGE = frozenset(PLANTS)
 
 
 def is_refine_foliage(block: str) -> bool:
@@ -37,7 +40,7 @@ def is_refine_foliage(block: str) -> bool:
     short = short_id(raw)
     if 'sapling' in short:
         return True
-    if short in REFINE_PLANTS:
+    if short in PLANTS:
         return True
     if '_log' in short:
         return True
@@ -69,7 +72,7 @@ def should_strip_corridor_canopy(block: str) -> bool:
     short = short_id(block)
     if 'leaves' in short or '_log' in short or 'sapling' in short:
         return True
-    return short in REFINE_PLANTS
+    return short in PLANTS
 
 
 def corridor_columns_in_cell(

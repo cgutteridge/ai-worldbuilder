@@ -43,6 +43,7 @@ import numpy as np
 
 import cellmath
 from script_env import ROOT  # noqa: E402
+from surface_probe import PLANTS, short_id
 
 TOP = 140
 MIN_COLUMNS = 12                    # ignore slivers (bin stores, small sheds)
@@ -82,7 +83,7 @@ def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
             y = ((y >> 4) << 4) - 1
             continue
         b = _id(world.block(x, y, z))
-        if b in _AIRS or any(k in b for k in _PLANT):
+        if b in _AIRS or short_id(b) in PLANTS or any(k in b for k in _PLANT):
             pass
         elif b.endswith('_carpet'):
             roof = roof or y

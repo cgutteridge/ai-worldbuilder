@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from surface_probe import PLANTS
 
 DIRECTIONS = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}
 
@@ -20,7 +21,7 @@ def structural(state):
     """Whether a block can terminate an opening; doors and glazing are never jambs."""
     name = (state or 'air').split('[')[0].split(':')[-1]
     return name not in {'air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars',
-                        'snow', 'grass', 'short_grass', 'tall_grass', 'vine'} and not any(
+                        'snow', 'grass', 'short_grass', 'tall_grass', 'vine'} and name not in PLANTS and not any(
         token in name for token in ('glass', 'door', 'fence', 'leaves', 'torch', 'flower',
                                    'button', 'carpet', 'rail', 'sign', 'chain', 'sapling', 'ladder',
                                    'lantern', 'pressure_plate', 'candle', 'banner'))
