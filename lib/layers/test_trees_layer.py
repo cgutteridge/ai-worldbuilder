@@ -44,6 +44,60 @@ class TestCoverPixels(unittest.TestCase):
         self.assertGreater(m[:, :40][10:30, 10:30].mean(), 0.95)
         self.assertEqual(m[:, 40:][10:30, 10:100].mean(), 0)
 
+    def test_park_and_rural_shade_scores_meadow_low_and_canopy_high(self):
+        """Bright meadow is cover today and dull canopy is not; park and rural reverse that pair."""
+        import land_use
+        from PIL import Image
+
+        meadow = (110, 155, 90)     # sunlit pasture: saturated green under the ordinary ceiling
+        belt = (76, 90, 74)         # shaded canopy: dark, dull green, under the saturation floor
+        wood = (94, 83, 58)         # brown-olive shade the ordinary test already counts
+        roof = (150, 70, 50)
+        paving = (185, 175, 170)
+        bands = (meadow, belt, wood, roof, paving)
+        width = 56
+        img = np.zeros((48, width * len(bands), 3), np.uint8)
+        for i, colour in enumerate(bands):
+            img[:, i * width:(i + 1) * width] = colour
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'm.png'
+            Image.fromarray(img).save(p)
+
+            def band(mask, i):
+                return mask[:, i * width:(i + 1) * width][12:36, 12:44].mean()
+
+            ordinary = tl.cover_pixels(p)
+            self.assertGreater(band(ordinary, 0), 0.95)
+            self.assertEqual(band(ordinary, 1), 0)
+            self.assertGreater(band(ordinary, 2), 0.95)
+            self.assertEqual(band(ordinary, 3), 0)
+            self.assertEqual(band(ordinary, 4), 0)
+            for cid in ('rural', 'park'):
+                self.assertEqual(land_use.tree_cover(cid), 'shade')
+                got = tl.cover_pixels(p, shade=land_use.tree_cover(cid) == 'shade')
+                self.assertEqual(band(got, 0), 0)
+                self.assertGreater(band(got, 1), 0.95)
+                self.assertGreater(band(got, 2), 0.95)
+                self.assertEqual(band(got, 3), 0)
+                self.assertEqual(band(got, 4), 0)
+            for cid in ('residential', 'natural', 'unknown'):
+                self.assertIsNone(land_use.tree_cover(cid))
+                got = tl.cover_pixels(p, shade=land_use.tree_cover(cid) == 'shade')
+                self.assertTrue(np.array_equal(got, ordinary))
+
+    def test_shade_cover_follows_the_class_of_the_column(self):
+        ordinary = np.full((4, 4), 0.93)
+        shaded = np.full((4, 4), 0.16)
+        classes = {(10, 20): 'rural', (11, 20): 'park', (12, 20): 'natural', (13, 20): 'residential'}
+        got = tl._cover_by_class(ordinary, shaded, classes, (10, 20))
+        self.assertEqual(got[0, 0], 0.16)
+        self.assertEqual(got[1, 0], 0.16)
+        self.assertEqual(got[2, 0], 0.93)
+        self.assertEqual(got[3, 0], 0.93)
+        self.assertEqual(got[0, 1], 0.93)
+        np.testing.assert_array_equal(ordinary, np.full((4, 4), 0.93))
+        np.testing.assert_array_equal(shaded, np.full((4, 4), 0.16))
+
 
 class TestFillDense(unittest.TestCase):
     def test_dense_patch_gets_proportionally_many_crowns(self):
@@ -336,7 +390,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
         osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp, areas=[])
         plan = types.SimpleNamespace(set=lambda *a: None)
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
-                mock.patch.object(tl, 'cover_grid', lambda c: cover(1.0, 1.0)), \
+                mock.patch.object(tl, 'cover_grid', lambda c, **_kw: cover(1.0, 1.0)), \
                 mock.patch('tree_lines.standing_height', lambda c, margin=0: (None, 'none')), \
                 mock.patch.object(tl, 'surface_y', surface), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
@@ -376,7 +430,7 @@ class TestOverhang(unittest.TestCase):
         plan = types.SimpleNamespace(set=lambda x, y, z, b: sets.__setitem__((x, y, z), b))
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'find_crowns', lambda g: [crown]), \
-                mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, 'grass_block')), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: masked or {}), \
@@ -460,7 +514,7 @@ class TestExtraCrowns(unittest.TestCase):
             plan = types.SimpleNamespace(set=lambda *a: None)
             with mock.patch.object(tl, 'EXTRA_CROWNS', f), \
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
-                    mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                    mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
                     mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
@@ -498,7 +552,7 @@ class TestGoogleCrowns(unittest.TestCase):
             with mock.patch.object(tl, 'GOOGLE_CROWNS', f), \
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'find_crowns', lambda g: list(detected)), \
-                    mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                    mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'surface_y', lambda w, x, z: (60, surface)), \
                     mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
@@ -668,7 +722,7 @@ class TestMappedTreeCrowns(unittest.TestCase):
         osm = types.ModuleType('osm_footprints')
         osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
-                mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
                 mock.patch('tree_lines.standing_height', lambda c, margin=0: (np.pad(ndsm, margin), 'first-return')), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'ignored_builds', lambda cell: set()), \
@@ -984,7 +1038,7 @@ class TestTerrainGround(unittest.TestCase):
         osm = types.ModuleType('osm_footprints')
         osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
-                mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
                 mock.patch('tree_lines.standing_height', lambda c, margin=0: (None, 'none')), \
                 mock.patch.object(tl, 'cell_terrain', lambda c: hm) as ct, \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \

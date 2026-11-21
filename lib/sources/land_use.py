@@ -34,6 +34,7 @@ OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodla
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 TREE_SOURCES = ('mapped', 'wood', 'lidar')
 TREE_SPECIES = ('oak', 'birch', 'dark_oak')
+TREE_COVER_MODES = ('shade',)  # trees.cover; absent/null keeps the ordinary aerial cover test (#361)
 GROUND_TEXTURE_PALETTES = ('pasture', 'meadow', 'wood')  # open grass (#319); wood floor (#348)
 GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
 WOOD_FLOOR_BLOCKS = ('podzol', 'coarse_dirt', 'moss_block')  # roll order for ground_texture.wood
@@ -112,8 +113,8 @@ def validate_table(doc: dict) -> dict:
                 raise TableError(f'{cid}: surface.path_widen {widen!r} not null or a whole number of blocks 1..{MAX_PATH_WIDEN}')
         trees = row.get('trees')
         if trees is not None:
-            if not isinstance(trees, dict) or set(trees) - {'sources', 'species_weights'}:
-                raise TableError(f'{cid}: trees must be null or a map with sources and species_weights')
+            if not isinstance(trees, dict) or set(trees) - {'sources', 'species_weights', 'cover'}:
+                raise TableError(f'{cid}: trees must be null or a map with sources, species_weights and cover')
             sources = trees.get('sources')
             if sources is not None and (not isinstance(sources, list)
                                         or any(source not in TREE_SOURCES for source in sources)
@@ -126,6 +127,9 @@ def validate_table(doc: dict) -> dict:
                                or not 0 <= w <= sys.float_info.max for w in weights.values())
                         or not 0 < sum(weights.values()) <= sys.float_info.max):
                     raise TableError(f'{cid}: trees.species_weights must map {TREE_SPECIES} to nonnegative finite weights with a positive total')
+            cover = trees.get('cover')
+            if cover is not None and cover not in TREE_COVER_MODES:
+                raise TableError(f'{cid}: trees.cover must be null or one of {TREE_COVER_MODES}')
         _validate_ground_texture(cid, row.get('ground_texture'))
         _validate_woodland_decor(cid, row.get('woodland_decor'))
         match = row['match']
@@ -270,6 +274,19 @@ def path_widen(cls: str) -> int | None:
     @returns: reach in whole blocks, or None
     """
     return (defaults(cls).get('surface') or {}).get('path_widen')
+
+
+def tree_cover(cls: str) -> str | None:
+    """Aerial cover test for this class (``trees.cover``), or None for the ordinary test.
+
+    ``shade`` is for park and rural, where sunlit meadow passes the ordinary brightness
+    ceiling and shadowed canopy fails the saturation floor. It is not a tree source.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: ``'shade'`` or None
+    """
+    cover = (defaults(cls).get('trees') or {}).get('cover')
+    return cover if cover else None
 
 
 def tree_sources(cls: str) -> tuple[str, ...] | None:

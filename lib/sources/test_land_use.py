@@ -260,6 +260,24 @@ class Table(unittest.TestCase):
         self.assertIsNone(L.path_widen('residential'))
         self.assertIsNone(L.path_widen('banana'))
 
+    def test_shipped_shade_cover_is_park_and_rural_only(self):
+        got = {cid: L.tree_cover(cid) for cid in L.CLASSES}
+        self.assertEqual({k: v for k, v in got.items() if v}, {'park': 'shade', 'rural': 'shade'})
+        self.assertIsNone(L.tree_cover('natural'))
+        self.assertIsNone(L.tree_cover('unknown'))
+        self.assertIsNone(L.tree_cover('banana'))
+
+    def test_tree_cover_is_optional_and_checked(self):
+        self.row('rural')['trees'].pop('cover')
+        L.validate_table(self.doc)
+        for good in (None, 'shade'):
+            self.row('rural')['trees']['cover'] = good
+            L.validate_table(self.doc)
+        for bad in (False, '', 'dark', 0.4, ['shade']):
+            self.row('rural')['trees']['cover'] = bad
+            with self.subTest(bad=bad), self.assertRaisesRegex(L.TableError, 'cover'):
+                L.validate_table(self.doc)
+
     def test_shipped_tree_sources_only_gate_open_land(self):
         got = {cid: L.tree_sources(cid) for cid in L.CLASSES}
         self.assertEqual({k: v for k, v in got.items() if v is not None},
