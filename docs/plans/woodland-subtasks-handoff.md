@@ -108,3 +108,30 @@ python3 scripts/ship_branch.py merge task/<id>-<slug>
 - a review keeps finding blockers after 3 rounds (leave the branch unmerged and say so);
 - a plant name for 347 is not in `config/minecraft-block-ids-26.2.txt`, or a worker needs block states the repo cannot confirm (two-block halves, `segment_amount`, `facing`);
 - anything in this file contradicts the live tracker or the project docs: follow them, and tell the owner.
+
+
+## Run status: 2026-11-21, stopped at full-suite lock gate
+
+No woodland task has been merged or archived yet. No live-world command was run.
+The orchestrator stopped after an external full-suite lock collision, as required
+above; an immediate follow-up lock probe found it free. Owner continuation is pending.
+
+- **349:** branch `task/349-lidar-crowns`, worktree `.worktrees/349-lidar-crowns`,
+  tip `79daae47a087c2ef08a65759da086cab518e43fb`. Code commit
+  `b12b0801c8371f74c1f5f3e9bbe673d2daa090e7`; synced with docs-only main.
+  75 focused tests passed; full precommit suite and provider audit passed.
+  Fresh-context read-only review: **APPROVE**. Worktree clean; ready for ship-branch.
+  Logs: `/tmp/woodland-349-focused.log`, `/tmp/woodland-349-commit.log`.
+- **347:** branch `task/347-plant-vocabulary`, worktree
+  `.worktrees/347-plant-vocabulary`. Implementation and synthetic tests are **staged,
+  uncommitted** (17 files). Focused checks across 11 modules passed. The commit hook
+  failed fast because another full suite held the common lock; no retry was made.
+  Log: `/tmp/woodland-347-commit.log`. Current-version plant states remain unverified;
+  the generic placement allowlist is unchanged. Retry the commit only after the
+  owner authorizes continuing, then sync main, run fresh review and ship-branch.
+- **348, 350, 351:** not started. Their dependency/file-serialization rules still apply.
+
+Before resuming, acquire the wave lock again and rerun the live ticket dispatch gates.
+Keep merges local (`ship_branch.py merge ... --no-push`) until the owner explicitly
+authorizes a remote destination. The unrelated pre-existing code branches
+`task/237-geofabrik-consolidation` and `task/road-labels-entity-kill` were preserved.
