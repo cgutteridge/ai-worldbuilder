@@ -136,6 +136,22 @@ class WaterLevelProfileTest(unittest.TestCase):
         out = segs([(12.0, 41.7)], min_step_length=5.0)
         self.assertEqual(out, [WL.LevelSegment(12.0, 12.0, 41)])
 
+    def test_lookup_join_uses_downstream_and_includes_final_endpoint(self):
+        profile = segs([(0, 42), (50, 40), (100, 40)])
+        for distance, level in ((0, 42), (49.9, 42), (50, 40), (75, 40), (100, 40)):
+            with self.subTest(distance=distance):
+                self.assertEqual(WL.level_at_distance(profile, distance), level)
+        self.assertEqual(WL.level_at_distance(segs([(12, 41.7)]), 12), 41)
+
+    def test_lookup_refuses_uncovered_or_nonfinite_distance(self):
+        profile = segs([(0, 42), (50, 40), (100, 40)])
+        for distance in (-1, 101, float('nan'), float('inf'), -float('inf')):
+            with self.subTest(distance=distance):
+                with self.assertRaises(ValueError):
+                    WL.level_at_distance(profile, distance)
+        with self.assertRaises(ValueError):
+            WL.level_at_distance([], 0)
+
 
 if __name__ == '__main__':
     unittest.main()
