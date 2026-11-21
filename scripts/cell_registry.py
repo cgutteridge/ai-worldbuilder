@@ -454,14 +454,14 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
     """Plan id for each candidate, keeping distinct building groups of one street apart.
 
     ``candidate_plan_id`` keys a house group by street, so two groups on one street
-    collide. Recorded ids keep their meaning: a street group takes the bare
-    ``houses_<street>`` id only when it is the sole group of that street in the batch and
-    the id is free anywhere in the registry. Otherwise it gets
-    ``houses_<street>_<lowest ref>`` (stable while the group's buildings are unchanged, so
-    re-runs and dismissals hold). An already-planned street id whose hand-off spec lists
-    every ref of the candidate still means that plan. A bare street id with no readable
-    hand-off spec is left as that id so callers can skip recording and flag ambiguity
-    (#233) rather than inventing a second plan.
+    collide. New street groups always take ``houses_<street>_<lowest ref>`` (stable while
+    the group's buildings are unchanged, so re-runs and dismissals hold). That way a plan
+    prepare just wrote is never a specless bare id that later looks like unresolved legacy,
+    and a second group on the same street can be recorded before the first has a build
+    spec (#233). An already-planned bare street id whose hand-off spec lists every ref of
+    the candidate still means that plan. A specless bare street id is not reused: the
+    candidate gets a suffixed id so callers can flag the bare plan as ambiguous legacy
+    without inventing a second claim on the same id.
 
     @param reg: registry
     @param cell: (tx, tz)
@@ -470,10 +470,6 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
     """
     bases = [candidate_plan_id(i) for i in items]
     streets = [i.get('kind') == 'houses' and bool((i.get('street') or '').strip()) for i in items]
-    group_counts: dict[str, int] = {}
-    for base, is_street in zip(bases, streets):
-        if is_street:
-            group_counts[base] = group_counts.get(base, 0) + 1
     known = feature_plan_ids(reg)
     dismissed = reg.plan_dismissed_ids(cell)
     out: list[str] = []
@@ -484,13 +480,10 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
         refs = {_norm_ref(r) for r in item['refs'] if r}
         if base in known:
             covered = planned_refs(reg.root, base)
-            split = covered is not None and not refs <= covered
-        else:
-            # A sibling ``houses_<street>_<ref>`` plan occupies the street: new groups need
-            # their own suffixed id (#233), matching the multi-group-in-batch case.
-            split = group_counts[base] > 1 or any(
-                pid.startswith(f'{base}_') for pid in known)
-        out.append(f'{base}_{min(refs)}' if split else base)
+            if covered is not None and refs <= covered:
+                out.append(base)
+                continue
+        out.append(f'{base}_{min(refs)}')
     return out
 
 
@@ -498,7 +491,8 @@ def _unresolved_legacy_house_pids(reg: CellRegistry, item: dict[str, Any], fid: 
                                   known: set[str]) -> list[str]:
     """Specless house plan ids that make this candidate an unresolved legacy match (#233).
 
-    Warns only for a real collision with this candidate: the bare street id, or a specless
+    Warns only for a real collision with this candidate: a specless bare street id this
+    candidate was not assigned (prepare did not just create it under ``fid``), or a specless
     ``houses_<street>_<ref>`` whose trailing name ref sits in the candidate's refs and is not
     merely this candidate's own assigned (already prepared) id. An unrelated prepared group on
     the same street is not legacy ambiguity.
@@ -513,7 +507,8 @@ def _unresolved_legacy_house_pids(reg: CellRegistry, item: dict[str, Any], fid: 
     base = candidate_plan_id(item)
     refs = {_norm_ref(r) for r in (item.get('refs') or ()) if r}
     out: list[str] = []
-    if base in known and planned_refs(reg.root, base) is None:
+    # Same exemption as the suffixed loop: the candidate's own assigned id is not legacy.
+    if base in known and base != fid and planned_refs(reg.root, base) is None:
         out.append(base)
     for pid in known:
         if pid == fid or not pid.startswith(f'{base}_'):

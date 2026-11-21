@@ -80,8 +80,8 @@ class PlanIdTest(unittest.TestCase):
         neighbour = (CELL[0] - 1, CELL[1])
         cid = f'{neighbour[0]},{neighbour[1]}'
         self.assertEqual(CR.record_feature_candidates(self.reg, cid, [pond, GROUP_A]),
-                         [{'id': STREET, 'label': GROUP_A['label'], 'kind': 'houses'}])
-        self.assertEqual([f.id for f in self.reg.cell(neighbour).features], [STREET])
+                         [{'id': f'{STREET}_w10', 'label': GROUP_A['label'], 'kind': 'houses'}])
+        self.assertEqual([f.id for f in self.reg.cell(neighbour).features], [f'{STREET}_w10'])
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[pond]):
             self.assertEqual(N.unplanned_footprint_candidates(self.reg, cid), [])
 
@@ -97,12 +97,13 @@ class PlanIdTest(unittest.TestCase):
         self.assertEqual(self.ids([OLD]), [STREET])
         self.assertEqual(self.record([OLD]), [])
 
-    def test_existing_ids_keep_meaning(self):
-        """A sole free street group still takes the bare street id; a street with no spec stays covered."""
-        self.assertEqual(self.ids([GROUP_A]), [STREET])
-        self.jw.seed(CELL, ground=True, features=(STREET,))   # planned, no spec to say otherwise
-        self.assertEqual(self.ids([GROUP_A]), [STREET])
-        self.assertEqual(self.record([GROUP_A]), [])
+    def test_new_street_group_takes_a_ref_suffixed_id(self):
+        """#233: prepare records houses_<street>_<ref> so a specless bare id is never prepare-made."""
+        self.assertEqual(self.ids([GROUP_A]), [f'{STREET}_w10'])
+        self.assertEqual(self.record([GROUP_A]), [f'{STREET}_w10'])
+        self.jw.seed(CELL, ground=True, features=(STREET,))   # legacy bare, no spec
+        self.assertEqual(self.ids([GROUP_B]), [f'{STREET}_w20'])
+        self.assertEqual(self.record([GROUP_B]), [])
 
     def test_two_groups_of_a_fresh_street_do_not_collide(self):
         self.assertEqual(self.ids([GROUP_A, GROUP_B]), [f'{STREET}_w10', f'{STREET}_w20'])
@@ -185,7 +186,7 @@ class PlanIdTest(unittest.TestCase):
         """#233: a bare street plan with no recoverable refs is neither assumed covered nor re-planned."""
         neighbour = (CELL[0] - 1, CELL[1])
         self.reg.change(Note(neighbour, 'plan_feature', 'legacy', STREET))
-        self.assertEqual(self.ids([GROUP_A]), [STREET])
+        self.assertEqual(self.ids([GROUP_A]), [f'{STREET}_w10'])
         self.assertEqual(self.record([GROUP_A]), [])
         self.assertEqual([f.id for f in self.reg.cell(CELL).features], [])
         self.assertEqual(CR.record_feature_candidates(self.reg, f'{neighbour[0]},{neighbour[1]}',
@@ -225,6 +226,16 @@ class PlanIdTest(unittest.TestCase):
             json.dumps({'name': plan, 'ways': {'10': 'A', '11': 'B', '12': 'C'}}))
         self.assertEqual(self.record([GROUP_A, GROUP_B]), [f'{STREET}_w20'])
         self.assertEqual(self.record([GROUP_A, GROUP_B]), [])
+
+    def test_prepare_then_repeat_then_add_second_group(self):
+        """#233: prepare A, prepare again (stable, no legacy warn), then add B without A's build spec."""
+        self.assertEqual(self.record([GROUP_A]), [f'{STREET}_w10'])
+        self.assertEqual(self.record([GROUP_A]), [])
+        self.assertEqual(CR.ambiguous_legacy_house_plans(self.reg, CELL, [GROUP_A]), [])
+        self.assertEqual(self.record([GROUP_A, GROUP_B]), [f'{STREET}_w20'])
+        self.assertEqual(CR.ambiguous_legacy_house_plans(self.reg, CELL, [GROUP_A, GROUP_B]), [])
+        self.assertEqual({f.id for f in self.reg.cell(CELL).features},
+                         {f'{STREET}_w10', f'{STREET}_w20'})
 
 
 if __name__ == '__main__':
