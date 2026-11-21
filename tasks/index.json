@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 343,
+  "nextTaskId": 344,
   "tasks": [
     
     {
@@ -22,15 +22,7 @@
       "blockedBy": [],
       "notes": "OWNER DECISION 2026-11-21: prepare skips buildings already covered by an existing plan, matching recorded building/map references rather than street name alone. If a group is partly covered, propose only the missing buildings. For legacy plans without usable specifications, recover references from reliable records where possible; otherwise flag the ambiguity for review without silently assuming coverage or creating another plan. Repeated prepare runs must remain stable while allowing genuinely new buildings to be added. Check: a spec-backed plan under a different id prevents a duplicate; a partly covered house group proposes only uncovered refs; two groups sharing a street name remain distinct; an unresolved legacy match is reported for review and causes neither silent coverage nor a duplicate plan; repeat prepare records no additional plans for unchanged inputs. Original report: on 53,-42 repeated prepare --apply added houses_brickfield_road for the same 6 houses already planned as houses_brickfield_road_w176633174, with an ambiguous legacy plan warning. A duplicate bare houses_kitchener_road id from the 2026-10-29 build in row -43 also showed planned in 53,-42. Both duplicates were dismissed with dismiss-feature. Follow the shared reference-matching work in #293 and partial-group coverage in #328; house groups are currently excluded from those coverage checks."
     , "requiresClaude": false},
-    {
-      "id": 234,
-      "title": "Feature builds across a cell edge silently invalidate a finished neighbour and may generate ghost cells",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "OWNER DECISIONS 2026-11-21 (unblocked): (1) No warn or confirm: an apply that reaches into a finished neighbour just proceeds. (2) Keep frontier ghost generation on feature applies (agent observation, not a request to change it: one West reapply generated 102 ghost cells over about 2.5 hours, and one cell's first write landed nothing, 621,280 readback mismatches, until cell_registry reconcile --fix re-applied it). (3) Define fringe by what crosses the boundary: roof or eaves extending beyond the feature's ground footprint are harmless fringe and leave the neighbour's trees/decor completion flags intact. The actual ground footprint, foundations or ground-level changes entering the neighbour are substantive overlap and still mark its trees/decor stale. There is no fixed distance allowance; the recorded five-block overhang is a test case, not a universal cutoff. Deliverable: apply this distinction in the invalidation step. Check: a roof/eaves-only overhang into a finished neighbour leaves its trees/decor flags intact, including the recorded five-block case; actual footprint/foundation/ground-level overlap still invalidates them; classification follows geometry rather than a distance threshold. Task 321 shares this edge policy and is no longer held by it. Original report: applying houses_kitchener_road_w176634502 (footprint z -5382..-5343) reached 5 blocks into finished cell 53,-43 and marked its trees/decor stale (trees=False, decor=False). An earlier apply also generated a lidar ghost cell at 56,-40 (230k blocks, ghost-ground journal seq 620) that the user did not ask for. All policy choices for this task are now recorded."
-    , "requiresClaude": false},
+    
     {
       "id": 237,
       "title": "Consolidate Geofabrik extraction while preserving world-provider workflows",
@@ -171,6 +163,15 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "Owner request 2026-11-21: add a requiresClaude boolean, assess it on task creation and scope updates, and honour it in single-task, parallel and unattended dispatch. Flag existing tasks whose work includes build steps or representative build trials. Cursor is eligible with Claude access and confirmed external-model budget. Missing model access or unknown/exhausted budget leaves the task pending; never silently substitute another family. Build trials use normal build model/effort and record tokens/time. Pure tool engineering uses the normal model policy. Deliver CLI validation and dispatch checks, project workflow instructions, synthetic regression tests and active-task classification. No place build is required to implement this policy."
-    , "requiresClaude": false}
+    , "requiresClaude": false},
+    {
+      "id": 343,
+      "title": "Speed up neighbour ownership lookup so layer planning does not rebuild journal ownership per cell",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Profile 2026-11-21 (read-only dry run of trees_layer on 87,-48 under cProfile, current code with #315): 85 s total, planning_inputs 52.9 s, of which ground_layer.neighbour_owned 36 s. cell_journal._cell_owners (called 15 times, 47 s cumulative) rebuilds ownership per cell from the journal; with builds excluded the result is not cacheable, so each call replays every build blob (about 9 million block_id and _cell_of calls). Cost scales with journal history and neighbouring cells, not with tree count. Deliverable: neighbour_owned and the exclude path of _cell_owners cost a small fraction of today's time on the same cell with identical ownership results (compare owned and owners outputs before and after, including ghost and ground-supersedes-ghost behaviour); generic for every layer that calls it, not trees only. Check: re-profile trees dry run on 87,-48 (baseline 85 s total, 36 s in neighbour_owned) and report the new figures. Context: #318 timing evidence; the live apply stage timings are still to be measured there."
+    }
   ]
 }
