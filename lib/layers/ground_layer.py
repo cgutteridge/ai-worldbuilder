@@ -15,6 +15,9 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
   WHAT BLOCK?             One palette, from CRAFTSMANSHIP §3a: tarmac gray_concrete (centre dashes
                           white_concrete, public-road edge smooth_stone), light paving
                           light_gray_concrete, brick paving polished_granite, grass grass_block.
+                          Mapped wood and forest may replace that grass with the class woodland
+                          floor (podzol, coarse dirt, moss) at the same lidar height, keeping grass
+                          within the configured reach of the polygon edge (#348).
 
 Then, per §10: the top block becomes the surface block, dirt fills beneath it down to solid
 ground (never just down to a live top that itself floats over air; a plan whose surface would
@@ -93,6 +96,13 @@ LAWN_TAGS = frozenset({
     ('leisure', 'garden'),
     ('leisure', 'playground'),
 })
+# Woodland floor (#348): these tags take ground_texture.wood. Scrub stays pasture unless that
+# palette sets scrub true. Shares and the grass-edge reach live in the config, not here.
+WOOD_FLOOR_TAGS = frozenset({
+    ('natural', 'wood'),
+    ('landuse', 'forest'),
+})
+SCRUB_TAG = ('natural', 'scrub')
 TEXTURE_RADIUS = 8          # local brightness spread for aerial variance (#319 prototype)
 BARE_DIRT = ('coarse_dirt', 'rooted_dirt')
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
@@ -1088,6 +1098,102 @@ def rough_grass_columns(cell: tuple[int, int], idx, classes: dict | None = None)
     return out
 
 
+def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> tuple[dict, set]:
+    """``({column: class id}, wood mask)`` for the woodland floor (#348).
+
+    Wood is ``natural=wood`` or ``landuse=forest``. A column is eligible when its land-use class
+    ships ``ground_texture.wood``, it is not a lawn, and a meadow or pasture tag does not already
+    claim it (#319 stays on those columns). ``natural=scrub`` stays on the pasture palette unless
+    that class's wood palette sets ``scrub`` true, in which case the floor takes the column.
+    The mask is every wood column (and opted-in scrub), including the scan margin, so the edge
+    test sees the polygon rather than the cell border. The grass rim itself is applied later
+    from the class ``edge`` reach.
+
+    @param cell: ``(tx, tz)``
+    @param idx: ``OSMIndex``
+    @param classes: ``coverage.area_classes`` result when the caller already has it
+    @returns: eligible columns (empty when no class ships a wood palette) and the wood mask
+    """
+    import land_use
+    from coverage import scan_polygon
+    from osm_footprints import osm_tags
+
+    if classes is None:
+        from coverage import area_classes
+        classes = area_classes(idx, cell_box(cell, MARGIN))
+    wood_rules = {}
+    for cid in land_use.CLASSES:
+        texture = land_use.ground_texture(cid) or {}
+        rule = texture.get('wood') if isinstance(texture, dict) else None
+        if isinstance(rule, dict):
+            wood_rules[cid] = rule
+    if not wood_rules:
+        return {}, set()
+    reach = max(int(rule['edge']) for rule in wood_rules.values())
+    bbox = cell_box(cell, max(MARGIN, reach))
+    lawn: set = set()
+    claimed: set = set()
+    wood: set = set()
+    scrub: set = set()
+    for rings, props in getattr(idx, 'areas', ()) or ():
+        tags = osm_tags(props)
+        pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
+        is_lawn = any(pair in LAWN_TAGS for pair in pairs)
+        is_wood = any(pair in WOOD_FLOOR_TAGS for pair in pairs)
+        is_scrub = SCRUB_TAG in pairs
+        is_claimed = any(pair != SCRUB_TAG and pair in ROUGH_GRASS_TAGS for pair in pairs)
+        if not (is_lawn or is_wood or is_scrub or is_claimed):
+            continue
+        cols = set(scan_polygon(rings, bbox))
+        if is_lawn:
+            lawn.update(cols)
+            continue
+        if is_wood:
+            wood.update(cols)
+        if is_scrub:
+            scrub.update(cols)
+        if is_claimed:
+            claimed.update(cols)
+    wood -= lawn
+    scrub -= lawn
+    claimed -= lawn
+    mask = set(wood)
+    eligible = {}
+    for q in wood:
+        if q in claimed:
+            continue
+        hit = classes.get(q)
+        if hit and hit[0] in wood_rules:
+            eligible[q] = hit[0]
+    for q in scrub:
+        if q in wood or q in claimed:
+            continue
+        hit = classes.get(q)
+        if not hit or hit[0] not in wood_rules or not wood_rules[hit[0]].get('scrub'):
+            continue
+        mask.add(q)
+        eligible[q] = hit[0]
+    return eligible, mask
+
+
+def _wood_floor_edge(q: tuple[int, int], mask: set, reach: int) -> bool:
+    """True when ``q`` is within ``reach`` columns (Chebyshev) of a column outside ``mask``.
+
+    @param q: column
+    @param mask: wood polygon columns, including those outside the cell
+    @param reach: grass rim in columns; 0 keeps no rim
+    @returns: whether the column keeps grass as polygon edge
+    """
+    if reach <= 0:
+        return False
+    x, z = q
+    for dx in range(-reach, reach + 1):
+        for dz in range(-reach, reach + 1):
+            if (x + dx, z + dz) not in mask:
+                return True
+    return False
+
+
 def aerial_texture_field(rgb: dict, columns, *, radius: int = TEXTURE_RADIUS) -> dict:
     """Per-column aerial texture score and pale/brown flag from local brightness spread (#319).
 
@@ -1185,7 +1291,8 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
     for q in sorted(candidates):
         name = candidates[q]
         rule = rules.get(name)
-        if not rule:
+        # Wood floor is a different palette (#348); only open-grass rules place tufts here.
+        if not rule or 'bare' not in rule:
             continue
         x, z = q
         gy = ys[q]
@@ -1264,6 +1371,92 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
                 'palette': 'meadow', 'label': 'ground texture flower (#319)',
                 'provenance': prov.provenance_record(source='inference', confidence='low'),
             })
+    return report
+
+
+def plan_woodland_floor(plan: Plan, world: World, cell: tuple[int, int], ys: dict, kind: dict,
+                        columns: dict, mask: set, *, masked=(), owned=(), clear=(),
+                        barriers=()) -> dict:
+    """Replace the grass surface with the woodland floor mix at lidar height (#348).
+
+    ``columns`` is ``{column: class id}`` from :func:`woodland_floor_columns` (the rim included).
+    Columns within the class ``edge`` reach of a column outside ``mask`` keep grass. Interior
+    columns take ``podzol``, ``coarse_dirt`` and ``moss_block`` at the configured shares; the
+    rest keep grass. Nothing is written at any other Y, and no plant is placed. Skips columns
+    that are not grass, plus footprints, routes, tree and decor masks, feature and neighbour
+    columns, and barriers. Seeded per cell and column so a rerun matches. Counts land in the
+    ground report.
+
+    @param plan: ground plan under construction; the grass surface is already set
+    @param world: live world reader
+    @param cell: ``(tx, tz)`` for seeds
+    @param ys: surface Y per column (lidar height); not modified
+    @param kind: surface kind per column (only ``grass`` is eligible)
+    @param columns: eligible ``{column: class id}``
+    @param mask: wood polygon columns used for the edge test
+    @param masked: tree/decor mask positions
+    @param owned: feature and neighbour owned positions
+    @param clear: reserved route, opening and footprint columns
+    @param barriers: hedge/wall/fence columns
+    @returns: per-block counts (``edge`` is the grass rim) and item rows for replaced blocks
+    """
+    import land_use
+    import provenance as prov
+
+    report = {'podzol': 0, 'coarse_dirt': 0, 'moss_block': 0, 'grass': 0,
+              'edge': 0, 'skipped': 0, 'items': []}
+    if not columns:
+        return report
+    tx, tz = cell
+    protected = set(masked) | set(owned)
+    blocked = set(clear) | {(x, z) for x, _y, z in protected} | set(barriers)
+    rules = {}
+
+    def block(p):
+        return plan.cells[p] if p in plan.cells else world.block(*p)
+
+    def is_grass_top(p):
+        name = bare(block(p) or '')
+        return name in ('grass_block', 'minecraft:grass_block')
+
+    for q in sorted(columns):
+        if q not in ys or q not in kind or kind[q] != 'grass' or q not in mask or q in blocked:
+            report['skipped'] += 1
+            continue
+        x, z = q
+        gy = ys[q]
+        top = (x, gy, z)
+        if top in protected or not is_grass_top(top):
+            report['skipped'] += 1
+            continue
+        cid = columns[q]
+        if cid not in rules:
+            rules[cid] = (land_use.ground_texture(cid) or {}).get('wood')
+        rule = rules[cid]
+        if not rule:
+            report['skipped'] += 1
+            continue
+        if _wood_floor_edge(q, mask, int(rule['edge'])):
+            report['edge'] += 1
+            continue
+        roll = random.Random(f'woodland_floor:{tx}:{tz}:{x}:{z}').random()
+        cursor = 0.0
+        chosen = None
+        for name in land_use.WOOD_FLOOR_BLOCKS:
+            cursor += rule[name]
+            if roll < cursor:
+                chosen = name
+                break
+        if chosen is None:
+            report['grass'] += 1
+            continue
+        plan.set(x, gy, z, chosen)
+        report[chosen] += 1
+        report['items'].append({
+            'kind': chosen, 'position': [x, gy, z], 'block': chosen,
+            'palette': 'wood', 'label': 'woodland floor (#348)',
+            'provenance': prov.provenance_record(source='inference', confidence='low'),
+        })
     return report
 
 
@@ -1636,6 +1829,19 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
             from coverage import area_classes
             classes = area_classes(idx, cell_box(cell, MARGIN))
         texture_palettes = rough_grass_columns(cell, idx, classes)
+    if 'woodland_floor' in ev:
+        floor_columns, floor_mask = ev['woodland_floor']
+    elif not getattr(idx, 'areas', None):
+        floor_columns, floor_mask = {}, set()
+    else:
+        if classes is None:
+            from coverage import area_classes
+            classes = area_classes(idx, cell_box(cell, MARGIN))
+        floor_columns, floor_mask = woodland_floor_columns(cell, idx, classes)
+    # Opted-in scrub leaves the pasture palette; meadow, pasture and lawn columns are not in
+    # floor_columns, so their #319 placement is unchanged.
+    if floor_columns:
+        texture_palettes = {q: name for q, name in texture_palettes.items() if q not in floor_columns}
     stats['ground_texture'] = plan_ground_texture(
         plan, world, cell, ys, kind, rgb, texture_palettes,
         masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
@@ -1643,6 +1849,9 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     stats['texture_tall_grass'] = stats['ground_texture']['tall_grass']
     stats['texture_bare'] = stats['ground_texture']['bare']
     stats['texture_flowers'] = stats['ground_texture']['flowers']
+    stats['woodland_floor'] = plan_woodland_floor(
+        plan, world, cell, ys, kind, floor_columns, floor_mask,
+        masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
     stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live},  # #296 guard
                                               floors=buried)
     return stats, conflicts, kind, skipped
@@ -1716,6 +1925,10 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  ground texture: tufts {stats["texture_tufts"]}, tall grass {stats["texture_tall_grass"]}, '
           f'bare {stats["texture_bare"]}, flowers {stats["texture_flowers"]} '
           '(#319; see ground_texture report)')
+    floor = stats['woodland_floor']
+    print(f'  woodland floor: podzol {floor["podzol"]}, coarse dirt {floor["coarse_dirt"]}, '
+          f'moss {floor["moss_block"]}, grass kept {floor["grass"]}, edge {floor["edge"]} '
+          '(#348; see woodland_floor report)')
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')
     for pos, want, why in conflicts[:10]:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')

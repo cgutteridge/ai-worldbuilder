@@ -319,11 +319,14 @@ class Table(unittest.TestCase):
     def test_shipped_ground_texture_only_on_open_land(self):
         got = {cid: L.ground_texture(cid) for cid in L.CLASSES}
         for cid in ('park', 'rural', 'natural'):
-            self.assertEqual(set(got[cid]), {'pasture', 'meadow'})
+            self.assertEqual(set(got[cid]), {'pasture', 'meadow', 'wood'})
             self.assertEqual(got[cid]['pasture']['tufts'], [0.08, 0.30])
             self.assertEqual(got[cid]['meadow']['flowers']['kinds'],
                              ['oxeye_daisy', 'cornflower', 'dandelion'])
             self.assertIsNone(got[cid]['pasture']['flowers'])
+            self.assertEqual(got[cid]['wood'], {
+                'podzol': 0.30, 'coarse_dirt': 0.10, 'moss_block': 0.08,
+                'edge': 2, 'scrub': False})
         self.assertIsNone(got['residential'])
         self.assertIsNone(L.ground_texture('banana'))
 
@@ -335,7 +338,9 @@ class Table(unittest.TestCase):
                             'bare': True, 'flowers': None},
                 'meadow': {'tufts': [0, 1], 'tall_grass': [0, 0], 'bare': False,
                            'flowers': good_flowers}}
-        for value in (None, {}, {'pasture': good['pasture']}, good):
+        wood = {'podzol': 0.30, 'coarse_dirt': 0.10, 'moss_block': 0.08, 'edge': 2, 'scrub': False}
+        for value in (None, {}, {'pasture': good['pasture']}, good, {'wood': wood},
+                      dict(good, wood=wood)):
             self.row('park')['ground_texture'] = value
             L.validate_table(self.doc)
         for bad in (False, [], {'woodland': good['pasture']},
@@ -343,7 +348,12 @@ class Table(unittest.TestCase):
                     {'pasture': dict(good['pasture'], tufts=[0.3, 0.08])},
                     {'pasture': dict(good['pasture'], bare='yes')},
                     {'meadow': dict(good['meadow'], flowers={'share': 0.1, 'kinds': ['poppy']})},
-                    {'meadow': dict(good['meadow'], flowers={'share': 0.015, 'kinds': ['stone']})}):
+                    {'meadow': dict(good['meadow'], flowers={'share': 0.015, 'kinds': ['stone']})},
+                    {'wood': dict(wood, podzol=0.9)},
+                    {'wood': dict(wood, edge=9)},
+                    {'wood': dict(wood, edge=True)},
+                    {'wood': dict(wood, scrub='yes')},
+                    {'wood': {k: v for k, v in wood.items() if k != 'scrub'}}):
             self.row('park')['ground_texture'] = bad
             with self.assertRaisesRegex(L.TableError, 'ground_texture'):
                 L.validate_table(self.doc)
