@@ -18,6 +18,9 @@ from cell_readiness import ReadinessPolicy, content_id, describe_blockers
 WHOLE = (-10**9, -10**9, 10**9, 10**9)
 _CLIP_SUFFIXES = ('.json', '.jsonl', '.geojson', '.png')
 _TERRAIN_SUFFIXES = ('.tif', '.tiff', '.asc')
+# Cell-scoped map extracts (handled by cell_map_inputs); everything else under
+# reference/ is shared planning evidence (decor, trees, buildings, portals, …).
+_MAP_CLIP_DIRNAMES = frozenset({'vector_map', 'osm'})
 
 
 def _touches_cell(rings, cell):
@@ -90,12 +93,31 @@ class LocalEvidence:
         return self._file_ids[path]
 
     def settings_revision(self):
-        """Shared settings that every cell's plans depend on (world frame, palette, land-use)."""
+        """Shared settings and reference evidence every cell's plans depend on.
+
+        Hashes ``config/`` plus shared ``reference/`` inputs (decor furniture, tree
+        crowns, buildings, portals, TPO, aerial sheets, …). Cell-scoped map clip
+        trees (``reference/vector_map`` and legacy ``reference/osm``) are omitted
+        here and audited per cell by :meth:`cell_map_inputs` so a neighbour prepare
+        does not invalidate this cell (task 232).
+        """
         if self._settings is None:
-            root = self.root / 'config'
-            paths = sorted(p for p in root.rglob('*')
-                           if p.is_file() and p.suffix.lower() in _CLIP_SUFFIXES) if root.is_dir() else []
-            self._settings = content_id([(str(p.relative_to(self.root)), self.file_id(p)) for p in paths])
+            rows = []
+            config = self.root / 'config'
+            if config.is_dir():
+                rows.extend((str(p.relative_to(self.root)), self.file_id(p))
+                            for p in sorted(config.rglob('*'))
+                            if p.is_file() and p.suffix.lower() in _CLIP_SUFFIXES)
+            reference = self.root / 'reference'
+            if reference.is_dir():
+                for path in sorted(reference.rglob('*')):
+                    if not path.is_file() or path.suffix.lower() not in _CLIP_SUFFIXES:
+                        continue
+                    rel = path.relative_to(reference)
+                    if rel.parts and rel.parts[0] in _MAP_CLIP_DIRNAMES:
+                        continue
+                    rows.append((str(path.relative_to(self.root)), self.file_id(path)))
+            self._settings = content_id(rows)
         return self._settings
 
     def source_revision(self):

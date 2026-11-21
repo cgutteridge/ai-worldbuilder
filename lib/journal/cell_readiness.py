@@ -438,6 +438,33 @@ class ReadinessPolicy:
                 {'revision': evidence_identity(parts), 'revision_parts': parts, 'policy': POLICY_VERSION})))
         return self.check(cell, neighbour=True)
 
+    def _plan_stamp_cells(self, build, primary, required):
+        """Cells whose evidence/journal identity the plan stamped.
+
+        Feature re-apply enlarges ``touched`` with the previous build's cells so undo
+        and flight cover overhang that the new plan no longer writes. Identity
+        comparison must still use the plan's own stamp (``Plan._input_cells`` or the
+        new geometry), otherwise a smaller re-apply is refused as stale forever
+        (task 232). Trees keep the readiness scope (trunk + non-leaf writes), not
+        leaf-only neighbour cells.
+
+        @param build: the ``Build`` about to begin
+        @param primary: owning ``(tx, tz)``
+        @param required: cells that readiness already checked for this apply
+        @returns: sorted list of ``(tx, tz)`` cells for stamp comparison
+        """
+        payload = build.payload
+        stamped = getattr(payload, '_input_cells', None) if payload is not None else None
+        if stamped is not None:
+            return sorted({tuple(c) for c in stamped})
+        if build.pass_ == 'trees':
+            return sorted(required)
+        import cellmath
+        cells = {tuple(primary)}
+        if build.cells:
+            cells |= {cellmath.cell_of(x, z, self.reg.cell_size) for x, _y, z in build.cells}
+        return sorted(cells)
+
     def enforce(self, build, touched):
         """Guard readiness before begin; tree leaf overhang needs only its owning cell ready.
 
@@ -502,7 +529,16 @@ class ReadinessPolicy:
         if self.require_plan_identity and not expected:
             raise Refused('plan has no evidence identity; construct Plan against current inputs '
                           'or supply Build.meta evidence_revision from check source_revision')
-        evidence_now = [r.get('source_revision', r['evidence_revision']) for r in reports]
+        # Compare identities against the plan stamp's cells, not previous.cells on re-apply.
+        stamp_cells = self._plan_stamp_cells(build, primary, required) or sorted(required)
+        report_by_cell = {tuple(map(int, r['cell'].split(','))): r for r in reports}
+        evidence_now = []
+        for cell in stamp_cells:
+            report = report_by_cell.get(cell)
+            if report is None:
+                evidence_now.append(self.evidence.facts(cell)['revision'])
+            else:
+                evidence_now.append(report.get('source_revision', report['evidence_revision']))
         evidence_id = evidence_now[0] if len(evidence_now) == 1 else content_id(evidence_now)
         if expected and expected != evidence_id:
             # Legacy Plan(name) (no cell list) stamps whole-world source_revision(); accept
@@ -516,7 +552,7 @@ class ReadinessPolicy:
         if self.require_plan_identity and not expected_journal:
             raise Refused('plan has no journal identity; construct Plan against current inputs '
                           'or supply Build.meta journal_revision from check')
-        journal_now = self.reg.planning_revision(sorted(required))
+        journal_now = self.reg.planning_revision(stamp_cells)
         if expected_journal and expected_journal != journal_now:
             if expected_journal != self.reg.planning_revision():
                 raise Refused('stale plan: journal geometry or planning assumptions changed; re-plan')

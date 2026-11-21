@@ -1120,6 +1120,66 @@ class ReadinessTest(unittest.TestCase):
             Build('hand', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
         self.assertEqual(receipt.status, 'landed')
 
+    def test_feature_reapply_with_smaller_footprint_is_not_stale_forever(self):
+        """Task 232: re-apply that drops neighbour overhang must not refuse against previous.cells."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        other = root / 'reference' / 'vector_map' / 'prepared-1-0'
+        other.mkdir(parents=True)
+        (other / 'buildings+highways-cell-128-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hall', 'hall'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        policy.validate_evidence((1, 0))
+        wide = site_kit.Plan('hall', input_cells=[(0, 0)])
+        wide.set(120, 61, 5, 'bricks')
+        wide.set(130, 61, 5, 'bricks')  # overhang into (1, 0)
+        wide.capture_inputs()
+        self.assertEqual(set(wide._input_cells), {(0, 0), (1, 0)})
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(
+            self.world.reg.change(Build('hall', 'feature', wide.cells, cell=(0, 0), payload=wide),
+                                  self.world.apply).status,
+            'landed')
+        # Fresh plan with a smaller footprint; re-apply still touches previous.cells for undo.
+        narrow = site_kit.Plan('hall', input_cells=[(0, 0)])
+        narrow.set(120, 61, 5, 'bricks')
+        narrow.capture_inputs()
+        self.assertEqual(set(narrow._input_cells), {(0, 0)})
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('hall', 'feature', narrow.cells, cell=(0, 0), payload=narrow, modifies=('hall',)),
+            self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_shared_reference_evidence_change_refuses_old_plan(self):
+        """Task 232: non-clip reference (decor/trees/…) must still stale scoped plan stamps."""
+        import site_kit
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        decor = root / 'reference' / 'decor-furniture.json'
+        decor.write_text('{"items":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('ground', input_cells=[(0, 0)])
+        plan.set(5, 60, 5, 'grass_block')
+        plan.capture_inputs()
+        decor.write_text('{"items":[],"rev":2}')
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.assertIn('validation stale (evidence facts changed)', policy.check((0, 0))['blockers'])
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', plan.cells, cell=(0, 0), payload=plan))
+
 
 from journal_testkit import FakePaced, LiveApplyCase
 
