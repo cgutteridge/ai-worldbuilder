@@ -151,15 +151,7 @@
       "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
     },
     
-    {
-      "id": 328,
-      "title": "Group touching non-house buildings into one feature candidate",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
     
     
     

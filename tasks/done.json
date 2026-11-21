@@ -2927,5 +2927,15 @@
       "blockedBy": [],
       "notes": "Owner: the 'church' on the high street was an old bingo hall with a big facade, steps and a permanent awning; street view would have shown it. Tier A is owner-nominated in docs/plans/vibe-at-scale.md section 2. Deliverable: propose-features flags church, cathedral, chapel, cinema and shopping-centre candidates as landmark; apply refuses until a street-level image source is recorded (cell_sources.py --record), with a reasoned override flag; document in rules/building-review.md. Generic wording: an image source the owner supplies, never a vendor. Check: a flagged candidate refuses with the command to run; a test covers both paths. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at c2708afa64bc1c28ec18e8c4cb3f605daa68ae3e: Landmark propose-features flagging (church/cathedral/chapel/cinema/shop=mall) and feature_build refuse until street-level cell_sources --record or --landmark-override; building-review.md updated.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 328,
+      "title": "Group touching non-house buildings into one feature candidate",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at b97a2eed2b285584f136e6d45aa163043ece05fe: Same-tag non-house footprints with gap<=1 become kind group (plan id min ref); cross-cell once under lead home; partial plans leave uncovered refs proposable. Merged with #335 landmark fields on _building_item.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
