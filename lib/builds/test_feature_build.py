@@ -3158,6 +3158,101 @@ class DetailsBuildTest(unittest.TestCase):
         self.assertIn('glass', builder.p.cells[(13, 56, 21)])
 
 
+class PvArraysTest(unittest.TestCase):
+    """Seam: roofs[label].pv_arrays -> daylight_detector rows on the finished flat roof."""
+
+    def setUp(self):
+        self.cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+
+    def spec(self, arrays, **roof):
+        return {
+            'name': 'unit_pv',
+            'ways': {'99': 'A'},
+            'storeys': {'A': 2},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone', 'pv_arrays': arrays, **roof}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [],
+            'floor_min': 50,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'facade_plan': _glazing_plan({}),
+        }
+
+    def build(self, arrays, **roof):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            plan = F.build(self.spec(arrays, **roof), footprints={'A': self.cells}, world=_StoneWorld())
+        return plan, out.getvalue()
+
+    def detectors(self, plan):
+        return {q for q, s in plan.cells.items() if 'daylight_detector' in s}
+
+    def test_rows_along_x_every_pitch_sit_on_a_solid_roof_block(self):
+        row = {'box': [11, 21, 16, 23], 'rows': 'x', 'pitch': 2, 'source': 'aerial PV'}
+        plan, out = self.build([row])
+        # Flat membrane at floor + 2 * STOREY_H = 56; detectors one above.
+        want = {(x, 57, z) for x in range(11, 17) for z in (21, 23)}
+        self.assertEqual(self.detectors(plan), want)
+        for x, _, z in want:
+            self.assertEqual(plan.cells[(x, 56, z)], 'minecraft:smooth_stone')
+        self.assertIn('smooth_stone_slab', plan.cells[(12, 56, 22)])
+        self.assertIn('pv_array A box (11,21)..(16,23) rows=x pitch=2 detectors=12 clipped=0 source=aerial PV', out)
+
+    def test_rows_along_z_with_pitch_three(self):
+        row = {'box': [10, 20, 16, 24], 'rows': 'z', 'pitch': 3, 'source': 'aerial PV'}
+        plan, _ = self.build([row])
+        self.assertEqual(self.detectors(plan), {(x, 57, z) for x in (10, 13, 16) for z in range(20, 25)})
+
+    def test_pitch_defaults_to_two(self):
+        plan, _ = self.build([{'box': [11, 21, 11, 24], 'rows': 'z', 'source': 'aerial PV'}])
+        self.assertEqual(len(self.detectors(plan)), 4)
+
+    def test_columns_off_the_footprint_are_clipped_and_reported(self):
+        row = {'box': [15, 21, 19, 21], 'rows': 'x', 'pitch': 2, 'source': 'aerial PV'}
+        plan, out = self.build([row], edge={'block': 'gray_concrete', 'where': 'outer'})
+        self.assertEqual(self.detectors(plan), {(x, 57, 21) for x in (15, 16, 17)})
+        self.assertIn('detectors=3 clipped=2', out)
+
+    def test_detail_on_the_roof_wins_over_a_detector(self):
+        spec = self.spec([{'box': [11, 21, 16, 21], 'rows': 'x', 'pitch': 2, 'source': 'aerial PV'}])
+        spec['details'] = {'A': [{'kind': 'vent', 'at': [12, 57, 21], 'size': [1, 1, 1], 'source': 'aerial vent'}]}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        self.assertEqual(plan.cells[(12, 57, 21)], 'minecraft:gray_concrete')
+        self.assertNotIn((12, 57, 21), self.detectors(plan))
+        self.assertEqual(len(self.detectors(plan)), 5)
+
+    def test_load_spec_validates_pv_arrays(self):
+        good = {'box': [11, 21, 16, 23], 'rows': 'x', 'pitch': 2, 'source': 'aerial PV'}
+        bad = [
+            ({**good, 'rows': 'y'}, 'rows'),
+            ({**good, 'pitch': 0}, 'pitch'),
+            ({**good, 'pitch': True}, 'pitch'),
+            ({**good, 'source': ' '}, 'source'),
+            ({**good, 'box': [11, 21, 16]}, 'box'),
+            ({**good, 'box': [16, 21, 11, 23]}, 'box'),
+            ({**good, 'colour': 'blue'}, 'unknown'),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'pv.json'
+            path.write_text(json.dumps(self.spec([good])))
+            self.assertEqual(F.load_spec(path)['roofs']['A']['pv_arrays'][0]['pitch'], 2)
+            for row, msg in bad:
+                with self.subTest(row=row):
+                    path.write_text(json.dumps(self.spec([row])))
+                    with self.assertRaisesRegex(SystemExit, msg):
+                        F.load_spec(path)
+            spec = self.spec([good])
+            spec['roofs']['A']['kind'] = 'pitched'
+            path.write_text(json.dumps(spec))
+            with self.assertRaisesRegex(SystemExit, 'flat'):
+                F.load_spec(path)
+
+
 class BlockFamilyVariantsTest(unittest.TestCase):
     """Seam: block_family_variants exposes full/slab/stairs without cross-mat swaps."""
 

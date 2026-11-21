@@ -14,7 +14,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>",
                    "edge"?: {"block": "<mat>", "where": "outer"|"all"},
                    "zone_materials"?: {"<level_m_AOD>": "<mat>", ...},
-                   "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...]}]}}
+                   "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...]}],
+                   "pv_arrays"?: [{"box": [x0, z0, x1, z1], "rows": "x"|"z",
+                                   "pitch"?: <int >= 1, default 2>, "source": "<evidence>"}]}}
                  Absent edge = no roof edging. Present: block is the parapet /
                  coping mat; where "outer" skips zone steps, "all" edges every
                  step. Flat-roof overhang fringe only when edge is set.
@@ -28,6 +30,12 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  (roof_material.py, config/roof-materials.json). Lidar
                  flattening is a separate step. A missing triad falls back to
                  the full block and is listed, not rewritten.
+                 Flat roofs may set pv_arrays (from ``scripts/roof_aerial.py``):
+                 inclusive box, rows running along x or z, one daylight_detector
+                 row every ``pitch`` blocks across the rows. Detectors sit on the
+                 finished deck (the slab under each becomes a full roof block),
+                 only on owned columns at the array's commonest deck height, and
+                 never over a detail; skipped columns are reported as clipped.
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
   wall / floor   wall and interior floor materials (defaults bricks / smooth_stone)
   floor_min      minimum floor y or null
@@ -1328,6 +1336,7 @@ def load_spec(path) -> dict:
             raise SystemExit(f'{path}: roofs[{lab}] needs {{kind: flat|pitched, material: ...}}')
         _validate_roof_edge(path, lab, roof)
         _validate_zone_materials(path, lab, roof)
+        _validate_pv_arrays(path, lab, roof)
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
@@ -1415,6 +1424,48 @@ def _validate_zone_materials(path, lab: str, roof: dict) -> None:
             raise SystemExit(
                 f'{path}: roofs[{lab}].zone_materials[{key!r}] must be a non-empty material name'
             )
+
+
+PV_ARRAY_KEYS = frozenset({'box', 'rows', 'pitch', 'source'})
+PV_DETECTOR = 'daylight_detector[inverted=false,power=0]'
+
+
+def _validate_pv_arrays(path, lab: str, roof: dict) -> None:
+    """Validate optional flat-roof ``pv_arrays`` rows; fill the default pitch.
+
+    @param path: spec path (for error text)
+    @param lab: roof label
+    @param roof: roofs[lab] dict (rows gain ``pitch`` 2 when absent)
+    @raises SystemExit: on a malformed row or a non-flat roof
+    """
+    if 'pv_arrays' not in roof:
+        return
+    rows = roof['pv_arrays']
+    context = f'{path}: roofs[{lab}].pv_arrays'
+    if not isinstance(rows, list):
+        raise SystemExit(f'{context} must be a list')
+    if rows and roof.get('kind') != 'flat':
+        raise SystemExit(f'{context} needs a flat roof')
+    for i, row in enumerate(rows):
+        pref = f'{context}[{i}]'
+        if not isinstance(row, dict):
+            raise SystemExit(f'{pref} must be an object')
+        unknown = sorted(set(row) - PV_ARRAY_KEYS)
+        if unknown:
+            raise SystemExit(f'{pref} unknown keys {unknown}')
+        box = row.get('box')
+        if (not isinstance(box, list) or len(box) != 4
+                or not all(isinstance(v, int) and not isinstance(v, bool) for v in box)
+                or box[0] > box[2] or box[1] > box[3]):
+            raise SystemExit(f'{pref} box must be [x0, z0, x1, z1] ints with x0 <= x1, z0 <= z1')
+        if row.get('rows') not in ('x', 'z'):
+            raise SystemExit(f'{pref} rows must be "x" or "z"')
+        pitch = row.setdefault('pitch', 2)
+        if not isinstance(pitch, int) or isinstance(pitch, bool) or pitch < 1:
+            raise SystemExit(f'{pref} pitch must be an int >= 1')
+        source = row.get('source')
+        if not isinstance(source, str) or not source.strip():
+            raise SystemExit(f'{pref} source must be a non-empty string')
 
 
 def _validate_material_regions(path, spec: dict) -> None:
@@ -1840,6 +1891,7 @@ class Build:
         self._roof_warnings: list[str] = []
         self._window_lines: list[str] = []
         self._detail_clip_lines: list[str] = []
+        self._pv_lines: list[str] = []
         self._entrance_covers: list[tuple] = []
         # Stamp against every cell the footprint covers so neighbour prepares elsewhere
         # do not invalidate this plan, while cross-cell geometry still counts (task 232).
@@ -3429,6 +3481,7 @@ class Build:
         guard_roof_jogs(self.p)
         # Greeblies after the outside-slab prune so awning_like/ledge overhangs survive.
         self.details()
+        self.pv_rows()
         self.entrance_covers()
         for f in self.features:
             self.street_face(f)
@@ -3456,6 +3509,8 @@ class Build:
         for line in roof_zone_colour_lines(self.features, aerial_rgb=self.aerial_rgb):
             print(line)
         for line in self.detail_report():
+            print(line)
+        for line in self._pv_lines:
             print(line)
         for line in self.footprint_overlap_report():
             print(line)
@@ -3688,6 +3743,64 @@ class Build:
         elif kind == 'fascia_band':
             for x, y, z in self._detail_box(at, size):
                 place(x, y, z, 'terracotta')
+
+    def pv_rows(self) -> None:
+        """Place ``roofs[label].pv_arrays`` as daylight_detector rows on the finished deck.
+
+        A column carries a detector when it is owned by the label, lies on a row
+        (every ``pitch`` blocks across the rows from the box edge), its top block
+        is the label's roof material (slab or full) at the array's commonest deck
+        height, and the cell above is still free (details win). The slab under a
+        detector becomes the full roof block so the detector does not hover.
+
+        @returns: None
+        """
+        self._pv_lines = []
+        for f in self.features:
+            rows = f.roof.get('pv_arrays') or []
+            if not rows:
+                continue
+            mats = [f.roof.get('material') or 'smooth_stone']
+            mats.extend((f.roof.get('zone_materials') or {}).values())
+            full_of = {}
+            for mat in mats:
+                variants = block_family_variants(mat)
+                for name in variants.values():
+                    full_of[name] = variants['full']
+            tops: dict[tuple[int, int], int] = {}
+            for (x, y, z), state in self.p.cells.items():
+                if ((x, z) in f.cells and y > tops.get((x, z), -10 ** 9)
+                        and bid(state)[10:] not in ('air', 'cave_air', 'void_air')):
+                    tops[(x, z)] = y
+            for row in rows:
+                x0, z0, x1, z1 = row['box']
+                pitch = row.get('pitch', 2)
+                along_x = row['rows'] == 'x'
+                want = [
+                    (x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)
+                    if ((z - z0) if along_x else (x - x0)) % pitch == 0
+                ]
+                ok: dict[tuple[int, int], int] = {}
+                for c in want:
+                    if c not in tops:
+                        continue
+                    y = tops[c]
+                    name = bid(self.p.cells[(c[0], y, c[1])])[10:]
+                    if name in full_of:
+                        ok[c] = y
+                deck = Counter(ok.values()).most_common(1)[0][0] if ok else None
+                placed = 0
+                for (x, z), y in sorted(ok.items()):
+                    if y != deck:
+                        continue
+                    name = bid(self.p.cells[(x, y, z)])[10:]
+                    self.set(x, y, z, full_of[name])
+                    self.set(x, y + 1, z, PV_DETECTOR)
+                    placed += 1
+                self._pv_lines.append(
+                    f'pv_array {f.no} box ({x0},{z0})..({x1},{z1}) rows={row["rows"]} pitch={pitch} '
+                    f'detectors={placed} clipped={len(want) - placed} source={row["source"]}'
+                )
 
     def details(self) -> None:
         """Place every ``details`` row after the shell and roof.
