@@ -1,4 +1,5 @@
 """site_status: parsing, layer aliases, the run log and the morning report (temp files only)."""
+import json
 import tempfile
 import unittest
 from datetime import datetime
@@ -13,15 +14,16 @@ class TestSiteStatus(unittest.TestCase):
         from journal_testkit import JournalWorld
         self.tmp = tempfile.TemporaryDirectory()
         d = Path(self.tmp.name)
-        self.saved = (ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG)
-        ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = d / 'cells', d / 'cur.json', d / 'LOCK.json', d / 'RUN-LOG.md'
+        self.saved = (ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG, ss.RUN_BUDGET)
+        ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG, ss.RUN_BUDGET = (
+            d / 'cells', d / 'cur.json', d / 'LOCK.json', d / 'RUN-LOG.md', d / 'run-budget.jsonl')
         self.jw = JournalWorld(d)
         self.jw.__enter__()
         self.jw.seed((47, -45), marker=True)
 
     def tearDown(self):
         self.jw.__exit__()
-        ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG = self.saved
+        ss.CELLS, ss.MARKER, ss.LOCK, ss.RUN_LOG, ss.RUN_BUDGET = self.saved
         self.tmp.cleanup()
 
     def test_stamps_and_rings(self):
@@ -73,6 +75,7 @@ class TestSiteStatus(unittest.TestCase):
         self.assertIn('strip under Building 2 still paved', out)
         future = ss.cmd_morning(ss.load_stages(), datetime(2999, 1, 1))
         self.assertIn('no run-log entries', future)
+        self.assertNotIn('OVER BUDGET', out)
 
     def test_morning_lists_stale_ground_only_when_a_feature_landed_after_it(self):
         """Task 285: the morning report names a stale ground with its cause and redo."""
@@ -119,6 +122,30 @@ class TestSiteStatus(unittest.TestCase):
         self.assertIn('FOOTPRINT', morning)
         self.assertIn('47,-45', morning)
         self.assertIn('Fixture Hall', morning)
+
+    def test_morning_lists_builds_of_eight_minutes_or_more(self):
+        """#346: the morning report names long budgeted builds and skips the rest."""
+        rows = [
+            {'ts': '2026-11-21 10:00:00', 'cell': '46,-46', 'elapsed_sec': 7 * 60,
+             'verdict': 'ok', 'task': 'short-ok'},
+            {'ts': '2026-11-21 10:08:00', 'cell': '46,-46', 'elapsed_sec': 9 * 60,
+             'verdict': 'over-budget', 'task': 'trees 46,-46'},
+            {'ts': '2026-11-21 10:20:00', 'cell': '63,-45', 'elapsed_sec': 12 * 60,
+             'verdict': 'killed', 'task': 'trees 63,-45'},
+            {'ts': '2026-11-20 10:20:00', 'cell': '1,1', 'elapsed_sec': 15 * 60,
+             'verdict': 'killed', 'task': 'old-run'},
+        ]
+        ss.RUN_BUDGET.write_text(''.join(json.dumps(row) + '\n' for row in rows) + 'not json\n')
+        listed = '\n'.join(ss.over_budget_lines(datetime(2026, 11, 21)))
+        self.assertIn('46,-46  540s  over-budget  trees 46,-46', listed)
+        self.assertIn('63,-45  720s  killed  trees 63,-45', listed)
+        self.assertNotIn('short-ok', listed)
+        self.assertNotIn('old-run', listed)
+        morning = ss.cmd_morning(ss.load_stages(), datetime(2026, 11, 21))
+        self.assertIn('OVER BUDGET (8 minutes or more):', morning)
+        self.assertIn('63,-45  720s  killed  trees 63,-45', morning)
+        self.assertNotIn('short-ok', morning)
+        self.assertNotIn('old-run', morning)
 
 
 if __name__ == '__main__':

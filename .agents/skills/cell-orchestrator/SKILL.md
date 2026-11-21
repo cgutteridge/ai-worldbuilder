@@ -37,6 +37,27 @@ whole run on a fresh lock held by another owner, two consecutive failed cells, a
 API/tool error, a repeated patrol flag across features, an ambiguous task, or the stated time/
 cell/item limit. Never touch hand-made cells, commit, or edit shared scripts unattended.
 
+A trees build in this mode is started through the lock runner with an 8 minute budget. The builder
+uses the `SITE_OWNER` that runner sets, and does not claim a different owner:
+
+```bash
+python3 scripts/site_lock.py --world <world> run <owner> "trees <tx>,<tz>" \
+  --cell <tx>,<tz> --budget-min 8 -- <trees apply command>
+```
+
+At 8 minutes the runner prints one OVER-BUDGET line (owner, task and elapsed) and lets the build
+continue. At 12 minutes (150%) it kills the process group, releases the lock, and exits 124.
+
+Exit 124 is a killed build, not a failure. Run `python3 scripts/site_recover.py --world <world> status`
+and, when that cell is in-flight or rolled back, `python3 scripts/site_recover.py --world <world> recover <cell> --apply`.
+Log a PROBLEM naming the cell and the elapsed time, exclude the cell for this run, and continue to
+the next cell. Do not retry it. It does not count toward the two-consecutive-failures stop. A
+repeated API or tool error still stops the whole run. Other layers have no budget yet.
+
+When the run ends, `site_status.py morning` lists every budgeted build that took 8 minutes or more,
+with cell, elapsed and verdict (`over-budget` if it finished, `killed` if it was stopped).
+Put that list in the end-of-run summary.
+
 ## Keep the human informed (every cell, every mode)
 
 After each cell is verified, write one block to the human run log, then move the marker:

@@ -1,4 +1,7 @@
 """Tests for site_lock.run: claim, SITE_OWNER for the command, release on every exit path."""
+import contextlib
+import io
+import json
 import sys
 import tempfile
 import unittest
@@ -17,9 +20,13 @@ class RunTest(unittest.TestCase):
         t = tempfile.TemporaryDirectory()
         self.addCleanup(t.cleanup)
         self.lock = Path(t.name) / 'LOCK.json'
+        self.budget = Path(t.name) / 'run-budget.jsonl'
         p = mock.patch.object(site_lock, 'LOCK', self.lock)
         p.start()
         self.addCleanup(p.stop)
+        budget = mock.patch.object(site_lock, 'RUN_BUDGET', self.budget)
+        budget.start()
+        self.addCleanup(budget.stop)
 
     def test_holds_lock_and_exports_owner_during_command_then_releases(self):
         out = Path(self.lock.parent) / 'seen.txt'
@@ -156,6 +163,87 @@ class RunTest(unittest.TestCase):
         with mock.patch.object(sys, 'argv', ['site_lock.py', 'run', 'me', 'task', 'x']):
             self.assertEqual(site_lock.main(), 2)
         self.assertFalse(self.lock.exists())
+
+    def _record(self):
+        return json.loads(self.budget.read_text().strip())
+
+    def test_without_budget_writes_no_record(self):
+        self.assertEqual(site_lock.run('me', 'task', [PY, '-c', 'pass']), 0)
+        self.assertFalse(self.budget.exists())
+        self.assertFalse(self.lock.exists())
+
+    def test_under_budget_finishes_untouched_and_records_ok(self):
+        seen = self.lock.parent / 'seen'
+        code = f'open({str(seen)!r},"w").write("done")'
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = site_lock.run('me', 'trees', [PY, '-c', code], budget_min=0.05, cell='46,-46')
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen.read_text(), 'done')
+        self.assertNotIn('OVER-BUDGET', buf.getvalue())
+        self.assertFalse(self.lock.exists())
+        rec = self._record()
+        self.assertEqual(rec['verdict'], 'ok')
+        self.assertEqual(rec['cell'], '46,-46')
+        self.assertEqual(rec['exit'], 0)
+        self.assertLess(rec['elapsed_sec'], 3)
+
+    def test_over_budget_flags_once_then_lets_the_command_finish(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = site_lock.run(
+                'me', 'trees', [PY, '-c', 'import time; time.sleep(1.0)'],
+                budget_min=0.4 / 60, kill_factor=10, cell='46,-46')
+        self.assertEqual(rc, 0)
+        self.assertEqual(buf.getvalue().count('OVER-BUDGET'), 1)
+        self.assertRegex(buf.getvalue(), r'OVER-BUDGET owner=me task=trees elapsed=\d+\.\d+s')
+        self.assertFalse(self.lock.exists())
+        rec = self._record()
+        self.assertEqual(rec['verdict'], 'over-budget')
+        self.assertEqual(rec['exit'], 0)
+        self.assertGreaterEqual(rec['elapsed_sec'], 0.4)
+
+    def test_budget_kills_at_the_factor_releases_and_records(self):
+        import os
+        pidfile = self.lock.parent / 'pid'
+        code = ('import os,time; from pathlib import Path; '
+                f'Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(30)')
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = site_lock.run(
+                'me', 'trees', [PY, '-c', code],
+                budget_min=0.5 / 60, kill_factor=1.5, cell='63,-45')
+        self.assertEqual(rc, 124)
+        self.assertEqual(buf.getvalue().count('OVER-BUDGET'), 1)
+        self.assertIn('owner=me', buf.getvalue())
+        self.assertIn('task=trees', buf.getvalue())
+        self.assertFalse(self.lock.exists())
+        self.assertTrue(pidfile.exists(), 'command never started')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pidfile.read_text()), 0)
+        rec = self._record()
+        self.assertEqual(rec['verdict'], 'killed')
+        self.assertEqual(rec['exit'], 124)
+        self.assertEqual(rec['cell'], '63,-45')
+        self.assertGreaterEqual(rec['elapsed_sec'], 0.5)
+
+    def test_cli_budget_flags_record_an_under_budget_run(self):
+        argv = ['site_lock.py', 'run', 'me', 'trees', '--cell', '1,-2',
+                '--budget-min', '0.05', '--kill-factor', '2', '--', PY, '-c', 'pass']
+        with mock.patch.object(sys, 'argv', argv):
+            self.assertEqual(site_lock.main(), 0)
+        rec = self._record()
+        self.assertEqual(rec['verdict'], 'ok')
+        self.assertEqual(rec['cell'], '1,-2')
+        self.assertEqual(rec['budget_min'], 0.05)
+        self.assertFalse(self.lock.exists())
+
+    def test_cli_rejects_a_bad_budget(self):
+        argv = ['site_lock.py', 'run', 'me', 'trees', '--budget-min', '0', '--', PY, '-c', 'pass']
+        with mock.patch.object(sys, 'argv', argv):
+            self.assertEqual(site_lock.main(), 2)
+        self.assertFalse(self.lock.exists())
+        self.assertFalse(self.budget.exists())
 
 
 if __name__ == '__main__':
