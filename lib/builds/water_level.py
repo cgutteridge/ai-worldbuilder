@@ -1,7 +1,8 @@
 """Stepped integer water level along a river reach from lidar surface samples.
 
-Pure function only (#354): the caller supplies ordered ``(distance, height)``
-samples. Spec fields, builds and real lidar sampling stay in #326.
+Pure functions: the caller supplies ordered ``(distance, height)`` samples.
+The water-body builder can consume the resulting segments; real lidar sampling
+and interpretation stay with its caller.
 """
 from __future__ import annotations
 
@@ -15,6 +16,25 @@ class LevelSegment(NamedTuple):
     start: float
     end: float
     level: int
+
+
+def level_at_distance(segments: Sequence[LevelSegment], distance: float) -> int:
+    """Read a validated contiguous profile, choosing downstream at a join.
+
+    @param segments: ordered, contiguous output of :func:`water_level_profile`
+        (or equivalent validated segments)
+    @param distance: finite reach distance inside the profile's coverage
+    @returns: local integer level; intervals are [start, end), except that the
+        last includes its end (also supports a single zero-length segment)
+    @raises ValueError: for an empty profile or an uncovered distance
+    """
+    if (not segments or not math.isfinite(distance)
+            or distance < segments[0].start or distance > segments[-1].end):
+        raise ValueError('distance is outside water-level profile coverage')
+    for segment in reversed(segments):
+        if segment.start <= distance:
+            return segment.level
+    raise ValueError('distance is outside water-level profile coverage')
 
 
 def water_level_profile(

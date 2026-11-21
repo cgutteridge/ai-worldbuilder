@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 import decision_record as dr
 import provenance as prov
 import water_body as W
+import water_level as WL
 
 
 class LoadSpecTest(unittest.TestCase):
@@ -405,6 +407,150 @@ class ClippedBuildTest(unittest.TestCase):
         self.assertEqual({(x // 128, z // 128) for x, _y, z in corner.cells}, {(0, 0)})
         self.assertEqual(set(corner.cells.values()), {'minecraft:cobblestone'})
         self.assertEqual(corner.get(127, self.LEVEL, 127), 'minecraft:cobblestone')
+
+
+class ProfileBuildTest(unittest.TestCase):
+    """Synthetic reach profile, local heights and ownership across cell joins."""
+
+    def raw(self, *, flat=False, clip=None, width=1, z0=10):
+        outline = [[x, z] for x in range(112, 146) for z in range(z0, z0 + 4)]
+        segments = WL.water_level_profile(
+            [(0, 55), (16, 55 if flat else 54), (33, 55 if flat else 54)], 2)
+        if clip is not None:
+            x0, x1 = clip[0] * 128 - W.CLIP_REACH, (clip[0] + 1) * 128 - 1 + W.CLIP_REACH
+            zmin, zmax = clip[1] * 128 - W.CLIP_REACH, (clip[1] + 1) * 128 - 1 + W.CLIP_REACH
+            outline = [[x, z] for x, z in outline if x0 <= x <= x1 and zmin <= z <= zmax]
+        raw = {
+            'name': 'unit_profile', 'outline': outline, 'water_level': 55,
+            'depth': 2, 'clear_above': 2, 'floor': 'clay',
+            'bank': {'material': 'coarse_dirt', 'width': width, 'rise': 1},
+            'edge': {'material': 'cobblestone'},
+            'provenance': {'source': 'vector_map', 'confidence': 'high'},
+            'water_level_profile': {
+                'segments': [s._asdict() for s in segments],
+                'columns': [[x, z, x - 112] for x, z in outline],
+            },
+        }
+        if clip is not None:
+            raw['clip'] = {'cell': list(clip)}
+        return raw
+
+    def test_flat_profile_matches_legacy_whole_and_clipped_plans(self):
+        for clip in (None, (0, 0), (1, 0)):
+            for width in (1, 3, W.CLIP_REACH):
+                with self.subTest(clip=clip, width=width):
+                    raw = self.raw(flat=True, clip=clip, width=width)
+                    profile = W.build(W.load_spec_dict(raw))
+                    del raw['water_level_profile']
+                    legacy = W.load_spec_dict(raw)
+                    self.assertNotIn('water_level_profile', legacy)
+                    self.assertEqual(profile.cells, W.build(legacy).cells)
+
+    def test_descending_reach_local_water_bed_air_and_true_banks(self):
+        raw = self.raw()
+        plan = W.build(W.load_spec_dict(raw))
+        for x, z in raw['outline']:
+            level = 55 if x < 128 else 54
+            self.assertEqual(plan.get(x, level - 2, z), 'minecraft:clay')
+            self.assertEqual(plan.get(x, level - 1, z), 'minecraft:water')
+            self.assertEqual(plan.get(x, level, z), 'minecraft:water')
+            self.assertEqual(plan.get(x, level + 1, z), 'minecraft:air')
+            self.assertEqual(plan.get(x, level + 2, z), 'minecraft:air')
+        # Water remains connected across the boundary; no internal coping/wall.
+        for z in range(10, 14):
+            self.assertEqual(plan.get(127, 54, z), 'minecraft:water')
+            self.assertEqual(plan.get(128, 54, z), 'minecraft:water')
+        self.assertEqual(plan.get(115, 56, 9), 'minecraft:cobblestone')
+        self.assertEqual(plan.get(132, 55, 9), 'minecraft:cobblestone')
+        self.assertIsNone(plan.get(132, 56, 9))
+        # Equidistant shore water chooses the upstream distance deterministically.
+        self.assertEqual(plan.get(128, 56, 9), 'minecraft:cobblestone')
+        self.assertEqual(plan.get(129, 55, 9), 'minecraft:cobblestone')
+        # Final endpoint (x=145) is included in the final segment.
+        self.assertEqual(plan.get(145, 54, 11), 'minecraft:water')
+
+    def test_bank_width_and_material_use_local_level(self):
+        plan = W.build(W.load_spec_dict(self.raw(width=3)))
+        self.assertEqual(plan.get(115, 56, 7), 'minecraft:coarse_dirt')
+        self.assertEqual(plan.get(135, 55, 7), 'minecraft:coarse_dirt')
+        self.assertIsNone(plan.get(135, 56, 7))
+        raw = self.raw()
+        raw['edge'] = None
+        plain_bank = W.build(W.load_spec_dict(raw))
+        self.assertEqual(plain_bank.get(132, 55, 9), 'minecraft:coarse_dirt')
+
+    def test_equal_distance_assignment_order_does_not_change_banks(self):
+        raw = self.raw(width=3)
+        plan = W.build(W.load_spec_dict(raw))
+        raw['water_level_profile']['columns'].sort(key=lambda row: (row[2], -row[1]))
+        self.assertEqual(plan.cells, W.build(W.load_spec_dict(raw)).cells)
+
+    def test_adjacent_context_clips_equal_whole_at_boundary_step(self):
+        for width in (1, 3, W.CLIP_REACH):
+            with self.subTest(width=width):
+                whole = W.build(W.load_spec_dict(self.raw(width=width)))
+                west = W.build(W.load_spec_dict(self.raw(clip=(0, 0), width=width)))
+                east = W.build(W.load_spec_dict(self.raw(clip=(1, 0), width=width)))
+                self.assertFalse(west.cells.keys() & east.cells.keys())
+                self.assertEqual({**west.cells, **east.cells}, whole.cells)
+                self.assertEqual({(x // 128, z // 128) for x, _, z in west.cells}, {(0, 0)})
+                self.assertEqual({(x // 128, z // 128) for x, _, z in east.cells}, {(1, 0)})
+
+    def test_bank_only_clips_keep_local_profile_heights(self):
+        whole = W.build(W.load_spec_dict(self.raw(width=3, z0=0)))
+        union = {}
+        for cell in ((0, -1), (1, -1), (0, 0), (1, 0)):
+            clip = W.build(W.load_spec_dict(self.raw(clip=cell, width=3, z0=0)))
+            self.assertFalse(union.keys() & clip.cells.keys())
+            self.assertEqual({(x // 128, z // 128) for x, _, z in clip.cells}, {cell})
+            if cell[1] == -1:
+                self.assertFalse({'minecraft:water', 'minecraft:clay', 'minecraft:air'}
+                                 & set(clip.cells.values()))
+            union.update(clip.cells)
+        self.assertEqual(union, whole.cells)
+
+    def test_single_point_profiler_output_supported(self):
+        raw = self.raw()
+        profile = raw['water_level_profile']
+        profile['segments'] = [s._asdict() for s in WL.water_level_profile([(0, 55)], 2)]
+        profile['columns'] = [[x, z, 0] for x, z in raw['outline']]
+        plan = W.build(W.load_spec_dict(raw))
+        del raw['water_level_profile']
+        self.assertEqual(plan.cells, W.build(W.load_spec_dict(raw)).cells)
+
+    def test_malformed_or_ambiguous_profiles_refused(self):
+        good = self.raw()['water_level_profile']
+        bad_profiles = [None, [], {}, {**good, 'segments': []}, {**good, 'columns': []}]
+        for key, value in (('start', True), ('start', '0'), ('end', float('nan')),
+                           ('end', float('inf')), ('end', -1), ('end', 0),
+                           ('level', True), ('level', 55.5), ('level', 56)):
+            profile = deepcopy(good)
+            profile['segments'][0][key] = value
+            bad_profiles.append(profile)
+        for start in (15, 17, -1):  # overlap, gap, reversed ordering
+            profile = deepcopy(good)
+            profile['segments'][1]['start'] = start
+            bad_profiles.append(profile)
+        profile = deepcopy(good)
+        profile['segments'][1]['level'] = 56  # downstream rise
+        bad_profiles.append(profile)
+        bad_profiles.extend([
+            {**good, 'segments': ['bad']},
+            {**good, 'segments': [{'start': 0, 'end': 33}]},
+            {**good, 'segments': list(reversed(good['segments']))},
+            {**good, 'columns': good['columns'][:-1]},  # uncovered outline
+            {**good, 'columns': [good['columns'][0], *good['columns']]},  # overlap
+            {**good, 'columns': list(reversed(good['columns']))},  # upstream order
+        ])
+        for row in ([112, 10], [112, 10, -1], [112, 10, 34],
+                    [112, 10, float('inf')], [112, 10, float('nan')],
+                    [112, 10, True], [112, 10, '0'], [112.5, 10, 0],
+                    [True, 10, 0], [111, 10, 0]):
+            bad_profiles.append({**good, 'columns': [row, *good['columns'][1:]]})
+        for profile in bad_profiles:
+            with self.subTest(profile=profile):
+                with self.assertRaises(W.WaterBodyError):
+                    W.load_spec_dict({**self.raw(), 'water_level_profile': profile})
 
 
 class CandidateIdTest(unittest.TestCase):
