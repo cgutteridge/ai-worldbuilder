@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -425,6 +426,15 @@ def _kill_cell(paced, cell: tuple[int, int]) -> list[str]:
         'selector': f'@e[tag={TAG}]',
         'limit': _QUERY_LIMIT,
     })
+    head = re.match(r'\s*\[(\d+)\]', listing)
+    count = int(head.group(1)) if head else 0
+    if count >= _QUERY_LIMIT:
+        raise RuntimeError(
+            f'entity_query hit its {_QUERY_LIMIT} entity cap: old labels may be missed; '
+            'refusing to apply and risk stacked duplicates'
+        )
+    if count and '- uuid:' not in listing:
+        raise RuntimeError('entity_query listing has entries but no "- uuid:" lines: format changed')
     return [
         paced.text('entity_kill', {'uuid': uuid})
         for uuid in label_uuids(listing, cell)

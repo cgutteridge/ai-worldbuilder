@@ -263,6 +263,33 @@ class TestApplyWritesNoBlocks(unittest.TestCase):
             )
         self.assertEqual(restored, [True])
 
+    def test_a_failed_kill_stops_before_any_summon_and_restores_the_player(self):
+        result = plan([way('1', 'Lane', [(0, 0), (40, 0)])])
+        paced = _FakePaced(
+            fail_on='entity_kill',
+            listing=_listing(('aaa', ('wb_label', 'wb_cell_0_0'))),
+        )
+        restored = []
+        with self.assertRaises(RuntimeError):
+            rl.apply_labels(
+                paced, result.labels, [(0, 0)],
+                hop=lambda lo, hi, why: (lambda: restored.append(True)),
+            )
+        self.assertNotIn('entity_summon', [name for name, _args in paced.calls])
+        self.assertEqual(restored, [True])
+
+    def test_a_capped_listing_refuses_rather_than_stack_duplicates(self):
+        result = plan([way('1', 'Lane', [(0, 0), (40, 0)])])
+        paced = _FakePaced(listing=f'[{rl._QUERY_LIMIT}]:\n  - uuid: aaa\n    tags[2]: wb_label,wb_cell_5_5')
+        with self.assertRaises(RuntimeError):
+            rl.apply_labels(paced, result.labels, [(0, 0)])
+        self.assertNotIn('entity_summon', [name for name, _args in paced.calls])
+
+    def test_an_unreadable_listing_refuses_rather_than_stack_duplicates(self):
+        paced = _FakePaced(listing='[2]:\n  - id: aaa\n  - id: bbb')
+        with self.assertRaises(RuntimeError):
+            rl.undo_labels(paced, [(0, 0)])
+
 
 class TestMapRows(unittest.TestCase):
     """Map property rows become ways, and a bridge centreline blocks a column."""
