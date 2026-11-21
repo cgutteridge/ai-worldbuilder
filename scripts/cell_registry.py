@@ -481,14 +481,16 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     """Propose vector-map building and water-body feature candidates for a cell.
 
     Calls ``cell_features.missing_features`` for the cell. Errors propagate
-    (no silent empty list).
+    (no silent empty list). Landmark footprints carry ``landmark`` /
+    ``landmark_class`` (#335).
 
     @param cid: ``tx,tz``
     @returns: list of candidate dicts from ``missing_features`` (kind/label/refs/…)
     """
     import cell_features as cf  # noqa: WPS433
+    from landmark_gate import annotate_landmark_candidates  # noqa: WPS433
     tx, tz = parse_cell_id(cid)
-    return list(cf.missing_features(tx, tz))
+    return annotate_landmark_candidates(list(cf.missing_features(tx, tz)))
 
 
 def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],

@@ -45,6 +45,8 @@ from osm_footprints import OSMIndex  # noqa: E402
 from portals import describe, for_footprint  # noqa: E402
 from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
 from water_body import MIN_WATER_COLUMNS, water_body_components  # noqa: E402
+from landmark_gate import landmark_fields  # noqa: E402
+from osm_footprints import osm_tags  # noqa: E402
 
 COVERED_FRAC = 0.5
 JOIN_GAP = 12         # blocks between footprints that still count as one run of houses
@@ -160,9 +162,18 @@ def _package_unbuilt(singles: list, homes: list, streets) -> list:
     @param streets: OSMIndex.streets for nearest-street lookup
     @returns: buildings first, then house runs (each with ``area`` column count)
     """
-    out = [{'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
-            'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures']}
-           for s in sorted(singles, key=lambda s: s['bbox'][:2])]
+    out = []
+    for s in sorted(singles, key=lambda s: s['bbox'][:2]):
+        row = {
+            'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
+            'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures'],
+        }
+        # Landmark flag only — do not change which footprints are grouped (#328 owns grouping).
+        if s.get('landmark'):
+            row['landmark'] = True
+            if s.get('landmark_class'):
+                row['landmark_class'] = s['landmark_class']
+        out.append(row)
     by_street: dict = {}
     for h in homes:
         h['street'] = _street_of(h['p'], h['bbox'], streets)
@@ -378,6 +389,7 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
             'portals': for_footprint(rings), 'pictures': pictures_for(rings),
             'bbox': (min(xs), min(zs), max(xs), max(zs)), 'area': area,
         }
+        item.update(landmark_fields(osm_tags(p)))
         (homes if p.get('building') in HOMES else singles).append(item)
     unbuilt = _package_unbuilt(singles, homes, idx.streets) + orphan_houses
     return {

@@ -3,6 +3,10 @@
 Read when reviewing a built building (I-064 / I-069 items, or the user asks).
 One building per review. Skip any building that already has an open feature issue (it is rebuilt there; user, 2026-10-16). Worked example: Oakdene Court, `site/REVIEWS.txt` 2026-10-16.
 
+## Landmark street-level check (tier A)
+
+Church, cathedral, chapel, cinema and shopping-centre candidates (`building=church|cathedral|chapel|cinema`, `amenity=cinema`, or `shop=mall`) are landmarks. `propose-features` marks them with `"landmark": true` and a `landmark_class`. Do not build one until a street-level image the owner supplies is recorded for the cell (`python3 scripts/cell_sources.py --cell tx,tz --record SOURCE --result found|partial|none|blocked --note "..."`; SOURCE is a street-level provider id from the cell sources checklist), or pass `--landmark-override "<reason>"` on `feature_build.py --apply` with a non-empty reason. Aerial and tags alone miss facade, steps and canopy detail (Portswood "church" bingo hall).
+
 1. **Read the data, not the label.** Lidar height row (`site/cells/<cell>-LIDAR.txt`), `lidar_audit.py --cell`, and the raw
    height grid of the building. Labels (flat/pitched, storeys) are estimates until the grid and a photo agree.
    Done when you can say what lidar shows for shape, top Y and floor level.
