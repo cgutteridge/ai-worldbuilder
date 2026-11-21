@@ -416,20 +416,13 @@ def snap_google_crowns(
 
 
 def cell_ndsm(cell: tuple[int, int], *, margin: int = 0) -> np.ndarray | None:
-    """nDSM (DSM − DTM) metres for one cell and optional halo, or None when unavailable.
+    """Cached standing-height grid; see ``tree_lines.standing_height`` for provenance.
 
-    @param cell: ``(tx, tz)``
-    @param margin: extra columns on each side; array origin is the cell origin minus this margin
-    @returns: float array shape ``(128 + 2*margin, 128 + 2*margin)``, or None
+    Kept as an array-only compatibility helper. Planning uses the shared reader
+    directly so its source label travels with the evidence.
     """
-    try:
-        import lidar_provider as lp
-        lidar = lp.tile_client(download=False)
-        x0, z0 = cell[0] * CELL, cell[1] * CELL
-        h = lp.mc_heights(lidar, x0 - margin, z0 - margin, x0 + CELL - 1 + margin, z0 + CELL - 1 + margin)
-        return np.asarray(h['diff'], dtype=float)
-    except Exception:
-        return None
+    from tree_lines import standing_height
+    return standing_height(cell, margin=margin)[0]
 
 
 def cell_terrain(cell: tuple[int, int]) -> dict | None:
@@ -637,6 +630,7 @@ class TreeInputs:
     source_rejections: list = field(default_factory=list)  # open-land crowns without mapped/height support (#317)
     source_counts: dict = field(default_factory=dict)  # candidate counts before source precedence/rejections
     land_classes: dict = field(default_factory=dict)   # world (x, z) -> land-use class for species config
+    height_source: str = 'none'  # standing-height return selected by the shared reader
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -675,6 +669,9 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
         if tags.get('natural') in ('wood', 'scrub') or tags.get('landuse') == 'forest':
             wood.update(scan_polygon(rings, bbox))
     near = [(di, dj) for di in range(-2, 3) for dj in range(-2, 3) if di * di + dj * dj <= 4]
+    from tree_lines import gated_crowns
+    height_support = gated_crowns([(x0 + i, z0 + j, r) for i, j, r in crowns],
+                                  x0 - margin, z0 - margin, ndsm)
     rejected = []
     for i, j, _r in crowns:
         q = (x0 + i, z0 + j)
@@ -683,11 +680,7 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
             continue
         if 'wood' in allowed and any((q[0] + di, q[1] + dj) in wood for di, dj in near):
             continue
-        if 'lidar' in allowed and ndsm is not None and any(
-                -margin <= i + di < CELL + margin and -margin <= j + dj < CELL + margin
-                and np.isfinite(ndsm[i + di + margin, j + dj + margin])
-                and ndsm[i + di + margin, j + dj + margin] >= 2
-                for di, dj in near):
+        if 'lidar' in allowed and height_support[q]:
             continue
         rejected.append((*q, 'no mapped or lidar tree evidence'))
     return rejected
@@ -702,10 +695,14 @@ def planning_inputs(cell, osm_ground=None):
     """
     tx, tz = cell
     x0, z0 = tx * CELL, tz * CELL
-    ndsm_support = cell_ndsm(cell, margin=2)
+    from tree_lines import standing_height
+    ndsm_support, height_source = standing_height(cell, margin=2)
     # Snapping keeps its existing 128x128 geometry; only corroboration reads across cell edges.
     # If neighbouring tiles are unavailable, preserve all cached in-cell evidence.
-    ndsm = ndsm_support[2:-2, 2:-2] if ndsm_support is not None else cell_ndsm(cell)
+    if ndsm_support is not None:
+        ndsm = ndsm_support[2:-2, 2:-2]
+    else:
+        ndsm, height_source = standing_height(cell)
     # Canopy and cover each call require_coverage, samples and a detector.
     # One cache so those six opens of the same mosaic become one decode.
     from aerial_coverage import rgb_cache
@@ -784,7 +781,7 @@ def planning_inputs(cell, osm_ground=None):
                       set(getattr(osm_ground, 'road', ())),
                       set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
                       crown_origins=crown_origins, terrain=cell_terrain(cell), source_rejections=source_rejections,
-                      source_counts=source_counts, land_classes=land_classes)
+                      source_counts=source_counts, land_classes=land_classes, height_source=height_source)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -804,7 +801,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
-              'crown_sources': inputs.source_counts,
+              'crown_sources': inputs.source_counts, 'height_source': inputs.height_source,
               'crown_snaps': inputs.crown_snaps,
               'mapped_rejections': inputs.mapped_rejections or [],
               'mapped_snaps': inputs.mapped_snaps or [], 'source_rejections': inputs.source_rejections, 'rooting': [],
@@ -972,6 +969,7 @@ def run(cell: tuple[int, int]) -> int:
           f'({sum(1 for t in rep["trees"] if t[3] == "tree")} trees, '
           f'{sum(1 for t in rep["trees"] if t[3] == "bush")} bushes)  skipped {len(rep["skipped"])}  '
           f'blocks {len(placed)}  overhang past cell edge {rep["overhang"]}')
+    print(f'  standing height: {rep["height_source"]}')
     if rep['crown_sources']:
         print('  crown candidates by source (before precedence): '
               + ', '.join(f'{source} {count}' for source, count in rep['crown_sources'].items()))
@@ -1000,7 +998,7 @@ def run(cell: tuple[int, int]) -> int:
     print(f'  review image: {img}  (magenta tree, cyan bush, red skipped, yellow root adjustment)')
     artifact_path(name, 'plan.json', dry=True).write_text(json.dumps(
         {'trees': rep['trees'], 'skipped': rep['skipped'], 'blocks': len(placed),
-         'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps'],
+         'height_source': rep['height_source'], 'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps'],
          'source_rejections': rep['source_rejections'], 'species': rep['species'],
          'tree_species': rep['tree_species']}, indent=1))
     if placed:

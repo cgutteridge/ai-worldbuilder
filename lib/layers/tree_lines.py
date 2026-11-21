@@ -5,7 +5,8 @@ with mapped trees, a wood polygon, or lidar standing height of at least 2 m. Hed
 and tree belts that the map does not mark as wood fail it wherever the lidar reader sees
 through the canopy, which the last-return composite does (task 320 findings).
 
-This module reads a second kind of evidence without touching ``trees_layer``:
+The shared ``standing_height`` reader feeds production trees. The remaining helpers
+prototype additional tree-line evidence:
 
 * a **corridor** of columns within reach of a mapped hedge or lane,
 * **canopy** columns: first-return standing height when cached; otherwise last-return height or
@@ -176,59 +177,85 @@ def first_return_height(dtm: np.ndarray, dsm_first: np.ndarray) -> np.ndarray:
     return np.where(np.isfinite(h), np.maximum(h, 0.0), np.nan)
 
 
-def standing_height(cell: tuple[int, int], margin: int = 0, client=None) -> tuple[np.ndarray | None, str]:
-    """Standing height for a cell: first-return when every tile is cached, else last-return.
+def standing_height(cell: tuple[int, int], margin: int = 0, client=None, *,
+                    prefer_first: bool = True) -> tuple[np.ndarray | None, str]:
+    """Read cached standing height, preferring first-return DSM minus DTM.
 
-    Never downloads. The last-return fallback is what ``trees_layer.cell_ndsm`` reads today.
+    Never downloads. Both returns use ``mc_heights_float`` DTM and unrounded
+    DSM metres, clamped at zero; the rounded ``mc_heights()['diff']`` is not
+    standing-height evidence. Nonfinite samples remain NaN and cannot support
+    crowns. Use first-return only when every requested tile is cached and at
+    least one paired sample is finite; otherwise use last-return. A selected
+    grid keeps its no-data holes (no per-column mixing of returns).
 
     @param cell: ``(tx, tz)``
-    @param margin: halo columns
-    @param client: optional tile client (tests); default ``lidar_provider.tile_client(download=False)``
-    @returns: ``(metres array or None, 'first-return' | 'last-return' | 'none')``
+    @param margin: halo columns; array origin is cell origin minus margin
+    @param client: optional tile client; defaults to cached-only provider client
+    @param prefer_first: false only for explicit last-return comparisons
+    @returns: ``(metres array or None, 'first-return' | 'last-return' | 'none')``;
+        None means neither selected surface has any finite standing height
     """
     from cellmath import CELL
     try:
         import lidar_provider as lp
-        lidar = client or lp.tile_client(download=False)
+        lidar = client if client is not None else lp.tile_client(download=False)
         x0, z0 = cell[0] * CELL - margin, cell[1] * CELL - margin
         x1, z1 = x0 + CELL - 1 + 2 * margin, z0 + CELL - 1 + 2 * margin
         h = lp.mc_heights_float(lidar, x0, z0, x1, z1)
-        last = np.maximum(np.asarray(h['dsm'], float) - np.asarray(h['dtm'], float), 0.0)
+        shape = (CELL + 2 * margin, CELL + 2 * margin)
+        dtm = np.asarray(h['dtm'], dtype=float)
+        if dtm.shape != shape:
+            return None, 'none'
     except Exception:
         return None, 'none'
-    if not (hasattr(lidar, 'missing') and hasattr(lidar, 'sample')):
-        return last, 'last-return'
-    from world_frame import load_frame, mc_grid_to_en
-    frame = load_frame()
-    xs, zs = np.meshgrid(np.arange(x0, x1 + 1), np.arange(z0, z1 + 1), indexing='ij')
-    e, n = mc_grid_to_en(xs, zs, frame)
+    last = None
     try:
+        if np.asarray(h['dsm']).shape == shape:
+            last = first_return_height(dtm, h['dsm'])
+            if not np.isfinite(last).any():
+                last = None
+    except (KeyError, TypeError, ValueError):
+        pass
+    fallback = (last, 'last-return' if last is not None else 'none')
+    if not prefer_first or not (callable(getattr(lidar, 'missing', None))
+                               and callable(getattr(lidar, 'sample', None))):
+        return fallback
+    try:
+        from world_frame import load_frame, mc_grid_to_en
+        frame = load_frame()
+        xs, zs = np.meshgrid(np.arange(x0, x1 + 1), np.arange(z0, z1 + 1), indexing='ij')
+        e, n = mc_grid_to_en(xs, zs, frame)
         if lidar.missing('DSM_FIRST', float(e.min()), float(n.min()), float(e.max()), float(n.max())):
-            return last, 'last-return'
-        first = first_return_height(h['dtm'], lidar.sample('DSM_FIRST', e, n, False))
+            return fallback
+        samples = np.asarray(lidar.sample('DSM_FIRST', e, n, False), dtype=float)
+        if samples.shape != shape:
+            return fallback
+        first = first_return_height(dtm, samples)
+        if not np.isfinite(first).any():
+            return fallback
     except Exception:
-        return last, 'last-return'
+        return fallback
     return first, 'first-return'
 
 
 def gated_crowns(crowns, x0: int, z0: int, height: np.ndarray | None, near: int = 2) -> dict:
-    """Which local crowns the #317 lidar source would keep: standing height >= 2 m within ``near``.
+    """Test finite standing height >=2 m within a circular ``near``-block radius.
 
     @param crowns: ``[(world x, world z, r)]``
-    @param x0: world x of ``height[0, :]``
-    @param z0: world z of ``height[:, 0]``
-    @param height: metres or None
+    @param x0: world x of ``height[0, :]`` (including any halo)
+    @param z0: world z of ``height[:, 0]`` (including any halo)
+    @param height: metres or None; unknown evidence never corroborates crowns
     @returns: ``{(x, z): bool}``
     """
+    offsets = [(di, dj) for di in range(-near, near + 1) for dj in range(-near, near + 1)
+               if di * di + dj * dj <= near * near]
     out = {}
     for x, z, _r in crowns:
-        ok = False
-        if height is not None:
-            i, j = x - x0, z - z0
-            a, b = max(i - near, 0), max(j - near, 0)
-            win = height[a:i + near + 1, b:j + near + 1]
-            ok = bool(win.size and np.nanmax(np.where(np.isfinite(win), win, -1)) >= MIN_STANDING_M)
-        out[(x, z)] = ok
+        i, j = x - x0, z - z0
+        out[(x, z)] = bool(height is not None and any(
+            0 <= i + di < height.shape[0] and 0 <= j + dj < height.shape[1]
+            and np.isfinite(height[i + di, j + dj]) and height[i + di, j + dj] >= MIN_STANDING_M
+            for di, dj in offsets))
     return out
 
 
@@ -331,8 +358,7 @@ def propose(cell: tuple[int, int]) -> dict:
     first, source = standing_height(cell)
     last = None
     if source == 'first-return':
-        import trees_layer
-        last = trees_layer.cell_ndsm(cell)
+        last, _last_source = standing_height(cell, prefer_first=False)
     else:
         last = first
         first = None

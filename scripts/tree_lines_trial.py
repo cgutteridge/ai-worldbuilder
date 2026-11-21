@@ -98,7 +98,8 @@ def _install(cell, rows):
         if tuple(c) != tuple(cell):
             return inputs
         new, added, refused = admit(inputs, cell, rows, belt_cols)
-        log.update(admitted=added, refused=refused, height_source=proposal['height_source'])
+        log.update(admitted=added, refused=refused, height_source=inputs.height_source,
+                   line_height_source=proposal['height_source'])
         print(f'  tree lines: {len(added)} hand-off crowns admitted, {len(refused)} refused '
               f'(height source {proposal["height_source"]})')
         for x, z, why in refused:
@@ -157,29 +158,31 @@ def _overlay(cell, p, path: Path, scale: int = 6) -> None:
     img.convert('RGB').save(path)
 
 
-def cmd_seam(cell, handoff: Path | None, reader: str = 'last') -> int:
-    """Ordinary path: hand-off as extra crowns, dry run of the trees pass.
+def cmd_seam(cell, handoff: Path | None, reader: str = 'auto') -> int:
+    """Run the ordinary trees path with an optional explicit return comparison.
 
-    ``reader='first'`` swaps ``trees_layer.cell_ndsm`` (last-return today) for first-return
-    standing height, to show what wiring first-return into the reader would change. It refuses
-    when the first-return tiles are not cached rather than silently reading last-return.
+    Auto uses the production reader. First requires cached first-return data;
+    last selects the shared reader's float last-return fallback for comparison.
+    Reader overrides are scoped to this command and always restored.
     """
+    from unittest.mock import patch
+    from contextlib import ExitStack
+    import tree_lines
     import trees_layer as tl
-    if handoff is not None:
-        tl.EXTRA_CROWNS = Path(handoff)
-    if reader == 'first':
-        import tree_lines
-        _h, source = tree_lines.standing_height(cell, margin=2)
-        if source != 'first-return':
-            raise SystemExit(f'first-return standing height unavailable for {cell} (reader: {source})')
+    original = tree_lines.standing_height
 
-        def first_ndsm(c, *, margin=0):
-            h, src = tree_lines.standing_height(c, margin=margin)
-            return h if src == 'first-return' else None
+    def selected(c, margin=0):
+        h, source = original(c, margin=margin, prefer_first=reader != 'last')
+        if reader == 'first' and source != 'first-return':
+            raise SystemExit(f'first-return standing height unavailable for {c} (reader: {source})')
+        return h, source
 
-        tl.cell_ndsm = first_ndsm
-        print('  seam: trees pass reads FIRST-return standing height')
-    return tl.run(cell)
+    with ExitStack() as stack:
+        if handoff is not None:
+            stack.enter_context(patch.object(tl, 'EXTRA_CROWNS', Path(handoff)))
+        if reader != 'auto':
+            stack.enter_context(patch.object(tree_lines, 'standing_height', selected))
+        return tl.run(cell)
 
 
 def cmd_plan(cell, handoff: Path) -> int:
@@ -246,9 +249,10 @@ def cmd_lines(cell, handoff: Path, live: bool) -> int:
         print(f'  refused {x},{z}: {why}')
     for x, z, _r, why in rep['skipped']:
         print(f'  skipped {x},{z}: {why}')
-    record = {'plan': plan.name, 'height_source': proposal['height_source'], 'admitted': added,
+    record = {'plan': plan.name, 'height_source': inputs.height_source,
+              'line_height_source': proposal['height_source'], 'admitted': added,
               'refused': refused, 'trees': trees, 'skipped': rep['skipped'], 'blocks': len(placed),
-              'rooting': rep['rooting']}
+              'rooting': rep['rooting'], 'species': rep['species'], 'tree_species': rep['tree_species']}
     _artifact(cell, 'lines.json' if live else 'lines-dry.json').write_text(json.dumps(record, indent=1))
     if not placed:
         raise SystemExit('nothing to plant')
@@ -279,8 +283,8 @@ def main(argv=None) -> int:
         p.add_argument('--cell', required=True, help='tx,tz')
         if name == 'seam':
             p.add_argument('--handoff', type=Path, help='extra-crowns format hand-off JSON (optional)')
-            p.add_argument('--reader', choices=('last', 'first'), default='last',
-                           help='standing-height reader for the trees pass (default: last-return, as today)')
+            p.add_argument('--reader', choices=('auto', 'last', 'first'), default='auto',
+                           help='standing-height reader for the trees pass (default: production cached first-return with fallback)')
         elif name != 'propose':
             p.add_argument('--handoff', required=True, type=Path, help='extra-crowns format hand-off JSON')
     a = ap.parse_args(argv)
