@@ -50,7 +50,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
-        348,
+        
         
         
         351
@@ -117,18 +117,7 @@
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     , "requiresClaude": true},
         
-    {
-      "id": 348,
-      "title": "Woodland floor blocks in the ground layer: podzol, coarse dirt and moss at terrain height",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "requiresClaude": false,
-      "notes": "Split out of #318 on 2026-11-21; corrected the same day. Layer ownership (owner): ground sets the ground level at lidar terrain height; trees do only trees; decor does minor non-feature, non-tree enhancements such as plants and leaf litter. So the woodland floor BLOCKS live in the ground layer, and every plant on top of them (ferns, tufts, leaf litter, dry grass, bushes) lives in decor (see the decor understorey task).\n\nScope: extend the existing surface step in lib/layers/ground_layer.py (rough grass, #319: ROUGH_GRASS_TAGS and the ground_texture class key, seeded per cell and column, removable through the masks, counted in the report) with a woodland floor: the surface block of a column at lidar terrain height becomes a floor mix. Gate: wood = natural=wood|scrub or landuse=forest (keep #319 behaviour for meadow, pasture and lawns unchanged; scrub keeps its pasture treatment unless the config says otherwise). Starting shares are the owner-accepted values of the rough-grass trial (trial259_roughgrass_87_m48, docs/plans/park-rural.md; owner verdict Yes, use it): 30% podzol, 10% coarse_dirt, 8% moss_block, the rest keeps the ground's grass; grass only at the polygon edge (reach in columns, default 2, tunable). All shares in config/land-use-classes.json under ground_texture (schema pattern as #319), never in code. Never touch the height: terrain stays the lidar height. Skip columns that trees, decor, features or neighbours own, as the trial did. No plants in this task.\n\nAcceptance, synthetic only: tests with a synthetic wood polygon and lawn and meadow neighbours: floor shares within tolerance of the config over a large synthetic area, same seed same result, edge reach respected, lawns and meadows identical to the #319 output, owned columns skipped, surface Y unchanged, report counts per block. No world build step, so requiresClaude is false. How it looks on 63,-45 and 46,-46 is #318. A ground change makes ground stale on built cells, so a real cell needs a ground redo after merge (never unattended); that is #318 work. Open question for the owner, not for this task: the #319 step in the ground layer also places grass tufts, tall grass and flowers, which under the ownership rule above would be decor; left as it is until the owner decides.\n"
-    },
+    
     
     
     {
