@@ -67,6 +67,89 @@ class TestFillDense(unittest.TestCase):
         self.assertEqual(tl.fill_dense(cover(), [], seed=3), tl.fill_dense(cover(), [], seed=3))
 
 
+class TestTreeSources(unittest.TestCase):
+    """Mapped open pasture must not become woodland from aerial texture alone (#317)."""
+
+    @staticmethod
+    def polygon(x0, z0, x1, z1):
+        return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+    def index(self, areas):
+        return types.SimpleNamespace(
+            cells=lambda: set(),
+            areas=[(rings, dict(tags, osm_way_id=str(i))) for i, (rings, tags) in enumerate(areas)],
+        )
+
+    def test_meadow_rejects_texture_and_dense_fill_but_keeps_supported_crowns(self):
+        idx = self.index([
+            (self.polygon(0, 0, 128, 128), {'landuse': 'meadow'}),
+            (self.polygon(20, 20, 30, 30), {'natural': 'wood'}),
+            (self.polygon(60, 20, 70, 30), {'natural': 'scrub'}),
+        ])
+        crowns = [(10, 10, 3.), (30, 25, 3.), (31, 25, 3.), (32, 25, 3.),
+                  (70, 25, 3.), (50, 50, 3.), (90, 90, 3.), (100, 100, 3.)]
+        ndsm = np.zeros((128, 128))
+        ndsm[52, 50] = 2.0
+        ndsm[90, 90] = 1.99
+        ndsm[100, 100] = np.nan
+        rejected = tl.unsupported_tree_crowns((0, 0), crowns, idx, {(10, 10)}, ndsm)
+        self.assertEqual({(x, z) for x, z, _reason in rejected},
+                         {(32, 25), (90, 90), (100, 100)})
+
+    def test_missing_lidar_and_polygon_holes_do_not_confirm_a_tree(self):
+        wood = self.polygon(0, 0, 128, 128) + self.polygon(40, 40, 80, 80)
+        idx = self.index([(wood, {'natural': 'wood'})])
+        rejected = tl.unsupported_tree_crowns((0, 0), [(20, 20, 3.), (60, 60, 3.)], idx, set(), None)
+        # The hole is unclassified, so no class policy applies there. Make its pasture explicit.
+        self.assertEqual(rejected, [])
+        idx.areas.append((self.polygon(40, 40, 80, 80), {'landuse': 'meadow', 'osm_way_id': 'meadow'}))
+        rejected = tl.unsupported_tree_crowns((0, 0), [(20, 20, 3.), (60, 60, 3.)], idx, set(), None)
+        self.assertEqual([(x, z) for x, z, _reason in rejected], [(60, 60)])
+
+    def test_other_classes_and_unmapped_columns_keep_their_existing_sources(self):
+        idx = self.index([(self.polygon(0, 0, 30, 30), {'landuse': 'residential'})])
+        self.assertEqual(tl.unsupported_tree_crowns((0, 0), [(10, 10, 3.), (50, 50, 3.)], idx, set(), None), [])
+
+    def test_class_table_controls_the_permitted_sources(self):
+        idx = self.index([(self.polygon(0, 0, 128, 128), {'leisure': 'park'})])
+        with mock.patch('land_use.tree_sources', side_effect=lambda cls: () if cls == 'park' else None):
+            rejected = tl.unsupported_tree_crowns((0, 0), [(10, 10, 3.)], idx, {(10, 10)}, np.full((128, 128), 5.))
+        self.assertEqual([(x, z) for x, z, _reason in rejected], [(10, 10)])
+        with mock.patch('land_use.tree_sources', return_value=None):
+            self.assertEqual(tl.unsupported_tree_crowns((0, 0), [(10, 10, 3.)], idx, set(), None), [])
+
+    def test_wood_in_neighbouring_cell_supports_an_edge_crown(self):
+        idx = self.index([
+            (self.polygon(0, 0, 128, 128), {'landuse': 'farmland'}),
+            (self.polygon(128, 10, 140, 20), {'landuse': 'forest'}),
+        ])
+        rejected = tl.unsupported_tree_crowns((0, 0), [(127, 15, 3.), (125, 15, 3.)], idx, set(), None)
+        self.assertEqual([(x, z) for x, z, _reason in rejected], [(125, 15)])
+
+    def test_planning_inputs_gate_detector_fill_aerial_and_extra_but_keep_mapped_rows(self):
+        x0, z0 = CELL[0] * 128, CELL[1] * 128
+        idx = self.index([(self.polygon(x0, z0, x0 + 128, z0 + 128), {'landuse': 'meadow'})])
+        ground = types.SimpleNamespace(trees=[(x0 + 10, z0 + 10)],
+                                       tree_rows=[[(x0 + 20, z0 + 80), (x0 + 32, z0 + 80)]])
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.)]), \
+                mock.patch.object(tl, 'cover_grid', return_value=cover(1., 1.)), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[(100, 100, 3.)]), \
+                mock.patch.object(tl, 'google_crowns', return_value=([(x0 + 60, z0 + 60, x0 + 70, z0 + 70)], [(65, 65, 3.)])), \
+                mock.patch.object(tl, 'cell_ndsm', return_value=None), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs(CELL, osm_ground=ground)
+        self.assertEqual({(x0 + i, z0 + j) for i, j, _r in inputs.crowns}, inputs.mapped)
+        self.assertGreater(len(inputs.source_rejections), 100)    # dense texture fill was also removed
+        self.assertEqual(len(inputs.crown_origins), len(inputs.crowns))
+        self.assertGreaterEqual(len(inputs.mapped), 4)             # young mapped point and row survive
+
+
 class TestPlanCellKeepsRules(unittest.TestCase):
     """Fill crowns go through plan_cell's footprint / surface rules like any other crown."""
 
@@ -78,7 +161,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
             return (60, 'stone') if x - x0 in range(*hard_x) else (60, 'grass_block')
 
         osm = types.ModuleType('osm_footprints')
-        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp)
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp, areas=[])
         plan = types.SimpleNamespace(set=lambda *a: None)
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: cover(1.0, 1.0)), \
@@ -115,7 +198,7 @@ class TestOverhang(unittest.TestCase):
     def plan(self, world, masked=None, crown=(127, 64, 5.0)):
         x0, z0 = CELL[0] * 128, CELL[1] * 128
         osm = types.ModuleType('osm_footprints')
-        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         sets = {}
         plan = types.SimpleNamespace(set=lambda x, y, z, b: sets.__setitem__((x, y, z), b))
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
@@ -200,7 +283,7 @@ class TestExtraCrowns(unittest.TestCase):
             f.write_text(json.dumps({f'{CELL[0]},{CELL[1]}': [{'x': x0 + 60, 'z': z0 + 60, 'r': 3.4}]}))
             osm = types.ModuleType('osm_footprints')
             fp = {(x0 + 60, z0 + 60)} if in_footprint else set()
-            osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp)
+            osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp, areas=[])
             plan = types.SimpleNamespace(set=lambda *a: None)
             with mock.patch.object(tl, 'EXTRA_CROWNS', f), \
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
@@ -237,7 +320,7 @@ class TestGoogleCrowns(unittest.TestCase):
                 'crowns': [{'x': self.X0 + 60, 'z': self.Z0 + 60, 'r': 3.4}]}}))
             osm = types.ModuleType('osm_footprints')
             fp = {(self.X0 + 60, self.Z0 + 60)} if in_footprint else set()
-            osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp)
+            osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp, areas=[])
             plan = types.SimpleNamespace(set=lambda *a: None)
             with mock.patch.object(tl, 'GOOGLE_CROWNS', f), \
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
@@ -384,7 +467,7 @@ class TestMappedTreeCrowns(unittest.TestCase):
             tree_rows=[[(x0 + 5.0, z0 + 60.0), (x0 + 17.0, z0 + 60.0)]],
         )
         osm = types.ModuleType('osm_footprints')
-        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cell_ndsm', lambda c: ndsm), \
@@ -410,7 +493,7 @@ class TestRetainedCrownOrigins(unittest.TestCase):
         ndsm = np.zeros((128, 128))
         ndsm[10, 10] = 9.0
         osm = types.ModuleType('osm_footprints')
-        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         ground = types.SimpleNamespace(trees=list(mapped), tree_rows=[], road={(10, 10)})
         with mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
@@ -700,7 +783,7 @@ class TestTerrainGround(unittest.TestCase):
     def test_planning_inputs_loads_the_terrain_once(self):
         hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), 60)}
         osm = types.ModuleType('osm_footprints')
-        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set())
+        osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cell_ndsm', lambda c: None), \
