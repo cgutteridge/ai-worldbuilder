@@ -63,7 +63,10 @@ spacing.
 
 `--apply` (world lock held) kills this cell's existing `wb_label` entities, then
 summons the plan. Running it again replaces the cell's labels rather than stacking
-copies. `--undo` only kills. The kill command is:
+copies. `--undo` only kills. The tool kills through `entity_query` (`@e[tag=wb_label]`,
+then keeps entries whose own tags include the cell tag) and one `entity_kill` per UUID,
+because the world server does not always register `command_execute`. The same kill by
+hand is:
 
 ```
 kill @e[tag=wb_label,tag=wb_cell_<tx>_<tz>]
