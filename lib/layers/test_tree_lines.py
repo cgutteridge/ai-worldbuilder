@@ -234,5 +234,67 @@ class StandingHeightTest(unittest.TestCase):
 
 
 
+class LineSourceTest(unittest.TestCase):
+    """Production lines columns: first-return corridors and belts, never aerial darkness."""
+
+    def test_hedge_lane_and_belt_need_first_return_height(self):
+        import land_use
+        allowed = np.ones((N, N), bool)
+        lane = [{'highway': 'service', 'points': [(0.0, 10.0), (39.0, 10.0)], 'half': 1.0}]
+        h = np.zeros((N, N))
+        h[20, 20] = land_use.MIN_STANDING_M          # hedge column
+        h[12, 8] = land_use.MIN_STANDING_M           # lane verge
+        h[24, 2:11] = land_use.MIN_STANDING_M        # connected belt north of the lane
+        h[24, 2] = land_use.MIN_STANDING_M - 0.01    # low end of that strip: shadow, not canopy
+        cols = tln.line_columns(BOUNDS, {(20, 20)}, lane, allowed, h, 'first-return')
+        self.assertIn((20, 20), cols)
+        self.assertIn((12, 8), cols)
+        self.assertIn((24, 6), cols)                 # lane verge
+        self.assertIn((24, 4), cols)                 # past the verge, grown through connected height
+        self.assertNotIn((24, 2), cols)              # low band stays clear
+        self.assertNotIn((24, 30), cols)             # open pasture
+        self.assertEqual(cols, tln.line_columns(BOUNDS, {(20, 20)}, lane, allowed, h, 'first-return'))
+
+    def test_missing_first_return_does_not_promote_darkness(self):
+        lum, wood, open_grass, allowed, lane = scene()
+        ev = tln.line_evidence(BOUNDS, (), lane, lum, wood, open_grass & ~wood, allowed, None, 'last-return')
+        self.assertIn((20, 3), ev['belt'])          # prototype fallback still sees the dark band
+        self.assertEqual(tln.line_columns(BOUNDS, (), lane, allowed, None, 'last-return'), set())
+        h = np.zeros((N, N))
+        h[20, 8] = 9.0
+        self.assertEqual(tln.line_columns(BOUNDS, (), lane, allowed, h, 'last-return'), set())
+        self.assertEqual(tln.line_columns(BOUNDS, (), lane, allowed, h, 'none'), set())
+        cols = tln.line_columns(BOUNDS, (), lane, allowed, h, 'first-return')
+        self.assertIn((20, 8), cols)
+        self.assertNotIn((20, 3), cols)
+
+    def test_belt_grows_through_covered_wood_without_claiming_it(self):
+        allowed = np.ones((N, N), bool)
+        lane = [{'highway': 'track', 'points': [(0.0, 10.0), (39.0, 10.0)], 'half': 1.0}]
+        h = np.zeros((N, N))
+        h[20, 2:8] = 4.0
+        covered = np.zeros((N, N), bool)
+        covered[20, 3:5] = True
+        cols = tln.line_columns(BOUNDS, (), lane, allowed, h, 'first-return', covered=covered)
+        self.assertIn((20, 2), cols)
+        self.assertNotIn((20, 3), cols)
+        self.assertNotIn((20, 4), cols)
+
+    def test_gated_classes_follow_the_table(self):
+        import land_use
+        self.assertEqual(tln.gated_classes(), frozenset({'park', 'rural', 'natural'}))
+        self.assertEqual(tln.gated_classes(), land_use.classes_with_source(land_use.LINE_SOURCE))
+        with mock.patch('land_use.tree_sources', side_effect=lambda cls: ('lines',) if cls == 'park' else None):
+            self.assertEqual(tln.gated_classes(), frozenset({'park'}))
+
+    def test_gate_threshold_is_the_shared_constant(self):
+        import land_use
+        h = np.zeros((3, 3))
+        h[1, 1] = land_use.MIN_STANDING_M
+        self.assertTrue(tln.gated_crowns([(1, 1, 3.0)], 0, 0, h)[(1, 1)])
+        h[1, 1] = land_use.MIN_STANDING_M - 0.01
+        self.assertFalse(tln.gated_crowns([(1, 1, 3.0)], 0, 0, h)[(1, 1)])
+
+
 if __name__ == '__main__':
     unittest.main()

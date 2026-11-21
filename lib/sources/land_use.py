@@ -32,7 +32,11 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
 OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
-TREE_SOURCES = ('mapped', 'wood', 'lidar')
+# Standing height, in metres, for the lidar source and the lines source (#317, #368).
+# The gate and the hedge/belt reader share this one value.
+MIN_STANDING_M = 2.0
+LINE_SOURCE = 'lines'  # hedge/lane corridors and the unmapped belt grown from them
+TREE_SOURCES = ('mapped', 'wood', 'lidar', LINE_SOURCE)
 TREE_SPECIES = ('oak', 'birch', 'dark_oak')
 TREE_COVER_MODES = ('shade',)  # trees.cover; absent/null keeps the ordinary aerial cover test (#361)
 GROUND_TEXTURE_PALETTES = ('pasture', 'meadow', 'wood')  # open grass (#319); wood floor (#348)
@@ -293,13 +297,26 @@ def tree_sources(cls: str) -> tuple[str, ...] | None:
     """Allowed tree evidence in this class (``trees.sources``, #317), or None for existing sources.
 
     Mapped includes tree points and rows; wood includes wood, scrub and forest polygons;
-    lidar requires standing height of at least 2 metres. Missing/null applies no source gate.
+    lidar requires standing height of at least ``MIN_STANDING_M`` metres within 2 blocks.
+    ``lines`` admits a hedge or lane corridor and the unmapped belt grown from it, and only
+    where first-return standing height reaches that same threshold. Aerial darkness is not
+    ``lines`` evidence. Shade cover (``trees.cover``) is not a source. Missing/null applies
+    no source gate.
 
     @param cls: class id; unknown ids use the ``unknown`` row
     @returns: allowed source names, possibly empty, or None
     """
     sources = (defaults(cls).get('trees') or {}).get('sources')
     return tuple(sources) if sources is not None else None
+
+
+def classes_with_source(source: str) -> frozenset[str]:
+    """Class ids whose ``trees.sources`` lists ``source``.
+
+    @param source: one of ``TREE_SOURCES``
+    @returns: class ids; empty when none permit it
+    """
+    return frozenset(cid for cid in CLASSES if source in (tree_sources(cid) or ()))
 
 
 def tree_species_weights(cls: str) -> dict:
