@@ -3750,7 +3750,7 @@ class Build:
         A column carries a detector when it is owned by the label, lies on a row
         (every ``pitch`` blocks across the rows from the box edge), its top block
         is the label's roof material (slab or full) at the array's commonest deck
-        height, and the cell above is still free (details win). The slab under a
+        height. Details applied afterwards win. The slab under a
         detector becomes the full roof block so the detector does not hover.
 
         @returns: None

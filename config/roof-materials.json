@@ -213,6 +213,46 @@
       "colour": [210, 214, 215],
       "texture": "smooth",
       "triad": false
+    },
+    "polished_andesite": {
+      "full": "polished_andesite",
+      "slab": "polished_andesite_slab",
+      "stairs": "polished_andesite_stairs",
+      "colour": [135, 135, 135],
+      "texture": "smooth",
+      "triad": true
+    },
+    "polished_diorite": {
+      "full": "polished_diorite",
+      "slab": "polished_diorite_slab",
+      "stairs": "polished_diorite_stairs",
+      "colour": [192, 193, 194],
+      "texture": "smooth",
+      "triad": true
+    },
+    "smooth_quartz": {
+      "full": "smooth_quartz",
+      "slab": "smooth_quartz_slab",
+      "stairs": "smooth_quartz_stairs",
+      "colour": [235, 229, 222],
+      "texture": "smooth",
+      "triad": true
+    },
+    "polished_deepslate": {
+      "full": "polished_deepslate",
+      "slab": "polished_deepslate_slab",
+      "stairs": "polished_deepslate_stairs",
+      "colour": [70, 70, 75],
+      "texture": "smooth",
+      "triad": true
+    },
+    "smooth_sandstone": {
+      "full": "smooth_sandstone",
+      "slab": "smooth_sandstone_slab",
+      "stairs": "smooth_sandstone_stairs",
+      "colour": [125, 125, 125],
+      "texture": "smooth",
+      "triad": true
     }
   }
 }

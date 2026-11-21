@@ -48,18 +48,6 @@ MAX_GROW = 3             # lines a box may regrow a side (the window erodes abou
 COLOUR_BIN = 16          # membrane colour histogram bin (0..255 per channel)
 MIN_COVERAGE = 0.9       # share of roof columns the aerial must cover (else the registration is wrong)
 
-# Flat-roof material families (all have slabs) with approximate texture colours.
-FLAT_ROOF_PALETTE: list[tuple[str, tuple[int, int, int]]] = [
-    ('smooth_stone', (158, 158, 158)),
-    ('stone', (125, 125, 125)),
-    ('polished_andesite', (132, 135, 133)),
-    ('polished_diorite', (192, 193, 194)),
-    ('smooth_quartz', (235, 229, 222)),
-    ('polished_deepslate', (72, 72, 73)),
-    ('polished_blackstone', (53, 48, 56)),
-    ('smooth_sandstone', (223, 214, 170)),
-    ('brick', (150, 97, 83)),
-]
 
 
 def nearest_roof_material(rgb) -> str:
@@ -68,7 +56,10 @@ def nearest_roof_material(rgb) -> str:
     @param rgb: (r, g, b) 0..255
     @returns: material family name for ``roofs[label].material``
     """
-    return min(FLAT_ROOF_PALETTE, key=lambda t: sum((a - b) ** 2 for a, b in zip(t[1], rgb)))[0]
+    from roof_material import load_catalogue
+    palette = [(name, row['colour']) for name, row in load_catalogue()['families'].items()
+               if row.get('slab')]
+    return min(palette, key=lambda t: sum((a - b) ** 2 for a, b in zip(t[1], rgb)))[0]
 
 
 def period_score(profile, lo: int, hi: int) -> tuple[float, int]:
@@ -224,6 +215,33 @@ def _sample(rgb: np.ndarray, A: np.ndarray, bbox, s: int, shift) -> np.ndarray:
     return out
 
 
+def _covered_profile(window, axis):
+    """Mean finite image samples per line, omitting uncovered border lines."""
+    counts = np.isfinite(window).sum(axis=axis)
+    sums = np.nansum(window, axis=axis)
+    return sums[counts > 0] / counts[counts > 0]
+
+
+def row_boxes(cells, box, rows, pitch):
+    """Encode supported detector runs as boxes without filling an angled hull."""
+    x0, z0, _, _ = box
+    lines = {}
+    for x, z in sorted(cells):
+        across, along = (z, x) if rows == 'x' else (x, z)
+        if (across - (z0 if rows == 'x' else x0)) % pitch == 0:
+            lines.setdefault(across, []).append(along)
+    out = []
+    for across, values in sorted(lines.items()):
+        start = end = values[0]
+        for value in values[1:] + [values[-1] + 2]:
+            if value == end + 1:
+                end = value
+                continue
+            out.append((start, across, end, across) if rows == 'x' else (across, start, across, end))
+            start = end = value
+    return out
+
+
 def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float = 0.5,
            blue_margin: float = 30.0, min_cells: int = 30, source_note: str = '') -> dict:
     """Roof colour and PV arrays for one footprint from a registered aerial.
@@ -243,8 +261,10 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
     """
     A = np.asarray(A, float)
     rgb = np.asarray(rgb, float)
+    if pitch < 1 or min_cells < 1 or not math.isfinite(blue_margin):
+        raise ValueError('pitch and min_cells must be positive; blue_margin must be finite')
     ppb = float(math.hypot(A[0, 0], A[1, 0]))
-    if ppb < MIN_PX_PER_BLOCK:
+    if ppb + 1e-9 < MIN_PX_PER_BLOCK:
         raise ValueError(f'aerial too coarse for PV rows: {ppb:.1f} px/block (needs >= {MIN_PX_PER_BLOCK:g})')
     if not footprint:
         raise ValueError('empty footprint')
@@ -266,13 +286,11 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
             continue
         colour[(x, z)] = block.reshape(-1, 3).mean(axis=0)
         win = lum[cv - half:cv + half + 1, cu - half:cu + half + 1]
-        if np.isnan(win).any():
-            continue
         # Stripes parallel to x (rows along x) vary down the window: profile over z.
-        score_rx[(x, z)], lag_rx[(x, z)] = period_score(win.mean(axis=1), lo, hi)
-        score_rz[(x, z)], lag_rz[(x, z)] = period_score(win.mean(axis=0), lo, hi)
+        score_rx[(x, z)], lag_rx[(x, z)] = period_score(_covered_profile(win, 1), lo, hi)
+        score_rz[(x, z)], lag_rz[(x, z)] = period_score(_covered_profile(win, 0), lo, hi)
 
-    coverage = len(score_rx) / len(footprint)
+    coverage = len(colour) / len(footprint)
     if coverage < MIN_COVERAGE:
         raise ValueError(
             f'aerial covers only {coverage:.0%} of the roof columns (needs {MIN_COVERAGE:.0%}); '
@@ -316,13 +334,21 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
         row_pitch = float(np.median([lags[c] for c in cells])) / s
         score = mx if rows == 'x' else mz
         note = f'; {source_note}' if source_note else ''
-        arrays.append({
-            'box': [x0, z0, x1, z1], 'rows': rows, 'pitch': pitch,
-            'source': f'aerial PV array, rows along {rows}, row pitch {row_pitch:.1f} m, '
-                      f'periodicity {score:.2f}{note}',
-            'row_pitch_m': round(row_pitch, 2), 'score': round(score, 2), 'cells': len(cells),
-        })
-        in_arrays |= inside(box)
+        supported = inside(box)
+        if membrane is not None:
+            supported = {c for c in supported if c in colour and (
+                c in cells or np.sum((colour[c] - panel) ** 2) < np.sum((colour[c] - membrane) ** 2))}
+        # Keep rectangular arrays compact; irregular/angled support becomes row
+        # runs using the existing box schema, never its rectangular hull.
+        layout = [box] if supported == inside(box) else row_boxes(supported, box, rows, pitch)
+        for bounds in layout:
+            arrays.append({
+                'box': list(bounds), 'rows': rows, 'pitch': pitch,
+                'source': f'aerial PV array, rows along {rows}, row pitch {row_pitch:.1f} m, '
+                          f'periodicity {score:.2f}{note}',
+                'row_pitch_m': round(row_pitch, 2), 'score': round(score, 2), 'cells': len(cells),
+            })
+        in_arrays |= supported
     arrays.sort(key=lambda a: (a['box'][1], a['box'][0]))
 
     roof = membrane_colour(colour[c] for c in colour if c not in in_arrays)
@@ -406,6 +432,7 @@ def check_mosaic(image: Path, size: tuple[int, int], spec: str) -> None:
         raise SystemExit(f'mosaic {w}x{h} is not whole 256 px tiles')
     m = _MOSAIC_NAME.search(Path(image).name)
     if not m:
+        print("warning: mosaic filename has no tile identity; only dimensions were checked", file=sys.stderr)
         return
     zoom, nx, ny, tx0, ty0 = (int(v) for v in m.groups())
     if (zoom, tx0, ty0) != tuple(int(v) for v in spec.split(',')):
@@ -492,6 +519,7 @@ def _footprint(args) -> set:
 
 
 def main(argv=None) -> int:
+    """Derive roof materials and PV runs, optionally patching an explicit spec."""
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
     d = sub.add_parser('derive', help='roof colour + PV arrays for one roof')
@@ -506,6 +534,8 @@ def main(argv=None) -> int:
     d.add_argument('--shift', default='0,0', help='dx,dz blocks of aerial lean (roof drawn this far off)')
     d.add_argument('--pitch', type=int, default=2, help='detector row pitch (blocks)')
     d.add_argument('--threshold', type=float, default=0.5, help='periodicity needed on both axes')
+    d.add_argument('--blue-margin', type=float, default=30.0, help='minimum blue minus red; use 0 for neutral dark arrays')
+    d.add_argument('--min-cells', type=int, default=30, help='smallest connected array support')
     d.add_argument('--sheet', help='write a review PNG with arrays and rows drawn on')
     d.add_argument('--write', action='store_true', help='patch roofs[label] in --spec')
     d.add_argument('--replace-pv', action='store_true', help='with --write: overwrite existing pv_arrays')
@@ -514,6 +544,10 @@ def main(argv=None) -> int:
         ap.error('--spec needs --label')
     if args.write and not args.spec:
         ap.error('--write needs --spec')
+    if args.replace_pv and not args.write:
+        ap.error('--replace-pv needs --write')
+    if args.pitch < 1 or args.min_cells < 1 or not math.isfinite(args.blue_margin):
+        ap.error('pitch/min-cells must be positive and blue-margin finite')
     from PIL import Image
     rgb = np.asarray(Image.open(args.image).convert('RGB'))
     foot = _footprint(args)
@@ -531,6 +565,7 @@ def main(argv=None) -> int:
     shift = tuple(int(v) for v in args.shift.split(','))
     try:
         out = derive(rgb, A, foot, shift=shift, pitch=args.pitch, threshold=args.threshold,
+                     blue_margin=args.blue_margin, min_cells=args.min_cells,
                      source_note=f'aerial {Path(args.image).name}')
     except ValueError as exc:
         raise SystemExit(str(exc))

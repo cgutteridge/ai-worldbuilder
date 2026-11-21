@@ -3228,6 +3228,28 @@ class PvArraysTest(unittest.TestCase):
         self.assertNotIn((12, 57, 21), self.detectors(plan))
         self.assertEqual(len(self.detectors(plan)), 5)
 
+    def test_deck_mode_zone_material_and_nonroof_tops(self):
+        from types import SimpleNamespace
+        build = object.__new__(F.Build)
+        build.p = site_kit.Plan('pv_fixture')
+        roof={'material':'smooth_stone','zone_materials':{'1':'polished_diorite'},
+              'pv_arrays':[{'box':[0,0,4,0],'rows':'x','pitch':1,'source':'fixture'}]}
+        build.features=[SimpleNamespace(roof=roof,cells={(x,0) for x in range(5)},no='A')]
+        for x, y, material in [(0,10,'smooth_stone_slab'),(1,10,'polished_diorite_slab'),(2,10,'smooth_stone'),(3,12,'smooth_stone'),(4,10,'gray_concrete')]:
+            build.p.set(x,y,0,material)
+        build.set=lambda x,y,z,state:build.p.set(x,y,z,state)
+        F.Build.pv_rows(build)
+        self.assertEqual(self.detectors(build.p),{(x,11,0) for x in range(3)})
+        self.assertEqual(build.p.cells[(1,10,0)],'minecraft:polished_diorite')
+        self.assertEqual(build.p.cells[(4,10,0)],'minecraft:gray_concrete')
+
+    def test_absent_arrays_equal_empty_arrays(self):
+        empty,_=self.build([])
+        spec=self.spec([]); del spec['roofs']['A']['pv_arrays']
+        with redirect_stdout(io.StringIO()):
+            absent=F.build(spec,footprints={'A':self.cells},world=_StoneWorld())
+        self.assertEqual(absent.cells,empty.cells)
+
     def test_load_spec_validates_pv_arrays(self):
         good = {'box': [11, 21, 16, 23], 'rows': 'x', 'pitch': 2, 'source': 'aerial PV'}
         bad = [
