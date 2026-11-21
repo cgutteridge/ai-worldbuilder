@@ -278,6 +278,28 @@ class Table(unittest.TestCase):
             with self.assertRaisesRegex(L.TableError, 'trees'):
                 L.validate_table(self.doc)
 
+    def test_shipped_species_mix_is_placeholder_and_parkland_stays_oak(self):
+        self.assertEqual(L.tree_species_weights('natural'), {'oak': 60, 'birch': 25, 'dark_oak': 15})
+        for cid in ('park', 'rural'):
+            self.assertEqual(L.tree_species_weights(cid), {'oak': 100})
+        self.assertEqual(L.tree_species_weights('banana'), {'oak': 1})
+        weights = L.tree_species_weights('natural')
+        weights['oak'] = 0
+        self.assertEqual(L.tree_species_weights('natural')['oak'], 60)
+
+    def test_species_weights_are_optional_and_checked(self):
+        for good in (None, {'oak': 1}, {'birch': 2.5, 'oak': 0}, {'oak': 60, 'birch': 25, 'dark_oak': 15}):
+            self.row('natural')['trees']['species_weights'] = good
+            L.validate_table(self.doc)
+        self.row('natural')['trees'].pop('species_weights')
+        L.validate_table(self.doc)
+        for bad in (False, [], {}, {'spruce': 1}, {'oak': True}, {'oak': -1}, {'oak': 0},
+                    {'oak': '60'}, {'oak': float('nan')}, {'oak': float('inf')},
+                    {'oak': 1e308, 'birch': 1e308}, {'oak': 10**400}):
+            self.row('natural')['trees']['species_weights'] = bad
+            with self.subTest(bad=bad), self.assertRaisesRegex(L.TableError, 'species_weights'):
+                L.validate_table(self.doc)
+
     def test_path_widen_is_optional_and_checked(self):
         self.row('park')['surface'] = {'unmapped_paving': 'dirt'}
         L.validate_table(self.doc)                                  # absent key widens nothing

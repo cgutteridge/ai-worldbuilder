@@ -171,6 +171,9 @@ SPECIES = {
     'acacia': ('acacia_log', 'acacia_leaves[persistent=true]'),
 }
 PLANE_SPECIES = 'oak'  # leaves; trunk is mottled oak with birch patches (see tree_voxels)
+# Species silhouettes used by the trees-layer mix (#350); the existing round/plane paths stay exact.
+SPECIES_CROWN_RADII = {'birch': (2.0, 3.0), 'dark_oak': (4.0, 2.0)}  # horizontal, vertical
+SPECIES_TRUNK_WIDTH = {'birch': 1, 'dark_oak': 2}
 
 
 def tree_voxels(x: int, z: int, ground_y: int, *, height: int | None = None,
@@ -183,8 +186,9 @@ def tree_voxels(x: int, z: int, ground_y: int, *, height: int | None = None,
     @param ground_y: surface Y under the trunk
     @param height: trunk height in blocks; default picked by style
     @param species: key of SPECIES; default by style (oak round, birch plane)
-    @param style: 'round' (sphere crown) or 'plane' (English plane: tall clean trunk, open
-        irregular crown of overlapping lobes high up); default 'plane' when height >= 8
+    @param style: 'round' (sphere crown), 'plane' (English plane: tall clean trunk, open
+        irregular crown of overlapping lobes high up), 'birch' (narrow/tall crown), or
+        'dark_oak' (broad/flat crown and two-block-wide trunk); default plane when height >= 8
     @param rng: random source for lobes
     @returns: voxel map
     """
@@ -203,6 +207,23 @@ def tree_voxels(x: int, z: int, ground_y: int, *, height: int | None = None,
             # plane bark is mottled: oak base with pale birch patches
             block = 'birch_log' if (i * 7 + x * 3 + z * 5) % 4 == 0 else 'oak_log'
         out[(x, ground_y + i, z)] = block
+    if style in SPECIES_CROWN_RADII:
+        width = SPECIES_TRUNK_WIDTH[style]
+        for dx in range(width):
+            for dz in range(width):
+                for i in range(1, height + 1):
+                    out[(x + dx, ground_y + i, z + dz)] = log
+        horizontal, vertical = SPECIES_CROWN_RADII[style]
+        reach, rise = math.ceil(horizontal), math.ceil(vertical)
+        centre = (width - 1) / 2
+        for dx in range(-reach, reach + width):
+            for dz in range(-reach, reach + width):
+                for dy in range(-rise, rise + 1):
+                    if ((dx - centre) ** 2 + (dz - centre) ** 2) / horizontal ** 2 + dy ** 2 / vertical ** 2 <= 1:
+                        p = (x + dx, ground_y + height + dy, z + dz)
+                        if p[1] > ground_y and p not in out:
+                            out[p] = leaves
+        return out
     if style == 'round':
         r = 3.0 if height <= 6 else 4.0
         cy = ground_y + height

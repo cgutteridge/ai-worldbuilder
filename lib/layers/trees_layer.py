@@ -65,6 +65,7 @@ FILL_SPACING = 5           # jittered grid pitch of the fill (crowns here are 5-
 FILL_RADII = (2.5, 3.0, 3.0, 3.5, 4.0, 4.5)   # height variance: round 4-6 below 3.5, plane 8-9 above
 MIN_NDSM = 3.0            # metres: inferred fill requires standing lidar canopy when available
 LIDAR_FILL_SPACING = FILL_SPACING  # minimum centre separation for the lidar-only second source
+SPECIES_HEIGHTS = {'birch': (6, 7, 8), 'dark_oak': (6, 7, 8)}  # varied trunk heights for species silhouettes
 
 
 class _InCell:
@@ -565,11 +566,42 @@ def resolve_mapped_tree_crowns(
     return crowns, rejections, enriched
 
 
-def voxels_for(x: int, z: int, gy: int, r: float) -> dict:
-    """Voxels for one crown: bush for small ones, plane/round tree otherwise."""
+def annotate_mask_species(mask: dict, species: dict) -> dict:
+    """Copy crown counts onto a trees mask so a redo can report them by species.
+
+    Placements still strip every crown block. Counts cover tree crowns only.
+
+    @param mask: trees mask from ``build_mask``
+    @param species: species name to planted-crown count
+    @returns: the same mask
+    """
+    mask['species'] = dict(species)
+    return mask
+
+
+def choose_species(cell: tuple[int, int], x: int, z: int, weights: dict) -> str:
+    """Choose a crown's species from validated weights, seeded independently of voxel randomness.
+
+    @param cell: home cell for the crown
+    @param x: observed crown X (keeps species stable during a one-block rooting adjustment)
+    @param z: observed crown Z
+    @param weights: nonnegative species weights with a positive total (land_use validates these)
+    @returns: species name; config map order does not affect the result
+    """
+    names = sorted(weights)
+    rnd = random.Random(f'tree_species:{cell[0]}:{cell[1]}:{x}:{z}')
+    return rnd.choices(names, weights=[weights[name] for name in names])[0]
+
+
+def voxels_for(x: int, z: int, gy: int, r: float, *, species: str = 'oak') -> dict:
+    """One crown's voxels; oak retains the exact original plane/round path and plain oak trunk."""
     rnd = random.Random(RNG_SEED + x * 31 + z)
     if r < MIN_CROWN_R + 0.2:
         return bush_voxels(x, z, gy)
+    if species != 'oak':
+        return tree_voxels(x, z, gy, height=rnd.choice(SPECIES_HEIGHTS[species]),
+                           species=species, style=species,
+                           rng=random.Random(RNG_SEED + x * 31 + z))
     if r >= 6:
         h, style = rnd.choice((12, 13, 14)), 'plane'
     elif r >= 3.5:
@@ -577,7 +609,8 @@ def voxels_for(x: int, z: int, gy: int, r: float) -> dict:
     else:
         h, style = rnd.choice((4, 5, 6)), 'round'
     vox = tree_voxels(x, z, gy, height=h, style=style, rng=random.Random(RNG_SEED + x * 31 + z))
-    # tree_voxels mottles plane trunks with birch patches; here trunks are plain oak (user, 2026-10-14)
+    # The 2026-10-14 plain-oak rule applies to plane trunks; intentional birch crowns above
+    # keep birch logs. Owner confirmation of this distinction is recorded in #350 for #318.
     return {p: ('oak_log' if b == 'birch_log' else b) for p, b in vox.items()}
 
 
@@ -603,6 +636,7 @@ class TreeInputs:
     terrain: Any = None                # lidar height map of the cell (``terrain`` = ground Y), None when unavailable (#301)
     source_rejections: list = field(default_factory=list)  # open-land crowns without mapped/height support (#317)
     source_counts: dict = field(default_factory=dict)  # candidate counts before source precedence/rejections
+    land_classes: dict = field(default_factory=dict)   # world (x, z) -> land-use class for species config
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -742,12 +776,15 @@ def planning_inputs(cell, osm_ground=None):
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
+    from coverage import area_classes
+    from ground_sources import cell_box
+    land_classes = {q: hit[0] for q, hit in area_classes(idx, cell_box(cell)).items()}
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
                       set(getattr(osm_ground, 'road', ())),
                       set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
                       crown_origins=crown_origins, terrain=cell_terrain(cell), source_rejections=source_rejections,
-                      source_counts=source_counts)
+                      source_counts=source_counts, land_classes=land_classes)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -761,6 +798,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     inputs = planning_inputs(cell) if inputs is None else inputs
     crowns, extra, aerial_sheet = inputs.crowns, inputs.extra, inputs.aerial_sheet
     mapped = inputs.mapped or set()
+    import land_use
+    species_weights = {cid: land_use.tree_species_weights(cid)
+                       for cid in set(inputs.land_classes.values()) | {'unknown'}}
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
@@ -768,7 +808,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
               'crown_snaps': inputs.crown_snaps,
               'mapped_rejections': inputs.mapped_rejections or [],
               'mapped_snaps': inputs.mapped_snaps or [], 'source_rejections': inputs.source_rejections, 'rooting': [],
-              'terrain': {'used': 0, 'moved': 0, 'fallback': 0}}
+              'terrain': {'used': 0, 'moved': 0, 'fallback': 0}, 'species': {}, 'tree_species': []}
     warm_surface_probe(world, x0 - CROWN_MARGIN, z0 - CROWN_MARGIN,
                        x0 + CELL - 1 + CROWN_MARGIN, z0 + CELL - 1 + CROWN_MARGIN)   # batch reads (#110)
     # Explicit aerial, surveyed and extra crowns are evidence; detector/dense fill
@@ -791,7 +831,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     def no_ground(x, z):
         return ground_missing_reason(inputs.terrain, x, z, owned)
 
-    def candidate(x, z, r, observed):
+    def candidate(x, z, r, observed, species):
         if (x, 0, z) not in cell_xz:
             return {}, 'trunk outside cell'
         surf = ground(x, z)
@@ -802,13 +842,18 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
         if not observed and surf[1] not in (LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES):
             return {}, f'surface {surf[1]}'
         gy = surf[0]
-        vox = voxels_for(x, z, gy, r)
+        # Keep the oak call shape as well as its voxels compatible with existing planners/fixtures.
+        vox = voxels_for(x, z, gy, r) if species == 'oak' else voxels_for(x, z, gy, r, species=species)
         trunk = [p for p, b in vox.items() if 'log' in b]
         roots = {(p[0], p[2]) for p in trunk if p[1] == gy + 1} or {(x, z)}
         for q in sorted(roots):
             top = ground(*q)
             if not top:
                 return {}, no_ground(*q)
+            if not observed and (q in fp or (ground_cols is not None and q not in ground_cols)):
+                return {}, 'feature zone'
+            if not observed and top[1] not in (LAWN_SURFACES | PAVED_SURFACES if TREES_ON_PAVING else LAWN_SURFACES):
+                return {}, f'surface {top[1]}'
             live = world.block(q[0], top[0], q[1])
             if live is None:
                 return {}, 'unknown water status'
@@ -818,7 +863,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
                 return {}, 'water'
             if q in inputs.road:
                 return {}, 'carriageway'
-            if observed and top[0] != gy:
+            if (observed or len(roots) > 1) and top[0] != gy:
                 return {}, 'uneven trunk ground'
         # a feature's own block anywhere in the trunk column up to the crown top (a low roof) leaves no room (#301)
         crown_top = max(p[1] for p in vox)
@@ -836,8 +881,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     for index, (i, j, r) in enumerate(crowns):
         origin = (x0 + i, z0 + j)
         observed = origin in evidenced
+        cls = inputs.land_classes.get(origin, 'unknown')
+        # Bushes stay the existing leaf clump. Only tree crowns take a species.
+        species = None if r < MIN_CROWN_R + 0.2 else choose_species(cell, *origin, species_weights[cls])
         x, z = origin
-        kept, reason = candidate(x, z, r, observed)
+        kept, reason = candidate(x, z, r, observed, species or 'oak')
         original_reason = reason
         observed_centre = crown_origins[index] if crown_origins is not None else origin
         attempts = [{'at': list(origin), 'reason': reason or 'accepted'}]
@@ -846,7 +894,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
         if observed and reason in ('carriageway', 'water'):
             neighbours = ((x - 1, z), (x, z - 1), (x, z + 1), (x + 1, z))
             for nx, nz in sorted(neighbours, key=lambda q: ((q[0] - observed_centre[0]) ** 2 + (q[1] - observed_centre[1]) ** 2, q)):
-                kept, reason = candidate(nx, nz, r, observed)
+                kept, reason = candidate(nx, nz, r, observed, species or 'oak')
                 attempts.append({'at': [nx, nz], 'reason': reason or 'accepted'})
                 if kept:
                     x, z = nx, nz
@@ -860,7 +908,10 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
             report['skipped'].append((*origin, r, reason))
             continue
         placed.update(kept)
-        report['trees'].append((x, z, r, 'bush' if r < MIN_CROWN_R + 0.2 else 'tree'))
+        report['trees'].append((x, z, r, 'bush' if species is None else 'tree'))
+        if species is not None:
+            report['species'][species] = report['species'].get(species, 0) + 1
+            report['tree_species'].append({'position': [x, z], 'species': species, 'class': cls})
         kind, gy = base_kind[(x, z)]
         if kind == 'terrain':
             report['terrain']['used'] += 1
@@ -924,6 +975,7 @@ def run(cell: tuple[int, int]) -> int:
     if rep['crown_sources']:
         print('  crown candidates by source (before precedence): '
               + ', '.join(f'{source} {count}' for source, count in rep['crown_sources'].items()))
+    print('  crowns by species: ' + ', '.join(f'{species} {count}' for species, count in rep['species'].items()))
     snaps = rep.get('crown_snaps') or []
     if snaps:
         x0, z0 = tx * CELL, tz * CELL
@@ -949,7 +1001,8 @@ def run(cell: tuple[int, int]) -> int:
     artifact_path(name, 'plan.json', dry=True).write_text(json.dumps(
         {'trees': rep['trees'], 'skipped': rep['skipped'], 'blocks': len(placed),
          'rooting': rep['rooting'], 'crown_snaps': rep['crown_snaps'], 'mapped_snaps': rep['mapped_snaps'],
-         'source_rejections': rep['source_rejections']}, indent=1))
+         'source_rejections': rep['source_rejections'], 'species': rep['species'],
+         'tree_species': rep['tree_species']}, indent=1))
     if placed:
         preview(plan, artifact_path(name, 'preview.png', dry=True), scale=2)
         # the simulated undo reads this pass's own earlier build, so its name must be in `modifies`
@@ -992,11 +1045,14 @@ def apply_cell(cell: tuple[int, int]) -> int:
     if not placed:
         raise SystemExit('nothing to plant; check the dry run')
     # air-only is asserted now, from the same world the plan was read from, and again here
-    mask = build_mask('trees', cell, name, placed,
-                      lambda p: is_air(world.block(*p)) or 'leaves' in bare(world.block(*p)))   # leaf-on-leaf merge
+    mask = annotate_mask_species(build_mask(
+        'trees', cell, name, placed,
+        lambda p: is_air(world.block(*p)) or 'leaves' in bare(world.block(*p))),  # leaf-on-leaf merge
+        rep['species'])
     print(f'{name}: {len(placed)} blocks, {len(rep["trees"])} crowns')
     rb = apply(plan, modifies=ignored_builds(cell), stage='trees', cell=cell,
-               strict=True, meta={'crowns': len(rep['trees']), 'rooting': rep['rooting']}, mask=mask)
+               strict=True, meta={'crowns': len(rep['trees']), 'rooting': rep['rooting'],
+                                  'species': rep['species'], 'tree_species': rep['tree_species']}, mask=mask)
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
     return 0
 
