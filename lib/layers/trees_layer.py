@@ -63,6 +63,8 @@ COVER_MIN = 0.6            # local cover fraction below which nothing is filled 
 COVER_FULL = 0.9           # at or above this every fill site gets a tree
 FILL_SPACING = 5           # jittered grid pitch of the fill (crowns here are 5-7 blocks across)
 FILL_RADII = (2.5, 3.0, 3.0, 3.5, 4.0, 4.5)   # height variance: round 4-6 below 3.5, plane 8-9 above
+MIN_NDSM = 3.0            # metres: inferred fill requires standing lidar canopy when available
+LIDAR_FILL_SPACING = FILL_SPACING  # minimum centre separation for the lidar-only second source
 
 
 class _InCell:
@@ -193,11 +195,13 @@ def cover_grid(cell: tuple[int, int], mask: np.ndarray | None = None) -> np.ndar
     return _mosaic_grid(cell, cover_pixels, 35, mask)
 
 
-def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: int = 0) -> list[tuple[int, int, float]]:
+def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: int = 0,
+               *, ndsm: np.ndarray | None = None) -> list[tuple[int, int, float]]:
     """Extra crowns (dx, dz, r) so dense cover gets trees at a density that follows the cover fraction.
 
     A jittered grid at FILL_SPACING; a site is used with probability rising from 0 at COVER_MIN to 1 at
-    COVER_FULL, and not within an existing crown. Deterministic for a given cell.
+    COVER_FULL, and not within an existing crown. Available lidar must confirm canopy height;
+    missing lidar preserves the original aerial-only output. Deterministic for a given cell.
     """
     rnd = random.Random(RNG_SEED + seed)
     ii, jj = np.mgrid[0:128, 0:128]
@@ -212,9 +216,39 @@ def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: in
             p = (cover[i, j] - COVER_MIN) / (COVER_FULL - COVER_MIN)
             if rnd.random() >= p or taken[i, j]:    # rnd drawn first so sites do not shift with neighbours
                 continue
+            if ndsm is not None and (not np.isfinite(ndsm[i, j]) or ndsm[i, j] < MIN_NDSM):
+                continue
             r = rnd.choice(FILL_RADII)
             extra.append((i, j, r))
             taken |= (ii - i) ** 2 + (jj - j) ** 2 <= (r * 0.75) ** 2
+    return extra
+
+
+def lidar_fill(ndsm: np.ndarray | None, crowns: list[tuple[int, int, float]],
+               cover: np.ndarray | None = None, seed: int = 0) -> list[tuple[int, int, float]]:
+    """Extra crowns for uncovered lidar-tall columns, even when aerial cover is dark or absent.
+
+    Highest lidar columns lead; aerial cover guides equal-height choices, with seeded random
+    ties. Existing crowns exclude their whole footprint, and new centres stay at least
+    LIDAR_FILL_SPACING apart. Missing lidar adds nothing. Inputs are never modified.
+    """
+    if ndsm is None:
+        return []
+    rnd = random.Random(RNG_SEED + seed)
+    ii, jj = np.indices(ndsm.shape)
+    taken = np.zeros(ndsm.shape, bool)
+    for ci, cj, cr in crowns:
+        taken |= (ii - ci) ** 2 + (jj - cj) ** 2 <= max(cr, LIDAR_FILL_SPACING) ** 2
+    order = sorted(((-float(ndsm[i, j]), -float(cover[i, j]) if cover is not None
+                     and np.isfinite(cover[i, j]) else 0., rnd.random(), int(i), int(j))
+                    for i, j in np.argwhere(np.isfinite(ndsm) & (ndsm >= MIN_NDSM))))
+    extra = []
+    for _height, _cover, _tie, i, j in order:
+        if taken[i, j]:
+            continue
+        r = rnd.choice(FILL_RADII)
+        extra.append((i, j, r))
+        taken |= (ii - i) ** 2 + (jj - j) ** 2 <= max(r, LIDAR_FILL_SPACING) ** 2
     return extra
 
 
@@ -568,6 +602,7 @@ class TreeInputs:
     crown_origins: list | None = None  # world (x, z), aligned with retained crowns before lidar snapping
     terrain: Any = None                # lidar height map of the cell (``terrain`` = ground Y), None when unavailable (#301)
     source_rejections: list = field(default_factory=list)  # open-land crowns without mapped/height support (#317)
+    source_counts: dict = field(default_factory=dict)  # candidate counts before source precedence/rejections
 
     def after_undo(self, remaining_masks):
         """A real undo clears only unshared positions; other masks retain ownership."""
@@ -633,6 +668,10 @@ def planning_inputs(cell, osm_ground=None):
     """
     tx, tz = cell
     x0, z0 = tx * CELL, tz * CELL
+    ndsm_support = cell_ndsm(cell, margin=2)
+    # Snapping keeps its existing 128x128 geometry; only corroboration reads across cell edges.
+    # If neighbouring tiles are unavailable, preserve all cached in-cell evidence.
+    ndsm = ndsm_support[2:-2, 2:-2] if ndsm_support is not None else cell_ndsm(cell)
     # Canopy and cover each call require_coverage, samples and a detector.
     # One cache so those six opens of the same mosaic become one decode.
     from aerial_coverage import rgb_cache
@@ -640,7 +679,13 @@ def planning_inputs(cell, osm_ground=None):
         grid = canopy_grid(cell)
         crowns = find_crowns(grid)
         n_detected = len(crowns)
-        crowns = crowns + fill_dense(cover_grid(cell), crowns, seed=tx * 1000 + tz)
+        cover = cover_grid(cell)
+        aerial_fill = fill_dense(cover, crowns, seed=tx * 1000 + tz, ndsm=ndsm)
+        crowns = crowns + aerial_fill
+    lidar = lidar_fill(ndsm, crowns, cover, seed=tx * 1000 + tz)
+    crowns = crowns + lidar
+    source_counts = {'detected': n_detected, 'aerial_fill': len(aerial_fill),
+                     'lidar_fill': len(lidar), 'mapped': 0}
     extra = {(x0 + i, z0 + j) for i, j, _r in extra_crowns(cell)}
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]
@@ -650,10 +695,6 @@ def planning_inputs(cell, osm_ground=None):
     from osm_footprints import OSMIndex
     idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
-    ndsm_support = cell_ndsm(cell, margin=2)
-    # Snapping keeps its existing 128x128 geometry; only corroboration reads across cell edges.
-    # If neighbouring tiles are unavailable, preserve all cached in-cell evidence.
-    ndsm = ndsm_support[2:-2, 2:-2] if ndsm_support is not None else cell_ndsm(cell)
     fp_local = {(x - x0, z - z0) for x, z in fp
                 if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
     g = google_crowns(cell)
@@ -679,6 +720,7 @@ def planning_inputs(cell, osm_ground=None):
         footprints=fp_local,
     )
     mapped = {(x0 + i, z0 + j) for i, j, _r in mapped_crowns}
+    source_counts['mapped'] = len(mapped_crowns)
     # Mapped crowns win overlaps (surveyed position); skip detector crowns too close.
     retained = [
         (c, origin) for c, origin in zip(crowns, crown_origins)
@@ -704,7 +746,8 @@ def planning_inputs(cell, osm_ground=None):
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
                       set(getattr(osm_ground, 'road', ())),
                       set(getattr(osm_ground, 'water', ())) | set(getattr(osm_ground, 'water_line', ())),
-                      crown_origins=crown_origins, terrain=cell_terrain(cell), source_rejections=source_rejections)
+                      crown_origins=crown_origins, terrain=cell_terrain(cell), source_rejections=source_rejections,
+                      source_counts=source_counts)
 
 
 CROWN_MARGIN = 12      # columns past the cell edge warmed for crown overhang reads
@@ -721,6 +764,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
+              'crown_sources': inputs.source_counts,
               'crown_snaps': inputs.crown_snaps,
               'mapped_rejections': inputs.mapped_rejections or [],
               'mapped_snaps': inputs.mapped_snaps or [], 'source_rejections': inputs.source_rejections, 'rooting': [],
@@ -877,6 +921,9 @@ def run(cell: tuple[int, int]) -> int:
           f'({sum(1 for t in rep["trees"] if t[3] == "tree")} trees, '
           f'{sum(1 for t in rep["trees"] if t[3] == "bush")} bushes)  skipped {len(rep["skipped"])}  '
           f'blocks {len(placed)}  overhang past cell edge {rep["overhang"]}')
+    if rep['crown_sources']:
+        print('  crown candidates by source (before precedence): '
+              + ', '.join(f'{source} {count}' for source, count in rep['crown_sources'].items()))
     snaps = rep.get('crown_snaps') or []
     if snaps:
         x0, z0 = tx * CELL, tz * CELL
