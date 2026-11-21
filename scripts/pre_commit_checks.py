@@ -8,7 +8,7 @@ Mechanical checks only:
 - When staged paths are administrative-only (tracker files, ``docs/``, markdown,
   the root docs files; the same allowlist as ``ship_branch.is_docs_only_path``),
   skip provider-name audit and the unit suite, but validate that any staged
-  tracker file is well-formed JSON (#82, #241). Anything else is code and keeps
+  tracker file is well-formed JSON with valid model flags. Anything else is code and keeps
   the full checks.
 - Provider-name audit (#28): no new line-level hits outside allowed homes.
 - Wave lock helpers for the parallel-task-wave orchestrator (one open wave).
@@ -182,18 +182,26 @@ def is_administrative_only_paths(paths: Iterable[str]) -> bool:
 
 
 def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
-    """Return staged tracker files whose staged content is not valid JSON.
+    """Return staged tracker files with invalid JSON or Claude requirement flags.
 
     @param repo_root: repository root
     @param paths: staged file paths relative to the repo root
-    @returns: sorted tracker paths that fail to parse
+    @returns: sorted tracker paths that fail JSON or model-flag validation
     """
     bad: list[str] = []
     for path in sorted(set(paths) & TRACKER_PATHS):
         try:
             text = _git(repo_root, 'show', f':{path}')
-            json.loads(text)
-        except (subprocess.CalledProcessError, ValueError):
+            data = json.loads(text)
+            tasks = data['tasks']
+            if not isinstance(tasks, list) or any(
+                not isinstance(task, dict)
+                or (path == 'tasks/index.json' or 'requiresClaude' in task)
+                and type(task.get('requiresClaude')) is not bool
+                for task in tasks
+            ):
+                bad.append(path)
+        except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
             bad.append(path)
     return bad
 
@@ -377,17 +385,15 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
             file=sys.stderr,
         )
         return 1
-    if skip_tests:
-        return 0
-    if is_administrative_only_paths(paths):
-        bad = invalid_tracker_files(repo_root, paths)
-        if bad:
-            print(
-                'pre-commit: staged tracker file is not valid JSON:\n  '
-                + '\n  '.join(bad),
-                file=sys.stderr,
-            )
-            return 1
+    bad = invalid_tracker_files(repo_root, paths)
+    if bad:
+        print(
+            'pre-commit: staged tracker has invalid JSON or requiresClaude flags:\n  '
+            + '\n  '.join(bad),
+            file=sys.stderr,
+        )
+        return 1
+    if skip_tests or is_administrative_only_paths(paths):
         return 0
     code = run_provider_name_audit(repo_root)
     if code != 0:

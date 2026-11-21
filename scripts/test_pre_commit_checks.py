@@ -347,7 +347,8 @@ class TrackerOnlySkipTestsTest(unittest.TestCase):
 
     def test_tracker_plus_code_still_runs_suite(self) -> None:
         """Mixed staging keeps provider audit + unit suite."""
-        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):
+        with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']), \
+                mock.patch.object(pcc, 'invalid_tracker_files', return_value=[]):
             with mock.patch.object(
                 pcc,
                 'staged_paths',
@@ -395,6 +396,46 @@ class TrackerOnlySkipTestsTest(unittest.TestCase):
             any('must not edit the system tracker' in line for line in printed),
             printed,
         )
+
+
+class TrackerModelFlagsTest(unittest.TestCase):
+    def test_active_tasks_require_explicit_boolean_flags(self) -> None:
+        for flag in ('missing', None, 'true', 1, [], {}):
+            task = {'id': 1}
+            if flag != 'missing':
+                task['requiresClaude'] = flag
+            with self.subTest(flag=flag), mock.patch.object(
+                pcc, '_git', return_value=json.dumps({'tasks': [task]})
+            ):
+                self.assertEqual(
+                    pcc.invalid_tracker_files(Path('/tmp/repo'), ['tasks/index.json']),
+                    ['tasks/index.json'],
+                )
+        for flag in (True, False):
+            with mock.patch.object(pcc, '_git', return_value=json.dumps(
+                {'tasks': [{'requiresClaude': flag}]}
+            )) as staged:
+                self.assertEqual(pcc.invalid_tracker_files(
+                    Path('/tmp/repo'), ['tasks/index.json']), [])
+                staged.assert_called_once_with(Path('/tmp/repo'), 'show', ':tasks/index.json')
+
+    def test_archive_accepts_legacy_tasks_and_checks_present_flags(self) -> None:
+        for task, expected in (({}, []), ({'requiresClaude': True}, []),
+                               ({'requiresClaude': False}, []),
+                               ({'requiresClaude': 'false'}, ['tasks/done.json'])):
+            with mock.patch.object(pcc, '_git', return_value=json.dumps({'tasks': [task]})):
+                self.assertEqual(pcc.invalid_tracker_files(
+                    Path('/tmp/repo'), ['tasks/done.json']), expected)
+
+    def test_invalid_flags_fail_even_with_code_or_skip_tests(self) -> None:
+        for skip_tests in (False, True):
+            with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']), \
+                    mock.patch.object(pcc, 'staged_paths', return_value=['tasks/index.json', 'scripts/foo.py']), \
+                    mock.patch.object(pcc, '_git', return_value='{"tasks":[{"requiresClaude":"true"}]}'), \
+                    mock.patch.object(pcc, 'run_unit_tests') as tests, \
+                    mock.patch('builtins.print'):
+                self.assertEqual(pcc.run_pre_commit(Path('/tmp/repo'), skip_tests=skip_tests), 1)
+                tests.assert_not_called()
 
 
 if __name__ == '__main__':
