@@ -112,24 +112,44 @@ python3 scripts/ship_branch.py merge task/<id>-<slug>
 - anything in this file contradicts the live tracker or the project docs: follow them, and tell the owner.
 
 
-## Run status: 2026-11-21, resumed
+## Run status: 2026-11-21, complete
 
-The owner explicitly resumed the wave and then authorized **"Wait and retry
-automatically when free"** for transient full-suite test-lock contention for the
-rest of this wave. This overrides only that immediate-stop condition; the wave
-lock, required checks and every other stop condition still apply.
+All five woodland subtasks are merged into `main` and archived in `tasks/done.json`.
+Claude completed 348, 350 and 351 while this orchestrator was waiting. Final close
+review found two concrete regressions; both were reproduced with synthetic tests,
+fixed on separate task branches, reviewed and merged through ship-branch.
 
-- **349:** merged at `fd73843f99a656b32ec129587cb9be91e9107ae8` and archived.
-  Fresh review APPROVE; 75 focused tests, full precommit and tip/main merge suites
-  passed. Worktree and local branch removed by ship-branch.
-- **347:** merged at `2af310f50fd024236cecd2e1181e0f670a5a276c` and archived.
-  Fresh review APPROVE; focused checks across 13 modules, full precommit and
-  tip/main merge suites passed. Worktree and local branch removed. Confirmed IDs
-  and unverified 26.2 placement-state distinction are recorded in its archived notes.
-- **348, 350, 351:** running in isolated `.worktrees/` branches. Workers must
-  obtain a full-suite slot from the orchestrator before code commits.
+| Task | Merge SHA | Verification | Review evidence |
+| --- | --- | --- | --- |
+| 347 plant vocabulary | `2af310f50fd024236cecd2e1181e0f670a5a276c` | Focused checks across 13 modules; full precommit and tip/main suites passed | APPROVE |
+| 348 woodland floor | `722414569161eeca0b1eaa01fbb6c97f5c84789b` | Ground and land-use focused suites, including floor/edge/share regressions; final full suite passed | Closed by Claude; close-review scrub overlap resolved by 364 (APPROVE) |
+| 349 lidar crown fill | `fd73843f99a656b32ec129587cb9be91e9107ae8` | 75 focused tests; full precommit and tip/main suites passed | APPROVE |
+| 350 species mix | `213ae384a1411b4a1e62d2aa3193ce56fad1e716` | Focused log passed; exact-oak, mix, grounded-root and mask regressions present; final full suite passed | Fresh close verification APPROVE |
+| 351 woodland decor | `6488d657e63fb74180b7594ba112223c0c4b1b82` | Decor and land-use focused suites; prior tip/main suites and final full suite passed | Prior APPROVE recorded in archive; close-review air check resolved by 363 (APPROVE) |
+| 363 preserve existing plants | `88fd56ce4e5cfe883956183a535f08cf9f2b3c4a` | Six synthetic overwrite cases failed before fix; focused decor/land-use, full precommit and tip/main suites passed | Fresh APPROVE |
+| 364 preserve overlapping scrub | `3b2e11af7113801e0ce2071cb9c39e071c151df7` | Overlapping scrub failed before fix; default-off, opt-in and reversed-order cases pass; focused ground/land-use, full precommit and tip/main suites passed | Fresh APPROVE |
 
-The orchestrator holds wave `woodland-1`, holder `codex-woodland-20261121-root`.
-No live-world command has been run. Merges use `--no-push` until the owner
-explicitly authorizes a remote destination. The two unrelated pre-existing
-code branches were merged by other sessions; this wave did not merge or push them.
+The decor fix requires known literal air, preserving an existing plant at either
+bush voxel. The floor fix applies the scrub opt-in inside overlapping wood/forest
+polygons as well as standalone scrub, preserving the enclosing polygon's edge mask.
+
+All seven task IDs are archived and absent from the active tracker; every listed
+merge is on `main`. Workers authored no tracker changes (main-sync merge imports
+are not worker tracker edits). No wave branch or worktree remains, and sweep reports
+no unmerged code branches. Three clean, pre-existing Claude worktrees are retained
+under `.claude/worktrees/`; this thread did not create them. The wave lock is released
+at close. Verification logs for 363 and 364 are `/tmp/woodland-<id>-focused.log`,
+`/tmp/woodland-<id>-commit.log`, and `/tmp/woodland-<id>-merge.log`.
+
+No live-world build step was performed by this code wave. Merges from this chat
+used `--no-push`. The owner authorized waiting/retrying transient full-suite test
+locks for this wave; other orchestrators' wave locks were respected.
+
+**318 is next and needs Claude.** It is unblocked, but remains pending. It must tune
+thresholds, species weights and shares against the aerial, redo ground then trees
+on 63,-45 and 46,-46 with the owner present, check the eight-minute budget and take
+the owner's in-game verdict. Issue I-055 stays held until 318 is archived. The
+woodland species weights remain placeholders; leaf litter and large ferns ship at
+zero share pending 26.2 state confirmation. The earlier plain-oak plane-trunk rule
+and the separate question about moving 319's existing plants to decor remain recorded
+in the task notes.
