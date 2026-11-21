@@ -159,7 +159,7 @@ def neighbour_owned_states(cell: tuple[int, int], exclude=()) -> dict:
     from cell_registry import view_registry
     tx, tz = cell
     around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
-    return {p: state for p, (_plan, state) in view_registry().owners(around, exclude=exclude).items()}
+    return view_registry().owner_states(around, exclude=exclude)
 
 
 def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
