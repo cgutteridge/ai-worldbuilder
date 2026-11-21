@@ -394,7 +394,7 @@ def snap_google_crowns(
                 if max(abs(di - i), abs(dj - j)) > radius:
                     continue
                 height = float(ndsm[di, dj])
-                if height < min_ndsm:
+                if not np.isfinite(height) or height < min_ndsm:
                     continue
                 dist2 = (di - i) ** 2 + (dj - j) ** 2
                 key = (-height, dist2, di, dj)

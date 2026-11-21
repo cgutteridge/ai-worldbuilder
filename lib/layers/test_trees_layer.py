@@ -551,6 +551,32 @@ class TestSnapGoogleCrowns(unittest.TestCase):
         self.assertEqual(report[2]['status'], 'unconfirmed')
         self.assertEqual(sum(1 for r in report if r['status'] == 'moved'), 1)
 
+    def test_nonfinite_samples_cannot_displace_a_finite_canopy_peak(self):
+        for invalid in (np.nan, np.inf, -np.inf):
+            with self.subTest(invalid=invalid):
+                ndsm = np.zeros((128, 128))
+                ndsm[20, 20] = 5.
+                ndsm[14, 14] = invalid  # visited first in the search window
+                snapped, report = tl.snap_google_crowns([(20, 20, 3.)], ndsm, set())
+                self.assertEqual(snapped, [(20, 20, 3.)])
+                self.assertEqual(report[0]['ndsm'], 5.)
+                x0, z0 = CELL[0] * 128, CELL[1] * 128
+                mapped, rejected, snaps = tl.resolve_mapped_tree_crowns(
+                    CELL, [(x0 + 20, z0 + 20)], [], ndsm, set())
+                self.assertEqual(mapped, [(20, 20, tl.MAPPED_TREE_R)])
+                self.assertEqual(rejected, [])
+                self.assertEqual(snaps[0]['ndsm'], 5.)
+
+    def test_nonfinite_samples_alone_do_not_confirm_canopy(self):
+        for invalid in (np.nan, np.inf, -np.inf):
+            with self.subTest(invalid=invalid):
+                ndsm = np.zeros((128, 128))
+                ndsm[14, 14] = invalid
+                snapped, report = tl.snap_google_crowns([(20, 20, 3.)], ndsm, set())
+                self.assertEqual(snapped, [(20, 20, 3.)])
+                self.assertEqual(report[0]['status'], 'unconfirmed')
+                self.assertEqual(report[0]['ndsm'], 0.)
+
 
 class TestMappedTreeCrowns(unittest.TestCase):
     """Mapped natural=tree points and tree_row lines → crown candidates (#157).
