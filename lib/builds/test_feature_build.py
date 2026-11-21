@@ -4004,3 +4004,12 @@ class RoofMaterialMigrationGoldenTest(unittest.TestCase):
         self.assertTrue(any(state == 'minecraft:gray_concrete' for state in states))
         rows = json.loads(_ROOF_MATERIAL_GOLDEN.read_text(encoding='utf-8'))
         self.assertEqual(_roof_material_cell_rows(plan), rows)
+
+
+class SharedRoofVariantTest(unittest.TestCase):
+    def test_pitched_helpers_resolve_shared_block_aliases(self):
+        from feature_build import _roof_slab, _roof_stair
+        self.assertEqual(_roof_slab('minecraft:brick_slab', 'bottom'),
+                         'brick_slab[type=bottom,waterlogged=false]')
+        self.assertEqual(_roof_stair('brick_stairs', 'north', shape='outer_left'),
+                         'brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]')

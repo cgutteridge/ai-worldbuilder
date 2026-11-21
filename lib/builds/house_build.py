@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic vector-map footprint house builder (house only: walls, floors, doors, windows, slab roofs).
+"""Generic vector-map footprint house builder (house only: walls, floors, doors, windows, flatish or pitched roofs).
 
 One module for every "house only" run (layered pass 1: Granby Grove, Merton Rd, Ripstone and Blenheim Gardens
 q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json instead of a 390-line script copy:
@@ -8,7 +8,10 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
   notes          provenance: map ways, aerial/streetlevel evidence, date, queue item (free text, never read by code)
   modifies       earlier builds this one may overwrite (default [])
   ways           {"<map way id>": "<label>"} the footprints to build
-  roofs          {"<label>": "<slab material>"} e.g. brick, mud_brick, deepslate_tile, cobbled_deepslate
+  roofs          {"<label>": "<roof material>"} from config/roof-materials.json
+  roof_pitch     optional {"<label>": rise_per_run}, finite number 0..1 (default 0.5)
+                 <=0.5 keeps legacy slab rings; >0.5 uses stairs/slabs at half-block-snapped heights
+                 group roofs require equal effective pitches; first label supplies the material
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
   floor_min      minimum floor y (front pavement height) or null
@@ -24,11 +27,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
+from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 from site_kit import Plan, apply, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 # Same list as feature_build.GROUND, incl. the lidar ghost tops (task 286).
@@ -44,8 +49,11 @@ FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}       # facing of a stair that rises toward the house
 
 
-def stair(mat, facing, half='bottom'):
-    return f'{mat}_stairs[facing={facing},half={half}]'
+def stair(mat, facing, half='bottom', shape=None):
+    """Stair state using shared material names; optional explicit corner shape."""
+    block = family_variants(mat)['stairs']
+    corner = f',shape={shape}' if shape is not None else ''
+    return f'{block}[facing={facing},half={half}{corner}]'
 
 
 def load_spec(path):
@@ -71,10 +79,25 @@ def load_spec(path):
     spec.setdefault('keep_edits', False)
     spec.setdefault('door_frame', True)
     labels = set(spec['ways'].values())
+    pitches = spec.get('roof_pitch', {})
+    if not isinstance(pitches, dict):
+        raise SystemExit(f'{path}: roof_pitch must be a label-to-rise_per_run object')
+    for no, pitch in pitches.items():
+        if no not in labels or no not in roofs:
+            raise SystemExit(f'{path}: roof_pitch label {no!r} needs a way and a roof')
+        if (isinstance(pitch, bool) or not isinstance(pitch, (int, float))
+                or not 0 <= pitch <= 1 or not math.isfinite(pitch)):
+            raise SystemExit(f'{path}: roof_pitch[{no!r}] must be a finite number in [0, 1]')
+    for no, material in roofs.items():
+        resolved = roof_blocks(material, roof_class(pitches.get(no, 0.5), 1))
+        if not resolved['ok']:
+            raise SystemExit(f'{path}: roof {no!r}: {"; ".join(resolved["messages"])}')
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
         g.setdefault('mode', 'each')
+        if g['mode'] == 'group' and len({pitches.get(no, 0.5) for no in g['nos']}) > 1:
+            raise SystemExit(f'{path}: group roof labels must have equal roof_pitch values')
         for no in g['nos']:
             if no not in labels or no not in spec['roofs']:
                 raise SystemExit(f'{path}: label {no} needs a way and a roof')
@@ -382,8 +405,11 @@ class Build:
             print(line)
 
     def roof(self):
+        """Plan shared or individual roof skins, solid underlays and through-chimneys."""
+        from feature_build import pitched_roof_states, roof_block_y
+        from roof_lint import stair_shape_from_neighbours
+
         done = {}
-        seen = set()
         todo = []
         for g in self.groups:
             hs = [h for h in self.houses if h.group is g]
@@ -415,22 +441,57 @@ class Build:
                             nq.append(n)
                 q = nq
             b = hs[0].b
+            rm = self.spec['roofs'][hs[0].no]
+            pitch = self.spec.get('roof_pitch', {}).get(hs[0].no, 0.5)
+            pitched = roof_class(pitch, 1) == 'pitched'
+            resolved = roof_blocks(rm, 'pitched' if pitched else 'flatish')
+            if not resolved['ok']:
+                raise SystemExit('; '.join(resolved['messages']))
+            variants = family_variants(rm)
+            if pitched:
+                half_heights = {c: 2 * (b + 6) + math.floor(2 * d * pitch)
+                                for c, d in dist.items()}
+                states = pitched_roof_states(half_heights, dict.fromkeys(dist, rm))
             for c, d in dist.items():
-                y = b + 6 + d // 2
-                t = 'bottom' if d % 2 == 0 else 'top'
-                key = (y, 1 if t == 'top' else 0)
+                if pitched:
+                    y = roof_block_y(half_heights[c])
+                    state = states[c]
+                    key = (y, 0 if 'type=bottom' in state else 1)
+                else:
+                    y = b + 6 + d // 2
+                    t = 'bottom' if d % 2 == 0 else 'top'
+                    key = (y, 1 if t == 'top' else 0)
+                    state = (f'{variants["slab"]}[type={t}]' if 'slab' in variants
+                             else variants['full'])
                 cur = done.get(c)
                 if cur is None or key > cur[0]:
-                    done[c] = (key, t, b, c in self.owner, self.spec['roofs'][hs[0].no])
+                    done[c] = (key, b, c in self.owner, rm, state, pitched)
             best = max(dist, key=lambda c: (dist[c] if c in own else -1, -abs(c[0] - sum(x for x, _ in own) / len(own))))
-            chim.append((best, b, hs[0].group))
-        for (x, z), (key, t, b, inside, rm) in done.items():
+            chim.append((best, b))
+        # Chimneys replace roof stairs, so choose corner states against the final skin.
+        chimney_cells = {c for c, _b in chim}
+        facings = {c: state.split('facing=', 1)[1].split(',', 1)[0]
+                   for c, (_key, _b, _inside, _rm, state, _pitched) in done.items()
+                   if '_stairs[' in state and c not in chimney_cells}
+        for (x, z), (key, b, inside, rm, state, pitched) in done.items():
             y = key[0]
             if inside:
                 for yy in range(b + 6, y):
                     self.set(x, yy, z, WALL)
-            self.set(x, y, z, f'{rm}_slab[type={t}]')
-        for (x, z), b, g in chim:
+            if pitched:
+                # A two-layer skin seals the stair cutouts, including the eave fringe.
+                self.set(x, y - 1, z, family_variants(rm)['full'])
+                if (x, z) in facings:
+                    adjacent = {FACE[face]: (facings[n], 'bottom')
+                                if n in facings and done[n][0][0] == y else None
+                                for face, (dx, dz) in DIRS.items()
+                                for n in [(x + dx, z + dz)]}
+                    shape = stair_shape_from_neighbours(facings[(x, z)], 'bottom', adjacent)
+                    state = stair(rm, facings[(x, z)], shape=shape)
+            self.set(x, y, z, state)
+            if pitched and 'type=bottom' in state:
+                self.p.keep_slab_cells.add((x, y, z))
+        for (x, z), b in chim:
             ridge = max(k[0][0] for (xx, zz), k in done.items() if abs(xx - x) <= 1 and abs(zz - z) <= 1)
             for y in range(b + 6, ridge + 2):
                 self.set(x, y, z, WALL)
@@ -464,7 +525,7 @@ class Build:
         for q in list(self.p.cells):
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]
-        self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
+        self.p.outside_footprint_ok = 'roof-overhang fringe; evidence: footprint-hits json'
         from site_kit import interior_ground_clears
         self.keep.update(interior_ground_clears(
             self.p, {c: h.b for h in self.houses for c in h.inner}))
