@@ -1686,7 +1686,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     """Dry-run one cell. Returns the number of conflicts (0 means it is safe to apply)."""
     tx, tz = cell
     name = plan_name(tx, tz)
-    plan = Plan(f'{name}-dry')
+    plan = Plan(f'{name}-dry', input_cells=[cell])
     world = _fresh_world()
     masked = load_masked_positions()
     states = neighbour_owned_states(cell, ignored_builds(cell))
@@ -1789,7 +1789,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     tx, tz = cell
     name = plan_name(tx, tz)
     require_ready([cell], 'ground', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
-    plan = Plan(name)
+    plan = Plan(name, input_cells=[cell])
     world = _fresh_world(strict=True)
     masked = load_masked_positions()
     ignored = ignored_builds(cell)

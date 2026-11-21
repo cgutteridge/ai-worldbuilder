@@ -112,6 +112,10 @@ class Build:
             for c in h.cells:
                 self.owner[c] = k
         self.by_no_all = by_no
+        # Stamp against footprint cells so unrelated neighbouring prepares do not
+        # invalidate this plan while cross-cell geometry still counts (task 232).
+        import cellmath
+        self.p.capture_inputs({cellmath.cell_of(x, z) for cols in by_no.values() for x, z in cols})
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
@@ -475,6 +479,9 @@ class Build:
         guard_roof_jogs(self.p)
         for h in self.houses:
             print(h.no, 'b', h.b, 'cells', len(h.cells), 'door', getattr(h, 'door', None), 'rear', getattr(h, 'rear', None))
+        # Re-stamp from the finished geometry so roof overhangs into neighbours are
+        # part of the plan identity apply will check (task 232).
+        self.p.capture_inputs()
         return self.p
 
 

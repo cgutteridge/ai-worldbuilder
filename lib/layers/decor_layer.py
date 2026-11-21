@@ -886,7 +886,7 @@ def run(cell: tuple[int, int]) -> int:
     from layer_reports import artifact_path, write_report
 
     name = plan_name(*cell)
-    plan = Plan(f'{name}-dry')
+    plan = Plan(f'{name}-dry', input_cells=[cell])
     undo = plan_after_undo('decor', cell, fresh_planning_world())
     if undo.conflicts:
         print(f'  {len(undo.conflicts)} decor undo conflicts; planning against the unmodified world')
@@ -939,7 +939,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     tx, tz = cell
     name = plan_name(tx, tz)
     require_ready([cell], 'decor', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
-    plan = Plan(name)
+    plan = Plan(name, input_cells=[cell])
     world = World()
     with timed_stage('layer planning (includes surface warm-up)'):
         placed, stats = plan_cell(cell, plan, world)

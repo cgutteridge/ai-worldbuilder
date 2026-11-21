@@ -364,6 +364,8 @@ def build(spec: Mapping[str, Any]) -> Plan:
             plan.set(x, bank_y, z, edge_spec['material'])
         else:
             plan.set(x, bank_y, z, bank_spec['material'])
+    # Stamp against every cell the water body and bank touch (task 232).
+    plan.capture_inputs()
     return plan
 
 

@@ -4,15 +4,7 @@
   "nextTaskId": 345,
   "tasks": [
     
-    {
-      "id": 232,
-      "title": "Concurrent cell prepares keep invalidating each other's readiness validation",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "OWNER DECISION 2026-11-21: (1) Unrelated work elsewhere must not invalidate a cell's readiness or an unapplied build plan; identities must cover the evidence, settings and shared geometry the particular plan actually depends on. Genuine neighbour dependencies still count. (2) Apply reruns readiness checks under the lock and automatically refreshes validation when those checks pass. (3) A genuinely outdated build plan must still stop and require replanning; refreshing readiness validation must never approve that old plan. Relevant changes include corrected footprints/lidar, palette or land-use rules, world coordinates, existing geometry and plan/dismissal assumptions used by the plan. Current source and journal fingerprints are conservative across the whole world, so unrelated changes can reject plans; narrow those dependencies. Diagnose the original incident using the cause tracking added by #289; the original cause is not established. Check: unrelated neighbouring evidence/geometry work leaves the cell and its unapplied plan usable; a relevant planning-input change refuses the old plan with a replanning instruction; stale readiness validation refreshes under the lock only after all readiness checks pass, with hold/coverage/recovery blockers preserved. Original report: seen 2026-10-31 on Portswood Rec (53,-42) with neighbour sessions preparing 52,-42/52,-43; prepare on one cell changed neighbouring readiness revisions and separate apply was refused 'validation stale' four times. Builders chained prepare && apply as a workaround. Original suspects were vector-map extract rewrites or neighbour plan notes, not verified causes."
-    , "requiresClaude": false},
+    
     {
       "id": 233,
       "title": "prepare --apply records a duplicate plan_feature on every run (ambiguous legacy plan warning)",

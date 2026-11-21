@@ -16,6 +16,11 @@ from cell_readiness import ReadinessPolicy, content_id, describe_blockers
 
 
 WHOLE = (-10**9, -10**9, 10**9, 10**9)
+_CLIP_SUFFIXES = ('.json', '.jsonl', '.geojson', '.png')
+_TERRAIN_SUFFIXES = ('.tif', '.tiff', '.asc')
+# Cell-scoped map extracts (handled by cell_map_inputs); everything else under
+# reference/ is shared planning evidence (decor, trees, buildings, portals, …).
+_MAP_CLIP_DIRNAMES = frozenset({'vector_map', 'osm'})
 
 
 def _touches_cell(rings, cell):
@@ -24,6 +29,38 @@ def _touches_cell(rings, cell):
     xs = [x for x, _ in rings[0]]
     zs = [z for _, z in rings[0]]
     return min(xs) <= x1 and max(xs) >= x0 and min(zs) <= z1 and max(zs) >= z0
+
+
+def _clip_extent(path):
+    """Inclusive MC query bbox encoded in a clip filename or folder, if any.
+
+    Layer prefixes are ignored so highways-only and multi-layer cell extracts both count.
+    """
+    import re
+    for name in (Path(path).stem, Path(path).parent.name):
+        match = re.search(r'(?:^|-)bbox-(-?\d+)-(-?\d+)-(-?\d+)-(-?\d+)$', name)
+        if match:
+            x0, z0, x1, z1 = map(int, match.groups())
+            if x0 <= x1 and z0 <= z1:
+                return x0, z0, x1, z1
+        match = re.search(r'(?:^|-)r(\d+)m-at-(-?\d+)-(-?\d+)$', name)
+        if match:
+            radius, x, z = map(int, match.groups())
+            return x - radius, z - radius, x + radius, z + radius
+        match = re.search(r'(?:^|-)cell-(-?\d+)-(-?\d+)$', name)
+        if match:
+            x, z = map(int, match.groups())
+            return x, z, x + 127, z + 127
+    return None
+
+
+def _extent_meets_cell(extent, cell):
+    """Whether an inclusive clip bbox overlaps the cell's block bounds."""
+    if extent is None:
+        return False
+    x0, z0, x1, z1 = cellmath.bounds(cell)
+    cx0, cz0, cx1, cz1 = extent
+    return cx0 <= x1 and cx1 >= x0 and cz0 <= z1 and cz1 >= z0
 
 
 def file_identity(path):
@@ -41,6 +78,7 @@ class LocalEvidence:
     def __init__(self, root):
         self.root = Path(root)
         self._revision = None
+        self._settings = None
         self._facts = {}
         self._index = None
         self._file_ids = {}
@@ -54,20 +92,53 @@ class LocalEvidence:
             self._file_ids[path] = file_identity(path)
         return self._file_ids[path]
 
+    def settings_revision(self):
+        """Shared settings and reference evidence every cell's plans depend on.
+
+        Hashes ``config/`` plus shared ``reference/`` inputs (decor furniture, tree
+        crowns, buildings, portals, TPO, aerial sheets, …). Cell-scoped map clip
+        trees (``reference/vector_map`` and legacy ``reference/osm``) are omitted
+        here and audited per cell by :meth:`cell_map_inputs` so a neighbour prepare
+        does not invalidate this cell (task 232).
+        """
+        if self._settings is None:
+            rows = []
+            config = self.root / 'config'
+            if config.is_dir():
+                rows.extend((str(p.relative_to(self.root)), self.file_id(p))
+                            for p in sorted(config.rglob('*'))
+                            if p.is_file() and p.suffix.lower() in _CLIP_SUFFIXES)
+            reference = self.root / 'reference'
+            if reference.is_dir():
+                for path in sorted(reference.rglob('*')):
+                    if not path.is_file() or path.suffix.lower() not in _CLIP_SUFFIXES:
+                        continue
+                    rel = path.relative_to(reference)
+                    if rel.parts and rel.parts[0] in _MAP_CLIP_DIRNAMES:
+                        continue
+                    rows.append((str(path.relative_to(self.root)), self.file_id(path)))
+            self._settings = content_id(rows)
+        return self._settings
+
     def source_revision(self):
-        """Hash evidence inputs once at run startup; build specs belong to plans."""
+        """Hash evidence inputs once at run startup; build specs belong to plans.
+
+        Kept for broad audits and legacy plan stamps. Cell readiness and new plan
+        identities use :meth:`settings_revision` plus per-cell map/lidar facts (task 232).
+        """
         if self._revision is None:
             roots = [self.root / 'config', self.root / 'reference']
             paths = sorted({p for directory in roots for p in directory.rglob('*')
-                            if p.is_file() and p.suffix.lower() in ('.json', '.jsonl', '.geojson', '.png')})
+                            if p.is_file() and p.suffix.lower() in _CLIP_SUFFIXES})
             paths += sorted(p for p in (self.root / 'downloads').rglob('*')
-                            if p.is_file() and p.suffix.lower() in ('.tif', '.tiff', '.asc'))
+                            if p.is_file() and p.suffix.lower() in _TERRAIN_SUFFIXES)
             self._revision = content_id([(str(p.relative_to(self.root)), self.file_id(p)) for p in paths])
         return self._revision
 
     def refresh(self):
         """Start a new content audit after a local extraction or preparation repair."""
-        self._revision, self._facts, self._index, self._file_ids, self._warnings = None, {}, None, {}, {}
+        self._revision = self._settings = None
+        self._facts, self._index, self._file_ids, self._warnings = {}, None, {}, {}
         self._lidar_client = None
 
     def lidar_status(self, cell):
@@ -87,6 +158,31 @@ class LocalEvidence:
                 raise ValueError('lidar DTM/DSM has no-data in the cell or its sampling edge')
         return missing, identities
 
+    def cell_map_inputs(self, cell, clips):
+        """Map-clip identities this cell's readiness and plans depend on.
+
+        Clips whose query bbox meets the cell count; clips with no encoded extent are
+        treated as shared (they feed every OSMIndex load). Far prepared-* extracts for
+        other cells are omitted so unrelated neighbour prepares do not invalidate this
+        cell (task 232).
+
+        @param cell: ``(tx, tz)``
+        @param clips: vector-map clip tree root
+        @returns: sorted ``(relative path, content id)`` rows including world-frame
+        """
+        cell = tuple(cell)
+        shared, local = [], []
+        for path in sorted(clips.glob('*/*.geojson')):
+            row = (str(path.relative_to(self.root)), self.file_id(path))
+            extent = _clip_extent(path)
+            if extent is None:
+                shared.append(row)
+            elif _extent_meets_cell(extent, cell):
+                local.append(row)
+        frame = self.root / 'config' / 'world-frame.json'
+        shared.append(('world-frame', self.file_id(frame)))
+        return shared + local
+
     def facts(self, cell):
         """Coverage and local cache availability for a named cell."""
         cell = tuple(cell)
@@ -98,15 +194,14 @@ class LocalEvidence:
             try:
                 clips = vector_map_clip_root(self.root)
                 fraction = clip_coverage(cell, root=clips)
-                map_ids = [(str(p.relative_to(self.root)), self.file_id(p))
-                           for p in sorted(clips.glob('*/*.geojson'))]
+                map_ids = self.cell_map_inputs(cell, clips)
             except FileNotFoundError:
                 fraction = 0.0
-                map_ids = []
-            frame = self.root / 'config' / 'world-frame.json'
-            map_ids.append(('world-frame', self.file_id(frame)))
-            self._facts[cell] = {'revision': content_id([self.source_revision(), lidar_ids]),
-                                 'source_revision': self.source_revision(),
+                frame = self.root / 'config' / 'world-frame.json'
+                map_ids = [('world-frame', self.file_id(frame))] if frame.is_file() else []
+            revision = content_id([self.settings_revision(), map_ids, lidar_ids])
+            self._facts[cell] = {'revision': revision,
+                                 'source_revision': revision,
                                  'map_revision': content_id(map_ids),
                                  'clip_coverage': fraction,
                                  'aerial_coverage': coverage(cell, mosaics(self.root)),
@@ -166,11 +261,18 @@ def policy_for(registry):
     return ReadinessPolicy(registry, LocalEvidence(registry.root), require_plan_identity=True)
 
 
-def planning_inputs():
-    """Capture source and journal inputs for a new Plan before geometry is planned.
+def planning_inputs(cells=None):
+    """Capture evidence and journal inputs for a new Plan before geometry is planned.
+
+    When ``cells`` is set, identities cover only the settings, map/lidar and journal
+    geometry those cells depend on (task 232). Omitting ``cells`` keeps the legacy
+    whole-world hashes for callers that have not named a cell yet.
 
     Pure plans may exist before a world is selected; a live apply still requires
     both identities. Reload the canonical frame before stamping its source bytes.
+
+    @param cells: optional iterable of ``(tx, tz)`` the plan will touch
+    @returns: ``(evidence_revision, journal_revision)`` or ``(None, None)`` with no world
     """
     from active_world import WORLD_ROOT
     if WORLD_ROOT is None:
@@ -178,7 +280,15 @@ def planning_inputs():
     from cell_registry import view_registry
     from world_frame import load_frame
     load_frame(reload=True)
-    return LocalEvidence(WORLD_ROOT).source_revision(), view_registry().planning_revision()
+    evidence = LocalEvidence(WORLD_ROOT)
+    if cells is None:
+        return evidence.source_revision(), view_registry().planning_revision()
+    scoped = sorted({tuple(c) for c in cells})
+    if not scoped:
+        return evidence.settings_revision(), view_registry().planning_revision(())
+    revisions = [evidence.facts(c)['revision'] for c in scoped]
+    evidence_id = revisions[0] if len(revisions) == 1 else content_id(revisions)
+    return evidence_id, view_registry().planning_revision(scoped)
 
 
 def enforce_live(registry, build, touched):
