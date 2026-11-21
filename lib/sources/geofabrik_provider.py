@@ -17,18 +17,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from script_env import TOOL_ROOT
-from osm_cell_extract import install_cell_extract_layer_presets, cell_extract_layers_csv
+from osm_cell_extract import cell_extract_layers_csv
+from osm_extraction import LAYER_PRESETS, osm_schema, run_ogr2ogr
 from vector_map_clips import default_pbf_path, place_clip_dir
 
 INDEX_URL = 'https://download.geofabrik.de/index-v1.json'
 OSM_CONFIG = TOOL_ROOT / 'config' / 'osmconf.ini'
-LAYER_PRESETS = {
-    'buildings': [('multipolygons', "building IS NOT NULL AND building <> ''", ['footprint'])],
-    'highways': [('lines', "highway IS NOT NULL AND highway <> ''", ['context'])],
-    'landuse': [('multipolygons', "landuse IS NOT NULL AND landuse <> ''", ['landscape'])],
-    'railway': [('lines', "railway IS NOT NULL AND railway <> ''", ['context'])],
-}
-install_cell_extract_layer_presets(LAYER_PRESETS)
 
 
 def parse_bbox(text: str) -> tuple[float, float, float, float]:
@@ -200,18 +194,13 @@ def extractor_main(config_path: Path, argv: list[str] | None = None) -> int:
             for name in args.layers.split(',') for i, job in enumerate(LAYER_PRESETS[name])]
         output = place_clip_dir(args.place)
         output.mkdir(parents=True, exist_ok=True)
-        schema = config_path.with_name('osmconf.ini')
-        if not schema.is_file():
-            schema = OSM_CONFIG
+        schema = osm_schema(config_path.with_name('osmconf.ini'))
         for name, layer, where, _tags in jobs:
             name = f'{name}.geojson'
             # Temporary output prevents failed GDAL jobs replacing good evidence.
             with tempfile.TemporaryDirectory(dir=output) as tmp:
                 target = Path(tmp) / name
-                subprocess.run(['ogr2ogr', '--config', 'OSM_CONFIG_FILE', str(schema),
-                                '-f', 'GeoJSON', '-spat', *map(str, bbox),
-                                '-clipsrc', *map(str, bbox), '-where', where,
-                                str(target), str(pbf), layer], check=True, capture_output=True, text=True)
+                run_ogr2ogr(pbf, target, layer, where, bbox, schema=schema, clip=True)
                 target.replace(output / name)
         print(output)
         return 0

@@ -51,7 +51,7 @@ Already done, do not redo: #345 (trees planning speed-up) and #346 (run budget).
    ```
 
    (`--tool claude-code` if you are Claude Code.) Expect "eligible". A refusal leaves the task pending; report why.
-5. **Task 347 input check.** The task says to confirm the new plant names from the repo's block data. The repo may not list them (a search found no mention of `leaf_litter`, `short_dry_grass`, `tall_dry_grass` or `bush` in `block_reference.py` or `surface_probe.py`). If the 347 notes do not already contain a confirmed list with its source, do not start 347 and do not let the worker guess names: ask the owner (or a Claude session with the game's block registry) for the list first. 348 and 351 wait on it.
+5. **Task 347 input check.** The four plant names are confirmed: `config/minecraft-block-ids-26.2.txt` (tracked; vendored from the Mojang 26.2 client's `blockstates/*.json`, SHA256 in its header) lists `minecraft:short_dry_grass`, `minecraft:tall_dry_grass`, `minecraft:leaf_litter` and `minecraft:bush`, and the 347 notes record this. Check the notes still say so; if they do, 347 may start. Any other ground-cover id (for example `wildflowers`, `pink_petals`, `dead_bush`) must be confirmed against that same file. The file holds ids only, not block states, and the repo has no 26.2 jar, so which plants are two-block (`tall_dry_grass` is not safe to assume) and what states `leaf_litter` and `wildflowers` take are **not** confirmed: the worker records them as unverified in the 347 notes or its return, and 348 and 351 do not place two-block or segmented plants until the owner or a world session has confirmed the states. Do not let the worker guess names or states. (An earlier version of this step said the repo did not list the names; it was searching `block_reference.py` and `surface_probe.py` only.)
 
 ## Launch a worker
 
@@ -106,5 +106,32 @@ python3 scripts/ship_branch.py merge task/<id>-<slug>
 - the wave lock or the full-suite lock is held by someone else;
 - a worker reports it needs a world build step, a new schema or journal change, or a change to layer ownership;
 - a review keeps finding blockers after 3 rounds (leave the branch unmerged and say so);
-- plant names for 347 cannot be confirmed from a real source;
+- a plant name for 347 is not in `config/minecraft-block-ids-26.2.txt`, or a worker needs block states the repo cannot confirm (two-block halves, `segment_amount`, `facing`);
 - anything in this file contradicts the live tracker or the project docs: follow them, and tell the owner.
+
+
+## Run status: 2026-11-21, stopped at full-suite lock gate
+
+No woodland task has been merged or archived yet. No live-world command was run.
+The orchestrator stopped after an external full-suite lock collision, as required
+above; an immediate follow-up lock probe found it free. Owner continuation is pending.
+
+- **349:** branch `task/349-lidar-crowns`, worktree `.worktrees/349-lidar-crowns`,
+  tip `79daae47a087c2ef08a65759da086cab518e43fb`. Code commit
+  `b12b0801c8371f74c1f5f3e9bbe673d2daa090e7`; synced with docs-only main.
+  75 focused tests passed; full precommit suite and provider audit passed.
+  Fresh-context read-only review: **APPROVE**. Worktree clean; ready for ship-branch.
+  Logs: `/tmp/woodland-349-focused.log`, `/tmp/woodland-349-commit.log`.
+- **347:** branch `task/347-plant-vocabulary`, worktree
+  `.worktrees/347-plant-vocabulary`. Implementation and synthetic tests are **staged,
+  uncommitted** (17 files). Focused checks across 11 modules passed. The commit hook
+  failed fast because another full suite held the common lock; no retry was made.
+  Log: `/tmp/woodland-347-commit.log`. Current-version plant states remain unverified;
+  the generic placement allowlist is unchanged. Retry the commit only after the
+  owner authorizes continuing, then sync main, run fresh review and ship-branch.
+- **348, 350, 351:** not started. Their dependency/file-serialization rules still apply.
+
+Before resuming, acquire the wave lock again and rerun the live ticket dispatch gates.
+Keep merges local (`ship_branch.py merge ... --no-push`) until the owner explicitly
+authorizes a remote destination. The unrelated pre-existing code branches
+`task/237-geofabrik-consolidation` and `task/road-labels-entity-kill` were preserved.
