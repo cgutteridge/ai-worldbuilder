@@ -15,6 +15,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                    "edge"?: {"block": "<mat>", "where": "outer"|"all"},
                    "zone_materials"?: {"<level_m_AOD>": "<mat>", ...},
                    "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...]}],
+                   "flat_tol_m"?: <metres 0..3, pitched only, default 1.5>,
                    "pv_arrays"?: [{"box": [x0, z0, x1, z1], "rows": "x"|"z",
                                    "pitch"?: <int >= 1, default 2>, "source": "<evidence>"}]}}
                  Absent edge = no roof edging. Present: block is the parapet /
@@ -698,11 +699,14 @@ def _roof_pitch_mask(
     return spread(uphill & (rise_m >= flat_tol_m), uphill=False)
 
 
+FLAT_TOL_M = 1.5  # default exclusive rise (m above the zone eave) below which a roof stays flat
+
+
 def zone_ridge_half_steps(
     med: np.ndarray,
     zone: np.ndarray,
     readable: np.ndarray,
-    flat_tol_m: float = 1.5,
+    flat_tol_m: float = FLAT_TOL_M,
     levels: list | None = None,
     flat_gradient: float = 0.2,
     flat_out: np.ndarray | None = None,
@@ -1335,6 +1339,7 @@ def load_spec(path) -> dict:
         if not isinstance(roof, dict) or roof.get('kind') not in ROOF_KINDS or not roof.get('material'):
             raise SystemExit(f'{path}: roofs[{lab}] needs {{kind: flat|pitched, material: ...}}')
         _validate_roof_edge(path, lab, roof)
+        _validate_flat_tol(path, lab, roof)
         _validate_zone_materials(path, lab, roof)
         _validate_pv_arrays(path, lab, roof)
     for g in spec['groups']:
@@ -1370,6 +1375,24 @@ def _validate_facade_plan(path, spec: dict, labels: set) -> None:
         )
     except facade_plan_mod.FacadePlanError as exc:
         raise SystemExit(str(exc)) from exc
+
+
+def _validate_flat_tol(path, lab: str, roof: dict) -> None:
+    """Validate optional ``roofs[label].flat_tol_m`` (absent = ``FLAT_TOL_M`` default).
+
+    @param path: spec path (for error text)
+    @param lab: roof label
+    @param roof: roofs[lab] dict
+    @raises SystemExit: when not a finite number in [0, 3], or set on a flat roof
+    """
+    if 'flat_tol_m' not in roof:
+        return
+    tol = roof['flat_tol_m']
+    if roof.get('kind') != 'pitched':
+        raise SystemExit(f'{path}: roofs[{lab}].flat_tol_m only applies to pitched roofs')
+    if (isinstance(tol, bool) or not isinstance(tol, (int, float))
+            or not math.isfinite(tol) or not 0 <= tol <= 3):
+        raise SystemExit(f'{path}: roofs[{lab}].flat_tol_m must be a finite number of metres in [0, 3]')
 
 
 def _validate_roof_edge(path, lab: str, roof: dict) -> None:
@@ -2053,6 +2076,7 @@ class Build:
                 half_grid = flatten_half_step_decks(
                     zone_ridge_half_steps(
                         _win_nanmedian(fine, 3), zone, readable, levels=_levels, flat_out=flat_grid,
+                        flat_tol_m=float(f.roof.get('flat_tol_m', FLAT_TOL_M)),
                     ),
                     zone, readable,
                 )
