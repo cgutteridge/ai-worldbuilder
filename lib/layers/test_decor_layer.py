@@ -1,14 +1,19 @@
-"""Unit tests for decor_layer (join_pieces + street furniture + empty apply)."""
+"""Unit tests for decor_layer (join_pieces + street furniture + empty apply + woodland #351)."""
 from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
 
 import decor_layer as dl
+import land_use
 import street_furniture as sf
+from block_store import MemoryBlocks
+from pass_mask import build_mask, mask_placements
+from site_kit import Plan, World
 
 B = 'brick_wall'
 
@@ -1089,3 +1094,284 @@ class TestDryRunUndo(unittest.TestCase):
             self.assertIs(planner.call_args.args[2], live)
             self.assertIn(pos, planner.call_args.kwargs['masked'])
             self.assertIn('undo conflicts; planning against the unmodified world', output.getvalue())
+
+
+class TestWoodlandDecor(unittest.TestCase):
+    """Woodland understorey bushes and ground cover inside wood polygons (#351)."""
+
+    SIDE = 64
+    CELL = (0, 0)
+    GY = 40
+
+    def square(self, *, trunks=(), crowns=(), extra=None):
+        cols = [(x, z) for x in range(self.SIDE) for z in range(self.SIDE)]
+        blocks = {}
+        for x, z in cols:
+            blocks[(x, self.GY, z)] = 'grass_block'
+            blocks[(x, self.GY - 1, z)] = 'stone'
+            for y in range(self.GY + 1, self.GY + 5):
+                blocks[(x, y, z)] = 'air'
+        for x, z in trunks:
+            blocks[(x, self.GY + 1, z)] = 'oak_log'
+            blocks[(x, self.GY + 2, z)] = 'oak_log'
+        for x, z in crowns:
+            blocks[(x, self.GY + 1, z)] = 'oak_leaves[persistent=true]'
+            blocks[(x, self.GY + 2, z)] = 'oak_leaves[persistent=true]'
+        if extra:
+            blocks.update(extra)
+        plan = Plan('woodland-decor-test')
+        world = World(store=MemoryBlocks(blocks, default='air'))
+        return cols, plan, world
+
+    def place(self, plan, world, columns, **kwargs):
+        return dl.plan_woodland_decor(plan, world, self.CELL, columns, **kwargs)
+
+    def test_shares_exclusions_air_and_seed(self):
+        cols, plan, world = self.square(trunks=((10, 10),), crowns=((11, 11),))
+        columns = {q: 'natural' for q in cols}
+        held = {(10, 10), (11, 11), (12, 12), (13, 13), (14, 14), (15, 15)}
+        found, report = self.place(
+            plan, world, columns,
+            owned={(12, self.GY, 12)},
+            masked={(13, self.GY + 1, 13): 'trees 0,0'},
+            clear={(14, 14)},
+            way={(15, 15)},
+            near1={(16, 16)},
+        )
+        free = [q for q in cols if q not in held and q != (16, 16)]
+        placed_cols = {(p[0], p[2]) for p in found}
+        self.assertTrue(placed_cols)
+        self.assertTrue(placed_cols.isdisjoint(held | {(16, 16)}))
+        self.assertNotIn((10, self.GY + 1, 10), found)
+        self.assertNotIn((11, self.GY + 1, 11), found)
+        n = len(free)
+        self.assertAlmostEqual(report['bushes'] / n, 0.07, delta=0.03)
+        self.assertAlmostEqual(report['fern'] / n, 0.15, delta=0.04)
+        self.assertAlmostEqual(report['short_grass'] / n, 0.08, delta=0.03)
+        self.assertAlmostEqual(report['short_dry_grass'] / n, 0.03, delta=0.02)
+        self.assertAlmostEqual(report['tall_dry_grass'] / n, 0.02, delta=0.02)
+        self.assertEqual(report['leaf_litter'], 0)
+        self.assertEqual(report['large_fern'], 0)
+        for pos, block in found.items():
+            self.assertGreaterEqual(pos[1], self.GY + 1)
+            live = world.block(*pos)
+            self.assertTrue(dl.is_air(live), msg=f'{pos} was {live}')
+        for item in report['items']:
+            self.assertEqual(item['provenance']['source'], 'inference')
+            self.assertIn('#351', item['label'])
+        again_cols, again_plan, again_world = self.square(trunks=((10, 10),), crowns=((11, 11),))
+        again_found, again = self.place(
+            again_plan, again_world, {q: 'natural' for q in again_cols},
+            owned={(12, self.GY, 12)},
+            masked={(13, self.GY + 1, 13): 'trees 0,0'},
+            clear={(14, 14)},
+            way={(15, 15)},
+            near1={(16, 16)},
+        )
+        self.assertEqual(again, report)
+        self.assertEqual(again_found, found)
+        self.assertEqual(again_plan.cells, plan.cells)
+
+    def test_outside_wood_and_key_off(self):
+        cols, plan, world = self.square()
+        wood = {(x, z) for x in range(32) for z in range(32)}
+        outside = {(x, z) for x in range(40, 56) for z in range(40, 56)}
+        found, report = self.place(plan, world, {q: 'natural' for q in wood})
+        self.assertTrue(report['bushes'] + report['fern'] + report['short_grass'] > 0)
+        self.assertTrue(all((p[0], p[2]) in wood for p in found))
+        self.assertFalse(any((p[0], p[2]) in outside for p in found))
+        empty_plan = Plan('woodland-off')
+        none, report_off = self.place(empty_plan, world, {})
+        self.assertEqual(none, {})
+        self.assertEqual(report_off['bushes'], 0)
+        with mock.patch('land_use.woodland_decor', return_value=None):
+            silent, report_silent = self.place(
+                Plan('woodland-silent'), world, {q: 'natural' for q in wood})
+        self.assertEqual(silent, {})
+        self.assertEqual(report_silent['bushes'], 0)
+
+    def test_bush_height_share_and_mask_round_trip(self):
+        cols, plan, world = self.square()
+        rule = {
+            'bushes': 1.0, 'bush_tall': 0.40, 'fern': 0.0, 'large_fern': 0.0,
+            'short_grass': 0.0, 'short_dry_grass': 0.0, 'tall_dry_grass': 0.0,
+            'leaf_litter': 0.0, 'scrub': True,
+        }
+        columns = {q: 'natural' for q in cols}
+        with mock.patch('land_use.woodland_decor', return_value=rule):
+            found, report = self.place(plan, world, columns)
+        self.assertEqual(report['bushes'], len(cols))
+        tall = sum(1 for item in report['items'] if item.get('tall'))
+        self.assertAlmostEqual(tall / len(cols), 0.40, delta=0.05)
+        for item in report['items']:
+            x, y, z = item['position']
+            self.assertIn((x, y, z), found)
+            self.assertIn('leaves', found[(x, y, z)])
+            if item['tall']:
+                self.assertIn((x, y + 1, z), found)
+            else:
+                self.assertNotIn((x, y + 1, z), found)
+        mask = build_mask('decor', self.CELL, 'woodland-mask', found, lambda _p: True)
+        self.assertEqual(mask_placements(mask), found)
+
+    def test_tags_and_scrub_gate(self):
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        areas = [
+            (sq(0, 0, 40, 40), {'natural': 'wood', 'osm_way_id': '1'}),
+            (sq(50, 0, 70, 20), {'landuse': 'grass', 'osm_way_id': '2'}),
+            (sq(50, 50, 70, 70), {'natural': 'scrub', 'osm_way_id': '3'}),
+            (sq(0, 80, 20, 100), {'landuse': 'forest', 'osm_way_id': '4'}),
+        ]
+        classes = {}
+        for x in range(0, 110):
+            for z in range(0, 110):
+                if x >= 50 and z < 30:
+                    classes[(x, z)] = ('park', 'lawn', 'cover')
+                else:
+                    classes[(x, z)] = ('natural', 'cover', 'cover')
+        idx = SimpleNamespace(areas=areas)
+        got = dl.woodland_decor_columns((0, 0), idx, classes)
+        self.assertEqual(got[(32, 32)], 'natural')
+        self.assertEqual(got[(10, 90)], 'natural')
+        self.assertNotIn((60, 10), got)
+        self.assertEqual(got[(60, 60)], 'natural')
+        residential = {q: ('residential', 'r', 'use') for q in classes}
+        self.assertEqual(dl.woodland_decor_columns((0, 0), idx, residential), {})
+        real = land_use.woodland_decor
+
+        def scrub_off(cid):
+            rule = real(cid)
+            if not rule:
+                return rule
+            return dict(rule, scrub=False)
+
+        with mock.patch('land_use.woodland_decor', side_effect=scrub_off):
+            no_scrub = dl.woodland_decor_columns((0, 0), idx, classes)
+        self.assertNotIn((60, 60), no_scrub)
+        self.assertEqual(no_scrub[(32, 32)], 'natural')
+
+    def test_land_class_columns_string_shape(self):
+        """plan_cell passes land_class_columns ({column: class id}), not area_classes tuples."""
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        wood = {(x, z) for x in range(0, 40) for z in range(0, 40)}
+        classes = {q: 'natural' for q in wood}  # string shape from decor_plan.land_class_columns
+        idx = SimpleNamespace(areas=[(sq(0, 0, 40, 40), {'natural': 'wood', 'osm_way_id': '1'})])
+        got = dl.woodland_decor_columns((0, 0), idx, classes)
+        self.assertEqual(got[(20, 20)], 'natural')
+        self.assertGreater(len(got), 100)
+        # First letter of "natural" must not be treated as the class id.
+        self.assertNotIn('n', {dl._land_class_id(v) for v in classes.values()})
+
+
+class TestWoodlandDecorPlanCell(unittest.TestCase):
+    """plan_cell wiring: land_class_columns shape, stats, and key-off."""
+
+    GY = 64
+
+    def _world(self, cols):
+        blocks = {}
+        for x, z in cols:
+            blocks[(x, self.GY, z)] = 'grass_block'
+            for y in range(self.GY + 1, self.GY + 4):
+                blocks[(x, y, z)] = 'air'
+        return World(store=MemoryBlocks(blocks, default='air'))
+
+    def test_plan_cell_places_woodland_and_key_off_leaves_unchanged(self):
+        import types
+        from site_kit import Plan
+
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        wood = {(x, z) for x in range(8, 24) for z in range(8, 24)}
+        world = self._world(wood | {(10, 20), (11, 20)})
+        land_classes = {q: 'natural' for q in wood}  # real land_class_columns shape
+        item = {'id': 'front', 'role': 'barrier', 'kind': 'hedge', 'height': 2,
+                'cells': [[10, 20], [11, 20]]}
+        vmap = types.SimpleNamespace(**{k: set() for k in
+            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks')},
+            furniture=[], road_lines=[], path_lines=[])
+        idx = mock.Mock(cells=lambda: {}, buildings={},
+                        areas=[(sq(8, 8, 24, 24), {'natural': 'wood', 'osm_way_id': 'w1'})])
+        with mock.patch('ground_sources.OSMGround', return_value=vmap), \
+                mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(dl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(dl, 'load_masked_positions', return_value={}), \
+                mock.patch.object(dl.dplan, 'land_class_columns', return_value=land_classes), \
+                mock.patch.object(dl.dplan, 'build_decor_plan',
+                                  return_value={'items': [item], 'reserved': {'openings': []}}), \
+                mock.patch.object(dl.ob, 'mapped_outbuilding_footprints', return_value=[]), \
+                mock.patch.object(dl.ob, 'lidar_rise', return_value=None), \
+                mock.patch.object(dl.sf, 'designer_items', return_value=[]), \
+                mock.patch.object(dl.sf, 'designer_observations', return_value=[]), \
+                mock.patch('lidar_heightmap.reference_world',
+                           return_value=mock.Mock(heightmap=lambda c: None)):
+            placed, stats = dl.plan_cell((0, 0), Plan('woodland-wire'), world)
+        self.assertIn('woodland_decor', stats)
+        wood_count = (stats['woodland_decor']['bushes']
+                      + stats['woodland_decor']['fern']
+                      + stats['woodland_decor']['short_grass']
+                      + stats['woodland_decor']['short_dry_grass']
+                      + stats['woodland_decor']['tall_dry_grass'])
+        self.assertGreater(wood_count, 0)
+        hedge_cols = {(10, 20), (11, 20)}
+        woodland_only = [p for p in placed if (p[0], p[2]) not in hedge_cols]
+        self.assertTrue(woodland_only, msg='woodland plants must land outside the hedge')
+
+        with mock.patch('ground_sources.OSMGround', return_value=vmap), \
+                mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(dl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(dl, 'load_masked_positions', return_value={}), \
+                mock.patch.object(dl.dplan, 'land_class_columns', return_value=land_classes), \
+                mock.patch.object(dl.dplan, 'build_decor_plan',
+                                  return_value={'items': [item], 'reserved': {'openings': []}}), \
+                mock.patch.object(dl.ob, 'mapped_outbuilding_footprints', return_value=[]), \
+                mock.patch.object(dl.ob, 'lidar_rise', return_value=None), \
+                mock.patch.object(dl.sf, 'designer_items', return_value=[]), \
+                mock.patch.object(dl.sf, 'designer_observations', return_value=[]), \
+                mock.patch('lidar_heightmap.reference_world',
+                           return_value=mock.Mock(heightmap=lambda c: None)), \
+                mock.patch('land_use.woodland_decor', return_value=None):
+            off_placed, off_stats = dl.plan_cell((0, 0), Plan('woodland-off'), world)
+        self.assertEqual(off_stats['woodland_decor']['bushes'], 0)
+        self.assertEqual(off_stats['woodland_decor']['fern'], 0)
+        # Barriers still place when the woodland key is off.
+        self.assertTrue(any('leaves' in b for b in off_placed.values()))
+
+
+class TestWoodlandDecorTable(unittest.TestCase):
+    """Config schema for woodland_decor (#351)."""
+
+    def test_shipped_open_land_only(self):
+        got = {cid: land_use.woodland_decor(cid) for cid in land_use.CLASSES}
+        for cid in ('park', 'rural', 'natural'):
+            self.assertEqual(got[cid]['bushes'], 0.07)
+            self.assertEqual(got[cid]['bush_tall'], 0.40)
+            self.assertEqual(got[cid]['fern'], 0.15)
+            self.assertEqual(got[cid]['short_grass'], 0.08)
+            self.assertEqual(got[cid]['leaf_litter'], 0.0)
+            self.assertTrue(got[cid]['scrub'])
+        self.assertIsNone(got['residential'])
+        self.assertIsNone(land_use.woodland_decor('banana'))
+
+    def test_schema_checked(self):
+        import copy
+        import json
+        from pathlib import Path
+        doc = json.loads(Path(land_use.TABLE_PATH).read_text())
+        good = land_use.woodland_decor('natural')
+        row = next(r for r in doc['classes'] if r['id'] == 'natural')
+        row.pop('woodland_decor', None)
+        land_use.validate_table(doc)
+        row['woodland_decor'] = good
+        land_use.validate_table(doc)
+        for bad in (False, [], {'bushes': 0.1}, dict(good, bushes=1.5),
+                    dict(good, scrub='yes'), dict(good, fern=0.9)):
+            with self.subTest(bad=bad):
+                row['woodland_decor'] = copy.deepcopy(bad) if isinstance(bad, dict) else bad
+                with self.assertRaisesRegex(land_use.TableError, 'woodland_decor'):
+                    land_use.validate_table(doc)

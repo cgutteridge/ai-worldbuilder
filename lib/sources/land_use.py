@@ -30,7 +30,7 @@ PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
-OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture')
+OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 TREE_SOURCES = ('mapped', 'wood', 'lidar')
 TREE_SPECIES = ('oak', 'birch', 'dark_oak')
@@ -38,6 +38,13 @@ GROUND_TEXTURE_PALETTES = ('pasture', 'meadow', 'wood')  # open grass (#319); wo
 GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
 WOOD_FLOOR_BLOCKS = ('podzol', 'coarse_dirt', 'moss_block')  # roll order for ground_texture.wood
 WOOD_FLOOR_KEYS = WOOD_FLOOR_BLOCKS + ('edge', 'scrub')
+# Decor understorey (#351): shares in config, never in code. leaf_litter stays placeable when its
+# share is > 0; 26.2 litter states are still unverified (#347), so the shipped share is 0 until #318.
+WOODLAND_DECOR_SHARE_KEYS = (
+    'bushes', 'bush_tall', 'fern', 'large_fern', 'short_grass',
+    'short_dry_grass', 'tall_dry_grass', 'leaf_litter',
+)
+WOODLAND_DECOR_KEYS = WOODLAND_DECOR_SHARE_KEYS + ('scrub',)
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
 MAX_GROUND_TEXTURE_FLOWER_SHARE = 0.05        # meadow flowers stay sparse (#319 prototype 1.5%)
@@ -120,6 +127,7 @@ def validate_table(doc: dict) -> dict:
                         or not 0 < sum(weights.values()) <= sys.float_info.max):
                     raise TableError(f'{cid}: trees.species_weights must map {TREE_SPECIES} to nonnegative finite weights with a positive total')
         _validate_ground_texture(cid, row.get('ground_texture'))
+        _validate_woodland_decor(cid, row.get('woodland_decor'))
         match = row['match']
         for col in ('building', 'use', 'cover'):
             if col not in match:
@@ -305,6 +313,20 @@ def ground_texture(cls: str) -> dict | None:
     return value if value else None
 
 
+def woodland_decor(cls: str) -> dict | None:
+    """Woodland understorey shares for a class (``woodland_decor``), or None when off.
+
+    Separate from ``planting`` so classes with ``frontage.inference`` false can still get
+    wood-polygon decor (#351). Absent or null means no understorey. Shares are placeholders
+    for #318; ``scrub`` true includes ``natural=scrub`` columns with wood and forest.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: share map, or None
+    """
+    value = defaults(cls).get('woodland_decor')
+    return dict(value) if value else None
+
+
 def _share_range(cid: str, field: str, value) -> None:
     """Refuse a texture share range that is not ``[lo, hi]`` with ``0 <= lo <= hi <= 1``.
 
@@ -411,6 +433,30 @@ def _validate_ground_texture(cid: str, texture) -> None:
             _validate_wood_floor(cid, palette)
         else:
             _validate_open_grass(cid, name, palette)
+
+
+def _validate_woodland_decor(cid: str, decor) -> None:
+    """Refuse a bad ``woodland_decor`` column (absent/null means no understorey).
+
+    @param cid: class id
+    @param decor: the column value
+    @returns: None
+    """
+    if decor is None:
+        return
+    if not isinstance(decor, dict) or set(decor) != set(WOODLAND_DECOR_KEYS):
+        raise TableError(
+            f'{cid}: woodland_decor must be null or have keys {sorted(WOODLAND_DECOR_KEYS)}')
+    total = 0.0
+    for key in WOODLAND_DECOR_SHARE_KEYS:
+        if key == 'bush_tall':
+            _unit_share(cid, f'woodland_decor.{key}', decor[key])
+            continue
+        total += _unit_share(cid, f'woodland_decor.{key}', decor[key])
+    if total > 1 + 1e-9:
+        raise TableError(f'{cid}: woodland_decor plant shares must add up to at most 1')
+    if type(decor['scrub']) is not bool:
+        raise TableError(f'{cid}: woodland_decor.scrub must be true or false')
 
 
 @lru_cache(maxsize=1)
