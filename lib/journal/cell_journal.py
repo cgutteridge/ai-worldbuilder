@@ -83,6 +83,9 @@ JOURNAL_SCHEMA = 2
 SAMPLE = 10
 # Large ghost plans must not multiply retained memory across cells.
 MAX_CACHED_BLOB_BLOCKS = 262144
+# Feature writes at or within this many blocks above a column's landed ground top count as
+# footprint / foundation / ground-level (task 234). Roof and eaves sit higher and are fringe.
+GROUND_LEVEL_SLACK = 1
 
 
 # --- errors (all loud; nothing is swallowed) -----------------------------------------------------
@@ -424,6 +427,8 @@ class _Entry:
     mismatches: int = 0
     undone: bool = False
     reopened: tuple[Cell, ...] = ()
+    # Cells whose trees/decor this feature invalidates (task 234). None = legacy: all ``cells``.
+    layout_cells: tuple[Cell, ...] | None = None
     owner: str | None = None
     ts: str = ''
     meta: dict = field(default_factory=dict)
@@ -666,6 +671,73 @@ class CellRegistry:
         size = self.cell_size
         return {cellmath.cell_of(x, z, size) for x, _y, z in positions}
 
+    def _ground_column_tops(self, cell: Cell) -> dict[tuple[int, int], int]:
+        """Landed ground-pass surface Y per column in ``cell``.
+
+        @param cell: (tx, tz)
+        @returns: ``{(x, z): top_y}`` from the latest landed ground plan that owns the cell
+        """
+        tops: dict[tuple[int, int], int] = {}
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if (e.kind != 'build' or e.pass_ != 'ground' or e.undone
+                    or e.status != 'landed' or e.cell != cell):
+                continue
+            tops = {}
+            for pos, state in self._blob(e.blob).items():
+                if block_id(state) in CANCEL or self._cell_of(pos) != cell:
+                    continue
+                x, y, z = pos
+                xz = (x, z)
+                if y > tops.get(xz, -10 ** 9):
+                    tops[xz] = y
+        return tops
+
+    def _substantive_feature_overlap(self, cell: Cell, positions: Iterable[Pos]) -> bool:
+        """Whether feature writes in ``cell`` are footprint / foundation / ground-level (task 234).
+
+        Roof or eaves beyond the ground footprint sit above the landed ground surface and are
+        harmless fringe. A column with no recorded ground top falls back to the cell's highest
+        known surface; with no ground at all, the overlap is treated as substantive.
+
+        @param cell: neighbour cell being classified
+        @param positions: non-air planned positions that fall in ``cell``
+        @returns: True when trees/decor on ``cell`` must be marked stale
+        """
+        tops = self._ground_column_tops(cell)
+        fallback = max(tops.values()) if tops else None
+        for x, y, z in positions:
+            top = tops.get((x, z), fallback)
+            if top is None:
+                return True
+            if y <= top + GROUND_LEVEL_SLACK:
+                return True
+        return False
+
+    def _feature_layout_cells(self, primary: Cell,
+                              positions: Mapping[Pos, str]) -> tuple[Cell, ...]:
+        """Cells whose trees/decor a feature landing invalidates (task 234).
+
+        The primary cell always. Neighbours only when ground footprint, foundations or
+        ground-level writes enter them — not roof/eaves-only fringe beyond the footprint.
+
+        @param primary: feature home cell
+        @param positions: planned ``{(x, y, z): state}``
+        @returns: sorted layout cells
+        """
+        by_cell: dict[Cell, list[Pos]] = {}
+        for pos, state in positions.items():
+            if block_id(state) in CANCEL:
+                continue
+            by_cell.setdefault(self._cell_of(pos), []).append(tuple(pos))
+        out: set[Cell] = {primary}
+        for cell, plist in by_cell.items():
+            if cell == primary:
+                continue
+            if self._substantive_feature_overlap(cell, plist):
+                out.add(cell)
+        return tuple(sorted(out))
+
     def _fold(self, d: dict) -> None:
         """Apply one parsed journal line to the folded state (deterministic, no I/O)."""
         try:
@@ -696,6 +768,9 @@ class CellRegistry:
 
     def _fold_begin(self, d: dict) -> None:
         cells = tuple(tuple(c) for c in d['cells'])
+        layout_raw = d.get('layout_cells')
+        layout_cells = (tuple(tuple(c) for c in layout_raw)
+                        if layout_raw is not None else None)
         e = _Entry(
             seq=d['seq'], kind=d['kind'], plan=d['plan'], pass_=d['pass'], cell=tuple(d['cell']),
             cells=cells, blob=d['blob'], n=d['n'], modifies=tuple(d.get('modifies', ())),
@@ -703,18 +778,31 @@ class CellRegistry:
             targets=tuple(d.get('targets', ())), owner=d.get('owner'), ts=d.get('ts', ''),
             meta=dict(d.get('meta') or {}),
             signs=_signs_from_json(d.get('signs')), entities=_entities_from_json(d.get('entities')),
-            prior=d.get('prior'), schema=int(d.get('schema', 1)))
+            prior=d.get('prior'), schema=int(d.get('schema', 1)), layout_cells=layout_cells)
         if e.schema > JOURNAL_SCHEMA:
             raise JournalError(f'journal entry {e.seq} has schema {e.schema}; this tool reads up to {JOURNAL_SCHEMA}')
         if e.kind == 'build' and e.pass_ == 'feature':
             earlier = self._latest(e.plan)
             if earlier is not None and earlier.status == 'landed':
-                e.reopened = tuple(sorted(set(earlier.cells) | set(cells)))
+                earlier_layout = self._layout_cells_of(earlier)
+                new_layout = self._layout_cells_of(e)
+                e.reopened = tuple(sorted(set(earlier_layout) | set(new_layout)))
         self._entries[e.seq] = e
         self._begun.add(e.seq)
         for c in cells:
             self._by_cell.setdefault(c, []).append(e.seq)
         self._plans.setdefault(e.plan, []).append(e.seq)
+
+    @staticmethod
+    def _layout_cells_of(e: _Entry) -> tuple[Cell, ...]:
+        """Cells whose trees/decor a feature entry invalidates (task 234).
+
+        @param e: feature build entry
+        @returns: layout cells; legacy entries without ``layout_cells`` use every touched cell
+        """
+        if e.layout_cells is not None:
+            return e.layout_cells
+        return e.cells
 
     def _fold_finish(self, d: dict) -> None:
         e = self._entries.get(d['ref'])
@@ -1134,8 +1222,10 @@ class CellRegistry:
             mine = e.cell == cell
             if e.pass_ == 'ground' and mine:
                 real, ghost_ground = True, False
-            elif e.pass_ == 'feature':
-                trees = decor = False                  # first landings change layout too
+            elif e.pass_ == 'feature' and cell in self._layout_cells_of(e):
+                # Footprint / foundation / ground-level overlap only (task 234); roof/eaves fringe
+                # into a neighbour leaves that neighbour's trees/decor completion intact.
+                trees = decor = False
             elif e.pass_ == 'trees' and mine:
                 trees, decor = True, False
             elif e.pass_ == 'decor' and mine:
@@ -1323,6 +1413,9 @@ class CellRegistry:
             'modifies': sorted(b.modifies), 'strict': bool(b.strict), 'strip': strip,
             'owner': os.environ.get('SITE_OWNER'), 'schema': JOURNAL_SCHEMA,
         }
+        if b.pass_ == 'feature':
+            layout = self._feature_layout_cells(primary, positions)
+            record['layout_cells'] = [list(c) for c in layout]
         if b.mask is not None:
             record['mask'] = b.mask
         if b.meta or policy_meta:

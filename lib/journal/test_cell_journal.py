@@ -302,15 +302,56 @@ class TestOwnership(Base):
 
 class TestRules(Base):
     def test_feature_rebuild_invalidates_all_previous_and_current_cells(self):
+        """Footprint-level writes across cells clear trees/decor on every touched cell (#234)."""
         self.real_cell(0, 0)
         self.real_cell(1, 0)
-        self.build('bridge', 'feature', {P(0, 0, y=70): STONE, P(1, 0, y=70): STONE})
+        # y=61 is ground+1: substantive footprint/foundation, not roof fringe.
+        mods = ('trees_0_0', 'trees_1_0', 'decor_0_0', 'decor_1_0')
+        self.build('bridge', 'feature', {P(0, 0, y=61): STONE, P(1, 0, y=61): STONE},
+                   modifies=mods)
         for tx in (0, 1):
             self.build(f'trees_{tx}_0', 'trees', {}, cell=(tx, 0))
             self.build(f'decor_{tx}_0', 'decor', {}, cell=(tx, 0))
-        self.build('bridge', 'feature', {P(0, 0, y=71): STONE}, cell=(0, 0))
+        self.build('bridge', 'feature', {P(0, 0, y=61): STONE}, cell=(0, 0),
+                   modifies=mods)
         for v in self.registry().view([(0, 0), (1, 0)]).values():
             self.assertFalse(v.trees or v.decor)
+
+    def test_five_block_roof_overhang_keeps_neighbour_trees_decor(self):
+        """#234: roof/eaves beyond the ground footprint leave a finished neighbour intact."""
+        self.real_cell(0, 0)
+        self.real_cell(1, 0)
+        cells = {P(0, 0, i, y=61): STONE for i in range(16)}
+        for i in range(5):
+            cells[(16 + i, 70, 0)] = 'minecraft:brick_slab[type=bottom]'
+        self.build('house', 'feature', cells, cell=(0, 0),
+                   modifies=('trees_0_0', 'decor_0_0'))
+        self.assertFalse(self.reg.cell((0, 0)).trees or self.reg.cell((0, 0)).decor)
+        neighbour = self.reg.cell((1, 0))
+        self.assertTrue(neighbour.trees and neighbour.decor)
+        self.assertTrue(neighbour.done)
+
+    def test_footprint_into_finished_neighbour_clears_trees_decor(self):
+        """#234: ground footprint / foundation entering a neighbour still marks trees/decor stale."""
+        self.real_cell(0, 0)
+        self.real_cell(1, 0)
+        self.build('house', 'feature', {
+            P(0, 0, 15, y=61): STONE,
+            P(1, 0, 5, y=61): STONE,
+        }, cell=(0, 0))
+        for tx in (0, 1):
+            v = self.reg.cell((tx, 0))
+            self.assertFalse(v.trees or v.decor)
+
+    def test_ground_level_change_into_neighbour_clears_trees_decor(self):
+        """#234: a ground-level write in the neighbour is substantive overlap, not fringe."""
+        self.real_cell(0, 0)
+        self.real_cell(1, 0)
+        self.build('house', 'feature', {
+            P(0, 0, 15, y=61): STONE,
+            P(1, 0, 5, y=60): DIRT,
+        }, cell=(0, 0), modifies=('ground_1_0',))
+        self.assertFalse(self.reg.cell((1, 0)).trees or self.reg.cell((1, 0)).decor)
 
     def test_successful_trees_generation_invalidates_decor_only_when_landed(self):
         for initial_trees in (False, True):
