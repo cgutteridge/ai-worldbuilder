@@ -317,10 +317,19 @@ class TestRules(Base):
         for v in self.registry().view([(0, 0), (1, 0)]).values():
             self.assertFalse(v.trees or v.decor)
 
+    def _finished_neighbour(self, tx: int, tz: int = 0, *, ground_y: int = 60) -> None:
+        """Done neighbour with ground on every column (avoids sparse-ground classification props)."""
+        self.build(f'ground_{tx}_{tz}', 'ground', plan(tx, tz, STONE, n=16, y=ground_y),
+                   cell=(tx, tz))
+        self.build(f'trees_{tx}_{tz}', 'trees',
+                   plan(tx, tz, 'minecraft:oak_log', y=ground_y + 1), cell=(tx, tz))
+        self.build(f'decor_{tx}_{tz}', 'decor',
+                   plan(tx, tz, 'minecraft:poppy', y=ground_y + 2, n=1), cell=(tx, tz))
+
     def test_five_block_roof_overhang_keeps_neighbour_trees_decor(self):
         """#234: roof/eaves beyond the ground footprint leave a finished neighbour intact."""
         self.real_cell(0, 0)
-        self.real_cell(1, 0)
+        self._finished_neighbour(1, 0)
         cells = {P(0, 0, i, y=61): STONE for i in range(16)}
         for i in range(5):
             cells[(16 + i, 70, 0)] = 'minecraft:brick_slab[type=bottom]'
@@ -334,7 +343,7 @@ class TestRules(Base):
     def test_footprint_into_finished_neighbour_clears_trees_decor(self):
         """#234: ground footprint / foundation entering a neighbour still marks trees/decor stale."""
         self.real_cell(0, 0)
-        self.real_cell(1, 0)
+        self._finished_neighbour(1, 0)
         self.build('house', 'feature', {
             P(0, 0, 15, y=61): STONE,
             P(1, 0, 5, y=61): STONE,
@@ -346,12 +355,34 @@ class TestRules(Base):
     def test_ground_level_change_into_neighbour_clears_trees_decor(self):
         """#234: a ground-level write in the neighbour is substantive overlap, not fringe."""
         self.real_cell(0, 0)
-        self.real_cell(1, 0)
+        self._finished_neighbour(1, 0)
         self.build('house', 'feature', {
             P(0, 0, 15, y=61): STONE,
             P(1, 0, 5, y=60): DIRT,
         }, cell=(0, 0), modifies=('ground_1_0',))
         self.assertFalse(self.reg.cell((1, 0)).trees or self.reg.cell((1, 0)).decor)
+
+    def test_wall_into_neighbour_with_dropped_ground_clears_trees_decor(self):
+        """#234: own-plan footprint still invalidates when neighbour terrain drops by 2+."""
+        self.real_cell(0, 0)
+        self._finished_neighbour(1, 0, ground_y=58)
+        self.build('house', 'feature', {
+            P(0, 0, 15, y=61): STONE,
+            P(1, 0, 5, y=61): STONE,
+        }, cell=(0, 0))
+        self.assertFalse(self.reg.cell((1, 0)).trees or self.reg.cell((1, 0)).decor)
+
+    def test_low_eave_over_rising_neighbour_keeps_trees_decor(self):
+        """#234: eaves above feature ground stay fringe even when neighbour ground rises under them."""
+        self.real_cell(0, 0)
+        self._finished_neighbour(1, 0, ground_y=69)
+        cells = {P(0, 0, i, y=61): STONE for i in range(16)}
+        cells[(20, 70, 0)] = 'minecraft:brick_slab[type=bottom]'
+        self.build('house', 'feature', cells, cell=(0, 0),
+                   modifies=('trees_0_0', 'decor_0_0'))
+        neighbour = self.reg.cell((1, 0))
+        self.assertTrue(neighbour.trees and neighbour.decor)
+        self.assertTrue(neighbour.done)
 
     def test_successful_trees_generation_invalidates_decor_only_when_landed(self):
         for initial_trees in (False, True):

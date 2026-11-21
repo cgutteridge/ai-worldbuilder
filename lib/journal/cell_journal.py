@@ -83,9 +83,6 @@ JOURNAL_SCHEMA = 2
 SAMPLE = 10
 # Large ghost plans must not multiply retained memory across cells.
 MAX_CACHED_BLOB_BLOCKS = 262144
-# Feature writes at or within this many blocks above a column's landed ground top count as
-# footprint / foundation / ground-level (task 234). Roof and eaves sit higher and are fringe.
-GROUND_LEVEL_SLACK = 1
 
 
 # --- errors (all loud; nothing is swallowed) -----------------------------------------------------
@@ -671,46 +668,47 @@ class CellRegistry:
         size = self.cell_size
         return {cellmath.cell_of(x, z, size) for x, _y, z in positions}
 
-    def _ground_column_tops(self, cell: Cell) -> dict[tuple[int, int], int]:
-        """Landed ground-pass surface Y per column in ``cell``.
+    @staticmethod
+    def _feature_ground_plan(positions: Mapping[Pos, str]
+                             ) -> tuple[int | None, set[tuple[int, int]]]:
+        """Feature ground level and xz footprint from its own plan (task 234).
 
-        @param cell: (tx, tz)
-        @returns: ``{(x, z): top_y}`` from the latest landed ground plan that owns the cell
+        Footprint columns are those with a write at the plan's lowest non-air Y. Roof or eaves
+        beyond that footprint are harmless fringe when every write in the neighbour column sits
+        above that ground level. No fixed horizontal allowance; neighbour terrain is unused.
+
+        @param positions: planned ``{(x, y, z): state}``
+        @returns: ``(ground_y, footprint_xz)``; ``ground_y`` is None when there are no solids
         """
-        tops: dict[tuple[int, int], int] = {}
-        for seq in self._by_cell.get(cell, ()):
-            e = self._entries[seq]
-            if (e.kind != 'build' or e.pass_ != 'ground' or e.undone
-                    or e.status != 'landed' or e.cell != cell):
+        ground_y: int | None = None
+        solids: list[Pos] = []
+        for pos, state in positions.items():
+            if block_id(state) in CANCEL:
                 continue
-            tops = {}
-            for pos, state in self._blob(e.blob).items():
-                if block_id(state) in CANCEL or self._cell_of(pos) != cell:
-                    continue
-                x, y, z = pos
-                xz = (x, z)
-                if y > tops.get(xz, -10 ** 9):
-                    tops[xz] = y
-        return tops
+            x, y, z = pos
+            solids.append((x, y, z))
+            if ground_y is None or y < ground_y:
+                ground_y = y
+        if ground_y is None:
+            return None, set()
+        return ground_y, {(x, z) for x, y, z in solids if y == ground_y}
 
-    def _substantive_feature_overlap(self, cell: Cell, positions: Iterable[Pos]) -> bool:
-        """Whether feature writes in ``cell`` are footprint / foundation / ground-level (task 234).
+    def _substantive_feature_overlap(self, footprint: set[tuple[int, int]], ground_y: int,
+                                     positions: Iterable[Pos]) -> bool:
+        """Whether feature writes in a neighbour are footprint / foundation / ground-level.
 
-        Roof or eaves beyond the ground footprint sit above the landed ground surface and are
-        harmless fringe. A column with no recorded ground top falls back to the cell's highest
-        known surface; with no ground at all, the overlap is treated as substantive.
+        A neighbour column is fringe only when it lies outside ``footprint`` and every write
+        there sits above ``ground_y`` (the feature's own lowest planned Y).
 
-        @param cell: neighbour cell being classified
-        @param positions: non-air planned positions that fall in ``cell``
-        @returns: True when trees/decor on ``cell`` must be marked stale
+        @param footprint: feature ground-footprint columns from ``_feature_ground_plan``
+        @param ground_y: feature's own lowest non-air planned Y
+        @param positions: non-air planned positions that fall in the neighbour cell
+        @returns: True when trees/decor on that neighbour must be marked stale
         """
-        tops = self._ground_column_tops(cell)
-        fallback = max(tops.values()) if tops else None
         for x, y, z in positions:
-            top = tops.get((x, z), fallback)
-            if top is None:
+            if (x, z) in footprint:
                 return True
-            if y <= top + GROUND_LEVEL_SLACK:
+            if y <= ground_y:
                 return True
         return False
 
@@ -718,23 +716,27 @@ class CellRegistry:
                               positions: Mapping[Pos, str]) -> tuple[Cell, ...]:
         """Cells whose trees/decor a feature landing invalidates (task 234).
 
-        The primary cell always. Neighbours only when ground footprint, foundations or
-        ground-level writes enter them — not roof/eaves-only fringe beyond the footprint.
+        The primary cell always. Neighbours only when the feature's own ground footprint,
+        foundations or ground-level writes enter them — not roof/eaves-only fringe beyond
+        that footprint. Classification uses the feature plan alone (not neighbour terrain).
 
         @param primary: feature home cell
         @param positions: planned ``{(x, y, z): state}``
         @returns: sorted layout cells
         """
+        ground_y, footprint = self._feature_ground_plan(positions)
         by_cell: dict[Cell, list[Pos]] = {}
         for pos, state in positions.items():
             if block_id(state) in CANCEL:
                 continue
             by_cell.setdefault(self._cell_of(pos), []).append(tuple(pos))
         out: set[Cell] = {primary}
+        if ground_y is None:
+            return tuple(sorted(out))
         for cell, plist in by_cell.items():
             if cell == primary:
                 continue
-            if self._substantive_feature_overlap(cell, plist):
+            if self._substantive_feature_overlap(footprint, ground_y, plist):
                 out.add(cell)
         return tuple(sorted(out))
 
