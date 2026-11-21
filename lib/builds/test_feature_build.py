@@ -147,6 +147,19 @@ class LoadSpecTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     F.load_spec(self.write({**good, 'roofs': {'A': roof}}))
 
+    def test_roof_flat_tol_m_accepted_on_pitched_and_bad_values_refused(self):
+        good = self.good()
+        ok = {'kind': 'pitched', 'material': 'brick', 'flat_tol_m': 1.25}
+        self.assertEqual(
+            F.load_spec(self.write({**good, 'roofs': {'A': ok}}))['roofs']['A']['flat_tol_m'], 1.25)
+        for bad in ('1.0', True, -0.1, 3.1, float('nan'), None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(SystemExit):
+                    F.load_spec(self.write({**good, 'roofs': {'A': {**ok, 'flat_tol_m': bad}}}))
+        with self.assertRaisesRegex(SystemExit, 'pitched'):
+            F.load_spec(self.write({**good, 'roofs': {'A': {
+                'kind': 'flat', 'material': 'smooth_stone', 'flat_tol_m': 1.0}}}))
+
 
 class ExcludeSpecTest(unittest.TestCase):
     """exclude boxes: validated on load, cut from the footprint on build."""
@@ -1554,6 +1567,28 @@ class PitchedZonesRidgeTest(unittest.TestCase):
         from roof_lint import stair_shape_mismatches
         self.assertEqual(stair_shape_mismatches(plan.cells), [])
 
+    def test_roof_flat_tol_m_reaches_zone_ridge_half_steps(self):
+        for roof_extra, want in (({}, F.FLAT_TOL_M), ({'flat_tol_m': 1.25}, 1.25)):
+            with self.subTest(roof_extra=roof_extra):
+                spec = self._spec('pitched', [48])
+                spec['roofs']['A'].update(roof_extra)
+                builder = F.Build(
+                    spec, footprints={'A': self.cells},
+                    world=_StoneWorld(), zone_data=self.ridge_zone_data,
+                )
+                seen = []
+                real = F.zone_ridge_half_steps
+
+                def spy(*a, **kw):
+                    seen.append(kw.get('flat_tol_m'))
+                    return real(*a, **kw)
+
+                with mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                        mock.patch.object(F, 'zone_ridge_half_steps', side_effect=spy), \
+                        redirect_stdout(io.StringIO()):
+                    builder.build()
+                self.assertEqual(seen, [want])
+
     def test_zoned_storey_floors_stop_below_eave(self):
         for kind, eave in (('pitched', 45), ('pitched', 46), ('flat', 45), ('flat', 46)):
             with self.subTest(kind=kind, eave=eave):
@@ -1843,6 +1878,16 @@ class FlatRoofPolicyTest(unittest.TestCase):
     def test_large_shallow_roof_flattens_even_when_its_total_rise_is_large(self):
         out = self.ridge(np.arange(41) * 0.1)
         self.assertFalse(out.any())  # Four metres of rise, 10% slope.
+
+    def test_lower_tolerance_keeps_a_ridge_that_peaks_under_the_default(self):
+        """B35 annex: a real ridge peaking 1.4 m above its eave was flattened by the 1.5 m default."""
+        profile = [0, 0.5, 1.0, 1.4, 1.4, 1.0, 0.5, 0]
+        med = np.tile(np.asarray(profile, dtype=float), (5, 1))
+        zone, readable = np.zeros(med.shape), np.ones(med.shape, dtype=bool)
+        self.assertFalse(F.zone_ridge_half_steps(med, zone, readable).any())
+        out = F.zone_ridge_half_steps(med, zone, readable, flat_tol_m=1.25)
+        self.assertTrue((out[:, 3:5] == 3).all())
+        self.assertTrue((out[:, 2] == 2).all())
 
     def test_gradient_boundary_is_strict(self):
         self.assertFalse(self.ridge(np.arange(11) * 0.199).any())
