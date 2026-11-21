@@ -162,28 +162,8 @@
     },
     
     
-    {
-      "id": 331,
-      "title": "Shop street-face rules by shop kind",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "Deliverable: glass, door at pavement level, fascia, contrasting wrapped name sign, and continuous awning by shop kind (cafe/restaurant/fast_food/food), applied to the street face only, never to side or alley walls or walls abutting another building, using the front-column helper from the industrial and big-box task. Owner verdict on v2: better but not accepted as default. Fixes issues I-051 (shop front wraps onto party/side walls: snags S-091, S-094) and I-050 (floating trapdoors at y=41, S-090) when landed; log each fix with issues.py fix and a check line per snag. Relates to #257. Check: Daily Echo and October Books in 50,-36 after a rebuild have no front on side walls and no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
-    {
-      "id": 332,
-      "title": "Fit straight runs to stepped shop fronts so awnings, signs and doors attach",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        331
-      ],
-      "notes": "Owner: square off shop fronts; awnings on angled walls leave gaps to the wall and signs hover; the door near Dido's is not fully framed (door jamb rule _door_jambs_solid assumes a straight run); the Admiral side is a mess. Same cause: items placed one block out from a stepped face. Deliverable: fit straight runs to the stepped front columns and place glass, door, fascia, sign and awning on the run line, filling stair-step gaps so awnings and signs touch the wall (owner: better thick than gaps) and doors on stepped faces get full jambs. Fixes I-052 (awnings leave gaps, S-093) when landed; log the fix with a check line per snag. Check: Admiral and Dido's fronts in 50,-36: no hovering sign, awning touches the wall, the door near Dido's fully framed, no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
+    
     {
       "id": 333,
       "title": "Shop typology: terrace-house body over a shopfront ground floor",

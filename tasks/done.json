@@ -2893,5 +2893,29 @@
       "blockedBy": [],
       "notes": "Owner accepted the industrial and big-box defaults in game (Belgrave 55,-41; Westquay South 43,-16, roof excluded). The prototype dress.py is not in the repo; nothing for shutters, fascia, bay marks or name signs exists in lib. The unwanted window grid is real: Builder.windows in lib/builds/feature_build.py falls to DIRECTIONS on all faces when facade_plan has no glazing. Deliverable: a shared front-column helper (a column whose outside neighbour is nearer the mapped street line, excluding side, alley and party walls); industrial shutter, fascia and bay marks with no storey window grid; big-box glazed base, fascia and name sign (no roof). Keyed by land-use class, UK-wide. Files: lib/builds/feature_build.py, lib/builds/facade_plan.py, lib/sources/land_use.py, config/land-use-classes.json. Relates to blocked spike #257 (file implementation after its findings; the owner has already accepted these two classes). Check: rebuild Belgrave 55,-41 and Westquay 43,-16 from rules only, no scratch script; owner verdict in game. Source: docs/plans/industrial-commercial.md (trial #258). Implementation and supporting fixes through e748d68 are on main via task 331 merge d7dc48d. All four normal locked rebuilds landed with zero mismatches (journal 1386, 1388, 1392, 1396); see docs/plans/industrial-commercial.md section 11. Full hook suites and independent reviews passed. Owner accepted both rebuilt examples in game: Belgrave \"looks good\" and Westquay \"yes\". Roof excluded. Published to GitHub main with owner authorization.\n\nClosed at d7dc48d5e1c5143a589e8ccd94c28c64bd011936: Owner accepted Belgrave and Westquay rebuilds in game. Four landed builds, zero readback mismatches; focused/full suites and independent reviews passed. Roof excluded.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 331,
+      "title": "Shop street-face rules by shop kind",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "Deliverable: glass, door at pavement level, fascia, contrasting wrapped name sign, and continuous awning by shop kind (cafe/restaurant/fast_food/food), applied to the street face only, never to side or alley walls or walls abutting another building, using the front-column helper from the industrial and big-box task. Owner verdict on v2: better but not accepted as default. Fixes issues I-051 (shop front wraps onto party/side walls: snags S-091, S-094) and I-050 (floating trapdoors at y=41, S-090) when landed; log each fix with issues.py fix and a check line per snag. Relates to #257. Check: Daily Echo and October Books in 50,-36 after a rebuild have no front on side walls and no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at d7dc48d5e1c5143a589e8ccd94c28c64bd011936: Shop street faces dressed by shop kind on the street face only (Cursor shipped, no push).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 332,
+      "title": "Fit straight runs to stepped shop fronts so awnings, signs and doors attach",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "Owner: square off shop fronts; awnings on angled walls leave gaps to the wall and signs hover; the door near Dido's is not fully framed (door jamb rule _door_jambs_solid assumes a straight run); the Admiral side is a mess. Same cause: items placed one block out from a stepped face. Deliverable: fit straight runs to the stepped front columns and place glass, door, fascia, sign and awning on the run line, filling stair-step gaps so awnings and signs touch the wall (owner: better thick than gaps) and doors on stepped faces get full jambs. Fixes I-052 (awnings leave gaps, S-093) when landed; log the fix with a check line per snag. Check: Admiral and Dido's fronts in 50,-36: no hovering sign, awning touches the wall, the door near Dido's fully framed, no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at d119f2121e2bb9f5162283c6dc7899b49ba8e969: Stepped shop fronts squared onto straight runs; recessed door moved onto that line (Cursor shipped, no push).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
