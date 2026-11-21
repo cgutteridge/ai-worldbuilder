@@ -2075,7 +2075,7 @@ class SmoothRoofHalfStepsTest(FloatDsmFixture, unittest.TestCase):
         flat = {(x, z): v for z, row in enumerate(out) for x, v in enumerate(row)}
         self.assertEqual(F._lone_odd_half_heights(flat), [])
 
-    def test_snap_only_lowers_or_keeps_no_cliff_above_two(self):
+    def test_snap_leaves_no_cliff_above_two_even_from_raw_heights(self):
         rows = [[0, 1, 4, 7, 4], [0, 2, 5, 5, 4], [0, 1, 3, 3, 3]]
         out = self._snap(rows)
         for z in range(len(out)):
@@ -2149,8 +2149,84 @@ class SmoothRoofHalfStepsTest(FloatDsmFixture, unittest.TestCase):
             h = {(x, z): max(0, 2 * rnd.randint(0, 6) + rnd.randint(-1, 1) + x * rnd.randint(0, 3))
                  for z in range(d) for x in range(w)}
             lv = {c: 48 for c in h}
-            out = F.snap_lone_odd_half_heights(F.regularise_roof_half_heights(h, lv), lv)
+            before = F.regularise_roof_half_heights(h, lv)
+            out = F.snap_lone_odd_half_heights(before, lv)
             self.assertEqual(F._lone_odd_half_heights(out), [], f'seed {seed}')
+            self.assertTrue(all(out[c] >= v - v % 2 for c, v in before.items()), f'seed {seed}')
+            self.assertEqual(F.regularise_roof_half_heights(out, lv), out, f'seed {seed}')
+
+
+class RoofCrestSnapTest(unittest.TestCase):
+    """#340: flank speckles must not erode any part of a pitched crest."""
+
+    @staticmethod
+    def _noisy_roof(shift, seed=0, transpose=False):
+        rng = np.random.default_rng(seed)
+        raw, crest = {}, []
+        for z in range(24):
+            centre = shift(z)
+            for offset in range(-8, 9):
+                c = (centre + offset, z)
+                if transpose:
+                    c = c[::-1]
+                noise = int(rng.choice([-1, 0, 1])) if offset else 0
+                raw[c] = max(0, 12 - 2 * abs(offset) + noise)
+                if not offset:
+                    crest.append(c)
+        levels = {c: 48 for c in raw}
+        return F.regularise_roof_half_heights(raw, levels), levels, crest
+
+    def test_noisy_flanks_keep_each_regularised_crest_column(self):
+        for name, shift in [('straight', lambda z: 0),
+                            ('drifting', lambda z: z // 4),
+                            ('diagonal', lambda z: z)]:
+            for transpose in (False, True):
+                for seed in range(4):
+                    with self.subTest(ridge=name, transpose=transpose, seed=seed):
+                        before, levels, crest = self._noisy_roof(shift, seed, transpose)
+                        after = F.snap_lone_odd_half_heights(before, levels)
+                        self.assertTrue(all(before[c] >= 10 for c in crest))
+                        losses = [(c, before[c], after[c]) for c in crest
+                                  if abs(after[c] - before[c]) > 1]
+                        self.assertEqual(losses, [], 'crest column, regularised height, snapped height')
+                        self.assertTrue(all(after[c] >= v - v % 2 for c, v in before.items()))
+                        self.assertEqual(F.regularise_roof_half_heights(after, levels), after)
+                        self.assertEqual(F._lone_odd_half_heights(after), [])
+                        self.assertEqual(F.snap_lone_odd_half_heights(after, levels), after)
+                        self.assertEqual(F.snap_lone_odd_half_heights(
+                            dict(reversed(list(before.items()))), levels), after)
+
+    def test_lower_crest_is_preserved_beside_a_taller_peak(self):
+        before, levels, crest = self._noisy_roof(lambda z: z // 4)
+        # Join unequal ridges in one zone: protecting just its tallest point is insufficient.
+        taller = {(x + 40, z): v + 8 for (x, z), v in before.items()}
+        before.update(taller)
+        before.update({(x, 0): min(8, 2 * (x - 8)) for x in range(9, 32)})
+        levels = {c: 48 for c in before}
+        self.assertEqual(F.regularise_roof_half_heights(before, levels), before)
+        after = F.snap_lone_odd_half_heights(before, levels)
+        for c in crest + [(x + 40, z) for x, z in crest]:
+            self.assertLessEqual(abs(after[c] - before[c]), 1, c)
+
+    def test_snap_and_cliff_cap_do_not_cross_semantic_zone_boundaries(self):
+        left = {(x, z): v for z, row in enumerate([[0, 1, 4], [0, 2, 4], [0, 1, 4]])
+                for x, v in enumerate(row)}
+        right = {(x + 3, z): v + 10 for (x, z), v in left.items()}
+        left_levels = {c: 48 for c in left}
+        right_levels = {c: 53 for c in right}
+        before = {**left, **right}
+        levels = {**left_levels, **right_levels}
+        expected = {**F.snap_lone_odd_half_heights(left, left_levels),
+                    **F.snap_lone_odd_half_heights(right, right_levels)}
+        self.assertEqual(F.snap_lone_odd_half_heights(before, levels), expected)
+        self.assertEqual(before, {**left, **right}, 'the input must not be mutated')
+
+    def test_zero_passes_keeps_the_input_and_one_pass_respects_the_floor(self):
+        before, levels, _ = self._noisy_roof(lambda z: z // 4)
+        self.assertEqual(F.snap_lone_odd_half_heights(before, levels, passes=0), before)
+        after = F.snap_lone_odd_half_heights(before, levels, passes=1)
+        self.assertTrue(all(after[c] >= v - v % 2 for c, v in before.items()))
+        self.assertEqual(F.regularise_roof_half_heights(after, levels), after)
 
 
 class ZoneGuardFixtureTest(unittest.TestCase):
