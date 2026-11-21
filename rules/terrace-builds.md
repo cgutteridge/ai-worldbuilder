@@ -13,7 +13,10 @@ docstring):
 
 - `name` — plan / cells-record name
 - `ways` — `{osm_way_id: label}` footprints to build
-- `roofs` — `{label: slab_material}` (e.g. brick, mud_brick, deepslate_tile)
+- `roofs` — `{label: slab_material}` (e.g. brick, mud_brick, deepslate_tile).
+  The same flat(ish)/pitched rule as features: rise/run up to 1 in 2 may be
+  any full block or slab in `config/roof-materials.json`; steeper than that
+  needs a triad (full block, slab and stairs). See `rules/feature-builds.md`.
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
   `site_kit.apply` refuses cells owned by builds not listed here)
@@ -38,7 +41,8 @@ planting DECOR.
   door (see lidar ground Y).
 - Door side alternates in pairs when the street photo shows it; label `hint`
   if unseen.
-- Per-house roof material from aerial colour (`roofs` in the spec).
+- Per-house roof material from aerial colour (`roofs` in the spec), picked
+  from `config/roof-materials.json` using that flat(ish)/pitched rule.
 - Find terrace ends first: `.venv/bin/python scripts/aerial_annot.py x0,z0,x1,z1 out.png`.
 - Plot angle: `python3 scripts/geo.py slope --bearing …` or `--points x0,z0,x1,z1`
   (snaps via `terrace.snap_slope`). Frontage pitch: `geo.py party --bbox …`.
