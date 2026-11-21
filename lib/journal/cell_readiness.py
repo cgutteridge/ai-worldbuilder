@@ -505,7 +505,12 @@ class ReadinessPolicy:
         evidence_now = [r.get('source_revision', r['evidence_revision']) for r in reports]
         evidence_id = evidence_now[0] if len(evidence_now) == 1 else content_id(evidence_now)
         if expected and expected != evidence_id:
-            raise Refused('stale plan: evidence changed since planning; re-plan against current inputs')
+            # Legacy Plan(name) (no cell list) stamps whole-world source_revision(); accept
+            # that stamp when it still matches so water_body / reset_to_base / hand plans
+            # apply until callers re-scope via capture_inputs (task 232).
+            whole_evidence = getattr(self.evidence, 'source_revision', None)
+            if not (callable(whole_evidence) and expected == whole_evidence()):
+                raise Refused('stale plan: evidence changed since planning; re-plan against current inputs')
         expected_journal = ((build.meta or {}).get('journal_revision')
                             or getattr(build.payload, 'journal_revision', None))
         if self.require_plan_identity and not expected_journal:
@@ -513,7 +518,8 @@ class ReadinessPolicy:
                           'or supply Build.meta journal_revision from check')
         journal_now = self.reg.planning_revision(sorted(required))
         if expected_journal and expected_journal != journal_now:
-            raise Refused('stale plan: journal geometry or planning assumptions changed; re-plan')
+            if expected_journal != self.reg.planning_revision():
+                raise Refused('stale plan: journal geometry or planning assumptions changed; re-plan')
         revisions = {r['cell']: r['revision'] for r in reports}
         return {'readiness_revision': revisions[f'{primary[0]},{primary[1]}'],
                 'readiness_cells': revisions, **({'parent_feature': parent} if parent else {})}

@@ -989,6 +989,137 @@ class ReadinessTest(unittest.TestCase):
                                        meta={'evidence_revision': 'old-evidence',
                                              'journal_revision': stamped['journal_revision']}))
 
+    def _local_plan_world(self):
+        """Temp world root with frame + home clip; bind WORLD_ROOT for Plan stamps."""
+        import json
+        from unittest import mock
+        import active_world
+        import aerial_coverage
+        import world_frame
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir(exist_ok=True)
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        home = root / 'reference' / 'vector_map' / 'prepared-0-0'
+        home.mkdir(parents=True, exist_ok=True)
+        (home / 'buildings+highways-cell-0-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        previous_root = active_world.WORLD_ROOT
+        active_world.set_world_root(root)
+        world_frame.clear_frame_cache()
+
+        def restore_world():
+            active_world.WORLD_ROOT = previous_root
+            world_frame.clear_frame_cache()
+
+        self.addCleanup(restore_world)
+        patches = (
+            mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])),
+            mock.patch.object(aerial_coverage, 'coverage', return_value=1.),
+            mock.patch.object(aerial_coverage, 'mosaics', return_value=[]),
+        )
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        return root
+
+    def test_plan_stamp_apply_survives_neighbour_prepare(self):
+        """Task 232: Plan.capture_inputs → apply still lands after an unrelated neighbour extract."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('house', input_cells=[(0, 0)])
+        plan.set(5, 61, 5, 'bricks')
+        plan.capture_inputs()
+        neighbour = root / 'reference' / 'vector_map' / 'prepared-2-0'
+        neighbour.mkdir(parents=True)
+        (neighbour / 'buildings+highways-cell-256-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((2, 0), ghost_ground=True, ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('house', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_plan_stamp_apply_refuses_relevant_evidence_change(self):
+        """Task 232: a Plan stamped before an overlapping clip change must re-plan."""
+        import site_kit
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        clip_dir = root / 'reference' / 'vector_map' / 'shared'
+        clip_dir.mkdir(parents=True)
+        clip = clip_dir / 'buildings-bbox-0-0-255-127.geojson'
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('ground', input_cells=[(0, 0)])
+        plan.set(5, 60, 5, 'grass_block')
+        plan.capture_inputs()
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":2}')
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', plan.cells, cell=(0, 0), payload=plan))
+
+    def test_plan_stamp_includes_cells_touched_by_overhang(self):
+        """Task 232: capture_inputs after planning covers roof overhang across a cell line."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        # Neighbouring cell also needs a clip so evidence facts exist for the overhang.
+        other = root / 'reference' / 'vector_map' / 'prepared-1-0'
+        other.mkdir(parents=True)
+        (other / 'buildings+highways-cell-128-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'overhang', 'overhang'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        policy.validate_evidence((1, 0))
+        plan = site_kit.Plan('overhang', input_cells=[(0, 0)])
+        plan.set(120, 61, 5, 'bricks')   # home cell
+        plan.set(130, 61, 5, 'bricks')   # overhang into (1, 0)
+        # Footprint-only stamp would omit (1, 0); re-stamp from finished geometry.
+        plan.capture_inputs()
+        self.assertEqual(set(plan._input_cells), {(0, 0), (1, 0)})
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('overhang', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_legacy_whole_world_plan_name_still_applies(self):
+        """Task 232: Plan(name) without a cell list still applies via the whole-world stamp fallback."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hand', 'hand'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('hand')  # whole-world stamp; no capture_inputs
+        plan.set(5, 61, 5, 'bricks')
+        self.assertIsNone(plan._input_cells)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('hand', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
 
 from journal_testkit import FakePaced, LiveApplyCase
 

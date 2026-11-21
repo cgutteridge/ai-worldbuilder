@@ -207,18 +207,21 @@ class Plan:
         self.entities = []   # (entity_type, (x,y,z), snbt or None)
         self.keep_slab_cells = set()  # bottom-half slabs exempt from rewrite_bottom_half_slabs (roof steps)
         self._input_cells = tuple(tuple(c) for c in input_cells) if input_cells is not None else None
+        # Evidence errors fail loudly. The only soft path is incomplete unit-test
+        # lidar fixtures (no tile_status), which leave no identity rather than a
+        # whole-world stamp that can never match scoped apply checks (task 232).
         try:
             self.evidence_revision, self.journal_revision = planning_inputs(self._input_cells)
-        except (OSError, ValueError, LookupError, RuntimeError, ImportError, AttributeError):
-            # Fixture worlds omit live lidar/map trees; keep an unscoped stamp when possible.
-            self.evidence_revision, self.journal_revision = planning_inputs()
+        except AttributeError:
+            self.evidence_revision = self.journal_revision = None
 
     def capture_inputs(self, cells=None):
         """Re-stamp evidence and journal identity for the cells this plan depends on.
 
         Call after planning fills ``cells`` (or with an explicit cell list) so the apply
-        gate compares against the same scope (task 232). Synthetic fixtures without a
-        live evidence tree keep the construction stamp.
+        gate compares against the same scope (task 232). Raises on evidence errors;
+        with no selected world, stamps ``(None, None)``. Incomplete unit-test lidar
+        fixtures (no ``tile_status``) keep the previous stamp.
 
         @param cells: optional iterable of ``(tx, tz)``; default is cells touched by
           ``self.cells`` plus any ``input_cells`` from construction
@@ -234,7 +237,7 @@ class Plan:
         self._input_cells = tuple(sorted({tuple(c) for c in cells})) if cells else None
         try:
             self.evidence_revision, self.journal_revision = planning_inputs(self._input_cells)
-        except (OSError, ValueError, LookupError, RuntimeError, ImportError, AttributeError):
+        except AttributeError:
             return
 
     # --- primitives -------------------------------------------------------
@@ -1008,6 +1011,7 @@ def reset_to_base(build, records):
     for name in records:
         for q in reg.recorded(name) or {}:
             plan.set(*q, base.get(q, 'minecraft:air'))
+    plan.capture_inputs()
     return plan
 
 

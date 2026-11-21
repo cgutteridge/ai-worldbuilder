@@ -479,6 +479,9 @@ class Build:
         guard_roof_jogs(self.p)
         for h in self.houses:
             print(h.no, 'b', h.b, 'cells', len(h.cells), 'door', getattr(h, 'door', None), 'rear', getattr(h, 'rear', None))
+        # Re-stamp from the finished geometry so roof overhangs into neighbours are
+        # part of the plan identity apply will check (task 232).
+        self.p.capture_inputs()
         return self.p
 
 
