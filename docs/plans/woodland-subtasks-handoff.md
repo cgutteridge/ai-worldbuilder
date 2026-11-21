@@ -110,28 +110,24 @@ python3 scripts/ship_branch.py merge task/<id>-<slug>
 - anything in this file contradicts the live tracker or the project docs: follow them, and tell the owner.
 
 
-## Run status: 2026-11-21, stopped at full-suite lock gate
+## Run status: 2026-11-21, resumed
 
-No woodland task has been merged or archived yet. No live-world command was run.
-The orchestrator stopped after an external full-suite lock collision, as required
-above; an immediate follow-up lock probe found it free. Owner continuation is pending.
+The owner explicitly resumed the wave and then authorized **"Wait and retry
+automatically when free"** for transient full-suite test-lock contention for the
+rest of this wave. This overrides only that immediate-stop condition; the wave
+lock, required checks and every other stop condition still apply.
 
-- **349:** branch `task/349-lidar-crowns`, worktree `.worktrees/349-lidar-crowns`,
-  tip `79daae47a087c2ef08a65759da086cab518e43fb`. Code commit
-  `b12b0801c8371f74c1f5f3e9bbe673d2daa090e7`; synced with docs-only main.
-  75 focused tests passed; full precommit suite and provider audit passed.
-  Fresh-context read-only review: **APPROVE**. Worktree clean; ready for ship-branch.
-  Logs: `/tmp/woodland-349-focused.log`, `/tmp/woodland-349-commit.log`.
-- **347:** branch `task/347-plant-vocabulary`, worktree
-  `.worktrees/347-plant-vocabulary`. Implementation and synthetic tests are **staged,
-  uncommitted** (17 files). Focused checks across 11 modules passed. The commit hook
-  failed fast because another full suite held the common lock; no retry was made.
-  Log: `/tmp/woodland-347-commit.log`. Current-version plant states remain unverified;
-  the generic placement allowlist is unchanged. Retry the commit only after the
-  owner authorizes continuing, then sync main, run fresh review and ship-branch.
-- **348, 350, 351:** not started. Their dependency/file-serialization rules still apply.
+- **349:** merged at `fd73843f99a656b32ec129587cb9be91e9107ae8` and archived.
+  Fresh review APPROVE; 75 focused tests, full precommit and tip/main merge suites
+  passed. Worktree and local branch removed by ship-branch.
+- **347:** merged at `2af310f50fd024236cecd2e1181e0f670a5a276c` and archived.
+  Fresh review APPROVE; focused checks across 13 modules, full precommit and
+  tip/main merge suites passed. Worktree and local branch removed. Confirmed IDs
+  and unverified 26.2 placement-state distinction are recorded in its archived notes.
+- **348, 350, 351:** running in isolated `.worktrees/` branches. Workers must
+  obtain a full-suite slot from the orchestrator before code commits.
 
-Before resuming, acquire the wave lock again and rerun the live ticket dispatch gates.
-Keep merges local (`ship_branch.py merge ... --no-push`) until the owner explicitly
-authorizes a remote destination. The unrelated pre-existing code branches
-`task/237-geofabrik-consolidation` and `task/road-labels-entity-kill` were preserved.
+The orchestrator holds wave `woodland-1`, holder `codex-woodland-20261121-root`.
+No live-world command has been run. Merges use `--no-push` until the owner
+explicitly authorizes a remote destination. The two unrelated pre-existing
+code branches were merged by other sessions; this wave did not merge or push them.
