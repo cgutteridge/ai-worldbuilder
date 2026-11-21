@@ -895,7 +895,9 @@ class TestPlanting(unittest.TestCase):
         live = {q: (50, 'grass_block') for q in self.lawn}
         ev = {'vmap': vmap if vmap is not None else TestGroundDecisions.Osm(),
               'rgb': rgb if rgb is not None else {q: (.44, .39, .27) for q in self.lawn},
-              'private_frontage': self.lawn, 'unmapped_paving': {}, 'path_widen': {}, 'frontages': frontages, 'plots': self.plots, 'segments': self.segments,
+              'private_frontage': self.lawn, 'unmapped_paving': {}, 'path_widen': {},
+              'ground_texture': {}, 'frontages': frontages, 'plots': self.plots,
+              'segments': self.segments,
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': 50)}
         plan = Plan('ground-planting-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=self.idx), \
@@ -981,6 +983,130 @@ class TestPlanting(unittest.TestCase):
         self.assertEqual(set(strip.cells), leaves | flowers | cover)
         self.assertTrue(all(b == 'minecraft:air' for b in strip.cells.values()))
         self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves | flowers | cover))
+
+
+class TestGroundTexture(unittest.TestCase):
+    """Rough grass and mottled dirt (#319): tag-gated, aerial-driven, own class key."""
+
+    def setUp(self):
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+        self.cols = {(x, z) for x in range(0, 20) for z in range(0, 20)}
+        self.ys = {q: 40 for q in self.cols}
+        self.kind = {q: 'grass' for q in self.cols}
+        self.blocks = {(x, 40, z): 'grass_block' for x, z in self.cols}
+        self.world = World(store=MemoryBlocks(self.blocks, default='air'))
+        self.plan = Plan('ground-texture-test')
+        for p, b in self.blocks.items():
+            self.plan.set(*p, b)
+        # Varied aerial: high local contrast in the east, pale/brown in the north.
+        self.rgb = {}
+        for x, z in self.cols:
+            if z < 4:
+                self.rgb[(x, z)] = (0.72, 0.68, 0.50)          # pale dry
+            elif x >= 12:
+                self.rgb[(x, z)] = (0.35 + 0.08 * ((x + z) % 3), 0.45, 0.25)  # textured
+            else:
+                self.rgb[(x, z)] = (0.42, 0.48, 0.30)          # even green
+
+    def texture(self, palettes, **kwargs):
+        return gl.plan_ground_texture(
+            self.plan, self.world, (87, -48), self.ys, self.kind, self.rgb, palettes, **kwargs)
+
+    def test_farmland_gets_tufts_and_mottling_park_lawn_stays_clean(self):
+        farmland = {(x, z) for x, z in self.cols if z >= 4}
+        lawn = {(x, z) for x, z in self.cols if z < 4}
+        report = self.texture({q: 'pasture' for q in farmland})
+        self.assertGreater(report['tufts'] + report['tall_grass'], 0)
+        self.assertGreater(report['bare'], 0)
+        planted = {(item['position'][0], item['position'][2]) for item in report['items']
+                   if item['kind'] in ('tufts', 'tall_grass', 'flowers')}
+        bare = {(item['position'][0], item['position'][2]) for item in report['items']
+                if item['kind'] == 'bare'}
+        self.assertTrue(planted <= farmland)
+        self.assertTrue(bare <= farmland)
+        self.assertTrue(planted.isdisjoint(lawn) and bare.isdisjoint(lawn))
+        self.assertTrue(all(self.plan.cells[(x, 40, z)] == 'minecraft:grass_block' for x, z in lawn))
+        self.assertTrue(all(item['provenance']['source'] == 'inference' for item in report['items']))
+        self.assertTrue(all('#319' in item['label'] for item in report['items']))
+
+    def test_meadow_flowers_reuse_refine_plants_vocabulary(self):
+        from foliage import REFINE_PLANTS
+        meadow = {(x, z) for x, z in self.cols if z >= 8}
+        # Even green so bare mottling does not consume every column before flowers.
+        rgb = {q: (0.42, 0.48, 0.30) for q in self.cols}
+        report = gl.plan_ground_texture(
+            self.plan, self.world, (1, 2), self.ys, self.kind, rgb, {q: 'meadow' for q in meadow})
+        flowers = [item for item in report['items'] if item['kind'] == 'flowers']
+        self.assertGreater(report['flowers'], 0)
+        self.assertEqual(len(flowers), report['flowers'])
+        self.assertTrue(all(item['block'] in REFINE_PLANTS for item in flowers))
+        self.assertTrue(all(item['block'] in ('oxeye_daisy', 'cornflower', 'dandelion') for item in flowers))
+        self.assertTrue(all(item['position'][1] == 41 for item in flowers))
+
+    def test_masks_routes_and_barriers_block_placement(self):
+        palettes = {q: 'pasture' for q in self.cols}
+        report = self.texture(
+            palettes,
+            clear={(5, z) for z in range(20)},
+            masked={(10, 90, 10): 'trees 0,0'},
+            owned={(11, 60, 11)},
+            barriers={(12, 12)})
+        taken = {(item['position'][0], item['position'][2]) for item in report['items']}
+        self.assertTrue(taken)
+        self.assertTrue(taken.isdisjoint({(5, z) for z in range(20)} | {(10, 10), (11, 11), (12, 12)}))
+
+    def test_seeded_per_cell_and_column_is_stable(self):
+        palettes = {q: 'pasture' for q in self.cols}
+        first = self.texture(palettes)
+        from site_kit import Plan
+        self.plan = Plan('ground-texture-test-2')
+        for p, b in self.blocks.items():
+            self.plan.set(*p, b)
+        second = self.texture(palettes)
+        self.assertEqual(first, second)
+
+    def test_aerial_texture_field_marks_pale_and_scales_variance(self):
+        field = gl.aerial_texture_field(self.rgb, self.cols)
+        self.assertTrue(any(row['bare'] for q, row in field.items() if q[1] < 4))
+        scores = [row['score'] for row in field.values()]
+        self.assertGreater(max(scores), min(scores))
+        self.assertTrue(all(0 <= s <= 1 for s in scores))
+
+    def test_rough_grass_columns_gate_tags_and_skip_lawns(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        farmland = (sq(0, 0, 9, 9), {'landuse': 'farmland'})
+        meadow = (sq(10, 0, 19, 9), {'landuse': 'meadow'})
+        lawn = (sq(0, 10, 19, 19), {'landuse': 'grass'})
+        classes = {}
+        for x in range(20):
+            for z in range(20):
+                if z >= 10:
+                    classes[(x, z)] = ('park', 'lawn', 'cover')
+                elif x < 10:
+                    classes[(x, z)] = ('rural', 'farm', 'use')
+                else:
+                    classes[(x, z)] = ('rural', 'meadow', 'use')
+        idx = SimpleNamespace(areas=[farmland, meadow, lawn])
+        with mock.patch('coverage.area_classes', return_value=classes):
+            got = gl.rough_grass_columns((0, 0), idx, classes)
+        self.assertTrue(all(0 <= z < 10 for _x, z in got))
+        self.assertTrue(all(got[(x, z)] == 'pasture' for x in range(10) for z in range(10) if (x, z) in got))
+        self.assertTrue(all(got[(x, z)] == 'meadow' for x in range(10, 20) for z in range(10) if (x, z) in got))
+        self.assertFalse(any(z >= 10 for _x, z in got))
+
+    def test_residential_class_without_ground_texture_places_nothing(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        classes = {q: ('residential', 'r', 'use') for q in self.cols}
+        idx = SimpleNamespace(areas=[])
+        with mock.patch('coverage.area_classes', return_value=classes):
+            self.assertEqual(gl.rough_grass_columns((0, 0), idx, classes), {})
 
 
 class TestWarmSurfaceProbe(unittest.TestCase):

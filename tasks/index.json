@@ -1,36 +1,28 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 342,
+  "nextTaskId": 345,
   "tasks": [
     
     {
       "id": 232,
       "title": "Concurrent cell prepares keep invalidating each other's readiness validation",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "notes": "OWNER DECISION 2026-11-21: (1) Unrelated work elsewhere must not invalidate a cell's readiness or an unapplied build plan; identities must cover the evidence, settings and shared geometry the particular plan actually depends on. Genuine neighbour dependencies still count. (2) Apply reruns readiness checks under the lock and automatically refreshes validation when those checks pass. (3) A genuinely outdated build plan must still stop and require replanning; refreshing readiness validation must never approve that old plan. Relevant changes include corrected footprints/lidar, palette or land-use rules, world coordinates, existing geometry and plan/dismissal assumptions used by the plan. Current source and journal fingerprints are conservative across the whole world, so unrelated changes can reject plans; narrow those dependencies. Diagnose the original incident using the cause tracking added by #289; the original cause is not established. Check: unrelated neighbouring evidence/geometry work leaves the cell and its unapplied plan usable; a relevant planning-input change refuses the old plan with a replanning instruction; stale readiness validation refreshes under the lock only after all readiness checks pass, with hold/coverage/recovery blockers preserved. Original report: seen 2026-10-31 on Portswood Rec (53,-42) with neighbour sessions preparing 52,-42/52,-43; prepare on one cell changed neighbouring readiness revisions and separate apply was refused 'validation stale' four times. Builders chained prepare && apply as a workaround. Original suspects were vector-map extract rewrites or neighbour plan notes, not verified causes."
-    },
+    , "requiresClaude": false},
     {
       "id": 233,
       "title": "prepare --apply records a duplicate plan_feature on every run (ambiguous legacy plan warning)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "notes": "OWNER DECISION 2026-11-21: prepare skips buildings already covered by an existing plan, matching recorded building/map references rather than street name alone. If a group is partly covered, propose only the missing buildings. For legacy plans without usable specifications, recover references from reliable records where possible; otherwise flag the ambiguity for review without silently assuming coverage or creating another plan. Repeated prepare runs must remain stable while allowing genuinely new buildings to be added. Check: a spec-backed plan under a different id prevents a duplicate; a partly covered house group proposes only uncovered refs; two groups sharing a street name remain distinct; an unresolved legacy match is reported for review and causes neither silent coverage nor a duplicate plan; repeat prepare records no additional plans for unchanged inputs. Original report: on 53,-42 repeated prepare --apply added houses_brickfield_road for the same 6 houses already planned as houses_brickfield_road_w176633174, with an ambiguous legacy plan warning. A duplicate bare houses_kitchener_road id from the 2026-10-29 build in row -43 also showed planned in 53,-42. Both duplicates were dismissed with dismiss-feature. Follow the shared reference-matching work in #293 and partial-group coverage in #328; house groups are currently excluded from those coverage checks."
-    },
-    {
-      "id": 234,
-      "title": "Feature builds across a cell edge silently invalidate a finished neighbour and may generate ghost cells",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "OWNER DECISIONS 2026-11-21 (unblocked): (1) No warn or confirm: an apply that reaches into a finished neighbour just proceeds. (2) Keep frontier ghost generation on feature applies (agent observation, not a request to change it: one West reapply generated 102 ghost cells over about 2.5 hours, and one cell's first write landed nothing, 621,280 readback mismatches, until cell_registry reconcile --fix re-applied it). (3) Define fringe by what crosses the boundary: roof or eaves extending beyond the feature's ground footprint are harmless fringe and leave the neighbour's trees/decor completion flags intact. The actual ground footprint, foundations or ground-level changes entering the neighbour are substantive overlap and still mark its trees/decor stale. There is no fixed distance allowance; the recorded five-block overhang is a test case, not a universal cutoff. Deliverable: apply this distinction in the invalidation step. Check: a roof/eaves-only overhang into a finished neighbour leaves its trees/decor flags intact, including the recorded five-block case; actual footprint/foundation/ground-level overlap still invalidates them; classification follows geometry rather than a distance threshold. Task 321 shares this edge policy and is no longer held by it. Original report: applying houses_kitchener_road_w176634502 (footprint z -5382..-5343) reached 5 blocks into finished cell 53,-43 and marked its trees/decor stale (trees=False, decor=False). An earlier apply also generated a lidar ghost cell at 56,-40 (230k blocks, ghost-ground journal seq 620) that the user did not ask for. All policy choices for this task are now recorded."
-    },
+    , "requiresClaude": false},
+    
     {
       "id": 237,
       "title": "Consolidate Geofabrik extraction while preserving world-provider workflows",
@@ -39,7 +31,7 @@
       "complexity": "m",
       "blockedBy": [],
       "notes": "OWNER DECISION AND IMPLEMENTATION REQUEST 2026-11-21: consolidate extraction in shared tool code, with a small world-local wrapper supplying regional configuration and deliberate overrides. Implement in an agent on a dedicated worktree. Capture and preserve Southampton's current CLI options, output filenames, combined GeoJSON and evidence-manifest registration; the current shared extractor is not a drop-in replacement. Move useful portable capabilities into shared code with regional settings supplied as configuration, and keep standard queries in one place. Every GDAL extraction must explicitly supply OSM_CONFIG_FILE, honour deliberate local schema overrides and fall back to the shared schema. Replace the world duplicate only after compatibility is covered; preserve owner edits. Meaningful temporary-fixture/subprocess-double checks must cover furniture/schema arguments, both entry points, legacy options and outputs, manifest registration and preservation of previous good outputs on failure. Tool tests must use synthetic providers, never import the live world's implementation. A separate small change belongs in the world repository for its wrapper. No live block writes, downloads or remote writes are part of this implementation request. Original report: the world extractor omitted OSM_CONFIG_FILE and GDAL's default schema lacked the amenity column used by furniture queries, blocking prepare. A local patch selected world downloads/osmconf.ini or TOOL_ROOT/config/osmconf.ini; inspect the current file because that historical patch may now be committed. Original prepare manifest hints for prepared-53--42, prepared-54--42, 52,-42 and 52,-43 were not run; do not retroactively register those as part of this refactor."
-    },
+    , "requiresClaude": false},
     
     
     
@@ -60,7 +52,7 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "NEEDS USER INPUT: the owner names the world and the stretch, and says whether it may be rebuilt. Plan: docs/plans/vibe-at-scale.md sections 5 and 6. Owner idea 2026-11-10: real Minecraft rails for long runs of railway, with land height and direction hacking. This is a spike: the deliverable is findings plus a throwaway prototype, not a production builder. Stretch: at least 300 blocks with a curve and a cutting or embankment. Steps: (1) get the railway lines for the area (railway is not in CELL_EXTRACT_LAYERS today; state where they come from, for example a one-off extract from the world's OSM provider) and snap the centreline to a rail-legal path (long cardinal runs, 90-degree corners, diagonals as staircases); (2) take a lidar ground profile along it, smooth and clamp to a gentle gradient (find the real-world figure from a source and cite it), level the corridor with cut or fill and grass side slopes; (3) lay ballast and rails, with one ascending rail only where a step is needed; (4) apply under the site lock with a structure backup and look in game with the owner. First version leaves out bridges, tunnels, road crossings, fences, stations and signals; note where each would be needed. The prototype lives in the scratchpad, or on a task/* branch only if the owner wants to keep it. Game rules to confirm on the current client: rail needs a solid block below, slopes only on straight cardinal runs at 1 block per block, curves flat, diagonals as staircases. Deliver findings in docs/plans/railway.md: what looked right and wrong, blocks changed outside the corridor, minutes and session tokens used (method stated), and a recommendation with the follow-up implementation tasks to file from the findings. Scratch effects and any snags go to the named world's repo; standing up a new world is separate world work. Check: findings file has a Cost heading and table rows; the owner's in-game verdict on whether the run reads as a railway and the corridor looks natural is recorded in it."
-    },
+    , "requiresClaude": true},
     {
       "id": 257,
       "title": "Trial: rule-built typology buildings versus per-building specs (owner picks terrace, estate and shop parade)",
@@ -69,7 +61,7 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "NEEDS USER INPUT: the owner names the world and three study streets, and says whether they may be rebuilt. Plan: docs/plans/vibe-at-scale.md sections 2 and 6. Today houses use scripts/house_build.py (already a rule-based footprint builder with a small spec) and non-house buildings use a full hand-written spec in site/builds/<name>.json built by feature_build.py. Question: how much of a real district can rules cover well, using footprint, lidar height, OSM tags (building, building:levels, roof:shape) and a small per-district choice of palette and roof form. This is a spike. The prototype generates minimal specs for the existing builders (house_build and feature_build); it does not add a third builder. Baseline is house_build with a minimal spec versus a full feature_build spec for the same buildings. Study streets: a terrace, a semi-detached or detached estate street, a shop parade. Build about 20 buildings per street with the prototype and compare with the current path, noting minutes and session tokens per building (method stated) and what the player sees from the street. Pitched roofs use pitched_roof_states as it is today. Deliver findings in docs/plans/typology-buildings.md: which building classes the rules cover, what still needs a designer, cost per building under each path, and a recommendation, including whether roof and facade detail (I-006) and glazing become class recipes. File implementation tasks from the findings, not before. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and table rows; the owner's in-game verdict on whether the rule-built streets read as the real ones is recorded in it."
-    },
+    , "requiresClaude": true},
     
     
     
@@ -84,19 +76,9 @@
       "blockedBy": [
         
       ],
-      "notes": "Deliverable: inside wood polygons, fill towards the aerial canopy cover (about 80%), mixed species and heights, understorey bushes (persistent leaves at Y+1 to Y+2) and ferns, podzol/coarse_dirt/moss_block floor with grass at the edges; labelled inference, removable through the foliage and decor masks. Owner: trees need more density. Performance evidence clarified 2026-11-21 (read-only): the trial quotes 962 s for 113 trees, but 8.5 s per tree is only an average of the reported total, not a measured per-tree bottleneck. The saved farmland trees-result.json (journal_seq 1292) records 17,915 positions, writer total 2.35 s, and 40.38 s summed across recorded apply stages; planning before site_kit.apply is not included in that result. The code already batches tree writes into one cell plan. The cause of the remainder of the reported command time is not established; profile planning and full command stages before choosing an optimisation or projecting dense-woodland cost. The earlier live-planning cache-thrash/low-probe-floor problem has a landed fix in #315 (planning from saved regions); distinguish it from the still-unexplained 962 s total. Numeric runtime limit remains to be agreed. Check: wood across the river in cell 63,-45 matches the aerial density; apply time for it stays under a stated limit; owner verdict in game."
-    },
-    {
-      "id": 319,
-      "title": "Rough grass and mottled ground on non-lawn grass",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "Owner request: plain grass on farmland reads bland, the aerial shows mottled ground. Deliverable: new class key ground_texture (add to the validator via the schema pattern). Gate: meadow, farmland, grassland, heath, scrub and nature_reserve only; lawns never (rules in docs/plans/park-rural.md section Rough grass without spoiling lawns). Place from aerial texture variance, seeded per cell and column, removable through the masks and counted in the report. Planting is null when frontage.inference is false and rural has inference false, so use its own key; reuse the flower vocabulary of #266 (REFINE_PLANTS), do not re-implement. OWNER DECISION ALREADY RECORDED: use the accepted prototype palette shares in docs/plans/park-rural.md, Rough-grass prototype (owner verdict: Yes, use it), rather than the earlier low-confidence proposal table. This tracker note was corrected on 2026-11-21; no further palette decision is pending. Check: farmland cell 87,-48 shows tufts and mottling, park lawns unchanged; owner verdict."
-    },
+      "notes": "Deliverable: inside wood polygons, fill towards the aerial canopy cover (about 80%), mixed species and heights, understorey bushes (persistent leaves at Y+1 to Y+2) and ferns, podzol/coarse_dirt/moss_block floor with grass at the edges; labelled inference, removable through the foliage and decor masks. Owner: trees need more density. Performance evidence clarified 2026-11-21 (read-only): the trial quotes 962 s for 113 trees, but 8.5 s per tree is only an average of the reported total, not a measured per-tree bottleneck. The saved farmland trees-result.json (journal_seq 1292) records 17,915 positions, writer total 2.35 s, and 40.38 s summed across recorded apply stages; planning before site_kit.apply is not included in that result. The code already batches tree writes into one cell plan. The cause of the remainder of the reported command time is not established; profile planning and full command stages before choosing an optimisation or projecting dense-woodland cost. The earlier live-planning cache-thrash/low-probe-floor problem has a landed fix in #315 (planning from saved regions); distinguish it from the still-unexplained 962 s total. Numeric runtime limit remains to be agreed. Check: wood across the river in cell 63,-45 matches the aerial density; apply time for it stays under a stated limit; owner verdict in game. Profile 2026-11-21 (read-only dry run of trees_layer on 87,-48 under cProfile, current code with #315): 85 s total. planning_inputs 52.9 s, of which neighbour_owned 36 s (cell_journal._cell_owners rebuilds ownership per cell, uncacheable because builds are excluded; about 9 million block_id calls; scales with journal history, not tree count); dry site_kit.apply 16.9 s; surface warm-up 5.6 s; plan_cell (tree placement) 5.7 s. Dry run planted 51 trees and 10,306 blocks, not the trial's 113 trees and 17,915 positions, so it is indicative only. Current planning is about a minute, so the 962 s is not explained by planning on current code: it was pre-#315 live planning or the live apply stages (MCP write and readback), which a dry run cannot show. Next: time a live apply with the existing timed_stage output; the ownership lookup is a candidate optimisation. Live apply 2026-11-21 (87,-48, after prepare --apply cleared a stale readiness validation): 77 s wall, but NOT a clean redo and NOT the 113-tree workload. The apply did not undo the earlier trees pass (the dry run simulates that undo, apply_cell does not), so 51 crowns were skipped as trunk blocked and only 3 trees (556 blocks) were planted on top. Stages: layer planning 38.6 s, identity and readiness 4.1 s, journal begin 6.1 s, writer total 12.7 s (player hop 9.3 s), flush 3.6 s, readback 0.4 s. Side effect, owner chose not to repair: the trees mask for 87,-48 now holds 556 positions instead of the 17,915 of journal #1292, so the original trees remain in the world but are outside the mask (mask-based undo or redo would only touch the 3 new trees). A real full-workload timing needs undo then apply of the trees pass, on a cell where that is acceptable."
+    , "requiresClaude": true},
+    
     
     {
       "id": 321,
@@ -106,7 +88,7 @@
       "complexity": "l",
       "blockedBy": [],
       "notes": "Cause (verified): water_body items carry one cells entry and propose takes one cell, building the body whole; the Itchen spans 12 cells and 22,824 columns. The trial used a scratch clip wrapper and a manual plan_feature note. Deliverable: build per cell, clipped, no bank ring on clip edges, plan recorded per cell. Same edge policy as blocked task 234 (building across a cell edge). Test on a two-cell fixture. Check: Itchen reach across 63,-45 and its neighbour joins without a seam or bank wall. Water level along the reach is a separate task."
-    },
+    , "requiresClaude": true},
     
     {
       "id": 323,
@@ -117,8 +99,8 @@
       "blockedBy": [
         
       ],
-      "notes": "Mapped natural=tree_row is already read (#157) and the tree gate must keep it. Gap: hedgerow tree lines and tree belts that are not mapped are lost by the open-land gate. Deliverable: findings in docs/plans/ on whether aerial plus lidar evidence along mapped hedges and lanes can place them, with a go or no-go. Check: the hedge on 87,-48 and the unmapped north-east tree belt in that cell get trees from evidence in the prototype."
-    },
+      "notes": "Mapped natural=tree_row is already read (#157) and the tree gate must keep it. Gap: hedgerow tree lines and tree belts that are not mapped are lost by the open-land gate. Deliverable: findings in docs/plans/ on whether aerial plus lidar evidence along mapped hedges and lanes can place them, with a go or no-go. Check: the hedge on 87,-48 and the unmapped north-east tree belt in that cell get trees from evidence in the prototype.\n\nOWNER DECISION 2026-11-21: the prototype must exercise the normal Claude build workflow with its configured designer/builder models and effort, using the same evidence and instructions as ordinary builds. Record actual models/efforts, tokens with measurement method, elapsed time and verdict; recover the hedge trees and unmapped north-east belt while keeping open pasture clear. Numerical detection checks alone do not satisfy the build trial. Cursor may take this task with Claude access and confirmed sufficient external-model budget. First-return source evaluation #320 has a go verdict, but its findings note that the tree reader still uses last-return standing height; test that seam rather than assuming the connection has shipped."
+    , "requiresClaude": true},
     
     
     {
@@ -131,7 +113,7 @@
         321
       ],
       "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
-    },
+    , "requiresClaude": true},
     
     
     
@@ -148,7 +130,7 @@
         257
       ],
       "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    , "requiresClaude": true},
     
     
     
@@ -162,6 +144,18 @@
         
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
+    , "requiresClaude": true},
+    
+    
+    {
+      "id": 344,
+      "title": "Task CLI: verify Cursor Claude identifiers and cover legacy scope-update edges",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Nonblocking Sonnet review suggestions from #342. Family aliases sonnet/opus and the configured claude-sonnet/claude-opus identifiers already work. Verify which identifiers the actual Cursor runner supplies before adding compatibility for any version-first labels; keep non-Claude/auto rejection and the external-model budget gate. Add synthetic CLI regression checks that re-read a legacy task after adding requiresClaude and exercise simultaneous flag/title/notes updates when source property order differs. editSpans already sorts edits; confirm behaviour rather than replacing it. Pure tool engineering with disposable tracker fixtures; no world build, place data or external model call is needed."
     }
   ]
 }

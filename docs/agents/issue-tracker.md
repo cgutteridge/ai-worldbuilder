@@ -19,24 +19,51 @@ Read the task by id from `tasks/index.json` (or `tasks/done.json` if it is not i
 
 Tasks carry no triage label, only a status. Workers on `task/*` branches never edit the tracker; the orchestrator on `main` does (ADR 005).
 
+## Claude requirement on creation and updates
+
+Read [task model requirement](model-and-effort.md#task-model-requirement) before
+creating, updating or dispatching a system task. Every active task must have an
+explicit boolean `requiresClaude`; the pre-commit hook checks staged flags even
+on tracker-only commits. Classify from the whole required scope and acceptance
+checks. Use the CLI's required `--requires-claude true|false` on `add` and `update`;
+scope updates must reassess it, not blindly copy the old value. Direct edits to
+priority/blockers must preserve it; direct scope edits must reassess it as well.
+Archival retains it. Removing a true requirement needs a recorded scope reason.
+
 ## Task CLI
 
-`scripts/tasks.mjs` (from the `local-tasks` kit; Node only, no dependencies) lists, shows and changes task status without hand-editing JSON:
+`scripts/tasks.mjs` (a project-maintained extension of the `local-tasks` kit;
+Node only, no dependencies) lists, shows and changes tasks without disturbing
+unrelated tracker bytes:
 
 ```sh
 node scripts/tasks.mjs list --ready
 node scripts/tasks.mjs show ID
-node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --notes "Details"  # or --notes-file PATH
+node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --requires-claude false --notes "Details"  # or --notes-file PATH
+node scripts/tasks.mjs update ID --requires-claude true --notes "Updated scope"  # or --notes-file PATH
+node scripts/tasks.mjs check-run ID --tool cursor --model sonnet --external-model-budget available
 node scripts/tasks.mjs status ID doing
+# Claude tasks need the same confirmed runner options on status ID doing:
+node scripts/tasks.mjs status ID doing --tool cursor --model sonnet --external-model-budget available
 node scripts/tasks.mjs status ID todo --reason "Short explanation"
 node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 ```
 
-Run it on `main` only, because the pre-commit hook rejects tracker edits on `task/*` branches. Adding a task and editing titles, notes, priority or blockers is still done in `tasks/index.json` through the `task-index-manager` skill. This tracker has no triage tags, so `list --ready` lists every `todo` task with no `blockedBy`.
+Run mutations on `main` only, because the pre-commit hook rejects tracker edits
+on `task/*` branches. Read-only `show`, `list` and `check-run` are also available
+to workers. Priority/blocker edits remain direct edits through the
+`task-index-manager` skill. This tracker has no triage tags, so `list --ready`
+lists every `todo` task with no `blockedBy`, marking Claude-required tasks.
+Readiness alone does not establish runner eligibility: run `check-run` before
+dispatch, including when task status is managed without `status doing`.
 
 The kit copy of `task-index-manager` has the same name as the personal one in `~/.claude/skills`; Claude Code may load the personal skill instead of the project one, so the CLI guidance here may not be what an agent sees until the personal skill is removed; check with `/skills`.
 
-The CLI's own tests live in the kit (`agent-kits/kits/local-tasks/tooling/tasks.test.mjs`), not in this repository, so `scripts/run_tests.py` does not exercise `scripts/tasks.mjs`. Change the script in the kit, not here. The first `close` may leave a stray comma line in `tasks/done.json`; it is valid JSON, so do not hand-fix it.
+The local CLI and its project extensions are tested by `scripts/tasks.test.mjs`,
+run through `scripts/test_tasks_cli.py` in `scripts/run_tests.py`. Keep project
+policy here rather than changing the installed generic kit skills. The first
+`close` may leave a stray comma line in `tasks/done.json`; it is valid JSON, so
+do not hand-fix it.
 
 ## `.scratch/`
 
