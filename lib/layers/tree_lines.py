@@ -1,19 +1,22 @@
 """Spike #323: unmapped tree lines and belts along mapped hedges and lanes.
 
-The trees source gate (#317) keeps a crown on open land (park, rural, natural classes) only
-with mapped trees, a wood polygon, or lidar standing height of at least 2 m. Hedgerow trees
-and tree belts that the map does not mark as wood fail it wherever the lidar reader sees
-through the canopy, which the last-return composite does (task 320 findings).
+The trees source gate keeps a crown on open land only with evidence listed in ``trees.sources``.
+``line_columns`` is the production ``lines`` source: hedge and lane corridors and the unmapped
+belt grown from them. It requires first-return standing height of at least
+``land_use.MIN_STANDING_M`` metres. Classes that permit it come from that table
+(``gated_classes``), not a hardcoded set. Shade cover is not admission for this source.
 
-The shared ``standing_height`` reader feeds production trees. The remaining helpers
-prototype additional tree-line evidence:
+``line_evidence`` still treats aerial darkness as a fallback when the height source is not
+first-return. That fallback is not the production source: a dark band with low or missing
+height stays clear. The helpers are:
 
 * a **corridor** of columns within reach of a mapped hedge or lane,
-* **canopy** columns: first-return standing height when cached; otherwise last-return height or
-  aerial darkness calibrated per cell against mapped wood and open grass (darkness also marks the
-  shadow tall trees cast north of themselves, so it is only a fallback),
-* a **belt**: canopy grown outward from the corridor through connected canopy columns on gated
-  land, so a belt that runs along a lane is kept while open pasture beyond it stays clear.
+* **canopy** columns: first-return standing height when that is the height source; otherwise
+  last-return height or aerial darkness calibrated per cell against mapped wood and open grass
+  (darkness also marks the shadow tall trees cast north of themselves, so it is only a fallback),
+* a **belt**: canopy grown outward from the corridor through connected canopy columns on classes
+  that permit ``lines``, so a belt that runs along a lane is kept while open pasture beyond it
+  stays clear.
 
 Everything is a pure function of explicit arrays except ``standing_height`` and ``propose``,
 which load evidence for one cell. Arrays are indexed ``[x - x0, z - z0]`` like the lidar reader.
@@ -29,14 +32,34 @@ import numpy as np
 LANE_HIGHWAYS = frozenset({'service', 'track', 'unclassified', 'tertiary', 'bridleway'})
 CORRIDOR_REACH = 4        # blocks from a hedge column or lane edge that still count as its verge
 BELT_REACH = 32           # blocks a belt may grow from the corridor through connected canopy
-MIN_STANDING_M = 2.0      # same standing height as the #317 gate's lidar source
 MIN_REFERENCE_COLUMNS = 200  # wood and open-grass samples needed to calibrate aerial darkness
 DARK_SHARE = 0.5          # threshold sits this share of the way from the wood to the open median
 CROWN_SPACING = 5         # minimum centre separation, matches trees_layer FILL_SPACING
 DEFAULT_RADIUS = 3.0      # crown radius when no standing height is measured
-GATED_CLASSES = frozenset({'park', 'rural', 'natural'})
 # Foliage rule radius guide (rules/foliage.md): height 13 = r 6+, 7-10 = r 3.5-5, 3-5 = bush.
 RADIUS_BY_HEIGHT = ((13.0, 6.0), (10.0, 5.0), (7.0, 4.0), (5.0, 3.5), (3.0, 3.0))
+
+
+def _min_standing() -> float:
+    """Standing-height threshold shared with the production source gate.
+
+    @returns: metres (``land_use.MIN_STANDING_M``)
+    """
+    import land_use
+    return land_use.MIN_STANDING_M
+
+
+def gated_classes() -> frozenset[str]:
+    """Classes that permit the lines source, read from ``trees.sources``.
+
+    Shipped park, rural and natural permit it. A class that omits ``lines`` is not
+    land a belt may grow on. Unmapped columns are not in this set; callers keep
+    those allowed where no polygon claims them.
+
+    @returns: class ids
+    """
+    import land_use
+    return land_use.classes_with_source(land_use.LINE_SOURCE)
 
 
 def corridor(hedge, lanes, bounds: tuple[int, int, int, int], reach: int = CORRIDOR_REACH,
@@ -249,12 +272,13 @@ def gated_crowns(crowns, x0: int, z0: int, height: np.ndarray | None, near: int 
     """
     offsets = [(di, dj) for di in range(-near, near + 1) for dj in range(-near, near + 1)
                if di * di + dj * dj <= near * near]
+    minimum = _min_standing()
     out = {}
     for x, z, _r in crowns:
         i, j = x - x0, z - z0
         out[(x, z)] = bool(height is not None and any(
             0 <= i + di < height.shape[0] and 0 <= j + dj < height.shape[1]
-            and np.isfinite(height[i + di, j + dj]) and height[i + di, j + dj] >= MIN_STANDING_M
+            and np.isfinite(height[i + di, j + dj]) and height[i + di, j + dj] >= minimum
             for di, dj in offsets))
     return out
 
@@ -279,7 +303,8 @@ def line_evidence(bounds, hedge, lanes, lum, wood, open_grass, allowed, height=N
     x0, z0, _x1, _z1 = bounds
     dark, dark_info = dark_canopy(lum, wood, open_grass)
     canopy = np.zeros(lum.shape, dtype=bool)
-    tall = None if height is None else np.where(np.isfinite(height), height, 0) >= MIN_STANDING_M
+    minimum = _min_standing()
+    tall = None if height is None else np.where(np.isfinite(height), height, 0) >= minimum
     if height_source == 'first-return' and tall is not None:
         # First returns see the crowns. Aerial darkness would add the shadow they cast on the
         # grass north of them (87,-48: a dark band about 10 blocks wide with no standing height).
@@ -306,6 +331,34 @@ def line_evidence(bounds, hedge, lanes, lum, wood, open_grass, allowed, height=N
                        'belt': len(grown)}}
 
 
+def line_columns(bounds, hedge, lanes, allowed, height, height_source, *, covered=None) -> set:
+    """Columns the production ``lines`` source may admit.
+
+    First-return standing height is required. ``line_evidence`` still keeps a darkness
+    fallback for any other height source; that fallback is not this source, so a missing
+    or last-return read returns no columns even when the aerial is dark. With first-return,
+    only corridor and belt columns at or above the shared standing-height threshold qualify.
+    A low shadow band and open pasture that is not connected to the corridor stay out.
+
+    @param bounds: inclusive ``(x0, z0, x1, z1)`` matching ``allowed`` and ``height``
+    @param hedge: hedge columns
+    @param lanes: lane centreline rows
+    @param allowed: bool columns where a belt may grow (classes that permit ``lines``,
+        not road or water)
+    @param height: standing height metres ``[x, z]``, or None
+    @param height_source: ``'first-return'``, ``'last-return'`` or ``'none'``
+    @param covered: bool wood/scrub/forest columns already admitted by the wood source
+    @returns: world ``(x, z)`` belt columns, empty without first-return support
+    """
+    if height_source != 'first-return' or height is None:
+        return set()
+    shape = np.shape(allowed)
+    blank = np.zeros(shape, dtype=bool)
+    ev = line_evidence(bounds, hedge, lanes, np.zeros(shape, dtype=float), blank, blank, allowed,
+                       height, height_source, covered=blank if covered is None else covered)
+    return set(ev['belt'])
+
+
 def propose(cell: tuple[int, int]) -> dict:
     """Load one cell's evidence and propose tree-line crowns for the designer to review.
 
@@ -328,11 +381,12 @@ def propose(cell: tuple[int, int]) -> dict:
     wood = np.zeros((CELL, CELL), bool)        # darkness reference: wood and forest
     covered = np.zeros((CELL, CELL), bool)     # already passes the gate: wood, scrub, forest
     open_grass = np.zeros((CELL, CELL), bool)  # brightness reference
-    # Gated classes, plus columns no land-use polygon claims (verges beside lanes and hedges,
-    # where the gate does not apply but nothing detects the trees either).
+    # Classes that permit lines, plus columns no land-use polygon claims (verges beside
+    # lanes and hedges, where the gate does not apply but nothing detects the trees either).
     allowed = np.ones((CELL, CELL), bool)
+    gated = gated_classes()
     for (x, z), (cls, _ref, _kind) in classes.items():
-        if x0 <= x < x0 + CELL and z0 <= z < z0 + CELL and cls not in GATED_CLASSES:
+        if x0 <= x < x0 + CELL and z0 <= z < z0 + CELL and cls not in gated:
             allowed[x - x0, z - z0] = False
     for rings, props in idx.areas:
         t = osm_tags(props)
@@ -374,7 +428,7 @@ def propose(cell: tuple[int, int]) -> dict:
         h = float(height[i, j]) if height is not None and np.isfinite(height[i, j]) else None
         dark = (thr - lum[i, j]) if thr is not None else 0.0
         score[q] = (h or 0.0) * 10.0 + dark - 0.01 * steps
-        if h is not None and h >= MIN_STANDING_M:
+        if h is not None and h >= _min_standing():
             hmap[q] = h
     crowns = place_crowns(ev['belt'], score, hmap)
     hedge_cells = set(g.hedge)

@@ -699,19 +699,75 @@ class TreeInputs:
         return replace(self, masked=dict(remaining_masks))
 
 
-def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
-    """Reject crowns on classes whose ``trees.sources`` lacks corroborating tree evidence (#317).
+def _lines_support(cell, classes, covered, ndsm, margin, height_source, osm_ground, footprints):
+    """World columns the lines source can admit.
+
+    Empty unless the standing-height read is first-return. Aerial darkness is never
+    consulted here. The belt may cross a neighbouring column inside ``margin`` so a
+    hedge just outside the cell can support an in-cell crown whose own column is tall.
+    Wood, scrub and forest stay on the wood source. Carriageway, water and footprints
+    are not lines land.
+
+    @param cell: ``(tx, tz)``
+    @param classes: ``area_classes`` result
+    @param covered: world columns of wood, scrub and forest
+    @param ndsm: standing height metres, padded by ``margin``, or None
+    @param margin: extra columns on each side of the cell in ``ndsm``
+    @param height_source: ``'first-return'``, ``'last-return'`` or ``'none'``
+    @param osm_ground: hedge, lane and carriageway evidence, or None
+    @param footprints: world columns of building footprints
+    @returns: belt columns; empty without first-return support
+    """
+    from tree_lines import corridor, gated_classes, line_columns
+    if height_source != 'first-return' or ndsm is None or osm_ground is None:
+        return set()
+    x0 = cell[0] * CELL - margin
+    z0 = cell[1] * CELL - margin
+    nx, nz = ndsm.shape
+    bounds = (x0, z0, x0 + nx - 1, z0 + nz - 1)
+    allowed = np.ones((nx, nz), dtype=bool)
+    gated = gated_classes()
+    for (x, z), hit in classes.items():
+        if x0 <= x <= bounds[2] and z0 <= z <= bounds[3] and hit[0] not in gated:
+            allowed[x - x0, z - z0] = False
+    road_lines = list(getattr(osm_ground, 'road_lines', ()) or ())
+    blocked = set(getattr(osm_ground, 'road', ()) or ())
+    blocked |= set(getattr(osm_ground, 'water', ()) or ())
+    blocked |= set(getattr(osm_ground, 'water_line', ()) or ())
+    blocked |= set(footprints)
+    blocked |= corridor((), road_lines, bounds, reach=0, highways=None)
+    for x, z in blocked:
+        if x0 <= x <= bounds[2] and z0 <= z <= bounds[3]:
+            allowed[x - x0, z - z0] = False
+    cover = np.zeros((nx, nz), dtype=bool)
+    for x, z in covered:
+        if x0 <= x <= bounds[2] and z0 <= z <= bounds[3]:
+            cover[x - x0, z - z0] = True
+    hedge = getattr(osm_ground, 'hedge', ()) or ()
+    lanes = road_lines + list(getattr(osm_ground, 'path_lines', ()) or ())
+    return line_columns(bounds, hedge, lanes, allowed, ndsm, height_source, covered=cover)
+
+
+def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0,
+                            height_source='none', osm_ground=None):
+    """Reject crowns on classes whose ``trees.sources`` lacks corroborating tree evidence (#317, #368).
 
     Reuses class/polygon rasterisation, including holes. Wood/scrub/forest columns or lidar
-    standing height >=2 m may support a crown within 2 blocks; mapped points and rows survive
-    even when young and absent from lidar. Other classes keep their existing source policy.
+    standing height of at least ``land_use.MIN_STANDING_M`` metres may support a crown within
+    2 blocks; mapped points and rows survive even when young and absent from lidar. ``lines``
+    supports a crown whose own column is a hedge or lane corridor, or the unmapped belt grown
+    from it, and only when ``height_source`` is first-return. Aerial darkness does not admit
+    a shadow band, and shade cover is not this source. A class whose list omits ``lines``
+    does not take these crowns. Other classes keep their existing source policy.
 
     @param cell: ``(tx, tz)``
     @param crowns: local ``(dx, dz, radius)`` candidates after source precedence and snapping
     @param idx: ``OSMIndex`` with non-building ``areas``
     @param mapped: world ``(x, z)`` of mapped tree point/row crowns
     @param ndsm: standing heights in metres, optionally padded by ``margin``, or None
-    @param margin: extra lidar columns on each side; lets evidence across a cell edge corroborate crowns
+    @param margin: extra columns on each side; lets height across a cell edge corroborate crowns
+    @param height_source: ``'first-return'``, ``'last-return'`` or ``'none'`` from the shared reader
+    @param osm_ground: hedge, lane and carriageway evidence; None admits no lines crowns
     @returns: ``[(world x, world z, reason)]`` for unsupported candidates
     """
     if not idx.areas:
@@ -734,6 +790,9 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
     from tree_lines import gated_crowns
     height_support = gated_crowns([(x0 + i, z0 + j, r) for i, j, r in crowns],
                                   x0 - margin, z0 - margin, ndsm)
+    cells = getattr(idx, 'cells', None)
+    footprints = set(cells()) if callable(cells) else set()
+    line_cols = _lines_support(cell, classes, wood, ndsm, margin, height_source, osm_ground, footprints)
     rejected = []
     for i, j, _r in crowns:
         q = (x0 + i, z0 + j)
@@ -744,7 +803,9 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
             continue
         if 'lidar' in allowed and height_support[q]:
             continue
-        rejected.append((*q, 'no mapped or lidar tree evidence'))
+        if land_use.LINE_SOURCE in allowed and q in line_cols:
+            continue
+        rejected.append((*q, 'no mapped, lidar or line evidence'))
     return rejected
 
 
@@ -829,7 +890,8 @@ def planning_inputs(cell, osm_ground=None):
         origin for _c, origin in retained]
     source_rejections = unsupported_tree_crowns(
         cell, crowns, idx, mapped, ndsm_support if ndsm_support is not None else ndsm,
-        margin=2 if ndsm_support is not None else 0)
+        margin=2 if ndsm_support is not None else 0, height_source=height_source,
+        osm_ground=osm_ground)
     unsupported = {(x, z) for x, z, _reason in source_rejections}
     retained = [(c, origin) for c, origin in zip(crowns, crown_origins)
                 if (x0 + c[0], z0 + c[1]) not in unsupported]

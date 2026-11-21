@@ -376,6 +376,124 @@ class TestTreeSources(unittest.TestCase):
         self.assertGreaterEqual(len(inputs.mapped), 4)             # young mapped point and row survive
 
 
+class TestLineSource(unittest.TestCase):
+    """Hedge, lane and unmapped-belt crowns, only with first-return support (#368)."""
+
+    @staticmethod
+    def polygon(x0, z0, x1, z1):
+        return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+    def index(self, areas):
+        return types.SimpleNamespace(
+            cells=lambda: set(),
+            areas=[(rings, dict(tags, osm_way_id=str(i))) for i, (rings, tags) in enumerate(areas)],
+        )
+
+    def scene(self):
+        """Farmland cell, a lane, a hedge in the neighbouring column, a footway, and a low shadow."""
+        idx = self.index([(self.polygon(0, 0, 128, 128), {'landuse': 'farmland'})])
+        lane = {'highway': 'service', 'points': [(0.0, 40.0), (80.0, 40.0)], 'half': 1.0}
+        footway = {'highway': 'footway', 'points': [(0.0, 110.0), (40.0, 110.0)], 'half': 1.0}
+        ground = types.SimpleNamespace(
+            trees=[], tree_rows=[], hedge={(-1, 70)}, road_lines=[lane], path_lines=[footway],
+            road=set(), water=set(), water_line=set())
+        height = np.zeros((132, 132))
+
+        def put(x, z, metres):
+            height[x + 2, z + 2] = metres
+
+        put(30, 36, 2.5)                 # lane verge
+        for z in range(30, 37):
+            put(30, z, 2.5)              # unmapped belt running north from the verge
+        put(30, 22, 0.4)                 # low shadow, not connected
+        put(100, 100, 2.5)               # tall open pasture, not on a line
+        for x in range(-1, 3):
+            put(x, 70, 2.5)              # hedge just outside the cell, crown inside
+        put(10, 110, 2.5)                # footway, not a lane
+        crowns = [(30, 36, 4.0), (30, 30, 4.0), (30, 22, 4.0), (100, 100, 4.0), (2, 70, 4.0), (10, 110, 4.0)]
+        return idx, ground, height, crowns
+
+    def gate(self, sources, *, height_source='first-return'):
+        idx, ground, height, crowns = self.scene()
+
+        def tree_sources(cls):
+            return sources if cls in ('park', 'rural', 'natural') else None
+
+        with mock.patch('land_use.tree_sources', side_effect=tree_sources):
+            rejected = tl.unsupported_tree_crowns(
+                (0, 0), crowns, idx, set(), height, margin=2, height_source=height_source, osm_ground=ground)
+            again = tl.unsupported_tree_crowns(
+                (0, 0), crowns, idx, set(), height, margin=2, height_source=height_source, osm_ground=ground)
+        self.assertEqual(rejected, again)
+        self.assertTrue(all(len(c) == 3 for c in crowns))
+        return {(x, z) for x, z, _reason in rejected}
+
+    def test_lines_admits_hedge_lane_and_belt_and_clears_the_rest(self):
+        rejected = self.gate(('lines',))
+        self.assertEqual(rejected, {(30, 22), (100, 100), (10, 110)})
+
+    def test_a_class_without_lines_rejects_those_crowns(self):
+        self.assertEqual(self.gate(('mapped',)),
+                         {(30, 36), (30, 30), (30, 22), (100, 100), (2, 70), (10, 110)})
+
+    def test_last_return_cannot_turn_height_or_darkness_into_lines(self):
+        self.assertEqual(self.gate(('lines',), height_source='last-return'),
+                         {(30, 36), (30, 30), (30, 22), (100, 100), (2, 70), (10, 110)})
+        self.assertEqual(self.gate(('lines',), height_source='none'),
+                         {(30, 36), (30, 30), (30, 22), (100, 100), (2, 70), (10, 110)})
+
+    def test_shade_cover_does_not_admit_a_low_shadow(self):
+        """Park and rural score this dull green as canopy; the lines source still refuses it."""
+        from PIL import Image
+        colour = np.zeros((48, 56, 3), np.uint8)
+        colour[:] = (76, 90, 74)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'm.png'
+            Image.fromarray(colour).save(path)
+            self.assertGreater(tl.cover_pixels(path, shade=True)[16:32, 16:40].mean(), 0.95)
+        self.assertIn((30, 22), self.gate(('lines',)))
+        # Shipped rural still has lidar. The low shadow stays out; a tall pasture crown does not.
+        idx, ground, height, crowns = self.scene()
+        rejected = tl.unsupported_tree_crowns(
+            (0, 0), crowns, idx, set(), height, margin=2, height_source='first-return', osm_ground=ground)
+        self.assertEqual({(x, z) for x, z, _reason in rejected}, {(30, 22)})
+
+    def test_planning_keeps_line_crowns_as_ordinary_species_tuples(self):
+        idx, ground, height, crowns = self.scene()
+
+        def only_lines(cls):
+            return ('lines',) if cls in ('park', 'rural', 'natural') else None
+
+        def standing(cell, margin=0):
+            self.assertEqual(margin, 2)
+            return height, 'first-return'
+
+        with mock.patch('land_use.tree_sources', side_effect=only_lines), \
+                mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'find_crowns', return_value=crowns), \
+                mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch('tree_lines.standing_height', side_effect=standing), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs((0, 0), osm_ground=ground)
+            again = tl.planning_inputs((0, 0), osm_ground=ground)
+        self.assertEqual(inputs.crowns, again.crowns)
+        self.assertEqual(inputs.crowns, [(30, 36, 4.0), (30, 30, 4.0), (2, 70, 4.0)])
+        self.assertEqual({(x, z) for x, z, _r in inputs.source_rejections}, {(30, 22), (100, 100), (10, 110)})
+        with mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')):
+            _placed, report = tl.plan_cell((0, 0), types.SimpleNamespace(set=lambda *a: None), FakeWorld(), inputs)
+        self.assertEqual([tuple(row['position']) + (row['species'], row['class']) for row in report['tree_species']],
+                         [(30, 36, 'oak', 'rural'), (30, 30, 'oak', 'rural'), (2, 70, 'oak', 'rural')])
+        self.assertEqual(report['trees'], [(30, 36, 4.0, 'tree'), (30, 30, 4.0, 'tree'), (2, 70, 4.0, 'tree')])
+
+
 class TestPlanCellKeepsRules(unittest.TestCase):
     """Fill crowns go through plan_cell's footprint / surface rules like any other crown."""
 

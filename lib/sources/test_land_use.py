@@ -281,17 +281,24 @@ class Table(unittest.TestCase):
     def test_shipped_tree_sources_only_gate_open_land(self):
         got = {cid: L.tree_sources(cid) for cid in L.CLASSES}
         self.assertEqual({k: v for k, v in got.items() if v is not None},
-                         dict.fromkeys(('park', 'rural', 'natural'), ('mapped', 'wood', 'lidar')))
+                         dict.fromkeys(('park', 'rural', 'natural'), ('mapped', 'wood', 'lidar', 'lines')))
         self.assertIsNone(L.tree_sources('banana'))
+        self.assertEqual(L.classes_with_source(L.LINE_SOURCE), frozenset({'park', 'rural', 'natural'}))
+        self.assertEqual(L.MIN_STANDING_M, 2.0)
+        self.assertEqual(L.tree_cover('park'), 'shade')
+        self.assertEqual(L.tree_cover('rural'), 'shade')
+        self.assertIsNone(L.tree_cover('natural'))
 
     def test_tree_sources_are_optional_and_checked(self):
         self.row('park').pop('trees', None)
         L.validate_table(self.doc)
-        for good in (None, {}, {'sources': None}, {'sources': []}, {'sources': ['mapped', 'lidar']}):
+        for good in (None, {}, {'sources': None}, {'sources': []}, {'sources': ['mapped', 'lidar']},
+                     {'sources': ['lines']}, {'sources': ['mapped', 'wood', 'lidar', 'lines']}):
             self.row('park')['trees'] = good
             L.validate_table(self.doc)
         for bad in (False, [], {'fill': 'dense'}, {'sources': 'mapped'},
-                    {'sources': ['aerial']}, {'sources': ['mapped', 'mapped']}, {'sources': [True]}):
+                    {'sources': ['aerial']}, {'sources': ['darkness']}, {'sources': ['mapped', 'mapped']},
+                    {'sources': [True]}):
             self.row('park')['trees'] = bad
             with self.assertRaisesRegex(L.TableError, 'trees'):
                 L.validate_table(self.doc)
