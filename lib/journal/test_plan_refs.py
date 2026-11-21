@@ -66,6 +66,16 @@ class PlanRefsTest(unittest.TestCase):
         self.assertFalse(PR.candidate_covered(building('w1'), covered))
         self.assertEqual(PR.plan_refs(self.root, 'houses_kitchener_road')[1], 'none')
 
+    def test_house_plan_name_suffix_is_not_coverage(self):
+        """#233: specless houses_*_<ref> does not recover the trailing ref as the group's extent."""
+        self.assertEqual(PR.plan_refs(self.root, 'houses_kitchener_road_w13'), (set(), 'none'))
+        terrace = {'kind': 'houses', 'label': 'Kitchener Road (6 houses)', 'street': 'Kitchener Road',
+                   'refs': ['w10', 'w11', 'w12', 'w13', 'w14', 'w15'], 'bbox': (0, 0, 1, 1),
+                   'area': 6, 'portals': [], 'pictures': []}
+        covered = PR.covered_by_plans(self.root, ['houses_kitchener_road_w13'])
+        self.assertFalse(PR.candidate_covered(terrace, covered))
+        self.assertEqual(PR.uncovered_candidates(terrace, covered), [terrace])
+
     def test_house_groups_match_by_map_ref_like_other_groups(self):
         """#233: house groups are covered by recorded map refs, not excluded from matching."""
         covered = PR.covered_by_plans(self.root, ['west_w5'])

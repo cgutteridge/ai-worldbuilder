@@ -195,6 +195,26 @@ class PlanIdTest(unittest.TestCase):
             f'ambiguous legacy plan {STREET}: no readable handoff spec; audit refs {GROUP_A["refs"]}',
         ])
 
+    def test_unrelated_group_next_to_unbuilt_prepared_plan_is_not_legacy(self):
+        """#233: a just-prepared specless sibling is not ambiguous legacy for another group."""
+        self.reg.change(Note(CELL, 'plan_feature', GROUP_A['label'], f'{STREET}_w10'))
+        self.assertEqual(CR.ambiguous_legacy_house_plans(self.reg, CELL, [GROUP_B]), [])
+        self.assertEqual(self.record([GROUP_B]), [f'{STREET}_w20'])
+        self.assertEqual({f.id for f in self.reg.cell(CELL).features},
+                         {f'{STREET}_w10', f'{STREET}_w20'})
+
+    def test_specless_house_plan_name_ref_does_not_split_or_duplicate(self):
+        """#233: a specless houses_*_<ref> plan is unresolved — no name peel, no second plan."""
+        terrace = group(['w10', 'w11', 'w12', 'w13', 'w14', 'w15'])
+        self.reg.change(Note(CELL, 'plan_feature', 'legacy partial', f'{STREET}_w13'))
+        self.assertEqual(CR.drop_covered_candidates(self.reg, CELL, [terrace]), [])
+        self.assertEqual(self.record([terrace]), [])
+        self.assertEqual([f.id for f in self.reg.cell(CELL).features], [f'{STREET}_w13'])
+        self.assertEqual(CR.ambiguous_legacy_house_plans(self.reg, CELL, [terrace]), [
+            f'ambiguous legacy plan {STREET}_w13: no readable handoff spec; '
+            f'audit refs {terrace["refs"]}',
+        ])
+
     def test_repeat_prepare_records_no_extra_plans_for_unchanged_houses(self):
         """#233: a second record pass is a no-op once the house group is planned by ref."""
         plan = f'{STREET}_w10'

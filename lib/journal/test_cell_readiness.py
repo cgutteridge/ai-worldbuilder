@@ -656,6 +656,66 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(home[0]['area'], 100)        # whole pond, not the clipped 70
         self.assertEqual(evidence.candidates(self.world.reg, (47, -44)), [])
 
+    def test_local_evidence_houses_follow_brickfield_prepare_rules(self):
+        """#233: LocalEvidence skips a spec-backed house plan under another id; warns only on legacy."""
+        import json
+        from types import SimpleNamespace
+        from unittest import mock
+        from cell_journal import Note
+        from readiness_evidence import LocalEvidence
+
+        cell = (48, -44)
+        street = 'Brickfield Road'
+        refs = ['w176633174', 'w176633175', 'w176633176',
+                'w176633177', 'w176633178', 'w176633179']
+        terrace = {
+            'kind': 'houses', 'street': street, 'label': f'{street} (6 houses)',
+            'refs': list(refs), 'bbox': (0, 0, 1, 1), 'area': 6, 'portals': [], 'pictures': [],
+        }
+        plan = 'houses_brickfield_road_w176633174'
+        self.world.reg.change(Note(cell, 'plan_feature', terrace['label'], plan))
+        builds = self.world.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{plan}.json').write_text(json.dumps({
+            'name': plan,
+            'ways': {r[1:]: f'H{r}' for r in refs},
+        }))
+        empty = {'built_area': 0, 'unbuilt_area': 6, 'unbuilt': [terrace], 'unbuilt_names': [terrace['label']]}
+        evidence = LocalEvidence(self.world.root)
+        evidence._index = SimpleNamespace(areas=[], buildings=[], streets=[])
+        with mock.patch('cell_features.footprint_progress', return_value=empty):
+            first = evidence.candidates(self.world.reg, cell)
+            second = evidence.candidates(self.world.reg, cell)
+        self.assertEqual(first, [])
+        self.assertEqual(second, [])
+        self.assertEqual(evidence.warnings(cell), [])
+
+        # Unrelated new terrace on the same street still proposes; no legacy warning.
+        other = {
+            'kind': 'houses', 'street': street, 'label': f'{street} (2 houses)',
+            'refs': ['w20', 'w21'], 'bbox': (0, 0, 1, 1), 'area': 2, 'portals': [], 'pictures': [],
+        }
+        both = {'built_area': 0, 'unbuilt_area': 8, 'unbuilt': [terrace, other],
+                'unbuilt_names': [terrace['label'], other['label']]}
+        with mock.patch('cell_features.footprint_progress', return_value=both):
+            proposed = evidence.candidates(self.world.reg, cell)
+        self.assertEqual([(c['id'], c['refs']) for c in proposed],
+                         [('houses_brickfield_road_w20', ['w20', 'w21'])])
+        self.assertEqual(evidence.warnings(cell), [])
+
+        # Bare specless street plan is a genuine unresolved legacy collision.
+        legacy = JournalWorld()
+        with legacy:
+            legacy.reg.change(Note(cell, 'plan_feature', 'legacy', 'houses_brickfield_road'))
+            leg_ev = LocalEvidence(legacy.root)
+            leg_ev._index = SimpleNamespace(areas=[], buildings=[], streets=[])
+            with mock.patch('cell_features.footprint_progress', return_value=empty):
+                self.assertEqual(leg_ev.candidates(legacy.reg, cell), [])
+            self.assertEqual(leg_ev.warnings(cell), [
+                "ambiguous legacy plan houses_brickfield_road: no readable handoff spec; "
+                f"audit refs {refs}",
+            ])
+
     def test_content_audit_detects_same_timestamp_changes_and_check_is_read_only(self):
         import json
         import os

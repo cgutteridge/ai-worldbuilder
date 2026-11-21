@@ -117,8 +117,8 @@ class LocalEvidence:
         """Eligible unaccounted map groups, retaining stable IDs and deliberate dismissals."""
         from cell_features import footprint_progress, missing_water_bodies
         from cell_readiness import planned_elsewhere, planned_here
-        from cell_registry import (ambiguous_legacy_house_plans, feature_plan_ids,
-                                   plan_ids_for_candidates)
+        from cell_registry import (ambiguous_legacy_house_plans, drop_unresolved_legacy_houses,
+                                   feature_plan_ids, plan_ids_for_candidates)
         from coverage import osm_ref, scan_polygon
         from osm_footprints import OSMIndex, osm_tags
         from plan_refs import uncovered_candidates
@@ -143,7 +143,10 @@ class LocalEvidence:
         # Prefixed / house plans cover their map refs here and in other cells (tasks 293, 233)
         here = planned_here(reg, cell) | planned_elsewhere(reg, cell)
         items = [part for item in items for part in uncovered_candidates(item, here)]
+        # Specless house plans: warn on a genuine unresolved collision, and do not propose
+        # another plan for that group (drop_covered / record do the same; #233).
         self._warnings[tuple(cell)] = ambiguous_legacy_house_plans(reg, cell, items)
+        items = drop_unresolved_legacy_houses(reg, cell, items)
         ids = plan_ids_for_candidates(reg, cell, items)
         return [{**item, 'id': fid} for item, fid in zip(items, ids) if fid not in skip]
 
