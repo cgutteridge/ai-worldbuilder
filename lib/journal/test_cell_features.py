@@ -67,6 +67,39 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(prog['unbuilt'][0]['label'], 'Empty Hall')
         self.assertEqual(prog['unbuilt'][0]['area'], prog['unbuilt_area'])
 
+    def test_footprint_progress_flags_landmark_candidates(self):
+        """#335: church and shop=mall footprints leave footprint_progress / missing_features with landmark fields."""
+        # Cell 48,-44 is x 6144..6271, z -5632..-5505.
+        church = _square(6160, -5600, 6180, -5580)
+        mall = _square(6200, -5600, 6220, -5580)
+        ordinary = _square(6230, -5600, 6250, -5580)
+        idx = SimpleNamespace(
+            buildings=[
+                (church, {'building': 'church', 'name': 'St Marks', 'id': 'wchurch'}),
+                (mall, {'building': 'retail', 'shop': 'mall', 'name': 'West Quay', 'id': 'wmall'}),
+                (ordinary, {'building': 'university', 'name': 'Lab Block', 'id': 'wlab'}),
+            ],
+            streets=[],
+        )
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            prog = cf.footprint_progress(48, -44, idx=idx, covered=set())
+            missing = cf.missing_features(48, -44, idx=idx, covered=set(), water_columns=set())
+        by_label = {u['label']: u for u in prog['unbuilt']}
+        self.assertTrue(by_label['St Marks']['landmark'])
+        self.assertEqual(by_label['St Marks']['landmark_class'], 'church')
+        self.assertTrue(by_label['West Quay']['landmark'])
+        self.assertEqual(by_label['West Quay']['landmark_class'], 'shopping_centre')
+        self.assertNotIn('landmark', by_label['Lab Block'])
+        miss_by_label = {u['label']: u for u in missing if u['kind'] == 'building'}
+        self.assertTrue(miss_by_label['St Marks']['landmark'])
+        self.assertEqual(miss_by_label['St Marks']['landmark_class'], 'church')
+        self.assertTrue(miss_by_label['West Quay']['landmark'])
+        self.assertEqual(miss_by_label['West Quay']['landmark_class'], 'shopping_centre')
+        self.assertNotIn('landmark', miss_by_label['Lab Block'])
+
     def test_built_footprint_still_emits_uncovered_portals_as_houses(self):
         """#154: a built outline that swallows houses still proposes their portals.
 

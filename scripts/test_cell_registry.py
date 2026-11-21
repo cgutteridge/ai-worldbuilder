@@ -141,6 +141,31 @@ class RegistryCliTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 R.propose_feature_candidates('48,-44')
 
+    def test_propose_features_surfaces_landmark_flag(self):
+        """#335: propose-features JSON lines keep landmark fields set by missing_features."""
+        mapped = [{
+            'kind': 'building', 'label': 'St Marks', 'street': None,
+            'refs': ['wchurch'], 'bbox': (6160, -5600, 6180, -5580),
+            'area': 400, 'portals': [], 'pictures': [],
+            'landmark': True, 'landmark_class': 'church',
+        }, {
+            'kind': 'building', 'label': 'West Quay', 'street': None,
+            'refs': ['wmall'], 'bbox': (6200, -5600, 6220, -5580),
+            'area': 400, 'portals': [], 'pictures': [],
+            'landmark': True, 'landmark_class': 'shopping_centre',
+        }]
+        with mock.patch('cell_features.clip_coverage', return_value=1.0), \
+                mock.patch('cell_features.missing_features', return_value=mapped):
+            code, output = run('--root', str(self.root), 'propose-features', '--cell', '48,-44')
+        self.assertEqual(code, 0)
+        rows = [json.loads(line) for line in output.strip().splitlines()]
+        candidates = [row for row in rows if row.get('kind') != 'clip-query-coverage']
+        by_label = {row['label']: row for row in candidates}
+        self.assertTrue(by_label['St Marks']['landmark'])
+        self.assertEqual(by_label['St Marks']['landmark_class'], 'church')
+        self.assertTrue(by_label['West Quay']['landmark'])
+        self.assertEqual(by_label['West Quay']['landmark_class'], 'shopping_centre')
+
     def test_propose_features_reports_query_coverage_even_without_candidates(self):
         with mock.patch('cell_features.clip_coverage', return_value=0.125), \
                 mock.patch('cell_features.missing_features', return_value=[]):
