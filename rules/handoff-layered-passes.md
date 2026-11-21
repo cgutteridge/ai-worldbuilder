@@ -19,15 +19,19 @@ In-flight applies are `begun` journal entries; mess-in-a-cell → `cell_registry
  3. TREES — placed only on air. Writes a mask (§3).
  4. DECOR — hedges, street furniture and other minor things we are sure work.
     Placed only on air. Writes a mask (§3). Hedges live here, not in ground.
+ 5. ROAD-NAME LABELS (optional, #341) — after decor. Floating `text_display` entities, not blocks.
+    No mask. Undo is `kill @e[tag=wb_label]` (add the cell tag to limit it to one cell).
+    Spec: `docs/specs/road-name-labels.md`.
 
  DEFINITION OF DONE (I-057 / ADR 003 empty-world): a cell is done when evidence-backed feature
  builds cover mapped buildings, ground/trees/decor are applied, and the trees mask follows the
  overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined vendor lump left” — vendor
- lumps alone do not keep a cell open. `cell_registry.py next` / `site_handoff.cell_gaps`
+ lumps alone do not keep a cell open. Road-name labels are optional dressing and do not keep a
+ cell open. `cell_registry.py next` / `site_handoff.cell_gaps`
  report missing feature builds, layer passes, and trees-mask currency; a finished cell with an
  old tree mask is reopened for a trees re-run.
 
-Cell approvals (#327): `cell_registry.py approve tx,tz --layers ghost,buildings,ground,trees,decor,dressing`
+Cell approvals (#327): `cell_registry.py approve tx,tz --layers ghost,buildings,ground,trees,decor,dressing,labels`
 records which layers the owner signed off (latest note replaces the earlier one; read with
 `CellRegistry.approved_layers`). An approval never stands in for a pass: ground-layer work
 (`Plan.ground_marking`) is refused on any cell without a landed ground pass.

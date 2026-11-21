@@ -348,7 +348,7 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(self.world.reg.notes((1, 0), kinds=('plan_feature', 'readiness')), ())
 
     def test_cross_cell_feature_refuses_stale_neighbour_evidence_with_evidence_only_clear(self):
-        """Task 292: changed neighbour evidence refuses, naming the evidence-only command."""
+        """Task 292/232: check names the stale neighbour; apply refreshes when checks still pass."""
         from cell_readiness import describe_blockers
         policy, others, pond = self._cross_cell_pond()
         self.evidence.items = others
@@ -357,15 +357,12 @@ class ReadinessTest(unittest.TestCase):
         self.evidence.items = []
         policy.validate((0, 0))
         self.evidence.items = others
-        self.world.reg.build_policy = policy.enforce
-        with self.assertRaises(Refused) as caught:
-            self.world.reg.begin(pond)
-        self.assertEqual(str(caught.exception), 'needs-prep 1,0: evidence validation stale (evidence facts '
-                         'changed) [clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 '
-                         '--apply --evidence-only (records no feature plans)]')
         report = policy.check((1, 0), 'feature', neighbour=True)
         self.assertEqual(report['next_actions'], ['prepare --cell 1,0 --apply --evidence-only'])
         self.assertIn('evidence validation stale', describe_blockers(report))
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(self.world.reg.change(pond, self.world.apply).status, 'landed')
+        self.assertTrue(policy.check((1, 0), neighbour=True)['evidence_validated'])
 
     def test_evidence_only_prepare_writes_no_plan_notes(self):
         """Task 292: dry run says it records no plans; apply writes only a readiness_evidence note."""
@@ -656,6 +653,66 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(home[0]['area'], 100)        # whole pond, not the clipped 70
         self.assertEqual(evidence.candidates(self.world.reg, (47, -44)), [])
 
+    def test_local_evidence_houses_follow_brickfield_prepare_rules(self):
+        """#233: LocalEvidence skips a spec-backed house plan under another id; warns only on legacy."""
+        import json
+        from types import SimpleNamespace
+        from unittest import mock
+        from cell_journal import Note
+        from readiness_evidence import LocalEvidence
+
+        cell = (48, -44)
+        street = 'Brickfield Road'
+        refs = ['w176633174', 'w176633175', 'w176633176',
+                'w176633177', 'w176633178', 'w176633179']
+        terrace = {
+            'kind': 'houses', 'street': street, 'label': f'{street} (6 houses)',
+            'refs': list(refs), 'bbox': (0, 0, 1, 1), 'area': 6, 'portals': [], 'pictures': [],
+        }
+        plan = 'houses_brickfield_road_w176633174'
+        self.world.reg.change(Note(cell, 'plan_feature', terrace['label'], plan))
+        builds = self.world.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{plan}.json').write_text(json.dumps({
+            'name': plan,
+            'ways': {r[1:]: f'H{r}' for r in refs},
+        }))
+        empty = {'built_area': 0, 'unbuilt_area': 6, 'unbuilt': [terrace], 'unbuilt_names': [terrace['label']]}
+        evidence = LocalEvidence(self.world.root)
+        evidence._index = SimpleNamespace(areas=[], buildings=[], streets=[])
+        with mock.patch('cell_features.footprint_progress', return_value=empty):
+            first = evidence.candidates(self.world.reg, cell)
+            second = evidence.candidates(self.world.reg, cell)
+        self.assertEqual(first, [])
+        self.assertEqual(second, [])
+        self.assertEqual(evidence.warnings(cell), [])
+
+        # Unrelated new terrace on the same street still proposes; no legacy warning.
+        other = {
+            'kind': 'houses', 'street': street, 'label': f'{street} (2 houses)',
+            'refs': ['w20', 'w21'], 'bbox': (0, 0, 1, 1), 'area': 2, 'portals': [], 'pictures': [],
+        }
+        both = {'built_area': 0, 'unbuilt_area': 8, 'unbuilt': [terrace, other],
+                'unbuilt_names': [terrace['label'], other['label']]}
+        with mock.patch('cell_features.footprint_progress', return_value=both):
+            proposed = evidence.candidates(self.world.reg, cell)
+        self.assertEqual([(c['id'], c['refs']) for c in proposed],
+                         [('houses_brickfield_road_w20', ['w20', 'w21'])])
+        self.assertEqual(evidence.warnings(cell), [])
+
+        # Bare specless street plan is a genuine unresolved legacy collision.
+        legacy = JournalWorld()
+        with legacy:
+            legacy.reg.change(Note(cell, 'plan_feature', 'legacy', 'houses_brickfield_road'))
+            leg_ev = LocalEvidence(legacy.root)
+            leg_ev._index = SimpleNamespace(areas=[], buildings=[], streets=[])
+            with mock.patch('cell_features.footprint_progress', return_value=empty):
+                self.assertEqual(leg_ev.candidates(legacy.reg, cell), [])
+            self.assertEqual(leg_ev.warnings(cell), [
+                "ambiguous legacy plan houses_brickfield_road: no readable handoff spec; "
+                f"audit refs {refs}",
+            ])
+
     def test_content_audit_detects_same_timestamp_changes_and_check_is_read_only(self):
         import json
         import os
@@ -727,10 +784,16 @@ class ReadinessTest(unittest.TestCase):
                 self.assertTrue(report['ready'], report['blockers'])
                 home = policy.check((0, 0))
                 self.assertTrue(home['validated'], home['blockers'])
+                import cellmath
+                from cell_readiness import content_id
+                touched = sorted({(0, 0)} | {cellmath.cell_of(x, z) for x, _y, z in cells})
+                reports = [policy.check(c, neighbour=c != (0, 0)) for c in touched]
+                evidence_ids = [r.get('source_revision', r['evidence_revision']) for r in reports]
+                evidence = evidence_ids[0] if len(evidence_ids) == 1 else content_id(evidence_ids)
+                journal = self.world.reg.planning_revision(touched)
                 self.world.reg.build_policy = policy.enforce
                 receipt = self.world.reg.change(Build(fid, 'feature', cells, cell=(0, 0),
-                    meta={'evidence_revision': home['source_revision'],
-                          'journal_revision': home['journal_revision']}), self.world.apply)
+                    meta={'evidence_revision': evidence, 'journal_revision': journal}), self.world.apply)
                 self.assertEqual(receipt.status, 'landed')
             before = policy.check((1, 0), neighbour=True)['revision_parts']
             spec = specs / 'first.json'
@@ -848,6 +911,334 @@ class ReadinessTest(unittest.TestCase):
                                                     meta={'evidence_revision': 'evidence-1',
                                                           'journal_revision': policy.check((0, 0))['journal_revision']}),
                                               self.world.apply).status, 'landed')
+
+    def test_neighbour_map_extract_does_not_stale_this_cell_readiness_or_plan(self):
+        """Task 232: unrelated neighbouring evidence must not invalidate readiness or an unapplied plan.
+
+        Diagnosis (Portswood 53,-42 on 2026-10-31): readiness was re-accepted solely after neighbour
+        54,-42 prepares, with no local plan-identity change. Notes predating #289 omit revision_parts;
+        the code path that fits is world-wide source_revision picking up the neighbour's prepared-*
+        extract, which #289 would report as evidence facts changed.
+        """
+        import json
+        from unittest import mock
+        import aerial_coverage
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir()
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        home = root / 'reference' / 'vector_map' / 'prepared-0-0'
+        home.mkdir(parents=True)
+        (home / 'buildings+highways-cell-0-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
+                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            home_report = policy.validate((0, 0))
+            before = home_report['revision_parts']
+            neighbour = root / 'reference' / 'vector_map' / 'prepared-2-0'
+            neighbour.mkdir(parents=True)
+            (neighbour / 'buildings+highways-cell-256-0.geojson').write_text(
+                '{"type":"FeatureCollection","features":[{"type":"Feature","properties":'
+                '{"building":"yes","osm_way_id":"9"},"geometry":{"type":"Polygon","coordinates":'
+                '[[[0,0],[1,0],[1,1],[0,0]]]}}]}')
+            self.world.reg.change(Note((2, 0), 'plan_feature', 'far_house', 'far house'))
+            self.world.seed((2, 0), ghost_ground=True, ground=True)
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            report = policy.check((0, 0))
+            self.assertEqual(before, report['revision_parts'])
+            self.assertTrue(report['validated'], report['blockers'])
+            self.world.reg.build_policy = policy.enforce
+            receipt = self.world.reg.change(
+                Build('house', 'feature', {(5, 61, 5): 'minecraft:bricks'}, cell=(0, 0),
+                      meta={'evidence_revision': home_report['evidence_revision'],
+                            'journal_revision': home_report['journal_revision']}),
+                self.world.apply)
+            self.assertEqual(receipt.status, 'landed')
+
+    def test_overlapping_neighbour_clip_stales_evidence_and_refuses_old_plan(self):
+        """A map clip that covers this cell is a real dependency; the old plan must re-plan."""
+        import json
+        from unittest import mock
+        import aerial_coverage
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir()
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        clip_dir = root / 'reference' / 'vector_map' / 'shared'
+        clip_dir.mkdir(parents=True)
+        clip = clip_dir / 'buildings-bbox-0-0-255-127.geojson'
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
+                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            stamped = policy.validate((0, 0))
+            clip.write_text('{"type":"FeatureCollection","features":[],"rev":2}')
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            self.assertIn('validation stale (evidence facts changed)', policy.check((0, 0))['blockers'])
+            self.world.reg.build_policy = policy.enforce
+            with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+                self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                           cell=(0, 0),
+                                           meta={'evidence_revision': stamped['evidence_revision'],
+                                                 'journal_revision': stamped['journal_revision']}))
+
+    def test_apply_refreshes_stale_validation_under_the_lock_when_checks_pass(self):
+        """Task 232: apply re-checks readiness and rewrites validation when only the note is stale."""
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy, content_id
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence, require_plan_identity=True)
+        stamped = policy.validate((0, 0))
+        # Simulate an accepted note whose combined revision drifted while inputs still pass checks
+        # (e.g. a neighbour session that no longer affects cell-scoped facts after the narrow fix).
+        parts = dict(stamped['revision_parts'])
+        stale_revision = content_id(['not', parts['policy'], parts['evidence'], parts['plans']])
+        self.world.reg.change(Note((0, 0), 'readiness',
+                                   __import__('json').dumps({'revision': stale_revision,
+                                                             'revision_parts': parts,
+                                                             'policy': parts['policy'],
+                                                             'warnings': []})))
+        self.assertFalse(policy.check((0, 0))['validated'])
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'}, cell=(0, 0),
+                  meta={'evidence_revision': stamped['evidence_revision'],
+                        'journal_revision': stamped['journal_revision']}),
+            self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+        self.assertTrue(policy.check((0, 0))['validated'])
+
+    def test_apply_refresh_preserves_hold_and_never_approves_outdated_plan(self):
+        """Refreshing validation must not clear holds or bless a plan with stale identities."""
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy, content_id
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence, require_plan_identity=True)
+        stamped = policy.validate((0, 0))
+        parts = dict(stamped['revision_parts'])
+        stale_revision = content_id(['drift', parts])
+        self.world.reg.change(Note((0, 0), 'readiness',
+                                   __import__('json').dumps({'revision': stale_revision,
+                                                             'revision_parts': parts,
+                                                             'policy': parts['policy'],
+                                                             'warnings': []})))
+        self.world.reg.change(Note((0, 0), 'hold', 'owner reviewing'))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaisesRegex(Refused, r'needs-prep 0,0:.*hold:'):
+            self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                       cell=(0, 0),
+                                       meta={'evidence_revision': stamped['evidence_revision'],
+                                             'journal_revision': stamped['journal_revision']}))
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.world.reg.change(Note((0, 0), 'hold', ''))
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                       cell=(0, 0),
+                                       meta={'evidence_revision': 'old-evidence',
+                                             'journal_revision': stamped['journal_revision']}))
+
+    def _local_plan_world(self):
+        """Temp world root with frame + home clip; bind WORLD_ROOT for Plan stamps."""
+        import json
+        from unittest import mock
+        import active_world
+        import aerial_coverage
+        import world_frame
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir(exist_ok=True)
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        home = root / 'reference' / 'vector_map' / 'prepared-0-0'
+        home.mkdir(parents=True, exist_ok=True)
+        (home / 'buildings+highways-cell-0-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        previous_root = active_world.WORLD_ROOT
+        active_world.set_world_root(root)
+        world_frame.clear_frame_cache()
+
+        def restore_world():
+            active_world.WORLD_ROOT = previous_root
+            world_frame.clear_frame_cache()
+
+        self.addCleanup(restore_world)
+        patches = (
+            mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])),
+            mock.patch.object(aerial_coverage, 'coverage', return_value=1.),
+            mock.patch.object(aerial_coverage, 'mosaics', return_value=[]),
+        )
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        return root
+
+    def test_plan_stamp_apply_survives_neighbour_prepare(self):
+        """Task 232: Plan.capture_inputs → apply still lands after an unrelated neighbour extract."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('house', input_cells=[(0, 0)])
+        plan.set(5, 61, 5, 'bricks')
+        plan.capture_inputs()
+        neighbour = root / 'reference' / 'vector_map' / 'prepared-2-0'
+        neighbour.mkdir(parents=True)
+        (neighbour / 'buildings+highways-cell-256-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((2, 0), ghost_ground=True, ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('house', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_plan_stamp_apply_refuses_relevant_evidence_change(self):
+        """Task 232: a Plan stamped before an overlapping clip change must re-plan."""
+        import site_kit
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        clip_dir = root / 'reference' / 'vector_map' / 'shared'
+        clip_dir.mkdir(parents=True)
+        clip = clip_dir / 'buildings-bbox-0-0-255-127.geojson'
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('ground', input_cells=[(0, 0)])
+        plan.set(5, 60, 5, 'grass_block')
+        plan.capture_inputs()
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":2}')
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', plan.cells, cell=(0, 0), payload=plan))
+
+    def test_plan_stamp_includes_cells_touched_by_overhang(self):
+        """Task 232: capture_inputs after planning covers roof overhang across a cell line."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        # Neighbouring cell also needs a clip so evidence facts exist for the overhang.
+        other = root / 'reference' / 'vector_map' / 'prepared-1-0'
+        other.mkdir(parents=True)
+        (other / 'buildings+highways-cell-128-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'overhang', 'overhang'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        policy.validate_evidence((1, 0))
+        plan = site_kit.Plan('overhang', input_cells=[(0, 0)])
+        plan.set(120, 61, 5, 'bricks')   # home cell
+        plan.set(130, 61, 5, 'bricks')   # overhang into (1, 0)
+        # Footprint-only stamp would omit (1, 0); re-stamp from finished geometry.
+        plan.capture_inputs()
+        self.assertEqual(set(plan._input_cells), {(0, 0), (1, 0)})
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('overhang', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_legacy_whole_world_plan_name_still_applies(self):
+        """Task 232: Plan(name) without a cell list still applies via the whole-world stamp fallback."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hand', 'hand'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('hand')  # whole-world stamp; no capture_inputs
+        plan.set(5, 61, 5, 'bricks')
+        self.assertIsNone(plan._input_cells)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('hand', 'feature', plan.cells, cell=(0, 0), payload=plan), self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_feature_reapply_with_smaller_footprint_is_not_stale_forever(self):
+        """Task 232: re-apply that drops neighbour overhang must not refuse against previous.cells."""
+        import site_kit
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        other = root / 'reference' / 'vector_map' / 'prepared-1-0'
+        other.mkdir(parents=True)
+        (other / 'buildings+highways-cell-128-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'hall', 'hall'))
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        policy.validate_evidence((1, 0))
+        wide = site_kit.Plan('hall', input_cells=[(0, 0)])
+        wide.set(120, 61, 5, 'bricks')
+        wide.set(130, 61, 5, 'bricks')  # overhang into (1, 0)
+        wide.capture_inputs()
+        self.assertEqual(set(wide._input_cells), {(0, 0), (1, 0)})
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(
+            self.world.reg.change(Build('hall', 'feature', wide.cells, cell=(0, 0), payload=wide),
+                                  self.world.apply).status,
+            'landed')
+        # Fresh plan with a smaller footprint; re-apply still touches previous.cells for undo.
+        narrow = site_kit.Plan('hall', input_cells=[(0, 0)])
+        narrow.set(120, 61, 5, 'bricks')
+        narrow.capture_inputs()
+        self.assertEqual(set(narrow._input_cells), {(0, 0)})
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('hall', 'feature', narrow.cells, cell=(0, 0), payload=narrow, modifies=('hall',)),
+            self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+
+    def test_shared_reference_evidence_change_refuses_old_plan(self):
+        """Task 232: non-clip reference (decor/trees/…) must still stale scoped plan stamps."""
+        import site_kit
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self._local_plan_world()
+        decor = root / 'reference' / 'decor-furniture.json'
+        decor.write_text('{"items":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        policy.validate((0, 0))
+        plan = site_kit.Plan('ground', input_cells=[(0, 0)])
+        plan.set(5, 60, 5, 'grass_block')
+        plan.capture_inputs()
+        decor.write_text('{"items":[],"rev":2}')
+        policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+        self.assertIn('validation stale (evidence facts changed)', policy.check((0, 0))['blockers'])
+        self.world.reg.build_policy = policy.enforce
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', plan.cells, cell=(0, 0), payload=plan))
 
 
 from journal_testkit import FakePaced, LiveApplyCase

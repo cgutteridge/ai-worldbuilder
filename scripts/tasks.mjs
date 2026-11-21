@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Installed from agent-kits local-tasks@0.2.0. Change it in the kit, not here.
+// Project-maintained extension of agent-kits local-tasks@0.2.0.
+// Project model policy: docs/agents/model-and-effort.md.
 // Reads a local task tracker (tasks/index.json and tasks/done.json) and
 // updates implementation status without disturbing unrelated tracker bytes.
 //
@@ -9,8 +10,10 @@
 // Usage: node tasks.mjs [--tracker-dir DIR] <command>
 //   list --ready
 //   show <id>
-//   add --title T --priority low|medium|high --complexity s|m|l --notes TEXT
-//   status <id> <todo|doing> [--reason TEXT]
+//   add --title T --priority low|medium|high --complexity s|m|l --requires-claude true|false --notes TEXT
+//   update <id> --requires-claude true|false [--title T] [--notes TEXT] [--reason TEXT]
+//   check-run <id> [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]
+//   status <id> <todo|doing> [--reason TEXT] [runner options as for check-run]
 //   close <id> --sha FULL_COMMIT_SHA --note TEXT
 // Default tracker directory: tasks/ under the git root of the current
 // directory, or ./tasks when there is no git root.
@@ -70,6 +73,7 @@ function isValidTask(task) {
     optional(task.blockedBy, arrayOf(isId)) &&
     optional(task.tags, arrayOf(isString)) &&
     optional(task.kind, oneOf(kinds)) &&
+    optional(task.requiresClaude, (value) => typeof value === "boolean") &&
     optional(task.notes, isString)
   )
 }
@@ -316,20 +320,44 @@ export async function showTask(directory, id) {
   return done
 }
 
+/** Refuse a Claude-required task unless the runner establishes model and budget access.
+ * Runner capabilities are current caller attestations, never inferred from host names.
+ */
+export function checkTaskRunner(task, { tool, model, externalModelBudget } = {}) {
+  if (!task.requiresClaude) return
+  const claudeModel = /^(?:anthropic\/)?(?:claude-)?(?:sonnet|opus)(?:-[\d][\w.-]*)?$/i
+  if (typeof model !== "string" || !claudeModel.test(model))
+    throw new TaskError(`Task ${task.id} requires a Claude Sonnet or Opus model; leave it pending.`, 2)
+  if (!["claude-code", "cursor"].includes(tool))
+    throw new TaskError(`Task ${task.id} requires confirmed Claude access through claude-code or cursor; leave it pending.`, 2)
+  if (tool === "cursor" && externalModelBudget !== "available")
+    throw new TaskError(`Task ${task.id}: Cursor external-model budget is ${externalModelBudget ?? "unknown"}; leave it pending.`, 2)
+}
+
+/** Check dispatch eligibility without changing task status or tracker bytes. */
+export async function checkTaskRun(directory, id, runner) {
+  const task = await showTask(directory, id)
+  if (!["todo", "doing"].includes(task.status) || unresolvedBlockers(task).length)
+    throw new TaskError(`Task ${id} is not ready to run.`, 2)
+  checkTaskRunner(task, runner)
+  return task
+}
+
 /** Append an ordinary todo task, preserving all existing tracker bytes. */
-export async function addTask(directory, { title, priority, complexity, blockedBy = [], notes }) {
+export async function addTask(directory, { title, priority, complexity, blockedBy = [], notes, requiresClaude }) {
   const snapshot = await readTrackerFile(directory, "index.json")
   const nextId = snapshot.root.properties.get("nextTaskId")
   const id = JSON.parse(snapshot.text.slice(nextId.start, nextId.end))
-  const task = { id, title, status: "todo", priority, complexity, blockedBy, notes }
+  const task = { id, title, status: "todo", priority, complexity, blockedBy, requiresClaude, notes }
   if (
     !isValidTask(task) ||
     typeof notes !== "string" ||
+    typeof requiresClaude !== "boolean" ||
     !["low", "medium", "high"].includes(priority) ||
     !["s", "m", "l"].includes(complexity)
   )
     throw new TaskError(
-      "Add requires a nonempty title, priority low|medium|high, complexity s|m|l, notes and positive blocker ids.",
+      "Add requires a nonempty title, priority low|medium|high, complexity s|m|l, notes, a requiresClaude boolean and positive blocker ids.",
       2,
     )
   if (!isId(id + 1)) throw new TaskError("No safe next task id remains.")
@@ -363,7 +391,38 @@ export async function addTask(directory, { title, priority, complexity, blockedB
   return task
 }
 
-export async function setTaskStatus(directory, id, status, reason) {
+/** Update scope and explicitly reassess its model requirement, preserving unrelated bytes. */
+export async function updateTask(directory, id, { requiresClaude, title, notes, reason }) {
+  if (!isId(id) || typeof requiresClaude !== "boolean")
+    throw new TaskError("Update requires a valid task id and requiresClaude boolean.", 2)
+  const snapshot = await readTrackerFile(directory, "index.json")
+  const index = snapshot.tasks.findIndex((task) => task.id === id)
+  const task = snapshot.tasks[index]
+  if (!task) throw new TaskError(`Active task ${id} was not found.`, 3)
+  const updated = { ...task, requiresClaude,
+    ...(title === undefined ? {} : { title }), ...(notes === undefined ? {} : { notes }) }
+  if (!isValidTask(updated)) throw new TaskError("Invalid task update.", 2)
+  if (task.requiresClaude && !requiresClaude) {
+    if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 300)
+      throw new TaskError("Removing the Claude requirement needs a reason of 1–300 characters explaining why build work is no longer required.", 2)
+    updated.notes = `${updated.notes ?? ""}\n\nClaude requirement removed: ${reason.trim()}`
+  }
+  const span = snapshot.root.properties.get("tasks").items[index]
+  const edits = []
+  const missing = []
+  for (const key of ["requiresClaude", "title", "notes"]) {
+    if (updated[key] === task[key]) continue
+    const field = span.properties.get(key)
+    if (field) edits.push({ span: field, text: JSON.stringify(updated[key]) })
+    else missing.push(`${JSON.stringify(key)}: ${JSON.stringify(updated[key])}`)
+  }
+  if (missing.length) edits.push({ span: { start: span.end - 1, end: span.end - 1 },
+    text: `, ${missing.join(", ")}` })
+  await replaceTrackerFile(snapshot, editSpans(snapshot.text, edits))
+  return updated
+}
+
+export async function setTaskStatus(directory, id, status, reason, runner) {
   if (!isId(id) || !["todo", "doing"].includes(status))
     throw new TaskError("Use a valid task id and status todo or doing.", 2)
   const snapshot = await readTrackerFile(directory, "index.json")
@@ -382,6 +441,7 @@ export async function setTaskStatus(directory, id, status, reason) {
     )
   if (status === "doing" && unresolvedBlockers(task).length)
     throw new TaskError("Task has unresolved blockers.", 2)
+  if (status === "doing") checkTaskRunner(task, runner)
   if (task.status === status) return task
   const trimmed = reason?.trim()
   if (status === "todo" && (!trimmed || trimmed.length > 300))
@@ -702,20 +762,36 @@ const commands = {
   },
   add: {
     usage:
-      "add --title T --priority low|medium|high --complexity s|m|l [--blocked-by ID,...] (--notes TEXT | --notes-file PATH)",
+      "add --title T --priority low|medium|high --complexity s|m|l --requires-claude true|false [--blocked-by ID,...] (--notes TEXT | --notes-file PATH)",
     summary: "Append a todo task and print its allocated id (orchestrator on main only).",
     positional: [],
     flags: [],
-    values: ["--title", "--priority", "--complexity", "--blocked-by", "--notes", "--notes-file"],
-    required: ["--title", "--priority", "--complexity"],
+    values: ["--title", "--priority", "--complexity", "--blocked-by", "--notes", "--notes-file", "--requires-claude"],
+    required: ["--title", "--priority", "--complexity", "--requires-claude"],
+  },
+  update: {
+    usage: "update <id> --requires-claude true|false [--title T] [--notes TEXT | --notes-file PATH] [--reason TEXT]",
+    summary: "Update task scope and reassess its Claude requirement (orchestrator on main only).",
+    positional: ["id"],
+    flags: [],
+    values: ["--requires-claude", "--title", "--notes", "--notes-file", "--reason"],
+    required: ["--requires-claude"],
+  },
+  "check-run": {
+    usage: "check-run <id> [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]",
+    summary: "Read-only dispatch gate; Cursor needs confirmed external-model budget for Claude tasks.",
+    positional: ["id"],
+    flags: [],
+    values: ["--tool", "--model", "--external-model-budget"],
+    required: [],
   },
   status: {
-    usage: "status <id> <todo|doing> [--reason TEXT]",
+    usage: "status <id> <todo|doing> [--reason TEXT] [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]",
     summary:
       "Start a task (doing) or return it to todo with a reason of 1–300 characters.",
     positional: ["id", "status"],
     flags: [],
-    values: ["--reason"],
+    values: ["--reason", "--tool", "--model", "--external-model-budget"],
     required: [],
   },
   close: {
@@ -823,6 +899,12 @@ export function parseArguments(argv) {
     (options["--notes"] !== undefined) === (options["--notes-file"] !== undefined)
   )
     throw new UsageError("specify exactly one of '--notes' or '--notes-file'")
+  if (name === "update" && options["--notes"] !== undefined && options["--notes-file"] !== undefined)
+    throw new UsageError("specify at most one of '--notes' or '--notes-file'")
+  if (options["--requires-claude"] !== undefined && !["true", "false"].includes(options["--requires-claude"]))
+    throw new UsageError("'--requires-claude' must be true or false")
+  if (options["--external-model-budget"] !== undefined && !["available", "unavailable", "unknown"].includes(options["--external-model-budget"]))
+    throw new UsageError("'--external-model-budget' must be available, unavailable or unknown")
   return {
     help: false,
     command: name,
@@ -835,19 +917,21 @@ export function parseArguments(argv) {
 async function run(request) {
   const directory = request.trackerDir
   const [id, status] = request.positional
+  const options = request.options
+  const runner = { tool: options["--tool"], model: options["--model"],
+    externalModelBudget: options["--external-model-budget"] }
   if (request.command === "list") {
     for (const task of await listReadyTasks(directory)) {
       const title = task.title.replace(/\s+/g, " ").trim()
       console.log(
-        `${task.id}\t${task.priority ?? "-"}\t${title.length > 120 ? `${title.slice(0, 117)}...` : title}`,
+        `${task.id}\t${task.priority ?? "-"}\t${title.length > 120 ? `${title.slice(0, 117)}...` : title}${task.requiresClaude ? "\t[requires Claude]" : ""}`,
       )
     }
   } else if (request.command === "show") {
     console.log(
       JSON.stringify(await showTask(directory, parseTaskId(id)), null, 2),
     )
-  } else if (request.command === "add") {
-    const options = request.options
+  } else if (["add", "update"].includes(request.command)) {
     let notes = options["--notes"]
     if (options["--notes-file"] !== undefined) {
       try {
@@ -855,6 +939,14 @@ async function run(request) {
       } catch {
         throw new TaskError("Could not read notes file.")
       }
+    }
+    if (request.command === "update") {
+      const task = await updateTask(directory, parseTaskId(id), {
+        requiresClaude: options["--requires-claude"] === "true",
+        title: options["--title"], notes, reason: options["--reason"],
+      })
+      console.log(`Task ${task.id}: updated (requiresClaude=${task.requiresClaude})`)
+      return
     }
     const task = await addTask(directory, {
       title: options["--title"],
@@ -864,8 +956,12 @@ async function run(request) {
         ? []
         : options["--blocked-by"].split(",").map(parseTaskId),
       notes,
+      requiresClaude: options["--requires-claude"] === "true",
     })
     console.log(task.id)
+  } else if (request.command === "check-run") {
+    const task = await checkTaskRun(directory, parseTaskId(id), runner)
+    console.log(`Task ${task.id}: eligible${task.requiresClaude ? ` (${runner.tool}, ${runner.model})` : ""}`)
   } else if (request.command === "status") {
     if (status !== "todo" && status !== "doing")
       throw new TaskError("Status must be todo or doing.", 2)
@@ -874,6 +970,7 @@ async function run(request) {
       parseTaskId(id),
       status,
       request.options["--reason"],
+      runner,
     )
     console.log(`Task ${task.id}: ${task.status}`)
   } else if (request.command === "close") {

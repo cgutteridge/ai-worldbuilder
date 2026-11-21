@@ -61,12 +61,16 @@ The one real seam under the journal, with `LiveBlocks` (MCP `block_scan_region`)
 _Avoid_: region backup, snapshot, writing or restoring region files; parsing `.mca` for live apply readback
 
 **Element**:
-One of the lasting kinds of place content a finished cell must cover: **feature**, **ground**, **trees**, or **decor**. The concept (not a journal `Build` intent). Journal wire values stay those four strings; code may keep `REAL_PASSES` as the same tuple. Excludes **lidar ghost** (placeholder) and `other` / neutral ownership.
+One of the lasting kinds of place content a finished cell must cover: **feature**, **ground**, **trees**, or **decor**. The concept (not a journal `Build` intent). Journal wire values stay those four strings; code may keep `REAL_PASSES` as the same tuple. Excludes **lidar ghost** (placeholder), `other` / neutral ownership and the optional **road-name label**.
 _Avoid_: aspect, strand, real pass (as the concept name), layer (as the superclass — features are not layers), build (the apply intent)
 
 **Feature** (registry):
 A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches. One **Element**; not a layered pass.
 _Avoid_: layer pass, decor prop, queue item
+
+**Road-name label**:
+An optional floating `text_display` entity naming a mapped road (#341), placed after decor from the vector map's `name` tags. Not an **Element**: it writes no blocks, has no mask, never appears in the journal as a `Build` intent, and never keeps a cell open. Tagged `wb_label` and `wb_cell_<tx>_<tz>`; undo is `kill @e[tag=wb_label]` (add the cell tag to limit it to one cell). `cell_registry.py approve` can still sign off `labels` as a layer. Spec: [road-name-labels](docs/specs/road-name-labels.md).
+_Avoid_: sign, road sign (blocks), decor (labels are entities, not decor props), layer (as the concept name)
 
 **Registry marker**:
 At most one cell may have `marker=up`. That cell is the focus ring (`cell_marker.py --raise` / `--clear`).

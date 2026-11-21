@@ -929,5 +929,110 @@ class TestDryRunUndo(unittest.TestCase):
             fresh.assert_called_once_with(strict=True)   # plans from saved regions, not the live store
 
 
+def _box_oracle(a, k):
+    """The shifted-copy box mean ``_box`` used to compute. Test oracle only."""
+    pad = np.pad(a, k // 2, mode='edge')
+    h, w = a.shape
+    return sum(pad[i:i + h, j:j + w] for i in range(k) for j in range(k)) / (k * k)
+
+
+def _threshold_masks(values):
+    """The comparisons callers apply to a box mean."""
+    return (values > 0.5, values > 0.999, values > 1e-6, values >= 0.035)
+
+
+def _canopy_oracle(img_path):
+    """``canopy_pixels`` with the shifted-copy box, for mask equality."""
+    from PIL import Image
+    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    r, g = a[..., 0], a[..., 1]
+    mx, mn = a.max(2), a.min(2)
+    d = mx - mn
+    s = np.where(mx > 0, d / np.maximum(mx, 1e-9), 0)
+    h = np.zeros_like(mx)
+    m = d > 0
+    b = a[..., 2]
+    idx = m & (mx == r)
+    h[idx] = ((g - b)[idx] / d[idx]) % 6
+    idx = m & (mx == g)
+    h[idx] = ((b - r)[idx] / d[idx]) + 2
+    idx = m & (mx == b)
+    h[idx] = ((r - g)[idx] / d[idx]) + 4
+    h *= 60
+    lum = a.mean(2)
+    mu = _box_oracle(lum, 7)
+    sd = np.sqrt(np.maximum(_box_oracle(lum ** 2, 7) - mu ** 2, 0))
+    fm = img_path.with_name(img_path.stem + '-mask.png')
+    filled = np.asarray(Image.open(fm).convert('L')) > 0 if fm.exists() else np.zeros(sd.shape, bool)
+    mask = (sd >= np.where(filled, 0.0, 0.035)) & (g >= r * 0.93) & (s >= 0.14) & (mx <= 0.85) & (h >= 38) & (h <= np.where(filled, 200, 140))
+    dil = _box_oracle(mask.astype(float), 9) > 1e-6
+    return _box_oracle(dil.astype(float), 9) > 0.999
+
+
+def _cover_oracle(img_path):
+    """``cover_pixels`` with the shifted-copy box, for mask equality."""
+    from PIL import Image
+    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    mx, mn = a.max(2), a.min(2)
+    s = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-9), 0)
+    mask = (s >= 0.22) & (mx <= 0.62) & (g > b + 0.02) & (g >= r * 0.8)
+    return _box_oracle(_box_oracle(mask.astype(float), 5), 5) > 0.5
+
+
+class TestBoxFilter(unittest.TestCase):
+    """The running-sum box matches the shifted-copy mean, including thresholds."""
+
+    def arrays(self):
+        rng = np.random.default_rng(345)
+        edge = np.zeros((40, 50))
+        edge[0, :] = 1
+        edge[-1, :] = 1
+        edge[:, 0] = 1
+        edge[:, -1] = 1
+        edge[0, 0] = 5
+        edge[-1, -1] = -3
+        edge[3:9, 4:11] = 0.2
+        return {
+            'random': rng.random((80, 70)),
+            'smaller_than_window': rng.random((20, 15)),
+            'edge': edge,
+            'binary': rng.integers(0, 2, size=(36, 28)).astype(float),
+        }
+
+    def test_running_sum_matches_shifted_copies_and_thresholds(self):
+        for name, array in self.arrays().items():
+            for k in (5, 7, 9, 35):
+                with self.subTest(array=name, k=k):
+                    got = tl._box(array, k)
+                    old = _box_oracle(array, k)
+                    self.assertEqual(got.shape, array.shape)
+                    self.assertTrue(np.allclose(got, old, rtol=1e-9, atol=1e-12))
+                    for new_mask, old_mask in zip(_threshold_masks(got), _threshold_masks(old)):
+                        self.assertTrue(np.array_equal(new_mask, old_mask))
+                    if name == 'binary':
+                        self.assertTrue(np.array_equal(got, old))
+
+    def test_canopy_and_cover_masks_match_the_shifted_box(self):
+        from PIL import Image
+        rng = np.random.default_rng(345)
+        img = np.zeros((48, 72, 3), np.uint8)
+        canopy = rng.integers(15, 70, size=(48, 36, 3), dtype=np.uint8)
+        canopy[..., 1] = np.clip(canopy[..., 0].astype(int) + 45, 0, 180)
+        canopy[..., 2] = 25
+        img[:, :36] = canopy
+        img[:, 36:54] = (150, 40, 40)
+        img[:, 54:] = (90, 80, 40)
+        img[0, :] = (255, 255, 255)
+        img[-1, :] = (0, 0, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mosaic.png'
+            Image.fromarray(img).save(path)
+            self.assertTrue(np.array_equal(tl.canopy_pixels(path), _canopy_oracle(path)))
+            self.assertTrue(np.array_equal(tl.cover_pixels(path), _cover_oracle(path)))
+            self.assertGreater(tl.canopy_pixels(path)[:, :30].mean(), 0.5)
+            self.assertEqual(tl.cover_pixels(path)[:, 36:54].mean(), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

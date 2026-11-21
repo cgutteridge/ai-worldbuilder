@@ -28,13 +28,15 @@ BOUNDARY_ROLES = ('front', 'side_front', 'side_back', 'rear', 'perimeter')
 PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
-# validate_table) so an unknown key is still refused; later keys (ground_texture) follow
-# the surface pattern: absent or null means "infer nothing", the shipped behaviour.
-OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees')
+# validate_table) so an unknown key is still refused; absent or null means "infer nothing".
+OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 TREE_SOURCES = ('mapped', 'wood', 'lidar')
+GROUND_TEXTURE_PALETTES = ('pasture', 'meadow')  # open-grass textures (#319); woodland floor is #318
+GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
+MAX_GROUND_TEXTURE_FLOWER_SHARE = 0.05        # meadow flowers stay sparse (#319 prototype 1.5%)
 DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
 NO_INFERENCE = ('rural', 'natural', 'water', 'unknown')
 
@@ -105,6 +107,7 @@ def validate_table(doc: dict) -> dict:
                                         or any(source not in TREE_SOURCES for source in sources)
                                         or len(sources) != len(set(sources))):
                 raise TableError(f'{cid}: trees.sources must be null or a list of distinct values from {TREE_SOURCES}')
+        _validate_ground_texture(cid, row.get('ground_texture'))
         match = row['match']
         for col in ('building', 'use', 'cover'):
             if col not in match:
@@ -260,6 +263,74 @@ def tree_sources(cls: str) -> tuple[str, ...] | None:
     """
     sources = (defaults(cls).get('trees') or {}).get('sources')
     return tuple(sources) if sources is not None else None
+
+
+def ground_texture(cls: str) -> dict | None:
+    """Open-grass texture palettes for a class (``ground_texture``, #319), or None when off.
+
+    Absent or null means no rough grass or mottling. A map keyed by ``pasture`` / ``meadow``
+    enables placement on gated OSM tags (farmland, meadow, grassland, heath, scrub,
+    nature_reserve); lawns never. Does not use ``planting`` (null when ``frontage.inference``
+    is false). Flower kinds reuse ``foliage.REFINE_PLANTS``.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: palette map, or None
+    """
+    value = defaults(cls).get('ground_texture')
+    return value if value else None
+
+
+def _share_range(cid: str, field: str, value) -> None:
+    """Refuse a texture share range that is not ``[lo, hi]`` with ``0 <= lo <= hi <= 1``.
+
+    @param cid: class id
+    @param field: field name for the error
+    @param value: candidate range
+    @returns: None
+    """
+    if (not isinstance(value, list) or len(value) != 2
+            or any(isinstance(n, bool) or not isinstance(n, (int, float)) for n in value)
+            or not 0 <= value[0] <= value[1] <= 1):
+        raise TableError(f'{cid}: ground_texture {field} must be [lo, hi] with 0 <= lo <= hi <= 1')
+
+
+def _validate_ground_texture(cid: str, texture) -> None:
+    """Refuse a bad ``ground_texture`` column (absent/null means infer nothing).
+
+    @param cid: class id
+    @param texture: the column value
+    @returns: None
+    """
+    if texture is None:
+        return
+    if not isinstance(texture, dict) or set(texture) - set(GROUND_TEXTURE_PALETTES):
+        raise TableError(f'{cid}: ground_texture must be null or a map with keys from {GROUND_TEXTURE_PALETTES}')
+    from foliage import REFINE_PLANTS
+
+    for name, palette in texture.items():
+        if not isinstance(palette, dict) or set(palette) != set(GROUND_TEXTURE_KEYS):
+            raise TableError(f'{cid}: ground_texture.{name} must have keys {sorted(GROUND_TEXTURE_KEYS)}')
+        _share_range(cid, f'{name}.tufts', palette['tufts'])
+        _share_range(cid, f'{name}.tall_grass', palette['tall_grass'])
+        if type(palette['bare']) is not bool:
+            raise TableError(f'{cid}: ground_texture.{name}.bare must be true or false')
+        flowers = palette['flowers']
+        if flowers is None:
+            continue
+        if not isinstance(flowers, dict) or set(flowers) != {'share', 'kinds'}:
+            raise TableError(f'{cid}: ground_texture.{name}.flowers must be null or {{share, kinds}}')
+        share, kinds = flowers['share'], flowers['kinds']
+        if (isinstance(share, bool) or not isinstance(share, (int, float))
+                or not 0 < share <= MAX_GROUND_TEXTURE_FLOWER_SHARE):
+            raise TableError(
+                f'{cid}: ground_texture.{name}.flowers share must be above 0 and '
+                f'at most {MAX_GROUND_TEXTURE_FLOWER_SHARE}')
+        if (not isinstance(kinds, list) or not 1 <= len(kinds) <= 3
+                or any(not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds)
+                or len(set(kinds)) != len(kinds)):
+            raise TableError(
+                f'{cid}: ground_texture.{name}.flowers kinds must be 1-3 different names '
+                f'from foliage.REFINE_PLANTS')
 
 
 @lru_cache(maxsize=1)

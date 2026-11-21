@@ -118,11 +118,10 @@ Viewed in game on 2026-11-20 from walking height and from a raised spectator vie
    | --- | --- | --- | --- | --- |
    | Meadow | 20-30% `short_grass` | 3-8% `tall_grass` | — | ≤3% `oxeye_daisy`, `cornflower`, `dandelion` |
    | Pasture | 10-15% | ≤2% | ≤5% coarse dirt | — |
-4. **Woodland is its own treatment:**
-   - dense fill only inside wood polygons, towards the aerial canopy cover (about 80%);
-   - mixed species (oak, birch, some dark oak) and varied trunk heights;
-   - understorey bushes (persistent leaves at Y+1 to Y+2) and ferns;
-   - a `podzol` / `coarse_dirt` / `moss_block` floor, with grass only at the edges.
+4. **Woodland is its own treatment** (layer ownership set by the owner, 2026-11-21: ground sets the ground level at lidar terrain height, trees do only trees, decor does the minor non-feature, non-tree enhancements such as plants and leaf litter):
+   - **trees:** dense fill only inside wood polygons, towards the aerial canopy cover (about 80%), with lidar-tall columns as a second crown source (#349); mixed species (oak, birch, some dark oak) and varied trunk heights (#350);
+   - **ground:** a `podzol` / `coarse_dirt` / `moss_block` floor at lidar terrain height, with grass only at the edges (#348);
+   - **decor:** understorey bushes (persistent leaves at Y+1 to Y+2), ferns, short grass, leaf litter and the dry grasses (#351), on the ground the ground layer set.
 5. **Everything is labelled inference and removable.** Put it in the existing foliage or decor masks, so a redo strips it and the report counts it, like shrubs and flowers (#265, #266).
 
 ### Rough-grass prototype (farmland cell, in game now)
@@ -148,6 +147,7 @@ At the owner's request the proposal was built on cell 87,-48 as one decor build,
   - otherwise 15% `fern` and 8% `short_grass`.
 - **Placed:** 1,492 tufts, 108 tall grass, 125 flowers, 270 dirt patches, 1,950 podzol, 533 moss, 619 coarse-dirt floor, 947 ferns, 432 bushes.
 - **Not used:** Minecraft 26.2's `short_dry_grass`, `tall_dry_grass`, `leaf_litter` and `bush`. `surface_probe`'s plant list does not know them yet, so the probe would read them as ground. Add them there before using them; they suit pasture and woodland floors.
+- **Layers:** the scratch script put everything, floor blocks and plants, in one decor build. In the product the floor blocks belong to the ground layer (#348) and the plants and bushes to decor (#351); the shares here carry over unchanged as starting values.
 - **Gotcha:** the journal refuses ordinary builds in the `other` pass, so this went in as `decor`. A decor apply also triggers the frontier ghost follow-up unless `LIDAR_GHOST_RING=0` is set (see follow-up 11).
 
 ## Recommended defaults rows
@@ -187,9 +187,9 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
 | Key | Recommended | Evidence |
 | --- | --- | --- |
 | `frontage.*` | as shipped (`inference: false`) | — |
-| proposed `trees.fill` | dense fill only inside the polygon, target canopy cover from the aerial (about 80%), mixed species, varied heights | owner: "trees probably need a bit more density"; the woods read as parkland |
-| proposed `trees.understorey` | bushes (leaves Y+1..Y+2) about 1 per 12 columns, ferns about 10% | owner verdict; aerial shows a closed canopy |
-| proposed `surface.floor` | podzol / coarse dirt / moss mix inside wood, grass at the edge; scrub: grass with bushes | 1,588 "paving" columns under farmland woods were shade, not paving |
+| proposed `trees.fill` | dense fill only inside the polygon, target canopy cover from the aerial (about 80%), lidar-tall columns left bare as a second crown source, mixed species, varied heights; **trees layer** (#349, #350) | owner: "trees probably need a bit more density"; the woods read as parkland. Read-only check on cell 46,-46 (2026-11-21): only 48% of lidar-tall columns (3 m or more) had a crown, and 59% of those missed had aerial cover under the fill's 0.6 threshold |
+| proposed `trees.understorey` | moved to decor: bushes (leaves Y+1..Y+2) about 7% of columns with 40% two blocks high, ferns about 15%, short grass about 8%, plus leaf litter and dry grasses where the probe knows them; **decor layer** (#351) | owner verdict; aerial shows a closed canopy |
+| proposed `surface.floor` | podzol / coarse dirt / moss mix inside wood at lidar terrain height, grass at the edge; scrub: grass with bushes; **ground layer** (#348) | 1,588 "paving" columns under farmland woods were shade, not paving |
 
 ## Evidence: what exists UK-wide and where it is thin
 
@@ -236,10 +236,10 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
    - Wanted: a per-class `surface.unmapped_paving`; widen a mapped way to the paving seen beside it; a woodland-floor kind.
    - Scope by land-use class, UK-wide.
 3. **Trees on open grass.** The texture-only crown detector and dense fill plant meadow and pasture as forest. Gate crowns on open land to mapped trees, wood or scrub polygons, or lidar standing height (variant B rule).
-4. **Woodland treatment** (filed as #318; the prototype's woodland floor is the owner-accepted starting palette).
-   - Dense fill to aerial canopy cover inside wood polygons.
-   - Mixed species and heights, an understorey of bushes and ferns, and a podzol/moss floor.
-   - Owner: "trees probably need a bit more density".
+4. **Woodland treatment** (filed as #318 and split on 2026-11-21; the prototype's woodland floor is the owner-accepted starting palette).
+   - Split by layer: plant vocabulary #347 (the probe must know the 26.2 plants), ground floor blocks #348, trees #349 (lidar crowns) and #350 (species mix), decor understorey and ground cover #351. #318 keeps the tuning against the aerial, the ground then trees redo on cells 63,-45 and 46,-46, the 8-minute build budget (flag at 8, kill at 12) and the owner verdict. The code tasks do not need Claude; see `docs/plans/woodland-subtasks-handoff.md`.
+   - Owner snags on the existing planner are issue I-055 (too sparse, grass floor, one species).
+   - Open for the owner: the #319 step places grass tufts, tall grass and flowers from the ground layer, which the ownership rule above would put in decor.
 5. **Rough grass and mottled ground on non-lawn grass**, gated by tag and class as in the proposal above, placed from aerial texture, removable through the masks.
    - Owner request; the owner accepted the prototype ("Yes, use it") as the proposed default for non-lawn rural grass. Filed as #319. The palette shares in the prototype section are the owner-accepted starting values.
 6. **First-return lidar for canopy.** Add the national first-return DSM (or note when it is unavailable) so lidar standing height can confirm trees. The last-return composite misses most canopy.
