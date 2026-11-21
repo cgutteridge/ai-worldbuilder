@@ -1109,6 +1109,199 @@ class TestGroundTexture(unittest.TestCase):
             self.assertEqual(gl.rough_grass_columns((0, 0), idx, classes), {})
 
 
+class TestWoodlandFloor(unittest.TestCase):
+    """Woodland floor blocks (#348): config shares at lidar height, grass on the polygon edge."""
+
+    SIDE = 64
+
+    def square(self, y_of=None):
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+        cols = [(x, z) for x in range(self.SIDE) for z in range(self.SIDE)]
+        ys = {q: 40 if y_of is None else y_of(*q) for q in cols}
+        blocks = {}
+        plan = Plan('woodland-floor-test')
+        for q, gy in ys.items():
+            blocks[(q[0], gy, q[1])] = 'grass_block'
+            blocks[(q[0], gy - 1, q[1])] = 'stone'
+            plan.set(q[0], gy, q[1], 'grass_block')
+            plan.set(q[0], gy - 1, q[1], 'stone')
+        world = World(store=MemoryBlocks(blocks, default='air'))
+        return cols, ys, plan, world
+
+    def place(self, plan, world, ys, columns, mask, **kwargs):
+        return gl.plan_woodland_floor(
+            plan, world, (63, -45), ys, {q: 'grass' for q in ys}, columns, mask, **kwargs)
+
+    def test_shares_edge_height_and_seed(self):
+        cols, ys, plan, world = self.square(lambda x, z: 40 + (x % 3))
+        saved = dict(ys)
+        mask = set(cols)
+        columns = {q: 'natural' for q in cols}
+        held = {(10, 10), (11, 11), (12, 12), (13, 13)}
+        report = self.place(
+            plan, world, ys, columns, mask,
+            owned={(10, ys[(10, 10)], 10)},
+            masked={(11, ys[(11, 11)], 11): 'trees 0,0'},
+            clear={(12, 12)},
+            barriers={(13, 13)})
+        self.assertEqual(ys, saved)
+        rim = [q for q in cols if min(q[0], self.SIDE - 1 - q[0], q[1], self.SIDE - 1 - q[1]) < 2]
+        interior = [q for q in cols if q not in rim]
+        rolled = [q for q in interior if q not in held]
+        self.assertEqual(report['edge'], len(rim))
+        self.assertEqual(report['skipped'], len(held))
+        self.assertEqual(report['podzol'] + report['coarse_dirt'] + report['moss_block'] + report['grass'],
+                         len(rolled))
+        n = len(rolled)
+        for block, share in (('podzol', 0.30), ('coarse_dirt', 0.10), ('moss_block', 0.08)):
+            self.assertAlmostEqual(report[block] / n, share, delta=0.04)
+        self.assertAlmostEqual(report['grass'] / n, 0.52, delta=0.04)
+        placed = {}
+        for item in report['items']:
+            x, gy, z = item['position']
+            placed[(x, z)] = item
+            self.assertEqual(gy, ys[(x, z)])
+            self.assertEqual(item['provenance']['source'], 'inference')
+            self.assertIn('#348', item['label'])
+            self.assertEqual(report[item['block']], sum(1 for it in report['items'] if it['block'] == item['block']))
+        self.assertTrue(placed)
+        self.assertTrue(set(placed).isdisjoint(set(rim) | held))
+        for q in rim + list(held):
+            self.assertEqual(plan.cells[(q[0], ys[q], q[1])], 'minecraft:grass_block')
+        for q, gy in ys.items():
+            self.assertEqual(plan.cells[(q[0], gy - 1, q[1])], 'minecraft:stone')
+            self.assertNotIn((q[0], gy + 1, q[1]), plan.cells)
+            surface = plan.cells[(q[0], gy, q[1])]
+            self.assertIn(surface, {
+                'minecraft:grass_block', 'minecraft:podzol',
+                'minecraft:coarse_dirt', 'minecraft:moss_block'})
+        again_cols, again_ys, again_plan, again_world = self.square(lambda x, z: 40 + (x % 3))
+        again = self.place(
+            again_plan, again_world, again_ys, {q: 'natural' for q in again_cols}, set(again_cols),
+            owned={(10, again_ys[(10, 10)], 10)},
+            masked={(11, again_ys[(11, 11)], 11): 'trees 0,0'},
+            clear={(12, 12)},
+            barriers={(13, 13)})
+        self.assertEqual(again, report)
+        self.assertEqual(again_plan.cells, plan.cells)
+
+    def test_meadow_and_lawn_match_rough_grass(self):
+        """Neighbours keep the #319 blocks; the wood polygon takes the floor."""
+        from block_store import MemoryBlocks
+        from site_kit import Plan, World
+        meadow = {(x, z) for x in range(16) for z in range(16)}
+        lawn = {(x, z) for x in range(20, 36) for z in range(16)}
+        wood = {(x, z) for x in range(24) for z in range(40, 64)}
+        cols = meadow | lawn | wood
+        ys = {q: 40 for q in cols}
+        rgb = {}
+        for x, z in cols:
+            if z < 4 and (x, z) in meadow:
+                rgb[(x, z)] = (0.72, 0.68, 0.50)
+            elif x >= 8 and (x, z) in meadow:
+                rgb[(x, z)] = (0.35 + 0.08 * ((x + z) % 3), 0.45, 0.25)
+            else:
+                rgb[(x, z)] = (0.42, 0.48, 0.30)
+
+        def fresh():
+            blocks = {(x, 40, z): 'grass_block' for x, z in cols}
+            plan = Plan('woodland-neighbours')
+            for p, b in blocks.items():
+                plan.set(*p, b)
+            world = World(store=MemoryBlocks(blocks, default='air'))
+            return plan, world
+
+        palettes = {q: 'meadow' for q in meadow}
+        kind = {q: 'grass' for q in cols}
+        plan, world = fresh()
+        before = gl.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
+        plan, world = fresh()
+        after = gl.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
+        floor = gl.plan_woodland_floor(
+            plan, world, (46, -46), ys, kind, {q: 'natural' for q in wood}, set(wood))
+        self.assertGreater(floor['podzol'], 0)
+        self.assertTrue(set(wood).isdisjoint(meadow | lawn))
+        meadow_items = [item for item in before['items']
+                        if (item['position'][0], item['position'][2]) in meadow]
+        meadow_after = [item for item in after['items']
+                        if (item['position'][0], item['position'][2]) in meadow]
+        self.assertEqual(meadow_items, meadow_after)
+        self.assertTrue(meadow_items)
+        only, _world = fresh()
+        gl.plan_ground_texture(only, _world, (46, -46), ys, kind, rgb, palettes)
+        for q in meadow | lawn:
+            self.assertEqual(plan.cells[(q[0], 40, q[1])], only.cells[(q[0], 40, q[1])])
+        self.assertTrue(any(plan.cells[(x, 40, z)] == 'minecraft:podzol' for x, z in wood))
+        self.assertFalse(any(item['position'][1] != 40 for item in floor['items']))
+
+    def test_tags_skip_lawn_meadow_and_scrub_until_config_says_otherwise(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        import land_use
+
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        areas = [
+            (sq(0, 0, 40, 40), {'natural': 'wood', 'osm_way_id': '1'}),
+            (sq(10, 10, 25, 25), {'landuse': 'meadow', 'osm_way_id': '2'}),
+            (sq(0, 50, 40, 70), {'landuse': 'meadow', 'osm_way_id': '3'}),
+            (sq(50, 0, 70, 20), {'landuse': 'grass', 'osm_way_id': '4'}),
+            (sq(50, 50, 70, 70), {'natural': 'scrub', 'osm_way_id': '5'}),
+            (sq(0, 80, 20, 100), {'landuse': 'forest', 'osm_way_id': '6'}),
+        ]
+        classes = {}
+        for x in range(0, 110):
+            for z in range(0, 110):
+                if 50 <= z < 80 and x < 40:
+                    classes[(x, z)] = ('rural', 'meadow', 'use')
+                elif x >= 50 and z < 30:
+                    classes[(x, z)] = ('park', 'lawn', 'cover')
+                else:
+                    classes[(x, z)] = ('natural', 'cover', 'cover')
+        idx = SimpleNamespace(areas=areas)
+        got, mask = gl.woodland_floor_columns((0, 0), idx, classes)
+        self.assertEqual(got[(32, 32)], 'natural')
+        self.assertIn((32, 32), mask)
+        self.assertNotIn((20, 20), got)          # meadow overlapping the wood stays #319
+        self.assertNotIn((20, 60), got)
+        self.assertNotIn((60, 10), got)
+        self.assertNotIn((60, 60), got)
+        self.assertNotIn((60, 60), mask)
+        self.assertEqual(got[(10, 90)], 'natural')
+        self.assertIn((10, 90), mask)
+
+        residential = {q: ('residential', 'r', 'use') for q in classes}
+        none, still = gl.woodland_floor_columns((0, 0), idx, residential)
+        self.assertEqual(none, {})
+        self.assertIn((32, 32), still)
+
+        real_texture = land_use.ground_texture
+
+        def scrub_on(cid):
+            texture = real_texture(cid)
+            if cid != 'natural' or not texture:
+                return texture
+            return dict(texture, wood=dict(texture['wood'], scrub=True))
+
+        with mock.patch('land_use.ground_texture', side_effect=scrub_on):
+            opted, opted_mask = gl.woodland_floor_columns((0, 0), idx, classes)
+        self.assertEqual(opted[(60, 60)], 'natural')
+        self.assertIn((60, 60), opted_mask)
+        self.assertNotIn((20, 60), opted)
+
+    def test_edge_reach_zero_covers_the_rim(self):
+        from unittest import mock
+        cols, ys, plan, world = self.square()
+        rule = {'podzol': 1, 'coarse_dirt': 0, 'moss_block': 0, 'edge': 0, 'scrub': False}
+        with mock.patch('land_use.ground_texture', return_value={'wood': rule}):
+            report = self.place(plan, world, ys, {q: 'natural' for q in cols}, set(cols))
+        self.assertEqual(report['edge'], 0)
+        self.assertEqual(report['podzol'], self.SIDE * self.SIDE)
+        self.assertEqual(plan.cells[(0, 40, 0)], 'minecraft:podzol')
+
+
 class TestWarmSurfaceProbe(unittest.TestCase):
     """The surface probe must batch its reads, not issue one MCP call per block."""
 
@@ -1675,7 +1868,11 @@ class TestDryArtifacts(unittest.TestCase):
         def plan(cell, masked, owned, plan, world, **kw):
             self.assertEqual(masked, {(0, 64, 0): 'decor 0,0'})
             plan.set(0, 64, 0, 'grass_block')
-            return Counter(columns=1), conflicts, {(0, 0): 'grass'}, Counter()
+            stats = Counter(columns=1)
+            stats['woodland_floor'] = {
+                'podzol': 0, 'coarse_dirt': 0, 'moss_block': 0, 'grass': 0,
+                'edge': 0, 'skipped': 0, 'items': []}
+            return stats, conflicts, {(0, 0): 'grass'}, Counter()
 
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(gl, '_fresh_world', return_value=mock.Mock(block=lambda *p: 'minecraft:air')), \

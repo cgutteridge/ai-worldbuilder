@@ -34,11 +34,14 @@ OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 TREE_SOURCES = ('mapped', 'wood', 'lidar')
 TREE_SPECIES = ('oak', 'birch', 'dark_oak')
-GROUND_TEXTURE_PALETTES = ('pasture', 'meadow')  # open-grass textures (#319); woodland floor is #318
+GROUND_TEXTURE_PALETTES = ('pasture', 'meadow', 'wood')  # open grass (#319); wood floor (#348)
 GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
+WOOD_FLOOR_BLOCKS = ('podzol', 'coarse_dirt', 'moss_block')  # roll order for ground_texture.wood
+WOOD_FLOOR_KEYS = WOOD_FLOOR_BLOCKS + ('edge', 'scrub')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
 MAX_GROUND_TEXTURE_FLOWER_SHARE = 0.05        # meadow flowers stay sparse (#319 prototype 1.5%)
+MAX_WOOD_FLOOR_EDGE = 8                       # ground_texture.wood.edge, in columns (#348)
 DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
 NO_INFERENCE = ('rural', 'natural', 'water', 'unknown')
 
@@ -287,12 +290,13 @@ def tree_species_weights(cls: str) -> dict:
 
 
 def ground_texture(cls: str) -> dict | None:
-    """Open-grass texture palettes for a class (``ground_texture``, #319), or None when off.
+    """Ground-texture palettes for a class (``ground_texture``), or None when off.
 
-    Absent or null means no rough grass or mottling. A map keyed by ``pasture`` / ``meadow``
-    enables placement on gated OSM tags (farmland, meadow, grassland, heath, scrub,
-    nature_reserve); lawns never. Does not use ``planting`` (null when ``frontage.inference``
-    is false). Flower kinds reuse ``foliage.REFINE_PLANTS``.
+    Absent or null means no rough grass, mottling or woodland floor. ``pasture`` / ``meadow``
+    (#319) enable placement on gated OSM tags (farmland, meadow, grassland, heath, scrub,
+    nature_reserve); lawns never. ``wood`` (#348) is the woodland floor mix for ``natural=wood``
+    and ``landuse=forest`` (scrub only when ``wood.scrub`` is true). Does not use ``planting``
+    (null when ``frontage.inference`` is false). Flower kinds reuse ``foliage.REFINE_PLANTS``.
 
     @param cls: class id; unknown ids use the ``unknown`` row
     @returns: palette map, or None
@@ -315,6 +319,82 @@ def _share_range(cid: str, field: str, value) -> None:
         raise TableError(f'{cid}: ground_texture {field} must be [lo, hi] with 0 <= lo <= hi <= 1')
 
 
+def _unit_share(cid: str, field: str, value) -> float:
+    """Refuse a woodland-floor share that is not a number from 0 to 1.
+
+    @param cid: class id
+    @param field: field name for the error
+    @param value: candidate share
+    @returns: the share as a float
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        raise TableError(f'{cid}: ground_texture {field} must be a share from 0 to 1')
+    return float(value)
+
+
+def _validate_wood_floor(cid: str, palette) -> None:
+    """Refuse a bad ``ground_texture.wood`` palette (#348).
+
+    Keys are the floor blocks plus ``edge`` (grass rim, in columns) and ``scrub`` (whether
+    ``natural=scrub`` takes this floor instead of the pasture palette). Block shares add up
+    to at most 1; the rest of the interior keeps grass.
+
+    @param cid: class id
+    @param palette: the ``wood`` value
+    @returns: None
+    """
+    if not isinstance(palette, dict) or set(palette) != set(WOOD_FLOOR_KEYS):
+        raise TableError(
+            f'{cid}: ground_texture.wood must have keys {sorted(WOOD_FLOOR_KEYS)}')
+    total = 0.0
+    for block in WOOD_FLOOR_BLOCKS:
+        total += _unit_share(cid, f'wood.{block}', palette[block])
+    if total > 1 + 1e-9:
+        raise TableError(f'{cid}: ground_texture.wood shares must add up to at most 1')
+    edge = palette['edge']
+    if isinstance(edge, bool) or not isinstance(edge, int) or not 0 <= edge <= MAX_WOOD_FLOOR_EDGE:
+        raise TableError(
+            f'{cid}: ground_texture.wood.edge must be a whole number of columns '
+            f'from 0 to {MAX_WOOD_FLOOR_EDGE}')
+    if type(palette['scrub']) is not bool:
+        raise TableError(f'{cid}: ground_texture.wood.scrub must be true or false')
+
+
+def _validate_open_grass(cid: str, name: str, palette) -> None:
+    """Refuse a bad ``pasture`` or ``meadow`` palette (#319).
+
+    @param cid: class id
+    @param name: ``pasture`` or ``meadow``
+    @param palette: the palette value
+    @returns: None
+    """
+    from foliage import REFINE_PLANTS
+
+    if not isinstance(palette, dict) or set(palette) != set(GROUND_TEXTURE_KEYS):
+        raise TableError(f'{cid}: ground_texture.{name} must have keys {sorted(GROUND_TEXTURE_KEYS)}')
+    _share_range(cid, f'{name}.tufts', palette['tufts'])
+    _share_range(cid, f'{name}.tall_grass', palette['tall_grass'])
+    if type(palette['bare']) is not bool:
+        raise TableError(f'{cid}: ground_texture.{name}.bare must be true or false')
+    flowers = palette['flowers']
+    if flowers is None:
+        return
+    if not isinstance(flowers, dict) or set(flowers) != {'share', 'kinds'}:
+        raise TableError(f'{cid}: ground_texture.{name}.flowers must be null or {{share, kinds}}')
+    share, kinds = flowers['share'], flowers['kinds']
+    if (isinstance(share, bool) or not isinstance(share, (int, float))
+            or not 0 < share <= MAX_GROUND_TEXTURE_FLOWER_SHARE):
+        raise TableError(
+            f'{cid}: ground_texture.{name}.flowers share must be above 0 and '
+            f'at most {MAX_GROUND_TEXTURE_FLOWER_SHARE}')
+    if (not isinstance(kinds, list) or not 1 <= len(kinds) <= 3
+            or any(not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds)
+            or len(set(kinds)) != len(kinds)):
+        raise TableError(
+            f'{cid}: ground_texture.{name}.flowers kinds must be 1-3 different names '
+            f'from foliage.REFINE_PLANTS')
+
+
 def _validate_ground_texture(cid: str, texture) -> None:
     """Refuse a bad ``ground_texture`` column (absent/null means infer nothing).
 
@@ -326,32 +406,11 @@ def _validate_ground_texture(cid: str, texture) -> None:
         return
     if not isinstance(texture, dict) or set(texture) - set(GROUND_TEXTURE_PALETTES):
         raise TableError(f'{cid}: ground_texture must be null or a map with keys from {GROUND_TEXTURE_PALETTES}')
-    from foliage import REFINE_PLANTS
-
     for name, palette in texture.items():
-        if not isinstance(palette, dict) or set(palette) != set(GROUND_TEXTURE_KEYS):
-            raise TableError(f'{cid}: ground_texture.{name} must have keys {sorted(GROUND_TEXTURE_KEYS)}')
-        _share_range(cid, f'{name}.tufts', palette['tufts'])
-        _share_range(cid, f'{name}.tall_grass', palette['tall_grass'])
-        if type(palette['bare']) is not bool:
-            raise TableError(f'{cid}: ground_texture.{name}.bare must be true or false')
-        flowers = palette['flowers']
-        if flowers is None:
-            continue
-        if not isinstance(flowers, dict) or set(flowers) != {'share', 'kinds'}:
-            raise TableError(f'{cid}: ground_texture.{name}.flowers must be null or {{share, kinds}}')
-        share, kinds = flowers['share'], flowers['kinds']
-        if (isinstance(share, bool) or not isinstance(share, (int, float))
-                or not 0 < share <= MAX_GROUND_TEXTURE_FLOWER_SHARE):
-            raise TableError(
-                f'{cid}: ground_texture.{name}.flowers share must be above 0 and '
-                f'at most {MAX_GROUND_TEXTURE_FLOWER_SHARE}')
-        if (not isinstance(kinds, list) or not 1 <= len(kinds) <= 3
-                or any(not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds)
-                or len(set(kinds)) != len(kinds)):
-            raise TableError(
-                f'{cid}: ground_texture.{name}.flowers kinds must be 1-3 different names '
-                f'from foliage.REFINE_PLANTS')
+        if name == 'wood':
+            _validate_wood_floor(cid, palette)
+        else:
+            _validate_open_grass(cid, name, palette)
 
 
 @lru_cache(maxsize=1)
