@@ -65,3 +65,37 @@ rows) went ahead.
 - `feature_build`: `roofs[label].pv_arrays` (flat roofs) lays `daylight_detector` rows on the finished deck,
   one row every `pitch` blocks across the rows, on a full roof block, never over a detail.
 - Check: top-down capture of Westquay South in 43,-16 beside the aerial; owner verdict.
+
+## Live run on Westquay South (2026-11-21, world `southampton-build`)
+
+All writes ran under `site_lock.py run t337`, with the orchestrator's go for each step.
+
+| Seq | Cell | What |
+| --- | --- | --- |
+| 1686 | 42,-16 | `prepare --evidence-only --apply`: readiness_evidence note; evidence 9b3fb2e6… -> 4af43887… (was seq 1368); no plans, no blocks |
+| 1687 | 42,-16 | full `prepare --apply` (owner approved): readiness note, plan list identical to seq 1373; no blocks |
+| 1692 | 43,-16 | full `prepare --apply`: readiness note, plan list identical to seq 1367; evidence -> 1ff9ec17…; offered ground redo not run |
+| 1693-1694 | 42,-16; 43,-16 | `feature_build site/builds/w465660355.json --apply --overwrite`: 1,050 blocks changed |
+
+- The re-apply's guard held: the old and new plans were identical in 42,-16. The PV boxes were clipped to x >= 5504,
+  so the NW and SW arrays stop at the cell edge and are narrower than the aerial's.
+- The 1,050 changed blocks: 1,017 `daylight_detector` in six arrays (43,-16 only); 2 `light_blue_stained_glass` at
+  (5494,16..17,-1949) in 42,-16, a west-face window found as air (old drift; owner: re-apply whole); 31 old drifts in
+  43,-16 restored (30 air -> smooth_stone, 1 double slab -> smooth_stone; x 5529-5532, y 18-45, z -2002..-1980).
+- Readback finished `mismatched` with 1,017 positions. Every one is a detector reading `power=10` (set by daylight)
+  where the plan said `power=0`; no block was missing. Fixed in code: `same_state` skips `power` on
+  `daylight_detector`, and PV rows no longer plan it. A dry-run reconcile with the fix finds 0 positions. The
+  `reconcile 43,-16 --fix` that would mark entry 1693 landed was not run (session permission refused; then the
+  owner said leave the world as it is), so the entry stays `mismatched` until the owner chooses.
+- After seq 1694 the owner hand-edited Westquay in game: a south-west patch (x 5495-5547, z -1983..-1939,
+  y 21-46) is now air. That covers 4,100 smooth_stone and 124 detectors in 43,-16, and 546 smooth_stone and 227
+  gray_concrete in 42,-16 (interior floors every 3 blocks and roof deck). The journal still lists those blocks under
+  w465660355, so **any future re-apply of w465660355, and any `reconcile --fix` that re-commits it, would put
+  them back.**
+- Capture (north up), beside the aerial crop, taken before the hand edit:
+  `instance/google-aerial/337-westquay-roof-aerial-vs-capture.png` in the world checkout (gitignored; look-only aerial).
+  The verdict is the owner's.
+- Undo: `python3 scripts/element_undo.py --world southampton-build w465660355 --apply` reverts entry 1693 to its
+  pre-apply snapshot, which would also undo the owner's hand edit. Then restore the pre-#337 spec, which has no
+  `pv_arrays` (the spec's `roofs.WS` without that key). The world's `site/builds/w465660355.json` holds the PV
+  version and is not committed in the world repo.
