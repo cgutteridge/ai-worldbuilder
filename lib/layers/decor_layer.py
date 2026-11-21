@@ -695,6 +695,24 @@ WOODLAND_PLANT_ROLL = (
 _LEAF_LITTER_FACINGS = ('north', 'south', 'east', 'west')
 
 
+def _land_class_id(hit) -> str | None:
+    """Class id from a ``land_class_columns`` string or an ``area_classes`` tuple.
+
+    ``plan_cell`` passes the string map (park-umbrella aware). Tests and the
+    ``area_classes`` fallback still use ``(class, ref, kind)``.
+
+    @param hit: class id string, ``(class, …)`` tuple, or None
+    @returns: class id, or None when absent
+    """
+    if hit is None:
+        return None
+    if isinstance(hit, str):
+        return hit
+    if isinstance(hit, (tuple, list)) and hit:
+        return hit[0]
+    return None
+
+
 def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
     """``{column: class id}`` for woodland understorey columns gated by OSM tag (#351).
 
@@ -705,7 +723,9 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
 
     @param cell: ``(tx, tz)``
     @param idx: ``OSMIndex``
-    @param classes: ``coverage.area_classes`` result when the caller already has it
+    @param classes: ``land_class_columns`` map (``{column: class id}``) or
+        ``area_classes`` map (``{column: (class, ref, kind)}``); when omitted,
+        ``area_classes`` is loaded for the cell box
     @returns: eligible columns (empty when no class ships woodland decor)
     """
     import land_use
@@ -745,16 +765,16 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
     scrub -= lawn
     eligible = {}
     for q in wood:
-        hit = classes.get(q)
-        if hit and hit[0] in rules:
-            eligible[q] = hit[0]
+        cid = _land_class_id(classes.get(q))
+        if cid in rules:
+            eligible[q] = cid
     for q in scrub:
         if q in wood:
             continue
-        hit = classes.get(q)
-        if not hit or hit[0] not in rules or not rules[hit[0]].get('scrub'):
+        cid = _land_class_id(classes.get(q))
+        if not cid or cid not in rules or not rules[cid].get('scrub'):
             continue
-        eligible[q] = hit[0]
+        eligible[q] = cid
     return eligible
 
 
