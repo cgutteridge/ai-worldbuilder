@@ -1164,6 +1164,8 @@ def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = No
             continue
         hit = classes.get(q)
         if hit and hit[0] in wood_rules:
+            if q in scrub and not wood_rules[hit[0]].get('scrub'):
+                continue
             eligible[q] = hit[0]
     for q in scrub:
         if q in wood or q in claimed:

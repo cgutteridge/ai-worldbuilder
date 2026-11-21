@@ -1291,6 +1291,41 @@ class TestWoodlandFloor(unittest.TestCase):
         self.assertIn((60, 60), opted_mask)
         self.assertNotIn((20, 60), opted)
 
+    def test_overlapping_scrub_requires_opt_in_in_either_polygon_order(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        import land_use
+
+        def sq(x0, z0, x1, z1):
+            return [[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]]
+
+        areas = [
+            (sq(0, 0, 40, 40), {'natural': 'wood', 'osm_way_id': '1'}),
+            (sq(10, 10, 25, 25), {'natural': 'scrub', 'osm_way_id': '2'}),
+        ]
+        classes = {(x, z): ('natural', 'wood', 'cover')
+                   for x in range(40) for z in range(40)}
+        real_texture = land_use.ground_texture
+
+        def scrub_on(cid):
+            texture = real_texture(cid)
+            if cid != 'natural' or not texture:
+                return texture
+            return dict(texture, wood=dict(texture['wood'], scrub=True))
+
+        results = []
+        for ordered in (areas, list(reversed(areas))):
+            idx = SimpleNamespace(areas=ordered)
+            got, mask = gl.woodland_floor_columns((0, 0), idx, classes)
+            self.assertEqual(got[(5, 5)], 'natural')
+            self.assertFalse((15, 15) in got, 'scrub must keep its pasture palette until opted in')
+            self.assertIn((15, 15), mask)  # preserve the enclosing wood's edge geometry
+            with mock.patch('land_use.ground_texture', side_effect=scrub_on):
+                opted, opted_mask = gl.woodland_floor_columns((0, 0), idx, classes)
+            self.assertEqual(opted[(15, 15)], 'natural')
+            results.append((got, mask, opted, opted_mask))
+        self.assertEqual(results[0], results[1])
+
     def test_edge_reach_zero_covers_the_rim(self):
         from unittest import mock
         cols, ys, plan, world = self.square()
