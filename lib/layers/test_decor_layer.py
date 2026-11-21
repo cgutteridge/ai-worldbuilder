@@ -1190,6 +1190,37 @@ class TestWoodlandDecor(unittest.TestCase):
         self.assertEqual(silent, {})
         self.assertEqual(report_silent['bushes'], 0)
 
+    def test_existing_plants_are_not_air_for_woodland_placement(self):
+        rule = dict.fromkeys(('bushes', 'bush_tall', 'fern', 'large_fern',
+                              'short_grass', 'short_dry_grass', 'tall_dry_grass',
+                              'leaf_litter'), 0.0)
+        rule.update(bushes=1.0, bush_tall=1.0, scrub=True)
+        for height in (1, 2):
+            for plant in ('fern', 'short_grass', 'leaf_litter'):
+                with self.subTest(height=height, plant=plant):
+                    pos = (1, self.GY + height, 1)
+                    _, plan, world = self.square(extra={pos: plant})
+                    with mock.patch('land_use.woodland_decor', return_value=rule):
+                        found, report = self.place(plan, world, {(1, 1): 'natural'})
+                    self.assertEqual(found, {})
+                    self.assertEqual(plan.cells, {})
+                    self.assertEqual(report['bushes'], 0)
+                    self.assertTrue(world.block(*pos).endswith(plant))
+
+    def test_true_air_variants_still_allow_woodland_placement(self):
+        rule = dict.fromkeys(('bushes', 'bush_tall', 'fern', 'large_fern',
+                              'short_grass', 'short_dry_grass', 'tall_dry_grass',
+                              'leaf_litter'), 0.0)
+        rule.update(bushes=1.0, bush_tall=1.0, scrub=True)
+        for air in ('air', 'cave_air', 'void_air'):
+            with self.subTest(air=air):
+                _, plan, world = self.square(extra={
+                    (1, self.GY + 1, 1): air, (1, self.GY + 2, 1): air})
+                with mock.patch('land_use.woodland_decor', return_value=rule):
+                    found, report = self.place(plan, world, {(1, 1): 'natural'})
+                self.assertEqual(set(found), {(1, self.GY + 1, 1), (1, self.GY + 2, 1)})
+                self.assertEqual(report['bushes'], 1)
+
     def test_bush_height_share_and_mask_round_trip(self):
         cols, plan, world = self.square()
         rule = {
