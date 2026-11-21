@@ -67,6 +67,95 @@ class TestFillDense(unittest.TestCase):
         self.assertEqual(tl.fill_dense(cover(), [], seed=3), tl.fill_dense(cover(), [], seed=3))
 
 
+class TestLidarFill(unittest.TestCase):
+    def test_dark_tall_blob_gets_crowns_without_aerial_cover(self):
+        ndsm = np.zeros((128, 128))
+        ndsm[20:45, 20:45] = 8.
+        crowns = tl.lidar_fill(ndsm, [], np.zeros_like(ndsm), seed=7)
+        self.assertGreater(len(crowns), 5)
+        self.assertTrue(all(ndsm[i, j] >= tl.MIN_NDSM for i, j, _r in crowns))
+        self.assertTrue(all(r in tl.FILL_RADII for _i, _j, r in crowns))
+
+    def test_existing_crown_covers_the_blob(self):
+        ii, jj = np.indices((128, 128))
+        ndsm = np.where((ii - 30) ** 2 + (jj - 30) ** 2 <= 7 ** 2, 8., 0.)
+        self.assertEqual(tl.lidar_fill(ndsm, [(30, 30, 7.)], np.ones_like(ndsm)), [])
+
+    def test_low_and_unknown_lidar_overrides_high_aerial_cover(self):
+        for height in (tl.MIN_NDSM - .01, np.nan, np.inf):
+            with self.subTest(height=height):
+                ndsm = np.full((128, 128), height)
+                self.assertEqual(tl.fill_dense(cover(1., 1.), [], ndsm=ndsm), [])
+                self.assertEqual(tl.lidar_fill(ndsm, [], cover(1., 1.)), [])
+
+    def test_deterministic_separated_crowns_and_unmodified_inputs(self):
+        ndsm = np.full((128, 128), tl.MIN_NDSM)
+        aerial = cover(1., .2)
+        existing = [(30, 30, 7.)]
+        crowns = tl.lidar_fill(ndsm, existing, aerial, seed=3)
+        self.assertEqual(crowns, tl.lidar_fill(ndsm, existing, aerial, seed=3))
+        self.assertNotEqual(crowns, tl.lidar_fill(ndsm, existing, aerial, seed=4))
+        for index, (i, j, r) in enumerate(crowns):
+            for ci, cj, cr in existing + crowns[:index]:
+                distance2 = (i - ci) ** 2 + (j - cj) ** 2
+                self.assertGreater(distance2, max(r, cr) ** 2)
+                self.assertGreater(distance2, tl.LIDAR_FILL_SPACING ** 2)
+        np.testing.assert_array_equal(ndsm, np.full((128, 128), tl.MIN_NDSM))
+        np.testing.assert_array_equal(aerial, cover(1., .2))
+        self.assertEqual(existing, [(30, 30, 7.)])
+
+    def planning_inputs(self, ndsm, aerial, *, mapped=()):
+        idx = types.SimpleNamespace(cells=lambda: set(), areas=[])
+        ground = types.SimpleNamespace(trees=list(mapped), tree_rows=[])
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'cover_grid', return_value=aerial), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'cell_ndsm', side_effect=lambda c, margin=0:
+                                  None if ndsm is None else np.pad(ndsm, margin)), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            return tl.planning_inputs((0, 0), osm_ground=ground)
+
+    def test_missing_lidar_preserves_original_aerial_output_in_planning(self):
+        aerial = np.zeros((128, 128))
+        aerial[:12, :12] = 1.
+        # Recorded from the pre-#349 fill_dense, rather than another call to the new helper.
+        expected = [(2, 2, 3.0), (2, 6, 3.0), (3, 11, 3.5), (8, 3, 2.5),
+                    (8, 8, 3.0), (7, 11, 2.5), (11, 1, 2.5)]
+        self.assertEqual(tl.fill_dense(aerial, [], seed=3, ndsm=None), expected)
+        self.assertEqual(tl.lidar_fill(None, [], aerial), [])
+        inputs = self.planning_inputs(None, aerial)
+        self.assertEqual(inputs.crowns, tl.fill_dense(aerial, [], seed=0))
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': len(inputs.crowns),
+                                                'lidar_fill': 0, 'mapped': 0})
+
+    def test_planning_uses_lidar_when_aerial_is_dark_and_mapped_crowns_win(self):
+        ndsm = np.zeros((128, 128))
+        ndsm[10, 10] = 8.
+        aerial = np.zeros_like(ndsm)
+        inputs = self.planning_inputs(ndsm, aerial)
+        self.assertEqual(len(inputs.crowns), 1)
+        self.assertEqual(inputs.crowns[0][:2], (10, 10))
+        inputs = self.planning_inputs(ndsm, aerial, mapped=[(10, 10)])
+        self.assertEqual(inputs.crowns, [(10, 10, tl.MAPPED_TREE_R)])
+        self.assertEqual(inputs.crown_origins, [(10, 10)])
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': 0, 'lidar_fill': 1, 'mapped': 1})
+        with mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')):
+            _placed, report = tl.plan_cell((0, 0), types.SimpleNamespace(set=lambda *a: None), FakeWorld(), inputs)
+        self.assertEqual(report['crown_sources'], inputs.source_counts)
+
+    def test_planning_does_not_add_high_cover_crowns_on_low_lidar(self):
+        inputs = self.planning_inputs(np.zeros((128, 128)), cover(1., 1.))
+        self.assertEqual(inputs.crowns, [])
+        self.assertEqual(inputs.source_counts, {'detected': 0, 'aerial_fill': 0, 'lidar_fill': 0, 'mapped': 0})
+
+
 class TestTreeSources(unittest.TestCase):
     """Mapped open pasture must not become woodland from aerial texture alone (#317)."""
 
@@ -181,7 +270,7 @@ class TestTreeSources(unittest.TestCase):
             inputs = tl.planning_inputs(CELL, osm_ground=ground)
         self.assertEqual({(x0 + i, z0 + j) for i, j, _r in inputs.crowns},
                          inputs.mapped | {(x0 + 127, z0 + 50)})
-        self.assertGreater(len(inputs.source_rejections), 100)    # dense texture fill was also removed
+        self.assertEqual(len(inputs.source_rejections), 3)  # low lidar prevents aerial fill before this gate
         self.assertEqual(len(inputs.crown_origins), len(inputs.crowns))
         self.assertGreaterEqual(len(inputs.mapped), 4)             # young mapped point and row survive
 
@@ -201,6 +290,7 @@ class TestPlanCellKeepsRules(unittest.TestCase):
         plan = types.SimpleNamespace(set=lambda *a: None)
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: cover(1.0, 1.0)), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c, margin=0: None), \
                 mock.patch.object(tl, 'surface_y', surface), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
