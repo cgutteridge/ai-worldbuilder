@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 355,
+  "nextTaskId": 356,
   "tasks": [
     
     
@@ -175,12 +175,22 @@
     {
       "id": 354,
       "title": "Water level profile: stepped river level from lidar samples (pure function)",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "Split from #326 so a non-Claude runner can do the offline half. Deliverable: a pure function in lib/builds (new module, for example water_level.py) that turns lidar surface samples taken along a river reach into a stepped integer water level per segment. Input: ordered (distance along reach, lidar surface height) samples, plus a minimum step length. Output: list of (start_distance, end_distance, level) with these rules, each covered by a test on synthetic fixtures: levels never rise going downstream; noise under one block does not create a step; a short dip (bridge deck, culvert) is ignored rather than stepping; a gentle slope produces steps no shorter than the minimum length; a flat reach returns one segment equal to today's single level. No spec schema change, no build, no world access and no lidar reading: the caller supplies the samples. Check: python3 scripts/run_tests.py --only test_water_level passes. Do not touch lib/builds/water_body.py; the integration (spec field, step shape in the build, sampling real lidar for the Itchen) stays in #326, which is blocked by this task.\n"
+    },
+    {
+      "id": 355,
+      "title": "Shared roof-material module and flat(ish)/pitched rule (I-057 S-104)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Owner direction 2026-11-21: big buildings (feature_build) and houses (house_build) share basic code for deciding roof materials. FLAT(ISH) = flat up to 1 in 2 (rise/run <= 0.5): any block or slab. PITCHED = steeper than 1 in 2: needs stairs in the mix (full + slab + stairs). Owner decision: the rule gates MATERIALS only; feature_build's lidar flattening (flat_tol_m 1.5 m, flat_gradient 0.2; zone_ridge_half_steps/_roof_pitch_mask ~lines 638-745) stays a separate named detection step, so existing feature roof plans do not change.\nCause (I-057, read from code): roof material is free text in every spec (house `roofs {label: material}`, house_build.load_spec ~57, rules/terrace-builds.md:16; feature `roofs.<label>.material`, rules/feature-builds.md:37). The only triad resolver is feature_build.block_family_variants with _ROOF_NO_STAIRS/_ROOF_NO_SLAB/_ROOF_FULL_NAME (920-955); house_build does not use it. No catalogue records colour or texture. Owner snag S-104.\nDeliverable: a module in lib/builds/ (e.g. roof_material.py) both builders import:\n (a) roof_class(rise, run) -> 'flatish' if rise/run <= 0.5 else 'pitched'; the only slope rule for material choice. Feature `kind: flat` -> flatish; `kind: pitched` -> pitched.\n (b) catalogue data (e.g. config/roof-materials.json): per family full, slab, stairs names checked against config/minecraft-block-ids-26.2.txt, approximate colour: seeded from site_kit.PREVIEW_COLOURS (lib/site/site_kit.py:379-392, the archived #126 table, ~35 entries) where an entry exists, otherwise approximate vanilla colours; do NOT edit that table (colour() substring-matches on it), texture tag (smooth, rough, tile-like, shingle-like, ridged), `triad` flag. smooth_stone has a slab only; terracotta and concrete have neither; these are flatish-only.\n (c) roof_blocks(material, roof_class): flatish allows any catalogue full block or slab; pitched requires the triad, else reports the nearest triad families by colour and texture. feature_build never raises for a pitched roof with no triad: the thin wrapper keeps today's fallback to a full block plus a warning (test_full_block_fallback_is_not_a_stair_neighbour uses a pitched smooth_stone). The wrapper also accepts names outside the roof catalogue unchanged (wall/floor materials at 3701; tests use stone, polished_deepslate, granite).\n (d) validate_roof_material(material, roof_class) -> messages (warning for existing specs; listed, not rewritten).\nCleanup in the same task: block_family_variants, _ROOF_NO_STAIRS, _ROOF_NO_SLAB, _ROOF_FULL_NAME become thin calls into the module or go; update every caller (feature_build.py 1160, 2211, 2618, 3549, 3701) and the unknown-id check near 3465. Out of scope, noted: lib/builds/terrace.py ROOF_FULL (105), lib/layers/outbuildings.py ROOF_FULL (56).\nRules text: rules/feature-builds.md (roof lines) and rules/terrace-builds.md (16, 41) state the flatish/pitched rule and point at the catalogue.\nScope: 1a wires feature_build only; house_build imports the module in Task 2.\nFiles: new module and colocated test; config catalogue; lib/builds/feature_build.py; lib/builds/test_feature_build.py (seam test ~3145-3160 and mock.patch.object(F, 'block_family_variants') at ~3376 and ~3582); the two rules files.\nCheck: (1) fixture tests: roof_class at 0, 0.4, 0.5 (flatish), 0.51, 1.0 (pitched); every catalogue name exists in the block list; pitched + smooth_stone or terracotta rejected with suggestions; flatish + smooth_stone passes; brick keeps full name bricks. (2) `python3 scripts/run_tests.py --only test_feature_build` and the new test pass, plus a new golden test: a synthetic feature spec (built as PitchedZonesRidgeTest._build / BuildPlanTest.spec do: F.build with footprints, _StoneWorld, zone_data, metres_aod_to_y mocked) reaching all five callers (zone_materials for 1160 and 3701, an unzoned flat roof for 2211, an entrance covered_area for 2618, a roof detail pad for 3549) produces the same plan.cells before and after the migration. The golden (JSON or hash of plan.cells) is recorded on the pre-migration code and committed first, since the old code goes away. Existing feature plans are unchanged by construction.\nCovers: I-057 (S-104), the shared rule and catalogue. Not covered: named roof types and recommended triads (1b); house roof geometry (Task 2)."
     }
   ]
 }
