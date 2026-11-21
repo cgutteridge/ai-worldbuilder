@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest import mock
+from types import SimpleNamespace
 from pathlib import Path
 
 import numpy as np
@@ -142,6 +144,94 @@ class SeamTest(unittest.TestCase):
         ok = tln.gated_crowns([(3, 5, 3.0), (2, 5, 3.0)], 0, 0, h)
         self.assertEqual(ok, {(3, 5): True, (2, 5): False})
         self.assertEqual(tln.gated_crowns([(3, 5, 3.0)], 0, 0, None), {(3, 5): False})
+
+
+class StandingHeightTest(unittest.TestCase):
+    def read(self, client, heights=None, *, margin=0, cell=(0, 0), prefer_first=True):
+        shape = (128 + 2 * margin,) * 2
+        if heights is None:
+            heights = {'dtm': np.full(shape, 10.25), 'dsm': np.full(shape, 11.5),
+                       'diff': np.full(shape, 99)}  # rounded/provider diff must never win
+        with mock.patch('lidar_provider.mc_heights_float', return_value=heights) as grid, \
+                mock.patch('world_frame.load_frame', return_value=object()), \
+                mock.patch('world_frame.mc_grid_to_en', side_effect=lambda x, z, f: (x, -z)):
+            result = tln.standing_height(cell, margin=margin, client=client, prefer_first=prefer_first)
+        return result, grid
+
+    def client(self, samples=None, missing=False):
+        return SimpleNamespace(missing=mock.Mock(return_value=missing),
+                               sample=mock.Mock(return_value=np.full((128, 128), 15.0)
+                                               if samples is None else samples))
+
+    def test_first_return_uses_float_dtm_and_halo_alignment(self):
+        samples = np.full((132, 132), 10.25)
+        samples[0, 20] = 13.0
+        client = self.client(samples)
+        (h, source), grid = self.read(client, margin=2, cell=(1, -1))
+        self.assertEqual(source, 'first-return')
+        self.assertEqual(h[0, 20], 2.75)
+        self.assertEqual(h[1, 20], 0)
+        grid.assert_called_once_with(client, 126, -130, 257, 1)
+        client.missing.assert_called_once_with('DSM_FIRST', 126., -1., 257., 130.)
+        args = client.sample.call_args.args
+        self.assertEqual(args[0], 'DSM_FIRST')
+        self.assertFalse(args[3])  # cached sampling, never download
+        self.assertEqual((args[1][0, 20], args[2][0, 20]), (126, 110))
+        self.assertTrue(tln.gated_crowns([(128, -110, 3)], 126, -130, h)[(128, -110)])
+
+    def test_missing_tiles_failures_and_minimal_clients_use_float_last(self):
+        broken = self.client()
+        broken.sample.side_effect = RuntimeError('sample failed')
+        missing_broken = self.client()
+        missing_broken.missing.side_effect = RuntimeError('tile check failed')
+        clients = [self.client(missing=True), broken, missing_broken, object(),
+                   SimpleNamespace(missing=lambda *a: [], sample=None),
+                   SimpleNamespace(missing=lambda *a: []),
+                   SimpleNamespace(sample=lambda *a: np.ones((128, 128)))]
+        for client in clients:
+            with self.subTest(client=type(client).__name__):
+                (h, source), _ = self.read(client)
+                self.assertEqual(source, 'last-return')
+                np.testing.assert_array_equal(h, np.full((128, 128), 1.25))
+        clients[0].sample.assert_not_called()
+
+    def test_nonfinite_first_samples_do_not_support_crowns_or_mix_last(self):
+        samples = np.full((128, 128), 10.25)
+        samples[5, 5] = np.inf
+        samples[15, 15] = np.nan
+        heights = {'dtm': np.full((128, 128), 10.25), 'dsm': np.full((128, 128), 20.)}
+        (h, source), _ = self.read(self.client(samples), heights)
+        self.assertEqual(source, 'first-return')
+        self.assertTrue(np.isnan(h[5, 5]))
+        self.assertTrue(np.isnan(h[15, 15]))
+        self.assertFalse(any(tln.gated_crowns([(5, 5, 3), (15, 15, 3)], 0, 0, h).values()))
+
+    def test_absent_invalid_and_all_nonfinite_data(self):
+        for samples in [np.full((128, 128), np.nan), np.full((128, 128), np.inf), None, np.ones((2, 2))]:
+            client = self.client()
+            client.sample.return_value = samples
+            (h, source), _ = self.read(client)
+            self.assertEqual(source, 'last-return')
+            self.assertEqual(h[0, 0], 1.25)
+        for heights in [{}, {'dtm': None}, {'dtm': np.ones((2, 2))},
+                        {'dtm': np.full((128, 128), np.nan), 'dsm': np.ones((128, 128))}]:
+            with self.subTest(heights=list(heights)):
+                (h, source), _ = self.read(self.client(missing=True), heights)
+                self.assertIsNone(h)
+                self.assertEqual(source, 'none')
+        with mock.patch('lidar_provider.mc_heights_float', side_effect=RuntimeError('unavailable')):
+            self.assertEqual(tln.standing_height((0, 0), client=object()), (None, 'none'))
+
+    def test_first_available_without_last_and_explicit_last_comparison(self):
+        (h, source), _ = self.read(self.client(), {'dtm': np.full((128, 128), 10.25)})
+        self.assertEqual(source, 'first-return')
+        self.assertEqual(h[0, 0], 4.75)
+        client = self.client()
+        (h, source), _ = self.read(client, prefer_first=False)
+        self.assertEqual(source, 'last-return')
+        self.assertEqual(h[0, 0], 1.25)
+        client.sample.assert_not_called()
+
 
 
 if __name__ == '__main__':
