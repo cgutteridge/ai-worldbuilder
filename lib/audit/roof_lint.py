@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
+from surface_probe import PLANTS, short_id
 OUT = ROOT / 'verification/site'
 
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
@@ -102,7 +103,7 @@ def stair_shape_mismatches(cells: dict) -> list[dict]:
     """
     by_pos = {}
     for (x, y, z), s in cells.items():
-        if s in _SKIP or any(t in s.split(':', 1)[-1] for t in _THIN):
+        if s in _SKIP or short_id(s) in PLANTS or any(t in s.split(':', 1)[-1] for t in _THIN):
             continue
         fh = _stair_facing_half(s)
         if fh is None:
@@ -133,7 +134,7 @@ def _tops(cells: dict) -> dict:
     """
     top = {}
     for (x, y, z), s in cells.items():
-        if s in _SKIP or any(t in s.split(':', 1)[-1] for t in _THIN):
+        if s in _SKIP or short_id(s) in PLANTS or any(t in s.split(':', 1)[-1] for t in _THIN):
             continue
         if (x, z) not in top or y > top[(x, z)][0]:
             top[(x, z)] = (y, s)

@@ -16,6 +16,13 @@ def col(blocks, x=0, z=0):
 
 
 class ColumnTest(unittest.TestCase):
+    def test_woodland_cover_does_not_raise_lidar_readback(self):
+        for state in ('short_dry_grass', 'tall_dry_grass', 'bush',
+                      'leaf_litter[facing=east,segment_amount=4]', 'closed_eyeblossom'):
+            with self.subTest(state=state):
+                self.assertEqual(col({40: 'minecraft:podzol', 41: f'minecraft:{state}'}),
+                                 (40, 40, 0, L.GROUND))
+
     def test_plain_ground_ignores_grass_tufts(self):
         self.assertEqual(col({40: 'minecraft:stone', 41: 'minecraft:short_grass'}), (40, 40, 0, L.GROUND))
 

@@ -41,6 +41,14 @@ class SlopeTest(unittest.TestCase):
 
 
 class ViewTest(unittest.TestCase):
+    def test_lidar_top_ignores_woodland_cover(self):
+        class Column:
+            def block(self, x, y, z):
+                return {40: 'minecraft:podzol', 41: 'minecraft:leaf_litter[segment_amount=4]',
+                        42: 'minecraft:tall_dry_grass'}.get(y)
+
+        self.assertEqual(geo.lidar_top(Column(), 0, 0, ymax=44), 40)
+
     def test_north_look(self):
         rec = geo.view_from_heading(100.0, 70.0, -200.0, 0.0, distance=10.0)
         self.assertAlmostEqual(rec['look'][0], 100.0)

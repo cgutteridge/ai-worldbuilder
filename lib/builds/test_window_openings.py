@@ -299,3 +299,13 @@ class CornerSchemaTest(unittest.TestCase):
         grid = {'ground_y': np.array([[49, float('nan')]]), 'x0': 10, 'z0': 20}
         self.assertEqual(outside_ground([(10, 20), (11, 20), (12, 20)], grid),
                          {(10, 20): 49, (11, 20): None, (12, 20): None})
+
+
+class PlantStructureTest(unittest.TestCase):
+    def test_woodland_plants_cannot_terminate_a_window_opening(self):
+        from window_openings import structural
+        for state in ('short_dry_grass', 'tall_dry_grass', 'bush',
+                      'leaf_litter[facing=east,segment_amount=4]', 'closed_eyeblossom'):
+            with self.subTest(state=state):
+                self.assertFalse(structural(f'minecraft:{state}'))
+        self.assertTrue(structural('brown_mushroom_block'))

@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 352,
+  "nextTaskId": 356,
   "tasks": [
     
     
@@ -59,20 +59,12 @@
     , "requiresClaude": true},
     
     
-    {
-      "id": 321,
-      "title": "Rivers across cells: per-cell clipped water bodies",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Cause (verified): water_body items carry one cells entry and propose takes one cell, building the body whole; the Itchen spans 12 cells and 22,824 columns. The trial used a scratch clip wrapper and a manual plan_feature note. Deliverable: build per cell, clipped, no bank ring on clip edges, plan recorded per cell. Same edge policy as blocked task 234 (building across a cell edge). Test on a two-cell fixture. Check: Itchen reach across 63,-45 and its neighbour joins without a seam or bank wall. Water level along the reach is a separate task."
-    , "requiresClaude": true},
+    
     
     {
       "id": 323,
       "title": "Spike: tree lines along hedges and lanes that OSM does not map",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
@@ -89,9 +81,9 @@
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
-        321
+        
       ],
-      "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
+      "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game.\nSplit 2026-11-21: the offline function (lidar samples along the reach to a stepped level profile, fixture-tested) is #354, which any runner can take, and blocks this task. What stays here needs Claude: the spec field for per-segment levels and how a step looks in the build (lib/builds/water_body.py, a schema change, so a stretch: ask before raising model or effort), sampling real lidar along the Itchen, and the in-game check across two cells. Requires Claude because it runs a build and judges the result in game.\n"
     , "requiresClaude": true},
     
     
@@ -116,7 +108,7 @@
     {
       "id": 337,
       "title": "Big-box roof follows the aerial (spike first)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
@@ -124,16 +116,7 @@
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     , "requiresClaude": true},
-        {
-      "id": 347,
-      "title": "Plant vocabulary: teach the surface probe the 26.2 ground-cover plants",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Split out of #318 on 2026-11-21 (woodland raft). Prerequisite for the woodland floor task: the surface probe and the layers must treat every plant the game offers as a plant, not as ground.\n\nToday lib/blocks/surface_probe.py PLANTS lists only short_grass, tall_grass, fern, large_fern and some flowers. docs/plans/park-rural.md notes the Minecraft 26.2 plants that the rough-grass trial did not use because the probe would read them as ground: short_dry_grass, tall_dry_grass, leaf_litter and bush (they suit pasture and woodland floors). Scope: (1) confirm from the repo's block data (lib/blocks/block_reference.py and any generated block list) which of these and any other ground-cover plants exist in the game version in use, and record the list with its source; do not guess names; (2) add them to PLANTS and to every place that mirrors the list (ground_layer.STEM_OR_FLOWER derives from it; check foliage.REFINE_PLANTS, block_reference patterns, decor and the readback/audit code that classifies plants) so a plant over ground is probed as plant plus ground, a probe never mistakes it for the surface, and clears treat it like other plants; (3) say in the notes which plants are two-block (like tall_grass, large_fern) if any, since placement must give them the right half states.\n\nAcceptance, synthetic only: unit tests for the probe with each new plant above grass, dirt and podzol; existing tests unchanged. No world build step, so requiresClaude is false. Not a stretch. Related: #318, the woodland floor task.\n\nPreflight source confirmation (2026-11-21): config/minecraft-block-ids-26.2.txt is tracked and contains minecraft:short_dry_grass, minecraft:tall_dry_grass, minecraft:leaf_litter and minecraft:bush. Its provenance header identifies Mojang 26.2 client assets/minecraft/blockstates/*.json, client jar SHA256 40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290. These four IDs are confirmed, so the worker may start. Confirm any additional ground-cover IDs against this same list and verify placement states from real blockstate data; the word tall in an ID is not evidence that it needs two halves.\n"
-    },
+        
     {
       "id": 348,
       "title": "Woodland floor blocks in the ground layer: podzol, coarse dirt and moss at terrain height",
@@ -141,7 +124,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        347
+        
       ],
       "requiresClaude": false,
       "notes": "Split out of #318 on 2026-11-21; corrected the same day. Layer ownership (owner): ground sets the ground level at lidar terrain height; trees do only trees; decor does minor non-feature, non-tree enhancements such as plants and leaf litter. So the woodland floor BLOCKS live in the ground layer, and every plant on top of them (ferns, tufts, leaf litter, dry grass, bushes) lives in decor (see the decor understorey task).\n\nScope: extend the existing surface step in lib/layers/ground_layer.py (rough grass, #319: ROUGH_GRASS_TAGS and the ground_texture class key, seeded per cell and column, removable through the masks, counted in the report) with a woodland floor: the surface block of a column at lidar terrain height becomes a floor mix. Gate: wood = natural=wood|scrub or landuse=forest (keep #319 behaviour for meadow, pasture and lawns unchanged; scrub keeps its pasture treatment unless the config says otherwise). Starting shares are the owner-accepted values of the rough-grass trial (trial259_roughgrass_87_m48, docs/plans/park-rural.md; owner verdict Yes, use it): 30% podzol, 10% coarse_dirt, 8% moss_block, the rest keeps the ground's grass; grass only at the polygon edge (reach in columns, default 2, tunable). All shares in config/land-use-classes.json under ground_texture (schema pattern as #319), never in code. Never touch the height: terrain stays the lidar height. Skip columns that trees, decor, features or neighbours own, as the trial did. No plants in this task.\n\nAcceptance, synthetic only: tests with a synthetic wood polygon and lawn and meadow neighbours: floor shares within tolerance of the config over a large synthetic area, same seed same result, edge reach respected, lawns and meadows identical to the #319 output, owned columns skipped, surface Y unchanged, report counts per block. No world build step, so requiresClaude is false. How it looks on 63,-45 and 46,-46 is #318. A ground change makes ground stale on built cells, so a real cell needs a ground redo after merge (never unattended); that is #318 work. Open question for the owner, not for this task: the #319 step in the ground layer also places grass tufts, tall grass and flowers, which under the ownership rule above would be decor; left as it is until the owner decides.\n"
@@ -164,10 +147,32 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [
-        347
+        
       ],
       "requiresClaude": false,
       "notes": "Split out of #318 on 2026-11-21; moved to decor the same day. Layer ownership (owner): ground sets the ground level at lidar terrain height; trees do only trees; decor does minor non-feature, non-tree enhancements such as plants and leaf litter. So woodland understorey and ground cover are decor, not trees and not ground. The floor blocks under them are the ground-layer woodland floor task.\n\nOwner snag (issue I-055): the woods read as parkland and the floor is plain grass; the aerial shows a closed canopy with a real understorey. Doc targets (docs/plans/park-rural.md, natural class and the rough-grass trial, owner verdict Yes, use it): low bushes of persistent leaves, about 7% of columns with 40% two blocks high; ferns about 15%; short_grass about 8%; the trial also had podzol, coarse dirt and moss floor blocks (ground task, not here).\n\nScope: in lib/layers/decor_layer.py (read how decor is gated first: the #319 notes say frontage.inference false blocks planting, which is why rough grass used its own key; use the same approach, a separate woodland key in config/land-use-classes.json, shares never in code) add woodland decor inside wood polygons (natural=wood|scrub, landuse=forest): (1) understorey bushes from leaf blocks (reuse plant_cell_canopy.bush_voxels), height 1 or 2; (2) ground-cover plants on the surface: fern and large_fern where they fit, short_grass, and any of leaf_litter, short_dry_grass, tall_dry_grass that the plant vocabulary task (blocked-by) confirms exist. Shares for the new plants and for leaf litter are placeholders for #318 to tune. Rules: only on a column whose block above the surface is air; never under or in a trunk or a crown's solid blocks, never on a column the trees, features or neighbours own (decor runs after trees and reads their blocks), never within the clearance of a building, path or road, never on water. Seeded per cell and column; removable through the decor mask and counted in the report per kind.\n\nAcceptance, synthetic only: tests with a synthetic wood, crowns and trunks: share per kind within tolerance, none on trunks or crown blocks, none outside the wood polygon, none on roads or footprints, only on air above ground, deterministic, mask round-trip, woodland key off leaves decor unchanged. No world build step, so requiresClaude is false. Density, look and the owner verdict on 63,-45 and 46,-46 are #318. Edits decor_layer.py (not trees_layer.py).\n"
+    },
+    {
+      "id": 352,
+      "title": "Itchen join check in game across 62,-45 / 63,-45 / 64,-45",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": true,
+      "notes": "Live check left over from #321 (per-cell clipped water bodies, merged in 6e33f44). Check: the Itchen reach across 63,-45 joins its neighbours 62,-45 and 64,-45 in game with no seam and no bank wall. Offline, both joins already equal the whole-river build with 0 bank blocks over water. The world still holds the old trial build of 63,-45, which put 36 grass bank blocks on the river at x 8063 and x 8192.\nBlockers (cell_registry check, 2026-11-21):\n- 63,-45: validation stale; needs prepare --apply.\n- 64,-45 and 62,-45: validation required; the river clip is unaccounted for; map query coverage is 0.0%; aerial coverage is 24.6% and 26.2%.\n- Each neighbour needs the owner to supply local aerial data (source, filename and size approved before any download) and either a fix to the map extract or dismiss-clip-coverage with a reason.\nSteps, once those are settled: prepare all three cells, then run the README steps from #321's notes (specs plus make_itchen_clip_specs.py; ask the orchestrator for the path, or regenerate them) under site_lock.py run. Dry-run each cell first. Build 62,-45 too if the bank at x=8063 has to go.\n"
+    },
+    
+    
+    {
+      "id": 355,
+      "title": "Shared roof-material module and flat(ish)/pitched rule (I-057 S-104)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Owner direction 2026-11-21: big buildings (feature_build) and houses (house_build) share basic code for deciding roof materials. FLAT(ISH) = flat up to 1 in 2 (rise/run <= 0.5): any block or slab. PITCHED = steeper than 1 in 2: needs stairs in the mix (full + slab + stairs). Owner decision: the rule gates MATERIALS only; feature_build's lidar flattening (flat_tol_m 1.5 m, flat_gradient 0.2; zone_ridge_half_steps/_roof_pitch_mask ~lines 638-745) stays a separate named detection step, so existing feature roof plans do not change.\nCause (I-057, read from code): roof material is free text in every spec (house `roofs {label: material}`, house_build.load_spec ~57, rules/terrace-builds.md:16; feature `roofs.<label>.material`, rules/feature-builds.md:37). The only triad resolver is feature_build.block_family_variants with _ROOF_NO_STAIRS/_ROOF_NO_SLAB/_ROOF_FULL_NAME (920-955); house_build does not use it. No catalogue records colour or texture. Owner snag S-104.\nDeliverable: a module in lib/builds/ (e.g. roof_material.py) both builders import:\n (a) roof_class(rise, run) -> 'flatish' if rise/run <= 0.5 else 'pitched'; the only slope rule for material choice. Feature `kind: flat` -> flatish; `kind: pitched` -> pitched.\n (b) catalogue data (e.g. config/roof-materials.json): per family full, slab, stairs names checked against config/minecraft-block-ids-26.2.txt, approximate colour: seeded from site_kit.PREVIEW_COLOURS (lib/site/site_kit.py:379-392, the archived #126 table, ~35 entries) where an entry exists, otherwise approximate vanilla colours; do NOT edit that table (colour() substring-matches on it), texture tag (smooth, rough, tile-like, shingle-like, ridged), `triad` flag. smooth_stone has a slab only; terracotta and concrete have neither; these are flatish-only.\n (c) roof_blocks(material, roof_class): flatish allows any catalogue full block or slab; pitched requires the triad, else reports the nearest triad families by colour and texture. feature_build never raises for a pitched roof with no triad: the thin wrapper keeps today's fallback to a full block plus a warning (test_full_block_fallback_is_not_a_stair_neighbour uses a pitched smooth_stone). The wrapper also accepts names outside the roof catalogue unchanged (wall/floor materials at 3701; tests use stone, polished_deepslate, granite).\n (d) validate_roof_material(material, roof_class) -> messages (warning for existing specs; listed, not rewritten).\nCleanup in the same task: block_family_variants, _ROOF_NO_STAIRS, _ROOF_NO_SLAB, _ROOF_FULL_NAME become thin calls into the module or go; update every caller (feature_build.py 1160, 2211, 2618, 3549, 3701) and the unknown-id check near 3465. Out of scope, noted: lib/builds/terrace.py ROOF_FULL (105), lib/layers/outbuildings.py ROOF_FULL (56).\nRules text: rules/feature-builds.md (roof lines) and rules/terrace-builds.md (16, 41) state the flatish/pitched rule and point at the catalogue.\nScope: 1a wires feature_build only; house_build imports the module in Task 2.\nFiles: new module and colocated test; config catalogue; lib/builds/feature_build.py; lib/builds/test_feature_build.py (seam test ~3145-3160 and mock.patch.object(F, 'block_family_variants') at ~3376 and ~3582); the two rules files.\nCheck: (1) fixture tests: roof_class at 0, 0.4, 0.5 (flatish), 0.51, 1.0 (pitched); every catalogue name exists in the block list; pitched + smooth_stone or terracotta rejected with suggestions; flatish + smooth_stone passes; brick keeps full name bricks. (2) `python3 scripts/run_tests.py --only test_feature_build` and the new test pass, plus a new golden test: a synthetic feature spec (built as PitchedZonesRidgeTest._build / BuildPlanTest.spec do: F.build with footprints, _StoneWorld, zone_data, metres_aod_to_y mocked) reaching all five callers (zone_materials for 1160 and 3701, an unzoned flat roof for 2211, an entrance covered_area for 2618, a roof detail pad for 3549) produces the same plan.cells before and after the migration. The golden (JSON or hash of plan.cells) is recorded on the pre-migration code and committed first, since the old code goes away. Existing feature plans are unchanged by construction.\nCovers: I-057 (S-104), the shared rule and catalogue. Not covered: named roof types and recommended triads (1b); house roof geometry (Task 2)."
     }
   ]
 }

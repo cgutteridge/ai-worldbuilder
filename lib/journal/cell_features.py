@@ -18,8 +18,10 @@ feature. Outbuildings (sheds, garages) are left to their house plot. Connected
 polygon water columns become ``kind: water_body`` candidates (streams stay off the
 pond list; #163).
 
-A feature is one build whatever cell lines it crosses (task 288): a footprint is proposed
+A building is one build whatever cell lines it crosses (task 288): a footprint is proposed
 only in its home cell (:func:`home_cell`), whole, and never in the other cells it touches.
+A water body over cell lines is the exception (#321): each cell it touches proposes and
+builds its own clip (``water_body.clip_candidate``), so a river is planned cell by cell.
 A touching same-tag non-house chain is grouped before that home filter; the whole chain
 uses the home of its lowest-ref member so it is planned once (#328).
 
@@ -48,7 +50,12 @@ from coverage import (  # noqa: E402
 from osm_footprints import OSMIndex  # noqa: E402
 from portals import describe, for_footprint  # noqa: E402
 from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
-from water_body import MIN_WATER_COLUMNS, water_body_components  # noqa: E402
+from water_body import (  # noqa: E402
+    MIN_WATER_COLUMNS,
+    bank_columns_in_cell,
+    clip_candidate,
+    water_body_components,
+)
 from landmark_gate import landmark_fields  # noqa: E402
 from osm_footprints import osm_tags  # noqa: E402
 
@@ -550,10 +557,14 @@ def missing_water_bodies(
     """Mapped water bodies overlapping the cell that no feature build covers (#148, #163).
 
     Uses polygon ``natural=water`` only (not stream/drain line columns). Candidates
-    carry OSM way refs and provenance ``source: vector_map``. A body is whole (its columns
-    outside the cell included, as far as ``water_columns`` reaches) and is proposed only in
-    its home cell (:func:`home_cell`); ``cells`` lists every cell it touches, home first
-    (task 288). Columns clipped to the cell can only show the in-cell part.
+    carry OSM way refs and provenance ``source: vector_map``. A body inside the cell is
+    proposed whole. A body over cell lines (as far as ``water_columns`` reaches) is proposed
+    as this cell's clip (#321, ``water_body.clip_candidate``): a per-cell ``id`` and ``clip``,
+    the in-cell ``area``, and coverage judged on the in-cell columns only. Every cell it
+    touches proposes its own clip, so each cell records and builds its own plan. A cell with
+    none of the body's water but some within the default bank width gets a bank-only clip
+    (``area`` 0), so a shore that spills over a cell line is never left unbuilt. Built
+    bank-only clips drop out once their in-cell bank columns are covered (#353).
 
     @param tx: cell X
     @param tz: cell Z
@@ -583,13 +594,22 @@ def missing_water_bodies(
         provenance_source='vector_map',
     ):
         outline = [(int(c[0]), int(c[1])) for c in body['outline']]
-        if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
+        if len(footprint_cells(outline)) > 1:
+            # per-cell clip of a body over cell lines, bank-only where only its shore reaches (#321)
+            body = clip_candidate(body, (tx, tz))
+            if body is None:
+                continue
+            outline = [q for q in outline if x0 <= q[0] <= x1 and z0 <= q[1] <= z1]
+            if not outline:
+                # bank only: no in-cell water; coverage is the bank columns this clip would write
+                bank_cols = bank_columns_in_cell(body['outline'], (tx, tz))
+                if bank_cols and sum(c in covered for c in bank_cols) >= COVERED_FRAC * len(bank_cols):
+                    continue
+                out.append(body)
+                continue
+        elif not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
             continue
-        cells = footprint_cells(outline)
-        if cells[0] != (tx, tz):
-            continue                                  # proposed whole in its home cell (task 288)
-        body['cells'] = [[c[0], c[1]] for c in cells]
-        if outline and sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
+        if sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
             continue
         out.append(body)
     return out

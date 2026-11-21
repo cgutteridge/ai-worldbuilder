@@ -34,6 +34,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from script_env import ROOT  # noqa: E402
+from surface_probe import PLANTS, short_id
 
 JAR = Path.home() / 'Library/Application Support/minecraft/versions/1.21.11/1.21.11.jar'
 ASSETS = ROOT / 'instance' / 'block-reference' / 'assets' / 'minecraft'
@@ -45,8 +46,15 @@ SHADE = {'up': 1.0, 'north': 0.8, 'south': 0.8, 'east': 0.6, 'west': 0.6, 'down'
 NORMAL = {'up': (0, 1, 0), 'down': (0, -1, 0), 'north': (0, 0, -1), 'south': (0, 0, 1), 'east': (1, 0, 0), 'west': (-1, 0, 0)}
 PARTIAL = ('_slab', '_carpet', '_stairs', '_trapdoor', '_button', '_pressure_plate', 'snow', 'candle', '_wall', '_fence')
 CONNECTS = ('_pane', 'iron_bars', '_wall', '_fence', 'chain')
-TINTED = ('grass_block', 'leaves', 'fern', 'short_grass', 'tall_grass', 'vine', 'lily_pad')
+TINTED = ('grass_block', 'leaves', 'fern', 'short_grass', 'tall_grass', 'vine', 'lily_pad',
+          'bush', 'pink_petals', 'wildflowers')
 TILE = 112
+
+
+def is_partial(block: str) -> bool:
+    """Whether a block is a plant or one of the reference's partial shapes."""
+    name = short_id(block)
+    return name in PLANTS or any(k in name for k in PARTIAL)
 
 
 def extract(jar: Path = JAR) -> int:
@@ -399,7 +407,7 @@ def build_info(block: str) -> dict | None:
     top, side, noise, transparent, full = st
     rgb = [int((a + b) / 2) for a, b in zip(top, side)]
     texture = 'flat' if noise < 6 else 'subtle' if noise < 14 else 'patterned' if noise < 28 else 'busy'
-    shape = 'partial' if any(k in block for k in PARTIAL) else 'full' if (full or block in MUSHROOM_BLOCKS) else 'other'
+    shape = 'partial' if is_partial(block) else 'full' if (full or block in MUSHROOM_BLOCKS) else 'other'
     d = {'rgb': rgb, 'top_rgb': top, 'side_rgb': side, 'noise': noise, 'texture': texture, 'opaque': not transparent,
          'shape': shape, 'partial': shape == 'partial', 'connects': any(k in block for k in CONNECTS),
          'emits_light': any(k in block for k in LIGHT), 'group': hue_group(rgb)}
@@ -445,7 +453,7 @@ def sheets(patterns: list[str]) -> int:
             rgb = None
         if not rgb:
             continue
-        info[n] = {'rgb': list(rgb), 'group': hue_group(rgb), 'partial': any(k in n for k in PARTIAL),
+        info[n] = {'rgb': list(rgb), 'group': hue_group(rgb), 'partial': is_partial(n),
                    'connects': any(k in n for k in CONNECTS)}
         groups.setdefault(info[n]['group'], []).append(n)
     font = ImageFont.load_default()
