@@ -914,6 +914,9 @@ describe("Claude task policy", () => {
     for (const [tool, model, externalModelBudget] of [
       ["claude-code", "sonnet", undefined],
       ["claude-code", "claude-opus-5-5-low", undefined],
+      ["cursor", "sonnet-4", "available"],
+      ["cursor", "sonnet-4-thinking", "available"],
+      ["cursor", "opus", "available"],
       ["cursor", "claude-sonnet-5-5-medium", "available"],
       ["cursor", "anthropic/claude-opus-4-6", "available"],
     ]) {
@@ -979,10 +982,50 @@ describe("Claude task policy", () => {
     assert.equal((await showTask(directory, 1)).requiresClaude, false)
   })
 
-  it("adds a flag to a legacy active task and rejects nonboolean stored flags", async () => {
+  it("persists a flag on a legacy task and reads it back through the CLI", async () => {
     const directory = await fixture({ requiresClaude: undefined })
-    const result = await updateTask(directory, 1, { requiresClaude: true })
-    assert.equal(result.requiresClaude, true)
+    const before = JSON.parse(await source(directory))
+    const result = run(directory, "update", "1", "--requires-claude", "true")
+    assert.equal(result.status, 0, result.stderr)
+    const expected = { ...before.tasks[0], requiresClaude: true }
+    const shown = run(directory, "show", "1")
+    assert.equal(shown.status, 0, shown.stderr)
+    assert.deepEqual(JSON.parse(shown.stdout), expected)
+    assert.deepEqual(JSON.parse(await source(directory)), { ...before, tasks: [expected] })
+  })
+
+  for (const order of [
+    ["notes", "title", "requiresClaude"],
+    ["requiresClaude", "notes", "title"],
+    ["title", "requiresClaude", "notes"],
+  ]) {
+    it(`updates flag, title and notes together with source order ${order.join(", ")}`, async () => {
+      const directory = await fixture()
+      const original = task({ requiresClaude: false })
+      const reordered = Object.fromEntries(
+        ["id", ...order, "status", "custom"].map((key) => [key, original[key]]),
+      )
+      const tracker = { _comment: "Keep", nextTaskId: 10, tasks: [reordered,
+        task({ id: 2, title: "Unchanged neighbour", requiresClaude: false })] }
+      const before = JSON.stringify(tracker, null, 2) + "\n"
+      await writeFile(join(directory, "index.json"), before)
+      const title = 'Renamed "trial" with a longer title'
+      const notes = "Short\nnotes"
+      const result = run(directory, "update", "1", "--requires-claude", "true",
+        "--title", title, "--notes", notes)
+      assert.equal(result.status, 0, result.stderr)
+      const shown = run(directory, "show", "1")
+      assert.equal(shown.status, 0, shown.stderr)
+      assert.deepEqual(JSON.parse(shown.stdout), { ...reordered, requiresClaude: true, title, notes })
+      assert.equal(await source(directory), before
+        .replace('"requiresClaude": false', '"requiresClaude": true')
+        .replace(JSON.stringify(original.title), JSON.stringify(title))
+        .replace(JSON.stringify(original.notes), JSON.stringify(notes)))
+    })
+  }
+
+  it("rejects nonboolean stored flags", async () => {
+    const directory = await fixture()
     for (const requiresClaude of ["true", null, 1, {}, []]) {
       await writeFile(join(directory, "index.json"), JSON.stringify({ nextTaskId: 10, tasks: [task({ requiresClaude })] }))
       await rejectsWith(showTask(directory, 1), "invalid tracker schema")
