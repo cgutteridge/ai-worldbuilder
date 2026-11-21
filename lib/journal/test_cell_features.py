@@ -35,6 +35,87 @@ class TestCellFeatures(unittest.TestCase):
         runs = cf._split_runs([a, b, c])
         self.assertEqual(sorted(len(g) for g in runs), [1, 2])
 
+    def test_touching_retail_ways_form_one_group_distant_stays_building(self):
+        """#328: same building= tag, gap <= TOUCH_GAP → one group; a distant way stays alone.
+
+        The third shop sits inside JOIN_GAP but beyond TOUCH_GAP, so house-run clustering
+        must not swallow it into the group.
+        """
+        # Cell 48,-44: x 6144..6271, z -5632..-5505. Three retail footprints.
+        a = _square(6160, -5600, 6180, -5580)          # touches b (shared wall at x=6180)
+        b = _square(6180, -5600, 6200, -5580)
+        c = _square(6205, -5600, 6225, -5580)          # gap 5: > TOUCH_GAP, < JOIN_GAP
+        self.assertLessEqual(cf._gap((6180, -5600, 6200, -5580), (6205, -5600, 6225, -5580)),
+                             cf.JOIN_GAP)
+        self.assertGreater(cf._gap((6180, -5600, 6200, -5580), (6205, -5600, 6225, -5580)),
+                           cf.TOUCH_GAP)
+        idx = SimpleNamespace(
+            buildings=[
+                (a, {'building': 'retail', 'name': 'Shop A', 'id': 'w30'}),
+                (b, {'building': 'retail', 'name': 'Shop B', 'id': 'w10'}),
+                (c, {'building': 'retail', 'name': 'Shop C', 'id': 'w20'}),
+            ],
+            streets=[],
+        )
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            unbuilt = cf.footprint_progress(48, -44, idx=idx, covered=set())['unbuilt']
+        kinds = sorted((u['kind'], tuple(u['refs'])) for u in unbuilt)
+        self.assertEqual(kinds, [
+            ('building', ('w20',)),
+            ('group', ('w10', 'w30')),
+        ])
+        group = next(u for u in unbuilt if u['kind'] == 'group')
+        self.assertEqual(group['label'], 'retail (2 buildings)')
+        self.assertEqual(group['bbox'][:2], (6160, -5600))
+        self.assertEqual(group['bbox'][2:], (6200, -5580))
+
+    def test_mixed_tag_touching_ways_stay_separate(self):
+        """#328: same-tag only — industrial + retail that touch must not merge."""
+        industrial = _square(6160, -5600, 6180, -5580)
+        retail = _square(6180, -5600, 6200, -5580)          # shared wall; different building=
+        idx = SimpleNamespace(
+            buildings=[
+                (industrial, {'building': 'industrial', 'name': 'Unit 7', 'id': 'w7'}),
+                (retail, {'building': 'retail', 'name': 'Unit 12', 'id': 'w12'}),
+            ],
+            streets=[],
+        )
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            unbuilt = cf.footprint_progress(48, -44, idx=idx, covered=set())['unbuilt']
+        kinds = sorted((u['kind'], tuple(u['refs'])) for u in unbuilt)
+        self.assertEqual(kinds, [
+            ('building', ('w12',)),
+            ('building', ('w7',)),
+        ])
+
+    def test_cross_cell_touching_same_tag_forms_one_group_in_lead_home(self):
+        """#328 / #288: a same-tag chain across a cell line is one group in the min-ref home."""
+        # Cell line at x=6144: west way homes in 47,-44; east way homes in 48,-44; they touch.
+        west = _square(6124, -5600, 6144, -5580)           # id w10 → group home
+        east = _square(6144, -5600, 6164, -5580)           # id w30
+        idx = SimpleNamespace(
+            buildings=[
+                (west, {'building': 'retail', 'name': 'West Shop', 'id': 'w10'}),
+                (east, {'building': 'retail', 'name': 'East Shop', 'id': 'w30'}),
+            ],
+            streets=[],
+        )
+        with mock.patch('cell_features.for_footprint', return_value=[]), \
+             mock.patch('cell_features.pictures_for', return_value=[]), \
+             mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
+             mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
+            home = cf.footprint_progress(47, -44, idx=idx, covered=set())['unbuilt']
+            other = cf.footprint_progress(48, -44, idx=idx, covered=set())['unbuilt']
+        self.assertEqual([(u['kind'], tuple(u['refs'])) for u in home],
+                         [('group', ('w10', 'w30'))])
+        self.assertEqual(other, [])
+
     def test_ring_order(self):
         self.assertEqual(sh.ring_cells(1), [(48, -45), (49, -45), (49, -44), (49, -43),
                                             (48, -43), (47, -43), (47, -44), (47, -45)])

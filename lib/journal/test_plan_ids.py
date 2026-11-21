@@ -113,6 +113,13 @@ class PlanIdTest(unittest.TestCase):
                     'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
         self.assertEqual(self.ids([building]), ['w99'])
 
+    def test_group_plan_id_is_the_lowest_ref(self):
+        """#328: a touching non-house group keys by min(refs), not refs[0] as packaged."""
+        group = {'kind': 'group', 'label': 'retail (2 buildings)', 'street': None,
+                 'refs': ['w30', 'w10'], 'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
+        self.assertEqual(CR.candidate_plan_id(group), 'w10')
+        self.assertEqual(self.ids([group]), ['w10'])
+
     def test_cell_with_uncovered_footprint_is_not_done(self):
         self.built_street()
         self.assertTrue(self.reg.cell(CELL).done)            # the journal alone cannot see the map

@@ -73,10 +73,11 @@ def covered_by_plans(root, plan_ids) -> set[str]:
 
 
 def candidate_covered(item, covered) -> bool:
-    """Whether a non-house candidate's id or any of its refs is covered.
+    """Whether a non-house candidate is fully covered by planned/built refs.
 
     House groups key by street, not by a global map ref (see ``plan_ids_for_candidates``), so they
-    are never matched here.
+    are never matched here. A ``kind: group`` is covered only when every ref is covered; a
+    single building or water body matches if its id or any ref is covered (#328).
 
     @param item: candidate dict (``kind``, ``id`` and/or ``refs``)
     @param covered: :func:`covered_by_plans` result
@@ -84,9 +85,45 @@ def candidate_covered(item, covered) -> bool:
     """
     if item.get('kind') == 'houses':
         return False
+    refs = {norm_ref(r) for r in item.get('refs') or () if r}
+    if item.get('kind') == 'group':
+        return bool(refs) and refs <= set(covered)
     keys = {str(item['id'])} if item.get('id') else set()
-    keys |= {norm_ref(r) for r in item.get('refs') or () if r}
+    keys |= refs
     return bool(keys & covered)
+
+
+def uncovered_candidates(item, covered) -> list:
+    """Still-needed candidates after plans in ``covered``: drop full hits; split partial groups.
+
+    A ``kind: group`` whose refs are only partly covered becomes one ``kind: building`` row
+    per uncovered ref (regrouping happens on the next propose from the map). Fully covered
+    candidates yield an empty list; untouched candidates are returned unchanged.
+
+    @param item: candidate dict (``kind``, ``refs``, …)
+    @param covered: :func:`covered_by_plans` result
+    @returns: zero or more candidate dicts
+    """
+    if item.get('kind') == 'houses':
+        return [item]
+    if item.get('kind') == 'group':
+        refs = [r for r in (item.get('refs') or ()) if r]
+        left = [r for r in refs if norm_ref(r) not in covered]
+        if not left:
+            return []
+        if len(left) == len(refs):
+            return [item]
+        return [{
+            'kind': 'building',
+            'label': str(item.get('label') or r),
+            'street': None,
+            'refs': [r],
+            'bbox': item.get('bbox', (0, 0, 0, 0)),
+            'area': item.get('area', 0),
+            'portals': list(item.get('portals') or ()),
+            'pictures': list(item.get('pictures') or ()),
+        } for r in left]
+    return [] if candidate_covered(item, covered) else [item]
 
 
 def duplicate_plans(root, plans: dict[str, dict]) -> list[dict]:

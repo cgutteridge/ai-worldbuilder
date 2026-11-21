@@ -119,7 +119,7 @@ class LocalEvidence:
         from cell_registry import candidate_plan_id, plan_ids_for_candidates, planned_refs
         from coverage import osm_ref, scan_polygon
         from osm_footprints import OSMIndex, osm_tags
-        from plan_refs import candidate_covered, covered_by_plans
+        from plan_refs import covered_by_plans, uncovered_candidates
         from vector_map_clips import vector_map_clip_root
         if self._index is None:
             self._index = OSMIndex(vector_map_clip_root(self.root), read_only=True)
@@ -139,14 +139,14 @@ class LocalEvidence:
         items += missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=covered)
         known = {f.id for f in reg.cell(cell).features}
         skip = known | reg.plan_dismissed_ids(cell)
+        here = covered_by_plans(self.root, skip)       # a prefixed plan covers its map ref (task 293)
+        items = [part for item in items for part in uncovered_candidates(item, here)]
         ids = plan_ids_for_candidates(reg, cell, items)
         self._warnings[tuple(cell)] = [f'ambiguous legacy plan {fid}: no readable handoff spec; audit refs {item["refs"]}'
                                        for item, fid in zip(items, ids)
                                        if item.get('kind') == 'houses' and fid in known
                                        and fid == candidate_plan_id(item) and planned_refs(self.root, fid) is None]
-        here = covered_by_plans(self.root, skip)       # a prefixed plan covers its map ref (task 293)
-        return [{**item, 'id': fid} for item, fid in zip(items, ids)
-                if fid not in skip and not candidate_covered(item, here)]
+        return [{**item, 'id': fid} for item, fid in zip(items, ids) if fid not in skip]
 
     def warnings(self, cell):
         """Ambiguous legacy accounting found during candidate audit."""

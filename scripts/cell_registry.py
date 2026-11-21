@@ -399,7 +399,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
     """Stable feature plan id for a ``propose-features`` candidate (#128).
 
     Buildings and water bodies (#148) use the first vector-map ref (e.g. ``w93729745``
-    or ``water_<x>_<z>``). Houses use ``houses_<street_slug>`` when a street is known,
+    or ``water_<x>_<z>``). Touching non-house groups (#328) use the lowest ref among
+    the group's ways. Houses use ``houses_<street_slug>`` when a street is known,
     else ``houses_`` plus sorted refs. Build specs should reuse this id as ``name`` so
     the plan matches the Build.
 
@@ -417,6 +418,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
             slug = re.sub(r'[^a-z0-9]+', '_', street.lower()).strip('_') or 'unnamed'
             return f'houses_{slug}'
         return 'houses_' + '_'.join(sorted(refs))
+    if item.get('kind') == 'group':
+        return min(refs)
     return refs[0]
 
 
@@ -499,18 +502,22 @@ def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
     A feature crossing a cell line is planned once; the other cells it touches never
     re-propose it (a legacy plan in a minority cell still counts). A plan covers a candidate
     by map ref, not only by id: ``west_w34391673`` covers ``w34391673`` (``plan_refs``).
-    House groups are not matched here: ``plan_ids_for_candidates`` keeps them by street.
+    A ``kind: group`` is dropped only when every ref is covered; a partial hit keeps the
+    uncovered refs as building candidates (#328). House groups are not matched here:
+    ``plan_ids_for_candidates`` keeps them by street.
 
     @param reg: registry
     @param cell: (tx, tz)
     @param items: candidates from :func:`propose_feature_candidates` or readiness evidence
     @returns: the candidates still to account for in this cell
     """
-    from cell_readiness import accounted_elsewhere, planned_elsewhere, planned_here
-    from plan_refs import candidate_covered
-    elsewhere = planned_elsewhere(reg, cell)
-    here = planned_here(reg, cell)
-    return [i for i in items if not accounted_elsewhere(i, elsewhere) and not candidate_covered(i, here)]
+    from cell_readiness import planned_elsewhere, planned_here
+    from plan_refs import uncovered_candidates
+    covered = planned_here(reg, cell) | planned_elsewhere(reg, cell)
+    out: list[dict[str, Any]] = []
+    for item in items:
+        out.extend(uncovered_candidates(item, covered))
+    return out
 
 
 def record_feature_candidates(reg: CellRegistry, cid: str,
