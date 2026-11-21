@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 365,
+  "nextTaskId": 369,
   "tasks": [
     
     
@@ -66,14 +66,12 @@
     
     {
       "id": 326,
-      "title": "River water level from lidar along the reach",
-      "status": "todo",
+      "title": "River levels: real-lidar profile and in-game stepped-reach trial",
+      "status": "blocked",
       "priority": "low",
       "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game.\nSplit 2026-11-21: the offline function (lidar samples along the reach to a stepped level profile, fixture-tested) is #354, which any runner can take, and blocks this task. What stays here needs Claude: the spec field for per-segment levels and how a step looks in the build (lib/builds/water_body.py, a schema change, so a stretch: ask before raising model or effort), sampling real lidar along the Itchen, and the in-game check across two cells. Requires Claude because it runs a build and judges the result in game.\n"
+      "blockedBy": [365],
+      "notes": "Split 2026-11-21: the sample-to-profile pure function already landed in #354. Spec validation, optional per-segment levels and water/bed/bank/clipping geometry are now fixture-only task #365. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task waits for that implementation and retains the real-world work.\n\nScope: sample real lidar along the Itchen reach; interpret the samples and select a stepped level profile using the existing water_level_profile function; prepare the real-place spec through the implemented per-segment interface. Choose and assess how level transitions should look in the actual reach. Run the representative dry run and authorized apply under the site lock, then inspect the reach across at least two cells. Store place evidence, specs and trial artifacts in the active world checkout.\n\nAcceptance: the reach follows the real terrain, with no stranded water, dry bed, artificial internal bank wall or broken join at the cell boundary; record the in-game result and owner verdict. If fixtures pass but the real transition is wrong, diagnose it and file/fix the resulting issue rather than treating offline completion as the trial verdict.\n\nrequiresClaude true: real place evidence becomes a build spec, a representative build is run and the result is judged in game. Closing #365 only unblocks this trial. The ordinary stretch and model/effort rules still apply to any further schema/geometry change."
     , "requiresClaude": true},
     
     
@@ -133,35 +131,33 @@
     },
     {
       "id": 358,
-      "title": "House roofs use the shared roof rule: pitched roofs get stairs, flat(ish) keep slabs (I-056 S-103)",
-      "status": "todo",
+      "title": "House roofs: real-spec pitched-roof validation and owner review",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [],
+      "blockedBy": [366],
       "requiresClaude": true,
-      "notes": "Cause (I-056, read from code): House.roof in lib/builds/house_build.py (~384-437) sets y = b+6+d//2 by Chebyshev ring distance d, places only {mat}_slab (bottom even d, top odd), fills b+6..y-1 with WALL (bricks, line 37). Rise per ring is half a block, exactly 1 in 2, which by the shared rule is flat(ish) (the boundary), so the old roof never needs stairs. There is no pitched mode: stair() (line 47, no shape argument) is unused for roofs. The Burgess Road roofs are probably steeper hipped clay tile (spec notes; aerial and lidar slope not verified). Owner snag S-103.\nDeliverable: pitch enters the spec as a new key `roof_pitch {label: rise_per_run}` parallel to `roofs` (the `roofs` values stay plain strings, which load_spec checks); absent means flatish, so existing specs build exactly as today. house_build takes roof_class from the the shared roof-material module (#355, merged: roof_class, roof_blocks, validate_roof_material in lib/builds/roof_material.py) module. Flatish: today's slab rings. Pitched: one roof-material stair per ring facing its higher neighbour (as terrace.py does), outer/inner corner shapes written explicitly via lib/audit/roof_lint.stair_shape_from_neighbours (house stair() gains a shape argument), a slab or opposed-stair cap where rings meet, chimney and ridge height recomputed (they read the `done` dict), support fill under each column a solid block so no wrong colour shows through a stair's open half, group mode (one roof over several houses) handled. Names come from the the shared roof-material module (#355, merged: roof_class, roof_blocks, validate_roof_material in lib/builds/roof_material.py) module. load_spec validates each roof material with validate_roof_material (warning); the module docstring (line 11) documents roof_pitch.\nFiles: lib/builds/house_build.py; lib/builds/test_house_build.py (ChimneyTest roof test ~224-253 asserts brick_slab and is kept for flatish, with pitched tests added); rules/terrace-builds.md roofs lines.\nCheck: (1) red-first fixture tests on square, L-shaped and group footprints: flatish equals the old slab roof; pitched has every slope stair facing its higher neighbour with explicit corner shapes and no slab-only slope. (2) Dry run of houses_burgess_road with roof_pitch set and a catalogue triad: stair/slab/block counts printed; `python3 scripts/roof_lint.py` and guard_roof_jogs clean. (3) Owner review step after Burgess Road is respecced to pitched and rebuilt: I-056 S-103 (\"house roofs use stairs and slabs, not whole blocks\"). I-056 stays open until then.\nCovers: I-056 (S-103). Not covered: picking the material and pitch for Burgess Road (a respec after both tasks land); feature_build roofs (I-019).\nRelated: #356 (review of half-shared seams) names house_build's own {mat}_slab as the example; this task is the concrete house_build wiring, so #356 should treat it as already ticketed and not duplicate it. terrace.py and outbuildings.py ROOF_FULL stay out of scope here."
+      "notes": "Split 2026-11-21: the shared-material integration, roof_pitch spec field, pitched geometry, corner/support/cap/chimney/group handling, documentation and synthetic tests are now task #366. Plan: docs/plans/claude-task-splits-2026-11-21.md. #356 should follow that implementation ticket for house_build's shared roof wiring; terrace.py/outbuildings.py sharing remains outside it.\n\nCause/context: house_build's existing half-block slab rings have a 1-in-2 slope and no pitched mode; this is owner I-056 S-103. The offline task preserves legacy flatish plans and provides the pitched mode through the existing roof-material module.\n\nScope here: after the implementation lands, validate a real house spec with roof_pitch and a catalogue triad. The existing proving spec is houses_burgess_road; choose its pitch/material through the actual place evidence and the roof-selection work (#357), rather than treating an example material as a decision. Run its representative dry run, print stair/slab/full-block counts, and check roof_lint and guard_roof_jogs. Keep real-place spec changes and evidence in the world repo. Arrange the existing owner review after the world's separate respec/rebuild is ready, under the normal world-work authorization and site lock.\n\nAcceptance: the real-spec dry run and lint/guard checks pass, then the rebuilt roof's pitch, stair/slab transitions, corners, support and chimney read correctly in game; record the owner verdict for I-056 S-103. Keep I-056 open until that review. Implementing #366 alone does not close the snag. Feature-build roofs (I-019) are outside this task.\n\nrequiresClaude true: this retained scope interprets place evidence, runs a representative build dry run and requires in-game evaluation."
     },
     {
       "id": 359,
-      "title": "Trees reader uses first-return standing height",
-      "status": "todo",
+      "title": "Tree heights: rural build trial of first-return reader",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "m",
-      "blockedBy": [],
+      "blockedBy": [367],
       "requiresClaude": true,
-      "notes": "Follow-up from spike #323 (merged eb5549c; findings in docs/plans/323-unmapped-tree-lines.md). The trees pass reads last-return standing height, so the open-land gate drops real belt and hedge crowns: in the trial on 87,-48 it dropped 21 of the designer's 62. Switch the trees reader to first-return height (tree_lines.standing_height is a starting point; #320 evaluated the source).\nTake in the #323 review notes:\n- the trial's gated_crowns uses a square 5x5 window, while the gate uses a circular one;\n- standing_height falls back to mc_heights_float while cell_ndsm uses mc_heights()['diff'], so say which is authoritative;\n- standing_height needs tests: tiles missing, sample raising, a client without missing or sample;\n- scripts/tree_lines_trial.py reads trees_layer internals (planning_inputs, plan_cell, cell_ndsm, EXTRA_CROWNS, the TreeInputs crown tuples), so revisit or retire it after #350 changes the crown shape.\nCheck: on a representative rural cell, the gate keeps the belt and hedge crowns and open pasture stays clear, judged by a normal build trial.\n"
+      "notes": "Split 2026-11-21: the production first-return reader, authoritative fallback/source contract, circular-gate parity, missing-data regression tests and #350 crown-format compatibility are now fixture-only task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. No new height reader or parallel tree planner is needed.\n\nContext: spike #323 (merged eb5549c; docs/plans/323-unmapped-tree-lines.md) showed the last-return gate dropping real belt/hedge crowns, including 21 of 62 designer crowns in the trial. #320 evaluated the first-return source. The implementation task covers the prototype's square-window mismatch, mc_heights_float versus mc_heights()['diff'] authority, reader failure paths and trial-script internals after #350.\n\nScope here: after #367 lands, choose a representative rural proving cell from real evidence, run the normal trees build with the first-return reader, and compare supported belt/hedge crowns with the prior rejection behavior. Inspect the result in game and record source availability/fallback and any tuning needed in the world's trial notes. Use the site lock and normal world-work authorization for the build.\n\nAcceptance: supported belt/hedge crowns survive the normal gate, unsupported open pasture remains clear, and the owner/in-game verdict is recorded. This trial may validate the reader using existing crown inputs; the separate new hedge/belt source remains #360. #360 keeps its dependency on this completed reader trial, while its offline source implementation may depend on #367 directly.\n\nrequiresClaude true: this is a representative real-world build and in-game evaluation. Fixture completion is not its acceptance result."
     },
     {
       "id": 360,
-      "title": "Tree lines and belts along hedges and lanes as a gate source, by land-use class",
-      "status": "todo",
+      "title": "Tree belts: evidence tuning and rural build trial",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [
-        359
-      ],
+      "blockedBy": [359, 368],
       "requiresClaude": true,
-      "notes": "Follow-up from spike #323 (go with conditions). Add a tree-line and belt evidence source to the trees gate, keyed by land-use class in config (land_use.tree_sources), not code. Put trees along mapped hedges and lanes, and in unmapped belts, where first-return evidence supports them.\n- Derive the gated class list and the 2 m standing threshold from config and shared constants. #323's prototype hardcodes GATED_CLASSES = {park, rural, natural} and MIN_STANDING_M in lib/layers/tree_lines.py.\n- Don't use aerial darkness as an on-its-own signal: tall trees cast a shadow band about 10 blocks wide to their north, and #323's v1 put about 20 crowns in it.\nCheck: a normal build trial on a UK rural cell places hedge and belt trees with none on open pasture.\n"
+      "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nrequiresClaude true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game."
     },
     {
       "id": 361,
@@ -182,6 +178,46 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "Follow-ups from #337 (big-box roof follows the aerial, merged in fa3826d; findings in docs/plans/bigbox-roof-aerial.md):\n1. The roof_aerial palette should come from the shared roof-material catalogue (#355, config/roof-materials.json). 5 of its 9 materials are missing there: polished_andesite, polished_diorite, smooth_quartz, polished_deepslate, smooth_sandstone.\n2. PV detection needs blue minus red of at least 30, so black-cell or dark-grey UK arrays are never found. Expose blue_margin and min_cells on the CLI, or detect dark arrays too.\n3. The 0.4 m/px resolution gate (ppb < 2.5) can refuse exactly 0.4 m/px through float noise. Compare with an epsilon and test the boundary.\n4. Arrays at an angle to the block grid are laid as their rectangular outline. Arrays clipped at a cell edge (the western ends of Westquay's NW and SW arrays, in 42,-16) are dropped.\n5. Small CLI points:\n   - --replace-pv without --write does nothing silently;\n   - the mosaic name cross-check is skipped silently when the name has no zNN-WxH-TX-TY pattern;\n   - main() has no docstring;\n   - main, _footprint, _mosaic_affine and review_sheet have no tests.\n6. feature_build PvArraysTest gaps: a box spanning two roof levels (commonest-deck filter), zone_materials, a top block that is not roof material, and a no-pv_arrays build equal to the old output. Also fix the stale \"cell above is still free\" wording in the pv_rows docstring.\n"
+    },
+    {
+      "id": 365,
+      "title": "River builder: per-segment water levels with synthetic fixtures",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "l",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Split from #326 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. The sample-to-stepped-profile function already landed in #354 (lib/builds/water_level.py); reuse it rather than creating a parallel profile implementation.\n\nScope: extend the existing lib/builds/water_body.py spec loader and planner to accept an optional per-segment water-level profile, including an explicit mapping from ordered reach distances to water columns. Keep the existing integer water_level path compatible. Validate the new field and define unambiguous coverage of the outline, downstream ordering, levels and joins. Plan water, bed, clear-above and real shoreline bank heights from each column's local level; segment joins must not create internal bank walls. Preserve per-cell clipping and whole-body equivalence when a level step lies at a cell boundary. Keep this in the existing water-body builder and document the spec field there.\n\nAcceptance, synthetic only: flat profile reproduces today's single-level plan; absent profile leaves legacy plans unchanged; a descending reach has continuous intended water columns, correct local bed/bank heights and no bank wall at a step; union of adjacent clips equals the whole-body plan including a boundary step; malformed, overlapping, uncovered or upstream-rising profile assignments are refused. Extend test_water_body and use test_water_level as the existing profile contract. No real lidar reads, real-place spec generation, representative build dry run/apply or in-game judgment. The visual choice of how an actual river step should read and its real-data validation stay in #326.\n\nrequiresClaude false: this entire deliverable is tool schema/planner engineering and synthetic fixtures. This remains a stretch because it changes a spec schema; the ordinary model/effort rules still apply when dispatching it. Closing this task only unblocks the Claude trial; it does not satisfy #326."
+    },
+    {
+      "id": 366,
+      "title": "House builder: shared roof materials and pitched-roof geometry",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Split from #358 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. This is the concrete house_build integration already named by #356; update that reference to this ticket rather than filing another roof-sharing implementation.\n\nScope: implement the existing #358 code requirements in lib/builds/house_build.py. Add optional roof_pitch {label: rise_per_run} parallel to the existing string-valued roofs map; absent pitch keeps today's flatish behavior. Use roof_class, roof_blocks and validation from the existing lib/builds/roof_material.py (#355), including its full/slab/stair names, rather than inventing material suffixes or a new catalogue. Keep flatish slab rings. Pitched roofs use correctly oriented stairs, explicit inner/outer corner shapes via the existing roof_lint helper, supported columns, and a slab or opposed-stair ridge cap. Recompute ridge/chimney heights and handle group roofs. Extend the stair helper for shape, load_spec validation, module docstring and rules/terrace-builds.md schema guidance.\n\nAcceptance, synthetic only: fixture tests for square, L-shaped and group footprints; legacy flatish plans equal their prior output; pitched slope stairs face the higher neighbor with explicit corner states and full support; caps and chimneys use the recomputed ridge; materials resolve through the existing shared catalogue; invalid pitch/labels are rejected. Use synthetic roof plans for applicable lint/guard checks. Extend test_house_build and relevant roof tests. No existing-world spec reads, real-place material/pitch selection, representative build dry run or apply, or in-game review. Existing terrace.py/outbuildings.py material tables remain outside this ticket, as in #358; #356 retains their review.\n\nrequiresClaude false: code and fixture verification only. This is a stretch because the spec gains a field and roof geometry changes; normal model/effort approval still applies at dispatch. #358 retains the real-spec dry run and owner review for I-056 S-103; completing this task does not close that snag."
+    },
+    {
+      "id": 367,
+      "title": "Trees: first-return standing-height reader and gate fixtures",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Split from #359 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. The #323 findings and original #359 identify the production reader's last-return height as a cause of rejected hedge/belt crowns.\n\nScope: wire the existing first-return standing-height reader into lib/layers/trees_layer.py using lib/layers/tree_lines.py rather than adding another height reader. Establish and document one authoritative height/fallback contract, including the current mc_heights_float versus mc_heights()['diff'] discrepancy. Use cached first-return data where available and make missing-data/source provenance explicit. Align tree_lines.gated_crowns with the production gate's circular neighborhood instead of the prototype's square 5x5 window. Add coverage for missing first-return tiles, sample failures, a client lacking missing/sample, absent data, nonfinite samples, fallback and halo alignment. Update or retire scripts/tree_lines_trial.py's dependence on old tree-layer internals and pre-#350 crown tuples; reuse the current crown/species representation.\n\nAcceptance, synthetic only: fake clients/arrays prove first-return crown support is retained, source/fallback reporting is accurate, the gate helper agrees with the production circular gate including corner-only height, and missing evidence does not admit unsupported open-pasture crowns. Focused tests for tree_lines and trees_layer pass. No provider downloads, real cell reads, representative build dry runs/apply, interpretation of place evidence, or in-game judgment. Do not add the hedge/belt evidence source here; that is the paired follow-up split from #360.\n\nrequiresClaude false: reader/gate code plus synthetic regression tests. #359 retains the required normal rural-cell build trial and in-game verdict."
+    },
+    {
+      "id": 368,
+      "title": "Trees: class-configured hedge and belt evidence source",
+      "status": "blocked",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [367],
+      "requiresClaude": false,
+      "notes": "Split from #360 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. Depends on the offline first-return reader split from #359; the implementation can proceed after that code lands without waiting for #359's in-game trial. #360 itself retains its existing dependency on #359's completed trial.\n\nScope: integrate the existing lib/layers/tree_lines.py hedge/lane corridors and unmapped-belt evidence into the production trees gate. Configure permitted sources per land-use class through the existing config/land-use-classes.json trees.sources and land_use.tree_sources interface. Derive gated classes and standing-height thresholds from that configuration and shared constants; remove duplicate hardcoded GATED_CLASSES/MIN_STANDING_M policy from the prototype path where it duplicates the production contract. First-return standing-height support is required for the new source; aerial darkness alone must not admit a shadow band. Reuse the existing tree planner, source gate and crown/species representation. Preserve unrelated source behavior and exclusions.\n\nAcceptance, synthetic only: hedge and lane corridors admit supported crowns; an unmapped belt with first-return support is kept; a dark but low shadow band and unsupported open pasture stay clear; class opt-in/opt-out works; missing first-return evidence cannot silently turn darkness into this new source; output is deterministic and compatible with neighboring-cell evidence and existing crown/species tuples. Extend tree_lines, trees_layer and land_use tests as applicable. No real-world evidence selection or threshold tuning, representative dry run/apply, downloads or in-game checks.\n\nrequiresClaude false: source integration and fixture tests only. This remains a stretch planner change at dispatch; the usual model/effort rules apply. #360 retains choosing/tuning against real evidence, the normal rural-cell build trial and owner verdict."
     }
   ]
 }
