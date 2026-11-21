@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 364,
+  "nextTaskId": 365,
   "tasks": [
     
     
@@ -192,6 +192,16 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "Follow-up blocker found while closing the owner-authorized woodland wave (#347-#351). In #351 plan_woodland_decor.free_air calls ground_layer.is_air, which treats PLANTS as air. As a result it may overwrite an existing unowned plant above otherwise eligible woodland ground, contrary to the ticket air-only rule.\n\nScope: require literal Minecraft air/cave_air/void_air for woodland placement voxels; preserve existing plant blocks, including upper voxels of tall bushes/ferns. Keep other decor/ground callers and configuration shares unchanged. Add synthetic regression tests for an existing plant at surface+1 and at a required upper voxel, and retain successful placement in true air. Run focused decor/land-use tests, fresh read-only review, then required ship-branch merge locally (--no-push). No live-world reads/builds, registry/schema changes or new plant-state guesses; requiresClaude false. This is a small single-layer predicate fix, not a stretch.\n"
+    },
+    {
+      "id": 364,
+      "title": "Woodland floor: preserve scrub pasture inside overlapping woods",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Follow-up blocker from final #348 review: woodland_floor_columns admits columns from a wood/forest polygon before considering that the same columns are mapped as natural=scrub. With ground_texture.wood.scrub false, overlapping scrub therefore loses its existing #319 pasture palette. Require the class scrub opt-in for overlapping scrub as well as standalone scrub; preserve existing polygon-edge mask semantics, lawn/meadow exclusions and all other columns. Synthetic tests must cover overlapping wood and scrub with the default off, opt-in on, and reversed polygon order. Single-layer selector fix only; no world reads/builds or schema changes. Use focused ground/land-use tests, fresh review and local ship-branch merge. requiresClaude false; small firm predicate fix, not a stretch."
     }
   ]
 }
