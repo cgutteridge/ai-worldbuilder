@@ -65,6 +65,15 @@ Dry run unless `--apply`; `--apply` refuses a plan that already has a landed bui
   then each zone's mean
   aerial colour and a suggested block from the site_kit colour table
   (suggestion only — not a gate).
+  Material choice uses one slope rule (`lib/builds/roof_material.py`,
+  catalogue `config/roof-materials.json`). Flat(ish) means rise/run up to
+  1 in 2 (`<= 0.5`): any catalogue full block or slab. Pitched means steeper
+  than that: the material must be a triad (full block, slab and stairs).
+  `kind: flat` is flatish and `kind: pitched` is pitched. The rule gates
+  materials only; lidar flattening stays its own detection step. A pitched
+  material with no triad keeps the full-block fallback, and the dry run lists
+  a warning without rewriting the spec. Names outside the catalogue, including
+  wall and floor materials, keep their historical full/slab/stairs names.
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
   `site_kit.apply` refuses cells owned by builds not listed here)

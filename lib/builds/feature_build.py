@@ -23,6 +23,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  Pitched roofs may set material_regions [{level, polygon}]
                  from photo/aerial evidence to assign a roof's material across
                  lidar-zone boundaries. Unmapped columns retain zone lookup.
+                 Material choice: flat(ish) (kind flat, rise/run <= 1 in 2) may
+                 use any catalogue full block or slab; pitched needs a triad
+                 (roof_material.py, config/roof-materials.json). Lidar
+                 flattening is a separate step. A missing triad falls back to
+                 the full block and is listed, not rewritten.
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
   wall / floor   wall and interior floor materials (defaults bricks / smooth_stone)
   floor_min      minimum floor y or null
@@ -141,6 +146,7 @@ from script_env import ROOT, TOOL_ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 from chimney import chimney_layers, validate_chimney
+from roof_material import family_variants, roof_material_warnings
 import facade_plan as facade_plan_mod  # noqa: E402
 import land_use  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
@@ -918,39 +924,21 @@ def stair(mat: str, facing: str, half: str = 'bottom') -> str:
 
 # Cardinal deltas for pitched-roof upslope detection.
 _ROOF_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
-# Roof materials with no stair / slab block in vanilla 1.21 (never invent another mat).
-_ROOF_NO_STAIRS = frozenset({'smooth_stone'})
-_ROOF_NO_SLAB = frozenset()
-_ROOF_FULL_NAME = {
-    'brick': 'bricks',
-    'mud_brick': 'mud_bricks',
-    'deepslate_tile': 'deepslate_tiles',
-    'stone_brick': 'stone_bricks',
-}
 
 
 def block_family_variants(mat: str) -> dict[str, str]:
     """Full / slab / stairs short names for a roof material family.
 
-    Always includes ``full``. ``slab`` and ``stairs`` are present only when that
-    variant exists for ``mat`` (vanilla roof set; never substitutes another
-    material).
+    Thin call into :func:`roof_material.family_variants`. Catalogue families
+    list only the variants they have. Other names keep the historical prefix
+    and never borrow another material. Pitched roofs with no stair still fall
+    back to the full block in :func:`pitched_roof_states`; this function does
+    not raise.
 
     @param mat: roof material prefix (e.g. ``brick``, ``smooth_stone``)
     @returns: ``{'full': ...}`` plus optional ``slab`` / ``stairs``
     """
-    mat = mat.replace('minecraft:', '').split('[', 1)[0]
-    if mat.endswith('_slab'):
-        mat = mat[: -len('_slab')]
-    if mat.endswith('_stairs'):
-        mat = mat[: -len('_stairs')]
-    full = _ROOF_FULL_NAME.get(mat, mat)
-    out = {'full': full}
-    if mat not in _ROOF_NO_SLAB:
-        out['slab'] = f'{mat}_slab'
-    if mat not in _ROOF_NO_STAIRS:
-        out['stairs'] = f'{mat}_stairs'
-    return out
+    return family_variants(mat)
 
 
 def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bottom') -> str:
@@ -3461,6 +3449,12 @@ class Build:
             print(line)
         for line in self.footprint_overlap_report():
             print(line)
+        # Material warnings are listed here, beside the unknown-id check.
+        # The spec is not rewritten; a pitched roof with no triad still
+        # places the full block (pitched_roof_states).
+        for f in self.features:
+            for line in roof_material_warnings(f.roof):
+                print(line)
         valid_ids = {
             line for line in (TOOL_ROOT / 'config/minecraft-block-ids-26.2.txt').read_text().splitlines()
             if line and not line.startswith('#')
