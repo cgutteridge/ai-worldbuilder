@@ -67,10 +67,10 @@
     {
       "id": 326,
       "title": "River levels: real-lidar profile and in-game stepped-reach trial",
-      "status": "blocked",
+      "status": "todo",
       "priority": "low",
       "complexity": "m",
-      "blockedBy": [365],
+      "blockedBy": [],
       "notes": "Split 2026-11-21: the sample-to-profile pure function already landed in #354. Spec validation, optional per-segment levels and water/bed/bank/clipping geometry are now fixture-only task #365. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task waits for that implementation and retains the real-world work.\n\nScope: sample real lidar along the Itchen reach; interpret the samples and select a stepped level profile using the existing water_level_profile function; prepare the real-place spec through the implemented per-segment interface. Choose and assess how level transitions should look in the actual reach. Run the representative dry run and authorized apply under the site lock, then inspect the reach across at least two cells. Store place evidence, specs and trial artifacts in the active world checkout.\n\nAcceptance: the reach follows the real terrain, with no stranded water, dry bed, artificial internal bank wall or broken join at the cell boundary; record the in-game result and owner verdict. If fixtures pass but the real transition is wrong, diagnose it and file/fix the resulting issue rather than treating offline completion as the trial verdict.\n\nrequiresClaude true: real place evidence becomes a build spec, a representative build is run and the result is judged in game. Closing #365 only unblocks this trial. The ordinary stretch and model/effort rules still apply to any further schema/geometry change."
     , "requiresClaude": true},
     
@@ -179,16 +179,7 @@
       "requiresClaude": false,
       "notes": "Follow-ups from #337 (big-box roof follows the aerial, merged in fa3826d; findings in docs/plans/bigbox-roof-aerial.md):\n1. The roof_aerial palette should come from the shared roof-material catalogue (#355, config/roof-materials.json). 5 of its 9 materials are missing there: polished_andesite, polished_diorite, smooth_quartz, polished_deepslate, smooth_sandstone.\n2. PV detection needs blue minus red of at least 30, so black-cell or dark-grey UK arrays are never found. Expose blue_margin and min_cells on the CLI, or detect dark arrays too.\n3. The 0.4 m/px resolution gate (ppb < 2.5) can refuse exactly 0.4 m/px through float noise. Compare with an epsilon and test the boundary.\n4. Arrays at an angle to the block grid are laid as their rectangular outline. Arrays clipped at a cell edge (the western ends of Westquay's NW and SW arrays, in 42,-16) are dropped.\n5. Small CLI points:\n   - --replace-pv without --write does nothing silently;\n   - the mosaic name cross-check is skipped silently when the name has no zNN-WxH-TX-TY pattern;\n   - main() has no docstring;\n   - main, _footprint, _mosaic_affine and review_sheet have no tests.\n6. feature_build PvArraysTest gaps: a box spanning two roof levels (commonest-deck filter), zone_materials, a top block that is not roof material, and a no-pv_arrays build equal to the old output. Also fix the stale \"cell above is still free\" wording in the pv_rows docstring.\n"
     },
-    {
-      "id": 365,
-      "title": "River builder: per-segment water levels with synthetic fixtures",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "l",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Split from #326 on 2026-11-21. Plan: docs/plans/claude-task-splits-2026-11-21.md. The sample-to-stepped-profile function already landed in #354 (lib/builds/water_level.py); reuse it rather than creating a parallel profile implementation.\n\nScope: extend the existing lib/builds/water_body.py spec loader and planner to accept an optional per-segment water-level profile, including an explicit mapping from ordered reach distances to water columns. Keep the existing integer water_level path compatible. Validate the new field and define unambiguous coverage of the outline, downstream ordering, levels and joins. Plan water, bed, clear-above and real shoreline bank heights from each column's local level; segment joins must not create internal bank walls. Preserve per-cell clipping and whole-body equivalence when a level step lies at a cell boundary. Keep this in the existing water-body builder and document the spec field there.\n\nAcceptance, synthetic only: flat profile reproduces today's single-level plan; absent profile leaves legacy plans unchanged; a descending reach has continuous intended water columns, correct local bed/bank heights and no bank wall at a step; union of adjacent clips equals the whole-body plan including a boundary step; malformed, overlapping, uncovered or upstream-rising profile assignments are refused. Extend test_water_body and use test_water_level as the existing profile contract. No real lidar reads, real-place spec generation, representative build dry run/apply or in-game judgment. The visual choice of how an actual river step should read and its real-data validation stay in #326.\n\nrequiresClaude false: this entire deliverable is tool schema/planner engineering and synthetic fixtures. This remains a stretch because it changes a spec schema; the ordinary model/effort rules still apply when dispatching it. Closing this task only unblocks the Claude trial; it does not satisfy #326."
-    },
+    
     {
       "id": 366,
       "title": "House builder: shared roof materials and pitched-roof geometry",

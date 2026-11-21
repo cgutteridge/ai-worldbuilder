@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Water-body features (ponds): plan vocabulary, provenance and build (#148).
+"""Water-body features (ponds and rivers): spec, provenance and build.
 
 A water body is a cell-plan feature like a building: outline columns, a water
 surface level, a bank ring and an optional shoreline edge. Ground leaves mapped
@@ -13,6 +13,25 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   modifies       earlier builds this one may overwrite (default [])
   outline        [[x, z], ...] water columns (from the vector map or aerial)
   water_level    integer Y of the water surface block
+  water_level_profile  optional {"segments": [{"start": 0, "end": 6, "level": 55},
+                           {"start": 6, "end": 12, "level": 54}],
+                           "columns": [[x, z, distance], ...]}
+                 Segments serialize water_level.water_level_profile() output.
+                 Distances increase downstream; segments must be contiguous,
+                 ordered and non-rising, with integer levels. Only a single
+                 segment may have zero length. Required water_level equals the
+                 first segment's level; the profile supplies every local level.
+                 Each outline column (including clip context) appears exactly
+                 once in columns, ordered by non-decreasing finite distance,
+                 within the segment coverage. A join belongs to the downstream
+                 segment; the final endpoint belongs to the last segment.
+                 Water, bed and clear_above use each column's local level.
+                 Banks use the nearest water column in N8 distance; ties use
+                 smallest reach distance, then x, z, before clipping. Only the
+                 whole outline's true shoreline is banked, never segment joins.
+                 Adjacent clips must retain the same segment profile and column
+                 distances in their CLIP_REACH context; do not restart distances
+                 or recompute profiles at cell edges.
   depth          water column height including the surface (default 1; >= 1)
   floor          bed material under the deepest water (default dirt)
   clear_above    optional int >= 0 (default 0): air placed over the water columns
@@ -42,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -49,6 +69,7 @@ from typing import Any
 
 import cellmath
 import provenance as prov
+from water_level import LevelSegment, level_at_distance
 from site_kit import Plan, apply, preview  # noqa: E402
 
 N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
@@ -123,6 +144,65 @@ def _validate_edge(path: str | Path | None, raw: Any) -> dict[str, str] | None:
     return {'material': material}
 
 
+def _validate_level_profile(path: str | Path | None, raw: Any,
+                            outline: Sequence[tuple[int, int]], level: int) -> dict:
+    """Validate serialized profiler output and its explicit column assignments."""
+    if not isinstance(raw, dict):
+        _fail(path, 'water_level_profile must be an object {"segments", "columns"}')
+    rows = raw.get('segments')
+    if not isinstance(rows, list) or not rows:
+        _fail(path, 'water_level_profile.segments must be a non-empty list')
+    segments: list[LevelSegment] = []
+    for row in rows:
+        if not isinstance(row, dict) or not all(k in row for k in ('start', 'end', 'level')):
+            _fail(path, 'water_level_profile segment must have start, end and level')
+        start, end, local = row['start'], row['end'], row['level']
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                   and math.isfinite(v) for v in (start, end)):
+            _fail(path, 'water_level_profile segment distances must be finite numbers')
+        if end < start or (end == start and len(rows) != 1):
+            _fail(path, 'water_level_profile segments must have positive length (except a single point)')
+        if not isinstance(local, int) or isinstance(local, bool):
+            _fail(path, 'water_level_profile segment level must be an int')
+        if segments and start != segments[-1].end:
+            _fail(path, 'water_level_profile segments must be ordered and contiguous without gaps or overlaps')
+        if segments and local > segments[-1].level:
+            _fail(path, 'water_level_profile levels must not rise downstream')
+        segments.append(LevelSegment(start, end, local))
+    if segments[0].level != level:
+        _fail(path, 'water_level must equal the first water_level_profile segment level')
+    columns = raw.get('columns')
+    if not isinstance(columns, list) or not columns:
+        _fail(path, 'water_level_profile.columns must be a non-empty list of [x, z, distance]')
+    outline_set = set(outline)
+    seen: set[tuple[int, int]] = set()
+    previous = None
+    for row in columns:
+        if not isinstance(row, (list, tuple)) or len(row) != 3:
+            _fail(path, 'water_level_profile column must be [x, z, distance]')
+        x, z, distance = row
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in (x, z)):
+            _fail(path, 'water_level_profile column coordinates must be integers')
+        if (not isinstance(distance, (int, float)) or isinstance(distance, bool)
+                or not math.isfinite(distance)):
+            _fail(path, 'water_level_profile column distance must be a finite number')
+        if previous is not None and distance < previous:
+            _fail(path, 'water_level_profile columns must be ordered downstream by distance')
+        previous = distance
+        if (x, z) in seen:
+            _fail(path, 'water_level_profile columns overlap: each outline column must appear once')
+        if (x, z) not in outline_set:
+            _fail(path, 'water_level_profile column is outside outline')
+        seen.add((x, z))
+        try:
+            level_at_distance(segments, distance)
+        except ValueError as exc:
+            _fail(path, f'water_level_profile column: {exc}')
+    if seen != outline_set:
+        _fail(path, 'water_level_profile columns must cover every outline column, including clip context')
+    return {'segments': [s._asdict() for s in segments], 'columns': [list(c) for c in columns]}
+
+
 def _parse_clip_coord(token: str) -> int:
     return -int(token[1:]) if token.startswith('m') else int(token)
 
@@ -187,6 +267,9 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     level = spec['water_level']
     if not isinstance(level, int) or isinstance(level, bool):
         _fail(path, 'water_level must be an int')
+    profile = None
+    if 'water_level_profile' in spec:
+        profile = _validate_level_profile(path, spec['water_level_profile'], outline, level)
     depth = spec.get('depth', DEFAULT_DEPTH)
     if not isinstance(depth, int) or isinstance(depth, bool) or depth < 1:
         _fail(path, 'depth must be an int >= 1')
@@ -222,6 +305,8 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
         'clip': clip,
         'provenance': provenance,
     }
+    if profile is not None:
+        out['water_level_profile'] = profile
     return out
 
 
@@ -476,11 +561,28 @@ def _shoreline(outline: set[tuple[int, int]], bank: set[tuple[int, int]]) -> set
     }
 
 
+def _bank_levels(levels: Mapping[tuple[int, int], int],
+                 distances: Mapping[tuple[int, int], float], width: int) -> dict[tuple[int, int], int]:
+    """Grow N8 banks with nearest-water ownership, resolving ties upstream."""
+    owners = {q: (distances[q], *q) for q in levels}
+    frontier = owners
+    for _ in range(width):
+        grow = {}
+        for (x, z), source in frontier.items():
+            for dx, dz in N8:
+                q = (x + dx, z + dz)
+                if q not in owners and (q not in grow or source < grow[q]):
+                    grow[q] = source
+        owners.update(grow)
+        frontier = grow
+    return {q: levels[(source[1], source[2])] for q, source in owners.items() if q not in levels}
+
+
 def build(spec: Mapping[str, Any]) -> Plan:
     """Build a water-body ``Plan`` from a validated spec.
 
-    Places floor under each outline column, water up to ``water_level``, a bank
-    ring at the water surface, and optional shoreline edge material. With ``clip``
+    Places floor, water and air using each column's local profile level (or
+    ``water_level``), a bank ring and optional shoreline edge. With ``clip``
     only the clip cell's columns are written; the ring is still worked out on the
     whole outline, so water across the cell edge is never banked (#321).
 
@@ -493,7 +595,17 @@ def build(spec: Mapping[str, Any]) -> Plan:
     floor = str(spec['floor'])
     bank_spec = spec['bank']
     edge_spec = spec.get('edge')
-    bank = _bank_ring(outline, int(bank_spec['width']))
+    profile = spec.get('water_level_profile')
+    levels = dict.fromkeys(outline, level)
+    bank_levels = {}
+    if profile:
+        segments = [LevelSegment(**row) for row in profile['segments']]
+        distances = {(x, z): distance for x, z, distance in profile['columns']}
+        levels = {q: level_at_distance(segments, distance) for q, distance in distances.items()}
+        bank_levels = _bank_levels(levels, distances, int(bank_spec['width']))
+        bank = set(bank_levels)
+    else:
+        bank = _bank_ring(outline, int(bank_spec['width']))
     shore = _shoreline(outline, bank) if edge_spec else set()
     clip = spec.get('clip')
     if clip:
@@ -502,15 +614,16 @@ def build(spec: Mapping[str, Any]) -> Plan:
         bank = {q for q in bank if cellmath.cell_of(*q) == cell}
 
     plan = Plan(str(spec['name']))
-    bed_y = level - depth
     for x, z in outline:
+        local = levels[(x, z)]
+        bed_y = local - depth
         plan.set(x, bed_y, z, floor)
-        for y in range(bed_y + 1, level + 1):
+        for y in range(bed_y + 1, local + 1):
             plan.set(x, y, z, 'water')
-        for y in range(level + 1, level + int(spec.get('clear_above', 0)) + 1):
+        for y in range(local + 1, local + int(spec.get('clear_above', 0)) + 1):
             plan.set(x, y, z, 'air')
-    bank_y = level + int(bank_spec.get('rise', 0))
     for x, z in bank:
+        bank_y = bank_levels.get((x, z), level) + int(bank_spec.get('rise', 0))
         if (x, z) in shore and edge_spec:
             plan.set(x, bank_y, z, edge_spec['material'])
         else:
