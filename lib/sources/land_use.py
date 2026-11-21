@@ -15,6 +15,7 @@ inheritance from neighbours.
 from __future__ import annotations
 
 import json
+import sys
 from functools import lru_cache
 
 from script_env import TOOL_ROOT
@@ -32,6 +33,7 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 TREE_SOURCES = ('mapped', 'wood', 'lidar')
+TREE_SPECIES = ('oak', 'birch', 'dark_oak')
 GROUND_TEXTURE_PALETTES = ('pasture', 'meadow')  # open-grass textures (#319); woodland floor is #318
 GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
@@ -100,13 +102,20 @@ def validate_table(doc: dict) -> dict:
                 raise TableError(f'{cid}: surface.path_widen {widen!r} not null or a whole number of blocks 1..{MAX_PATH_WIDEN}')
         trees = row.get('trees')
         if trees is not None:
-            if not isinstance(trees, dict) or set(trees) - {'sources'}:
-                raise TableError(f'{cid}: trees must be null or a map with only sources')
+            if not isinstance(trees, dict) or set(trees) - {'sources', 'species_weights'}:
+                raise TableError(f'{cid}: trees must be null or a map with sources and species_weights')
             sources = trees.get('sources')
             if sources is not None and (not isinstance(sources, list)
                                         or any(source not in TREE_SOURCES for source in sources)
                                         or len(sources) != len(set(sources))):
                 raise TableError(f'{cid}: trees.sources must be null or a list of distinct values from {TREE_SOURCES}')
+            weights = trees.get('species_weights')
+            if weights is not None:
+                if (not isinstance(weights, dict) or not weights or set(weights) - set(TREE_SPECIES)
+                        or any(isinstance(w, bool) or not isinstance(w, (int, float))
+                               or not 0 <= w <= sys.float_info.max for w in weights.values())
+                        or not 0 < sum(weights.values()) <= sys.float_info.max):
+                    raise TableError(f'{cid}: trees.species_weights must map {TREE_SPECIES} to nonnegative finite weights with a positive total')
         _validate_ground_texture(cid, row.get('ground_texture'))
         match = row['match']
         for col in ('building', 'use', 'cover'):
@@ -263,6 +272,18 @@ def tree_sources(cls: str) -> tuple[str, ...] | None:
     """
     sources = (defaults(cls).get('trees') or {}).get('sources')
     return tuple(sources) if sources is not None else None
+
+
+def tree_species_weights(cls: str) -> dict:
+    """Configured per-crown species weights; absent/null keeps the original oak-only output.
+
+    The shipped woodland mix is a placeholder for #318, not evidence of local species.
+
+    @param cls: land-use class; unknown ids use the unknown row
+    @returns: species-to-weight map (a copy, safe for callers to change)
+    """
+    weights = (defaults(cls).get('trees') or {}).get('species_weights')
+    return dict(weights) if weights is not None else {'oak': 1}
 
 
 def ground_texture(cls: str) -> dict | None:

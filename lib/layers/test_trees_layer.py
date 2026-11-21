@@ -1124,5 +1124,145 @@ class TestBoxFilter(unittest.TestCase):
             self.assertEqual(tl.cover_pixels(path)[:, 36:54].mean(), 0)
 
 
+class TestSpeciesMix(unittest.TestCase):
+    def test_seeded_species_mix_and_config_order(self):
+        from collections import Counter
+        weights = {'oak': 60, 'birch': 25, 'dark_oak': 15}
+        reversed_weights = dict(reversed(list(weights.items())))
+        positions = [(i % 128, i // 128) for i in range(10000)]
+        species = [tl.choose_species((0, 0), x, z, weights) for x, z in positions]
+        self.assertEqual(species, [tl.choose_species((0, 0), x, z, reversed_weights)
+                                   for x, z in positions])
+        self.assertNotEqual(species[:128], [tl.choose_species((1, 0), x, z, weights)
+                                           for x, z in positions[:128]])
+        counts = Counter(species)
+        for name, weight in weights.items():
+            self.assertAlmostEqual(counts[name] / len(species), weight / 100, delta=.02)
+
+    def test_oak_only_matches_pre_change_voxel_fixtures(self):
+        import hashlib
+        import json
+        # Captured from the original voxels_for on e521d10; tests do not recalculate an oracle.
+        fixtures = {
+            1.5: 'bf07ab7e73f8d913c2e18a8f8b578b5dc846f7af746b203a74a6a24b23b1da8b',
+            2.5: '4ff47eb48b5141322591c4c87ec774c93a68c98a54b2141d3084d45b32e72c8e',
+            4.5: '515b87f1ee526294c4dff421730ec167ab6d2c8842fab206d358665b2610e11d',
+            6.0: '1d7455b786b435b24f978175b3b02d2afe95e560da7e6bde91d4c51426c0045f',
+        }
+        for radius, expected in fixtures.items():
+            with self.subTest(radius=radius):
+                species = tl.choose_species((0, 0), 20, 24, {'oak': 100})
+                vox = tl.voxels_for(20, 24, 60, radius, species=species)
+                payload = json.dumps([[*p, b] for p, b in sorted(vox.items())], separators=(',', ':'))
+                self.assertEqual(hashlib.sha256(payload.encode()).hexdigest(), expected)
+                self.assertNotIn('birch_log', vox.values())
+
+    def test_each_species_crown_is_connected_and_trunks_start_at_ground(self):
+        silhouettes = {}
+        for species in ('oak', 'birch', 'dark_oak'):
+            for seed_x in range(10, 20):
+                with self.subTest(species=species, x=seed_x):
+                    vox = tl.voxels_for(seed_x, 24, 60, 4., species=species)
+                    self.assertTrue(all(p[1] > 60 for p in vox))
+                    logs = {p for p, b in vox.items() if 'log' in b}
+                    roots = {(x, z) for x, _y, z in logs}
+                    for x, z in roots:
+                        self.assertIn((x, 61, z), logs)
+                    connected = set()
+                    frontier = [next(iter(logs))]
+                    while frontier:
+                        p = frontier.pop()
+                        if p in connected:
+                            continue
+                        connected.add(p)
+                        for axis in range(3):
+                            for delta in (-1, 1):
+                                q = list(p)
+                                q[axis] += delta
+                                q = tuple(q)
+                                if q in vox and q not in connected:
+                                    frontier.append(q)
+                    self.assertEqual(connected, set(vox), 'every leaf reaches the grounded trunk')
+                    if seed_x == 10:
+                        silhouettes[species] = {(x - seed_x, y - 60, z - 24) for x, y, z in vox}
+                    self.assertTrue(all(b.startswith(species + '_') for b in vox.values()))
+        self.assertNotEqual(silhouettes['oak'], silhouettes['birch'])
+        self.assertNotEqual(silhouettes['birch'], silhouettes['dark_oak'])
+
+    def plan_species(self, crowns, classes, weights, *, footprints=(), terrain=None, road=(), owned=(), masked=None):
+        from site_kit import Plan
+        inputs = tl.TreeInputs(crowns, 0, set(), set(), set(owned), None, masked or {}, set(footprints),
+                               land_classes=classes, terrain=terrain, road=set(road))
+        class Ground:
+            def block(self, x, y, z):
+                height = 60 if terrain is None else int(terrain['terrain'][x, z])
+                return 'minecraft:grass_block' if y <= height else 'minecraft:air'
+        with mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')), \
+                mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch('land_use.tree_species_weights', side_effect=lambda cid: weights.get(cid, {'oak': 1})):
+            return tl.plan_cell((0, 0), Plan('species'), Ground(), inputs)
+
+    def test_species_report_and_existing_mask_round_trip(self):
+        from pass_mask import build_mask, mask_placements, plan_undo
+        crowns = [(20, 20, 3.), (60, 60, 3.), (100, 100, 3.)]
+        classes = {(20, 20): 'natural', (60, 60): 'park', (100, 100): 'rural'}
+        weights = {'natural': {'birch': 1}, 'park': {'dark_oak': 1}, 'rural': {'oak': 1}}
+        placed, report = self.plan_species(crowns, classes, weights)
+        self.assertEqual(report['skipped'], [])
+        self.assertEqual(report['species'], {'birch': 1, 'dark_oak': 1, 'oak': 1})
+        self.assertEqual([row['species'] for row in report['tree_species']], ['birch', 'dark_oak', 'oak'])
+        self.assertEqual(placed, self.plan_species(crowns, classes, weights)[0])
+        mask = tl.annotate_mask_species(build_mask('trees', (0, 0), 'species', placed, lambda p: True),
+                                        report['species'])
+        self.assertEqual(mask['species'], report['species'])
+        decoded = mask_placements(mask)
+        self.assertEqual(decoded, placed)
+        removals, conflicts = plan_undo(mask, decoded.get)
+        self.assertEqual(conflicts, [])
+        self.assertEqual(set(removals), set(placed))
+        for species in report['species']:
+            self.assertIn(species + '_log', mask['palette'])
+
+    def test_missing_class_evidence_and_oak_only_config_preserve_old_plan(self):
+        crown = (20, 24, 4.5)
+        for classes, weights in (({}, {}), ({(20, 24): 'natural'}, {'natural': {'oak': 100}})):
+            with self.subTest(classes=classes):
+                placed, report = self.plan_species([crown], classes, weights)
+                self.assertEqual(placed, tl.voxels_for(20, 24, 60, 4.5))
+                self.assertEqual(report['species'], {'oak': 1})
+
+    def test_bushes_stay_out_of_the_species_mix(self):
+        placed, report = self.plan_species([(20, 24, 1.5)], {(20, 24): 'natural'},
+                                           {'natural': {'birch': 1}})
+        self.assertTrue(placed)
+        self.assertEqual(report['species'], {})
+        self.assertEqual(report['tree_species'], [])
+        self.assertTrue(all('log' not in block for block in placed.values()))
+
+    def test_wide_species_respects_all_root_feature_columns(self):
+        placed, report = self.plan_species([(20, 24, 3.)], {(20, 24): 'natural'},
+                                           {'natural': {'dark_oak': 1}}, footprints={(21, 24)})
+        self.assertEqual(placed, {})
+        self.assertEqual(report['skipped'][0][-1], 'feature zone')
+
+    def test_wide_species_requires_every_root_at_the_same_terrain_height(self):
+        hm = {'x0': 0, 'z0': 0, 'terrain': np.full((128, 128), 60)}
+        hm['terrain'][21, 24] = 59
+        placed, report = self.plan_species([(20, 24, 3.)], {(20, 24): 'natural'},
+                                           {'natural': {'dark_oak': 1}}, terrain=hm)
+        self.assertEqual(placed, {})
+        self.assertEqual(report['skipped'][0][-1], 'uneven trunk ground')
+
+    def test_wide_species_secondary_roots_respect_ownership_and_roads(self):
+        for inputs, reason in (({'road': {(21, 24)}}, 'carriageway'),
+                               ({'owned': {(21, 61, 24)}}, 'feature above terrain'),
+                               ({'masked': {(21, 61, 24): 'decor 0,0'}}, 'trunk blocked')):
+            with self.subTest(inputs=inputs):
+                placed, report = self.plan_species([(20, 24, 3.)], {(20, 24): 'natural'},
+                                                   {'natural': {'dark_oak': 1}}, **inputs)
+                self.assertEqual(placed, {})
+                self.assertEqual(report['skipped'][0][-1], reason)
+
+
 if __name__ == '__main__':
     unittest.main()
