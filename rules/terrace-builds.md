@@ -13,10 +13,19 @@ docstring):
 
 - `name` — plan / cells-record name
 - `ways` — `{osm_way_id: label}` footprints to build
-- `roofs` — `{label: slab_material}` (e.g. brick, mud_brick, deepslate_tile).
+- `roofs` — `{label: roof_material}` (e.g. brick, mud_brick, deepslate_tile).
   The same flat(ish)/pitched rule as features: rise/run up to 1 in 2 may be
   any full block or slab in `config/roof-materials.json`; steeper than that
   needs a triad (full block, slab and stairs). See `rules/feature-builds.md`.
+- `roof_pitch` — optional `{label: rise_per_run}`, finite numbers from 0 to 1.
+  Missing labels default to 0.5. At or below 0.5 the existing half-block slab
+  rings remain unchanged; above 0.5 the roof rises inward at the supplied ratio,
+  snapped down to half-block heights, with stairs, explicit corner shapes,
+  solid underlay and slab or opposed-stair ridge caps. Full-only flatish
+  materials use full blocks instead of inventing a slab variant. Pitched
+  materials without a catalogue triad are refused with shared suggestions.
+  `mode: group` labels must have equal effective pitches; the first label's
+  material covers the shared roof, as before. Different pitches need `mode: each`.
 - `groups` — `[{nos, mode: each|group, front: N|S|E|W}]`
 - `modifies` — earlier builds this plan may overwrite (explicit list;
   `site_kit.apply` refuses cells owned by builds not listed here)

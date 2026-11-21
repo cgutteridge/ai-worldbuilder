@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import tempfile
@@ -85,6 +86,192 @@ class SpecTest(unittest.TestCase):
                        {'notes': 'FEATURE PATH (scripts/feature_build.py)'}):
             with self.subTest(change=change), self.assertRaisesRegex(SystemExit, 'scripts/feature_build.py'):
                 H.load_spec(self.write({**good, **change}))
+
+
+class RoofSpecTest(unittest.TestCase):
+    write = SpecTest.write
+
+    def spec(self, **changes):
+        return {'name': 'roof', 'ways': {'1': 'A', '2': 'B'},
+                'roofs': {'A': 'brick', 'B': 'brick'},
+                'groups': [{'nos': ['A', 'B'], 'front': 'N', 'mode': 'group'}],
+                **changes}
+
+    def test_pitch_values_and_labels_are_checked(self):
+        for pitch in (-1, 1.01, 10 ** 400, True, False, '1', None, float('nan'), float('inf')):
+            with self.subTest(pitch=pitch), self.assertRaisesRegex(SystemExit, 'roof_pitch'):
+                H.load_spec(self.write(self.spec(roof_pitch={'A': pitch})))
+        for pitches in ([], None, {'C': 1}):
+            with self.subTest(pitches=pitches), self.assertRaisesRegex(SystemExit, 'roof_pitch'):
+                H.load_spec(self.write(self.spec(roof_pitch=pitches)))
+        missing_roof = self.spec(roofs={'A': 'brick'}, roof_pitch={'B': 1})
+        with self.assertRaisesRegex(SystemExit, 'needs a way and a roof'):
+            H.load_spec(self.write(missing_roof))
+
+    def test_shared_roof_pitch_requires_equal_effective_values(self):
+        for pitches in ({'A': 1}, {'A': 0.5, 'B': 0.25}):
+            with self.subTest(pitches=pitches), self.assertRaisesRegex(SystemExit, 'equal roof_pitch'):
+                H.load_spec(self.write(self.spec(roof_pitch=pitches)))
+        for pitches in ({}, {'A': 0.5}, {'A': 1, 'B': 1}):
+            self.assertEqual(H.load_spec(self.write(self.spec(roof_pitch=pitches)))['roof_pitch'], pitches)
+        each = [{'nos': ['A', 'B'], 'front': 'N', 'mode': 'each'}]
+        H.load_spec(self.write(self.spec(groups=each, roof_pitch={'A': 1})))
+
+    def test_shared_material_validation_uses_the_half_pitch_boundary(self):
+        for pitch in (0, 0.5):
+            H.load_spec(self.write(self.spec(roofs={'A': 'smooth_stone', 'B': 'terracotta'},
+                                             roof_pitch={'A': pitch, 'B': pitch})))
+        for material in ('smooth_stone', 'terracotta'):
+            with self.subTest(material=material), self.assertRaisesRegex(SystemExit, 'not a pitched triad'):
+                H.load_spec(self.write(self.spec(roofs={'A': material, 'B': material},
+                                                 roof_pitch={'A': 0.501, 'B': 0.501})))
+
+
+class RoofGeometryTest(unittest.TestCase):
+    """Synthetic footprint plans only; legacy hashes were captured before #366."""
+
+    @staticmethod
+    def footprints(kind):
+        if kind == 'square':
+            return [{(x, z) for x in range(7) for z in range(7)}]
+        if kind == 'L':
+            return [{(x, z) for x in range(10) for z in range(10) if x < 5 or z < 5}]
+        return [{(x, z) for x in range(lo, hi) for z in range(8)}
+                for lo, hi in ((0, 6), (6, 12))]
+
+    def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None):
+        from site_kit import Plan
+        parts = parts or self.footprints(kind)
+        labels = [str(i) for i in range(len(parts))]
+        group = {'nos': labels, 'front': 'N', 'mode': mode}
+        b = H.Build.__new__(H.Build)
+        b.groups, b.houses = [group], []
+        for label, cells in zip(labels, parts):
+            house = H.House(label, cells, group)
+            house.b = 30
+            b.houses.append(house)
+        b.owner = {c: i for i, cells in enumerate(parts) for c in cells}
+        b.foreign, b.shared = set(), set()
+        b.spec = {'roofs': dict.fromkeys(labels, material)}
+        if pitch is not None:
+            b.spec['roof_pitch'] = dict.fromkeys(labels, pitch)
+        b.p = Plan('synthetic_roof')
+        b.roof()
+        return b.p
+
+    def test_legacy_flatish_plans_match_pre_change_output(self):
+        expected = {
+            'square': '7064076ad3685a3200f7754feb188c7510428bd58d9acea287d5bb611169d8e0',
+            'L': '4d42eae5036129354e47c70c47cc097250f4132c2157131a1ca35bcc829d885b',
+            'group': '4da5be58289db1ca95333f5abb8922aa388ec881b6a06a223eb7323c85640dd7',
+        }
+        for kind, digest in expected.items():
+            for pitch in (None, 0, 0.25, 0.5):
+                with self.subTest(kind=kind, pitch=pitch):
+                    short = {q: state.removeprefix('minecraft:')
+                             for q, state in self.plan(kind, pitch).cells.items()}
+                    self.assertEqual(hashlib.sha256(json.dumps(sorted(short.items())).encode()).hexdigest(), digest)
+
+    def test_pitched_shapes_lint_and_full_underlay(self):
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        for kind in ('square', 'L', 'group'):
+            with self.subTest(kind=kind):
+                p = self.plan(kind, 1)
+                stairs = {q: s for q, s in p.cells.items() if '_stairs[' in s}
+                self.assertTrue(stairs)
+                self.assertTrue(any('shape=outer_' in s for s in stairs.values()))
+                if kind == 'L':
+                    self.assertTrue(any('shape=inner_' in s for s in stairs.values()))
+                self.assertEqual(stair_shape_mismatches(p.cells), [])
+                self.assertEqual(ridge_jogs(p.cells), [])
+                H.guard_roof_jogs(p)
+                for (x, y, z), state in stairs.items():
+                    self.assertIn('shape=', state)
+                    self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
+                for q in p.keep_slab_cells:
+                    self.assertIn('type=bottom', p.cells[q])
+                    x, y, z = q
+                    self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
+                # Owned roof columns stay solid from wall plate to the membrane.
+                from roof_lint import _tops
+                for cells in self.footprints(kind):
+                    for x, z in cells:
+                        for y in range(36, _tops(p.cells)[x, z][0]):
+                            self.assertEqual(p.cells[x, y, z], 'minecraft:bricks')
+                from site_kit import rewrite_bottom_half_slabs
+                before = dict(p.cells)
+                self.assertEqual(rewrite_bottom_half_slabs(p), 0)
+                self.assertEqual(p.cells, before)
+
+    def test_pitched_slopes_face_uphill_and_caps_meet(self):
+        from roof_lint import _tops, _props
+        parts = [{(x, z) for x in range(7) for z in range(11)}]
+        p = self.plan(pitch=1, parts=parts)
+        top = _tops(p.cells)
+        self.assertIn('facing=east', top[0, 5][1])
+        self.assertIn('facing=west', top[6, 5][1])
+        self.assertIn('facing=south', top[3, 0][1])
+        self.assertIn('facing=north', top[3, 10][1])
+        self.assertIn('type=bottom', top[3, 5][1])
+        delta = {'north': (0, -1), 'east': (1, 0), 'south': (0, 1), 'west': (-1, 0)}
+        for (x, z), (y, state) in top.items():
+            if '_stairs[' not in state:
+                continue
+            dx, dz = delta[_props(state)['facing']]
+            nx, nz = x + dx, z + dz
+            neighbor = top[nx, nz]
+            # At a hip corner only the diagonal is higher; cardinal join stays level.
+            self.assertGreaterEqual(neighbor[0], y)
+            self.assertTrue(any(top.get((x + a, z + c), (-1,))[0] > y
+                                for a, c in H.N8))
+        even = self.plan(pitch=1, parts=[{(x, z) for x in range(8) for z in range(12)}])
+        tops = _tops(even.cells)
+        self.assertIn('facing=east', tops[3, 6][1])
+        self.assertIn('facing=west', tops[4, 6][1])
+        self.assertEqual(tops[3, 6][0], tops[4, 6][0])
+
+    def test_pitch_changes_ridge_and_chimney_height(self):
+        for pitch, ridge in ((0.5, 38), (0.75, 39), (1, 40)):
+            with self.subTest(pitch=pitch):
+                p = self.plan(pitch=pitch)
+                pots = [q for q, state in p.cells.items() if state == 'minecraft:flower_pot']
+                self.assertEqual(pots, [(3, ridge + 2, 3)])
+                for y in range(36, ridge + 2):
+                    self.assertEqual(p.cells[3, y, 3], 'minecraft:bricks')
+
+    def test_group_roof_uses_union_and_one_chimney(self):
+        parts = self.footprints('group')
+        group = self.plan('group', 1)
+        single = self.plan(pitch=1, parts=[set.union(*parts)])
+        self.assertEqual(group.cells, single.cells)
+        each = self.plan('group', 1, mode='each')
+        self.assertEqual(sum(s == 'minecraft:flower_pot' for s in each.cells.values()), 2)
+        self.assertNotEqual(group.cells, each.cells)
+
+    def test_materials_use_shared_catalogue_and_full_only_flatish(self):
+        import roof_material as RM
+        ids = RM.block_id_names()
+        for material, family in RM.load_catalogue()['families'].items():
+            for pitch in ((None, 1) if family['triad'] else (None,)):
+                with self.subTest(material=material, pitch=pitch):
+                    cells = self.plan(pitch=pitch, material=material).cells
+                    self.assertTrue(all(s.removeprefix('minecraft:').split('[')[0] in ids
+                                        for s in cells.values()))
+                    if pitch == 1:
+                        self.assertTrue(any(s.startswith('minecraft:' + family['stairs'] + '[')
+                                            for s in cells.values()))
+                    elif 'slab' not in family:
+                        self.assertTrue(any(s == 'minecraft:' + family['full'] for s in cells.values()))
+                        self.assertFalse(any('_slab[' in s for s in cells.values()))
+        for alias in ('minecraft:brick_slab[type=bottom]', 'brick_stairs'):
+            self.assertEqual(self.plan(pitch=1, material=alias).cells, self.plan(pitch=1).cells)
+        unknown = self.plan(material='legacy_unknown').cells
+        self.assertTrue(any('legacy_unknown_slab[' in s for s in unknown.values()))
+
+    def test_stair_helper_accepts_explicit_shape_without_changing_legacy_states(self):
+        self.assertEqual(H.stair('spruce', 'north'), 'spruce_stairs[facing=north,half=bottom]')
+        self.assertEqual(H.stair('brick_stairs', 'east', shape='inner_left'),
+                         'brick_stairs[facing=east,half=bottom,shape=inner_left]')
 
 
 class FloorReferenceTest(unittest.TestCase):
