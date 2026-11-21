@@ -803,12 +803,15 @@ def snap_lone_odd_half_heights(
     The provider's float option carries single-cell noise. An odd rise (a slab
     course) that differs from all of its neighbours is noise. First it snaps to
     the closest half-height among its same-zone neighbours (the lower on a tie),
-    so a clean slope or ridge keeps its line. A cell that still stands alone
-    after that (a steep hip where each snap hands the speckle to the next cell)
+    without going below its original even floor. The even floors of an already
+    regularised roof also differ by at most two half-steps, so re-capping cannot
+    pull any column below that floor: even crest columns keep their height and
+    odd crest columns lose at most one half-step, along the entire ridge.
+    A cell that still stands alone after that (a steep hip where each snap
+    hands the speckle to the next cell)
     drops one half-step to the even height below; the cliff cap in
-    ``regularise_roof_half_heights`` that follows then pulls its neighbours to
-    even heights too. Odd steps in a clean course (a neighbour shares the
-    height) are kept.
+    ``regularise_roof_half_heights`` that follows respects the same floors.
+    Odd steps in a clean course (a neighbour shares the height) are kept.
 
     @param half_heights: ``{(x, z): half_height}``, already regularised
     @param levels: semantic zone level per column (as for ``regularise_roof_half_heights``)
@@ -816,6 +819,8 @@ def snap_lone_odd_half_heights(
     @returns: new dict with the same keys
     """
     h = dict(half_heights)
+    # Re-cap the even floor too, so raw helper inputs cannot introduce cliffs.
+    even_floor = regularise_roof_half_heights({c: v - v % 2 for c, v in h.items()}, levels)
     for _ in range(passes):
         lone = _lone_odd_half_heights(h)
         nxt = dict(h)
@@ -823,7 +828,8 @@ def snap_lone_odd_half_heights(
             same = [h[(x + dx, z + dz)] for dx, dz in N4
                     if (x + dx, z + dz) in h and levels[(x + dx, z + dz)] == levels[(x, z)]]
             if same:
-                nxt[(x, z)] = min(same, key=lambda s: (abs(s - h[(x, z)]), s))
+                nearest = min(same, key=lambda s: (abs(s - h[(x, z)]), s))
+                nxt[(x, z)] = max(even_floor[(x, z)], nearest)
         if nxt == h:
             break
         h = regularise_roof_half_heights(nxt, levels)
