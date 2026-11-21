@@ -77,6 +77,24 @@ BLOCK_KIND = {'gray_concrete': 'tarmac', 'light_gray_concrete': 'paving', 'polis
 STITCH_DEPTH = 2        # columns from a seam that copy the finished neighbour's surface
 SHRUB_EDGE_REACH_SQ = 2   # shrubs only within one column (diagonals too) of the house wall or plot boundary (#339)
 COVER_EDGE_REACH_SQ = 8   # grass tufts and ferns within two columns of that edge (#339)
+# Rough grass (#319): OSM tags that take a pasture/meadow palette; lawn tags never.
+ROUGH_GRASS_TAGS = {
+    ('landuse', 'meadow'): 'meadow',
+    ('landuse', 'farmland'): 'pasture',
+    ('natural', 'grassland'): 'meadow',
+    ('natural', 'heath'): 'pasture',
+    ('natural', 'scrub'): 'pasture',
+    ('leisure', 'nature_reserve'): 'pasture',
+}
+LAWN_TAGS = frozenset({
+    ('landuse', 'grass'),
+    ('leisure', 'pitch'),
+    ('leisure', 'golf_course'),
+    ('leisure', 'garden'),
+    ('leisure', 'playground'),
+})
+TEXTURE_RADIUS = 8          # local brightness spread for aerial variance (#319 prototype)
+BARE_DIRT = ('coarse_dirt', 'rooted_dirt')
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
 FILL_REACH = 12         # how far shade/canopy columns look for ground around them
 STRUCTURE_TOPS = ('stairs', 'slab', '_wall', '_fence', 'bars', 'planks', '_carpet')
@@ -159,7 +177,7 @@ def neighbour_owned_states(cell: tuple[int, int], exclude=()) -> dict:
     from cell_registry import view_registry
     tx, tz = cell
     around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
-    return {p: state for p, (_plan, state) in view_registry().owners(around, exclude=exclude).items()}
+    return view_registry().owner_states(around, exclude=exclude)
 
 
 def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
@@ -1014,6 +1032,241 @@ def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:
     return changed
 
 
+def rough_grass_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
+    """``{column: palette}`` for open-grass columns gated by OSM tag and ``ground_texture`` (#319).
+
+    Gates: ``landuse=meadow|farmland``, ``natural=grassland|heath|scrub``, ``leisure=nature_reserve``.
+    Lawns (``landuse=grass``, ``leisure=pitch|golf_course|garden|playground``) are never included.
+    Meadow beats pasture when both cover a column. The column's land-use class must ship a matching
+    ``ground_texture`` palette.
+
+    @param cell: ``(tx, tz)``
+    @param idx: ``OSMIndex``
+    @param classes: ``coverage.area_classes`` result when the caller already has it
+    @returns: only eligible columns; empty when no class enables ground texture
+    """
+    import land_use
+    from coverage import area_classes, scan_polygon
+    from osm_footprints import osm_tags
+
+    if classes is None:
+        classes = area_classes(idx, cell_box(cell, MARGIN))
+    enabled = {cid: land_use.ground_texture(cid) for cid in land_use.CLASSES}
+    if not any(enabled.values()):
+        return {}
+    bbox = cell_box(cell, MARGIN)
+    lawn: set = set()
+    pasture: set = set()
+    meadow: set = set()
+    for rings, props in getattr(idx, 'areas', ()) or ():
+        tags = osm_tags(props)
+        pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
+        if any(pair in LAWN_TAGS for pair in pairs):
+            lawn.update(scan_polygon(rings, bbox))
+            continue
+        for key, value in pairs:
+            palette = ROUGH_GRASS_TAGS.get((key, value))
+            if palette == 'meadow':
+                meadow.update(scan_polygon(rings, bbox))
+            elif palette == 'pasture':
+                pasture.update(scan_polygon(rings, bbox))
+    out = {}
+    for q, hit in classes.items():
+        if q in lawn:
+            continue
+        palettes = enabled.get(hit[0])
+        if not palettes:
+            continue
+        name = 'meadow' if q in meadow and 'meadow' in palettes else (
+            'pasture' if q in pasture and 'pasture' in palettes else None)
+        if name is None and q in meadow and 'pasture' in palettes:
+            name = 'pasture'
+        if name is None and q in pasture and 'meadow' in palettes:
+            name = 'meadow'
+        if name is not None:
+            out[q] = name
+    return out
+
+
+def aerial_texture_field(rgb: dict, columns, *, radius: int = TEXTURE_RADIUS) -> dict:
+    """Per-column aerial texture score and pale/brown flag from local brightness spread (#319).
+
+    Score is local brightness standard deviation over ``±radius``, scaled between the set's
+    10th and 90th percentiles into ``[0, 1]``. Pale or brown (brightness above the 85th percentile,
+    or red ≥ 0.98 × green) marks dry/bare ground.
+
+    @param rgb: ``{(x, z): (r, g, b)}`` in 0..1
+    @param columns: columns to score
+    @param radius: neighbourhood half-width in blocks
+    @returns: ``{(x, z): {'score': float, 'bare': bool}}``
+    """
+    cols = [q for q in columns if q in rgb]
+    if not cols:
+        return {}
+    bright = {q: sum(rgb[q][:3]) / 3 for q in cols}
+    spreads = {}
+    for x, z in cols:
+        samples = [bright[n] for dx in range(-radius, radius + 1) for dz in range(-radius, radius + 1)
+                   if (n := (x + dx, z + dz)) in bright]
+        if len(samples) < 2:
+            spreads[(x, z)] = 0.0
+            continue
+        mean = sum(samples) / len(samples)
+        spreads[(x, z)] = (sum((v - mean) ** 2 for v in samples) / len(samples)) ** 0.5
+    ordered = sorted(spreads.values())
+    lo = ordered[max(0, int(0.10 * (len(ordered) - 1)))]
+    hi = ordered[min(len(ordered) - 1, int(0.90 * (len(ordered) - 1)))]
+    span = hi - lo
+    bright_vals = sorted(bright.values())
+    pale_cut = bright_vals[min(len(bright_vals) - 1, int(0.85 * (len(bright_vals) - 1)))]
+    out = {}
+    for q in cols:
+        r, g, _b = rgb[q][:3]
+        score = 0.0 if span <= 1e-9 else max(0.0, min(1.0, (spreads[q] - lo) / span))
+        # Strict above the cut so a flat field (every column the same) is not all "bare".
+        out[q] = {'score': score, 'bare': bright[q] > pale_cut or r >= 0.98 * g}
+    return out
+
+
+def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dict, kind: dict,
+                        rgb: dict, palettes: dict, *, masked=(), owned=(), clear=(),
+                        barriers=()) -> dict:
+    """Place rough-grass tufts, tall grass, mottled dirt and meadow flowers (#319).
+
+    Driven by ``ground_texture`` palettes and aerial texture, not by ``planting`` (null when
+    ``frontage.inference`` is false). Flower kinds come from ``foliage.REFINE_PLANTS``. Skips
+    footprints, routes, tree/decor masks, neighbour-owned columns and barrier columns. Seeded
+    per cell and column so reruns match. Counts land in the ground report; plants sit in air
+    above grass (cleared on redo / foliage strip); dirt replaces the grass surface.
+
+    @param plan: ground plan under construction
+    @param world: live world reader
+    @param cell: ``(tx, tz)`` for seeds
+    @param ys: surface Y per column
+    @param kind: surface kind per column (only ``grass`` is eligible)
+    @param rgb: aerial colours
+    @param palettes: ``{column: 'pasture'|'meadow'}`` from :func:`rough_grass_columns`
+    @param masked: tree/decor mask positions
+    @param owned: neighbour-owned positions
+    @param clear: reserved route/opening columns
+    @param barriers: hedge/wall/fence columns
+    @returns: counts and item rows for the report
+    """
+    import land_use
+    import provenance as prov
+
+    report = {'tufts': 0, 'tall_grass': 0, 'bare': 0, 'flowers': 0, 'lawn_skipped': 0, 'items': []}
+    if not palettes:
+        return report
+    tx, tz = cell
+    protected = set(masked) | set(owned)
+    blocked = set(clear) | {(x, z) for x, _y, z in protected} | set(barriers)
+    candidates = {q: name for q, name in palettes.items()
+                  if q in ys and q in kind and kind[q] == 'grass' and q not in blocked}
+    report['lawn_skipped'] = sum(1 for q in ys if q in kind and kind[q] == 'grass'
+                                 and q not in palettes and q not in blocked)
+    texture = aerial_texture_field(rgb, candidates)
+    rules: dict = {}
+    for cid in ('park', 'rural', 'natural'):
+        for name, palette in (land_use.ground_texture(cid) or {}).items():
+            rules.setdefault(name, palette)
+
+    def block(p):
+        return plan.cells[p] if p in plan.cells else world.block(*p)
+
+    def air(p):
+        b = block(p)
+        return b is not None and bare(b) in AIRS
+
+    def is_grass_top(p):
+        return bare(block(p) or '') == 'minecraft:grass_block' or bare(block(p) or '') == 'grass_block'
+
+    taken = set()
+    for q in sorted(candidates):
+        name = candidates[q]
+        rule = rules.get(name)
+        if not rule:
+            continue
+        x, z = q
+        gy = ys[q]
+        top = (x, gy, z)
+        if top in protected or not is_grass_top(top):
+            continue
+        field = texture.get(q) or {'score': 0.0, 'bare': False}
+        rnd = random.Random(f'ground_texture:{tx}:{tz}:{x}:{z}')
+        if rule['bare'] and field['bare']:
+            dirt = rnd.choice(BARE_DIRT)
+            plan.set(x, gy, z, dirt)
+            report['bare'] += 1
+            report['items'].append({
+                'kind': 'bare', 'position': list(top), 'block': dirt,
+                'palette': name, 'label': 'ground texture bare (#319)',
+                'provenance': prov.provenance_record(source='inference', confidence='low'),
+            })
+            taken.add(q)
+            continue
+        score = field['score']
+        tuft_lo, tuft_hi = rule['tufts']
+        tall_lo, tall_hi = rule['tall_grass']
+        plant = (x, gy + 1, z)
+        live_plant = bare(block(plant) or '')
+        if not air(plant) and live_plant not in ('short_grass', 'tall_grass',
+                                                 'minecraft:short_grass', 'minecraft:tall_grass'):
+            continue
+        # Tall grass first (rarer), then tufts; share rises with aerial texture.
+        if rnd.random() < tall_lo + score * (tall_hi - tall_lo):
+            upper = (x, gy + 2, z)
+            upper_ok = air(upper) or bare(block(upper) or '') in ('tall_grass', 'minecraft:tall_grass')
+            if air(plant) and upper_ok:
+                plan.set(*plant, 'tall_grass[half=lower]')
+                plan.set(*upper, 'tall_grass[half=upper]')
+                report['tall_grass'] += 1
+                report['items'].append({
+                    'kind': 'tall_grass', 'position': list(plant), 'block': 'tall_grass',
+                    'palette': name, 'label': 'ground texture tall grass (#319)',
+                    'provenance': prov.provenance_record(source='inference', confidence='low'),
+                })
+                taken.add(q)
+                continue
+        if rnd.random() < tuft_lo + score * (tuft_hi - tuft_lo):
+            plan.set(*plant, 'short_grass')
+            report['tufts'] += 1
+            report['items'].append({
+                'kind': 'tufts', 'position': list(plant), 'block': 'short_grass',
+                'palette': name, 'label': 'ground texture tuft (#319)',
+                'provenance': prov.provenance_record(source='inference', confidence='low'),
+            })
+            taken.add(q)
+
+    meadow_cols = [q for q, name in candidates.items() if name == 'meadow' and q not in taken]
+    flower_rule = (rules.get('meadow') or {}).get('flowers')
+    if flower_rule and meadow_cols:
+        target = round(flower_rule['share'] * len(meadow_cols))
+        kinds = flower_rule['kinds']
+        ranked = sorted(
+            meadow_cols,
+            key=lambda q: (random.Random(f'ground_texture:flower:{tx}:{tz}:{q[0]}:{q[1]}').random(), q))
+        for x, z in ranked:
+            if report['flowers'] >= target:
+                break
+            gy = ys[(x, z)]
+            plant = (x, gy + 1, z)
+            flower = random.Random(f'ground_texture:flower-kind:{tx}:{tz}:{x}:{z}').choice(kinds)
+            live = bare(block(plant) or '')
+            if not (air(plant) or live in (flower, full(flower))):
+                continue
+            if not is_grass_top((x, gy, z)):
+                continue
+            plan.set(*plant, flower)
+            report['flowers'] += 1
+            report['items'].append({
+                'kind': 'flowers', 'position': list(plant), 'block': flower,
+                'palette': 'meadow', 'label': 'ground texture flower (#319)',
+                'provenance': prov.provenance_record(source='inference', confidence='low'),
+            })
+    return report
+
+
 def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple, segments: dict,
                   *, clear=(), masked=(), owned=(), barriers=()) -> list[dict]:
     """Plan labelled planting on guessed grass only; return per-plot counts and provenance.
@@ -1365,13 +1618,31 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     owner, info, street, idx = plots
     segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cell_box(cell))
     # soft_grass survivors can include low-priority mapped surfaces; planting must exclude them.
+    clear_cols = gs.reserved_route(frontages) | gs.reserved_openings(frontages)
+    barriers = vmap.hedge | vmap.wall | vmap.fence
     stats['planting'] = plan_planting(
         plan, world, guessed.difference(vmap.kind), ys, plots, segments,
-        clear=gs.reserved_route(frontages) | gs.reserved_openings(frontages),
-        masked=masked, owned=neighbour_owned, barriers=vmap.hedge | vmap.wall | vmap.fence)
+        clear=clear_cols, masked=masked, owned=neighbour_owned, barriers=barriers)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
     stats['flowers'] = sum(row['flowers'] for row in stats['planting'])
     stats['cover'] = sum(row['cover'] for row in stats['planting'])
+    # Rough grass / mottling (#319): own key (planting is null when frontage.inference is false).
+    if 'ground_texture' in ev:
+        texture_palettes = ev['ground_texture']
+    elif not getattr(idx, 'areas', None):
+        texture_palettes = {}
+    else:
+        if classes is None:
+            from coverage import area_classes
+            classes = area_classes(idx, cell_box(cell, MARGIN))
+        texture_palettes = rough_grass_columns(cell, idx, classes)
+    stats['ground_texture'] = plan_ground_texture(
+        plan, world, cell, ys, kind, rgb, texture_palettes,
+        masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
+    stats['texture_tufts'] = stats['ground_texture']['tufts']
+    stats['texture_tall_grass'] = stats['ground_texture']['tall_grass']
+    stats['texture_bare'] = stats['ground_texture']['bare']
+    stats['texture_flowers'] = stats['ground_texture']['flowers']
     stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live},  # #296 guard
                                               floors=buried)
     return stats, conflicts, kind, skipped
@@ -1442,6 +1713,9 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  cavities: {stats["cavity_filled"]} air block(s) filled under a crust in {stats["cavity_columns"]} column(s)')
     print(f'  inferred shrubs: {stats["shrubs"]}, flowers: {stats["flowers"]}, cover: {stats["cover"]} '
           '(low confidence; see per-plot planting report)')
+    print(f'  ground texture: tufts {stats["texture_tufts"]}, tall grass {stats["texture_tall_grass"]}, '
+          f'bare {stats["texture_bare"]}, flowers {stats["texture_flowers"]} '
+          '(#319; see ground_texture report)')
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')
     for pos, want, why in conflicts[:10]:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')

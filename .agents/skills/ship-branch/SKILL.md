@@ -22,6 +22,13 @@ test → review → fix blockers → re-review (cap 3) → merge. Workers never 
 Everything else in this skill is automatic once invoked. Ask the owner before
 using Opus or any other high-cost model; default models need no ask.
 
+Before resuming a task builder or dispatching a fixer, read the ticket's
+`requiresClaude` flag and follow the dispatch gate in
+[`docs/agents/model-and-effort.md`](../../../docs/agents/model-and-effort.md#task-model-requirement).
+This applies to the fixer defaults below too: a flagged task needs an eligible
+Claude runner, including confirmed external-model budget when hosted in Cursor.
+On refusal leave the branch unmerged and report the handoff needed.
+
 ## Loop
 
 Work in the branch worktree. Round counter starts at 0; each fixer dispatch

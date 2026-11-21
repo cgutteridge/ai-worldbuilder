@@ -640,6 +640,9 @@ class CellRegistry:
         self.ring = ring
         self.build_policy = build_policy
         self._blob_cache: OrderedDict[str, dict[Pos, str]] = OrderedDict()
+        # blob key -> (cell size, cells touched, cancelling states); content-addressed, never stale
+        self._blob_meta: dict[str, tuple[int, frozenset[Cell], frozenset[str]]] = {}
+        self._cancel_memo: dict[str, bool] = {}
         self._reset_state()
 
     # ---- folding ---------------------------------------------------------------------------
@@ -658,6 +661,7 @@ class CellRegistry:
         """Drop derived caches after the folded state changed."""
         self._derived: dict[Cell, CellView] = {}
         self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
+        self._table_cache: dict[Cell, tuple[dict[Pos, str], dict[Pos, int]]] = {}
         self._note_cache: dict | None = None
         self._planning_revision: dict[frozenset[Cell] | None, str] = {}
 
@@ -986,56 +990,140 @@ class CellRegistry:
         return got
 
     # ---- ownership projection (private, rebuilt from the journal) --------------------------
+    def _is_cancel(self, state: str) -> bool:
+        """Whether a planned state cancels ownership (``CANCEL``), memoised per distinct state."""
+        got = self._cancel_memo.get(state)
+        if got is None:
+            got = self._cancel_memo[state] = block_id(state) in CANCEL
+        return got
+
+    def _blob_slice(self, key: str, cell: Cell, size: int) -> tuple[Mapping[Pos, str], list[Pos]]:
+        """The part of a blob inside one cell, split into owning writes and cancelling positions.
+
+        Both keep blob order. A blob wholly inside ``cell`` with no cancelling state is returned
+        as-is (no copy). Per-blob metadata (cells touched, cancelling states) is small and kept
+        for the life of the registry: blob keys are content hashes, so it never goes stale.
+
+        @param key: blob key
+        @param cell: cell to slice
+        @param size: cell edge in blocks
+        @returns: ``(puts, cancels)``; ``puts`` is ``{pos: state}`` without cancelling states
+        """
+        blob = self._blob(key)
+        meta = self._blob_meta.get(key)
+        if meta is None:
+            cells = {(x // size, z // size) for x, _y, z in blob}
+            cancel = frozenset(s for s in set(blob.values()) if self._is_cancel(s))
+            meta = self._blob_meta[key] = (size, frozenset(cells), cancel)
+        msize, cells, cancel = meta
+        if msize != size:                               # only if cell_size changed mid-run
+            del self._blob_meta[key]
+            return self._blob_slice(key, cell, size)
+        if cell not in cells:
+            return {}, []
+        if len(cells) == 1:
+            items = blob.items()
+        else:
+            x0, z0 = cell[0] * size, cell[1] * size
+            x1, z1 = x0 + size, z0 + size
+            items = [(p, s) for p, s in blob.items() if x0 <= p[0] < x1 and z0 <= p[2] < z1]
+        if not cancel:
+            return (blob if len(cells) == 1 else dict(items)), []
+        return ({p: s for p, s in items if s not in cancel},
+                [p for p, s in items if s in cancel])
+
+    def _cell_table(self, cell: Cell, *, exclude: frozenset[str] = frozenset(),
+                    skip: frozenset[int] = frozenset()) -> tuple[dict[Pos, str], dict[Pos, int]]:
+        """Ownership of one cell as plain dicts, folded from the journal (task 343).
+
+        Later builds win per position; a cancelling state (``CANCEL``) drops the owner; undone,
+        begun, skipped and excluded builds own nothing. A landed real ground plan in its own
+        cell drops ghost-ground owners above the real top in each column it wrote (ghost
+        substrate below that top, and ghost columns it did not write, stay). Bulk dict updates
+        over per-blob cell slices replace the old per-position ``_Owner`` replay.
+
+        @param cell: (tx, tz)
+        @param exclude: plan names that own nothing
+        @param skip: entry seqs that own nothing
+        @returns: ``(states, seqs)``: ``{pos: state}`` and ``{pos: owning seq}``, same keys and order
+        """
+        cacheable = not exclude and not skip
+        if cacheable and cell in self._table_cache:
+            return self._table_cache[cell]
+        size = self.cell_size if self.cell_size is not None else cellmath.cell_size()
+        states: dict[Pos, str] = {}
+        seqs: dict[Pos, int] = {}
+        ghost_ground: set[int] = set()
+        for seq in self._by_cell.get(cell, ()):
+            e = self._entries[seq]
+            if e.kind != 'build' or e.undone or e.status == 'begun' or seq in skip or e.plan in exclude:
+                continue
+            puts, cancels = self._blob_slice(e.blob, cell, size)
+            # Positions are unique within a blob, so cancels and puts are disjoint: applying
+            # them as two bulk steps matches the old per-position replay, order included.
+            for p in cancels:
+                if states.pop(p, None) is not None:
+                    del seqs[p]
+            if not puts:
+                continue
+            states.update(puts)
+            seqs.update(dict.fromkeys(puts, seq))
+            if e.pass_ == 'ghost-ground':
+                ghost_ground.add(seq)
+            # Real ground supersedes ghost only in columns it wrote: drop ghost above that
+            # column's real top (exact positions already lost via later-wins). Keep ghost
+            # substrate below the top and every ghost column the ground plan did not cover.
+            if e.pass_ == 'ground' and e.status == 'landed' and e.cell == cell and ghost_ground:
+                tops: dict[tuple[int, int], int] = {}   # (x, z) -> max Y written by this ground plan
+                for x, y, z in puts:
+                    if y > tops.get((x, z), -10 ** 9):
+                        tops[(x, z)] = y
+                no_top = float('inf')
+                for p in [p for p, s in seqs.items()
+                          if s in ghost_ground and p[1] > tops.get((p[0], p[2]), no_top)]:
+                    del states[p], seqs[p]
+        if cacheable:
+            # Ownership is reconstructed independently per cell; retain only the latest.
+            self._table_cache.clear()
+            self._table_cache[cell] = (states, seqs)
+        return states, seqs
+
+    def _owner(self, seq: int, state: str) -> _Owner:
+        e = self._entries[seq]
+        return _Owner(seq, e.plan, state, e.pass_ in GHOST_PASSES, e.pass_)
+
     def _cell_owners(self, cell: Cell, *, exclude: frozenset[str] = frozenset(),
                      skip: frozenset[int] = frozenset()) -> dict[Pos, _Owner]:
         cacheable = not exclude and not skip
         if cacheable and cell in self._owner_cache:
             return self._owner_cache[cell]
+        states, seqs = self._cell_table(cell, exclude=exclude, skip=skip)
+        made: dict[tuple[int, str], _Owner] = {}
         owners: dict[Pos, _Owner] = {}
-        for seq in self._by_cell.get(cell, ()):
-            e = self._entries[seq]
-            if e.kind != 'build' or e.undone or e.status == 'begun' or seq in skip or e.plan in exclude:
-                continue
-            ghost = e.pass_ in GHOST_PASSES
-            tops: dict[tuple[int, int], int] = {}       # (x, z) -> max Y written by this ground plan
-            for pos, state in self._blob(e.blob).items():
-                if self._cell_of(pos) != cell:
-                    continue
-                if block_id(state) in CANCEL:
-                    owners.pop(pos, None)
-                else:
-                    owners[pos] = _Owner(seq, e.plan, state, ghost, e.pass_)
-                    if e.pass_ == 'ground':
-                        x, y, z = pos
-                        xz = (x, z)
-                        if y > tops.get(xz, -10 ** 9):
-                            tops[xz] = y
-            # Real ground supersedes ghost only in columns it wrote: drop ghost above that
-            # column's real top (exact positions already lost via later-wins). Keep ghost
-            # substrate below the top and every ghost column the ground plan did not cover.
-            if e.pass_ == 'ground' and e.status == 'landed' and e.cell == cell and tops:
-                for pos in [p for p, o in owners.items() if o.pass_ == 'ghost-ground']:
-                    top = tops.get((pos[0], pos[2]))
-                    if top is not None and pos[1] > top:
-                        del owners[pos]
+        for p, s in states.items():
+            k = (seqs[p], s)
+            o = made.get(k)
+            if o is None:
+                o = made[k] = self._owner(*k)
+            owners[p] = o
         if cacheable:
-            # Ownership is reconstructed independently per cell; retain only the latest.
             self._owner_cache.clear()
             self._owner_cache[cell] = owners
         return owners
 
     def _owners_in(self, positions: Iterable[Pos], *, exclude: frozenset[str] = frozenset(),
                    skip: frozenset[int] = frozenset()) -> dict[Pos, _Owner]:
+        size = self.cell_size if self.cell_size is not None else cellmath.cell_size()
         by_cell: dict[Cell, list[Pos]] = {}
         for p in positions:
-            by_cell.setdefault(self._cell_of(p), []).append(p)
+            by_cell.setdefault((p[0] // size, p[2] // size), []).append(p)
         out: dict[Pos, _Owner] = {}
         for cell, plist in by_cell.items():
-            owners = self._cell_owners(cell, exclude=exclude, skip=skip)
+            states, seqs = self._cell_table(cell, exclude=exclude, skip=skip)
             for p in plist:
-                o = owners.get(p)
-                if o is not None:
-                    out[p] = o
+                s = states.get(p)
+                if s is not None:
+                    out[p] = self._owner(seqs[p], s)
         return out
 
     def owned(self, within: Iterable[Pos], exclude: Iterable[str] = (), *,
@@ -1064,9 +1152,38 @@ class CellRegistry:
         ex = frozenset(exclude)
         out: dict[Pos, tuple[str, str]] = {}
         for cell in {tuple(c) for c in cells}:
-            for p, o in self._cell_owners(cell, exclude=ex).items():
-                if not (real_only and o.ghost):
-                    out[p] = (o.plan, o.state)
+            states, seqs = self._cell_table(cell, exclude=ex)
+            plan_of = {seq: self._entries[seq].plan for seq in set(seqs.values())}
+            if real_only:
+                ghost = {seq for seq in plan_of if self._entries[seq].pass_ in GHOST_PASSES}
+                out.update({p: (plan_of[seqs[p]], s) for p, s in states.items() if seqs[p] not in ghost})
+            else:
+                out.update({p: (plan_of[seqs[p]], s) for p, s in states.items()})
+        return out
+
+    def owner_states(self, cells: Iterable[Cell], exclude: Iterable[str] = (), *,
+                     real_only: bool = False) -> dict[Pos, str]:
+        """Owned block state per position inside whole cells: ``owners`` without the plan names.
+
+        Same positions, states and order as ``{p: s for p, (_plan, s) in owners(...).items()}``,
+        without building a tuple per position (task 343: neighbour lookups span millions).
+
+        @param cells: cells to scan
+        @param exclude: plan names to ignore
+        @param real_only: drop ghost owners
+        @returns: ``{pos: state}``
+        """
+        self._sync()
+        ex = frozenset(exclude)
+        out: dict[Pos, str] = {}
+        for cell in {tuple(c) for c in cells}:
+            states, seqs = self._cell_table(cell, exclude=ex)
+            if real_only:
+                ghost = {seq for seq in set(seqs.values()) if self._entries[seq].pass_ in GHOST_PASSES}
+                if ghost:
+                    out.update({p: s for p, s in states.items() if seqs[p] not in ghost})
+                    continue
+            out.update(states)
         return out
 
     def recorded(self, plan: str) -> dict[Pos, str] | None:
