@@ -8,8 +8,9 @@ through the canopy, which the last-return composite does (task 320 findings).
 This module reads a second kind of evidence without touching ``trees_layer``:
 
 * a **corridor** of columns within reach of a mapped hedge or lane,
-* **canopy** columns in that corridor, from standing height (first-return when cached, else
-  last-return) or from aerial darkness calibrated per cell against mapped wood and open grass,
+* **canopy** columns: first-return standing height when cached; otherwise last-return height or
+  aerial darkness calibrated per cell against mapped wood and open grass (darkness also marks the
+  shadow tall trees cast north of themselves, so it is only a fallback),
 * a **belt**: canopy grown outward from the corridor through connected canopy columns on gated
   land, so a belt that runs along a lane is kept while open pasture beyond it stays clear.
 
@@ -251,10 +252,18 @@ def line_evidence(bounds, hedge, lanes, lum, wood, open_grass, allowed, height=N
     x0, z0, _x1, _z1 = bounds
     dark, dark_info = dark_canopy(lum, wood, open_grass)
     canopy = np.zeros(lum.shape, dtype=bool)
-    if dark is not None:
-        canopy |= dark
-    if height is not None:
-        canopy |= np.where(np.isfinite(height), height, 0) >= MIN_STANDING_M
+    tall = None if height is None else np.where(np.isfinite(height), height, 0) >= MIN_STANDING_M
+    if height_source == 'first-return' and tall is not None:
+        # First returns see the crowns. Aerial darkness would add the shadow they cast on the
+        # grass north of them (87,-48: a dark band about 10 blocks wide with no standing height).
+        canopy |= tall
+        dark_info['used'] = False
+    else:
+        if dark is not None:
+            canopy |= dark
+        if tall is not None:
+            canopy |= tall
+        dark_info['used'] = dark is not None
     canopy &= allowed
     # Mapped wood already passes the gate, so new evidence is canopy outside it. A belt may still
     # grow through covered canopy: a strip of mapped wood often separates a lane from the belt.

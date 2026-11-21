@@ -9,6 +9,7 @@ crowns off that evidence are refused, so open pasture stays clear even if the ha
 
   python3 scripts/tree_lines_trial.py --world <w> propose --cell tx,tz          # evidence + proposal for the designer
   python3 scripts/tree_lines_trial.py --world <w> seam --cell tx,tz --handoff F  # ordinary extra-crowns path: what the gate drops
+  python3 scripts/tree_lines_trial.py --world <w> seam --cell tx,tz --reader first  # trees pass on first-return height
   python3 scripts/tree_lines_trial.py --world <w> plan --cell tx,tz --handoff F  # trees dry run with line crowns admitted
   python3 scripts/site_lock.py --world <w> run <owner> "trial323" -- \\
     python3 scripts/tree_lines_trial.py --world <w> apply --cell tx,tz --handoff F   # LIVE trees pass with line crowns
@@ -156,10 +157,28 @@ def _overlay(cell, p, path: Path, scale: int = 6) -> None:
     img.convert('RGB').save(path)
 
 
-def cmd_seam(cell, handoff: Path) -> int:
-    """Ordinary path: put the hand-off in as extra crowns and dry-run the unchanged trees pass."""
+def cmd_seam(cell, handoff: Path | None, reader: str = 'last') -> int:
+    """Ordinary path: hand-off as extra crowns, dry run of the trees pass.
+
+    ``reader='first'`` swaps ``trees_layer.cell_ndsm`` (last-return today) for first-return
+    standing height, to show what wiring first-return into the reader would change. It refuses
+    when the first-return tiles are not cached rather than silently reading last-return.
+    """
     import trees_layer as tl
-    tl.EXTRA_CROWNS = Path(handoff)
+    if handoff is not None:
+        tl.EXTRA_CROWNS = Path(handoff)
+    if reader == 'first':
+        import tree_lines
+        _h, source = tree_lines.standing_height(cell, margin=2)
+        if source != 'first-return':
+            raise SystemExit(f'first-return standing height unavailable for {cell} (reader: {source})')
+
+        def first_ndsm(c, *, margin=0):
+            h, src = tree_lines.standing_height(c, margin=margin)
+            return h if src == 'first-return' else None
+
+        tl.cell_ndsm = first_ndsm
+        print('  seam: trees pass reads FIRST-return standing height')
     return tl.run(cell)
 
 
@@ -196,9 +215,10 @@ def inside_cell(rows, cell):
 def cmd_lines(cell, handoff: Path, live: bool) -> int:
     """Additive trial build: only the admitted line crowns, planned by ``trees_layer.plan_cell``.
 
-    Journalled as its own plan (stage ``other``) so it neither replaces the cell's trees mask nor
-    changes layer progress, and ``element_undo.py <plan> --apply`` removes exactly these blocks.
-    Crowns whose leaves would leave the cell are refused.
+    Journalled as its own plan in the trees pass, with no pass mask, so it does not replace the
+    cell's trees mask (``highfield_<cell>_trees``) and ``element_undo.py <plan> --apply`` removes
+    exactly these blocks through the journal. Readiness applies as for any trees apply (stage
+    ``other`` is reserved for clean-ups and markers). Crowns whose leaves would leave the cell are refused.
     """
     import os
     import trees_layer as tl
@@ -236,7 +256,7 @@ def cmd_lines(cell, handoff: Path, live: bool) -> int:
         preview(plan, _artifact(cell, 'lines-preview.png'), scale=2)
         apply(plan, dry=True, modifies=modifies)
         return 0
-    rb = apply(plan, modifies=modifies, stage='other', cell=cell, strict=True,
+    rb = apply(plan, modifies=modifies, stage='trees', cell=cell, strict=True,
                meta={'note': 'trial323 hedge/lane tree lines; undo: element_undo.py ' + name,
                      'crowns': len(trees), 'handoff': str(handoff)})
     print(f'readback: {rb["planned"]} planned, {rb["mismatches"]} mismatches')
@@ -257,7 +277,11 @@ def main(argv=None) -> int:
     for name in ('propose', 'seam', 'plan', 'apply', 'lines-plan', 'lines-apply'):
         p = sub.add_parser(name)
         p.add_argument('--cell', required=True, help='tx,tz')
-        if name != 'propose':
+        if name == 'seam':
+            p.add_argument('--handoff', type=Path, help='extra-crowns format hand-off JSON (optional)')
+            p.add_argument('--reader', choices=('last', 'first'), default='last',
+                           help='standing-height reader for the trees pass (default: last-return, as today)')
+        elif name != 'propose':
             p.add_argument('--handoff', required=True, type=Path, help='extra-crowns format hand-off JSON')
     a = ap.parse_args(argv)
     script_env.activate_world_from_args(a)
@@ -265,7 +289,7 @@ def main(argv=None) -> int:
     if a.cmd == 'propose':
         return cmd_propose(cell)
     if a.cmd == 'seam':
-        return cmd_seam(cell, a.handoff)
+        return cmd_seam(cell, a.handoff, a.reader)
     if a.cmd == 'plan':
         return cmd_plan(cell, a.handoff)
     if a.cmd in ('lines-plan', 'lines-apply'):

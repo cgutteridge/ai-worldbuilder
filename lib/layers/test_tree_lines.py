@@ -91,6 +91,18 @@ class EvidenceTest(unittest.TestCase):
         ev = tln.line_evidence(BOUNDS, (), lane, lum, wood, open_grass & ~wood, allowed)
         self.assertNotIn((22, 32), ev['belt'])
 
+    def test_first_return_ignores_aerial_shadow(self):
+        lum, wood, open_grass, allowed, lane = scene()
+        h = np.zeros((N, N))
+        h[15:30, 8:10] = 12.0                             # real crowns just north of the lane
+        ev = tln.line_evidence(BOUNDS, (), lane, lum, wood, open_grass & ~wood, allowed, h, 'first-return')
+        self.assertIn((20, 9), ev['belt'])
+        self.assertNotIn((20, 3), ev['belt'])             # dark but no height: shadow
+        self.assertFalse(ev['dark']['used'])
+        ev = tln.line_evidence(BOUNDS, (), lane, lum, wood, open_grass & ~wood, allowed, None, 'last-return')
+        self.assertIn((20, 3), ev['belt'])                # without first-return, darkness is the fallback
+        self.assertTrue(ev['dark']['used'])
+
     def test_height_alone_is_evidence(self):
         lum, wood, open_grass, allowed, lane = scene()
         h = np.zeros((N, N))
