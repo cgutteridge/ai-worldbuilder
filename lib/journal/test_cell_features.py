@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'shims'))
 
 import cell_features as cf  # noqa: E402
 import site_handoff as sh  # noqa: E402
+import water_body as W  # noqa: E402
 
 
 def _square(x0, z0, x1, z1):
@@ -276,26 +277,56 @@ class TestCellFeatures(unittest.TestCase):
         cols = {(x, z) for x in range(6144 - west_cols, 6144 + east_cols) for z in range(-5600, -5590)}
         return cols, {q: 'w147601601' for q in cols}
 
-    def test_cross_cell_pond_is_proposed_once_whole_in_its_majority_cell(self):
-        """Task 288: a pond over a cell line is one candidate, in the cell holding most of it."""
+    def test_cross_cell_pond_is_proposed_per_cell_clipped(self):
+        """#321: a water body over a cell line is one clip candidate in each cell it touches."""
         water, refs = self._two_cell_pond(2, 5)
-        home = cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs, covered=set())
-        self.assertEqual(len(home), 1, home)
-        self.assertEqual(home[0]['refs'], ['w147601601'])
-        self.assertEqual(home[0]['area'], 70)
-        self.assertEqual(len(home[0]['outline']), 70)
-        self.assertEqual(home[0]['cells'], [[48, -44], [47, -44]])
-        self.assertEqual(cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs,
-                                                 covered=set()), [])
+        east = cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs, covered=set())
+        west = cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs, covered=set())
+        self.assertEqual([b['id'] for b in east], ['w147601601_48_m44'])
+        self.assertEqual([b['id'] for b in west], ['w147601601_47_m44'])
+        self.assertEqual(east[0]['refs'], ['w147601601'])
+        self.assertEqual((east[0]['area'], west[0]['area']), (50, 20))
+        self.assertEqual(east[0]['cells'], [[48, -44]])
+        self.assertEqual(east[0]['clip'], {'cell': [48, -44]})
+        self.assertEqual(east[0]['bbox'], (6144, -5600, 6148, -5591))
+        self.assertEqual(len(east[0]['outline']), 70)       # the shore ring sees across the line
 
-    def test_cross_cell_tie_goes_to_the_lowest_cell(self):
-        """Task 288: an even split is planned in the lowest (tx, tz), stably."""
-        water, refs = self._two_cell_pond(3, 3)
-        self.assertEqual(cf.home_cell(water), (47, -44))
-        self.assertEqual(len(cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs,
-                                                     covered=set())), 1)
+    def test_clip_outline_reaches_only_clip_reach_beyond_its_cell(self):
+        """#321: a clip carries neighbour water only as far as a bank ring can need it."""
+        water, refs = self._two_cell_pond(20, 5)
+        east = cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs, covered=set())
+        xs = {x for x, _ in east[0]['outline']}
+        self.assertEqual(min(xs), 6144 - W.CLIP_REACH)
+
+    def test_clip_covered_in_its_own_cell_only(self):
+        """#321: built water in one cell does not account for the neighbour's clip."""
+        water, refs = self._two_cell_pond(2, 5)
+        built_east = {q for q in water if q[0] >= 6144}
         self.assertEqual(cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs,
-                                                 covered=set()), [])
+                                                 covered=built_east), [])
+        self.assertEqual(len(cf.missing_water_bodies(47, -44, water_columns=water, water_refs=refs,
+                                                     covered=built_east)), 1)
+
+    def test_clip_candidates_build_the_whole_pond_without_a_seam(self):
+        """#321: specs written from each cell's candidate join into the whole body."""
+        water, refs = self._two_cell_pond(2, 5)
+        common = {'water_level': 40, 'bank': {'material': 'dirt'}, 'edge': {'material': 'gravel'},
+                  'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        plans = []
+        for cell in ((47, -44), (48, -44)):
+            body = cf.missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=set())[0]
+            spec = {'name': body['id'], 'outline': body['outline'], 'clip': body['clip'], **common}
+            plans.append(W.build(W.load_spec_dict(spec)))
+        whole = W.build(W.load_spec_dict({'name': 'whole', 'outline': sorted(water), **common}))
+        self.assertEqual({**plans[0].cells, **plans[1].cells}, whole.cells)
+
+    def test_single_cell_pond_keeps_its_map_ref_plan(self):
+        """#321: a pond inside one cell is not clipped; its plan id stays the map ref."""
+        water, refs = self._two_cell_pond(0, 5)
+        bodies = cf.missing_water_bodies(48, -44, water_columns=water, water_refs=refs, covered=set())
+        self.assertEqual(len(bodies), 1)
+        self.assertNotIn('clip', bodies[0])
+        self.assertNotIn('id', bodies[0])
 
     def test_cross_cell_building_is_proposed_only_in_its_home_cell(self):
         """Task 288: an unbuilt building over a cell line is a candidate of its home cell only."""

@@ -399,7 +399,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
     """Stable feature plan id for a ``propose-features`` candidate (#128).
 
     Buildings and water bodies (#148) use the first vector-map ref (e.g. ``w93729745``
-    or ``water_<x>_<z>``). Touching non-house groups (#328) use the lowest ref among
+    or ``water_<x>_<z>``); one cell's clip of a water body over cell lines keeps the
+    per-cell ``id`` it was proposed with (``w93729745_63_m45``, #321). Touching non-house groups (#328) use the lowest ref among
     the group's ways. Houses use ``houses_<street_slug>`` when a street is known,
     else ``houses_`` plus sorted refs. Build specs should reuse this id as ``name`` so
     the plan matches the Build.
@@ -420,6 +421,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
         return 'houses_' + '_'.join(sorted(refs))
     if item.get('kind') == 'group':
         return min(refs)
+    if item.get('kind') == 'water_body' and item.get('clip') and item.get('id'):
+        return str(item['id'])
     return refs[0]
 
 

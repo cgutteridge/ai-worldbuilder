@@ -21,10 +21,28 @@ in the `water_body` module docstring):
 - `provenance` — shared schema from `lib/site/provenance.py` (#151):
   `{source, confidence, evidence_ids, unresolved_reason}` (no private fields)
 - optional: `modifies`, `notes`
+- optional: `clip` — `{"cell": [tx, tz]}` for one cell's part of a body over cell lines (below)
 
 `propose-features` / `cell_features.missing_features` include `kind: water_body`
 candidates from connected vector-map water columns. Unresolved level/bank/edge
 go on the plan item via `water_body_plan_item` + provenance `unresolved_reason`.
+
+## Bodies over cell lines (#321)
+
+A river or pond that crosses a cell line is planned and built **per cell**, not
+whole in one home cell (buildings still follow #288). `propose-features --cell
+<tx,tz> --record` in each cell the body touches records that cell's clip plan,
+id `<ref>_<tx>_<tz>` (`m` for a minus, e.g. `w4019512_63_m45`). The candidate
+carries `clip`, the in-cell `area`, and an `outline` of the in-cell water plus
+the body's water up to `CLIP_REACH` (8) blocks beyond the cell.
+
+Copy `name` (the clip id), `outline` and `clip` into that cell's spec. The
+build writes only the clip cell; the bank ring is worked out on the whole
+outline, so real shorelines get bank and the cell edge gets none. A clipped
+apply never writes into a neighbour, so it never makes a finished neighbour's
+trees or decor stale (the #234 edge policy). Use the same `water_level`,
+`depth`, `bank` and `edge` in every clip of one body so the cells join without
+a step. `bank.width` must not exceed `CLIP_REACH`.
 
 Example:
 

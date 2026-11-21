@@ -228,7 +228,7 @@ class LocalEvidence:
         water, refs = set(), {}
         for rings, props in self._index.areas:
             if osm_tags(props).get('natural') == 'water' and _touches_cell(rings, cell):
-                # whole polygon, as OSMGround.water: the home cell is chosen on the whole pond (task 288)
+                # whole polygon, as OSMGround.water: a clip banks against the water across the cell line (#321)
                 columns = set(scan_polygon(rings, WHOLE))
                 water.update(columns)
                 ref = osm_ref(props)

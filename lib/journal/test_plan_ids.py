@@ -85,6 +85,25 @@ class PlanIdTest(unittest.TestCase):
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[pond]):
             self.assertEqual(N.unplanned_footprint_candidates(self.reg, cid), [])
 
+    def test_water_body_clips_are_planned_in_each_cell(self):
+        """#321: each cell records its own clip plan; the neighbour's clip plan does not cover it."""
+        neighbour = (CELL[0] - 1, CELL[1])
+
+        def clip(cell):
+            tag = f"{cell[0]}_{'m' if cell[1] < 0 else ''}{abs(cell[1])}"
+            return {'kind': 'water_body', 'label': 'river clip', 'refs': ['w9'], 'id': f'w9_{tag}',
+                    'clip': {'cell': list(cell)}, 'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
+
+        self.assertEqual(self.record([clip(CELL)]), ['w9_48_m44'])
+        cid = f'{neighbour[0]},{neighbour[1]}'
+        self.assertEqual([r['id'] for r in CR.record_feature_candidates(self.reg, cid, [clip(neighbour)])],
+                         ['w9_47_m44'])
+        self.assertEqual([f.id for f in self.reg.cell(CELL).features], ['w9_48_m44'])
+        self.assertEqual([f.id for f in self.reg.cell(neighbour).features], ['w9_47_m44'])
+        self.assertEqual(self.record([clip(CELL)]), [])                     # re-run is idempotent
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=[clip(CELL)]):
+            self.assertEqual(N.unplanned_footprint_candidates(self.reg, '48,-44'), [])
+
     def test_dismissed_group_stays_dismissed(self):
         self.built_street()
         self.record([GROUP_A, GROUP_B])

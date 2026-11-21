@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from cell_journal import Build, Refused
+from cell_journal import Build, Note, Refused
 from journal_testkit import JournalWorld
 
 
@@ -640,18 +640,23 @@ class ReadinessTest(unittest.TestCase):
         self.assertTrue(self.world.reg.cell((0, 0)).trees)
         self.assertFalse(self.world.reg.cell((0, 0)).decor)
 
-    def test_candidates_see_the_whole_pond_so_only_the_home_cell_counts_it(self):
-        """Task 288 follow-up: a pond over a cell line is one candidate, in its majority cell only."""
+    def test_candidates_see_the_whole_pond_and_each_cell_counts_its_clip(self):
+        """#321: a pond over a cell line is one clip candidate per cell, banked on the whole pond."""
         from types import SimpleNamespace
         from readiness_evidence import LocalEvidence
         ring = [(6141., -5600.), (6151., -5600.), (6151., -5590.), (6141., -5590.), (6141., -5600.)]
         props = {'natural': 'water', 'osm_way_id': '147601601'}
         evidence = LocalEvidence(self.world.root)
         evidence._index = SimpleNamespace(areas=[([ring], props)], buildings=[], streets=[])
-        home = evidence.candidates(self.world.reg, (48, -44))
-        self.assertEqual([c['refs'] for c in home], [['w147601601']])
-        self.assertEqual(home[0]['area'], 100)        # whole pond, not the clipped 70
-        self.assertEqual(evidence.candidates(self.world.reg, (47, -44)), [])
+        east = evidence.candidates(self.world.reg, (48, -44))
+        west = evidence.candidates(self.world.reg, (47, -44))
+        self.assertEqual([(c['id'], c['area']) for c in east], [('w147601601_48_m44', 70)])
+        self.assertEqual([(c['id'], c['area']) for c in west], [('w147601601_47_m44', 30)])
+        self.assertEqual(len(east[0]['outline']), 100)   # whole pond within reach of the cell
+        self.world.reg.change(Note((48, -44), 'plan_feature', 'clip', 'w147601601_48_m44'))
+        self.assertEqual(evidence.candidates(self.world.reg, (48, -44)), [])
+        self.assertEqual([c['id'] for c in evidence.candidates(self.world.reg, (47, -44))],
+                         ['w147601601_47_m44'])
 
     def test_local_evidence_houses_follow_brickfield_prepare_rules(self):
         """#233: LocalEvidence skips a spec-backed house plan under another id; warns only on legacy."""
