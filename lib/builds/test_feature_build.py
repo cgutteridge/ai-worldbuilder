@@ -720,6 +720,22 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
         self.assertEqual(plan.cells.get((13, 50, 25)), 'minecraft:air')
         self.assertIn('door T-A cover awning depth 1', out)
 
+    def test_cover_without_slab_uses_full_block_and_warns(self):
+        """Terracotta has no slab. A covered entrance must not raise (#355)."""
+        spec = self.spec([_entrance_row(awning_like={'kind': 'covered_area', 'depth': 1})])
+        spec['roofs']['A']['material'] = 'terracotta'
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        covers = [
+            state for (x, y, z), state in plan.cells.items()
+            if z == 25 and 'terracotta' in state
+        ]
+        self.assertTrue(covers)
+        self.assertTrue(all(state == 'minecraft:terracotta' for state in covers))
+        self.assertIn("roof material 'terracotta' has no slab", buf.getvalue())
+        self.assertIn('using full block terracotta', buf.getvalue())
+
     def test_covered_area_depth_and_double_leaf_width(self):
         plan, out = self.build_plan([
             _entrance_row(leaves=2, awning_like={'kind': 'covered_area', 'depth': 3}),

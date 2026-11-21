@@ -2593,6 +2593,8 @@ class Build:
 
         Slab roofs extend one block beyond each leaf edge. Porch posts stand
         at the two outer front corners, leaving the door approach walkable.
+        A catalogue material with no slab (terracotta, concrete) places its
+        full block instead and records a warning. It does not raise.
 
         @returns: None
         """
@@ -2603,14 +2605,22 @@ class Build:
             lx, lz = (1, 0) if face in 'NS' else (0, 1)
             start = cells[0]
             width = len(cells)
-            material = block_family_variants(f.roof.get('material') or 'smooth_stone')
+            raw = f.roof.get('material') or 'smooth_stone'
+            material = block_family_variants(raw)
+            if 'slab' in material:
+                cover_state = f"{material['slab']}[type=bottom]"
+            else:
+                cover_state = material['full']
+                self._roof_warnings.append(
+                    f"roof material {raw!r} has no slab; using full block {material['full']}"
+                )
             for lateral in range(-1, width + 1):
                 for outward in range(1, depth + 1):
                     x = start[0] + lx * lateral + dx * outward
                     z = start[1] + lz * lateral + dz * outward
                     if (x, z) in self.by_no_all_cells:
                         continue
-                    self.set(x, roof_y, z, f"{material['slab']}[type=bottom]")
+                    self.set(x, roof_y, z, cover_state)
                     if kind == 'porch_roof' and outward == depth and lateral in (-1, width):
                         ground_y = self.top_solid(x, z, roof_y)
                         if ground_y is not None:
