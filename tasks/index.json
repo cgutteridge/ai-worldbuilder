@@ -128,18 +128,6 @@
         
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    , "requiresClaude": true},
-    
-    
-    {
-      "id": 344,
-      "title": "Task CLI: verify Cursor Claude identifiers and cover legacy scope-update edges",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Nonblocking Sonnet review suggestions from #342. Family aliases sonnet/opus and the configured claude-sonnet/claude-opus identifiers already work. Verify which identifiers the actual Cursor runner supplies before adding compatibility for any version-first labels; keep non-Claude/auto rejection and the external-model budget gate. Add synthetic CLI regression checks that re-read a legacy task after adding requiresClaude and exercise simultaneous flag/title/notes updates when source property order differs. editSpans already sorts edits; confirm behaviour rather than replacing it. Pure tool engineering with disposable tracker fixtures; no world build, place data or external model call is needed."
-    }
+    , "requiresClaude": true}
   ]
 }
