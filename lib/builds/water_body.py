@@ -29,8 +29,10 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  runs on real shorelines only, never along the cell edge. Each cell
                  of the body has its own spec and plan; together they build the
                  whole body without a seam. A cell with none of the body's
-                 water but within reach of its shore has a bank-only clip.
-                 ``bank.width`` must not exceed ``CLIP_REACH``.
+                 water but within reach of its shore has a bank-only clip
+                 (proposed only when the default bank width can reach that cell).
+                 ``bank.width`` must not exceed ``CLIP_REACH``. A clip plan id as
+                 ``name`` requires ``clip`` (#353).
   provenance     shared schema from ``lib/site/provenance.py`` (#151):
                    {source, confidence, evidence_ids, unresolved_reason}
 
@@ -40,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -54,6 +57,11 @@ DEFAULT_FLOOR = 'dirt'
 DEFAULT_BANK_WIDTH = 1
 MIN_WATER_COLUMNS = 4
 CLIP_REACH = 8          # blocks of a body's water a clipped spec carries beyond its cell (#321)
+# Clip plan ids from :func:`clip_plan_id` only: OSM ``w<digits>`` or synthetic ``water_<x>_<z>``,
+# then ``_<tx>_<tz>`` (m for minus). Do not match free-form names like ``river_itchen_63_m45``.
+_CLIP_PLAN_ID = re.compile(
+    r'^(?P<ref>w\d+|water_-?\d+_-?\d+)_(?P<tx>m?\d+)_(?P<tz>m?\d+)$'
+)
 
 
 class WaterBodyError(SystemExit):
@@ -115,6 +123,27 @@ def _validate_edge(path: str | Path | None, raw: Any) -> dict[str, str] | None:
     return {'material': material}
 
 
+def _parse_clip_coord(token: str) -> int:
+    return -int(token[1:]) if token.startswith('m') else int(token)
+
+
+def parse_clip_plan_id(name: str) -> tuple[str, tuple[int, int]] | None:
+    """Parse a per-cell clip plan id ``<ref>_<tx>_<tz>``, or None (#353).
+
+    Only ids :func:`clip_plan_id` can produce: OSM ``w123_63_m45`` or synthetic
+    ``water_<x>_<z>_<tx>_<tz>``. Free-form names that happen to end in
+    ``_<n>_<n>`` (for example a legacy ``river_itchen_63_m45`` whole plan) are
+    not clips.
+
+    @param name: plan / spec name
+    @returns: ``(ref, (tx, tz))`` when ``name`` is a clip id, else None
+    """
+    m = _CLIP_PLAN_ID.match(str(name).strip())
+    if not m:
+        return None
+    return m.group('ref'), (_parse_clip_coord(m.group('tx')), _parse_clip_coord(m.group('tz')))
+
+
 def _validate_clip(path: str | Path | None, raw: Any, outline: Sequence[tuple[int, int]],
                    bank: Mapping[str, Any]) -> dict[str, list[int]] | None:
     if raw is None:
@@ -122,6 +151,8 @@ def _validate_clip(path: str | Path | None, raw: Any, outline: Sequence[tuple[in
     cell = raw.get('cell') if isinstance(raw, dict) else None
     if not isinstance(cell, (list, tuple)) or len(cell) != 2:
         _fail(path, 'clip must be an object {"cell": [tx, tz]} or omitted')
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in cell):
+        _fail(path, 'clip.cell must be two integers [tx, tz]')
     tx, tz = int(cell[0]), int(cell[1])
     x0, z0, x1, z1 = cellmath.bounds((tx, tz), margin=bank['width'])
     if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
@@ -166,6 +197,16 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     bank = _validate_bank(path, spec['bank'])
     edge = _validate_edge(path, spec.get('edge'))
     clip = _validate_clip(path, spec.get('clip'), outline, bank)
+    # Clip plan ids without ``clip`` build neighbour water out to CLIP_REACH and bank
+    # that artificial edge (#353). Require the field when the name is a clip id, and
+    # keep the named cell aligned with clip.cell when both are present.
+    parsed = parse_clip_plan_id(name)
+    if clip is None and parsed is not None:
+        _fail(path, f'name {name!r} is a clip plan id; set clip {{"cell": [tx, tz]}} '
+                    '(or use a non-clip name for a legacy whole-body plan)')
+    if clip is not None and parsed is not None and tuple(parsed[1]) != tuple(clip['cell']):
+        _fail(path, f'name {name!r} clip cell {parsed[1][0]},{parsed[1][1]} does not match '
+                    f'clip.cell {clip["cell"][0]},{clip["cell"][1]}')
     provenance = _validate_provenance(path, spec['provenance'], root)
     out = {
         'name': name,
@@ -263,17 +304,20 @@ def clip_plan_id(ref: str, cell: tuple[int, int] | Sequence[int]) -> str:
     return f'{ref}_{tag}'
 
 
-def clip_candidate(body: Mapping[str, Any], cell: tuple[int, int]) -> dict[str, Any] | None:
+def clip_candidate(body: Mapping[str, Any], cell: tuple[int, int],
+                   *, bank_width: int = DEFAULT_BANK_WIDTH) -> dict[str, Any] | None:
     """One cell's clip of a whole water-body candidate, or None when no water is within reach (#321).
 
     The clip keeps the body's refs and provenance and gains a per-cell ``id``, ``clip``, ``cells``
     and in-cell ``area`` / ``bbox``. Its ``outline`` is the in-cell water plus the body's water
     within ``CLIP_REACH`` of the cell, which :func:`build` needs to bank real shores only. A cell
-    with no water of its own but some within ``CLIP_REACH`` gets a bank-only clip: ``area`` 0 and
-    ``bbox`` over the nearby water, since its shore may spill over the cell line.
+    with no water of its own gets a bank-only clip only when water lies within ``bank_width``
+    (default ``DEFAULT_BANK_WIDTH``) of the cell: farther water inside ``CLIP_REACH`` alone used
+    to propose candidates that ``load_spec_dict`` then refused (#353).
 
     @param body: whole-body candidate (``outline``, ``refs``, …)
     @param cell: ``(tx, tz)``
+    @param bank_width: reach used to decide bank-only proposals (default bank width)
     @returns: clip candidate dict, or None
     """
     cols = [(int(x), int(z)) for x, z in body['outline']]
@@ -282,6 +326,11 @@ def clip_candidate(body: Mapping[str, Any], cell: tuple[int, int]) -> dict[str, 
     if not near:
         return None
     inside = [q for q in near if cellmath.cell_of(*q) == tuple(cell)]
+    if not inside:
+        reach = max(1, int(bank_width))
+        bx0, bz0, bx1, bz1 = cellmath.bounds(tuple(cell), margin=reach)
+        if not any(bx0 <= q[0] <= bx1 and bz0 <= q[1] <= bz1 for q in cols):
+            return None
     xs, zs = [x for x, _ in inside or near], [z for _, z in inside or near]
     what = f'{len(inside)} columns' if inside else 'bank only'
     return {
@@ -294,6 +343,28 @@ def clip_candidate(body: Mapping[str, Any], cell: tuple[int, int]) -> dict[str, 
         'cells': [[int(cell[0]), int(cell[1])]],
         'clip': {'cell': [int(cell[0]), int(cell[1])]},
     }
+
+
+def bank_columns_in_cell(
+    outline: Iterable[Sequence[int] | tuple[int, int]],
+    cell: tuple[int, int] | Sequence[int],
+    *,
+    width: int = DEFAULT_BANK_WIDTH,
+) -> set[tuple[int, int]]:
+    """Bank-ring columns of ``outline`` that fall inside ``cell`` (#353).
+
+    Used to judge whether a bank-only clip is already built (no in-cell water to
+    cover by outline alone).
+
+    @param outline: water columns (clip outline may include neighbour water)
+    @param cell: ``(tx, tz)``
+    @param width: bank ring width
+    @returns: set of ``(x, z)`` bank columns in the cell
+    """
+    cols = {(int(x), int(z)) for x, z in outline}
+    ring = _bank_ring(cols, max(1, int(width)))
+    key = (int(cell[0]), int(cell[1]))
+    return {q for q in ring if cellmath.cell_of(*q) == key}
 
 
 def _components(cells: set[tuple[int, int]]) -> list[set[tuple[int, int]]]:

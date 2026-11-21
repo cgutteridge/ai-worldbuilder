@@ -343,6 +343,69 @@ class ClippedBuildTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             W.load_spec_dict({**bad, 'bank': {'material': 'dirt'}, 'clip': {'cell': [0]}})
 
+    def test_non_integer_clip_cell_raises_water_body_error(self):
+        """#353: clip.cell must be integers; raise WaterBodyError, not a bare ValueError."""
+        bad = {'name': 'unit_river', 'outline': self.river(), 'water_level': self.LEVEL,
+               'bank': {'material': 'dirt'}, 'clip': {'cell': ['west', 0]},
+               'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        with self.assertRaises(W.WaterBodyError):
+            W.load_spec_dict(bad)
+        with self.assertRaises(W.WaterBodyError):
+            W.load_spec_dict({**bad, 'clip': {'cell': [0, 1.5]}})
+
+    def test_clip_plan_id_name_requires_clip_field(self):
+        """#353: copying a clip outline under a clip id without clip banks the artificial edge."""
+        base = {
+            'name': W.clip_plan_id('w9', self.WEST),
+            'outline': self.river(),
+            'water_level': self.LEVEL,
+            'bank': {'material': 'coarse_dirt', 'width': 1},
+            'provenance': {'source': 'vector_map', 'confidence': 'high'},
+        }
+        with self.assertRaises(W.WaterBodyError) as ctx:
+            W.load_spec_dict(base)
+        self.assertIn('clip plan id', str(ctx.exception))
+        ok = W.load_spec_dict({**base, 'clip': {'cell': list(self.WEST)}})
+        self.assertEqual(ok['clip'], {'cell': [0, 0]})
+        with self.assertRaises(W.WaterBodyError) as mismatch:
+            W.load_spec_dict({**base, 'clip': {'cell': list(self.EAST)}})
+        self.assertIn('does not match', str(mismatch.exception))
+        # Whole-body synthetic ids, free-form legacy names, and plain names stay valid without clip.
+        whole = W.load_spec_dict({**base, 'name': 'water_122_10'})
+        self.assertIsNone(whole['clip'])
+        legacy = W.load_spec_dict({**base, 'name': 'river_itchen_63_m45'})
+        self.assertIsNone(legacy['clip'])
+        self.assertIsNone(W.parse_clip_plan_id('water_122_10'))
+        self.assertIsNone(W.parse_clip_plan_id('river_itchen_63_m45'))
+        self.assertEqual(W.parse_clip_plan_id('w9_0_0'), ('w9', (0, 0)))
+        self.assertEqual(W.parse_clip_plan_id('water_122_10_0_0'), ('water_122_10', (0, 0)))
+
+    def test_bank_width_greater_than_one_on_a_clip(self):
+        """#353: clipped builds honour bank.width > 1 inside the clip cell only."""
+        plan = W.build(self.edge_river(0, 2, self.WEST))
+        self.assertEqual({(x // 128, z // 128) for x, _y, z in plan.cells}, {self.WEST})
+        self.assertEqual(plan.get(121, self.LEVEL, 1), 'minecraft:cobblestone')  # width-2 shore
+        self.assertIsNone(plan.get(128, self.LEVEL, 1))  # never writes the east cell
+
+    def test_diagonal_corner_body_banks_only_the_clip_cell(self):
+        """#353: a body that only touches a cell on the diagonal still clips cleanly."""
+        # Water only in cell (1, 1), hugging the SW corner toward (0, 0).
+        outline = [[x, z] for x in range(128, 132) for z in range(128, 132)]
+        base = {
+            'name': 'unit_corner',
+            'outline': outline,
+            'water_level': self.LEVEL,
+            'bank': {'material': 'coarse_dirt', 'width': 1},
+            'edge': {'material': 'cobblestone'},
+            'provenance': {'source': 'vector_map', 'confidence': 'high'},
+        }
+        corner = W.build(W.load_spec_dict({**base, 'name': W.clip_plan_id('w1', (0, 0)),
+                                           'clip': {'cell': [0, 0]}}))
+        self.assertTrue(corner.cells)
+        self.assertEqual({(x // 128, z // 128) for x, _y, z in corner.cells}, {(0, 0)})
+        self.assertEqual(set(corner.cells.values()), {'minecraft:cobblestone'})
+        self.assertEqual(corner.get(127, self.LEVEL, 127), 'minecraft:cobblestone')
+
 
 class CandidateIdTest(unittest.TestCase):
     """Seam: water_body candidates get a stable plan id."""
