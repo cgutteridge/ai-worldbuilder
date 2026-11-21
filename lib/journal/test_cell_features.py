@@ -320,6 +320,28 @@ class TestCellFeatures(unittest.TestCase):
         whole = W.build(W.load_spec_dict({'name': 'whole', 'outline': sorted(water), **common}))
         self.assertEqual({**plans[0].cells, **plans[1].cells}, whole.cells)
 
+    def test_cell_the_bank_reaches_without_water_gets_a_bank_only_clip(self):
+        """#321: water along the z = -5632 line (not crossing it) still has its bank clipped below."""
+        water = {(x, z) for x in range(6142, 6149) for z in range(-5632, -5629)}
+        refs = {q: 'w7' for q in water}
+        common = {'water_level': 40, 'bank': {'material': 'dirt'}, 'edge': {'material': 'gravel'},
+                  'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        below = cf.missing_water_bodies(48, -45, water_columns=water, water_refs=refs, covered=set())
+        self.assertEqual([(b['id'], b['area'], b['clip']) for b in below],
+                         [('w7_48_m45', 0, {'cell': [48, -45]})])
+        self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=water, water_refs=refs,
+                                                 covered=water), below)   # built water never covers a bank
+        far = {(x, z + 9) for x, z in water}
+        self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=far, water_refs={q: 'w7' for q in far},
+                                                 covered=set()), [])     # beyond CLIP_REACH
+        whole = W.build(W.load_spec_dict({'name': 'whole', 'outline': sorted(water), **common}))
+        union: dict = {}
+        for cell in ((47, -44), (48, -44), (47, -45), (48, -45)):
+            body = cf.missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=set())[0]
+            spec = {'name': body['id'], 'outline': body['outline'], 'clip': body['clip'], **common}
+            union.update(W.build(W.load_spec_dict(spec)).cells)
+        self.assertEqual(union, whole.cells)
+
     def test_single_cell_pond_keeps_its_map_ref_plan(self):
         """#321: a pond inside one cell is not clipped; its plan id stays the map ref."""
         water, refs = self._two_cell_pond(0, 5)

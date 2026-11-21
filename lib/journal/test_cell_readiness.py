@@ -658,6 +658,16 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual([c['id'] for c in evidence.candidates(self.world.reg, (47, -44))],
                          ['w147601601_47_m44'])
 
+    def test_candidates_include_a_bank_only_clip_next_to_the_water(self):
+        """#321: a cell with none of a river's water still counts its bank clip when the water is near."""
+        from types import SimpleNamespace
+        from readiness_evidence import LocalEvidence
+        ring = [(6141., -5632.), (6151., -5632.), (6151., -5629.), (6141., -5629.), (6141., -5632.)]
+        evidence = LocalEvidence(self.world.root)
+        evidence._index = SimpleNamespace(areas=[([ring], {'natural': 'water', 'osm_way_id': '7'})],
+                                          buildings=[], streets=[])
+        self.assertEqual([c['id'] for c in evidence.candidates(self.world.reg, (48, -45))], ['w7_48_m45'])
+
     def test_local_evidence_houses_follow_brickfield_prepare_rules(self):
         """#233: LocalEvidence skips a spec-backed house plan under another id; warns only on legacy."""
         import json

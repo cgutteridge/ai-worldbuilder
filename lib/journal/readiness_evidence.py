@@ -24,8 +24,12 @@ _MAP_CLIP_DIRNAMES = frozenset({'vector_map', 'osm'})
 
 
 def _touches_cell(rings, cell):
-    """Whether a polygon's outer-ring bbox meets the cell (skips scanning far-off water)."""
-    x0, z0, x1, z1 = cellmath.bounds(cell)
+    """Whether a polygon's outer-ring bbox comes within a clip's reach of the cell (#321).
+
+    Skips scanning far-off water; water within ``CLIP_REACH`` may still need a bank-only clip here.
+    """
+    from water_body import CLIP_REACH
+    x0, z0, x1, z1 = cellmath.bounds(cell, margin=CLIP_REACH)
     xs = [x for x, _ in rings[0]]
     zs = [z for _, z in rings[0]]
     return min(xs) <= x1 and max(xs) >= x0 and min(zs) <= z1 and max(zs) >= z0

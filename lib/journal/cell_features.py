@@ -556,7 +556,9 @@ def missing_water_bodies(
     proposed whole. A body over cell lines (as far as ``water_columns`` reaches) is proposed
     as this cell's clip (#321, ``water_body.clip_candidate``): a per-cell ``id`` and ``clip``,
     the in-cell ``area``, and coverage judged on the in-cell columns only. Every cell it
-    touches proposes its own clip, so each cell records and builds its own plan.
+    touches proposes its own clip, so each cell records and builds its own plan. A cell with
+    none of the body's water but some within ``CLIP_REACH`` gets a bank-only clip (``area`` 0),
+    so a shore that spills over a cell line is never left unbuilt.
 
     @param tx: cell X
     @param tz: cell Z
@@ -586,11 +588,17 @@ def missing_water_bodies(
         provenance_source='vector_map',
     ):
         outline = [(int(c[0]), int(c[1])) for c in body['outline']]
-        if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
-            continue
         if len(footprint_cells(outline)) > 1:
-            body = clip_candidate(body, (tx, tz))     # per-cell clip of a body over cell lines (#321)
+            # per-cell clip of a body over cell lines, bank-only where only its shore reaches (#321)
+            body = clip_candidate(body, (tx, tz))
+            if body is None:
+                continue
             outline = [q for q in outline if x0 <= q[0] <= x1 and z0 <= q[1] <= z1]
+            if not outline:
+                out.append(body)                      # bank only: no water to judge coverage by
+                continue
+        elif not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
+            continue
         if sum(c in covered for c in outline) >= COVERED_FRAC * len(outline):
             continue
         out.append(body)

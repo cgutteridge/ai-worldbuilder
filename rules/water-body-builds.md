@@ -34,7 +34,11 @@ whole in one home cell (buildings still follow #288). `propose-features --cell
 <tx,tz> --record` in each cell the body touches records that cell's clip plan,
 id `<ref>_<tx>_<tz>` (`m` for a minus, e.g. `w4019512_63_m45`). The candidate
 carries `clip`, the in-cell `area`, and an `outline` of the in-cell water plus
-the body's water up to `CLIP_REACH` (8) blocks beyond the cell.
+the body's water up to `CLIP_REACH` (8) blocks beyond the cell. A cell with
+none of the body's water but some within `CLIP_REACH` gets a **bank-only** clip
+(area 0), because the shore can spill over a cell line the water never crosses.
+If the chosen `bank.width` leaves that cell untouched, the spec is refused: dismiss
+that clip plan (`cell_registry.py dismiss-feature`).
 
 Copy `name` (the clip id), `outline` and `clip` into that cell's spec. The
 build writes only the clip cell; the bank ring is worked out on the whole

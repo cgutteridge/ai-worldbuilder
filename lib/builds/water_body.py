@@ -28,8 +28,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  water up to ``CLIP_REACH`` blocks beyond the cell, so the bank ring
                  runs on real shorelines only, never along the cell edge. Each cell
                  of the body has its own spec and plan; together they build the
-                 whole body without a seam. ``bank.width`` must not exceed
-                 ``CLIP_REACH``.
+                 whole body without a seam. A cell with none of the body's
+                 water but within reach of its shore has a bank-only clip.
+                 ``bank.width`` must not exceed ``CLIP_REACH``.
   provenance     shared schema from ``lib/site/provenance.py`` (#151):
                    {source, confidence, evidence_ids, unresolved_reason}
 
@@ -122,8 +123,10 @@ def _validate_clip(path: str | Path | None, raw: Any, outline: Sequence[tuple[in
     if not isinstance(cell, (list, tuple)) or len(cell) != 2:
         _fail(path, 'clip must be an object {"cell": [tx, tz]} or omitted')
     tx, tz = int(cell[0]), int(cell[1])
-    if not any(cellmath.cell_of(x, z) == (tx, tz) for x, z in outline):
-        _fail(path, f'clip cell {tx},{tz} holds no outline column')
+    x0, z0, x1, z1 = cellmath.bounds((tx, tz), margin=bank['width'])
+    if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
+        _fail(path, f'clip cell {tx},{tz} gets no water or bank at bank.width {bank["width"]}; '
+                    'dismiss its plan with cell_registry.py dismiss-feature')
     if bank['width'] > CLIP_REACH:
         _fail(path, f'bank.width must be <= {CLIP_REACH} (CLIP_REACH) on a clipped spec')
     return {'cell': [tx, tz]}
@@ -261,27 +264,30 @@ def clip_plan_id(ref: str, cell: tuple[int, int] | Sequence[int]) -> str:
 
 
 def clip_candidate(body: Mapping[str, Any], cell: tuple[int, int]) -> dict[str, Any] | None:
-    """One cell's clip of a whole water-body candidate, or None when the body misses the cell (#321).
+    """One cell's clip of a whole water-body candidate, or None when no water is within reach (#321).
 
     The clip keeps the body's refs and provenance and gains a per-cell ``id``, ``clip``, ``cells``
     and in-cell ``area`` / ``bbox``. Its ``outline`` is the in-cell water plus the body's water
-    within ``CLIP_REACH`` of the cell, which :func:`build` needs to bank real shores only.
+    within ``CLIP_REACH`` of the cell, which :func:`build` needs to bank real shores only. A cell
+    with no water of its own but some within ``CLIP_REACH`` gets a bank-only clip: ``area`` 0 and
+    ``bbox`` over the nearby water, since its shore may spill over the cell line.
 
     @param body: whole-body candidate (``outline``, ``refs``, …)
     @param cell: ``(tx, tz)``
     @returns: clip candidate dict, or None
     """
     cols = [(int(x), int(z)) for x, z in body['outline']]
-    inside = [q for q in cols if cellmath.cell_of(*q) == tuple(cell)]
-    if not inside:
-        return None
     x0, z0, x1, z1 = cellmath.bounds(tuple(cell), margin=CLIP_REACH)
     near = sorted(q for q in cols if x0 <= q[0] <= x1 and z0 <= q[1] <= z1)
-    xs, zs = [x for x, _ in inside], [z for _, z in inside]
+    if not near:
+        return None
+    inside = [q for q in near if cellmath.cell_of(*q) == tuple(cell)]
+    xs, zs = [x for x, _ in inside or near], [z for _, z in inside or near]
+    what = f'{len(inside)} columns' if inside else 'bank only'
     return {
         **body,
         'id': clip_plan_id(body['refs'][0], cell),
-        'label': f"{body['label']}, clip {cell[0]},{cell[1]} ({len(inside)} columns)",
+        'label': f"{body['label']}, clip {cell[0]},{cell[1]} ({what})",
         'bbox': (min(xs), min(zs), max(xs), max(zs)),
         'area': len(inside),
         'outline': [[x, z] for x, z in near],

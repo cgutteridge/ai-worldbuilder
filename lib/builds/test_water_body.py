@@ -303,9 +303,37 @@ class ClippedBuildTest(unittest.TestCase):
         self.assertFalse(set(west.cells) & set(east.cells))
         self.assertEqual({**west.cells, **east.cells}, whole.cells)
 
+    def edge_river(self, z0: int, width: int, clip=None) -> dict:
+        """A river crossing x = 128 whose near shore runs ``z0`` blocks above the z = 0 cell line."""
+        base = {'name': 'unit_edge_river', 'water_level': self.LEVEL,
+                'outline': [[x, z] for x in range(122, 134) for z in range(z0, z0 + 3)],
+                'bank': {'material': 'coarse_dirt', 'width': width}, 'edge': {'material': 'cobblestone'},
+                'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        if clip is not None:
+            base['clip'] = {'cell': list(clip)}
+        return W.load_spec_dict(base)
+
+    def test_bank_in_a_cell_without_water_is_built_by_its_own_clip(self):
+        """Water near a cell line it does not cross: every cell the bank reaches has a clip."""
+        for z0, width in ((0, 1), (1, 2), (0, 3)):
+            whole = W.build(self.edge_river(z0, width))
+            cells = {(x // 128, z // 128) for x, _y, z in whole.cells}
+            self.assertIn((0, -1), cells)                      # the bank spills over z = 0
+            union: dict = {}
+            for cell in cells:
+                clip = W.build(self.edge_river(z0, width, cell))
+                self.assertEqual({(x // 128, z // 128) for x, _y, z in clip.cells}, {cell})
+                self.assertFalse(set(clip.cells) & set(union))
+                union.update(clip.cells)
+            self.assertEqual(union, whole.cells, (z0, width))
+        bank_only = W.build(self.edge_river(0, 1, (0, -1)))
+        self.assertEqual(set(bank_only.cells.values()), {'minecraft:cobblestone'})
+
     def test_clip_spec_is_validated(self):
         with self.assertRaises(SystemExit):
-            self.spec((5, 5))                                  # no water in that cell
+            self.spec((5, 5))                                  # no water or bank in that cell
+        with self.assertRaises(SystemExit):
+            self.edge_river(2, 1, (0, -1))                     # bank stops at z = 1, short of the cell
         bad = {'name': 'x', 'outline': self.river(), 'water_level': 1,
                'bank': {'material': 'dirt', 'width': W.CLIP_REACH + 1},
                'clip': {'cell': [0, 0]},
