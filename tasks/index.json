@@ -72,7 +72,7 @@
     {
       "id": 323,
       "title": "Spike: tree lines along hedges and lanes that OSM does not map",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
@@ -116,7 +116,7 @@
     {
       "id": 337,
       "title": "Big-box roof follows the aerial (spike first)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
