@@ -50,7 +50,12 @@ from coverage import (  # noqa: E402
 from osm_footprints import OSMIndex  # noqa: E402
 from portals import describe, for_footprint  # noqa: E402
 from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
-from water_body import MIN_WATER_COLUMNS, clip_candidate, water_body_components  # noqa: E402
+from water_body import (  # noqa: E402
+    MIN_WATER_COLUMNS,
+    bank_columns_in_cell,
+    clip_candidate,
+    water_body_components,
+)
 from landmark_gate import landmark_fields  # noqa: E402
 from osm_footprints import osm_tags  # noqa: E402
 
@@ -557,8 +562,9 @@ def missing_water_bodies(
     as this cell's clip (#321, ``water_body.clip_candidate``): a per-cell ``id`` and ``clip``,
     the in-cell ``area``, and coverage judged on the in-cell columns only. Every cell it
     touches proposes its own clip, so each cell records and builds its own plan. A cell with
-    none of the body's water but some within ``CLIP_REACH`` gets a bank-only clip (``area`` 0),
-    so a shore that spills over a cell line is never left unbuilt.
+    none of the body's water but some within the default bank width gets a bank-only clip
+    (``area`` 0), so a shore that spills over a cell line is never left unbuilt. Built
+    bank-only clips drop out once their in-cell bank columns are covered (#353).
 
     @param tx: cell X
     @param tz: cell Z
@@ -595,7 +601,11 @@ def missing_water_bodies(
                 continue
             outline = [q for q in outline if x0 <= q[0] <= x1 and z0 <= q[1] <= z1]
             if not outline:
-                out.append(body)                      # bank only: no water to judge coverage by
+                # bank only: no in-cell water; coverage is the bank columns this clip would write
+                bank_cols = bank_columns_in_cell(body['outline'], (tx, tz))
+                if bank_cols and sum(c in covered for c in bank_cols) >= COVERED_FRAC * len(bank_cols):
+                    continue
+                out.append(body)
                 continue
         elif not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in outline):
             continue

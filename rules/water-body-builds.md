@@ -35,18 +35,32 @@ whole in one home cell (buildings still follow #288). `propose-features --cell
 id `<ref>_<tx>_<tz>` (`m` for a minus, e.g. `w4019512_63_m45`). The candidate
 carries `clip`, the in-cell `area`, and an `outline` of the in-cell water plus
 the body's water up to `CLIP_REACH` (8) blocks beyond the cell. A cell with
-none of the body's water but some within `CLIP_REACH` gets a **bank-only** clip
-(area 0), because the shore can spill over a cell line the water never crosses.
-If the chosen `bank.width` leaves that cell untouched, the spec is refused: dismiss
-that clip plan (`cell_registry.py dismiss-feature`).
+none of the body's water but some within the **default bank width** (1) gets a
+**bank-only** clip (area 0), because the shore can spill over a cell line the
+water never crosses. Water that is only farther away (still inside `CLIP_REACH`)
+is not proposed as bank-only: at the default width the spec would be refused.
+If you later choose a wider `bank.width` that needs a dry neighbour the proposal
+skipped, write that clip spec by hand. If a recorded plan's chosen width leaves
+the cell untouched, the spec is refused: dismiss that clip plan
+(`cell_registry.py dismiss-feature`).
 
-Copy `name` (the clip id), `outline` and `clip` into that cell's spec. The
-build writes only the clip cell; the bank ring is worked out on the whole
-outline, so real shorelines get bank and the cell edge gets none. A clipped
-apply never writes into a neighbour, so it never makes a finished neighbour's
-trees or decor stale (the #234 edge policy). Use the same `water_level`,
-`depth`, `bank` and `edge` in every clip of one body so the cells join without
-a step. `bank.width` must not exceed `CLIP_REACH`.
+Copy `name` (the clip id), `outline` and `clip` into that cell's spec. A clip
+plan id as `name` **requires** `clip` (#353); omitting it builds the neighbour's
+water out to the reach and banks that artificial edge. The build writes only the
+clip cell; the bank ring is worked out on the whole outline, so real shorelines
+get bank and the cell edge gets none. A clipped apply never writes into a
+neighbour, so it never makes a finished neighbour's trees or decor stale (the
+#234 edge policy). Use the same `water_level`, `depth`, `bank` and `edge` in
+every clip of one body so the cells join without a step. `bank.width` must not
+exceed `CLIP_REACH`.
+
+### Legacy whole-body plans
+
+A spec **without** `clip` still builds the entire `outline` in one apply (the
+pre-#321 whole-pond path, and the offline “join the clips” check). Keep that for
+legacy plans and fixtures. Do not reuse a clip plan id (`<ref>_<tx>_<tz>`) as
+`name` on a whole-body spec: load refuses it so a copied clip outline cannot
+silently bank an artificial edge.
 
 Example:
 

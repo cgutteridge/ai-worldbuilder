@@ -331,6 +331,9 @@ class TestCellFeatures(unittest.TestCase):
                          [('w7_48_m45', 0, {'cell': [48, -45]})])
         self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=water, water_refs=refs,
                                                  covered=water), below)   # built water never covers a bank
+        mid = {(x, z + 3) for x, z in water}
+        self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=mid, water_refs={q: 'w7' for q in mid},
+                                                 covered=set()), [])     # within CLIP_REACH, beyond default bank
         far = {(x, z + 9) for x, z in water}
         self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=far, water_refs={q: 'w7' for q in far},
                                                  covered=set()), [])     # beyond CLIP_REACH
@@ -341,6 +344,14 @@ class TestCellFeatures(unittest.TestCase):
             spec = {'name': body['id'], 'outline': body['outline'], 'clip': body['clip'], **common}
             union.update(W.build(W.load_spec_dict(spec)).cells)
         self.assertEqual(union, whole.cells)
+        # #353: once the bank-only clip is built, its in-cell bank columns cover it
+        bank_only = below[0]
+        built = W.build(W.load_spec_dict({
+            'name': bank_only['id'], 'outline': bank_only['outline'], 'clip': bank_only['clip'], **common,
+        }))
+        bank_covered = {(x, z) for x, _y, z in built.cells}
+        self.assertEqual(cf.missing_water_bodies(48, -45, water_columns=water, water_refs=refs,
+                                                 covered=bank_covered), [])
 
     def test_single_cell_pond_keeps_its_map_ref_plan(self):
         """#321: a pond inside one cell is not clipped; its plan id stays the map ref."""
