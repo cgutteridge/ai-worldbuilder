@@ -128,20 +128,6 @@
         
       ],
       "notes": "Owner: Westquay South roof does not match the aerial (long PV rows on a flat light roof; the prototype's central grid of detectors did not). Unverified: whether the aerial resolution separates PV rows from a light roof; spike that first. Deliverable: roof colour and PV row layout from an aerial crop of the roof, as daylight_detector rows. Check: top-down capture of Westquay South in 43,-16 matches the aerial; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
-    , "requiresClaude": true},
-    
-    
-    
-    
-    {
-      "id": 346,
-      "title": "Run budget for long runs: flag at budget, kill at 150%, continue to next cell",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Owner decision 2026-11-21 (from #318 timing work): a tree build has a runtime budget of 8 minutes. In a long (unattended) run, a build that reaches the budget is flagged; it is killed at 150% of the budget (12 minutes); the run then goes on to the next cell instead of stopping. At the end of the run the report lists every tree build that took 8 minutes or more, whether it finished or was killed.\n\nToday lib/site/site_lock.py run() starts the command in its own session and handles SIGTERM (then SIGKILL) but has no deadline, and nothing records how long a build took. Scope:\n1. site_lock.py run (and the CLI) gets a budget: --budget-min N (flag at N) and --kill-factor F (default 1.5). At the budget it prints one OVER-BUDGET line with owner, task and elapsed; at N*F it kills the process group the way run() already does (SIGTERM, short grace, SIGKILL), releases the lock as it always does, and exits with a distinct status (for example 124), different from an ordinary failure. Without --budget-min nothing changes.\n2. Every run that finishes or is killed writes its elapsed time and verdict (ok, over-budget, killed) to a machine-readable record that site_status.py morning can read, so the end-of-run report lists builds of 8 minutes or more with cell, elapsed and verdict.\n3. cell-orchestrator skill (overnight mode): trees builds run with --budget-min 8; exit 124 is a killed build, not a failure: run site_recover.py status/recover for that cell (existing rule), log a PROBLEM with the elapsed time, exclude the cell for this run, and continue. A killed build does not count toward the two-consecutive-failures stop and is not retried. The repeated-tool-error stop still applies to other causes. The morning summary lists the over-budget builds.\n\nAcceptance, synthetic only: tests run a harmless sleeping command with a tiny budget (seconds) and check the flag line, the kill, the exit status, that the lock is released, that the record is written, and that a run under budget is untouched. No world build step in this task, so requiresClaude is false. The orchestrator-skill wording is covered by the skill-stub test. Other layers have no budget yet (ground redo on 46,-46 took about 3 minutes plus a possible frontier of about 2 minutes per new cell edge); set them once timed.\n\nRelated: #318 (timing and the 8 minute budget), #345 (speeds trees planning).\n"
-    }
+    , "requiresClaude": true}
   ]
 }
