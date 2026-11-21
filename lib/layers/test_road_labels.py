@@ -201,23 +201,56 @@ class TestApplyWritesNoBlocks(unittest.TestCase):
 
         texts = rl.apply_labels(paced, result.labels, [(0, 0)], hop=hop)
         names = [name for name, _args in paced.calls]
-        self.assertEqual(names, ['command_execute', 'entity_summon'])
-        self.assertEqual(paced.calls[0][1]['command'], rl.kill_command((0, 0)))
+        self.assertEqual(names, ['entity_query', 'entity_summon'])
+        self.assertEqual(paced.calls[0][1]['selector'], '@e[tag=wb_label]')
         self.assertEqual(paced.calls[1][1]['entity_type'], 'minecraft:text_display')
         self.assertNotIn('{"text"', paced.calls[1][1]['nbt'])
         self.assertEqual(len(hops), 1)
         self.assertIn('I will put you back', hops[0][2])
         self.assertEqual(restored, [(0, 0)])
-        self.assertEqual(len(texts), 2)
+        self.assertEqual(len(texts), 1)   # no old labels to kill, one summon
         self.assertFalse(any(name.startswith('block_') for name, _args in paced.calls))
 
-    def test_undo_only_kills(self):
+    def test_apply_kills_only_this_cells_old_labels_before_summoning(self):
+        result = plan([way('1', 'Lane', [(0, 0), (40, 0)])])
+        paced = _FakePaced(listing=_listing(
+            ('aaa', ('wb_label', 'wb_cell_0_0')),
+            ('bbb', ('wb_label', 'wb_cell_1_0')),
+            ('ccc', ('wb_cell_0_0',)),
+        ))
+        rl.apply_labels(paced, result.labels, [(0, 0)])
+        self.assertEqual(
+            [name for name, _args in paced.calls],
+            ['entity_query', 'entity_kill', 'entity_summon'],
+        )
+        self.assertEqual(paced.calls[1][1], {'uuid': 'aaa'})
+
+    def test_never_calls_command_execute(self):
+        result = plan([way('1', 'Lane', [(0, 0), (40, 0)])])
         paced = _FakePaced()
+        rl.apply_labels(paced, result.labels, [(0, 0)])
+        rl.undo_labels(paced, [(0, 0)])
+        self.assertNotIn('command_execute', [name for name, _args in paced.calls])
+
+    def test_undo_only_kills(self):
+        paced = _FakePaced(listing=_listing(('aaa', ('wb_label', 'wb_cell_1_-1'))))
         rl.undo_labels(paced, [(1, -1)])
         self.assertEqual(
-            paced.calls,
-            [('command_execute', {'command': rl.kill_command((1, -1))})],
+            [name for name, _args in paced.calls],
+            ['entity_query', 'entity_kill'],
         )
+        self.assertEqual(paced.calls[1][1], {'uuid': 'aaa'})
+
+    def test_label_uuids_reads_the_servers_listing(self):
+        listing = _listing(
+            ('fa839abc-007d-4fd3-8a85-e7c0dd9382cd', ('wb_label', 'wb_cell_49_-45')),
+            ('88ec593f-827f-45e1-ab52-8e26fd5c8ed6', ('wb_label', 'wb_cell_49_-44')),
+        )
+        self.assertEqual(
+            rl.label_uuids(listing, (49, -45)),
+            ['fa839abc-007d-4fd3-8a85-e7c0dd9382cd'],
+        )
+        self.assertEqual(rl.label_uuids('[0]:', (49, -45)), [])
 
     def test_a_failed_summon_still_restores_the_player(self):
         result = plan([way('1', 'Lane', [(0, 0), (40, 0)])])
@@ -264,15 +297,29 @@ class TestMapRows(unittest.TestCase):
         self.assertFalse(bridge_at(10, 30))
 
 
+def _listing(*entries):
+    """An ``entity_query`` listing: ``(uuid, tags)`` pairs in the server's text form."""
+    rows = [
+        f'  - uuid: {uuid}\n    type: "minecraft:text_display"\n    tags[{len(tags)}]: {",".join(tags)}'
+        for uuid, tags in entries
+    ]
+    return f'[{len(rows)}]:\n' + '\n'.join(rows)
+
+
 class _FakePaced:
-    def __init__(self, fail_on=None):
+    """Records calls. ``entity_query`` answers with ``listing``; every other call says ok."""
+
+    def __init__(self, fail_on=None, listing='[0]:'):
         self.calls = []
         self.fail_on = fail_on
+        self.listing = listing
 
     def text(self, name, args):
         self.calls.append((name, args))
         if name == self.fail_on:
             raise RuntimeError(name)
+        if name == 'entity_query':
+            return self.listing
         return 'ok'
 
 

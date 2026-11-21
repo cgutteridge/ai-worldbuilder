@@ -378,13 +378,57 @@ def _refresh(paced, labels, cells, *, hop) -> list[str]:
         )
         restore = hop(lo, hi, why) if hop else None
         try:
-            out.append(paced.text('command_execute', {'command': kill_command(cell)}))
+            out.extend(_kill_cell(paced, cell))
             for label in by_cell.get(cell, ()):
                 out.append(paced.text('entity_summon', summon_args(label)))
         finally:
             if restore:
                 restore()
     return out
+
+
+_QUERY_LIMIT = 1024
+
+
+def label_uuids(listing: str, cell: tuple[int, int]) -> list[str]:
+    """UUIDs of this cell's labels in an ``entity_query`` listing.
+
+    The selector is not trusted to filter: an entry counts only when its own tags
+    include both ``wb_label`` and the cell tag.
+
+    @param listing: ``entity_query`` text (``- uuid: ...`` entries with a ``tags[n]:`` line)
+    @param cell: cell whose ``wb_cell`` tag must be present
+    @returns: matching entity UUIDs
+    """
+    want = {TAG, cell_tag(cell)}
+    found: list[str] = []
+    for entry in listing.split('- uuid:')[1:]:
+        uuid = entry.split(None, 1)[0].strip('"')
+        tags: set[str] = set()
+        for line in entry.splitlines():
+            head, _, rest = line.strip().partition(':')
+            if head.startswith('tags'):
+                tags = {t.strip().strip('"') for t in rest.split(',')}
+        if want <= tags:
+            found.append(uuid)
+    return found
+
+
+def _kill_cell(paced, cell: tuple[int, int]) -> list[str]:
+    """Kill this cell's labels with ``entity_query`` + ``entity_kill``.
+
+    The world server does not always register ``command_execute``, so the kill
+    never depends on it. Equivalent to :func:`kill_command` for the cell.
+    """
+    listing = paced.text('entity_query', {
+        'dimension': DIMENSION,
+        'selector': f'@e[tag={TAG}]',
+        'limit': _QUERY_LIMIT,
+    })
+    return [
+        paced.text('entity_kill', {'uuid': uuid})
+        for uuid in label_uuids(listing, cell)
+    ]
 
 
 def _cell_box(cell: tuple[int, int]) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
