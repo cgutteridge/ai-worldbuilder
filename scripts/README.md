@@ -14,7 +14,7 @@ API.
 | Registry / queue | `cell_registry.py`, `dryrun_reset.py`, `cell_marker.py` |
 | Repo hygiene | `run_tests.py`, `pre_commit_checks.py`, `ship_branch.py`, `install_git_hooks.py` |
 | Live site | `site_views.py`, `site_patrol.py`, `site_audit.py`, `site_index.py`, `redo_here.py` |
-| Feature builds | `house_build.py`, `feature_build.py`, `reapply_feature.py`, `register_builder.py`, `builder_audit.py` |
+| Feature builds | `house_build.py`, `feature_build.py`, `reapply_feature.py`, `register_builder.py`, `builder_audit.py`, `roof_aerial.py` (flat-roof colour + PV rows from an aerial) |
 | Audits | `lidar_audit.py`, `tree_review.py`, `door_audit.py`, `airtight.py` |
 | Bake-off shims | `model_bakeoff.py`, `feature_selection_check.py` → `bakeoff/` |
 | Bootstrap | `script_env.py` (path preamble; import this, do not move it) |
