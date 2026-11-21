@@ -38,6 +38,7 @@ from osgb import load_offsets, to_mc, to_osgb  # noqa: E402
 from ref_manifest import mc_tiles_for_bbox  # noqa: E402
 from terrace import snap_slope  # noqa: E402
 from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402
+from surface_probe import PLANTS, short_id
 
 SKIP_LIDAR_TOP = ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
 
@@ -206,7 +207,7 @@ def lidar_top(world, x: int, z: int, ymax: int = 120, ymin: int = 30) -> int:
     y = ymax
     while y > ymin:
         b = world.block(x, y, z) or 'minecraft:air'
-        if not any(s in b for s in SKIP_LIDAR_TOP):
+        if short_id(b) not in PLANTS and not any(s in b for s in SKIP_LIDAR_TOP):
             return y
         y -= 1
     return y

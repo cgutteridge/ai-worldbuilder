@@ -1,9 +1,20 @@
 """Unit tests for surface_probe (no Minecraft)."""
 import unittest
+from pathlib import Path
 
 import numpy as np
 
 import surface_probe as sp
+
+
+NEW_GROUND_COVER = (
+    'blue_orchid', 'orange_tulip', 'pink_tulip', 'lily_of_the_valley', 'wither_rose',
+    'sunflower', 'rose_bush', 'peony', 'lilac',
+    'short_dry_grass', 'tall_dry_grass', 'leaf_litter', 'bush', 'firefly_bush',
+    'wildflowers', 'pink_petals', 'open_eyeblossom', 'closed_eyeblossom',
+    'torchflower', 'pitcher_plant', 'dead_bush', 'sweet_berry_bush',
+    'brown_mushroom', 'red_mushroom',
+)
 
 
 class _Col:
@@ -31,6 +42,45 @@ class TestSurfaceY(unittest.TestCase):
 
     def test_plain_ground_unchanged(self):
         self.assertEqual(sp.surface_y(_Col({42: 'minecraft:grass_block'}), 0, 0), (42, 'grass_block'))
+
+
+class TestGroundCover(unittest.TestCase):
+    def test_ids_are_in_the_vendored_mojang_block_list(self):
+        source = Path(__file__).resolve().parents[2] / 'config/minecraft-block-ids-26.2.txt'
+        ids = set(source.read_text().splitlines())
+        for plant in NEW_GROUND_COVER:
+            with self.subTest(plant=plant):
+                self.assertIn(f'minecraft:{plant}', ids)
+
+    def test_every_new_plant_is_skipped_above_each_floor(self):
+        for plant in NEW_GROUND_COVER:
+            for ground in ('grass_block', 'dirt', 'podzol'):
+                with self.subTest(plant=plant, ground=ground):
+                    blocks = {42: f'minecraft:{ground}', 43: f'minecraft:{plant}'}
+                    self.assertEqual(sp.surface_y(_Col(blocks), 0, 0, top=45), (42, ground))
+                    self.assertTrue(sp.is_tree_or_plant_block(blocks[43]))
+
+    def test_plant_at_lidar_terrain_is_not_ground(self):
+        for plant in NEW_GROUND_COVER:
+            with self.subTest(plant=plant):
+                world = _Grid({(1, 64, 1): f'minecraft:{plant}'})
+                self.assertIsNone(sp.ground_at(world, hm(), 1, 1))
+
+    def test_litter_states_and_both_halves_remain_vegetation(self):
+        for state in ('leaf_litter[facing=west,segment_amount=4]',
+                      'leaf_litter[facing=north,segment_amount=1]',
+                      'pitcher_plant[half=lower]', 'pitcher_plant[half=upper]'):
+            with self.subTest(state=state):
+                world = _Col({42: 'minecraft:podzol', 43: f'minecraft:{state}'})
+                self.assertEqual(sp.surface_y(world, 0, 0, top=44), (42, 'podzol'))
+                self.assertTrue(sp.is_tree_or_plant_block(f'minecraft:{state}'))
+
+    def test_mushroom_blocks_are_still_ground(self):
+        for block in ('brown_mushroom_block', 'red_mushroom_block'):
+            with self.subTest(block=block):
+                world = _Col({42: f'minecraft:{block}'})
+                self.assertEqual(sp.surface_y(world, 0, 0, top=43), (42, block))
+                self.assertFalse(sp.is_tree_or_plant_block(f'minecraft:{block}'))
 
 
 def bound_world(y_offset):

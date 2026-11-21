@@ -10,12 +10,13 @@ import sys
 from collections import deque
 
 from site_kit import World, warm_reads
+from surface_probe import PLANTS
 
 OPEN_EXACT = {
     'air', 'cave_air', 'light', 'water', 'lantern', 'soul_lantern', 'end_rod', 'iron_chain',
     'torch', 'wall_torch', 'rail', 'vine', 'short_grass', 'tall_grass', 'fern', 'large_fern',
     'moss_carpet', 'flower_pot', 'ladder', 'lever', 'tripwire',
-}
+} | set(PLANTS)
 OPEN_SUFFIX = (
     '_door', '_sign', '_button', '_carpet', '_torch', '_rail', '_pressure_plate', '_banner',
     '_sapling', '_tulip',

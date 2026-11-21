@@ -10,6 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import block_reference as br  # noqa: E402
 
 class TestGroups(unittest.TestCase):
+    def test_woodland_plants_are_partial_but_solid_mushrooms_are_not(self):
+        for plant in ('short_dry_grass', 'tall_dry_grass', 'leaf_litter', 'bush',
+                      'firefly_bush', 'wildflowers', 'pink_petals', 'closed_eyeblossom'):
+            with self.subTest(plant=plant):
+                self.assertTrue(br.is_partial(f'minecraft:{plant}'))
+        self.assertFalse(br.is_partial('brown_mushroom_block'))
+        self.assertFalse(br.is_partial('grass_block'))
+
     def test_hue_groups(self):
         self.assertEqual(br.hue_group((200, 30, 30)), 'red')
         self.assertEqual(br.hue_group((120, 120, 120)), 'grey-mid')
