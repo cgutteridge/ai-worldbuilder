@@ -1,6 +1,6 @@
 """Standard per-cell OSM extract job list (landscape set).
 
-The world ``osm_extract`` provider owns buildings / highways / landuse / railway
+The shared ``osm_extraction`` module owns base building / highway / railway
 presets. Landscape families the planner layers already read (water, waterway,
 barriers, furniture, entrances, pedestrian areas, natural, leisure) live here
 so every world gets the same vocabulary via ``shims/osm_extract.py``.
