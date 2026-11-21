@@ -4,11 +4,12 @@ Evaluated 2026-11-21 for `southampton-build`; source and code verification,
 with no live-world writes.
 
 1. **Verdict:** add — go for the optional first-return product already supported
-   by `ukdefra-lidar`; do not add a duplicate provider.
+   by the existing system lidar provider; do not add a duplicate provider.
 2. **Home:** system. England-wide data belongs to the existing system provider,
    whose downloaded files remain in each active world's own cache.
 3. **Type slot(s):** `lidar`.
-4. **Provider id:** `ukdefra-lidar` (existing); product/model `DSM_FIRST`.
+4. **Provider id:** reuse the existing `lidar` entry in the
+   [system catalogue](../../config/system-providers.json); product/model `DSM_FIRST`.
 5. **Why:**
    - An actual 1 m GeoTIFF download succeeded; this is not just a map service.
    - The first-return surface recovered substantially more standing height in
@@ -84,16 +85,16 @@ the table above preserves the useful results independently of those throwaways.
 
 ## Existing implementation and the remaining seam
 
-- System catalogue: `config/system-providers.json` selects `ukdefra-lidar`.
-- System code: `providers/ukdefra-lidar/get/defra_lidar.py` already maps
+- System catalogue: `config/system-providers.json` already selects a `lidar` provider.
+- System code: the catalogue's `modules.tiles` implementation already maps
   `DSM_FIRST` to `lidar_composite_first_return_dsm`. Its tile client supports
   `missing`, `ensure` and `sample` for that optional model.
 - Per-world files: `downloads/defra-lidar/DSM_FIRST/*.tif` beneath the active
   world, beside `DTM/`, `DSM/` and cached catalogue answers.
-- `providers/ukdefra-lidar/review/lidar_query.py` already exposes `dsm_first`
+- The catalogue's `modules.query` implementation already exposes `dsm_first`
   and `canopy`. **`canopy` means first minus last return**, not first minus DTM.
   For a 2 m standing-height gate, calculate `max(dsm_first - dtm, 0)`.
-- `providers/ukdefra-lidar/manage/defra_world.py` already consumes cached first
+- The catalogue's `modules.world` implementation already consumes cached first
   returns in reference heightmaps. It uses first-minus-last evidence to identify
   foliage, then first-minus-DTM for the resulting crown height.
 - `lib/layers/trees_layer.py:cell_ndsm` currently returns the provider-neutral
@@ -135,7 +136,7 @@ PY
 
 Those whole-cell numbers differ from the table, which restricts samples to the
 mapped wood polygon. The evaluation itself used the same `lidar_query.query`
-implementation with `DefraLidar(cache=temporary_cache, download=False)` so it
+implementation with `lidar_provider.tile_client(cache=temporary_cache, download=False)` so it
 could retain the world's existing cache unchanged.
 
 Verification: the actual ZIP/GeoTIFF and mapped-wood sample succeeded; focused
