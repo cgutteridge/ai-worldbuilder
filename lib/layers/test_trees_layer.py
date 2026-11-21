@@ -126,25 +126,61 @@ class TestTreeSources(unittest.TestCase):
         rejected = tl.unsupported_tree_crowns((0, 0), [(127, 15, 3.), (125, 15, 3.)], idx, set(), None)
         self.assertEqual([(x, z) for x, z, _reason in rejected], [(125, 15)])
 
+    def test_lidar_across_each_cell_edge_and_corner_supports_a_crown(self):
+        idx = self.index([(self.polygon(0, 0, 128, 128), {'landuse': 'meadow'})])
+        cases = [((0, 50), (-2, 50)), ((127, 50), (129, 50)),
+                 ((50, 0), (50, -2)), ((50, 127), (50, 129)),
+                 ((0, 0), (-1, -1)), ((0, 127), (-1, 128)),
+                 ((127, 0), (128, -1)), ((127, 127), (128, 128))]
+        for crown, support in cases:
+            with self.subTest(crown=crown, support=support):
+                ndsm = np.zeros((132, 132))
+                ndsm[support[0] + 2, support[1] + 2] = 2.
+                self.assertEqual(tl.unsupported_tree_crowns(
+                    (0, 0), [(*crown, 3.)], idx, set(), ndsm, margin=2), [])
+
+    def test_missing_halo_preserves_cached_interior_lidar_evidence(self):
+        idx = self.index([(self.polygon(0, 0, 128, 128), {'landuse': 'meadow'})])
+        ndsm = np.zeros((128, 128))
+        ndsm[40, 40] = 2.
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.)]), \
+                mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'cell_ndsm', side_effect=lambda c, margin=0: None if margin else ndsm), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            inputs = tl.planning_inputs((0, 0), osm_ground=_empty_osm_ground())
+        self.assertEqual(inputs.crowns, [(40, 40, 3.)])
+        self.assertEqual(inputs.source_rejections, [])
+
     def test_planning_inputs_gate_detector_fill_aerial_and_extra_but_keep_mapped_rows(self):
         x0, z0 = CELL[0] * 128, CELL[1] * 128
         idx = self.index([(self.polygon(x0, z0, x0 + 128, z0 + 128), {'landuse': 'meadow'})])
         ground = types.SimpleNamespace(trees=[(x0 + 10, z0 + 10)],
                                        tree_rows=[[(x0 + 20, z0 + 80), (x0 + 32, z0 + 80)]])
+        ndsm = np.zeros((132, 132))
+        ndsm[128 + 2, 50 + 2] = 2.    # supports only the detector crown beside the east cell edge
         with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
                 mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
-                mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.)]), \
+                mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.), (127, 50, 3.)]), \
                 mock.patch.object(tl, 'cover_grid', return_value=cover(1., 1.)), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[(100, 100, 3.)]), \
                 mock.patch.object(tl, 'google_crowns', return_value=([(x0 + 60, z0 + 60, x0 + 70, z0 + 70)], [(65, 65, 3.)])), \
-                mock.patch.object(tl, 'cell_ndsm', return_value=None), \
+                mock.patch.object(tl, 'cell_ndsm', return_value=ndsm), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
                 mock.patch.object(tl, 'ignored_builds', return_value=set()), \
                 mock.patch.object(tl, 'load_masked_positions', return_value={}), \
                 mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
             inputs = tl.planning_inputs(CELL, osm_ground=ground)
-        self.assertEqual({(x0 + i, z0 + j) for i, j, _r in inputs.crowns}, inputs.mapped)
+        self.assertEqual({(x0 + i, z0 + j) for i, j, _r in inputs.crowns},
+                         inputs.mapped | {(x0 + 127, z0 + 50)})
         self.assertGreater(len(inputs.source_rejections), 100)    # dense texture fill was also removed
         self.assertEqual(len(inputs.crown_origins), len(inputs.crowns))
         self.assertGreaterEqual(len(inputs.mapped), 4)             # young mapped point and row survive
@@ -330,7 +366,7 @@ class TestGoogleCrowns(unittest.TestCase):
                     mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                     mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
                     mock.patch('ground_sources.OSMGround', _empty_osm_ground), \
-                    mock.patch.object(tl, 'cell_ndsm', lambda c: None), \
+                    mock.patch.object(tl, 'cell_ndsm', lambda c, margin=0: None), \
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())
 
@@ -470,7 +506,7 @@ class TestMappedTreeCrowns(unittest.TestCase):
         osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
-                mock.patch.object(tl, 'cell_ndsm', lambda c: ndsm), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c, margin=0: np.pad(ndsm, margin)), \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'ignored_builds', lambda cell: set()), \
                 mock.patch.object(tl, 'load_masked_positions', lambda: {}), \
@@ -499,7 +535,7 @@ class TestRetainedCrownOrigins(unittest.TestCase):
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
                 mock.patch.object(tl, 'google_crowns', return_value=([(0, 0, 127, 127)], list(aerial))), \
-                mock.patch.object(tl, 'cell_ndsm', return_value=ndsm), \
+                mock.patch.object(tl, 'cell_ndsm', side_effect=lambda c, margin=0: np.pad(ndsm, margin)), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
                 mock.patch.object(tl, 'ignored_builds', return_value=set()), \
                 mock.patch.object(tl, 'load_masked_positions', return_value={}), \
@@ -786,7 +822,7 @@ class TestTerrainGround(unittest.TestCase):
         osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: set(), areas=[])
         with mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', lambda c: np.zeros((128, 128))), \
-                mock.patch.object(tl, 'cell_ndsm', lambda c: None), \
+                mock.patch.object(tl, 'cell_ndsm', lambda c, margin=0: None), \
                 mock.patch.object(tl, 'cell_terrain', lambda c: hm) as ct, \
                 mock.patch.object(tl, 'neighbour_owned', lambda cell, exclude=(): set()), \
                 mock.patch.object(tl, 'ignored_builds', lambda cell: set()), \

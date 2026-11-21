@@ -335,17 +335,18 @@ def snap_google_crowns(
     return out, report
 
 
-def cell_ndsm(cell: tuple[int, int]) -> np.ndarray | None:
-    """nDSM (DSM − DTM) metres for one cell as ``[dx, dz]``, or None when lidar is unavailable.
+def cell_ndsm(cell: tuple[int, int], *, margin: int = 0) -> np.ndarray | None:
+    """nDSM (DSM − DTM) metres for one cell and optional halo, or None when unavailable.
 
     @param cell: ``(tx, tz)``
-    @returns: float array shape ``(128, 128)``, or None
+    @param margin: extra columns on each side; array origin is the cell origin minus this margin
+    @returns: float array shape ``(128 + 2*margin, 128 + 2*margin)``, or None
     """
     try:
         import lidar_provider as lp
         lidar = lp.tile_client(download=False)
         x0, z0 = cell[0] * CELL, cell[1] * CELL
-        h = lp.mc_heights(lidar, x0, z0, x0 + CELL - 1, z0 + CELL - 1)
+        h = lp.mc_heights(lidar, x0 - margin, z0 - margin, x0 + CELL - 1 + margin, z0 + CELL - 1 + margin)
         return np.asarray(h['diff'], dtype=float)
     except Exception:
         return None
@@ -528,7 +529,7 @@ class TreeInputs:
         return replace(self, masked=dict(remaining_masks))
 
 
-def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm):
+def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0):
     """Reject crowns on classes whose ``trees.sources`` lacks corroborating tree evidence (#317).
 
     Reuses class/polygon rasterisation, including holes. Wood/scrub/forest columns or lidar
@@ -539,7 +540,8 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm):
     @param crowns: local ``(dx, dz, radius)`` candidates after source precedence and snapping
     @param idx: ``OSMIndex`` with non-building ``areas``
     @param mapped: world ``(x, z)`` of mapped tree point/row crowns
-    @param ndsm: standing heights in metres as ``[dx, dz]``, or None when unavailable
+    @param ndsm: standing heights in metres, optionally padded by ``margin``, or None
+    @param margin: extra lidar columns on each side; lets evidence across a cell edge corroborate crowns
     @returns: ``[(world x, world z, reason)]`` for unsupported candidates
     """
     if not idx.areas:
@@ -568,8 +570,9 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm):
         if 'wood' in allowed and any((q[0] + di, q[1] + dj) in wood for di, dj in near):
             continue
         if 'lidar' in allowed and ndsm is not None and any(
-                0 <= i + di < CELL and 0 <= j + dj < CELL
-                and np.isfinite(ndsm[i + di, j + dj]) and ndsm[i + di, j + dj] >= 2
+                -margin <= i + di < CELL + margin and -margin <= j + dj < CELL + margin
+                and np.isfinite(ndsm[i + di + margin, j + dj + margin])
+                and ndsm[i + di + margin, j + dj + margin] >= 2
                 for di, dj in near):
             continue
         rejected.append((*q, 'no mapped or lidar tree evidence'))
@@ -598,7 +601,10 @@ def planning_inputs(cell, osm_ground=None):
     from osm_footprints import OSMIndex
     idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
-    ndsm = cell_ndsm(cell)
+    ndsm_support = cell_ndsm(cell, margin=2)
+    # Snapping keeps its existing 128x128 geometry; only corroboration reads across cell edges.
+    # If neighbouring tiles are unavailable, preserve all cached in-cell evidence.
+    ndsm = ndsm_support[2:-2, 2:-2] if ndsm_support is not None else cell_ndsm(cell)
     fp_local = {(x - x0, z - z0) for x, z in fp
                 if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
     g = google_crowns(cell)
@@ -633,7 +639,9 @@ def planning_inputs(cell, osm_ground=None):
     crowns = mapped_crowns + [c for c, _origin in retained]
     crown_origins = [(x0 + snap['from'][0], z0 + snap['from'][1]) for snap in mapped_snaps] + [
         origin for _c, origin in retained]
-    source_rejections = unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm)
+    source_rejections = unsupported_tree_crowns(
+        cell, crowns, idx, mapped, ndsm_support if ndsm_support is not None else ndsm,
+        margin=2 if ndsm_support is not None else 0)
     unsupported = {(x, z) for x, z, _reason in source_rejections}
     retained = [(c, origin) for c, origin in zip(crowns, crown_origins)
                 if (x0 + c[0], z0 + c[1]) not in unsupported]
