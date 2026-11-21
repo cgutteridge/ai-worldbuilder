@@ -290,9 +290,41 @@ class Table(unittest.TestCase):
             L.validate_table(self.doc)
 
     def test_unknown_row_column_refused(self):
-        self.row('park')['ground_texture'] = None
+        self.row('park')['banana'] = None
         with self.assertRaisesRegex(L.TableError, 'unknown column'):
             L.validate_table(self.doc)
+
+    def test_shipped_ground_texture_only_on_open_land(self):
+        got = {cid: L.ground_texture(cid) for cid in L.CLASSES}
+        for cid in ('park', 'rural', 'natural'):
+            self.assertEqual(set(got[cid]), {'pasture', 'meadow'})
+            self.assertEqual(got[cid]['pasture']['tufts'], [0.08, 0.30])
+            self.assertEqual(got[cid]['meadow']['flowers']['kinds'],
+                             ['oxeye_daisy', 'cornflower', 'dandelion'])
+            self.assertIsNone(got[cid]['pasture']['flowers'])
+        self.assertIsNone(got['residential'])
+        self.assertIsNone(L.ground_texture('banana'))
+
+    def test_ground_texture_is_optional_and_checked(self):
+        self.row('park').pop('ground_texture', None)
+        L.validate_table(self.doc)
+        good_flowers = {'share': 0.015, 'kinds': ['oxeye_daisy', 'dandelion']}
+        good = {'pasture': {'tufts': [0.08, 0.3], 'tall_grass': [0.01, 0.07],
+                            'bare': True, 'flowers': None},
+                'meadow': {'tufts': [0, 1], 'tall_grass': [0, 0], 'bare': False,
+                           'flowers': good_flowers}}
+        for value in (None, {}, {'pasture': good['pasture']}, good):
+            self.row('park')['ground_texture'] = value
+            L.validate_table(self.doc)
+        for bad in (False, [], {'woodland': good['pasture']},
+                    {'pasture': dict(good['pasture'], extra=1)},
+                    {'pasture': dict(good['pasture'], tufts=[0.3, 0.08])},
+                    {'pasture': dict(good['pasture'], bare='yes')},
+                    {'meadow': dict(good['meadow'], flowers={'share': 0.1, 'kinds': ['poppy']})},
+                    {'meadow': dict(good['meadow'], flowers={'share': 0.015, 'kinds': ['stone']})}):
+            self.row('park')['ground_texture'] = bad
+            with self.assertRaisesRegex(L.TableError, 'ground_texture'):
+                L.validate_table(self.doc)
 
     def test_shipped_planting_rules_and_null_classes(self):
         self.assertEqual(L.planting_rule('residential', 'shrubs'), {'per_columns': 6})
