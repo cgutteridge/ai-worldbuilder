@@ -520,6 +520,13 @@ class TestStateHelpers(unittest.TestCase):
         self.assertFalse(same_state('stone', None))
         self.assertFalse(same_state('stone', 'minecraft:dirt'))
 
+    def test_same_state_ignores_daylight_detector_power_set_by_light(self):
+        self.assertTrue(same_state('daylight_detector[inverted=false,power=0]',
+                                   'minecraft:daylight_detector[inverted=false,power=10]'))
+        self.assertFalse(same_state('daylight_detector[inverted=false,power=0]',
+                                    'minecraft:daylight_detector[inverted=true,power=0]'))
+        self.assertFalse(same_state('target[power=0]', 'minecraft:target[power=10]'))
+
     def test_same_state_ignores_game_derived_connections(self):
         self.assertTrue(same_state('glass_pane[east=true,west=true]',
                                    'minecraft:glass_pane[east=false,north=true,south=false,waterlogged=false,west=true]'))

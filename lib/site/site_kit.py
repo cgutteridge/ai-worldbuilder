@@ -781,7 +781,7 @@ class World:
 
 def same(planned, actual):
     """Compare id and the planned properties (unplanned properties may differ;
-    skips waterlogged, connectable neighbour props, stair ``shape`` and door open/powered — see ``block_store.same_state``)."""
+    skips waterlogged, connectable neighbour props, stair ``shape``, door open/powered and daylight-detector power — see ``block_store.same_state``)."""
     from block_store import same_state
     return same_state(planned, actual)
 

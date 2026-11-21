@@ -3197,6 +3197,8 @@ class PvArraysTest(unittest.TestCase):
         # Flat membrane at floor + 2 * STOREY_H = 56; detectors one above.
         want = {(x, 57, z) for x in range(11, 17) for z in (21, 23)}
         self.assertEqual(self.detectors(plan), want)
+        # power is set by daylight in game: never planned, so readback cannot mismatch on it
+        self.assertEqual({plan.cells[q] for q in want}, {'minecraft:daylight_detector[inverted=false]'})
         for x, _, z in want:
             self.assertEqual(plan.cells[(x, 56, z)], 'minecraft:smooth_stone')
         self.assertIn('smooth_stone_slab', plan.cells[(12, 56, 22)])

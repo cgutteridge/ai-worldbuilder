@@ -1427,7 +1427,7 @@ def _validate_zone_materials(path, lab: str, roof: dict) -> None:
 
 
 PV_ARRAY_KEYS = frozenset({'box', 'rows', 'pitch', 'source'})
-PV_DETECTOR = 'daylight_detector[inverted=false,power=0]'
+PV_DETECTOR = 'daylight_detector[inverted=false]'   # power follows daylight in game
 
 
 def _validate_pv_arrays(path, lab: str, roof: dict) -> None:
