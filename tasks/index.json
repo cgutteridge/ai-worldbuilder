@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 352,
+  "nextTaskId": 354,
   "tasks": [
     
     
@@ -59,15 +59,7 @@
     , "requiresClaude": true},
     
     
-    {
-      "id": 321,
-      "title": "Rivers across cells: per-cell clipped water bodies",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Cause (verified): water_body items carry one cells entry and propose takes one cell, building the body whole; the Itchen spans 12 cells and 22,824 columns. The trial used a scratch clip wrapper and a manual plan_feature note. Deliverable: build per cell, clipped, no bank ring on clip edges, plan recorded per cell. Same edge policy as blocked task 234 (building across a cell edge). Test on a two-cell fixture. Check: Itchen reach across 63,-45 and its neighbour joins without a seam or bank wall. Water level along the reach is a separate task."
-    , "requiresClaude": true},
+    
     
     {
       "id": 323,
@@ -89,7 +81,7 @@
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
-        321
+        
       ],
       "notes": "Today one integer water level per body. Deliverable: sample the level from lidar along the reach so a long river steps with the terrain. Split from the per-cell rivers task. Check: the Itchen reach across two cells has no stranded water or dry bed in game."
     , "requiresClaude": true},
@@ -159,6 +151,26 @@
       ],
       "requiresClaude": false,
       "notes": "Split out of #318 on 2026-11-21; moved to decor the same day. Layer ownership (owner): ground sets the ground level at lidar terrain height; trees do only trees; decor does minor non-feature, non-tree enhancements such as plants and leaf litter. So woodland understorey and ground cover are decor, not trees and not ground. The floor blocks under them are the ground-layer woodland floor task.\n\nOwner snag (issue I-055): the woods read as parkland and the floor is plain grass; the aerial shows a closed canopy with a real understorey. Doc targets (docs/plans/park-rural.md, natural class and the rough-grass trial, owner verdict Yes, use it): low bushes of persistent leaves, about 7% of columns with 40% two blocks high; ferns about 15%; short_grass about 8%; the trial also had podzol, coarse dirt and moss floor blocks (ground task, not here).\n\nScope: in lib/layers/decor_layer.py (read how decor is gated first: the #319 notes say frontage.inference false blocks planting, which is why rough grass used its own key; use the same approach, a separate woodland key in config/land-use-classes.json, shares never in code) add woodland decor inside wood polygons (natural=wood|scrub, landuse=forest): (1) understorey bushes from leaf blocks (reuse plant_cell_canopy.bush_voxels), height 1 or 2; (2) ground-cover plants on the surface: fern and large_fern where they fit, short_grass, and any of leaf_litter, short_dry_grass, tall_dry_grass that the plant vocabulary task (blocked-by) confirms exist. Shares for the new plants and for leaf litter are placeholders for #318 to tune. Rules: only on a column whose block above the surface is air; never under or in a trunk or a crown's solid blocks, never on a column the trees, features or neighbours own (decor runs after trees and reads their blocks), never within the clearance of a building, path or road, never on water. Seeded per cell and column; removable through the decor mask and counted in the report per kind.\n\nAcceptance, synthetic only: tests with a synthetic wood, crowns and trunks: share per kind within tolerance, none on trunks or crown blocks, none outside the wood polygon, none on roads or footprints, only on air above ground, deterministic, mask round-trip, woodland key off leaves decor unchanged. No world build step, so requiresClaude is false. Density, look and the owner verdict on 63,-45 and 46,-46 are #318. Edits decor_layer.py (not trees_layer.py).\n"
+    },
+    {
+      "id": 352,
+      "title": "Itchen join check in game across 62,-45 / 63,-45 / 64,-45",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": true,
+      "notes": "Live check left over from #321 (per-cell clipped water bodies, merged in 6e33f44). Check: the Itchen reach across 63,-45 joins its neighbours 62,-45 and 64,-45 in game with no seam and no bank wall. Offline, both joins already equal the whole-river build with 0 bank blocks over water. The world still holds the old trial build of 63,-45, which put 36 grass bank blocks on the river at x 8063 and x 8192.\nBlockers (cell_registry check, 2026-11-21):\n- 63,-45: validation stale; needs prepare --apply.\n- 64,-45 and 62,-45: validation required; the river clip is unaccounted for; map query coverage is 0.0%; aerial coverage is 24.6% and 26.2%.\n- Each neighbour needs the owner to supply local aerial data (source, filename and size approved before any download) and either a fix to the map extract or dismiss-clip-coverage with a reason.\nSteps, once those are settled: prepare all three cells, then run the README steps from #321's notes (specs plus make_itchen_clip_specs.py; ask the orchestrator for the path, or regenerate them) under site_lock.py run. Dry-run each cell first. Build 62,-45 too if the bank at x=8063 has to go.\n"
+    },
+    {
+      "id": 353,
+      "title": "Water-body clips: guard specs without clip, bank-only candidates by bank width",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Review nits from #321 (per-cell clipped water bodies, merged in 6e33f44). Fix with synthetic fixtures:\n1. A spec that copies a clip candidate's outline but omits `clip` builds the neighbour's water out to the 8-block reach, with a bank ring on that artificial edge. Fix: reject it in lib/builds/water_body.py when the name matches a clip id, or put `clip` into the spec at propose time.\n2. `_validate_clip` (water_body.py:124) raises a bare ValueError for a non-integer clip cell; raise WaterBodyError instead.\n3. Bank-only clip candidates are proposed by CLIP_REACH (8), not by bank width. At width 1, water 2-8 blocks from a cell line yields a candidate that load_spec_dict refuses, and readiness shows it unaccounted until it is dismissed. Avoid proposing these where the default width can't reach, or document the dismissal better.\n4. A built bank-only clip still shows in missing_water_bodies / missing_features (column-based, empty outline). Harmless today, but site_handoff.layers_done would never go true for that cell.\n5. Add tests for bank.width greater than 1, diagonal-corner bodies, and a note in rules/water-body-builds.md on legacy whole plans.\n"
     }
   ]
 }
