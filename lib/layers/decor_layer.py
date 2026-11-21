@@ -29,7 +29,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ground_layer import (BLOCK_KIND, bare, cell_contains, ignored_builds,  # noqa: E402
+from ground_layer import (AIRS, BLOCK_KIND, bare, cell_contains, ignored_builds,  # noqa: E402
                           is_air, neighbour_owned, load_masked_positions, probe_y_range)
 from block_store import SCAN_VOLUME_CAP  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
@@ -874,7 +874,8 @@ def plan_woodland_decor(
     def free_air(p):
         if p in protected or p in found:
             return False
-        return is_air(live(p)) and not _tree_solid(live(p))
+        block = live(p)
+        return block is not None and bare(block) in AIRS
 
     for q in sorted(columns):
         if q in blocked or not cell_contains(cell, *q):
