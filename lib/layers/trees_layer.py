@@ -817,7 +817,7 @@ def run(cell: tuple[int, int]) -> int:
 
     tx, tz = cell
     name = plan_name(tx, tz)
-    plan = Plan(f'{name}-dry')
+    plan = Plan(f'{name}-dry', input_cells=[cell])
     world = fresh_planning_world()
     undo = plan_after_undo('trees', cell, world)
     if undo.conflicts:
@@ -882,7 +882,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     tx, tz = cell
     name = plan_name(tx, tz)
     require_ready([cell], 'trees', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
-    plan = Plan(name)
+    plan = Plan(name, input_cells=[cell])
     world = fresh_planning_world(strict=True)
     with timed_stage('layer planning (includes surface warm-up)'):
         placed, rep = plan_cell(cell, plan, world)

@@ -1853,6 +1853,10 @@ class Build:
         self._window_lines: list[str] = []
         self._detail_clip_lines: list[str] = []
         self._entrance_covers: list[tuple] = []
+        # Stamp against every cell the footprint covers so neighbour prepares elsewhere
+        # do not invalidate this plan, while cross-cell geometry still counts (task 232).
+        import cellmath
+        self.p.capture_inputs({cellmath.cell_of(x, z) for cols in by_no.values() for x, z in cols})
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)
@@ -3465,6 +3469,9 @@ class Build:
         for name, count in sorted(counts.items()):
             if name not in valid_ids:
                 print(f'unknown block id {name} x{count} (source: vendored Minecraft 26.2 client blockstates; config/minecraft-block-ids-26.2.txt)')
+        # Re-stamp from the finished geometry so roof overhangs into neighbours are
+        # part of the plan identity apply will check (task 232).
+        self.p.capture_inputs()
         return self.p
 
     def _preserve_real_owners(self) -> None:
