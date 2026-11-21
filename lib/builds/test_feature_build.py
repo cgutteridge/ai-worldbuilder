@@ -1,6 +1,7 @@
 """Tests for feature_build at agreed seams: load_spec, build→Plan, CLI dry-run, SU fixture, facades, doors."""
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import re
@@ -3749,3 +3750,144 @@ class RoofRidgeCapsTest(unittest.TestCase):
                         self.assertIn(f'facing={"east" if x == 2 else "west"},', state)
                 self.assertEqual(ridge_jogs(membrane), [])
                 self.assertEqual(stair_shape_mismatches(membrane), [])
+
+
+_ROOF_MATERIAL_CALLERS = frozenset({
+    'fam', 'shell_zoned', 'entrance_covers', '_solidify_roof_under', 'details',
+})
+_ROOF_MATERIAL_GOLDEN = (
+    Path(__file__).resolve().parent / 'fixtures' / 'roof-material-plan.json'
+)
+
+
+def _roof_material_migration_plan():
+    """Build the synthetic plan used to lock roof-material output (#355).
+
+    One pitched zoned mass carries ``zone_materials`` into ``pitched_roof_states``
+    and the detail support set. One flat zoned mass places the full-block deck.
+    A covered entrance and a plant room on a stair reach the other callers.
+    ``block_family_variants`` is wrapped only to record those callers.
+
+    @returns: ``(plan, caller names)``
+    """
+    cells_p = {(x, z) for x in range(10, 19) for z in range(20, 25)}
+    cells_f = {(x, z) for x in range(30, 39) for z in range(20, 25)}
+    depth, width = 7, 11
+    ground = np.full((depth, width), 51)
+    ridge = np.full((depth, width), 59.0)
+    for xi, height in enumerate([59, 59, 60, 61, 63, 61, 60, 59, 59]):
+        ridge[:, 1 + xi] = float(height)
+    flat = np.full((depth, width), 59.0)
+    zone_data = {
+        'P': {'dsm': ridge, 'ground_y': ground, 'x0': 9, 'z0': 19},
+        'F': {'dsm': flat, 'ground_y': ground.copy(), 'x0': 29, 'z0': 19},
+    }
+
+    def spec(detail):
+        details = {'P': [detail]} if detail is not None else {}
+        return {
+            'name': 'unit_roof_material_golden',
+            'ways': {'1': 'P', '2': 'F'},
+            'storeys': {'P': 2, 'F': 2},
+            'roofs': {
+                'P': {
+                    'kind': 'pitched',
+                    'material': 'brick',
+                    'zone_materials': {'59': 'deepslate_tile'},
+                },
+                'F': {'kind': 'flat', 'material': 'brick'},
+            },
+            'groups': [
+                {'nos': ['P'], 'front': 'S', 'mode': 'each'},
+                {'nos': ['F'], 'front': 'S', 'mode': 'each'},
+            ],
+            'modifies': [],
+            'floor_min': 51,
+            'step_max': 4,
+            'door_frame': True,
+            'keep_edits': False,
+            'wall': 'bricks',
+            'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'zones': {
+                'P': {'from': 'lidar', 'levels': [59], 'bucket': 2, 'axis_deg': 0},
+                'F': {'from': 'lidar', 'levels': [59], 'bucket': 2, 'axis_deg': 0},
+            },
+            'facade_plan': {
+                'F': {
+                    'faces': {},
+                    'entrances': [_entrance_row(
+                        id='T-F', portal_id='T-F', at=[34, 24],
+                        awning_like={'kind': 'covered_area', 'depth': 1},
+                    )],
+                },
+            },
+            'details': details,
+        }
+
+    seen = set()
+    real = F.block_family_variants
+
+    def wrapped(mat):
+        frame = inspect.currentframe()
+        while frame is not None:
+            if frame.f_code.co_name in _ROOF_MATERIAL_CALLERS:
+                seen.add(frame.f_code.co_name)
+                break
+            frame = frame.f_back
+        return real(mat)
+
+    def build(detail):
+        with mock.patch.object(F, 'block_family_variants', wrapped), \
+                mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(io.StringIO()):
+            return F.build(
+                spec(detail),
+                footprints={'P': cells_p, 'F': cells_f},
+                world=_StoneWorld(),
+                zone_data=zone_data,
+            )
+
+    bare = build(None)
+    pad = None
+    for (x, y, z), state in sorted(bare.cells.items()):
+        if not (10 <= x <= 18 and 20 <= z <= 24):
+            continue
+        name = state.split('[', 1)[0].removeprefix('minecraft:')
+        if name.endswith('_slab') or name.endswith('_stairs'):
+            pad = (x, y, z)
+            break
+    if pad is None:
+        raise AssertionError('pitched roof produced no slab or stair for the detail pad')
+    x, y, z = pad
+    plan = build({
+        'kind': 'plant_room',
+        'at': [x, y + 1, z],
+        'size': [1, 1, 1],
+        'source': 'golden roof pad',
+    })
+    return plan, frozenset(seen)
+
+
+def _roof_material_cell_rows(plan) -> list:
+    """Canonical ``[x, y, z, state]`` rows for the roof-material golden.
+
+    @param plan: feature plan
+    @returns: rows sorted by coordinate
+    """
+    return [[x, y, z, state] for (x, y, z), state in sorted(plan.cells.items())]
+
+
+class RoofMaterialMigrationGoldenTest(unittest.TestCase):
+    """Seam: feature plans stay byte-identical once roof materials move (#355)."""
+
+    def test_plan_cells_match_pre_migration_golden(self):
+        plan, callers = _roof_material_migration_plan()
+        self.assertEqual(callers, _ROOF_MATERIAL_CALLERS)
+        states = list(plan.cells.values())
+        self.assertTrue(any('deepslate_tile_stairs' in state for state in states))
+        self.assertTrue(any(state == 'minecraft:bricks' for state in states))
+        self.assertTrue(any('brick_slab' in state for state in states))
+        self.assertTrue(any(state == 'minecraft:gray_concrete' for state in states))
+        rows = json.loads(_ROOF_MATERIAL_GOLDEN.read_text(encoding='utf-8'))
+        self.assertEqual(_roof_material_cell_rows(plan), rows)
