@@ -440,17 +440,28 @@ def planned_refs(root: Path | str, plan_id: str) -> set[str] | None:
     return spec_refs(root, plan_id)
 
 
+def feature_plan_ids(reg: CellRegistry) -> set[str]:
+    """Every feature plan id currently on any cell (planned or built).
+
+    @param reg: registry
+    @returns: plan ids from every cell view
+    """
+    return {f.id for v in reg.view().values() for f in v.features}
+
+
 def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
                             items: list[dict[str, Any]]) -> list[str]:
     """Plan id for each candidate, keeping distinct building groups of one street apart.
 
     ``candidate_plan_id`` keys a house group by street, so two groups on one street
-    collide. Recorded ids keep their meaning: a street group takes the bare
-    ``houses_<street>`` id only when it is the sole group of that street in the batch and
-    the id is free. Otherwise it gets ``houses_<street>_<lowest ref>`` (stable while the
-    group's buildings are unchanged, so re-runs and dismissals hold). An already-planned
-    street id whose hand-off spec lists every ref of the candidate (or has no spec to
-    say) still means that plan, so the candidate stays covered by it.
+    collide. New street groups always take ``houses_<street>_<lowest ref>`` (stable while
+    the group's buildings are unchanged, so re-runs and dismissals hold). That way a plan
+    prepare just wrote is never a specless bare id that later looks like unresolved legacy,
+    and a second group on the same street can be recorded before the first has a build
+    spec (#233). An already-planned bare street id whose hand-off spec lists every ref of
+    the candidate still means that plan. A specless bare street id is not reused: the
+    candidate gets a suffixed id so callers can flag the bare plan as ambiguous legacy
+    without inventing a second claim on the same id.
 
     @param reg: registry
     @param cell: (tx, tz)
@@ -459,11 +470,7 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
     """
     bases = [candidate_plan_id(i) for i in items]
     streets = [i.get('kind') == 'houses' and bool((i.get('street') or '').strip()) for i in items]
-    group_counts: dict[str, int] = {}
-    for base, is_street in zip(bases, streets):
-        if is_street:
-            group_counts[base] = group_counts.get(base, 0) + 1
-    known = {f.id for f in reg.cell(cell).features}
+    known = feature_plan_ids(reg)
     dismissed = reg.plan_dismissed_ids(cell)
     out: list[str] = []
     for item, base, is_street in zip(items, bases, streets):
@@ -473,10 +480,88 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
         refs = {_norm_ref(r) for r in item['refs'] if r}
         if base in known:
             covered = planned_refs(reg.root, base)
-            split = covered is not None and not refs <= covered
-        else:
-            split = group_counts[base] > 1
-        out.append(f'{base}_{min(refs)}' if split else base)
+            if covered is not None and refs <= covered:
+                out.append(base)
+                continue
+        out.append(f'{base}_{min(refs)}')
+    return out
+
+
+def _unresolved_legacy_house_pids(reg: CellRegistry, item: dict[str, Any], fid: str,
+                                  known: set[str]) -> list[str]:
+    """Specless house plan ids that make this candidate an unresolved legacy match (#233).
+
+    Warns only for a real collision with this candidate: a specless bare street id this
+    candidate was not assigned (prepare did not just create it under ``fid``), or a specless
+    ``houses_<street>_<ref>`` whose trailing name ref sits in the candidate's refs and is not
+    merely this candidate's own assigned (already prepared) id. An unrelated prepared group on
+    the same street is not legacy ambiguity.
+
+    @param reg: registry
+    @param item: ``kind: houses`` candidate
+    @param fid: plan id :func:`plan_ids_for_candidates` assigns this item
+    @param known: every feature plan id on the registry
+    @returns: colliding specless plan ids (may be empty)
+    """
+    from plan_refs import NAME_REF
+    base = candidate_plan_id(item)
+    refs = {_norm_ref(r) for r in (item.get('refs') or ()) if r}
+    out: list[str] = []
+    # Same exemption as the suffixed loop: the candidate's own assigned id is not legacy.
+    if base in known and base != fid and planned_refs(reg.root, base) is None:
+        out.append(base)
+    for pid in known:
+        if pid == fid or not pid.startswith(f'{base}_'):
+            continue
+        if planned_refs(reg.root, pid) is not None:
+            continue
+        m = NAME_REF.search(pid)
+        if m and m.group(1) in refs:
+            out.append(pid)
+    return out
+
+
+def ambiguous_legacy_house_plans(reg: CellRegistry, cell: tuple[int, int],
+                                 items: list[dict[str, Any]]) -> list[str]:
+    """Warnings for house candidates that collide with a street plan that has no readable refs.
+
+    A bare ``houses_<street>`` plan, or a specless ``houses_<street>_<ref>`` whose name ref
+    lands in the candidate group, cannot be matched to buildings safely. Callers must not
+    record another plan for those candidates and must not treat them as silently covered
+    (#233). A plan this tool just prepared under the candidate's assigned id is not legacy.
+
+    @param reg: registry
+    @param cell: (tx, tz) — reserved for symmetry with other plan helpers; ids are world-wide
+    @param items: house (and other) candidates after coverage filtering
+    @returns: warning strings, one per ambiguous candidate/plan pair
+    """
+    known = feature_plan_ids(reg)
+    warnings: list[str] = []
+    for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
+        if item.get('kind') != 'houses':
+            continue
+        for pid in sorted(set(_unresolved_legacy_house_pids(reg, item, fid, known))):
+            warnings.append(
+                f'ambiguous legacy plan {pid}: no readable handoff spec; audit refs {item.get("refs")}')
+    return warnings
+
+
+def drop_unresolved_legacy_houses(reg: CellRegistry, cell: tuple[int, int],
+                                  items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Candidates minus house groups blocked by an unresolved specless legacy plan (#233).
+
+    @param reg: registry
+    @param cell: (tx, tz)
+    @param items: candidates after coverage filtering
+    @returns: items that may still be recorded or proposed
+    """
+    known = feature_plan_ids(reg)
+    out: list[dict[str, Any]] = []
+    for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
+        if (item.get('kind') == 'houses'
+                and _unresolved_legacy_house_pids(reg, item, fid, known)):
+            continue
+        out.append(item)
     return out
 
 
@@ -497,14 +582,15 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
 
 def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
                             items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Candidates minus map-ref features already planned or built, here or in another cell (tasks 288, 293).
+    """Candidates minus map-ref features already planned or built, here or in another cell (tasks 288, 293, 233).
 
     A feature crossing a cell line is planned once; the other cells it touches never
     re-propose it (a legacy plan in a minority cell still counts). A plan covers a candidate
     by map ref, not only by id: ``west_w34391673`` covers ``w34391673`` (``plan_refs``).
     A ``kind: group`` is dropped only when every ref is covered; a partial hit keeps the
-    uncovered refs as building candidates (#328). House groups are not matched here:
-    ``plan_ids_for_candidates`` keeps them by street.
+    uncovered refs as building candidates (#328). House groups match the same way (#233):
+    a spec-backed plan under a different id covers its ways; a partial hit keeps the
+    uncovered houses.
 
     @param reg: registry
     @param cell: (tx, tz)
@@ -516,18 +602,29 @@ def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
     covered = planned_here(reg, cell) | planned_elsewhere(reg, cell)
     out: list[dict[str, Any]] = []
     for item in items:
+        # A house plan id already on the registry accounts for that whole candidate when
+        # there is no hand-off ways list yet (prepare records the note before a build spec
+        # exists). House plans never recover coverage from a name suffix, so this keeps a
+        # just-prepared group from being re-proposed on the next run (#233). A readable
+        # spec still drives partial splits.
+        if item.get('kind') == 'houses':
+            fid = plan_ids_for_candidates(reg, cell, [item])[0]
+            if fid in covered and planned_refs(reg.root, fid) is None:
+                continue
         out.extend(uncovered_candidates(item, covered))
-    return out
+    return drop_unresolved_legacy_houses(reg, cell, out)
 
 
 def record_feature_candidates(reg: CellRegistry, cid: str,
                               candidates: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Write ``plan_feature`` notes for propose-features candidates (#128).
 
-    Skips ids already on the cell plan, map-ref features planned in another cell
-    (task 288) and features whose plan covers the candidate's map ref (task 293), and ids in ``plan_dismissed`` so a re-run
-    of ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature``
-    note would clear the dismissal in the note fold).
+    Skips ids already on any cell's plan (a house street id planned next door must not be
+    recorded again, #233), map-ref features planned in another cell (task 288) and features
+    whose plan covers the candidate's map ref (task 293), house groups blocked by an
+    unresolved specless legacy plan (#233), and ids in ``plan_dismissed`` so a re-run of
+    ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature`` note would
+    clear the dismissal in the note fold).
 
     @param reg: registry
     @param cid: ``tx,tz``
@@ -537,7 +634,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     cell = parse_cell_id(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
     items = drop_covered_candidates(reg, cell, items)
-    skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
+    skip = feature_plan_ids(reg) | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
     for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
         if fid in skip:

@@ -211,10 +211,12 @@ class LocalEvidence:
     def candidates(self, reg, cell):
         """Eligible unaccounted map groups, retaining stable IDs and deliberate dismissals."""
         from cell_features import footprint_progress, missing_water_bodies
-        from cell_registry import candidate_plan_id, plan_ids_for_candidates, planned_refs
+        from cell_readiness import planned_elsewhere, planned_here
+        from cell_registry import (ambiguous_legacy_house_plans, drop_unresolved_legacy_houses,
+                                   feature_plan_ids, plan_ids_for_candidates)
         from coverage import osm_ref, scan_polygon
         from osm_footprints import OSMIndex, osm_tags
-        from plan_refs import covered_by_plans, uncovered_candidates
+        from plan_refs import uncovered_candidates
         from vector_map_clips import vector_map_clip_root
         if self._index is None:
             self._index = OSMIndex(vector_map_clip_root(self.root), read_only=True)
@@ -232,15 +234,15 @@ class LocalEvidence:
                 ref = osm_ref(props)
                 refs.update({p: ref for p in columns})
         items += missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=covered)
-        known = {f.id for f in reg.cell(cell).features}
-        skip = known | reg.plan_dismissed_ids(cell)
-        here = covered_by_plans(self.root, skip)       # a prefixed plan covers its map ref (task 293)
+        skip = feature_plan_ids(reg) | reg.plan_dismissed_ids(cell)
+        # Prefixed / house plans cover their map refs here and in other cells (tasks 293, 233)
+        here = planned_here(reg, cell) | planned_elsewhere(reg, cell)
         items = [part for item in items for part in uncovered_candidates(item, here)]
+        # Specless house plans: warn on a genuine unresolved collision, and do not propose
+        # another plan for that group (drop_covered / record do the same; #233).
+        self._warnings[tuple(cell)] = ambiguous_legacy_house_plans(reg, cell, items)
+        items = drop_unresolved_legacy_houses(reg, cell, items)
         ids = plan_ids_for_candidates(reg, cell, items)
-        self._warnings[tuple(cell)] = [f'ambiguous legacy plan {fid}: no readable handoff spec; audit refs {item["refs"]}'
-                                       for item, fid in zip(items, ids)
-                                       if item.get('kind') == 'houses' and fid in known
-                                       and fid == candidate_plan_id(item) and planned_refs(self.root, fid) is None]
         return [{**item, 'id': fid} for item, fid in zip(items, ids) if fid not in skip]
 
     def warnings(self, cell):
