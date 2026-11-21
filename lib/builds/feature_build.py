@@ -952,25 +952,25 @@ def block_family_variants(mat: str) -> dict[str, str]:
 def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bottom') -> str:
     """Pitched-roof stair state (bottom half, waterlogged false).
 
-    @param mat: stair material prefix
+    @param mat: shared roof material family or block alias
     @param facing: upslope facing
     @param shape: ``straight`` / ``inner_*`` / ``outer_*``
     @param half: ``bottom`` or ``top``
     @returns: block state string
     """
     return (
-        f'{mat}_stairs[facing={facing},half={half},shape={shape},waterlogged=false]'
+        f'{block_family_variants(mat)["stairs"]}[facing={facing},half={half},shape={shape},waterlogged=false]'
     )
 
 
 def _roof_slab(mat: str, typ: str) -> str:
     """Pitched-roof slab state (waterlogged false).
 
-    @param mat: slab material prefix
+    @param mat: shared roof material family or block alias
     @param typ: ``bottom`` or ``top``
     @returns: block state string
     """
-    return f'{mat}_slab[type={typ},waterlogged=false]'
+    return f'{block_family_variants(mat)["slab"]}[type={typ},waterlogged=false]'
 
 
 def roof_block_y(half_height: int) -> int:
