@@ -1,6 +1,6 @@
 """Shared roof-material catalogue and the flat(ish) / pitched rule.
 
-Feature builds and, later, houses both ask this module which blocks a roof
+Feature builds, houses and aerial roof analysis ask which blocks a roof
 material may use. The only slope rule for that choice is rise/run: up to 1 in 2
 is flat(ish) and may be any catalogue full block or slab; steeper is pitched
 and needs a triad (full block, slab and stairs). Lidar flattening stays in

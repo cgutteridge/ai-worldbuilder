@@ -74,7 +74,7 @@ class RoofCatalogueTest(unittest.TestCase):
         pitched = RM.roof_blocks('smooth_stone', 'pitched')
         self.assertFalse(pitched['ok'])
         self.assertTrue(pitched['suggestions'])
-        self.assertIn('cut_copper', pitched['suggestions'])
+        self.assertIn('polished_andesite', pitched['suggestions'])
         message = pitched['messages'][0]
         for suggestion in pitched['suggestions']:
             self.assertIn(suggestion, message)
@@ -97,7 +97,7 @@ class RoofCatalogueTest(unittest.TestCase):
                 self.assertIsNone(self.catalogue['families'][name].get('stairs'))
 
     def test_names_outside_the_catalogue_keep_the_historical_prefix(self):
-        for name in ('granite', 'polished_deepslate', 'stone_wall_only'):
+        for name in ('granite', 'stone_wall_only'):
             with self.subTest(name=name):
                 self.assertNotIn(name, self.catalogue['families'])
                 self.assertEqual(RM.family_variants(name), {

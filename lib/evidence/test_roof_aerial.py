@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import json
+import io
+from contextlib import redirect_stdout, redirect_stderr
+from types import SimpleNamespace
+from unittest import mock
 import tempfile
 import unittest
 from pathlib import Path
@@ -298,6 +302,86 @@ class CrossCheckTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, 'size'):
             R.check_mosaic(Path('mosaic-z19-4x4-260093-175744.png'), (768, 1024), '19,260093,175744')
 
+
+
+class HardeningTest(unittest.TestCase):
+    """Synthetic image, shape and CLI regressions from the roof trial."""
+
+    def test_resolution_boundary_accepts_roundoff_but_refuses_coarser(self):
+        img = np.full((80, 80, 3), 200, dtype=np.uint8)
+        foot = {(x, z) for x in range(5, 15) for z in range(5, 15)}
+        for ppb in (2.5, 2.5 - 1e-12):
+            self.assertEqual(R.derive(img, _affine(ppb, 0, 0), foot)['pv_arrays'], [])
+        with self.assertRaisesRegex(ValueError, 'coarse'):
+            R.derive(img, _affine(2.499, 0, 0), foot)
+
+    def test_neutral_panels_are_available_with_explicit_colour_threshold(self):
+        img, foot, _ = _fixture()
+        img = np.repeat(img.mean(axis=2, keepdims=True).astype(np.uint8), 3, axis=2)
+        self.assertFalse(R.derive(img, _affine(), foot)['pv_arrays'])
+        self.assertTrue(R.derive(img, _affine(), foot, blue_margin=0)['pv_arrays'])
+
+    def test_image_edge_does_not_drop_clipped_array(self):
+        img, foot, _ = _fixture()
+        # Clip both the footprint and image through the second array.
+        img = img[:, :40 * PPB]
+        foot = {c for c in foot if c[0] < 140}
+        out = R.derive(img, _affine(), foot)
+        self.assertTrue(any(a['box'][0] >= 133 for a in out['pv_arrays']))
+
+    def test_angled_array_does_not_fill_its_rectangular_hull(self):
+        img=np.full((50*PPB,60*PPB,3),ROOF,dtype=np.uint8)
+        foot={(x,z) for x in range(105,155) for z in range(205,245)}
+        _array(img,(113,213,137,237),'x')
+        v,u=np.indices(img.shape[:2])
+        outside=np.abs(X0+(u+0.5)/PPB-125)+np.abs(Z0+(v+0.5)/PPB-225)>12
+        img[outside]=ROOF
+        out=R.derive(img,_affine(),foot,min_cells=10)
+        self.assertTrue(out['pv_arrays'])
+        want={(x,z) for a in out['pv_arrays'] for x in range(a['box'][0],a['box'][2]+1) for z in range(a['box'][1],a['box'][3]+1) if ((z-a['box'][1]) if a['rows']=='x' else (x-a['box'][0]))%a['pitch']==0}
+        self.assertTrue(all(abs(x-125)+abs(z-225)<=13 for x,z in want))
+        self.assertTrue(any(abs(x-125)+abs(z-225)>=9 for x,z in want))
+
+    def test_row_runs_preserve_diamond_and_holes_for_both_axes(self):
+        cells = {(x,z) for x in range(9) for z in range(9) if abs(x-4)+abs(z-4)<=4}
+        cells.remove((4,4))
+        for axis in ('x','z'):
+            boxes = R.row_boxes(cells, (0,0,8,8), axis, 2)
+            got = {(x,z) for a,b,c,d in boxes for x in range(a,c+1) for z in range(b,d+1)}
+            want = {(x,z) for x,z in cells if (z if axis=='x' else x)%2==0}
+            self.assertEqual(got, want)
+
+    def test_footprint_box_and_mapped_exclusions(self):
+        self.assertEqual(R._footprint(SimpleNamespace(box='1,2,2,3')), {(1,2),(1,3),(2,2),(2,3)})
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'spec.json'
+            p.write_text(json.dumps({'ways':{'7':'A'}, 'exclude':{'A':[[1,2,1,2]]}}))
+            idx=SimpleNamespace(cells=lambda:{(1,2):0,(2,2):0,(8,8):1}, buildings=[(None,{'osm_way_id':7}),(None,{'osm_id':8})])
+            with mock.patch('osm_footprints.OSMIndex', return_value=idx):
+                self.assertEqual(R._footprint(SimpleNamespace(box=None,spec=str(p),label='A')), {(2,2)})
+
+    def test_mosaic_affine_uses_explicit_coordinate_helpers(self):
+        with mock.patch('world_frame.mc_batch_to_wgs84', side_effect=lambda pts:pts), mock.patch('world_frame.tile_float', side_effect=lambda lat,lon,z:(lat/256+3,lon/256+4)):
+            A=R._mosaic_affine('19,3,4', (0,0,10,20))
+        np.testing.assert_allclose(A, [[1,0,0],[0,1,0]], atol=1e-10)
+
+    def test_main_forwards_controls_writes_and_renders_sheet(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            image=Path(tmp)/'crop.png'; Image.new('RGB',(256,256),(200,200,200)).save(image)
+            sheet=Path(tmp)/'sheet.png'; spec=Path(tmp)/'spec.json'
+            spec.write_text(json.dumps({'roofs':{'A':{'kind':'flat','material':'stone'}}}))
+            derived={'px_per_block':5,'shift':[0,0],'material':'smooth_stone','pv_arrays':[{'box':[5,5,8,8],'rows':'x','pitch':2,'source':'fixture'}]}
+            args=['derive','--image',str(image),'--mosaic','19,3,4','--spec',str(spec),'--label','A','--blue-margin','0','--min-cells','3','--sheet',str(sheet),'--write','--replace-pv']
+            with mock.patch.object(R,'_footprint',return_value={(x,z) for x in range(5,10) for z in range(5,10)}), mock.patch.object(R,'_mosaic_affine',return_value=_affine(5,0,0)), mock.patch.object(R,'derive',return_value=derived) as derive, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(R.main(args),0)
+            self.assertEqual(derive.call_args.kwargs['blue_margin'],0)
+            self.assertEqual(derive.call_args.kwargs['min_cells'],3)
+            self.assertIn('no tile identity',err.getvalue())
+            self.assertTrue(sheet.is_file())
+            self.assertEqual(json.loads(spec.read_text())['roofs']['A']['pv_arrays'],derived['pv_arrays'])
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                R.main(['derive','--image',str(image),'--mosaic','19,3,4','--box','1,1,3,3','--replace-pv'])
 
 if __name__ == '__main__':
     unittest.main()
