@@ -32,6 +32,10 @@ def water_level_profile(
     - a gentle slope produces steps no shorter than ``min_step_length``
     - a flat reach returns one segment at today's single integer level
 
+    Steps stay anchored to where the lidar drops. A short trailing drop is
+    absorbed into the upstream level. On a steep slope each min-length stair
+    catches up to the lidar height at that boundary (no deferred cliff).
+
     @param samples: ordered ``(distance_along_reach, surface_height)`` pairs;
         distances must be non-decreasing; heights are continuous elevations in
         the same units as Minecraft block Y (already offset if needed)
@@ -64,17 +68,7 @@ def water_level_profile(
         else:
             levels.append(min(prev, _level_at(height)))
 
-    runs = _collapse_runs(distances, levels)
-    runs = _absorb_short_drops(runs, min_step_length)
-    if _runs_honour_end_and_length(runs, levels[-1], min_step_length):
-        return [LevelSegment(s, e, lv) for s, e, lv in runs]
-    return _stairs(
-        distances[0],
-        distances[-1],
-        levels[0],
-        levels[-1],
-        min_step_length,
-    )
+    return _walk_steps(distances, levels, min_step_length)
 
 
 def _level_at(height: float) -> int:
@@ -117,106 +111,102 @@ def _fill_short_dips(
     return out
 
 
-def _collapse_runs(
+def _level_at_distance(
     distances: Sequence[float],
     levels: Sequence[int],
-) -> list[tuple[float, float, int]]:
-    """Merge consecutive equal integer levels into ``(start, end, level)`` runs."""
-    runs: list[tuple[float, float, int]] = []
-    start = distances[0]
+    at: float,
+) -> int:
+    """Integer level from the last sample at or before ``at`` (else the first)."""
     level = levels[0]
-    for i in range(1, len(levels)):
-        if levels[i] != level:
-            runs.append((start, distances[i], level))
-            start = distances[i]
-            level = levels[i]
-    runs.append((start, distances[-1], level))
-    return runs
+    for distance, sample_level in zip(distances, levels):
+        if distance <= at + 1e-12:
+            level = sample_level
+        else:
+            break
+    return level
 
 
-def _absorb_short_drops(
-    runs: Sequence[tuple[float, float, int]],
-    min_step_length: float,
-) -> list[tuple[float, float, int]]:
-    """Keep upstream level across lower runs shorter than ``min_step_length``."""
-    merged: list[list[float | int]] = [[runs[0][0], runs[0][1], runs[0][2]]]
-    for start, end, level in runs[1:]:
-        prev = merged[-1]
-        if level > prev[2]:
-            level = int(prev[2])
-        if level == prev[2]:
-            prev[1] = end
+def _first_drop_distance(
+    distances: Sequence[float],
+    levels: Sequence[int],
+    after: float,
+    current: int,
+) -> float | None:
+    """Distance of the first sample after ``after`` whose level is below ``current``."""
+    for distance, level in zip(distances, levels):
+        if distance < after - 1e-12:
             continue
-        if (end - start) < min_step_length:
-            prev[1] = end
-            continue
-        merged.append([start, end, level])
-    return [(float(s), float(e), int(lv)) for s, e, lv in merged]
+        if level < current:
+            return distance
+    return None
 
 
-def _runs_honour_end_and_length(
-    runs: Sequence[tuple[float, float, int]],
-    end_level: int,
-    min_step_length: float,
-) -> bool:
-    """True when runs already match the observed end level and min lengths."""
-    if not runs or runs[-1][2] != end_level:
-        return False
-    if runs[0][2] < end_level:
-        return False
-    for i, (start, end, _) in enumerate(runs):
-        if i < len(runs) - 1 and (end - start) < min_step_length - 1e-9:
-            return False
-    for i in range(len(runs) - 1):
-        if runs[i][2] < runs[i + 1][2]:
-            return False
-    return True
-
-
-def _stairs(
-    start_d: float,
-    end_d: float,
-    start_level: int,
-    end_level: int,
+def _walk_steps(
+    distances: Sequence[float],
+    levels: Sequence[int],
     min_step_length: float,
 ) -> list[LevelSegment]:
-    """Emit min-length stairs from ``start_level`` down to ``end_level``."""
-    if end_level >= start_level:
-        return [LevelSegment(start_d, end_d, start_level)]
-    span = end_d - start_d
-    drop = start_level - end_level
-    if span < min_step_length:
-        return [LevelSegment(start_d, end_d, start_level)]
-    n_steps = min(drop, int(math.floor(span / min_step_length)))
-    if n_steps <= 0:
-        return [LevelSegment(start_d, end_d, start_level)]
+    """Emit data-anchored steps that never rise and honour ``min_step_length``."""
+    start_d = distances[0]
+    end_d = distances[-1]
+    if end_d <= start_d + 1e-12:
+        return [LevelSegment(start_d, end_d, levels[0])]
 
     out: list[LevelSegment] = []
-    for i in range(n_steps):
-        a = start_d + i * min_step_length
-        b = start_d + (i + 1) * min_step_length
-        out.append(LevelSegment(a, b, start_level - i))
-    last_start = start_d + n_steps * min_step_length
-    if last_start < end_d - 1e-12:
-        out.append(LevelSegment(last_start, end_d, end_level))
-    else:
-        final = out[-1]
-        out[-1] = LevelSegment(final.start, end_d, end_level)
-    # Collapse any accidental equal neighbours and clamp rises.
-    fixed: list[LevelSegment] = []
-    for seg in out:
-        level = seg.level
-        if fixed and level > fixed[-1].level:
-            level = fixed[-1].level
-        if fixed and level == fixed[-1].level:
-            prev = fixed[-1]
-            fixed[-1] = LevelSegment(prev.start, seg.end, prev.level)
+    pos = start_d
+    level = levels[0]
+
+    while pos < end_d - 1e-12:
+        drop_at = _first_drop_distance(distances, levels, pos, level)
+        if drop_at is None:
+            out.append(LevelSegment(pos, end_d, level))
+            break
+
+        hold_until = pos + min_step_length
+        lower_span = end_d - drop_at
+
+        # Long hold then a short positive-length trailing dip: keep upstream.
+        if (
+            1e-12 < lower_span < min_step_length - 1e-12
+            and (drop_at - pos) >= min_step_length - 1e-12
+        ):
+            out.append(LevelSegment(pos, end_d, level))
+            break
+
+        if drop_at + 1e-12 >= hold_until:
+            # Lidar stays high long enough; step where it drops.
+            if drop_at >= end_d - 1e-12:
+                # Drop only at the endpoint sample: finish at that end level.
+                out.append(LevelSegment(pos, end_d, min(level, levels[-1])))
+                break
+            out.append(LevelSegment(pos, drop_at, level))
+            pos = drop_at
+            level = _level_at_distance(distances, levels, pos)
+            continue
+
+        # Drop arrives before this step is long enough. Hold to min_step, then
+        # catch up to the lidar height at that boundary (not the reach end).
+        step_end = min(hold_until, end_d)
+        data_level = _level_at_distance(distances, levels, step_end)
+        next_level = min(level, data_level)
+        out.append(LevelSegment(pos, step_end, level))
+        if step_end >= end_d - 1e-12:
+            break
+        pos = step_end
+        level = next_level
+
+    return _merge_equal(out)
+
+
+def _merge_equal(segments: Sequence[LevelSegment]) -> list[LevelSegment]:
+    """Collapse adjacent segments that share a level."""
+    if not segments:
+        return []
+    merged = [segments[0]]
+    for seg in segments[1:]:
+        prev = merged[-1]
+        if seg.level == prev.level:
+            merged[-1] = LevelSegment(prev.start, seg.end, prev.level)
         else:
-            fixed.append(LevelSegment(seg.start, seg.end, level))
-    if fixed[-1].level != end_level and len(fixed) > 1:
-        fixed[-1] = LevelSegment(fixed[-1].start, fixed[-1].end, end_level)
-        if fixed[-1].level > fixed[-2].level:
-            fixed[-1] = LevelSegment(
-                fixed[-1].start, fixed[-1].end, fixed[-2].level
-            )
-    return fixed
+            merged.append(seg)
+    return list(merged)

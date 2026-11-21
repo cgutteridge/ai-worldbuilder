@@ -84,14 +84,41 @@ class WaterLevelProfileTest(unittest.TestCase):
 
     def test_steep_slope_quantised_to_min_step_stairs(self):
         # One block every 5 units would be too short; stairs of length 25.
+        # Each boundary catches up to the lidar at that boundary — no deferred
+        # cliff from the start. Last stair holds the level at its start; the
+        # leftover drop inside that window stays within one stair (~5 blocks).
         samples = [(float(d), 44.0 - 0.2 * d) for d in range(0, 101, 5)]
         out = segs(samples, min_step_length=25.0)
         self.assertEqual(out[0].level, 44)
-        self.assertEqual(out[-1].level, 24)
+        self.assertEqual(
+            out,
+            [
+                WL.LevelSegment(0.0, 25.0, 44),
+                WL.LevelSegment(25.0, 50.0, 39),
+                WL.LevelSegment(50.0, 75.0, 34),
+                WL.LevelSegment(75.0, 100.0, 29),
+            ],
+        )
         for i, seg in enumerate(out[:-1]):
-            self.assertGreaterEqual(seg.end - seg.start, 25.0 - 1e-9, seg)
-            if i:
-                self.assertLess(seg.level, out[i - 1].level)
+            drop = out[i].level - out[i + 1].level
+            self.assertLessEqual(drop, 6, (out[i], out[i + 1]))
+
+    def test_late_sustained_drop_stays_anchored(self):
+        # Lower run must itself meet min_step_length; step begins at the drop.
+        samples = [(0.0, 42.0), (50.0, 42.0), (55.0, 40.0), (100.0, 40.0)]
+        out = segs(samples, min_step_length=10.0)
+        self.assertEqual(
+            out,
+            [
+                WL.LevelSegment(0.0, 55.0, 42),
+                WL.LevelSegment(55.0, 100.0, 40),
+            ],
+        )
+
+    def test_short_trailing_drop_absorbed(self):
+        samples = [(0.0, 42.0), (90.0, 42.0), (95.0, 39.0), (100.0, 39.0)]
+        out = segs(samples, min_step_length=15.0)
+        self.assertEqual(out, [WL.LevelSegment(0.0, 100.0, 42)])
 
     def test_empty_samples_rejected(self):
         with self.assertRaises(ValueError):
