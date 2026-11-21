@@ -481,7 +481,8 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     """Propose vector-map building and water-body feature candidates for a cell.
 
     Calls ``cell_features.missing_features`` for the cell. Errors propagate
-    (no silent empty list).
+    (no silent empty list). Landmark footprints already carry ``landmark`` /
+    ``landmark_class`` from ``footprint_progress`` (#335).
 
     @param cid: ``tx,tz``
     @returns: list of candidate dicts from ``missing_features`` (kind/label/refs/…)

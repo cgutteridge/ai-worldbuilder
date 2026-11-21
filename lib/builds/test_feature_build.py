@@ -2781,6 +2781,8 @@ class ReapplyGuardTest(unittest.TestCase):
             path.write_text(json.dumps(self.SPEC))
             (F.ROOT / 'verification/site').mkdir(parents=True, exist_ok=True)
             with mock.patch('readiness_evidence.require_feature_ready'), \
+                    mock.patch('landmark_gate.require_landmark_street_check'), \
+                    mock.patch('landmark_gate.feature_cells_for_plan', return_value=[]), \
                     mock.patch.object(F, 'landed_build_seqs', return_value=seqs), \
                     mock.patch.object(F, 'preview'), mock.patch.object(F, 'apply') as applied, \
                     redirect_stdout(io.StringIO()):

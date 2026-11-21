@@ -112,10 +112,14 @@ Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
 ``end`` refuses FEATURE without it).
 
 Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply [--overwrite]]
+                                         [--landmark-override REASON]
 
 ``--apply`` refuses a plan with a landed, not-undone build in the journal (a re-apply
 leaves old blocks outside the new plan); undo it first, or pass ``--overwrite``.
 Begun / mismatched entries do not block (site_recover / reconcile own those).
+Landmark classes (church, cathedral, chapel, cinema, shopping centre) refuse
+``--apply`` until a street-level image source is recorded for the feature's cell
+(``cell_sources.py --record``), unless ``--landmark-override`` gives a non-empty reason.
 """
 from __future__ import annotations
 
@@ -3744,6 +3748,7 @@ def run(
     osm_root=None,
     zone_data: dict | None = None,
     aerial_rgb: dict | None = None,
+    landmark_override: str = '',
 ) -> Plan:
     """Load spec, build plan, preview, and site_kit.apply (dry unless do_apply).
 
@@ -3755,6 +3760,7 @@ def run(
     @param osm_root: optional clip root (tests / fixtures only; not cross-world)
     @param zone_data: optional lidar grids for zoned labels (tests)
     @param aerial_rgb: optional column RGB map for roof-colour dry-run lines (tests)
+    @param landmark_override: non-empty reason skips the landmark street-level image gate
     @returns: Plan
     """
     from builder_provenance import resolve_builder_path, builder_record, provenance
@@ -3770,7 +3776,13 @@ def run(
                 'or pass --overwrite to apply over it anyway.')
     if do_apply:
         from readiness_evidence import require_feature_ready
+        from landmark_gate import feature_cells_for_plan, require_landmark_street_check
         require_feature_ready(spec['name'])
+        require_landmark_street_check(
+            spec,
+            override_reason=landmark_override,
+            cells=feature_cells_for_plan(spec['name']),
+        )
     plan = build(
         spec, footprints=footprints, world=world, osm_root=osm_root,
         zone_data=zone_data, aerial_rgb=aerial_rgb,
@@ -3789,5 +3801,16 @@ if __name__ == '__main__':
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--overwrite', action='store_true',
                     help='apply over a plan that already has a landed build (leaves stale blocks)')
+    ap.add_argument(
+        '--landmark-override',
+        default=None,
+        metavar='REASON',
+        help='build a landmark without a recorded street-level image source (non-empty reason required)',
+    )
     a = ap.parse_args()
-    run(a.spec, do_apply=a.apply, overwrite=a.overwrite)
+    override = ''
+    if a.landmark_override is not None:
+        override = a.landmark_override.strip()
+        if not override:
+            raise SystemExit('--landmark-override needs a non-empty reason')
+    run(a.spec, do_apply=a.apply, overwrite=a.overwrite, landmark_override=override)
