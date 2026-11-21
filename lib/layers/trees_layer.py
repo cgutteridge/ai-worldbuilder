@@ -91,18 +91,61 @@ def plan_name(tx: int, tz: int) -> str:
     return f"highfield_{tx}_{'m' if tz < 0 else ''}{abs(tz)}_trees"
 
 
+def _axis_slice(a: np.ndarray, start: int, end: int, axis: int) -> np.ndarray:
+    """``a`` sliced from ``start`` to ``end`` along one axis."""
+    sl = [slice(None)] * a.ndim
+    sl[axis] = slice(start, end)
+    return a[tuple(sl)]
+
+
+def _window_sum(a: np.ndarray, k: int, axis: int) -> np.ndarray:
+    """Sum of each length-k window along ``axis``, with ``k // 2`` edge padding.
+
+    Starts cover the original length only. Even ``k`` leaves one padded sample
+    unused on the far side, matching a shifted-copy box.
+
+    @param a: numeric array
+    @param k: window length, at least 1
+    @param axis: axis to sum along
+    @returns: float64 sums, same shape as ``a``
+    """
+    pad = [(0, 0)] * a.ndim
+    pad[axis] = (k // 2, k // 2)
+    padded = np.pad(a, pad, mode='edge')
+    cumulative = np.cumsum(padded, axis=axis, dtype=np.float64)
+    zero_shape = padded.shape[:axis] + (1,) + padded.shape[axis + 1:]
+    cumulative = np.concatenate(
+        [np.zeros(zero_shape, dtype=np.float64), cumulative], axis=axis)
+    length = a.shape[axis]
+    return (_axis_slice(cumulative, k, k + length, axis)
+            - _axis_slice(cumulative, 0, length, axis))
+
+
 def _box(a: np.ndarray, k: int) -> np.ndarray:
-    """Mean over a k×k window (edge padded)."""
-    pad = np.pad(a, k // 2, mode='edge')
-    h, w = a.shape
-    return sum(pad[i:i + h, j:j + w] for i in range(k) for j in range(k)) / (k * k)
+    """Mean over a k×k window (edge padded), as a separable running sum.
+
+    Same window as summing every shifted copy. Callers threshold the result
+    (``> 0.5``, ``> 0.999``, ``> 1e-6``, ``>= 0.035``). Numpy only.
+
+    @param a: 2-D array
+    @param k: window side length, at least 1
+    @returns: float64 means, same shape as ``a``
+    """
+    if k < 1:
+        raise ValueError(f'box window must be at least 1, got {k}')
+    work = np.asarray(a, dtype=np.float64)
+    if work.ndim != 2:
+        raise ValueError(f'box filter expects a 2-D array, got {work.ndim}-D')
+    return _window_sum(_window_sum(work, k, 0), k, 1) / (k * k)
 
 
 def canopy_pixels(img_path: Path) -> np.ndarray:
     """Boolean canopy mask over the mosaic: texture + greenness, then a morphological closing."""
     from PIL import Image
 
-    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    from aerial_coverage import load_rgb
+
+    a = load_rgb(img_path).astype(float) / 255
     r, g = a[..., 0], a[..., 1]
     mx, mn = a.max(2), a.min(2)
     d = mx - mn
@@ -135,9 +178,9 @@ def cover_pixels(img_path: Path) -> np.ndarray:
     this resolution, so the crown test rejects most of it. Roofs (red, g << r), paving and tarmac (low
     saturation) and bright surfaces stay out.
     """
-    from PIL import Image
+    from aerial_coverage import load_rgb
 
-    a = np.asarray(Image.open(img_path).convert('RGB')).astype(float) / 255
+    a = load_rgb(img_path).astype(float) / 255
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     mx, mn = a.max(2), a.min(2)
     s = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-9), 0)
@@ -181,21 +224,23 @@ def canopy_grid(cell: tuple[int, int]) -> np.ndarray:
 
 
 def _mosaic_grid(cell, detector, window, mask=None):
-    from aerial_coverage import cell_columns, require_coverage, samples
-    sources = require_coverage(cell)
-    points = cell_columns(cell)
-    selected = samples(points, sources)
-    x0, z0, x1, z1 = cell_bounds(*cell)
-    grid = np.zeros((x1 - x0 + 1, z1 - z0 + 1))
-    for source in sources:
-        positions = {p: sample for p, sample in selected.items() if sample[0] == source}
-        if not positions:
-            continue
-        pixels = detector(source.path) if mask is None else mask
-        density = _box(pixels.astype(float), window)
-        for (x, z), (_source, px, py, _rgb) in positions.items():
-            grid[x - x0, z - z0] = density[int(py), int(px)]
-    return grid
+    from aerial_coverage import cell_columns, require_coverage, rgb_cache, samples
+    # Coverage, sampling and the detector otherwise decode the same mosaic.
+    with rgb_cache():
+        sources = require_coverage(cell)
+        points = cell_columns(cell)
+        selected = samples(points, sources)
+        x0, z0, x1, z1 = cell_bounds(*cell)
+        grid = np.zeros((x1 - x0 + 1, z1 - z0 + 1))
+        for source in sources:
+            positions = {p: sample for p, sample in selected.items() if sample[0] == source}
+            if not positions:
+                continue
+            pixels = detector(source.path) if mask is None else mask
+            density = _box(pixels.astype(float), window)
+            for (x, z), (_source, px, py, _rgb) in positions.items():
+                grid[x - x0, z - z0] = density[int(py), int(px)]
+        return grid
 
 
 def find_crowns(grid: np.ndarray) -> list[tuple[int, int, float]]:
@@ -588,10 +633,14 @@ def planning_inputs(cell, osm_ground=None):
     """
     tx, tz = cell
     x0, z0 = tx * CELL, tz * CELL
-    grid = canopy_grid(cell)
-    crowns = find_crowns(grid)
-    n_detected = len(crowns)
-    crowns = crowns + fill_dense(cover_grid(cell), crowns, seed=tx * 1000 + tz)
+    # Canopy and cover each call require_coverage, samples and a detector.
+    # One cache so those six opens of the same mosaic become one decode.
+    from aerial_coverage import rgb_cache
+    with rgb_cache():
+        grid = canopy_grid(cell)
+        crowns = find_crowns(grid)
+        n_detected = len(crowns)
+        crowns = crowns + fill_dense(cover_grid(cell), crowns, seed=tx * 1000 + tz)
     extra = {(x0 + i, z0 + j) for i, j, _r in extra_crowns(cell)}
     crowns = crowns + [c for c in extra_crowns(cell) if not any((c[0] - ci) ** 2 + (c[1] - cj) ** 2 <= (cr * 0.75) ** 2
                                                                 for ci, cj, cr in crowns)]

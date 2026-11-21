@@ -5,7 +5,10 @@ are never fetched here. Black/no-data pixels do not establish evidence coverage.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +22,58 @@ from world_frame import mc_batch_to_wgs84, wgs84_to_wm_global_px
 
 class CoverageError(ValueError):
     """A cell lacks usable aerial evidence; an empty detector result would be misleading."""
+
+
+# Active only inside rgb_cache. None means each load_rgb call decodes again.
+_rgb_cache: contextvars.ContextVar[dict[tuple[str, int, int], np.ndarray] | None] = (
+    contextvars.ContextVar('aerial_rgb_cache', default=None)
+)
+
+
+@contextlib.contextmanager
+def rgb_cache() -> Iterator[None]:
+    """Reuse aerial RGB decodes until this planning run ends.
+
+    Nested calls share the outer cache. ``require_coverage`` decodes through
+    ``samples``, and a trees grid then samples again and decodes the same
+    mosaic in the canopy or cover detector. One cache covers that whole run.
+
+    @returns: context manager; no value
+    """
+    if _rgb_cache.get() is not None:
+        yield
+        return
+    token = _rgb_cache.set({})
+    try:
+        yield
+    finally:
+        _rgb_cache.reset(token)
+
+
+def load_rgb(path: Path) -> np.ndarray:
+    """Decoded RGB pixels for ``path``.
+
+    Inside ``rgb_cache``, the same resolved path, mtime and size returns the
+    same read-only array. Outside a run, every call decodes.
+
+    @param path: local image file
+    @returns: uint8 array shaped ``(height, width, 3)``
+    """
+    cache = _rgb_cache.get()
+    key = None
+    if cache is not None:
+        resolved = Path(path).resolve()
+        stat = resolved.stat()
+        key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+    with Image.open(path) as image:
+        rgb = np.array(image.convert('RGB'), dtype=np.uint8, copy=True)
+    if cache is not None:
+        rgb.setflags(write=False)
+        cache[key] = rgb
+    return rgb
 
 
 @dataclass(frozen=True)
@@ -80,8 +135,7 @@ def samples(points, sources, *, radius=0):
         todo = [p for p in points if p not in out]
         if not todo:
             break
-        with Image.open(mosaic.path) as image:
-            rgb = np.asarray(image.convert('RGB'))
+        rgb = load_rgb(mosaic.path)
         for p, (px, py) in mosaic.pixels(todo).items():
             if not (0 <= px < rgb.shape[1] and 0 <= py < rgb.shape[0]):
                 continue
