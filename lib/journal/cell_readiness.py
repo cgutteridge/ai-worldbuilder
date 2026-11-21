@@ -92,9 +92,10 @@ def planned_elsewhere(reg, cell):
     """Feature ids and map refs planned or dismissed in any other cell: a cross-cell feature is one thing (task 288).
 
     A map-ref feature (a building or water body) planned, or deliberately dismissed, in its
-    home cell is accounted for in every other cell its footprint touches. House groups key by
-    street, not by a global map ref, so callers apply this only to non-house candidates. A plan
-    named ``<prefix>_w<osmid>`` covers ``w<osmid>`` too (task 293, see ``plan_refs``).
+    home cell is accounted for in every other cell its footprint touches. House groups match
+    by the same recorded map refs (#233), so two terraces that share a street name stay
+    distinct when their ways differ. A plan named ``<prefix>_w<osmid>`` covers ``w<osmid>``
+    too (task 293, see ``plan_refs``).
 
     @param reg: cell journal
     @param cell: ``(tx, tz)``

@@ -147,6 +147,65 @@ class PlanIdTest(unittest.TestCase):
             self.assertIn('done=True', CR._format_status(self.reg, '48,-44'))
             self.assertEqual(V.check_uncovered_footprints(self.reg), [])
 
+    def test_spec_backed_plan_under_a_different_id_prevents_a_duplicate(self):
+        """#233: houses_street_wN with a ways spec covers the same buildings; prepare does not re-plan."""
+        plan = f'{STREET}_w1'
+        self.reg.change(Note(CELL, 'plan_feature', OLD['label'], plan))
+        builds = self.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{plan}.json').write_text(json.dumps({'name': plan, 'ways': {'1': 'K1', '2': 'K2'}}))
+        self.assertEqual(self.record([OLD]), [])
+        self.assertEqual(self.record([OLD]), [])
+        self.assertEqual([f.id for f in self.reg.cell(CELL).features], [plan])
+
+    def test_partly_covered_house_group_proposes_only_uncovered_refs(self):
+        """#233: a house plan covering some ways leaves the rest proposable as houses."""
+        plan = f'{STREET}_w10'
+        self.reg.change(Note(CELL, 'plan_feature', 'partial', plan))
+        builds = self.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{plan}.json').write_text(json.dumps({'name': plan, 'ways': {'10': 'A', '11': 'B'}}))
+        left = CR.drop_covered_candidates(self.reg, CELL, [GROUP_A])
+        self.assertEqual([(i['kind'], i['refs']) for i in left], [('houses', ['w12'])])
+        self.assertEqual(self.record([GROUP_A]), [f'{STREET}_w12'])
+
+    def test_two_groups_sharing_a_street_name_stay_distinct_across_cells(self):
+        """#233: same street name in two cells does not merge unrelated buildings."""
+        neighbour = (CELL[0] - 1, CELL[1])
+        self.reg.change(Note(CELL, 'plan_feature', GROUP_A['label'], f'{STREET}_w10'))
+        builds = self.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{STREET}_w10.json').write_text(
+            json.dumps({'name': f'{STREET}_w10', 'ways': {'10': 'A', '11': 'B', '12': 'C'}}))
+        cid = f'{neighbour[0]},{neighbour[1]}'
+        self.assertEqual(CR.record_feature_candidates(self.reg, cid, [GROUP_B]),
+                         [{'id': f'{STREET}_w20', 'label': GROUP_B['label'], 'kind': 'houses'}])
+
+    def test_unresolved_legacy_street_plan_is_flagged_and_not_duplicated(self):
+        """#233: a bare street plan with no recoverable refs is neither assumed covered nor re-planned."""
+        neighbour = (CELL[0] - 1, CELL[1])
+        self.reg.change(Note(neighbour, 'plan_feature', 'legacy', STREET))
+        self.assertEqual(self.ids([GROUP_A]), [STREET])
+        self.assertEqual(self.record([GROUP_A]), [])
+        self.assertEqual([f.id for f in self.reg.cell(CELL).features], [])
+        self.assertEqual(CR.record_feature_candidates(self.reg, f'{neighbour[0]},{neighbour[1]}',
+                                                      [GROUP_A]), [])
+        warning = CR.ambiguous_legacy_house_plans(self.reg, CELL, [GROUP_A])
+        self.assertEqual(warning, [
+            f'ambiguous legacy plan {STREET}: no readable handoff spec; audit refs {GROUP_A["refs"]}',
+        ])
+
+    def test_repeat_prepare_records_no_extra_plans_for_unchanged_houses(self):
+        """#233: a second record pass is a no-op once the house group is planned by ref."""
+        plan = f'{STREET}_w10'
+        self.reg.change(Note(CELL, 'plan_feature', GROUP_A['label'], plan))
+        builds = self.root / 'site' / 'builds'
+        builds.mkdir(parents=True)
+        (builds / f'{plan}.json').write_text(
+            json.dumps({'name': plan, 'ways': {'10': 'A', '11': 'B', '12': 'C'}}))
+        self.assertEqual(self.record([GROUP_A, GROUP_B]), [f'{STREET}_w20'])
+        self.assertEqual(self.record([GROUP_A, GROUP_B]), [])
+
 
 if __name__ == '__main__':
     unittest.main()
