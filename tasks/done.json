@@ -2937,5 +2937,15 @@
       "blockedBy": [],
       "notes": "Cause (verified): cell_features._package_unbuilt emits one candidate per non-house way and only houses are grouped, via _split_runs. Readiness already counts every ref a spec lists under ways (task 293, lib/journal/plan_refs.py), so the gap is the candidate and the plan id. JOIN_GAP is 12 blocks and would chain a whole estate; the trial's sheds were separated by walls. Deliverable: in lib/journal/cell_features.py group non-house candidates of the same building= tag whose footprints touch (gap 1 block or less) into one candidate of a new kind (group) with all its refs; plan id is the lowest ref, as for split house groups in plan_ids_for_candidates; a spec naming that id and listing the refs in ways covers all of them. Check: Belgrave 55,-41 proposes the west shed (units 1-4) and the east shed (units 7-18) as two candidates, not 20; fixture test: two touching retail ways give one candidate and a distant third stays single; a group crossing a cell edge is planned once (drop_covered_candidates). Unverified: whether the owner wants groups per structure only or also per parade. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at b97a2eed2b285584f136e6d45aa163043ece05fe: Same-tag non-house footprints with gap<=1 become kind group (plan id min ref); cross-cell once under lead home; partial plans leave uncovered refs proposable. Merged with #335 landmark fields on _building_item.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 320,
+      "title": "Spike: first-return lidar for canopy (Defra first-return DSM)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Cause: the last-return composite (lidar_composite_last_return_dsm) misses most canopy, so lidar standing height cannot confirm trees. UNVERIFIED: that Defra publishes a first-return DSM; config/system-providers.json lists only ukdefra-lidar and ukdefra-dsm. Deliverable: an evaluate-data-source write-up (coverage, licence, cost on the wire, whether it exists as a download) and a go or no-go; add-data-source only on go. Used by the tree gate once present. Check: findings in docs/plans/ with a verdict; if go, canopy height read on a wood cell.\n\nClosed at ddd9a2f822a4c5dd552609212e20aa3760c3cba8: Verified first-return DSM download and woodland canopy signal; go verdict reuses existing system provider. Report records current tree-reader limitation.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
