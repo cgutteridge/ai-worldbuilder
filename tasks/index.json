@@ -182,17 +182,6 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "Follow-ups from #337 (big-box roof follows the aerial, merged in fa3826d; findings in docs/plans/bigbox-roof-aerial.md):\n1. The roof_aerial palette should come from the shared roof-material catalogue (#355, config/roof-materials.json). 5 of its 9 materials are missing there: polished_andesite, polished_diorite, smooth_quartz, polished_deepslate, smooth_sandstone.\n2. PV detection needs blue minus red of at least 30, so black-cell or dark-grey UK arrays are never found. Expose blue_margin and min_cells on the CLI, or detect dark arrays too.\n3. The 0.4 m/px resolution gate (ppb < 2.5) can refuse exactly 0.4 m/px through float noise. Compare with an epsilon and test the boundary.\n4. Arrays at an angle to the block grid are laid as their rectangular outline. Arrays clipped at a cell edge (the western ends of Westquay's NW and SW arrays, in 42,-16) are dropped.\n5. Small CLI points:\n   - --replace-pv without --write does nothing silently;\n   - the mosaic name cross-check is skipped silently when the name has no zNN-WxH-TX-TY pattern;\n   - main() has no docstring;\n   - main, _footprint, _mosaic_affine and review_sheet have no tests.\n6. feature_build PvArraysTest gaps: a box spanning two roof levels (commonest-deck filter), zone_materials, a top block that is not roof material, and a no-pv_arrays build equal to the old output. Also fix the stale \"cell above is still free\" wording in the pv_rows docstring.\n"
-    },
-    
-    {
-      "id": 364,
-      "title": "Woodland floor: preserve scrub pasture inside overlapping woods",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Follow-up blocker from final #348 review: woodland_floor_columns admits columns from a wood/forest polygon before considering that the same columns are mapped as natural=scrub. With ground_texture.wood.scrub false, overlapping scrub therefore loses its existing #319 pasture palette. Require the class scrub opt-in for overlapping scrub as well as standalone scrub; preserve existing polygon-edge mask semantics, lawn/meadow exclusions and all other columns. Synthetic tests must cover overlapping wood and scrub with the default off, opt-in on, and reversed polygon order. Single-layer selector fix only; no world reads/builds or schema changes. Use focused ground/land-use tests, fresh review and local ship-branch merge. requiresClaude false; small firm predicate fix, not a stretch."
     }
   ]
 }

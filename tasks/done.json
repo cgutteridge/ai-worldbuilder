@@ -3221,5 +3221,16 @@
       "requiresClaude": false,
       "notes": "Follow-up blocker found while closing the owner-authorized woodland wave (#347-#351). In #351 plan_woodland_decor.free_air calls ground_layer.is_air, which treats PLANTS as air. As a result it may overwrite an existing unowned plant above otherwise eligible woodland ground, contrary to the ticket air-only rule.\n\nScope: require literal Minecraft air/cave_air/void_air for woodland placement voxels; preserve existing plant blocks, including upper voxels of tall bushes/ferns. Keep other decor/ground callers and configuration shares unchanged. Add synthetic regression tests for an existing plant at surface+1 and at a required upper voxel, and retain successful placement in true air. Run focused decor/land-use tests, fresh read-only review, then required ship-branch merge locally (--no-push). No live-world reads/builds, registry/schema changes or new plant-state guesses; requiresClaude false. This is a small single-layer predicate fix, not a stretch.\n\n\nClosed at 88fd56ce4e5cfe883956183a535f08cf9f2b3c4a: Resolved #351 close-review blocker: woodland decor requires known literal air and preserves existing plants at lower/upper voxels. Six red cases reproduced before fix; focused decor/land-use, full precommit and tip/main suites green; fresh review APPROVE; local merge only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 364,
+      "title": "Woodland floor: preserve scrub pasture inside overlapping woods",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Follow-up blocker from final #348 review: woodland_floor_columns admits columns from a wood/forest polygon before considering that the same columns are mapped as natural=scrub. With ground_texture.wood.scrub false, overlapping scrub therefore loses its existing #319 pasture palette. Require the class scrub opt-in for overlapping scrub as well as standalone scrub; preserve existing polygon-edge mask semantics, lawn/meadow exclusions and all other columns. Synthetic tests must cover overlapping wood and scrub with the default off, opt-in on, and reversed polygon order. Single-layer selector fix only; no world reads/builds or schema changes. Use focused ground/land-use tests, fresh review and local ship-branch merge. requiresClaude false; small firm predicate fix, not a stretch.\n\nClosed at 3b2e11af7113801e0ce2071cb9c39e071c151df7: Resolved #348 close-review blocker: scrub keeps pasture even inside overlapping woods unless its class opts in. Synthetic overlap regression fails before fix; default-off/opt-in/reversed-order checks pass. Focused ground/land-use, full precommit and tip/main suites green; fresh review APPROVE; local merge only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
