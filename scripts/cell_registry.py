@@ -399,7 +399,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
     """Stable feature plan id for a ``propose-features`` candidate (#128).
 
     Buildings and water bodies (#148) use the first vector-map ref (e.g. ``w93729745``
-    or ``water_<x>_<z>``). Houses use ``houses_<street_slug>`` when a street is known,
+    or ``water_<x>_<z>``). Touching non-house groups (#328) use the lowest ref among
+    the group's ways. Houses use ``houses_<street_slug>`` when a street is known,
     else ``houses_`` plus sorted refs. Build specs should reuse this id as ``name`` so
     the plan matches the Build.
 
@@ -417,6 +418,8 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
             slug = re.sub(r'[^a-z0-9]+', '_', street.lower()).strip('_') or 'unnamed'
             return f'houses_{slug}'
         return 'houses_' + '_'.join(sorted(refs))
+    if item.get('kind') == 'group':
+        return min(refs)
     return refs[0]
 
 

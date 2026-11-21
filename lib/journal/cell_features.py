@@ -9,12 +9,14 @@ A feature is any build recorded in the cell journal that is not a layer pass
 feature" when at least COVERED_FRAC of its footprint columns are touched by one.
 Mapped water bodies (#148) use the same coverage rule on their outline columns.
 
-Packaging: each non-home building (campus block, shop, church...) is its own feature.
-Homes that overlap the cell and are not yet in a feature are grouped by street, then
-split where the gap between neighbouring footprints exceeds JOIN_GAP, so one terrace
-or run of houses becomes one feature. Outbuildings (sheds, garages) are left to their
-house plot. Connected polygon water columns become ``kind: water_body`` candidates
-(streams stay off the pond list; #163).
+Packaging: non-home buildings of the same ``building=`` tag whose footprints touch
+(gap of TOUCH_GAP blocks or less) become one ``kind: group`` candidate with all their
+refs; an ungrouped single stays ``kind: building``. Homes that overlap the cell and
+are not yet in a feature are grouped by street, then split where the gap between
+neighbouring footprints exceeds JOIN_GAP, so one terrace or run of houses becomes one
+feature. Outbuildings (sheds, garages) are left to their house plot. Connected
+polygon water columns become ``kind: water_body`` candidates (streams stay off the
+pond list; #163).
 
 A feature is one build whatever cell lines it crosses (task 288): a footprint is proposed
 only in its home cell (:func:`home_cell`), whole, and never in the other cells it touches.
@@ -48,6 +50,7 @@ from water_body import MIN_WATER_COLUMNS, water_body_components  # noqa: E402
 
 COVERED_FRAC = 0.5
 JOIN_GAP = 12         # blocks between footprints that still count as one run of houses
+TOUCH_GAP = 1         # blocks between non-house footprints that still count as one group
 STREET_REACH = 40     # nearest named street for homes with no addr:street
 MIN_COLUMNS = 12      # ignore slivers (kiosks, bin stores)
 
@@ -138,31 +141,91 @@ def _gap(a, b) -> float:
     return math.hypot(dx, dz)
 
 
-def _split_runs(items: list) -> list:
-    """Single-link cluster footprints whose bbox gap <= JOIN_GAP.
+def _split_runs(items: list, gap: float = JOIN_GAP) -> list:
+    """Single-link cluster footprints whose bbox gap is at most ``gap``.
 
     @param items: [{'bbox': (x0, z0, x1, z1), ...}]
+    @param gap: maximum bbox gap (blocks) that still joins two footprints
     @returns: list of lists
     """
     groups: list[list] = []
     for it in items:
-        hit = [g for g in groups if any(_gap(it['bbox'], o['bbox']) <= JOIN_GAP for o in g)]
+        hit = [g for g in groups if any(_gap(it['bbox'], o['bbox']) <= gap for o in g)]
         merged = [it] + [o for g in hit for o in g]
         groups = [g for g in groups if g not in hit] + [merged]
     return groups
 
 
+_SINGLE_KEYS = frozenset({'label', 'bbox', 'area', 'portals', 'pictures'})
+
+
+def _single_building_row(s: dict) -> dict:
+    """One ``kind: building`` candidate from an ungrouped non-house item.
+
+    Keeps any extra keys on ``s`` (except the internal ``p`` / ``ref``) so a parallel
+    change can add fields without this packaging dropping them.
+
+    @param s: single item with ref/label/bbox/area/portals/pictures (and optional extras)
+    @returns: candidate dict
+    """
+    row = {k: v for k, v in s.items() if k not in ('p', 'ref')}
+    row.update({
+        'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
+        'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures'],
+    })
+    return row
+
+
+def _group_building_row(run: list) -> dict:
+    """One ``kind: group`` candidate from touching non-house items of the same tag.
+
+    Shared extra keys (same value on every member, not ``p`` / ``ref`` / packed fields)
+    are kept so unknown fields from a parallel change are not dropped.
+
+    @param run: two or more single items already clustered as touching
+    @returns: candidate dict with sorted ``refs`` and a union bbox
+    """
+    refs = sorted(o['ref'] for o in run)
+    tag = run[0]['p'].get('building') or 'yes'
+    shared = None
+    for o in run:
+        extra = {k: v for k, v in o.items()
+                 if k not in ('p', 'ref') and k not in _SINGLE_KEYS and k != 'street'}
+        shared = extra if shared is None else {k: v for k, v in shared.items()
+                                              if k in extra and extra[k] == v}
+    row = dict(shared or {})
+    row.update({
+        'kind': 'group', 'street': None,
+        'label': f'{tag} ({len(run)} buildings)',
+        'refs': refs,
+        'bbox': (min(o['bbox'][0] for o in run), min(o['bbox'][1] for o in run),
+                 max(o['bbox'][2] for o in run), max(o['bbox'][3] for o in run)),
+        'area': sum(o['area'] for o in run),
+        'portals': [q for o in run for q in o['portals']],
+        'pictures': [q for o in run for q in o['pictures']],
+    })
+    return row
+
+
 def _package_unbuilt(singles: list, homes: list, streets) -> list:
     """Package uncovered building items into missing-feature / footprint rows.
+
+    Non-house items of the same ``building=`` tag whose footprints touch (gap at most
+    TOUCH_GAP) become one ``kind: group``; an ungrouped single stays ``kind: building``.
 
     @param singles: non-home items with ref/label/bbox/area/portals/pictures
     @param homes: home items (same shape) still needing a street
     @param streets: OSMIndex.streets for nearest-street lookup
-    @returns: buildings first, then house runs (each with ``area`` column count)
+    @returns: buildings and groups first, then house runs (each with ``area`` column count)
     """
-    out = [{'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
-            'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures']}
-           for s in sorted(singles, key=lambda s: s['bbox'][:2])]
+    out: list = []
+    by_tag: dict = {}
+    for s in singles:
+        by_tag.setdefault(s['p'].get('building'), []).append(s)
+    for tag in sorted(by_tag, key=lambda t: t or ''):
+        for run in sorted(_split_runs(by_tag[tag], gap=TOUCH_GAP),
+                          key=lambda g: min(o['bbox'][:2] for o in g)):
+            out.append(_single_building_row(run[0]) if len(run) == 1 else _group_building_row(run))
     by_street: dict = {}
     for h in homes:
         h['street'] = _street_of(h['p'], h['bbox'], streets)
@@ -459,11 +522,11 @@ def missing_features(
     @param idx: optional shared OSMIndex
     @param covered: optional precomputed feature_columns()
     @param water_columns: optional water columns for tests; default loads ``OSMGround``
-    @returns: [{'kind': 'building'|'houses'|'water_body', 'label': str, 'street': str|None,
-                'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
+    @returns: [{'kind': 'building'|'group'|'houses'|'water_body', 'label': str,
+                'street': str|None, 'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
                 'portals': [portal],
                 'pictures': [university building (scripts/buildings.py: photo + outline)]}],
-        buildings first, then streets, then water bodies
+        buildings and groups first, then streets, then water bodies
     """
     covered = feature_columns() if covered is None else covered
     buildings = footprint_progress(tx, tz, idx=idx, covered=covered)['unbuilt']

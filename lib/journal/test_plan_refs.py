@@ -83,6 +83,26 @@ class PlanRefsTest(unittest.TestCase):
         self.spec('campus_main', {'10': 'A', '11': 'B'})
         self.assertEqual(CR.record_feature_candidates(self.reg, '48,-44', [building('w11')]), [])
 
+    def test_spec_ways_cover_a_multi_ref_group(self):
+        """#328: a plan named for the lowest ref, with all ways listed, covers the group."""
+        group = {'kind': 'group', 'label': 'retail (2 buildings)', 'street': None,
+                 'refs': ['w10', 'w30'], 'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
+        self.plan('w10')
+        self.spec('w10', {'10': 'A', '30': 'B'})
+        self.assertEqual(CR.drop_covered_candidates(self.reg, CELL, [group]), [])
+        self.assertEqual(CR.record_feature_candidates(self.reg, '48,-44', [group]), [])
+
+    def test_group_planned_in_home_cell_is_not_reproposed_next_door(self):
+        """#328 / #288: a multi-ref group planned once stays covered across the cell line."""
+        group = {'kind': 'group', 'label': 'retail (2 buildings)', 'street': None,
+                 'refs': ['w10', 'w30'], 'bbox': (0, 0, 1, 1), 'portals': [], 'pictures': []}
+        self.plan('w10')
+        self.spec('w10', {'10': 'A', '30': 'B'})
+        cid = '47,-44'
+        self.assertEqual(CR.record_feature_candidates(self.reg, cid, [group]), [])
+        with mock.patch('cell_registry.propose_feature_candidates', return_value=[group]):
+            self.assertEqual(N.unplanned_footprint_candidates(self.reg, cid), [])
+
     def test_next_and_readiness_do_not_offer_a_second_build(self):
         self.jw.seed(CELL, ground=True, features=('west_w34391673',))
         with mock.patch('cell_registry.propose_feature_candidates', return_value=[building('w34391673')]):
