@@ -61,6 +61,14 @@ DENSITY_MIN = 0.55
 # test and filled at a spacing that matches it. Planting still goes through plan_cell's rules.
 COVER_MIN = 0.6            # local cover fraction below which nothing is filled (light canopy unchanged)
 COVER_FULL = 0.9           # at or above this every fill site gets a tree
+# Ordinary aerial cover: saturated green-to-olive under a brightness ceiling. Shaded
+# brown-olive woodland still counts; roofs, paving and bright surfaces stay out.
+# Park and rural point at the shade pair (trees.cover "shade"): sunlit pasture still
+# clears the ordinary ceiling, and dull shadow falls under the ordinary saturation floor.
+COVER_MIN_SATURATION = 0.22
+COVER_MAX_CHANNEL = 0.62
+SHADE_COVER_MIN_SATURATION = 0.10
+SHADE_COVER_MAX_CHANNEL = 0.40
 FILL_SPACING = 5           # jittered grid pitch of the fill (crowns here are 5-7 blocks across)
 FILL_RADII = (2.5, 3.0, 3.0, 3.5, 4.0, 4.5)   # height variance: round 4-6 below 3.5, plane 8-9 above
 MIN_NDSM = 3.0            # metres: inferred fill requires standing lidar canopy when available
@@ -174,12 +182,21 @@ def canopy_pixels(img_path: Path) -> np.ndarray:
     return _box(dil.astype(float), 9) > 0.999
 
 
-def cover_pixels(img_path: Path) -> np.ndarray:
-    """Boolean vegetation-cover mask: any saturated, not-bright, green-to-olive pixel (no texture test).
+def cover_pixels(img_path: Path, *, shade: bool = False) -> np.ndarray:
+    """Boolean vegetation-cover mask: saturated, not-bright, green-to-olive pixels (no texture test).
 
     Wider than canopy_pixels on purpose: shaded woodland is dark, olive or brownish (g < r) and smooth at
     this resolution, so the crown test rejects most of it. Roofs (red, g << r), paving and tarmac (low
     saturation) and bright surfaces stay out.
+
+    ``shade`` is the park and rural test (``trees.cover``). The ordinary ceiling still lets sunlit
+    meadow through, and the ordinary saturation floor drops dull shadowed canopy. Shade lowers both
+    thresholds and keeps the same green-to-olive check, so the meadow scores low and the canopy high.
+    Other classes leave ``shade`` false.
+
+    @param img_path: local RGB mosaic
+    @param shade: use the park/rural shade thresholds
+    @returns: boolean mask, same height and width as the image
     """
     from aerial_coverage import load_rgb
 
@@ -187,13 +204,58 @@ def cover_pixels(img_path: Path) -> np.ndarray:
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     mx, mn = a.max(2), a.min(2)
     s = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-9), 0)
-    mask = (s >= 0.22) & (mx <= 0.62) & (g > b + 0.02) & (g >= r * 0.8)
+    sat = SHADE_COVER_MIN_SATURATION if shade else COVER_MIN_SATURATION
+    cap = SHADE_COVER_MAX_CHANNEL if shade else COVER_MAX_CHANNEL
+    mask = (s >= sat) & (mx <= cap) & (g > b + 0.02) & (g >= r * 0.8)
     return _box(_box(mask.astype(float), 5), 5) > 0.5
 
 
-def cover_grid(cell: tuple[int, int], mask: np.ndarray | None = None) -> np.ndarray:
-    """128×128 [x - x0, z - z0] = fraction of cover pixels in a ~7-block window around the column."""
-    return _mosaic_grid(cell, cover_pixels, 35, mask)
+def _cover_by_class(ordinary: np.ndarray, shaded: np.ndarray, classes: dict,
+                    origin: tuple[int, int]) -> np.ndarray:
+    """Use the shade cover grid on columns whose land-use class asks for it.
+
+    @param ordinary: cover fraction from the ordinary test, indexed ``[x - x0, z - z0]``
+    @param shaded: cover fraction from the shade test, same shape
+    @param classes: ``{(world x, world z): class id}``; a column with no entry stays ordinary
+    @param origin: world ``(x0, z0)`` of grid index ``[0, 0]``
+    @returns: cover fraction per column; ``ordinary`` and ``shaded`` are left unchanged
+    """
+    import land_use
+
+    shade_ids = {cid for cid in set(classes.values()) if land_use.tree_cover(cid) == 'shade'}
+    if not shade_ids:
+        return ordinary
+    out = ordinary.copy()
+    x0, z0 = origin
+    height, width = out.shape
+    for (x, z), cid in classes.items():
+        if cid not in shade_ids:
+            continue
+        i, j = x - x0, z - z0
+        if 0 <= i < height and 0 <= j < width:
+            out[i, j] = shaded[i, j]
+    return out
+
+
+def cover_grid(cell: tuple[int, int], mask: np.ndarray | None = None,
+               *, classes: dict | None = None) -> np.ndarray:
+    """128×128 ``[x - x0, z - z0]`` = fraction of cover pixels in a ~7-block window around the column.
+
+    @param cell: ``(tx, tz)``
+    @param mask: optional precomputed mosaic mask; skips the detector
+    @param classes: optional ``{(world x, world z): class id}``. Park and rural columns
+        (``trees.cover`` shade) take the shade test; every other class keeps the ordinary test.
+        Omitted, empty, or a supplied mask means the whole cell uses the ordinary test.
+    @returns: cover fraction per column
+    """
+    if mask is not None or not classes:
+        return _mosaic_grid(cell, cover_pixels, 35, mask)
+    import land_use
+    if not any(land_use.tree_cover(cid) == 'shade' for cid in set(classes.values())):
+        return _mosaic_grid(cell, cover_pixels, 35, mask)
+    ordinary = _mosaic_grid(cell, cover_pixels, 35, None)
+    shaded = _mosaic_grid(cell, lambda path: cover_pixels(path, shade=True), 35, None)
+    return _cover_by_class(ordinary, shaded, classes, (cell[0] * CELL, cell[1] * CELL))
 
 
 def fill_dense(cover: np.ndarray, crowns: list[tuple[int, int, float]], seed: int = 0,
@@ -704,13 +766,19 @@ def planning_inputs(cell, osm_ground=None):
     else:
         ndsm, height_source = standing_height(cell)
     # Canopy and cover each call require_coverage, samples and a detector.
-    # One cache so those six opens of the same mosaic become one decode.
+    # One cache so those opens of the same mosaic become one decode.
+    # Land class is known before cover so park and rural columns can use the shade test.
+    from osm_footprints import OSMIndex
+    from coverage import area_classes
+    from ground_sources import cell_box
+    idx = OSMIndex()
+    land_classes = {q: hit[0] for q, hit in area_classes(idx, cell_box(cell)).items()}
     from aerial_coverage import rgb_cache
     with rgb_cache():
         grid = canopy_grid(cell)
         crowns = find_crowns(grid)
         n_detected = len(crowns)
-        cover = cover_grid(cell)
+        cover = cover_grid(cell, classes=land_classes)
         aerial_fill = fill_dense(cover, crowns, seed=tx * 1000 + tz, ndsm=ndsm)
         crowns = crowns + aerial_fill
     lidar = lidar_fill(ndsm, crowns, cover, seed=tx * 1000 + tz)
@@ -723,8 +791,6 @@ def planning_inputs(cell, osm_ground=None):
     crown_origins = [(x0 + i, z0 + j) for i, j, _r in crowns]
     aerial_sheet = set()
     crown_snaps = None
-    from osm_footprints import OSMIndex
-    idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
     fp_local = {(x - x0, z - z0) for x, z in fp
                 if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
@@ -773,9 +839,6 @@ def planning_inputs(cell, osm_ground=None):
     from cell_registry import view_registry
     ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
-    from coverage import area_classes
-    from ground_sources import cell_box
-    land_classes = {q: hit[0] for q, hit in area_classes(idx, cell_box(cell)).items()}
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
                       set(getattr(osm_ground, 'road', ())),
