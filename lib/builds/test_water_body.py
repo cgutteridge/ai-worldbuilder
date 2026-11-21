@@ -241,6 +241,109 @@ class BuildTest(unittest.TestCase):
         self.assertIn('minecraft:cobblestone', summary['materials'])
 
 
+class ClippedBuildTest(unittest.TestCase):
+    """Seam: a water body over a cell line builds per cell, clipped, banked only on real shores (#321).
+
+    Two-cell fixture: a river strip crosses the x = 128 line between cells 0,0 and 1,0. The east
+    cell also has a bump of water at (128, 9), so the west land column (127, 8) touches water only
+    across the cell line: it is a real shore, and the west clip must bank it.
+    """
+
+    WEST, EAST = (0, 0), (1, 0)
+    LEVEL = 55
+
+    def river(self) -> list[list[int]]:
+        cols = [[x, z] for x in range(122, 134) for z in range(10, 14)]
+        return cols + [[128, 9]]
+
+    def spec(self, clip=None) -> dict:
+        base = {
+            'name': 'unit_river',
+            'outline': self.river(),
+            'water_level': self.LEVEL,
+            'depth': 2,
+            'bank': {'material': 'coarse_dirt', 'width': 1},
+            'edge': {'material': 'cobblestone'},
+            'provenance': {'source': 'vector_map', 'confidence': 'high',
+                           'evidence_ids': [], 'unresolved_reason': ''},
+        }
+        if clip is not None:
+            base['clip'] = {'cell': list(clip)}
+        return W.load_spec_dict(base)
+
+    def test_each_clip_writes_only_its_own_cell(self):
+        for cell in (self.WEST, self.EAST):
+            plan = W.build(self.spec(cell))
+            self.assertTrue(plan.cells)
+            self.assertEqual({(x // 128, z // 128) for x, _y, z in plan.cells}, {cell})
+
+    def test_no_bank_ring_on_the_clip_edge(self):
+        west = W.build(self.spec(self.WEST))
+        east = W.build(self.spec(self.EAST))
+        for z in range(10, 14):
+            self.assertEqual(west.get(127, self.LEVEL, z), 'minecraft:water')
+            self.assertEqual(east.get(128, self.LEVEL, z), 'minecraft:water')
+            self.assertIsNone(west.get(128, self.LEVEL, z))   # no wall in the neighbour's water
+            self.assertIsNone(east.get(127, self.LEVEL, z))
+
+    def test_real_shores_are_banked_on_both_sides_of_the_line(self):
+        west = W.build(self.spec(self.WEST))
+        east = W.build(self.spec(self.EAST))
+        self.assertEqual(west.get(121, self.LEVEL, 11), 'minecraft:cobblestone')   # west end
+        self.assertEqual(east.get(134, self.LEVEL, 11), 'minecraft:cobblestone')   # east end
+        self.assertEqual(west.get(127, self.LEVEL, 9), 'minecraft:cobblestone')    # north shore
+        self.assertEqual(east.get(129, self.LEVEL, 8), 'minecraft:cobblestone')    # bump shore
+        # touches water only across the cell line: still a shore, owned by the west clip
+        self.assertEqual(west.get(127, self.LEVEL, 8), 'minecraft:cobblestone')
+
+    def test_two_clips_join_into_the_whole_body_without_a_seam(self):
+        whole = W.build(self.spec())
+        west = W.build(self.spec(self.WEST))
+        east = W.build(self.spec(self.EAST))
+        self.assertFalse(set(west.cells) & set(east.cells))
+        self.assertEqual({**west.cells, **east.cells}, whole.cells)
+
+    def edge_river(self, z0: int, width: int, clip=None) -> dict:
+        """A river crossing x = 128 whose near shore runs ``z0`` blocks above the z = 0 cell line."""
+        base = {'name': 'unit_edge_river', 'water_level': self.LEVEL,
+                'outline': [[x, z] for x in range(122, 134) for z in range(z0, z0 + 3)],
+                'bank': {'material': 'coarse_dirt', 'width': width}, 'edge': {'material': 'cobblestone'},
+                'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        if clip is not None:
+            base['clip'] = {'cell': list(clip)}
+        return W.load_spec_dict(base)
+
+    def test_bank_in_a_cell_without_water_is_built_by_its_own_clip(self):
+        """Water near a cell line it does not cross: every cell the bank reaches has a clip."""
+        for z0, width in ((0, 1), (1, 2), (0, 3)):
+            whole = W.build(self.edge_river(z0, width))
+            cells = {(x // 128, z // 128) for x, _y, z in whole.cells}
+            self.assertIn((0, -1), cells)                      # the bank spills over z = 0
+            union: dict = {}
+            for cell in cells:
+                clip = W.build(self.edge_river(z0, width, cell))
+                self.assertEqual({(x // 128, z // 128) for x, _y, z in clip.cells}, {cell})
+                self.assertFalse(set(clip.cells) & set(union))
+                union.update(clip.cells)
+            self.assertEqual(union, whole.cells, (z0, width))
+        bank_only = W.build(self.edge_river(0, 1, (0, -1)))
+        self.assertEqual(set(bank_only.cells.values()), {'minecraft:cobblestone'})
+
+    def test_clip_spec_is_validated(self):
+        with self.assertRaises(SystemExit):
+            self.spec((5, 5))                                  # no water or bank in that cell
+        with self.assertRaises(SystemExit):
+            self.edge_river(2, 1, (0, -1))                     # bank stops at z = 1, short of the cell
+        bad = {'name': 'x', 'outline': self.river(), 'water_level': 1,
+               'bank': {'material': 'dirt', 'width': W.CLIP_REACH + 1},
+               'clip': {'cell': [0, 0]},
+               'provenance': {'source': 'vector_map', 'confidence': 'high'}}
+        with self.assertRaises(SystemExit):
+            W.load_spec_dict(bad)                              # bank wider than the outline's reach
+        with self.assertRaises(SystemExit):
+            W.load_spec_dict({**bad, 'bank': {'material': 'dirt'}, 'clip': {'cell': [0]}})
+
+
 class CandidateIdTest(unittest.TestCase):
     """Seam: water_body candidates get a stable plan id."""
 
