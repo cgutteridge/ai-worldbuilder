@@ -107,15 +107,7 @@
       ],
       "notes": "Owner request: plain grass on farmland reads bland, the aerial shows mottled ground. Deliverable: new class key ground_texture (add to the validator via the schema pattern). Gate: meadow, farmland, grassland, heath, scrub and nature_reserve only; lawns never (rules in docs/plans/park-rural.md section Rough grass without spoiling lawns). Place from aerial texture variance, seeded per cell and column, removable through the masks and counted in the report. Planting is null when frontage.inference is false and rural has inference false, so use its own key; reuse the flower vocabulary of #266 (REFINE_PLANTS), do not re-implement. OWNER DECISION PENDING: palette shares (starting values in the plan doc, low confidence). Check: farmland cell 87,-48 shows tufts and mottling, park lawns unchanged; owner verdict."
     },
-    {
-      "id": 320,
-      "title": "Spike: first-return lidar for canopy (Defra first-return DSM)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Cause: the last-return composite (lidar_composite_last_return_dsm) misses most canopy, so lidar standing height cannot confirm trees. UNVERIFIED: that Defra publishes a first-return DSM; config/system-providers.json lists only ukdefra-lidar and ukdefra-dsm. Deliverable: an evaluate-data-source write-up (coverage, licence, cost on the wire, whether it exists as a download) and a go or no-go; add-data-source only on go. Used by the tree gate once present. Check: findings in docs/plans/ with a verdict; if go, canopy height read on a wood cell."
-    },
+    
     {
       "id": 321,
       "title": "Rivers across cells: per-cell clipped water bodies",
