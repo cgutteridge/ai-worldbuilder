@@ -2947,5 +2947,17 @@
       "blockedBy": [],
       "notes": "Cause: the last-return composite (lidar_composite_last_return_dsm) misses most canopy, so lidar standing height cannot confirm trees. UNVERIFIED: that Defra publishes a first-return DSM; config/system-providers.json lists only ukdefra-lidar and ukdefra-dsm. Deliverable: an evaluate-data-source write-up (coverage, licence, cost on the wire, whether it exists as a download) and a go or no-go; add-data-source only on go. Used by the tree gate once present. Check: findings in docs/plans/ with a verdict; if go, canopy height read on a wood cell.\n\nClosed at ddd9a2f822a4c5dd552609212e20aa3760c3cba8: Verified first-return DSM download and woodland canopy signal; go verdict reuses existing system provider. Report records current tree-reader limitation.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 317,
+      "title": "Trees only from mapped trees, wood, scrub or lidar height on open grass",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [
+        
+      ],
+      "notes": "Cause: the texture-only crown detector and the dense fill plant meadow and pasture as forest (trees_layer.planning_inputs, dense fill, mosaic detector). Deliverable: on open-land classes keep crowns only from mapped trees, tree rows (#157), wood or scrub within 2 blocks, or lidar standing height of 2 m or more; add a trees.sources key to the class table via the schema pattern from the unmapped-paving task. Reference rule: variant B in docs/plans/park-rural.md (the prototype was scratch, not in the repo). Check: farmland cell 87,-48 has no crowns on open pasture (trial dropped 258 crowns in the park, 186 on farmland); meadow-polygon fixture test passes.\n\nClosed at 7eb51433191b129463dc6d1fc81a70af3d042cce: Merged after fresh review approval and passing tip/main full suites. Open-land crown gate includes mapped points/rows, nearby wood/scrub and two-block cached lidar halo. Farmland 87,-48: 189 unsupported crowns rejected, 110 retained, zero unsupported classified open-land crowns; no live writes.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
