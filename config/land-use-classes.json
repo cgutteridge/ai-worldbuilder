@@ -1,5 +1,5 @@
 {
- "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Furniture (#260): park ships bench_per_100m (benches on its paths); every other class ships null. highways is the default lamp spacing in blocks along the way, staggered either side, per OSM highway class; a class absent here (service, path, cycleway, steps, links) is not lit by inference, and a district profile or street convention beats it. Surface (#316): surface.unmapped_paving is the kind aerial paving takes off a mapped way (dirt, grass, or null to keep the aerial paving); surface.path_widen (#325) is the reach in blocks (1..6, or null) beside a mapped path within which aerial paving takes that path's own surface, so a path the map draws thin reads as wide as the aerial shows it (park 3; every other class null). New per-class keys join land_use.OPTIONAL_COLUMNS. Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
+ "_comment": "Land-use class table (#253): tag mapping and per-class defaults together. No class ships a fence default (every boundary is null). Furniture (#260): park ships bench_per_100m (benches on its paths); every other class ships null. highways is the default lamp spacing in blocks along the way, staggered either side, per OSM highway class; a class absent here (service, path, cycleway, steps, links) is not lit by inference, and a district profile or street convention beats it. Surface (#316): surface.unmapped_paving is the kind aerial paving takes off a mapped way (dirt, grass, or null to keep the aerial paving); surface.path_widen (#325) is the reach in blocks (1..6, or null) beside a mapped path within which aerial paving takes that path's own surface, so a path the map draws thin reads as wide as the aerial shows it (park 3; every other class null). Trees (#317): trees.sources lists permitted evidence on park, rural and natural land (mapped points/rows, wood/scrub/forest within 2 blocks, or lidar standing height >= 2m within 2 blocks); absent/null keeps existing sources. New per-class keys join land_use.OPTIONAL_COLUMNS. Pure reader: lib/sources/land_use.py. Plan: docs/plans/land-use-classes.md.",
  "classes": [
   {
    "id": "residential",
@@ -295,7 +295,8 @@
    },
    "planting": null,
    "furniture": {"bench_per_100m": 1.5},
-   "surface": {"unmapped_paving": "dirt", "path_widen": 3}
+   "surface": {"unmapped_paving": "dirt", "path_widen": 3},
+   "trees": {"sources": ["mapped", "wood", "lidar"]}
   },
   {
    "id": "rural",
@@ -338,7 +339,8 @@
    },
    "planting": null,
    "furniture": null,
-   "surface": {"unmapped_paving": "grass"}
+   "surface": {"unmapped_paving": "grass"},
+   "trees": {"sources": ["mapped", "wood", "lidar"]}
   },
   {
    "id": "natural",
@@ -385,7 +387,8 @@
    },
    "planting": null,
    "furniture": null,
-   "surface": {"unmapped_paving": "grass"}
+   "surface": {"unmapped_paving": "grass"},
+   "trees": {"sources": ["mapped", "wood", "lidar"]}
   },
   {
    "id": "water",

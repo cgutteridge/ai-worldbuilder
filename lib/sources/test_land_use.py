@@ -260,6 +260,24 @@ class Table(unittest.TestCase):
         self.assertIsNone(L.path_widen('residential'))
         self.assertIsNone(L.path_widen('banana'))
 
+    def test_shipped_tree_sources_only_gate_open_land(self):
+        got = {cid: L.tree_sources(cid) for cid in L.CLASSES}
+        self.assertEqual({k: v for k, v in got.items() if v is not None},
+                         dict.fromkeys(('park', 'rural', 'natural'), ('mapped', 'wood', 'lidar')))
+        self.assertIsNone(L.tree_sources('banana'))
+
+    def test_tree_sources_are_optional_and_checked(self):
+        self.row('park').pop('trees', None)
+        L.validate_table(self.doc)
+        for good in (None, {}, {'sources': None}, {'sources': []}, {'sources': ['mapped', 'lidar']}):
+            self.row('park')['trees'] = good
+            L.validate_table(self.doc)
+        for bad in (False, [], {'fill': 'dense'}, {'sources': 'mapped'},
+                    {'sources': ['aerial']}, {'sources': ['mapped', 'mapped']}, {'sources': [True]}):
+            self.row('park')['trees'] = bad
+            with self.assertRaisesRegex(L.TableError, 'trees'):
+                L.validate_table(self.doc)
+
     def test_path_widen_is_optional_and_checked(self):
         self.row('park')['surface'] = {'unmapped_paving': 'dirt'}
         L.validate_table(self.doc)                                  # absent key widens nothing

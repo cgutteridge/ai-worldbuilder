@@ -28,10 +28,11 @@ BOUNDARY_ROLES = ('front', 'side_front', 'side_back', 'rear', 'perimeter')
 PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
-# validate_table) so an unknown key is still refused; later keys (trees, ground_texture) follow
+# validate_table) so an unknown key is still refused; later keys (ground_texture) follow
 # the surface pattern: absent or null means "infer nothing", the shipped behaviour.
-OPTIONAL_COLUMNS = ('surface', 'street_face')
+OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
+TREE_SOURCES = ('mapped', 'wood', 'lidar')
 UNMAPPED_PAVING_KINDS = ('dirt', 'grass')     # ground_layer surface kinds; null keeps aerial paving
 MAX_PATH_WIDEN = 6                            # blocks; surface.path_widen is null or 1..this (#325)
 DEFAULT_PAVEMENT = 2.5      # blocks of public pavement between kerb and private frontage (#254)
@@ -95,6 +96,15 @@ def validate_table(doc: dict) -> dict:
             if widen is not None and (isinstance(widen, bool) or not isinstance(widen, int)
                                       or not 1 <= widen <= MAX_PATH_WIDEN):
                 raise TableError(f'{cid}: surface.path_widen {widen!r} not null or a whole number of blocks 1..{MAX_PATH_WIDEN}')
+        trees = row.get('trees')
+        if trees is not None:
+            if not isinstance(trees, dict) or set(trees) - {'sources'}:
+                raise TableError(f'{cid}: trees must be null or a map with only sources')
+            sources = trees.get('sources')
+            if sources is not None and (not isinstance(sources, list)
+                                        or any(source not in TREE_SOURCES for source in sources)
+                                        or len(sources) != len(set(sources))):
+                raise TableError(f'{cid}: trees.sources must be null or a list of distinct values from {TREE_SOURCES}')
         match = row['match']
         for col in ('building', 'use', 'cover'):
             if col not in match:
@@ -237,6 +247,19 @@ def path_widen(cls: str) -> int | None:
     @returns: reach in whole blocks, or None
     """
     return (defaults(cls).get('surface') or {}).get('path_widen')
+
+
+def tree_sources(cls: str) -> tuple[str, ...] | None:
+    """Allowed tree evidence in this class (``trees.sources``, #317), or None for existing sources.
+
+    Mapped includes tree points and rows; wood includes wood, scrub and forest polygons;
+    lidar requires standing height of at least 2 metres. Missing/null applies no source gate.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: allowed source names, possibly empty, or None
+    """
+    sources = (defaults(cls).get('trees') or {}).get('sources')
+    return tuple(sources) if sources is not None else None
 
 
 @lru_cache(maxsize=1)
