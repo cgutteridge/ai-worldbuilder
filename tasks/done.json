@@ -2917,5 +2917,15 @@
       ],
       "notes": "Owner: square off shop fronts; awnings on angled walls leave gaps to the wall and signs hover; the door near Dido's is not fully framed (door jamb rule _door_jambs_solid assumes a straight run); the Admiral side is a mess. Same cause: items placed one block out from a stepped face. Deliverable: fit straight runs to the stepped front columns and place glass, door, fascia, sign and awning on the run line, filling stair-step gaps so awnings and signs touch the wall (owner: better thick than gaps) and doors on stepped faces get full jambs. Fixes I-052 (awnings leave gaps, S-093) when landed; log the fix with a check line per snag. Check: Admiral and Dido's fronts in 50,-36: no hovering sign, awning touches the wall, the door near Dido's fully framed, no trapdoor above y 40; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at d119f2121e2bb9f5162283c6dc7899b49ba8e969: Stepped shop fronts squared onto straight runs; recessed door moved onto that line (Cursor shipped, no push).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 335,
+      "title": "Landmark buildings need a street-level check before building",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Owner: the 'church' on the high street was an old bingo hall with a big facade, steps and a permanent awning; street view would have shown it. Tier A is owner-nominated in docs/plans/vibe-at-scale.md section 2. Deliverable: propose-features flags church, cathedral, chapel, cinema and shopping-centre candidates as landmark; apply refuses until a street-level image source is recorded (cell_sources.py --record), with a reasoned override flag; document in rules/building-review.md. Generic wording: an image source the owner supplies, never a vendor. Check: a flagged candidate refuses with the command to run; a test covers both paths. Source: docs/plans/industrial-commercial.md (trial #258).\n\nClosed at c2708afa64bc1c28ec18e8c4cb3f605daa68ae3e: Landmark propose-features flagging (church/cathedral/chapel/cinema/shop=mall) and feature_build refuse until street-level cell_sources --record or --landmark-override; building-review.md updated.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

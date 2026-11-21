@@ -176,15 +176,7 @@
       "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258)."
     },
     
-    {
-      "id": 335,
-      "title": "Landmark buildings need a street-level check before building",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Owner: the 'church' on the high street was an old bingo hall with a big facade, steps and a permanent awning; street view would have shown it. Tier A is owner-nominated in docs/plans/vibe-at-scale.md section 2. Deliverable: propose-features flags church, cathedral, chapel, cinema and shopping-centre candidates as landmark; apply refuses until a street-level image source is recorded (cell_sources.py --record), with a reasoned override flag; document in rules/building-review.md. Generic wording: an image source the owner supplies, never a vendor. Check: a flagged candidate refuses with the command to run; a test covers both paths. Source: docs/plans/industrial-commercial.md (trial #258)."
-    },
+    
     
     {
       "id": 337,
