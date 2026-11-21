@@ -112,7 +112,7 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
     elif conflicts:
         raise SystemExit(f'STOP: {len(conflicts)} position(s) differ from the mask; nothing written, mask kept.')
     name = plan_name(tx, tz, f'{pass_name}_undo')
-    plan = Plan(name)
+    plan = Plan(name, input_cells=[(tx, tz)])
     for pos in to_air:
         plan.set(*pos, 'air')
     owner_plan = mask['plan']

@@ -1853,6 +1853,10 @@ class Build:
         self._window_lines: list[str] = []
         self._detail_clip_lines: list[str] = []
         self._entrance_covers: list[tuple] = []
+        # Stamp against every cell the footprint covers so neighbour prepares elsewhere
+        # do not invalidate this plan, while cross-cell geometry still counts (task 232).
+        import cellmath
+        self.p.capture_inputs({cellmath.cell_of(x, z) for cols in by_no.values() for x, z in cols})
 
     def set(self, x, y, z, s):
         self.p.set(x, y, z, s)

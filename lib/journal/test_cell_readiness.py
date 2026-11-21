@@ -348,7 +348,7 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(self.world.reg.notes((1, 0), kinds=('plan_feature', 'readiness')), ())
 
     def test_cross_cell_feature_refuses_stale_neighbour_evidence_with_evidence_only_clear(self):
-        """Task 292: changed neighbour evidence refuses, naming the evidence-only command."""
+        """Task 292/232: check names the stale neighbour; apply refreshes when checks still pass."""
         from cell_readiness import describe_blockers
         policy, others, pond = self._cross_cell_pond()
         self.evidence.items = others
@@ -357,15 +357,12 @@ class ReadinessTest(unittest.TestCase):
         self.evidence.items = []
         policy.validate((0, 0))
         self.evidence.items = others
-        self.world.reg.build_policy = policy.enforce
-        with self.assertRaises(Refused) as caught:
-            self.world.reg.begin(pond)
-        self.assertEqual(str(caught.exception), 'needs-prep 1,0: evidence validation stale (evidence facts '
-                         'changed) [clear: python3 scripts/cell_registry.py --world <world> prepare --cell 1,0 '
-                         '--apply --evidence-only (records no feature plans)]')
         report = policy.check((1, 0), 'feature', neighbour=True)
         self.assertEqual(report['next_actions'], ['prepare --cell 1,0 --apply --evidence-only'])
         self.assertIn('evidence validation stale', describe_blockers(report))
+        self.world.reg.build_policy = policy.enforce
+        self.assertEqual(self.world.reg.change(pond, self.world.apply).status, 'landed')
+        self.assertTrue(policy.check((1, 0), neighbour=True)['evidence_validated'])
 
     def test_evidence_only_prepare_writes_no_plan_notes(self):
         """Task 292: dry run says it records no plans; apply writes only a readiness_evidence note."""
@@ -727,10 +724,16 @@ class ReadinessTest(unittest.TestCase):
                 self.assertTrue(report['ready'], report['blockers'])
                 home = policy.check((0, 0))
                 self.assertTrue(home['validated'], home['blockers'])
+                import cellmath
+                from cell_readiness import content_id
+                touched = sorted({(0, 0)} | {cellmath.cell_of(x, z) for x, _y, z in cells})
+                reports = [policy.check(c, neighbour=c != (0, 0)) for c in touched]
+                evidence_ids = [r.get('source_revision', r['evidence_revision']) for r in reports]
+                evidence = evidence_ids[0] if len(evidence_ids) == 1 else content_id(evidence_ids)
+                journal = self.world.reg.planning_revision(touched)
                 self.world.reg.build_policy = policy.enforce
                 receipt = self.world.reg.change(Build(fid, 'feature', cells, cell=(0, 0),
-                    meta={'evidence_revision': home['source_revision'],
-                          'journal_revision': home['journal_revision']}), self.world.apply)
+                    meta={'evidence_revision': evidence, 'journal_revision': journal}), self.world.apply)
                 self.assertEqual(receipt.status, 'landed')
             before = policy.check((1, 0), neighbour=True)['revision_parts']
             spec = specs / 'first.json'
@@ -848,6 +851,143 @@ class ReadinessTest(unittest.TestCase):
                                                     meta={'evidence_revision': 'evidence-1',
                                                           'journal_revision': policy.check((0, 0))['journal_revision']}),
                                               self.world.apply).status, 'landed')
+
+    def test_neighbour_map_extract_does_not_stale_this_cell_readiness_or_plan(self):
+        """Task 232: unrelated neighbouring evidence must not invalidate readiness or an unapplied plan.
+
+        Diagnosis (Portswood 53,-42 on 2026-10-31): readiness was re-accepted solely after neighbour
+        54,-42 prepares, with no local plan-identity change. Notes predating #289 omit revision_parts;
+        the code path that fits is world-wide source_revision picking up the neighbour's prepared-*
+        extract, which #289 would report as evidence facts changed.
+        """
+        import json
+        from unittest import mock
+        import aerial_coverage
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir()
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        home = root / 'reference' / 'vector_map' / 'prepared-0-0'
+        home.mkdir(parents=True)
+        (home / 'buildings+highways-cell-0-0.geojson').write_text(
+            '{"type":"FeatureCollection","features":[]}')
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
+                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            home_report = policy.validate((0, 0))
+            before = home_report['revision_parts']
+            neighbour = root / 'reference' / 'vector_map' / 'prepared-2-0'
+            neighbour.mkdir(parents=True)
+            (neighbour / 'buildings+highways-cell-256-0.geojson').write_text(
+                '{"type":"FeatureCollection","features":[{"type":"Feature","properties":'
+                '{"building":"yes","osm_way_id":"9"},"geometry":{"type":"Polygon","coordinates":'
+                '[[[0,0],[1,0],[1,1],[0,0]]]}}]}')
+            self.world.reg.change(Note((2, 0), 'plan_feature', 'far_house', 'far house'))
+            self.world.seed((2, 0), ghost_ground=True, ground=True)
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            report = policy.check((0, 0))
+            self.assertEqual(before, report['revision_parts'])
+            self.assertTrue(report['validated'], report['blockers'])
+            self.world.reg.build_policy = policy.enforce
+            receipt = self.world.reg.change(
+                Build('house', 'feature', {(5, 61, 5): 'minecraft:bricks'}, cell=(0, 0),
+                      meta={'evidence_revision': home_report['evidence_revision'],
+                            'journal_revision': home_report['journal_revision']}),
+                self.world.apply)
+            self.assertEqual(receipt.status, 'landed')
+
+    def test_overlapping_neighbour_clip_stales_evidence_and_refuses_old_plan(self):
+        """A map clip that covers this cell is a real dependency; the old plan must re-plan."""
+        import json
+        from unittest import mock
+        import aerial_coverage
+        from cell_readiness import ReadinessPolicy
+        from readiness_evidence import LocalEvidence
+        root = self.world.root
+        frame = root / 'config' / 'world-frame.json'
+        frame.parent.mkdir()
+        frame.write_text(json.dumps({'offsets': {'easting': 0, 'northing': 0, 'sea_level': 0}}))
+        clip_dir = root / 'reference' / 'vector_map' / 'shared'
+        clip_dir.mkdir(parents=True)
+        clip = clip_dir / 'buildings-bbox-0-0-255-127.geojson'
+        clip.write_text('{"type":"FeatureCollection","features":[],"rev":1}')
+        self.world.seed((0, 0), ghost_ground=True)
+        with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
+                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            stamped = policy.validate((0, 0))
+            clip.write_text('{"type":"FeatureCollection","features":[],"rev":2}')
+            policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
+            self.assertIn('validation stale (evidence facts changed)', policy.check((0, 0))['blockers'])
+            self.world.reg.build_policy = policy.enforce
+            with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+                self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                           cell=(0, 0),
+                                           meta={'evidence_revision': stamped['evidence_revision'],
+                                                 'journal_revision': stamped['journal_revision']}))
+
+    def test_apply_refreshes_stale_validation_under_the_lock_when_checks_pass(self):
+        """Task 232: apply re-checks readiness and rewrites validation when only the note is stale."""
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy, content_id
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence, require_plan_identity=True)
+        stamped = policy.validate((0, 0))
+        # Simulate an accepted note whose combined revision drifted while inputs still pass checks
+        # (e.g. a neighbour session that no longer affects cell-scoped facts after the narrow fix).
+        parts = dict(stamped['revision_parts'])
+        stale_revision = content_id(['not', parts['policy'], parts['evidence'], parts['plans']])
+        self.world.reg.change(Note((0, 0), 'readiness',
+                                   __import__('json').dumps({'revision': stale_revision,
+                                                             'revision_parts': parts,
+                                                             'policy': parts['policy'],
+                                                             'warnings': []})))
+        self.assertFalse(policy.check((0, 0))['validated'])
+        self.world.reg.build_policy = policy.enforce
+        receipt = self.world.reg.change(
+            Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'}, cell=(0, 0),
+                  meta={'evidence_revision': stamped['evidence_revision'],
+                        'journal_revision': stamped['journal_revision']}),
+            self.world.apply)
+        self.assertEqual(receipt.status, 'landed')
+        self.assertTrue(policy.check((0, 0))['validated'])
+
+    def test_apply_refresh_preserves_hold_and_never_approves_outdated_plan(self):
+        """Refreshing validation must not clear holds or bless a plan with stale identities."""
+        from cell_journal import Note
+        from cell_readiness import ReadinessPolicy, content_id
+        self.world.seed((0, 0), ghost_ground=True)
+        policy = ReadinessPolicy(self.world.reg, self.evidence, require_plan_identity=True)
+        stamped = policy.validate((0, 0))
+        parts = dict(stamped['revision_parts'])
+        stale_revision = content_id(['drift', parts])
+        self.world.reg.change(Note((0, 0), 'readiness',
+                                   __import__('json').dumps({'revision': stale_revision,
+                                                             'revision_parts': parts,
+                                                             'policy': parts['policy'],
+                                                             'warnings': []})))
+        self.world.reg.change(Note((0, 0), 'hold', 'owner reviewing'))
+        self.world.reg.build_policy = policy.enforce
+        before = self.world.reg.journal_path.read_bytes()
+        with self.assertRaisesRegex(Refused, r'needs-prep 0,0:.*hold:'):
+            self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                       cell=(0, 0),
+                                       meta={'evidence_revision': stamped['evidence_revision'],
+                                             'journal_revision': stamped['journal_revision']}))
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.world.reg.change(Note((0, 0), 'hold', ''))
+        with self.assertRaisesRegex(Refused, 'stale plan: evidence changed'):
+            self.world.reg.begin(Build('ground', 'ground', {(5, 60, 5): 'minecraft:grass_block'},
+                                       cell=(0, 0),
+                                       meta={'evidence_revision': 'old-evidence',
+                                             'journal_revision': stamped['journal_revision']}))
 
 
 from journal_testkit import FakePaced, LiveApplyCase

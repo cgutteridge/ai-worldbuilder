@@ -657,7 +657,7 @@ class CellRegistry:
         self._derived: dict[Cell, CellView] = {}
         self._owner_cache: dict[Cell, dict[Pos, _Owner]] = {}
         self._note_cache: dict | None = None
-        self._planning_revision: str | None = None
+        self._planning_revision: dict[frozenset[Cell] | None, str] = {}
 
     def _cell_of(self, pos: Pos) -> Cell:
         return cellmath.cell_of(pos[0], pos[2], self.cell_size)
@@ -1036,24 +1036,38 @@ class CellRegistry:
                                  e.owner, e.ts, dict(e.meta), e.targets, e.mismatches, e.finish_seq, e.schema))
         return tuple(out)
 
-    def planning_revision(self) -> str:
+    def planning_revision(self, cells: Iterable[Cell] | None = None) -> str:
         """Identity of durable geometry and planning assumptions for an unexecuted plan.
 
         This is separate from completion: a ground redo changes future planning
         inputs without invalidating already landed trees/decor. Begun, mismatched
         and abandoned attempts, markers and validation/review notes are excluded.
+
+        When ``cells`` is set, only landings and plan/dismissal/coverage notes that
+        touch those cells count (task 232): unrelated neighbouring prepare work does
+        not invalidate a plan that does not depend on them. Pass every cell a
+        cross-cell plan touches so genuine neighbour geometry still counts.
+
+        @param cells: optional iterable of ``(tx, tz)``; ``None`` keeps the whole-world hash
+        @returns: hex digest of the scoped planning inputs
         """
         self._sync()
-        if self._planning_revision is None:
-            geometry = [(e.seq, e.finish_seq, e.kind, e.plan, e.pass_, e.blob, e.cells,
-                         e.undone, e.targets) for e in self._entries.values()
-                        if e.status == 'landed' and e.pass_ in REAL_PASSES + GHOST_PASSES]
-            assumptions = [n for n in self._notes if n['kind'] in
-                           ('plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss',
-                            'coverage', 'coverage-dismiss')]
-            body = json.dumps([geometry, assumptions], sort_keys=True, separators=(',', ':')).encode()
-            self._planning_revision = hashlib.sha256(body).hexdigest()
-        return self._planning_revision
+        key: frozenset[Cell] | None = None if cells is None else frozenset(tuple(c) for c in cells)
+        cached = self._planning_revision.get(key)
+        if cached is not None:
+            return cached
+        geometry = [(e.seq, e.finish_seq, e.kind, e.plan, e.pass_, e.blob, e.cells,
+                     e.undone, e.targets) for e in self._entries.values()
+                    if e.status == 'landed' and e.pass_ in REAL_PASSES + GHOST_PASSES
+                    and (key is None or key & set(e.cells))]
+        assumptions = [n for n in self._notes
+                       if n['kind'] in ('plan_feature', 'plan_feature-dismiss', 'clip_coverage-dismiss',
+                                        'coverage', 'coverage-dismiss')
+                       and (key is None or tuple(n['cell']) in key)]
+        body = json.dumps([geometry, assumptions], sort_keys=True, separators=(',', ':')).encode()
+        digest = hashlib.sha256(body).hexdigest()
+        self._planning_revision[key] = digest
+        return digest
 
     def ticket(self, seq: int) -> 'Ticket':
         """Re-open the ticket of a ``begun`` entry (recovery: read back, then ``finish`` or ``abandon``).

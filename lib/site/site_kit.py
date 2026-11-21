@@ -189,9 +189,16 @@ class Plan:
     is no fallback, so a rename fails loudly.
     """
 
-    def __init__(self, name):
+    def __init__(self, name, *, input_cells=None):
+        """Create an empty plan and stamp the evidence/journal inputs it depends on.
+
+        @param name: plan id written to the journal
+        @param input_cells: optional ``(tx, tz)`` cells whose evidence and journal geometry
+          this plan depends on (task 232). Prefer naming them when known so unrelated
+          neighbouring prepares do not invalidate the stamp; call :meth:`capture_inputs`
+          once the final touched set is known.
+        """
         from readiness_evidence import planning_inputs
-        self.evidence_revision, self.journal_revision = planning_inputs()
         self.ground_layer = False   # see class docstring: set by ground_marking*, read by apply
         self.parent_feature = None  # explicit built parent for named follow-ups; also list it in modifies
         self.name = name
@@ -199,6 +206,36 @@ class Plan:
         self.signs = []      # (pos, [4 lines], colour, glowing)
         self.entities = []   # (entity_type, (x,y,z), snbt or None)
         self.keep_slab_cells = set()  # bottom-half slabs exempt from rewrite_bottom_half_slabs (roof steps)
+        self._input_cells = tuple(tuple(c) for c in input_cells) if input_cells is not None else None
+        try:
+            self.evidence_revision, self.journal_revision = planning_inputs(self._input_cells)
+        except (OSError, ValueError, LookupError, RuntimeError, ImportError, AttributeError):
+            # Fixture worlds omit live lidar/map trees; keep an unscoped stamp when possible.
+            self.evidence_revision, self.journal_revision = planning_inputs()
+
+    def capture_inputs(self, cells=None):
+        """Re-stamp evidence and journal identity for the cells this plan depends on.
+
+        Call after planning fills ``cells`` (or with an explicit cell list) so the apply
+        gate compares against the same scope (task 232). Synthetic fixtures without a
+        live evidence tree keep the construction stamp.
+
+        @param cells: optional iterable of ``(tx, tz)``; default is cells touched by
+          ``self.cells`` plus any ``input_cells`` from construction
+        @returns: ``None``
+        """
+        from readiness_evidence import planning_inputs
+        if cells is None:
+            import cellmath
+            found = {cellmath.cell_of(x, z) for x, _y, z in self.cells}
+            if self._input_cells:
+                found.update(self._input_cells)
+            cells = found
+        self._input_cells = tuple(sorted({tuple(c) for c in cells})) if cells else None
+        try:
+            self.evidence_revision, self.journal_revision = planning_inputs(self._input_cells)
+        except (OSError, ValueError, LookupError, RuntimeError, ImportError, AttributeError):
+            return
 
     # --- primitives -------------------------------------------------------
     def set(self, x, y, z, s):
