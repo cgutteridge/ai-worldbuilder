@@ -20,6 +20,8 @@ pond list; #163).
 
 A feature is one build whatever cell lines it crosses (task 288): a footprint is proposed
 only in its home cell (:func:`home_cell`), whole, and never in the other cells it touches.
+A touching same-tag non-house chain is grouped before that home filter; the whole chain
+uses the home of its lowest-ref member so it is planned once (#328).
 
   python3 scripts/cell_features.py --cell 48,-43
 """
@@ -157,18 +159,20 @@ def _split_runs(items: list, gap: float = JOIN_GAP) -> list:
 
 
 _SINGLE_KEYS = frozenset({'label', 'bbox', 'area', 'portals', 'pictures'})
+_INTERNAL_KEYS = frozenset({'p', 'ref', '_home'})
+_WHOLE = (-10**9, -10**9, 10**9, 10**9)
 
 
 def _single_building_row(s: dict) -> dict:
     """One ``kind: building`` candidate from an ungrouped non-house item.
 
-    Keeps any extra keys on ``s`` (except the internal ``p`` / ``ref``) so a parallel
-    change can add fields without this packaging dropping them.
+    Keeps any extra keys on ``s`` (except internal ``p`` / ``ref`` / ``_home``) so a
+    parallel change can add fields without this packaging dropping them.
 
     @param s: single item with ref/label/bbox/area/portals/pictures (and optional extras)
     @returns: candidate dict
     """
-    row = {k: v for k, v in s.items() if k not in ('p', 'ref')}
+    row = {k: v for k, v in s.items() if k not in _INTERNAL_KEYS}
     row.update({
         'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
         'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures'],
@@ -179,8 +183,8 @@ def _single_building_row(s: dict) -> dict:
 def _group_building_row(run: list) -> dict:
     """One ``kind: group`` candidate from touching non-house items of the same tag.
 
-    Shared extra keys (same value on every member, not ``p`` / ``ref`` / packed fields)
-    are kept so unknown fields from a parallel change are not dropped.
+    Shared extra keys (same value on every member, not internal / packed fields) are
+    kept so unknown fields from a parallel change are not dropped.
 
     @param run: two or more single items already clustered as touching
     @returns: candidate dict with sorted ``refs`` and a union bbox
@@ -190,7 +194,7 @@ def _group_building_row(run: list) -> dict:
     shared = None
     for o in run:
         extra = {k: v for k, v in o.items()
-                 if k not in ('p', 'ref') and k not in _SINGLE_KEYS and k != 'street'}
+                 if k not in _INTERNAL_KEYS and k not in _SINGLE_KEYS and k != 'street'}
         shared = extra if shared is None else {k: v for k, v in shared.items()
                                               if k in extra and extra[k] == v}
     row = dict(shared or {})
@@ -207,15 +211,93 @@ def _group_building_row(run: list) -> dict:
     return row
 
 
-def _package_unbuilt(singles: list, homes: list, streets) -> list:
+def _run_home(run: list) -> tuple[int, int] | None:
+    """Home cell of a touching non-house run: home of the lowest-ref member's footprint.
+
+    @param run: one or more single items with ``ref`` and ``_home``
+    @returns: ``(tx, tz)`` or None when the lead has no home
+    """
+    lead = min(run, key=lambda o: o['ref'])
+    return lead.get('_home')
+
+
+def _building_item(rings, p: dict, *, area: int, home: tuple[int, int] | None) -> dict:
+    """One unbuilt non-house (or home) item for packaging.
+
+    @param rings: OSM rings
+    @param p: OSM tags (must include id for ``osm_ref``)
+    @param area: column count reported on the candidate
+    @param home: planning cell for this footprint (``_home``); None for house items
+    @returns: item dict
+    """
+    xs = [x for x, _ in rings[0]]
+    zs = [z for _, z in rings[0]]
+    item = {
+        'ref': osm_ref(p), 'label': property_label(p), 'p': p,
+        'portals': for_footprint(rings), 'pictures': pictures_for(rings),
+        'bbox': (min(xs), min(zs), max(xs), max(zs)), 'area': area,
+    }
+    if home is not None:
+        item['_home'] = home
+    return item
+
+
+def _expand_touching_nonhouses(seeds: list, idx: OSMIndex, covered: set) -> list:
+    """Grow ``seeds`` with unbuilt same-tag non-house buildings that touch the set (any cell).
+
+    A chain that crosses a cell line is clustered once; :func:`_package_unbuilt` then
+    keeps it only in the home of the lowest-ref member (#328 / #288).
+
+    @param seeds: unbuilt non-house items overlapping the cell being planned
+    @param idx: OSM index
+    @param covered: feature-build columns
+    @returns: seeds plus touching same-tag members from other cells
+    """
+    if not seeds:
+        return seeds
+    by_ref = {s['ref']: s for s in seeds}
+    pool: list = []
+    for rings, p in idx.buildings:
+        if p.get('building') in OUTBUILDINGS or p.get('building') in HOMES:
+            continue
+        ref = osm_ref(p)
+        if ref in by_ref:
+            continue
+        full = list(scan_polygon(rings, _WHOLE))
+        if len(full) < MIN_COLUMNS:
+            continue
+        if sum(c in covered for c in full) >= COVERED_FRAC * len(full):
+            continue
+        pool.append(_building_item(rings, p, area=len(full), home=home_cell(full)))
+    active = list(seeds)
+    changed = True
+    while changed:
+        changed = False
+        for cand in pool:
+            if cand['ref'] in by_ref:
+                continue
+            tag = cand['p'].get('building')
+            if any(o['p'].get('building') == tag and _gap(cand['bbox'], o['bbox']) <= TOUCH_GAP
+                   for o in active):
+                by_ref[cand['ref']] = cand
+                active.append(cand)
+                changed = True
+    return list(by_ref.values())
+
+
+def _package_unbuilt(singles: list, homes: list, streets,
+                     cell: tuple[int, int] | None = None) -> list:
     """Package uncovered building items into missing-feature / footprint rows.
 
     Non-house items of the same ``building=`` tag whose footprints touch (gap at most
     TOUCH_GAP) become one ``kind: group``; an ungrouped single stays ``kind: building``.
+    When ``cell`` is set, a non-house run is kept only if the lowest-ref member's
+    footprint home is that cell (so a chain across a cell line is planned once).
 
     @param singles: non-home items with ref/label/bbox/area/portals/pictures
     @param homes: home items (same shape) still needing a street
     @param streets: OSMIndex.streets for nearest-street lookup
+    @param cell: optional ``(tx, tz)`` home filter for non-house runs
     @returns: buildings and groups first, then house runs (each with ``area`` column count)
     """
     out: list = []
@@ -225,6 +307,8 @@ def _package_unbuilt(singles: list, homes: list, streets) -> list:
     for tag in sorted(by_tag, key=lambda t: t or ''):
         for run in sorted(_split_runs(by_tag[tag], gap=TOUCH_GAP),
                           key=lambda g: min(o['bbox'][:2] for o in g)):
+            if cell is not None and _run_home(run) != cell:
+                continue
             out.append(_single_building_row(run[0]) if len(run) == 1 else _group_building_row(run))
     by_street: dict = {}
     for h in homes:
@@ -394,9 +478,10 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
 
     Area is the count of building columns that fall inside the cell. An unbuilt building
     whose whole footprint has its home in another cell (:func:`home_cell`) is not listed or
-    counted here: that cell proposes it once (task 288). A building is
-    unbuilt when fewer than COVERED_FRAC of its full footprint columns are touched
-    by a feature build — the same rule as :func:`missing_features`.
+    counted here unless it joins a touching same-tag non-house group whose lowest-ref
+    member homes here (task 288 / #328). A building is unbuilt when fewer than
+    COVERED_FRAC of its full footprint columns are touched by a feature build — the
+    same rule as :func:`missing_features`.
 
     When a footprint is judged built, portals on it whose entrance columns are still
     untouched (and lie in this cell) are still emitted as unbuilt homes (#154): a
@@ -412,6 +497,7 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
     idx = idx or OSMIndex()
     covered = feature_columns() if covered is None else covered
     cb = cell_bbox(tx, tz, tx, tz)
+    cell = (tx, tz)
     built_area = 0
     singles, homes = [], []
     orphan_houses: list = []
@@ -423,26 +509,25 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
             continue
         # whole footprint, so a building straddling the cell edge is judged as one
         big = len(cols) >= 4000                       # umbrella polygons (campus): keep the clipped judgement
-        full = cols if big else list(scan_polygon(rings, (-10**9, -10**9, 10**9, 10**9)))
+        full = cols if big else list(scan_polygon(rings, _WHOLE))
         area = len(cols)
         built = sum(c in covered for c in full) >= COVERED_FRAC * len(full)
-        if not built and (_big_home(rings, (tx, tz), area) if big else home_cell(full)) != (tx, tz):
-            continue                                  # proposed whole in its home cell (task 288)
+        hc = _big_home(rings, cell, area) if big else home_cell(full)
         if built:
             built_area += area
             orphans = _uncovered_portals_in_cell(rings, covered, cb)
             if orphans:
                 orphan_houses.append(_houses_from_uncovered_portals(orphans, idx.streets))
             continue
-        xs = [x for x, _ in rings[0]]
-        zs = [z for _, z in rings[0]]
-        item = {
-            'ref': osm_ref(p), 'label': property_label(p), 'p': p,
-            'portals': for_footprint(rings), 'pictures': pictures_for(rings),
-            'bbox': (min(xs), min(zs), max(xs), max(zs)), 'area': area,
-        }
-        (homes if p.get('building') in HOMES else singles).append(item)
-    unbuilt = _package_unbuilt(singles, homes, idx.streets) + orphan_houses
+        if p.get('building') in HOMES:
+            if hc != cell:
+                continue                              # houses: proposed whole in home cell (task 288)
+            homes.append(_building_item(rings, p, area=area, home=None))
+            continue
+        # Non-houses: keep every overlap for grouping; home filter runs after the cluster.
+        singles.append(_building_item(rings, p, area=area, home=hc))
+    singles = _expand_touching_nonhouses(singles, idx, covered)
+    unbuilt = _package_unbuilt(singles, homes, idx.streets, cell=cell) + orphan_houses
     return {
         'built_area': built_area,
         'unbuilt_area': sum(u['area'] for u in unbuilt),

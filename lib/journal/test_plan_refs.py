@@ -92,6 +92,21 @@ class PlanRefsTest(unittest.TestCase):
         self.assertEqual(CR.drop_covered_candidates(self.reg, CELL, [group]), [])
         self.assertEqual(CR.record_feature_candidates(self.reg, '48,-44', [group]), [])
 
+    def test_partial_group_plan_leaves_uncovered_ref_proposable(self):
+        """#328: a plan covering only one ref of a group must not drop the other ref."""
+        group = {'kind': 'group', 'label': 'retail (2 buildings)', 'street': None,
+                 'refs': ['w10', 'w30'], 'bbox': (0, 0, 1, 1), 'area': 2,
+                 'portals': [], 'pictures': []}
+        self.plan('w10')
+        self.spec('w10', {'10': 'A'})                     # covers w10 only
+        left = CR.drop_covered_candidates(self.reg, CELL, [group])
+        self.assertEqual([(i['kind'], i['refs']) for i in left], [('building', ['w30'])])
+        self.assertFalse(PR.candidate_covered(group, PR.covered_by_plans(self.root, ['w10'])))
+        self.assertEqual(PR.uncovered_candidates(group, {'w10'}),
+                         [{'kind': 'building', 'label': 'retail (2 buildings)', 'street': None,
+                           'refs': ['w30'], 'bbox': (0, 0, 1, 1), 'area': 2,
+                           'portals': [], 'pictures': []}])
+
     def test_group_planned_in_home_cell_is_not_reproposed_next_door(self):
         """#328 / #288: a multi-ref group planned once stays covered across the cell line."""
         group = {'kind': 'group', 'label': 'retail (2 buildings)', 'street': None,

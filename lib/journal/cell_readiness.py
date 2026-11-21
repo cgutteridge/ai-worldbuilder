@@ -10,7 +10,7 @@ import json
 
 from cell_journal import CANCEL, GHOST_PASSES, Note, Refused
 from block_store import block_id
-from plan_refs import candidate_covered, covered_by_plans
+from plan_refs import candidate_covered, covered_by_plans, uncovered_candidates
 
 
 POLICY_VERSION = 1
@@ -315,9 +315,14 @@ class ReadinessPolicy:
                 candidates = self.evidence.candidates(self.reg, cell)
                 accounted = planned_here(self.reg, cell)
                 elsewhere = planned_elsewhere(self.reg, cell)
-                candidates = [c for c in candidates if c['id'] not in accounted
-                              and not candidate_covered(c, accounted)
-                              and not accounted_elsewhere(c, elsewhere)]
+                covered = accounted | elsewhere
+                kept = []
+                for c in candidates:
+                    if c['id'] in accounted:
+                        continue
+                    for part in uncovered_candidates(c, covered):
+                        kept.append(part)
+                candidates = kept
             except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
                 blockers.append(f'candidate evidence error: {exc}')
             if candidates:
