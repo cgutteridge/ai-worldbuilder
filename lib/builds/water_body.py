@@ -57,8 +57,11 @@ DEFAULT_FLOOR = 'dirt'
 DEFAULT_BANK_WIDTH = 1
 MIN_WATER_COLUMNS = 4
 CLIP_REACH = 8          # blocks of a body's water a clipped spec carries beyond its cell (#321)
-# Clip plan ids end with _<tx>_<tz> (m for minus). Reject bare water_<x>_<z> whole-body ids.
-_CLIP_PLAN_ID = re.compile(r'^(?P<ref>.+)_(?P<tx>m?\d+)_(?P<tz>m?\d+)$')
+# Clip plan ids from :func:`clip_plan_id` only: OSM ``w<digits>`` or synthetic ``water_<x>_<z>``,
+# then ``_<tx>_<tz>`` (m for minus). Do not match free-form names like ``river_itchen_63_m45``.
+_CLIP_PLAN_ID = re.compile(
+    r'^(?P<ref>w\d+|water_-?\d+_-?\d+)_(?P<tx>m?\d+)_(?P<tz>m?\d+)$'
+)
 
 
 class WaterBodyError(SystemExit):
@@ -127,8 +130,10 @@ def _parse_clip_coord(token: str) -> int:
 def parse_clip_plan_id(name: str) -> tuple[str, tuple[int, int]] | None:
     """Parse a per-cell clip plan id ``<ref>_<tx>_<tz>``, or None (#353).
 
-    Synthetic whole-body ids ``water_<x>_<z>`` are not clips (the ref would be
-    the bare word ``water``). A clip of that body is ``water_<x>_<z>_<tx>_<tz>``.
+    Only ids :func:`clip_plan_id` can produce: OSM ``w123_63_m45`` or synthetic
+    ``water_<x>_<z>_<tx>_<tz>``. Free-form names that happen to end in
+    ``_<n>_<n>`` (for example a legacy ``river_itchen_63_m45`` whole plan) are
+    not clips.
 
     @param name: plan / spec name
     @returns: ``(ref, (tx, tz))`` when ``name`` is a clip id, else None
@@ -136,10 +141,7 @@ def parse_clip_plan_id(name: str) -> tuple[str, tuple[int, int]] | None:
     m = _CLIP_PLAN_ID.match(str(name).strip())
     if not m:
         return None
-    ref = m.group('ref')
-    if ref == 'water':
-        return None
-    return ref, (_parse_clip_coord(m.group('tx')), _parse_clip_coord(m.group('tz')))
+    return m.group('ref'), (_parse_clip_coord(m.group('tx')), _parse_clip_coord(m.group('tz')))
 
 
 def _validate_clip(path: str | Path | None, raw: Any, outline: Sequence[tuple[int, int]],
@@ -196,10 +198,15 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     edge = _validate_edge(path, spec.get('edge'))
     clip = _validate_clip(path, spec.get('clip'), outline, bank)
     # Clip plan ids without ``clip`` build neighbour water out to CLIP_REACH and bank
-    # that artificial edge (#353). Require the field when the name is a clip id.
-    if clip is None and parse_clip_plan_id(name) is not None:
+    # that artificial edge (#353). Require the field when the name is a clip id, and
+    # keep the named cell aligned with clip.cell when both are present.
+    parsed = parse_clip_plan_id(name)
+    if clip is None and parsed is not None:
         _fail(path, f'name {name!r} is a clip plan id; set clip {{"cell": [tx, tz]}} '
                     '(or use a non-clip name for a legacy whole-body plan)')
+    if clip is not None and parsed is not None and tuple(parsed[1]) != tuple(clip['cell']):
+        _fail(path, f'name {name!r} clip cell {parsed[1][0]},{parsed[1][1]} does not match '
+                    f'clip.cell {clip["cell"][0]},{clip["cell"][1]}')
     provenance = _validate_provenance(path, spec['provenance'], root)
     out = {
         'name': name,

@@ -367,11 +367,18 @@ class ClippedBuildTest(unittest.TestCase):
         self.assertIn('clip plan id', str(ctx.exception))
         ok = W.load_spec_dict({**base, 'clip': {'cell': list(self.WEST)}})
         self.assertEqual(ok['clip'], {'cell': [0, 0]})
-        # Whole-body synthetic ids (water_<x>_<z>) and plain names stay valid without clip.
+        with self.assertRaises(W.WaterBodyError) as mismatch:
+            W.load_spec_dict({**base, 'clip': {'cell': list(self.EAST)}})
+        self.assertIn('does not match', str(mismatch.exception))
+        # Whole-body synthetic ids, free-form legacy names, and plain names stay valid without clip.
         whole = W.load_spec_dict({**base, 'name': 'water_122_10'})
         self.assertIsNone(whole['clip'])
+        legacy = W.load_spec_dict({**base, 'name': 'river_itchen_63_m45'})
+        self.assertIsNone(legacy['clip'])
         self.assertIsNone(W.parse_clip_plan_id('water_122_10'))
+        self.assertIsNone(W.parse_clip_plan_id('river_itchen_63_m45'))
         self.assertEqual(W.parse_clip_plan_id('w9_0_0'), ('w9', (0, 0)))
+        self.assertEqual(W.parse_clip_plan_id('water_122_10_0_0'), ('water_122_10', (0, 0)))
 
     def test_bank_width_greater_than_one_on_a_clip(self):
         """#353: clipped builds honour bank.width > 1 inside the clip cell only."""
