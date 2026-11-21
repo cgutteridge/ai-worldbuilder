@@ -69,7 +69,9 @@ NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue
               'readiness_evidence', 'builder_registration', 'approval')
 # Layers a cell approval can cover (#327). An approval says which of these the owner signed off;
 # it never stands in for the pass itself (ground-layer work needs a landed ground pass).
-APPROVAL_LAYERS = ('ghost', 'buildings', 'ground', 'trees', 'decor', 'dressing')
+# ``labels`` is optional road-name text (#341). It is not an Element and does not count
+# toward the cell being done.
+APPROVAL_LAYERS = ('ghost', 'buildings', 'ground', 'trees', 'decor', 'dressing', 'labels')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
 CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
