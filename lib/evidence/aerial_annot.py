@@ -91,8 +91,8 @@ def annotate(source, bbox, out, scale=4, footprints=None, extra=None):
         centre = (sum(v[0] for v in r[:-1]) / (len(r) - 1), sum(v[1] for v in r[:-1]) / (len(r) - 1))
         d.text(project([centre])[0], (props.get('osm_way_id') or '')[-3:], fill=(255, 255, 0))
     if extra:
-        from osgb import load_offsets
-        o = load_offsets()
+        from world_frame import legacy_offsets_dict
+        o = legacy_offsets_dict()
         for f in json.load(open(extra))['features']:
             g, pr = f['geometry'], f['properties']
             if not g or g['type'] not in ('Polygon', 'MultiPolygon') or pr.get('building'):

@@ -20,7 +20,7 @@ coordinate-conversion implementation.
   python3 scripts/geo.py place --name "Broadlands 20-22" --mc 7097,-5521
   python3 scripts/geo.py tiles --bbox 7040,-5560,7140,-5500 --zoom 18 --mosaic 3
 
-WGS84 paths use in-process pyproj via world_frame / geodetic. MC ↔ OSGB uses
+WGS84 paths use in-process pyproj via world_frame. MC ↔ OSGB uses
 config/world-frame.json.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-from geodetic import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
+from world_frame import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
 from osgb import load_offsets, to_mc, to_osgb  # noqa: E402
 from ref_manifest import mc_tiles_for_bbox  # noqa: E402
 from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402

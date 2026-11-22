@@ -99,27 +99,16 @@ def load_lidar_module(role: str, data: dict | None = None) -> ModuleType:
     return mod
 
 
-def _first_attr(mod: ModuleType, names: tuple[str, ...]) -> Any:
-    for name in names:
-        if hasattr(mod, name):
-            return getattr(mod, name)
-    raise AttributeError(
-        f'module {getattr(mod, "__name__", mod)!r} has none of {names}'
-    )
-
-
 def composite_world(**kwargs: Any):
     """Open the composite lidar world for the active lidar provider.
 
-    Prefer a type-facing class name (``LidarWorld`` / ``CompositeWorld``); fall
-    back to the historical class still exported by the provider package.
+    The configured world module exports the type-facing ``LidarWorld`` class.
 
     @param kwargs: forwarded to the world constructor
     @returns: world instance with ``covers`` / ``heightmap`` / ``block``
     """
     mod = load_lidar_module('world')
-    cls = _first_attr(mod, ('LidarWorld', 'CompositeWorld', 'DefraWorld'))
-    return cls(**kwargs)
+    return mod.LidarWorld(**kwargs)
 
 
 def tile_client(*, download: bool = False, **kwargs: Any):
@@ -130,8 +119,7 @@ def tile_client(*, download: bool = False, **kwargs: Any):
     @returns: tile client instance
     """
     mod = load_lidar_module('tiles')
-    cls = _first_attr(mod, ('LidarTiles', 'DefraLidar'))
-    return cls(download=download, **kwargs)
+    return mod.LidarTiles(download=download, **kwargs)
 
 
 def mc_box_en(*args: Any, **kwargs: Any):

@@ -37,7 +37,7 @@ from PIL import Image, ImageDraw, ImageFont
 from script_env import ROOT  # noqa: E402
 
 from coverage import cell_bbox  # noqa: E402
-from geodetic import osgb_batch_to_wgs84  # noqa: E402
+from world_frame import osgb_batch_to_wgs84  # noqa: E402
 from osgb import to_osgb  # noqa: E402
 from ref_manifest import REF, append_manifest, find_dup, load_manifest, sha256_file  # noqa: E402
 

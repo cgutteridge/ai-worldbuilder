@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 from script_env import ROOT, TOOL_ROOT
-from geodetic import osgb_to_wgs84
+from world_frame import osgb_to_wgs84
 from osgb import to_mc, to_osgb
 import ref_manifest
 from ref_manifest import find_dup, load_manifest, mc_tiles_for_bbox, sha256_file

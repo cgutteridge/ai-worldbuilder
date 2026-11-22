@@ -166,4 +166,3 @@ class DefraWorld:
 
 # Type-facing names for lib/sources/lidar_provider.py (catalogue modules.world).
 LidarWorld = DefraWorld
-CompositeWorld = DefraWorld
