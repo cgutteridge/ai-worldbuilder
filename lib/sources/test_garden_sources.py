@@ -573,6 +573,32 @@ class TestFrontJogClosers(unittest.TestCase):
             self.assertLessEqual(len({x for x, _ in closers}), 1, h)
 
 
+class OverlayAerialSourceTest(unittest.TestCase):
+    """The barrier overlay reads the current local aerial mosaics, not a removed module name."""
+
+    def test_overlay_draws_over_a_covering_mosaic_and_refuses_without_one(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from PIL import Image
+        import aerial_coverage
+        with tempfile.TemporaryDirectory() as tmp:
+            tile = Path(tmp) / 'tile.png'
+            Image.new('RGB', (4000, 4000), (30, 90, 30)).save(tile)
+            mosaic = aerial_coverage.Mosaic(tile, 19, 0, 0)
+            png = Path(tmp) / 'out.png'
+            with mock.patch('ground_sources.cell_box', return_value=(1000, 1000, 1003, 1003)), \
+                    mock.patch.object(aerial_coverage.Mosaic, 'pixels',
+                                      lambda self, pts: {p: (p[0] + .5, p[1] + .5) for p in pts}), \
+                    mock.patch.object(aerial_coverage, 'mosaics', return_value=[mosaic]):
+                gs.overlay((0, 0), [{'kind': 'fence', 'cells': [(1001, 1001)]}], png)
+                self.assertTrue(png.is_file())
+            with mock.patch('ground_sources.cell_box', return_value=(1000, 1000, 1003, 1003)), \
+                    mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
+                with self.assertRaises(aerial_coverage.CoverageError):
+                    gs.overlay((0, 0), [], Path(tmp) / 'no.png')
+
+
 if __name__ == '__main__':
     unittest.main()
 

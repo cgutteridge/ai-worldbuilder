@@ -149,6 +149,24 @@ def samples(points, sources, *, radius=0):
     return out
 
 
+def covering_mosaic(points, sources=None):
+    """Finest local mosaic whose image holds every point, with the points' pixels.
+
+    @param points: MC columns (their centres are located, as in ``Mosaic.pixels``)
+    @param sources: mosaics to choose from; default every local mosaic
+    @returns: ``(mosaic, {point: (px, py)})``, or None when no single mosaic covers them all
+    """
+    points = list(points)
+    for mosaic in (mosaics() if sources is None else sorted(
+            sources, key=lambda m: (-m.zoom, str(m.path)))):
+        with Image.open(mosaic.path) as im:
+            width, height = im.size
+        pixels = mosaic.pixels(points)
+        if all(0 <= px < width and 0 <= py < height for px, py in pixels.values()):
+            return mosaic, pixels
+    return None
+
+
 def coverage(cell, sources=None):
     """Fraction of the cell's columns covered by the union of usable local mosaics."""
     points = cell_columns(cell)
