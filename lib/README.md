@@ -8,7 +8,7 @@ ahead of `scripts/` (where CLI wrappers with the same names live).
 | --- | --- |
 | `geo/` | World frame, cell maths, OSGB / WGS84 helpers |
 | `blocks/` | BlockStore, MCP / player helpers, atomic JSON |
-| `journal/` | Cell journal, registry helpers, coverage |
+| `journal/` | Cell journal, registry helpers, registry coverage rollup |
 | `sources/` | Place sources, lidar, vector map, OSM footprints |
 | `layers/` | Ground / trees / decor passes, tree voxels, masks |
 | `builds/` | House and feature builders, roof geometry, shared door-stoop helpers (`stoop.py`), half-block-cell roof fit (`roof_octant.py`) |

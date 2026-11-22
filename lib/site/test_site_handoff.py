@@ -37,6 +37,16 @@ GENERIC BOOT PROMPT
 '''
 
 
+class CoverageCommandsTest(unittest.TestCase):
+    def test_brief_includes_current_registry_commands(self):
+        commands = '\n'.join(H._coverage_cheatsheet_lines())
+        self.assertIn('--world <world>', commands)
+        self.assertIn('status [--cell tx,tz]', commands)
+        self.assertIn('write ', commands)
+        self.assertNotIn('signoff', commands)
+        self.assertNotIn('--area', commands)
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

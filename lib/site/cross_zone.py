@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""Read-only cross-cell / cross-zone reports for ground and foliage handoff.
+"""Read-only cell-boundary reports for layered-pass handoff.
 
-  python3 scripts/cross_zone.py report --area highfield --cell 48,-44 [--margin 8]
+  python3 scripts/cross_zone.py --world <world> report --cell 48,-44 [--margin 8]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from pathlib import Path
 
-from script_env import ROOT  # noqa: E402
-
-from coverage import load_area, load_signoffs, stats, touched_by_build, union  # noqa: E402
 from cellmath import CELL, cell_bbox  # noqa: E402,F401
 DEFAULT_MARGIN = 8
 
@@ -47,42 +43,6 @@ def expanded_cell_bbox(tx: int, tz: int, margin: int = 0) -> tuple[int, int, int
     return x0, z0, x1, z1
 
 
-def parcels_on_cell_edge(area_name: str, tx: int, tz: int) -> list[str]:
-    """Parcel ids with at least one column on the cell bbox border.
-
-    @param area_name: coverage area
-    @param tx: cell X
-    @param tz: cell Z
-    @returns: sorted parcel ids
-    """
-    area = load_area(area_name)
-    x0, z0, x1, z1 = cell_bbox(tx, tz, tx, tz)
-    hit = []
-    for pid, p in area.parcels.items():
-        for x, z in p['set']:
-            if (x, z) in p['set'] and (x == x0 or x == x1 or z == z0 or z == z1):
-                hit.append(pid)
-                break
-    return sorted(set(hit))
-
-
-def parcel_straddle_summary(area_name: str, pid: str, tx: int, tz: int) -> dict:
-    """Count parcel columns inside vs outside a coverage cell.
-
-    @param area_name: coverage area
-    @param pid: parcel id
-    @param tx: cell X
-    @param tz: cell Z
-    @returns: {inside, outside, total}
-    """
-    area = load_area(area_name)
-    p = area.parcels[pid]
-    x0, z0, x1, z1 = cell_bbox(tx, tz, tx, tz)
-    inside = sum(1 for x, z in p['set'] if x0 <= x <= x1 and z0 <= z <= z1)
-    total = p['n']
-    return {'inside': inside, 'outside': total - inside, 'total': total}
-
-
 def columns_outside_cell(columns: set[tuple[int, int]], tx: int, tz: int) -> set[tuple[int, int]]:
     """Subset of columns not in the cell bbox.
 
@@ -96,7 +56,6 @@ def columns_outside_cell(columns: set[tuple[int, int]], tx: int, tz: int) -> set
 
 
 def cross_zone_report(
-    area_name: str,
     tx: int,
     tz: int,
     *,
@@ -105,27 +64,14 @@ def cross_zone_report(
 ) -> dict:
     """Unified cross-zone warnings for handoff and foliage dry-run.
 
-    @param area_name: coverage area
     @param tx: cell X
     @param tz: cell Z
     @param margin: foliage margin blocks
     @param plan_columns: optional planned {(x, z)} from a dry-run plan
     @returns: report dict with warnings, deferrals, and metadata
     """
-    area = load_area(area_name)
-    touched = union(touched_by_build())
-    signoffs = load_signoffs()
-    st = stats(area, touched, signoffs)
     warnings: list[str] = []
     deferrals: list[str] = []
-
-    edge_parcels = parcels_on_cell_edge(area_name, tx, tz)
-    for pid in edge_parcels[:8]:
-        if not pid.startswith(('open:', 'gap:', 'path:')):
-            continue
-        sm = parcel_straddle_summary(area_name, pid, tx, tz)
-        if sm['outside'] > 0:
-            warnings.append(f'{pid} straddles cell edge ({sm["outside"]} cols outside)')
 
     if plan_columns:
         outside = columns_outside_cell(plan_columns, tx, tz)
@@ -139,31 +85,11 @@ def cross_zone_report(
                 deferrals.append(f'foliage straddle: {n} cols → cell {ntx},{ntz}')
 
     ex0, ez0, ex1, ez1 = expanded_cell_bbox(tx, tz, margin)
-    for ntx, ntz in neighbor_cells(tx, tz, chebyshev=1):
-        if (ntx, ntz) == (tx, tz):
-            continue
-        nx0, nz0, nx1, nz1 = cell_bbox(ntx, ntz, ntx, ntz)
-        open_unsigned = []
-        for pid, p in area.parcels.items():
-            if p['kind'] not in ('open', 'gap', 'path'):
-                continue
-            if not (p['set'] & {(x, z) for x in range(nx0, nx1 + 1) for z in range(nz0, nz1 + 1)}):
-                continue
-            if st[pid]['state'] != 'done':
-                open_unsigned.append(pid)
-        if open_unsigned and margin:
-            warnings.append(
-                f'neighbor {ntx},{ntz}: {len(open_unsigned)} open/gap/path parcels not done '
-                f'(margin {margin} may touch them)',
-            )
-
     return {
         'cell': [tx, tz],
         'margin': margin,
         'expanded_bbox': [ex0, ez0, ex1, ez1],
-        'legacy_zones': zones,
         'neighbors': neighbor_cells(tx, tz),
-        'edge_parcels': edge_parcels[:20],
         'warnings': warnings,
         'deferrals': deferrals,
     }
@@ -177,7 +103,7 @@ def format_report(report: dict) -> str:
     """
     lines = [
         f"CROSS-ZONE cell {report['cell'][0]},{report['cell'][1]} "
-        f"margin={report['margin']} zones={[z['name'] for z in report['legacy_zones']]}",
+        f"margin={report['margin']}",
     ]
     for w in report['warnings']:
         lines.append(f'  warn: {w}')
@@ -196,13 +122,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest='cmd', required=True)
     rep = sub.add_parser('report', help='print cross-zone report')
-    rep.add_argument('--area', default='highfield')
     rep.add_argument('--cell', required=True, help='tx,tz')
     rep.add_argument('--margin', type=int, default=DEFAULT_MARGIN)
     rep.add_argument('--json', action='store_true')
     args = ap.parse_args()
     tx, tz = (int(v.strip()) for v in args.cell.split(','))
-    r = cross_zone_report(args.area, tx, tz, margin=args.margin)
+    r = cross_zone_report(tx, tz, margin=args.margin)
     if args.json:
         print(json.dumps(r, indent=2))
     else:

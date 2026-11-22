@@ -30,13 +30,7 @@ from script_env import (  # noqa: E402
     world_bound,
 )
 
-from coverage import (  # noqa: E402
-    load_areas,
-    load_signoffs,
-    stats,
-    touched_by_build,
-    union,
-)
+from coverage import registry_rollup_rows  # noqa: E402
 from cellmath import cell_bbox, cell_of, mc_tile_for_cell  # noqa: E402
 from geo import tiles_for_bbox  # noqa: E402
 from ground_sources import cell_coverage, references_for_cell  # noqa: E402
@@ -338,45 +332,23 @@ def osm_summary(tx: int, tz: int, idx: OSMIndex | None = None) -> dict:
     }
 
 
-def coverage_summary(tx: int, tz: int) -> list[str]:
-    """Parcel state lines for parcels touching this cell (all configured areas).
+def registry_summary(tx: int, tz: int) -> list[str]:
+    """Registry state and holds for one cell.
 
     @param tx: cell X
     @param tz: cell Z
     @returns: human-readable lines
     """
-    by_build = touched_by_build()
-    touched, signoffs = union(by_build), load_signoffs()
-    lines: list[str] = []
-    for area in load_areas():
-        st = stats(area, touched, signoffs)
-        in_cell = [
-            pid
-            for pid, p in area.parcels.items()
-            if any(cell_of(x, z) == (tx, tz) for x, z in p['set'])
-        ]
-        if not in_cell:
-            continue
-        c = Counter(st[pid]['state'] for pid in in_cell)
-        lines.append(
-            f'  {area.name}: {len(in_cell)} parcels — '
-            f'{c["untouched"]} untouched, {c["touched"]} touched, {c["done"]} done'
-        )
-        openish = [
-            pid
-            for pid in in_cell
-            if area.parcels[pid]['kind'] in ('open', 'gap', 'no_osm')
-            and st[pid]['state'] != 'done'
-        ]
-        openish.sort(key=lambda pid: (-area.parcels[pid]['n'], pid))
-        for pid in openish[:8]:
-            p = area.parcels[pid]
-            lines.append(
-                f'    {pid}  {p["kind"]}  {st[pid]["state"]}  {p.get("label", "")[:60]}'
-            )
-        if len(openish) > 8:
-            lines.append(f'    … {len(openish) - 8} more gap/open/no_osm (coverage.py status --cell {tx},{tz} --list)')
-    return lines or ['  (no parcels in config/coverage-areas.json for this cell — run coverage.py build)']
+    row = next((r for r in registry_rollup_rows() if r['cell'] == (tx, tz)), None)
+    if row is None:
+        return ['  (cell not registered)']
+    lines = [f'  status={row["status"]} ground={row["ground"]} '
+             f'trees={"yes" if row["trees"] else "no"} decor={"yes" if row["decor"] else "no"}']
+    if row['hold']:
+        lines.append(f'  hold: {row["hold"]}')
+    if row['left']:
+        lines.append(f'  left: {", ".join(row["left"])}')
+    return lines
 
 
 def manifest_summary(tx: int, tz: int) -> list[str]:
@@ -733,33 +705,30 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
         f'(buildings+highways+landuse+water+waterway+barrier+furniture+pedestrian+natural+leisure); '
         f'writes reference/{vmc.REFERENCE_DIRNAME}/',
         f'python3 scripts/osm_footprints.py frontage --bbox {x0},{z0},{x1},{z1}',
-        f'python3 scripts/coverage.py status --cell {tx},{tz} --list',
-        f'python3 scripts/coverage.py gaps --area highfield',
+        f'python3 scripts/coverage.py --world {ROOT.name} status --cell {tx},{tz}',
     ]
 
 
-def _cross_zone_lines(tx: int, tz: int, area: str = 'highfield') -> list[str]:
+def _cross_zone_lines(tx: int, tz: int) -> list[str]:
     """Generated cross-zone hints for a cell sources file.
 
     @param tx: cell X
     @param tz: cell Z
-    @param area: coverage area name
     @returns: indented lines (may be a single fallback line)
     """
     try:
         from cross_zone import cross_zone_report
 
-        r = cross_zone_report(area, tx, tz, margin=8)
-        zones = ', '.join(z['name'] for z in r['legacy_zones']) or '(none)'
+        r = cross_zone_report(tx, tz, margin=8)
         nb = ', '.join(f'{a},{b}' for a, b in r['neighbors'])
-        lines = [f'  grounds zones: {zones}', f'  neighbor cells: {nb}']
+        lines = [f'  neighbor cells: {nb}']
         for w in r['warnings'][:8]:
             lines.append(f'  warn: {w}')
         if not r['warnings']:
             lines.append('  (no cross-zone warnings at last write)')
         return lines
     except (SystemExit, OSError, KeyError, json.JSONDecodeError):
-        return ['  (run coverage.py build + cross_zone.py report --cell tx,tz)']
+        return ['  (run cross_zone.py report --cell tx,tz)']
 
 
 def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
@@ -786,7 +755,7 @@ def render_guide(tx: int, tz: int, *, idx: OSMIndex | None = None) -> str:
     ]
     parts.extend(manifest_summary(tx, tz))
     parts += ['', *vector_map_guide_lines(tx, tz, idx=idx)]
-    parts += ['', 'COVERAGE PARCELS', *coverage_summary(tx, tz)]
+    parts += ['', 'REGISTRY STATUS', *registry_summary(tx, tz)]
     parts += ['', 'CROSS-ZONE (generated on --write)', *_cross_zone_lines(tx, tz)]
     parts += [
         '',

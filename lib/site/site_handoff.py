@@ -950,16 +950,12 @@ def _last_reviews(n=3):
 
 
 def _coverage_cheatsheet_lines():
-    """CLI lines from scripts/coverage.py COVERAGE_CHEATSHEET (single source of truth).
+    """Live registry coverage commands from the coverage module.
 
     @returns: non-empty stripped lines for the session brief
     """
-    path = SCRIPTS / 'coverage.py'
-    src = path.read_text()
-    m = re.search(r'^COVERAGE_CHEATSHEET = """(.*?)"""', src, re.DOTALL | re.MULTILINE)
-    if not m:
-        return ['(see rules/process.md §2c)']
-    return [ln.rstrip() for ln in m.group(1).strip().splitlines()]
+    from coverage import COVERAGE_CHEATSHEET
+    return [ln.rstrip() for ln in COVERAGE_CHEATSHEET.splitlines()]
 
 
 def _kit_api():
@@ -1018,13 +1014,12 @@ def brief_text(item):
         try:
             from cross_zone import cross_zone_report, format_report
 
-            cz = cross_zone_report('highfield', cell[0], cell[1], margin=8)
+            cz = cross_zone_report(cell[0], cell[1], margin=8)
             parts += ['', 'CROSS-ZONE (read-only):']
             for ln in format_report(cz).splitlines():
                 parts.append(f'  {ln}')
         except (Exception, SystemExit):
-            # cross_zone_report uses SystemExit when coverage area is not built yet.
-            parts += ['', 'CROSS-ZONE (read-only):', '  (unavailable — run coverage build for highfield)']
+            parts += ['', 'CROSS-ZONE (read-only):', '  (unavailable — run cross_zone.py report --cell tx,tz)']
     cell_rel = None
     if cell is not None:
         cell_rel = str(sources_path(*cell).relative_to(ROOT))
@@ -1035,7 +1030,7 @@ def brief_text(item):
     parts += ['', 'SITE_KIT API (scripts/site_kit.py; read a function body only when needed):'] + _kit_api()
     parts += [
         '',
-        'COVERAGE CLI (scripts/coverage.py — do not run --help; use this + PROCESS §2c):',
+        'REGISTRY COVERAGE CLI (scripts/coverage.py; reference: --world <world> --help):',
     ] + [f'  {ln}' if not ln.startswith(' ') else ln for ln in _coverage_cheatsheet_lines()]
     parts += [
         '', 'TOKEN RULES:',
@@ -1082,7 +1077,7 @@ SITE_OWNER=<you> → readback → walk → evidence check → records). Follow t
 "Done bar" under RULES READING in the brief for this item's context.
 Stop rule: geometry fix builds → revert + re-survey; no _b/_c patches (I-009).
 
-Parcel coverage: commands are in the SESSION BRIEF below (not coverage.py --help).
+Registry coverage: commands are in the SESSION BRIEF below.
 
 Current task:
   {qid}  {summary}

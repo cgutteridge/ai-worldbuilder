@@ -190,7 +190,7 @@ clips of `southampton-build`:
 - Cells prepared with the standard step have it: the `prepared-53--42`, `53--44` and `54--42` clips hold
   `landuse=residential`, `allotments`, `leisure=park`. Older clips do not: cell 53,-43
   (`highfield-cell-53-43`) is `buildings+highways` only, as are `oldtown` and `portswood-x-broadlands`.
-- `OSMIndex.areas` keeps every non-building polygon, so `ParcelBuilder` sees them. `ground_sources.load_osm`
+- `OSMIndex.areas` keeps every non-building polygon, so the classification helpers see them. `ground_sources.load_osm`
   keeps a polygon only when one of its *vertices* is inside the cell box, so a large landuse polygon can be
   dropped on the ground and decor path (read, not run). The Southampton provider extracts with `-spat`
   (whole polygons, far vertices); the scaffold adds `-clipsrc`.
@@ -207,22 +207,16 @@ arrives for another reason and are not fetched for themselves. Whether other pro
 exposes `amenity` and `natural` as columns is **UNVERIFIED** (see #237). World work, separate: re-extract
 old cells.
 
-## 6. ParcelBuilder and the classifier
+## 6. Classification consumers
 
-No new parcel map. `land_use.py` is pure: tags in, class out. Rasterising stays where it is:
+The parcel register was retired in #395. `land_use.py` remains pure: tags in, class out.
+The retained map helpers in `coverage` serve the live source and build planners:
 
-- `ParcelBuilder.areas` already walks polygons smallest first and sets umbrellas aside. That loop becomes
-  one function, `coverage.area_classes(idx, bbox)`, returning `{column: (class, ref)}` under the use and
-  cover rule; `ParcelBuilder.areas` calls it. `UMBRELLA` is kept for parcel drawing (an umbrella is still
-  not a parcel) but its polygons now give gaps and buildings a class.
-- Every saved parcel gains `meta.land_use`. `foliage` and `cross_zone` already read parcels with
-  `load_area`, so #252 gets classes with no new reader.
-- Frontage keeps its own plots: `garden_sources.plots_for` sets `info[i]['land_use']` from the building
-  tags plus `area_classes`, replacing the `nonresidential` flag.
-
-Found, not fixed here: two plot growers already exist (`ParcelBuilder.gardens`, reach 45, corridor bands;
-`plots_for`, margin 60, road width plus pavement). They can disagree at plot edges. Unifying them is its
-own task; this design adds no third.
+- `coverage.area_classes(idx, bbox)` applies the smallest-use-polygon and cover fallback rules.
+- `coverage.building_land_use` classifies building tags and their containing use polygon.
+- Frontage keeps its own plots: `garden_sources.plots_for` sets `info[i]['land_use']` from
+  building tags and `area_classes`.
+- Cross-cell reports use planned columns and cell boundaries; progress comes from the registry.
 
 ## 7. Order of work and task-note edits
 
@@ -237,8 +231,8 @@ Edits to make in `tasks/index.json` (orchestrator, on `main`; not made by this p
 - **#253**: replace "Unverified: whether osm_cell_extract delivers landuse polygons per cell (it reads
   leisure only)" with the findings of section 5. Replace the class list with the eleven of section 1 and
   the use and cover rule. Add: table and mapping in `config/land-use-classes.json`, module
-  `lib/sources/land_use.py`, `coverage.area_classes` shared with `ParcelBuilder.areas`, `meta.land_use` on
-  parcels, presets (a) and (b), checked extents. Add file `lib/sources/osm_footprints.py`. Add: no class
+  `lib/sources/land_use.py`, `coverage.area_classes` shared by source and build planners,
+  presets (a) and (b), checked extents. Add file `lib/sources/osm_footprints.py`. Add: no class
   ships a fence default.
 - **#254**: add: generalise `residential_frontage` to `frontage(meta, ..., row)` with the old name kept as
   a wrapper; `nonresidential` replaced by the class; segments for non-house parcels with role
@@ -261,7 +255,7 @@ Edits to make in `tasks/index.json` (orchestrator, on `main`; not made by this p
   two nested use polygons, smallest wins; `landuse=grass` inside `amenity=university` is civic; grass alone
   is park; no landuse clip is `not_checked`; checked and empty is `unmapped`; a large polygon with no
   vertex in the cell still classifies; table validation (duplicate tag, missing column, `unknown` with a
-  boundary refused). `test_coverage`: parcels carry `meta.land_use`, parcel ids and digests unchanged.
+  boundary refused). `test_coverage`: rasterization and registry rollup; `test_land_use`: classification consumers.
   `test_osm_cell_extract`: `landuse` and `landclass` presets installed into an empty provider.
 - **#254**: existing residential tests pass unedited; a strip per class plus unknown; class default with a
   synthetic fence row builds, labelled `class`; the same row under `unknown` is refused; `front: none`
@@ -291,9 +285,8 @@ Edits to make in `tasks/index.json` (orchestrator, on `main`; not made by this p
    (**UNVERIFIED** whether cell readiness can surface it today).
 6. **Coarse classes.** Allotments under park, cemeteries under civic, caravan sites under commercial are
    first guesses; the unlisted and per-class counts in the classifier report are how they get refined.
-7. **Coverage areas.** `southampton-build` has no `config/coverage-areas.json` in its checkout, so
-   `meta.land_use` on saved parcels has no consumer there until an area is built; frontage does not
-   depend on it.
+7. **Consumer coverage.** Classification is exercised through the source and build planners;
+   progress is a registry view and does not require an area or parcel store.
 
 Not verified in this pass: anything by running code (all findings are from reading source and cached
 clips); clips of worlds other than `southampton-build`; the remaining #240 slices against current code

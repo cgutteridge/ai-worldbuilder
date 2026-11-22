@@ -505,28 +505,6 @@ class FurnitureRules(unittest.TestCase):
                 L.validate_table(doc)
 
 
-class ParcelMeta(unittest.TestCase):
-    def build(self, areas, buildings):
-        return C.ParcelBuilder('t', (0, 0, 0, 0), index(areas, buildings)).run()
-
-    def test_parcels_carry_land_use_ids_and_digests_unchanged(self):
-        # An umbrella polygon only (retail) is not a parcel, so ids and digests match a run with no classes.
-        areas = [(sq(0, 0, 60, 60), {'landuse': 'retail'})]
-        buildings = [(sq(10, 10, 16, 16), {'building': 'yes'})]
-        got = self.build(areas, buildings)
-        prop = next(p for p in got['parcels'] if p['kind'] == 'property')
-        self.assertEqual(prop['meta']['land_use']['class'], 'commercial')
-        base = self.build([], buildings)
-        key = lambda rec: [(p['id'], p['kind'], p['n'], p['digest']) for p in rec['parcels'] if p['kind'] == 'property']
-        self.assertEqual(key(got), key(base))
-
-    def test_gap_and_open_parcels_get_a_class_roads_do_not(self):
-        got = self.build([(sq(0, 0, 60, 60), {'landuse': 'retail'}), (sq(70, 70, 90, 90), {'leisure': 'park'})], [])
-        kinds = {p['kind']: p['meta'].get('land_use') for p in got['parcels']}
-        self.assertEqual(kinds['gap']['class'], 'commercial')
-        self.assertEqual(kinds['open']['class'], 'park')
-
-
 if __name__ == '__main__':
     unittest.main()
 

@@ -1,25 +1,17 @@
-#!/usr/bin/env python3
-"""Unit tests for the pure parts of scripts/coverage.py (no world / OSM access).
-
-  python3 -m unittest scripts/test_coverage.py
-"""
-import sys
-import unittest
+"""Coverage views use a synthetic journal; retained map helpers use pure fixtures."""
+import argparse
+import contextlib
+import io
 from pathlib import Path
+import tempfile
+import unittest
+from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import coverage as C  # noqa: E402
-from osm_footprints import _inside  # noqa: E402
+import coverage as C
+from osm_footprints import _inside
 
 
 class GeometryTest(unittest.TestCase):
-    def test_runs_round_trip(self):
-        cells = {(0, 0), (1, 0), (2, 0), (5, 0), (-3, -7), (-2, -7), (4, 2)}
-        runs = C.encode_runs(cells)
-        self.assertEqual(runs, [[-7, -3, -2], [0, 0, 2], [0, 5, 5], [2, 4, 4]])
-        self.assertEqual(C.decode_runs(runs), cells)
-
     def test_scan_polygon_matches_point_in_polygon(self):
         ring = [(0.3, 0.2), (9.7, 1.1), (8.2, 7.9), (4.0, 4.5), (0.9, 8.6), (0.3, 0.2)]
         hole = [(2.0, 2.0), (4.0, 2.0), (4.0, 3.0), (2.0, 3.0), (2.0, 2.0)]
@@ -29,44 +21,10 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(got, want)
         self.assertNotIn((2, 2), got)
 
+
     def test_scan_polygon_clips_to_bbox(self):
         sq = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
         self.assertEqual(set(C.scan_polygon([sq], (2, 3, 4, 4))), {(x, z) for x in (2, 3, 4) for z in (3, 4)})
-
-    def test_line_band(self):
-        got = {(x, z) for x, z, _d in C.line_band([(0.0, 0.5), (10.0, 0.5)], 1, (0, -5, 10, 5))}
-        self.assertIn((5, -1), got)
-        self.assertIn((5, 1), got)
-        self.assertNotIn((5, 2), got)
-
-
-class SeamTest(unittest.TestCase):
-    def test_narrow_strip_is_seam_wide_is_not(self):
-        touched = {(x, z) for x in range(0, 3) for z in range(0, 5)}
-        touched |= {(x, z) for x in range(5, 8) for z in range(0, 5)}       # 2-wide strip x=3,4
-        touched |= {(x, z) for x in range(12, 15) for z in range(0, 5)}     # 4-wide strip x=8..11
-        seams = C.find_seams((0, 0, 14, 4), touched, max_width=3)
-        self.assertEqual(len(seams), 1)
-        self.assertEqual(seams[0], {(x, z) for x in (3, 4) for z in range(0, 5)})
-
-    def test_no_seam_at_open_edge(self):
-        touched = {(x, 0) for x in range(0, 4)}
-        self.assertEqual(C.find_seams((0, 0, 8, 0), touched), [])
-
-
-class StateTest(unittest.TestCase):
-    def test_done_at_full_coverage(self):
-        """Ticket #31: 100% touched is done (no separate done gate)."""
-        self.assertEqual(C.parcel_state(10, 10, True), 'done')
-        self.assertEqual(C.parcel_state(10, 10, False), 'done')
-        self.assertEqual(C.parcel_state(10, 9, True), 'touched')
-        self.assertEqual(C.parcel_state(10, 0, False), 'untouched')
-
-    def test_pct_never_rounds_up_to_full(self):
-        self.assertEqual(C.pct(226, 227), '99.6%')
-        self.assertEqual(C.pct(9999, 10000), '99.9%')
-        self.assertEqual(C.pct(5, 5), '100%')
-        self.assertEqual(C.pct(0, 5), '0%')
 
 
 class SectionTest(unittest.TestCase):
@@ -102,20 +60,71 @@ class RegistryRollupTest(unittest.TestCase):
         self.assertIn('registry/journal.jsonl', text)
 
 
-class ClassifyTest(unittest.TestCase):
-    def test_area_kind(self):
-        self.assertEqual(C.area_kind({'amenity': 'university'}), 'umbrella')
-        self.assertEqual(C.area_kind({'landuse': 'residential'}), 'umbrella')
-        self.assertEqual(C.area_kind({'landuse': 'grass'}), 'open')
-        self.assertEqual(C.area_kind({'highway': 'pedestrian'}), 'path')
-        self.assertIsNone(C.area_kind({'type': 'multipolygon'}))
+class RegistryCoverageTest(unittest.TestCase):
+    def test_holds_survive_and_clear_in_registry_views(self):
+        from cell_journal import Note
+        from journal_testkit import JournalWorld
 
-    def test_grows_garden(self):
-        self.assertTrue(C.grows_garden({'building': 'house'}))
-        self.assertTrue(C.grows_garden({'building': 'yes', 'other_tags': '"addr:housenumber"=>"12"'}))
-        self.assertFalse(C.grows_garden({'building': 'yes'}))
-        self.assertFalse(C.grows_garden({'building': 'university', 'other_tags': '"addr:housenumber"=>"1"'}))
-        self.assertFalse(C.grows_garden({'building': 'shed'}))
+        with JournalWorld() as jw, mock.patch.object(C, 'focus_cell', return_value=(0, 0)):
+            jw.seed((0, 0), ground=True, trees=True, decor=True)
+            self.assertEqual(C.registry_rollup_rows()[0]['status'], 'done')
+            jw.reg.change(Note((0, 0), 'hold', 'survey pending'))
+            row = C.registry_rollup_rows()[0]
+            self.assertEqual(row['status'], 'held')
+            self.assertEqual(row['hold'], 'survey pending')
+            self.assertEqual(C.load_holds()[(0, 0)]['registry']['reason'], 'survey pending')
+            self.assertIn('hold=survey pending', C.registry_rollup_text([row]))
+            jw.reg.change(Note((0, 0), 'hold', ''))
+            self.assertEqual(C.load_holds(), {})
+            self.assertEqual(C.registry_rollup_rows()[0]['status'], 'done')
+
+    def test_write_creates_missing_site_and_preserves_notes(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'site' / 'COVERAGE.txt'
+            with mock.patch.object(C, 'COVERAGE_TXT', path), \
+                    mock.patch.object(C, 'registry_rollup_text', return_value='current registry'):
+                self.assertEqual(C.write_coverage(), 'current registry')
+                path.write_text(f'my focus note\n{C.BEGIN}\nold parcel table\n{C.END}\nmy tail\n')
+                C.write_coverage()
+                self.assertEqual(path.read_text(),
+                                 f'my focus note\n{C.BEGIN}\ncurrent registry\n{C.END}\nmy tail\n')
+                C.write_coverage()
+                self.assertEqual(path.read_text().count(C.BEGIN), 1)
+
+    def test_write_appends_generated_block_to_notes_without_markers(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'COVERAGE.txt'
+            path.write_text('handwritten focus\n')
+            with mock.patch.object(C, 'COVERAGE_TXT', path), \
+                    mock.patch.object(C, 'registry_rollup_text', return_value='registry'):
+                C.write_coverage()
+                self.assertTrue(path.read_text().startswith('handwritten focus\n'))
+                self.assertIn(f'{C.BEGIN}\nregistry\n{C.END}', path.read_text())
+
+    def test_status_filters_cell_and_writes_full_rollup_only_when_requested(self):
+        rows = [{'cell': (1, 2)}, {'cell': (-1, 0)}]
+        with mock.patch.object(C, 'registry_rollup_rows', return_value=rows), \
+                mock.patch.object(C, 'registry_rollup_text', return_value='status') as render, \
+                mock.patch.object(C, 'write_coverage') as write, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(C.cmd_status(argparse.Namespace(cell=(-1, 0), write=False)), 0)
+            render.assert_called_once_with([rows[1]])
+            write.assert_not_called()
+            C.cmd_status(argparse.Namespace(cell=None, write=True))
+            write.assert_called_once_with()
+
+    def test_help_lists_only_live_registry_commands(self):
+        out = io.StringIO()
+        with mock.patch('sys.argv', ['coverage.py', '--help']), contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit) as exit_:
+                C.main()
+        self.assertEqual(exit_.exception.code, 0)
+        self.assertIn('{status,write}', out.getvalue())
+        for retired in ('areas', 'build', 'gaps', 'signoff', 'map'):
+            with self.subTest(command=retired), mock.patch('sys.argv', ['coverage.py', retired]), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as exit_:
+                    C.main()
+                self.assertEqual(exit_.exception.code, 2)
 
 
 if __name__ == '__main__':
