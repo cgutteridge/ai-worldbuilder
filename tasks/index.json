@@ -225,16 +225,7 @@
     },
     
     
-    {
-      "id": 398,
-      "title": "One barrier vocabulary in lib/sources, and break the sources-to-layers import",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T8. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T8' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s–m\n- Scope: the barrier part of 1.10. One module owns `BARRIER_KINDS`, defaults, plank tones, `barrier_kind` and the `fence` alias. `decor_plan`, `garden_sources`, `street_furniture` and `decor_layer` (`:479-480,1031`) import it.\n- Check: fixture garden and street plans are identical before and after, and `BARRIER_KINDS =` is defined once.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T4 (#394) because it both edit decor_plan/decor_layer barrier code."
-    },
+    
     {
       "id": 399,
       "title": "Finish the cellmath move and drop compatibility re-exports",

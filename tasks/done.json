@@ -3638,5 +3638,16 @@
       "builderTask": false,
       "notes": "Housekeeping review ticket T4. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T4' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: m\n- Scope: every row of 1.5, per its verdict. Fix the rule, spec and skill text that names each one.\n- Check: every row has either a production caller with a test or no remaining reference.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 4554d9e6311a366684c345a300032a8a5c1832ae: Merged 4554d9e. Each section 1.5 row is wired or deleted; railway stays in CELL_EXTRACT_LAYERS. Full suite green on the branch and on main. Left as nits: an unused TOOL_ROOT import in feature_build, no unit test left for dismiss-clip-coverage, and resolved_barriers keeps the later item when two barriers share a column.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 398,
+      "title": "One barrier vocabulary in lib/sources, and break the sources-to-layers import",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T8. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T8' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s–m\n- Scope: the barrier part of 1.10. One module owns `BARRIER_KINDS`, defaults, plank tones, `barrier_kind` and the `fence` alias. `decor_plan`, `garden_sources`, `street_furniture` and `decor_layer` (`:479-480,1031`) import it.\n- Check: fixture garden and street plans are identical before and after, and `BARRIER_KINDS =` is defined once.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T4 (#394) because it both edit decor_plan/decor_layer barrier code.\n\nClosed at 78c77887befcce57477acdf54b88afb04cc5626e: Merged 78c7788. BARRIER_KINDS, defaults, plank tones, barrier_kind and the fence alias live once in lib/sources/barrier_vocab.py. decor_plan, garden_sources, street_furniture and decor_layer import it. garden_sources no longer imports decor_plan. Later shared-column barrier still wins. Fixture plans unchanged. Reviewer 48b95efd APPROVE (nit: no separate before/after fixture dump). Full suite green on the branch and on main.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
