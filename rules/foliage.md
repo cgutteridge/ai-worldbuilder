@@ -33,8 +33,9 @@ One cell
 
 Check the crown review image and the kinds against the aerial before apply. Undo for
 a re-run: scripts/mask_undo.py --cell tx,tz --pass trees (decor first, then trees).
-scripts/cross_zone.py report --cell tx,tz lists structure leftovers on open/gap/path
-columns near the cell edge.
+python3 scripts/cross_zone.py --world <world> report --cell tx,tz reports cell bounds
+and neighbouring cells. Check cell-edge structures against neighbouring registry
+state and place evidence.
 
 ------------------------------------------------------------------------
 Tree review (every cell redo: I-073 step 4, before the trees pass is called done)
