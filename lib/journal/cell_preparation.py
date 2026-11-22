@@ -6,13 +6,86 @@ No downloads, marker moves, real rebuilds or mask edits happen here.
 """
 from __future__ import annotations
 
-import shutil
 import contextlib
+import json
+import shutil
 import sys
 from pathlib import Path
 
 import cellmath
 from cell_readiness import ReadinessPolicy
+
+
+def prepared_place_slug(cell: tuple[int, int]) -> str:
+    """Stable place id for a cell-scoped prepare extract.
+
+    @param cell: coverage cell ``(tx, tz)``
+    @returns: place slug under ``reference/vector_map/``
+    """
+    return f'prepared-{cell[0]}-{cell[1]}'
+
+
+def _vector_map_provider_package() -> tuple[dict, Path]:
+    """Locate the world's single packaged ``vector_map`` provider.
+
+    @returns: ``(catalogue_row, absolute_package_dir)``
+    @raises RuntimeError: when the catalogue is missing or ambiguous
+    """
+    from cell_sources import load_place_sources, provider_package_dir
+
+    data = load_place_sources()
+    candidates = [
+        row for row in data.get('providers', [])
+        if 'vector_map' in row.get('types', []) and row.get('package')
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError(
+            'Configure exactly one packaged vector_map provider in '
+            'config/local-providers.json (system catalogue also considered); '
+            f'found {len(candidates)}'
+        )
+    row = candidates[0]
+    package = provider_package_dir(row['id'], data)
+    if package is None or not package.is_dir():
+        raise RuntimeError(f"vector_map provider {row['id']!r} package missing")
+    return row, package
+
+
+def local_vector_map_pbf(world_root: Path) -> Path:
+    """Resolve the cached regional PBF for this world's vector_map provider.
+
+    Prefers ``providers/.../provider.json`` ``pbf_filename`` (scaffolded
+    Geofabrik providers) via :func:`vector_map_clips.default_pbf_path`. Falls
+    back to a legacy module ``DEFAULT_PBF`` or ``PROVIDER``/``CONFIG``
+    ``pbf_filename`` when those still exist.
+
+    @param world_root: active world checkout root
+    @returns: absolute path under ``<world>/downloads/``
+    @raises RuntimeError: when the provider cannot name a PBF basename
+    """
+    import vector_map_clips as vmc
+
+    _row, package = _vector_map_provider_package()
+    meta = package / 'provider.json'
+    if meta.is_file():
+        filename = json.loads(meta.read_text()).get('pbf_filename')
+        if not filename:
+            raise RuntimeError(f'{meta} has no pbf_filename')
+        return vmc.default_pbf_path(str(filename), world_root)
+
+    import osm_extract
+
+    default = getattr(osm_extract, 'DEFAULT_PBF', None)
+    if default is not None:
+        return Path(default)
+    for attr in ('PROVIDER', 'CONFIG'):
+        cfg = getattr(osm_extract, attr, None)
+        if isinstance(cfg, dict) and cfg.get('pbf_filename'):
+            return vmc.default_pbf_path(str(cfg['pbf_filename']), world_root)
+    raise RuntimeError(
+        f'vector_map provider package {package} has neither provider.json '
+        'nor DEFAULT_PBF/PROVIDER pbf_filename'
+    )
 
 
 class LocalPreparation:
@@ -26,29 +99,34 @@ class LocalPreparation:
         if not needs_extract:
             return {'blockers': [], 'inputs': []}
         try:
-            import osm_extract
-            pbf = Path(osm_extract.DEFAULT_PBF)
+            pbf = local_vector_map_pbf(self.root)
             cached = pbf.is_relative_to(self.root) and pbf.is_file()
             blockers = [] if cached else [f'local PBF required: {pbf}; acquire explicitly before preparation']
             if shutil.which('ogr2ogr') is None:
                 blockers.append('local map extraction requires ogr2ogr (GDAL)')
             return {'blockers': blockers, 'inputs': [{'filename': str(pbf), 'cached': cached,
                                                      'bytes': pbf.stat().st_size if cached else None}]}
-        except (OSError, ValueError, ImportError, RuntimeError) as exc:
+        except (OSError, ValueError, ImportError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
             return {'blockers': [f'map preparation dependency: {exc}'], 'inputs': []}
 
     def extract(self, cell):
         """Complete this cell's query from a local PBF, with the full landscape preset."""
         import osm_extract
-        pbf = Path(osm_extract.DEFAULT_PBF)
+
+        cell = tuple(cell)
+        pbf = local_vector_map_pbf(self.root)
         if not pbf.is_relative_to(self.root) or not pbf.is_file():
             raise FileNotFoundError(f'local PBF required: {pbf}; acquire explicitly before preparation')
         if shutil.which('ogr2ogr') is None:
             raise FileNotFoundError('local map extraction requires ogr2ogr (GDAL)')
         x0, z0, _x1, _z1 = cellmath.bounds(cell)
+        argv = [
+            '--at', f'{x0},{z0}', '--cell',
+            '--pbf', str(pbf),
+            '--place', prepared_place_slug(cell),
+        ]
         with contextlib.redirect_stdout(sys.stderr):
-            rc = osm_extract.main(['--at', f'{x0},{z0}', '--cell', '--pbf', str(pbf),
-                                   '--dir', f'vector_map/prepared-{cell[0]}-{cell[1]}', '--force'])
+            rc = osm_extract.main(argv)
         if rc:
             raise RuntimeError(f'local map extraction failed: exit {rc}')
 
