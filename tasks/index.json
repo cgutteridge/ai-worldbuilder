@@ -376,7 +376,7 @@
     {
       "id": 415,
       "title": "Stairs: shape every stair against all neighbouring stairs, any material (all stair writers)",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
