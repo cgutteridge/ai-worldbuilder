@@ -237,7 +237,7 @@
     {
       "id": 403,
       "title": "Archive done plans and specs; move world material out of the tool repo",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
@@ -274,7 +274,7 @@
     {
       "id": 409,
       "title": "Tidy the site_* and undo CLIs",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [],
@@ -306,7 +306,7 @@
     {
       "id": 412,
       "title": "Test-tree hygiene",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
