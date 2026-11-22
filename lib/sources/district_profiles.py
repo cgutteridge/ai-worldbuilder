@@ -1,7 +1,8 @@
 """District area evidence: validate small, vendor-independent profiles, never observations.
 
-File loading lives beside ``garden_sources.load_convention``. This module only validates
-JSON and selects the boundary/furniture sections; building appearance remains unread.
+File loading lives beside ``garden_sources.load_convention``. This module validates
+JSON and selects the boundary/furniture sections. ``typology_spec`` reads palette,
+roofs and storeys; this module does not apply them.
 """
 from __future__ import annotations
 
@@ -167,7 +168,8 @@ def boundary_layer(profile: dict | None, cls: str, street: str, number: str = ''
     """Select area/run boundary evidence only, flattened for ``land_use.resolve``.
 
     Run keys are human names; street and optional house numbers select the run. Ambiguous
-    matches fail rather than depending on JSON order. Appearance/planting have no consumers.
+    matches fail rather than depending on JSON order. Planting has no consumer here.
+    Palette, roofs and storeys are left for ``typology_spec``.
     """
     if not profile or cls not in land_use.CLASSES or cls in land_use.NO_INFERENCE:
         return None
