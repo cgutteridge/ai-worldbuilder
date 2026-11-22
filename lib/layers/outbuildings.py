@@ -30,6 +30,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import provenance as prov
+from roof_material import family_variants
 
 KIND = 'outbuilding'
 TYPES = ('shed', 'garage')
@@ -51,9 +52,7 @@ LIDAR_MARGIN = 8                  # blocks of lidar read past the cell so blobs 
 
 DEFAULT_TOTAL = {'shed': 3, 'garage': 4}            # walls + one roof layer
 WALL_BLOCK = {'shed': 'spruce_planks', 'garage': 'bricks'}
-ROOF_SLAB = {'shed': 'spruce_slab', 'garage': 'stone_brick_slab'}
-ROOF_STAIR = {'shed': 'spruce_stairs', 'garage': 'stone_brick_stairs'}
-ROOF_FULL = {'shed': 'spruce_planks', 'garage': 'stone_bricks'}      # flat ridge of an odd-width gable
+ROOF_FAMILY = {'shed': 'spruce', 'garage': 'stone_brick'}      # roof catalogue families (config/roof-materials.json)
 DOOR_BLOCK = {'shed': 'spruce_door', 'garage': 'iron_door'}
 FACINGS = {(0, -1): 'north', (0, 1): 'south', (-1, 0): 'west', (1, 0): 'east'}
 
@@ -402,6 +401,7 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
     base = max(ground[c] for c in cells)
     pitch = pitched_roof(item, cells)
+    roof = family_variants(ROOF_FAMILY[kind])
     door = tuple(item['door']['cell']) if item.get('door') else None
     out: dict[tuple[int, int, int], str] = {}
     for x, z in cells:
@@ -410,13 +410,13 @@ def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> di
             up, form = roof_row(j, pitch['across'])
             level = base + pitch['eave'] + 1 + up
             if form == 'full':
-                block = ROOF_FULL[kind]
+                block = roof['full']  # flat ridge of an odd-width gable
             else:
                 low = j < pitch['across'] / 2           # a stair's facing is its UPHILL side (tall back), toward the ridge
                 facing = ('south' if low else 'north') if pitch['axis'] == 'x' else ('east' if low else 'west')
-                block = f'{ROOF_STAIR[kind]}[facing={facing},half=bottom]'
+                block = f'{roof["stairs"]}[facing={facing},half=bottom]'
         else:
-            level, block = base + int(item['walls']) + 1, f'{ROOF_SLAB[kind]}[type=bottom]'
+            level, block = base + int(item['walls']) + 1, f'{roof["slab"]}[type=bottom]'
         if x in (x0, x1) or z in (z0, z1):
             for y in range(ground[(x, z)] + 1, level):
                 out[(x, y, z)] = WALL_BLOCK[kind]

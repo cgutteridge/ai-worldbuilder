@@ -519,6 +519,50 @@ class TestMassing(unittest.TestCase):
         self.assertEqual(door, {'cell': [31, 32], 'facing': 'south'})
 
 
+class RoofCatalogueGoldenTest(unittest.TestCase):
+    """#372: shed and garage roof blocks come from the roof catalogue and the output is unchanged."""
+
+    GOLDEN = {
+        ('shed', 'pitched', 6, 4): '3498a3ecf553',
+        ('shed', 'pitched', 5, 5): 'a0a8d8dcaabd',
+        ('shed', 'pitched', 5, 4): '39157e045788',
+        ('shed', 'pitched', 4, 7): 'b97deaf6f9cd',
+        ('shed', 'pitched', 7, 3): '5c042d3c4824',
+        ('shed', 'flat', 6, 4): 'fb8175e3c252',
+        ('shed', 'flat', 5, 5): 'ed2950bc691e',
+        ('shed', 'flat', 5, 4): '483d3c751fd1',
+        ('shed', 'flat', 4, 7): '2a17864ce13a',
+        ('shed', 'flat', 7, 3): 'bf5651420a52',
+        ('garage', 'pitched', 6, 4): 'ddd7704a13be',
+        ('garage', 'pitched', 5, 5): '287382798845',
+        ('garage', 'pitched', 5, 4): 'c0f2a9201fbd',
+        ('garage', 'pitched', 4, 7): '2e1e9b2c409e',
+        ('garage', 'pitched', 7, 3): '6373e5e355db',
+        ('garage', 'flat', 6, 4): 'f337c95fe04e',
+        ('garage', 'flat', 5, 5): 'a650c7fd2b27',
+        ('garage', 'flat', 5, 4): '16fa1462ed4e',
+        ('garage', 'flat', 4, 7): '17398688a274',
+        ('garage', 'flat', 7, 3): '99cdb897cf5c',
+    }
+
+    def test_voxels_match_the_recorded_plans_from_before_the_catalogue_change(self):
+        import hashlib
+        for (kind, roof, w, d), want in self.GOLDEN.items():
+            cells = [[x, z] for x in range(30, 30 + w) for z in range(30, 30 + d)]
+            item = {'type': kind, 'cells': cells, 'walls': 3, 'roof': roof,
+                    'door': {'cell': [30, 32], 'facing': 'west'}}
+            found = ob.voxels(item, {tuple(c): GROUND for c in cells})
+            got = hashlib.sha1(repr(sorted(found.items())).encode()).hexdigest()[:12]
+            self.assertEqual(got, want, (kind, roof, w, d))
+
+    def test_roof_family_blocks_are_the_catalogue_rows(self):
+        from roof_material import family_variants
+        self.assertEqual(family_variants(ob.ROOF_FAMILY['shed']),
+                         {'full': 'spruce_planks', 'slab': 'spruce_slab', 'stairs': 'spruce_stairs'})
+        self.assertEqual(family_variants(ob.ROOF_FAMILY['garage']),
+                         {'full': 'stone_bricks', 'slab': 'stone_brick_slab', 'stairs': 'stone_brick_stairs'})
+
+
 if __name__ == '__main__':
     unittest.main()
 
