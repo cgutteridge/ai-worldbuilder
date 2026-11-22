@@ -152,3 +152,45 @@ class EdgeDistanceFieldTest(unittest.TestCase):
     def test_house_build_does_not_import_the_builder_module(self):
         import inspect
         self.assertNotIn('from feature_build import', inspect.getsource(H))
+
+
+def _stair(facing: str, shape: str) -> str:
+    return f'minecraft:brick_stairs[facing={facing},half=bottom,shape={shape},waterlogged=false]'
+
+
+class FinalSkinStairShapeTest(unittest.TestCase):
+    """A vent pad removes the stair that made a corner inner; the skin must be straight.
+
+    The neighbourhood is the west roof cell (6189, 61, -5608): a north-facing
+    inner_right whose same-Y south neighbour is an east-facing stair. Replacing
+    that south stair with a full block (the vent pad) leaves no stair neighbour,
+    so the game's rule is straight. A second corner that keeps its south stair
+    stays inner_right.
+    """
+
+    def _skin(self) -> dict:
+        return {
+            (0, 5, 0): _stair('north', 'inner_right'),
+            (0, 5, 1): _stair('east', 'straight'),
+            (0, 5, -1): 'minecraft:bricks',
+            (2, 5, 0): _stair('north', 'inner_right'),
+            (2, 5, 1): _stair('east', 'straight'),
+        }
+
+    def test_removed_back_stair_retargets_inner_corner_to_straight(self):
+        import roof_geometry as RG
+        from roof_lint import stair_shape_mismatches
+        cells = self._skin()
+        cells[(0, 5, 1)] = 'minecraft:bricks'
+        before = stair_shape_mismatches(cells)
+        self.assertEqual(
+            [(m['x'], m['planned'], m['expected']) for m in before],
+            [(0, 'inner_right', 'straight')],
+        )
+        aligned = RG.align_stair_shapes(cells)
+        self.assertIn('shape=straight', aligned[(0, 5, 0)])
+        self.assertIn('facing=north', aligned[(0, 5, 0)])
+        self.assertEqual(aligned[(2, 5, 0)], _stair('north', 'inner_right'))
+        self.assertEqual(aligned[(0, 5, 1)], 'minecraft:bricks')
+        self.assertEqual(stair_shape_mismatches(aligned), [])
+        self.assertIn('shape=inner_right', cells[(0, 5, 0)])

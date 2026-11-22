@@ -3157,6 +3157,21 @@ class DetailsBuildTest(unittest.TestCase):
         self.assertEqual(builder.p.cells[(12, 57, 22)], 'minecraft:white_concrete')
         self.assertEqual(builder.p.cells[(13, 60, 22)], 'minecraft:air')
 
+    def test_vent_pad_retargets_inner_stair_when_the_back_stair_becomes_a_full_block(self):
+        # Same neighbour pair as the west roof at (6189, 61, -5608): north inner
+        # corner, east-facing stair one step south. The vent pad replaces that
+        # south stair, so the corner has to become straight.
+        supports = {
+            (12, 56, 21): 'brick_stairs[facing=north,half=bottom,shape=inner_right,waterlogged=false]',
+            (12, 56, 22): 'brick_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]',
+        }
+        row = {'kind': 'vent', 'at': [12, 57, 22], 'size': [1, 1, 1], 'source': 'fixture'}
+        builder = self.detail_plan([row], supports)
+        got = builder.p.cells[(12, 56, 21)]
+        self.assertIn('facing=north', got)
+        self.assertIn('shape=straight', got)
+        self.assertEqual(builder.p.cells[(12, 56, 22)], 'minecraft:smooth_stone')
+
     def test_roof_detail_solidifies_deepslate_family_slab_and_stair(self):
         row = {'kind': 'vent', 'at': [12, 57, 21], 'size': [2, 1, 1], 'source': 'fixture'}
         spec = self.spec({'A': [row]})

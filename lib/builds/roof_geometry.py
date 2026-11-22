@@ -57,6 +57,66 @@ def stair_shape_from_neighbours(
     return 'straight'
 
 
+def _stair_facing_half(state: str) -> tuple[str, str, str] | None:
+    """Facing, half and shape of a stair state, or None when ``state`` is not one.
+
+    @param state: block state string
+    @returns: ``(facing, half, shape)`` or None
+    """
+    if '_stairs' not in state or '[' not in state or not state.endswith(']'):
+        return None
+    props = dict(kv.split('=', 1) for kv in state[state.index('[') + 1:-1].split(',') if '=' in kv)
+    facing = props.get('facing')
+    half = props.get('half', 'bottom')
+    if facing not in ROOF_DELTA or half not in ('bottom', 'top'):
+        return None
+    return facing, half, props.get('shape', 'straight')
+
+
+def _with_stair_shape(state: str, old: str, new: str) -> str:
+    """Replace the stair ``shape`` token, inserting one when the state omitted it.
+
+    @param state: stair block state
+    @param old: shape currently parsed from ``state``
+    @param new: shape to write
+    @returns: block state string
+    """
+    token = f'shape={old}'
+    if token in state:
+        return state.replace(token, f'shape={new}', 1)
+    return state[:-1] + f',shape={new}]'
+
+
+def align_stair_shapes(cells: dict[tuple[int, int, int], str]) -> dict[tuple[int, int, int], str]:
+    """Rewrite stair shapes so each one matches its same-Y neighbours.
+
+    :func:`pitched_roof_states` chooses shapes from the roof membrane. A later
+    pass can replace a stair with a full block (a vent pad or a chimney) or
+    with glass (a skylight). The stairs that remain have to be shaped against
+    that final skin, or the game retargets them on the next neighbour update
+    (#169, #390). Neighbour facing and half are what the rule reads, so
+    rewriting shape does not change what a neighbour expects.
+
+    @param cells: ``{(x, y, z): block state}``
+    @returns: new dict with the same keys; non-stairs and already-matching stairs unchanged
+    """
+    stairs: dict[tuple[int, int, int], tuple[str, str, str]] = {}
+    for pos, state in cells.items():
+        parsed = _stair_facing_half(state)
+        if parsed is not None:
+            stairs[pos] = parsed
+    out = dict(cells)
+    for (x, y, z), (facing, half, planned) in stairs.items():
+        adjacent: dict[str, tuple[str, str] | None] = {}
+        for face, (dx, dz) in ROOF_DELTA.items():
+            neighbour = stairs.get((x + dx, y, z + dz))
+            adjacent[face] = None if neighbour is None else (neighbour[0], neighbour[1])
+        shape = stair_shape_from_neighbours(facing, half, adjacent)
+        if shape != planned:
+            out[(x, y, z)] = _with_stair_shape(cells[(x, y, z)], planned, shape)
+    return out
+
+
 def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bottom') -> str:
     """Pitched-roof stair state (bottom half, waterlogged false).
 
@@ -224,9 +284,11 @@ def pitched_roof_states(
     :func:`roof_block_y`). Heights
     are regularised first (N4 steps at most 2 within a zone). A rise of 2
     half-steps toward a neighbour is a stair facing upslope; hip eaves with only a diagonal rise
-    also get a stair. Stair ``shape`` comes from stairs at the **same block Y**
+    also get a stair.     Stair ``shape`` comes from stairs at the **same block Y**
     (vanilla neighbour rule via :func:`stair_shape_from_neighbours`), not
-    from height differences on the diagonal. One-wide ridges and hip apexes
+    from height differences on the diagonal. A later pass that removes a
+    stair from the skin must call :func:`align_stair_shapes` so the shapes
+    match the stairs that remain. One-wide ridges and hip apexes
     use bottom-half slabs; two-wide ridges use stairs facing each other.
     At even terrace edges with no higher neighbour, a one-block drop backed by
     a level roof cell gets a stair facing away from the drop. Half-block drops
