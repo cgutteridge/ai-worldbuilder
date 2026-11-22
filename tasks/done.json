@@ -3894,5 +3894,16 @@
       "builderTask": false,
       "notes": "Add node scripts/tasks.mjs tree (easy one-liner from the repo root) that prints the active task dependency tree.\n\nOne line per task, indented under each blocker parent:\n#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER\n\nRules:\n- Roots: active tasks with no blockedBy entries, sorted by id.\n- Children: active tasks that list the parent id in blockedBy, indented two spaces per level, sorted by id.\n- If a child has other blockers besides the parent shown, append (also blocked by #…, #…) for those ids (sorted).\n- A task with several blockers appears under each of them (DAG as a forest), with also-blocked-by listing the others.\n- claimed by only when claimedBy is set; display Cursor/Claude/Codex.\n- Always show BUILDER or NO-BUILDER from builderTask.\n- Guard cycles (skip already-seen ids on a path).\n- Docs: issue-tracker Task CLI section. Tests in tasks.test.mjs.\n\nCheck: tree exits 0; fixture with multi-blocker prints also-blocked-by; builder and claim suffixes present; indentation matches depth.\n\nClosed at 8a7d2d80088c27941c65555d76d51bcdb665ed39: tree command landed via ship_branch merge of task/439-task-tree-report.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 425,
+      "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11\n\nClosed at 57f7bbf8e42da9e70568de29caca08a46e094f28: lidar_extremes prints offset_min..offset_max with the y_offset suggestion.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/425-lidar-y-offset-range"}
   ]
 }

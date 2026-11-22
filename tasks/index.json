@@ -254,16 +254,7 @@
       "builderTask": false,
       "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10"
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"},
-    {
-      "id": 425,
-      "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/425-lidar-y-offset-range"},
+    
     {
       "id": 426,
       "title": "Docs: cell-orchestrator prepare round trips and instance-doc ports and GDAL noise",
