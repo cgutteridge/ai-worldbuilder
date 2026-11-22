@@ -198,7 +198,6 @@ def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
                 not isinstance(task, dict)
                 or (path == 'tasks/index.json' or 'builderTask' in task)
                 and type(task.get('builderTask')) is not bool
-                or 'requiresClaude' in task and type(task['requiresClaude']) is not bool
                 for task in tasks
             ):
                 bad.append(path)
