@@ -109,6 +109,8 @@ _LANDSCAPE_PRESETS: dict[str, list[tuple[str, str, list[str]]]] = {
 CELL_EXTRACT_LAYERS: tuple[str, ...] = (
     'buildings',
     'highways',
+    # One lines query (preset in osm_extraction). See railway_evidence.
+    'railway',
     'landuse',
     'water',
     'waterway',
