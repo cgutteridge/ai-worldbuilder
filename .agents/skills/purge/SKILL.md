@@ -40,7 +40,7 @@ Done when the run reported clean readback for every undo, or `dryrun_reset.py` f
 The old build must not be readable as a reference. For each purged feature or layer:
 
 1. Retire its build script or `site/builds/<name>.json` out of the working tree: tar to `backups/retired-<what>-<date>.tar.gz`, `git rm` (the `cleanup.md` build-scripts route). Keep the re-run mechanism only: if a generator is shared, leave it, delete the per-element inputs.
-2. Archive leftovers named for the element: its `verification/site/*-cells.json` / `-backup.json` / `-preview` files, mask archives (`masks/undone/`), per-element notes in `site/`. Anything an agent could `Read` as "what was there" moves into the same tar or goes.
+2. Archive leftovers named for the element: its `verification/site/*-backup.json` / `*-preview` / `*-result.json` files, mask archives (`masks/undone/`), per-element notes in `site/`. Anything an agent could `Read` as "what was there" moves into the same tar or goes.
 3. Note purged scope on matching snags (`scripts/issues.py`); do not use retired `cell_registry.py issues`.
 
 For **above-ghost**, retire every feature and layer that the undo removed across the listed cells (one tar per feature/layer, or one dated above-ghost tar if the set is large), then confirm `above-ghost` no longer names those builds.
@@ -66,7 +66,7 @@ The element is now unbuilt, so `cell_registry.py next` will offer it in the norm
 - **Cell / above-ghost:** follow `next`; cell journal ring order and the done-bar apply (`rules/radial-good-enough.md`). Ghost stays; redesign starts from generated ground upward.
 - **Project:** after `dryrun_reset`, re-raise the ghost frontier first, then follow `next` from empty registry (ghost was wiped with the rest).
 
-Name designer and builder first (`build_roles.py show`, `rules/build-roles.md`).
+Name designer and builder first (`python3 scripts/build_roles.py --world <world> show`, `rules/build-roles.md`).
 
 Done when the redesign has started from the evidence table, or the user has deferred it and `next` shows the scope as open.
 

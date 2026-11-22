@@ -11,7 +11,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  site/NOTES.txt         overview, accuracy rules (active world; read first)
  site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
  rules/process.md       this file (tool repo): cadence, reviews, checklists
- rules/rules-context.md which rules/docs to read per work context (anti-reread)
+ rules/rules-context.md which rules/ and docs/ to read per work context (anti-reread)
  rules/*.md             craft and process rules in the tool repo (AGENTS.md entry)
  site/COVERAGE.txt      radial focus + generated rollup (coverage.py write;
                         registry-native + optional parcel tables)
@@ -27,7 +27,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  scripts/world_frame.py CRS / OSGB / WGS84 / MC / cells / WM tiles (canonical)
  scripts/osgb.py        thin wrapper → world_frame (legacy OFFSET_* shape)
  scripts/geo.py         WGS84 + probe Y + slopes + survey bboxes (see README)
- verification/site/     <build>-backup/-cells/-result/-preview, views/, audits/
+ verification/site/     <build>-backup/-result/-preview, views/, audits/
  reference/photos/      ground photos (local, gitignored content)
  reference/aerial/      aerial / ortho crops (local, gitignored content)
  reference/LOGGING.txt  how to log refs (dedupe, token budget, privacy)
@@ -52,7 +52,7 @@ BUILT plan in place to “fix” the world.
                      plots; describe photo + aerial in 3–5 lines) → plan → preview → dry-run
                      guards (footprint + roof ridge-jog on the plan in site_kit.apply)
                      → apply → readback → walk → osm_footprints.py check →
-                     python3 scripts/roof_lint.py --all (recorded *-cells.json;
+                     python3 scripts/roof_lint.py --all (recorded journal plans;
                      must exit 0 after pitched-roof builds) → client view from the
                      photo's camera beside the photo + top-down beside the aerial
                      (contact sheet) → notes.
@@ -199,14 +199,14 @@ BUILT plan in place to “fix” the world.
 
  Focus: the registry marker is the single source of truth for the active cell.
  ONLY cell_marker.py raises/clears it; never hand-edit registry JSON for focus.
- Raise refuses while another cell holds focus or any other cell_marker_*-cells.json
+ Raise refuses while another cell holds focus or any other live cell_marker_* journal plan
  exists, so there is at most one ring. Moving focus = --clear old, then --raise new.
  `cell_marker.py --status` shows focus + strays; --stray-clear tx,tz removes a leftover
  ring; --adopt tx,tz is a one-off bootstrap for an already-raised ring.
 
  Cell boundary marker (scripts/cell_marker.py): one flat black/yellow wool square on
  the cell bbox outer edge, ~30 blocks above the highest ground sampled in the cell
- (alternating like hazard tape). Raise replaces air only. Teardown clears *-cells.json
+ (alternating like hazard tape). Raise replaces air only. Teardown clears the marker journal plan
  plus any black/yellow wool still on the cell perimeter. Never a wool colour fill.
  Markers are excluded from coverage touched stats (cell_marker_* builds).
 
@@ -279,7 +279,7 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
 ------------------------------------------------------------------------
 4. WHAT MAY BE REPLACED WITHOUT ASKING
 ------------------------------------------------------------------------
- - Anything built by this kit (verification/site/*-cells.json) may be
+ - Anything built by this kit (recorded journal ownership) may be
    repaired or replaced after a review. Record as a modification build
    with its own backup; log the reason on the issue fix log.
  - Leftover vendor or generator terrain/buildings may be refined when
@@ -343,8 +343,7 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
  End    release the lock; save the world; update ISSUES / REVIEWS / COVERAGE;
         regenerate BUILDS-INDEX;
         python3 scripts/site_cleanup.py due (if it prints CLEANUP DUE: rules/cleanup.md);
-        python3 scripts/run_tests.py (stdlib unit tests incl. roof_lint on all
-        *-cells.json; same check as CI); then TOKEN NOTES
+        python3 scripts/run_tests.py (stdlib unit tests, including roof-lint fixtures); then TOKEN NOTES
         (2–5 lines in REVIEWS or place CHANGE LOG: what wasted tokens
         this stage, what to change next — reference/LOGGING.txt §8);
         then hand off: summary in chat + creative viewpoint of the main change

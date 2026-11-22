@@ -55,7 +55,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   provenance     shared schema from ``lib/site/provenance.py`` (#151):
                    {source, confidence, evidence_ids, unresolved_reason}
 
-Usage:  python3 scripts/water_body_build.py site/builds/<name>.json [--apply]
+Usage:  python3 scripts/water_body_build.py --world <world> site/builds/<name>.json [--apply]
 """
 from __future__ import annotations
 

@@ -73,7 +73,7 @@ only what the brief / task needs.
    Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
    Water-body (pond) feature: rules/water-body-builds.md
    Designer/builder models (feature/trees/decor): rules/build-roles.md +
-     `python3 scripts/build_roles.py show` (ghosts ignore this)
+     `python3 scripts/build_roles.py --world <world> show` (ghosts ignore this)
 
  TERRACE (includes PROPERTY list):
    rules/terrace-builds.md

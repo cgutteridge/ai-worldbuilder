@@ -12,7 +12,7 @@ Classes
   JUDGED (apply only when named): reference-junk
   REPORT-ONLY (never deleted here): reference-unlogged, build-scripts
 
-Never touched: instance/saves, backups/pristine-geocraft, backups/*.tar.gz, verification/site/*-cells.json
+Never touched: instance/saves, backups/pristine-geocraft, backups/*.tar.gz, registry/ (journal ownership)
 and *-backup.json (the build records and their undo), reference files judged useful yes/maybe, site/archive.
 
 Every apply appends to site/CLEANUP-LOG.txt. Reference junk keeps its manifest row (useful=no, removed date,

@@ -1,4 +1,4 @@
-"""Unit tests for scripts/pass_mask.py (no Minecraft, no world writes)."""
+"""Unit tests for lib/layers/pass_mask.py (no Minecraft, no world writes)."""
 import json
 import tempfile
 import unittest

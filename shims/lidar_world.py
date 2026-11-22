@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shim: type-facing ``lidar_world`` → active lidar provider world module.
 
-Prefer ``scripts/lidar_provider.composite_world()`` from glue code. This shim
+Prefer ``lidar_provider.composite_world()`` from glue code. This shim
 keeps a stable import / CLI name that does not spell a vendor id.
 """
 from __future__ import annotations

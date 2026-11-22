@@ -1,22 +1,17 @@
 {
   "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here.",
   "keys": [
-    "docs/plans/land-use-classes.md:122",
-    "docs/plans/land-use-classes.md:204",
-    "docs/plans/land-use-classes.md:206",
-    "docs/specs/lidar-provider-contract.md:19",
-    "docs/specs/lidar-provider-contract.md:24",
-    "docs/specs/lidar-provider-contract.md:26",
-    "docs/specs/lidar-provider-contract.md:28",
-    "docs/specs/lidar-provider-contract.md:30",
-    "docs/specs/lidar-provider-contract.md:45",
-    "docs/specs/lidar-provider-contract.md:55",
-    "docs/specs/lidar-provider-contract.md:59",
-    "docs/specs/lidar-provider-contract.md:61",
-    "docs/specs/lidar-provider-contract.md:79",
-    "docs/specs/lidar-provider-contract.md:8",
-    "docs/specs/lidar-provider-contract.md:84",
-    "docs/specs/lidar-provider-contract.md:86",
-    "docs/specs/lidar-provider-contract.md:94"
+    "docs/specs/lidar-provider-contract.md:20",
+    "docs/specs/lidar-provider-contract.md:25",
+    "docs/specs/lidar-provider-contract.md:27",
+    "docs/specs/lidar-provider-contract.md:29",
+    "docs/specs/lidar-provider-contract.md:31",
+    "docs/specs/lidar-provider-contract.md:46",
+    "docs/specs/lidar-provider-contract.md:56",
+    "docs/specs/lidar-provider-contract.md:62",
+    "docs/specs/lidar-provider-contract.md:80",
+    "docs/specs/lidar-provider-contract.md:85",
+    "docs/specs/lidar-provider-contract.md:87",
+    "docs/specs/lidar-provider-contract.md:95"
   ]
 }

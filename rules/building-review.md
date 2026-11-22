@@ -39,7 +39,7 @@ Church, cathedral, chapel, cinema and shopping-centre candidates (`building=chur
    list: edge on the roof? what block? outer only or steps too? Default is none — set `roofs[label].edge` only when
    the photo shows a parapet, coping or flat overhang fringe (`rules/feature-builds.md`, `rules/evidence-order.md`).
 4. **Keep or rebuild.** Keep when nothing in the list matters at street scale (`rules/radial-good-enough.md`). Rebuild by
-   reusing the cell's builder (`scripts/oakdene_court.py` is the pattern), clearing only the build's own recorded blocks, so
+   reusing the feature's recorded builder and spec, clearing only the build's own recorded blocks, so
    trees stay. Claim the lock, dry run, apply with `SITE_OWNER`. Done when readback is 0, the footprint check is OK and entrances match ``facade_plan``.
 5. **Check with the user.** When a fix is `fix-landed`, walk it with the `snag` skill review path
    (`scripts/issues.py review` / `verdict`). Steering replies loop back to step 4 and become rules
@@ -57,7 +57,7 @@ Church, cathedral, chapel, cinema and shopping-centre candidates (`building=chur
  - **Extents from cells, not drawings.** A shape read off a picture (box, polygon) is a hint for where to look. Lowered roofs, colour
    patches and membrane areas are defined by lidar cells of the feature's own part, so a colour cannot spill onto a neighbour and a
    rim cell cannot stand up as a pillar. Edge (coping) cells are never recoloured.
- - **Follow-up steps of a feature** (`--lower`, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
+ - **Follow-up steps of a feature** (`<base>-lower` plans, shared `MODIFIES`, `site_kit.reset_to_base`, never `built_cells()`):
    named follow-up plans set `plan.parent_feature` to their built base and list that parent in
    `modifies`; `reset_to_base` supplies the parent linkage. Readiness still covers every touched cell.
    roof and facade greeblies live in the feature spec `details` table and rebuild with the
@@ -76,7 +76,8 @@ Church, cathedral, chapel, cinema and shopping-centre candidates (`building=chur
    `--why` / `why=` naming the feature, pass, or place — Minecraft chat shows `[AI-builder] …` before the hop. Do not call
    raw MCP `entity_teleport` / `player_set_gamemode` for the player.
  - **Aerial sheet.** `google_aerial.py sheet` (and `google_window.py`) download tiles to a PNG under `instance/google-aerial/`;
-   `Read` that file. `--marks cells.json` paints live cells (tile, membrane, colour patches) on the sheet.
+   `Read` that file. `--marks marks.json` paints explicit XY mark records on the sheet; derive those records
+   from journal ownership when marking a built feature.
 
 
 ## Reflection on the 48,-44 review (2026-10-16): what went wrong and the approach we keep

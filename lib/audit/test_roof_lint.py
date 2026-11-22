@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the roof ridge-jog and stair-shape lint (no world / OSM access).
 
-  python3 -m unittest scripts/test_roof_lint.py
+  python3 scripts/run_tests.py --only test_roof_lint
 """
 import sys
 import unittest

@@ -89,7 +89,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                       "size": [sx, sy, sz], "source": "<evidence note>",
                       "face"?: "N"|"S"|"E"|"W"}]}
                  Roof kinds: plant_room, vent, louvred_vent, skylight,
-                 solar_panel, lift_overrun. Facade kinds: drainpipe, sign,
+                 solar_panel, lift_overrun, chimney. Facade kinds: drainpipe, sign,
                  awning_like, ledge, fascia_band (``face`` required). Entrance
                  awning_like / covered area belongs on ``facade_plan``
                  entrances, not here. Legacy details kind ``canopy`` is
@@ -124,11 +124,11 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  roofs reuse the same label keys.
 
 Path-in-footprint dry-run: scripts/footprint_overlap.py (also printed below).
-Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py <name>``
+Evidence contact sheet after apply: ``python3 scripts/evidence_sheet.py --world <world> <name>``
 (portal-facing + top-down + aerial; records path on ``*-result.json``; handoff
 ``end`` refuses FEATURE without it).
 
-Usage:  python3 scripts/feature_build.py site/builds/<name>.json [--apply [--overwrite]]
+Usage:  python3 scripts/feature_build.py --world <world> site/builds/<name>.json [--apply [--overwrite]]
                                          [--landmark-override REASON]
 
 ``--apply`` refuses a plan with a landed, not-undone build in the journal (a re-apply

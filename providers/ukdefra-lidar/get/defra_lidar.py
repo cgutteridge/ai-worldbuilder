@@ -344,7 +344,7 @@ class DefraLidar:
         return h
 
 
-# Type-facing name for scripts/lidar_provider.py (catalogue modules.tiles).
+# Type-facing name for lib/sources/lidar_provider.py (catalogue modules.tiles).
 LidarTiles = DefraLidar
 
 

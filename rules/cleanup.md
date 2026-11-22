@@ -12,7 +12,7 @@ CLASSES
   views          verification/site/views/*.png older than 7 days and named in no live site/*.txt
                  (site_views.py regenerates them).
   screenshots    instance/screenshots older than 7 days.
-  cells-cache    backups/cells-cache pickles whose *-cells.json is gone (the rest is rebuilt on demand).
+  cells-cache    retired ownership-cache files under backups/cells-cache (ADR 004).
   audits         verification/site/audits and patrol: newest 10 files each.
  JUDGED (apply --class reference-junk)
   reference-junk reference files with useful=no, or with no usable data (blank, one colour, fully
@@ -29,8 +29,7 @@ CLASSES
 
 NEVER TOUCHED
  instance/saves (the live world), backups/pristine-geocraft (legacy baseline only;
- not the live lidar evidence path), backups/*.tar.gz, verification/site/*-cells.json (build records:
- owners db, roof_lint, audit drift) and *-backup.json (undo), reference useful yes/maybe,
+ not the live lidar evidence path), backups/*.tar.gz, registry/ (journal ownership), *-backup.json (undo), reference useful yes/maybe,
  site/archive, downloads/ (source data).
 
 WHEN

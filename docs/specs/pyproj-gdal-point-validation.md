@@ -82,4 +82,4 @@ None between pyproj and GDAL when both use lon-first / always_xy and the same EP
 
 ## Permanent coverage
 
-Fictional `WorldFrame` fixtures for EPSG:27700, 32618 and 2193 live in `scripts/test_world_frame_crs_fixtures.py` (fixed expected lat/lon ↔ E/N ↔ MC; axis order; negative MC; nonzero offsets; batches; round trips). Those tests never invoke GDAL.
+Fictional `WorldFrame` fixtures for EPSG:27700, 32618 and 2193 live in `lib/geo/test_world_frame_crs_fixtures.py` (fixed expected lat/lon ↔ E/N ↔ MC; axis order; negative MC; nonzero offsets; batches; round trips). Those tests never invoke GDAL.

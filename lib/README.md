@@ -10,11 +10,11 @@ ahead of `scripts/` (where CLI wrappers with the same names live).
 | `blocks/` | BlockStore, MCP / player helpers, atomic JSON |
 | `journal/` | Cell journal, registry helpers, coverage |
 | `sources/` | Place sources, lidar, vector map, OSM footprints |
-| `layers/` | Ground / trees / decor passes, foliage, masks |
-| `builds/` | House and feature builders, terrace |
+| `layers/` | Ground / trees / decor passes, tree voxels, masks |
+| `builds/` | House and feature builders, roof geometry |
 | `site/` | site_kit, lock, handoff, recover, status, cleanup |
 | `evidence/` | Evidence / contact sheets, registered aerials |
-| `audit/` | Floaters, roof lint, name / stale-term audits |
+| `audit/` | Floaters, roof lint, name / stale-term / documentation-path audits |
 
 Colocated `test_*.py` modules are discovered by `scripts/run_tests.py`.
 

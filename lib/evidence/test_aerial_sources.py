@@ -17,7 +17,7 @@ import aerial_registered
 import ground_sources
 
 # aerial_rgb((0, 0)) on the fixture below, recorded from the pre-change implementation
-# (ground_sources.registered_rgb layered over aerial_coverage.sample_rgb).
+# (registered-shot pixels layered over mosaic pixels).
 GOLDEN_COUNT = 17424
 GOLDEN_DIGEST = 'f36220d1e2ca63e52c1b2ac52d6f59fca401d0886c965417df06c512b09b4fb5'
 MOSAIC_RGB = (60 / 255, 100 / 255, 40 / 255)

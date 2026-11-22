@@ -2,8 +2,8 @@
 
 Library-first. Scripts import ``move_player`` / ``restore_player``. Agents use the CLI:
 
-  python3 scripts/mc_player.py move --why "…" --pos x,y,z [--facing x,y,z] [--gamemode creative]
-  python3 scripts/mc_player.py tell --why "…"
+  python3 scripts/mc_player.py --world <world> move --why "…" --pos x,y,z [--facing x,y,z] [--gamemode creative]
+  python3 scripts/mc_player.py --world <world> tell --why "…"
 """
 from __future__ import annotations
 

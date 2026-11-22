@@ -149,7 +149,7 @@ rule-file copy.
     light_gray_concrete pavement at the adjoining street Y.
   - Rear lanes / alleys: gravel 60% / coarse_dirt 28% / dirt_path 12%
     within 1.5 of the map centreline, grass_block verge on the rest.
-  - Service ways go by map way tags (user, Q-045; scripts/build_broadlands_ring1_lanes.py):
+  - Service ways go by map way tags (user, Q-045):
     service=driveway / parking_aisle (untagged) and surface=asphalt → gray_concrete
     over the whole parcel, no kerb; asphalt alley → gray_concrete within width/2 +
     verge; highway=path dirt → coarse_dirt / dirt_path within 1 + grass. Check the
@@ -219,7 +219,7 @@ rule-file copy.
  character is the default.
 
 HOUSE-ONLY RUNS (vector-map footprints, slab roofs): scripts/house_build.py + site/builds/<name>.json is the only house feature apply path (spec keys in its docstring). List earlier builds in modifies; site_kit.apply refuses unlisted owners.
-Never copy a peer spec or a per-run build script. Write the spec from this run's evidence. Old copies: scripts/legacy/.
+Never copy a peer spec or a per-run build script. Write the spec from this run's evidence.
 
 NON-HOUSE FEATURE RUNS (campus / halls / sheds / odd masses): scripts/feature_build.py + site/builds/<name>.json is the only non-house building feature apply path (spec keys in its docstring; rules/feature-builds.md). Explicit storeys + flat|pitched roof. Do not extend house_build for odd shapes. List earlier builds in modifies.
 

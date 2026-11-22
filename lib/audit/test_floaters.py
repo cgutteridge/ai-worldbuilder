@@ -1,6 +1,6 @@
-"""Unit tests for scripts/floaters.py and floater_scan CLI helpers (no Minecraft).
+"""Unit tests for lib/audit/floaters.py and floater_scan CLI helpers (no Minecraft).
 
-  python3 -m unittest scripts/test_floaters.py
+  python3 scripts/run_tests.py --only test_floaters
 """
 import sys
 import unittest

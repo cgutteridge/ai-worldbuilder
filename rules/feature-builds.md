@@ -213,7 +213,7 @@ Dry run unless `--apply`; `--apply` refuses a plan that already has a landed bui
   cap rules apply to footprint-based Chebyshev hips. The builder then
   sets each stair's facing from the upslope and its `shape` from stairs
   at the **same block Y** (the game's neighbour rule — not from height
-  differences on the diagonal). `python3 scripts/roof_lint.py` checks
+  differences on the diagonal). `python3 scripts/roof_lint.py --world <world>` checks
   planned stair shapes against that rule. Inside a zoned mass, an open upper
   stair edge facing a taller roof column gets wall backing at the lower
   stair's Y when that cell would otherwise be air; solid floors and exterior
@@ -230,7 +230,7 @@ not extend `house_build` for odd shapes. Prefer `zones` over a custom
 `site_kit` script when one way has several roof plateaus.
 
 Designer / builder models: name both before writing the spec
-(`rules/build-roles.md`, `python3 scripts/build_roles.py show`). The JSON spec
+(`rules/build-roles.md`, `python3 scripts/build_roles.py --world <world> show`). The JSON spec
 is the hand-off when designer and builder differ; the builder applies with
 `feature_build.py` and does not redesign massing from scratch.
 
@@ -247,7 +247,7 @@ handoff, `python3 shims/lidar_ghost.py status --cell <home> --ring 2` should sho
 ghost ground applied on frontier neighbours that still lack real ground.
 
 Greeblies and path-in-footprint are separate system tickets. After apply, run
-`python3 scripts/evidence_sheet.py <name>` (portal-facing cameras, top-down,
+`python3 scripts/evidence_sheet.py --world <world> <name>` (portal-facing cameras, top-down,
 aerial crop); the build records the sheet path and `site_handoff.py end`
 refuses a FEATURE item without it (`rules/frontage-and-evidence.md` §4).
 
