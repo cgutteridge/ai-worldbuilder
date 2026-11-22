@@ -20,6 +20,7 @@ from stage_timing import timed_stage
 from pathlib import Path
 
 import script_env  # noqa: E402
+from block_store import block_id as bid, state_props
 
 _CFG = None
 REGION = None
@@ -72,9 +73,6 @@ ATTACH = ('door', 'sign', 'torch', 'lantern', 'pane', 'bars', 'bed', 'button', '
 def full(s):
     return s if ':' in s.split('[')[0] else 'minecraft:' + s
 
-
-def bid(s):
-    return full(s).split('[')[0]
 
 
 # Wood slab short names → planks (stripping ``_slab`` alone yields invalid ids).
@@ -418,7 +416,7 @@ def nearest_preview_colour(rgb: tuple[int, int, int]) -> tuple[str, tuple[int, i
 
 def colour(s):
     b = bid(s)[10:]
-    if b in ('air', 'cave_air', 'light', 'void_air'):
+    if b in (*AIR_IDS[:2], *_LIGHT_EXTRAS, *AIR_IDS[2:]):
         return None
     for k, c in PREVIEW_COLOURS:
         if k in b:
@@ -470,6 +468,7 @@ def preview(plan, path, scale=4):
 
 
 # --- region-file readback --------------------------------------------------
+_LIGHT_EXTRAS = ('light',)  # full cubes with no support or attachment surface
 AIR_IDS = ('air', 'cave_air', 'void_air')      # matched exactly: a substring test also hit *_stairs (Q-181)
 
 
@@ -861,11 +860,7 @@ def _block_arg(state: str) -> dict:
     @returns: ``{'id': ..., 'properties': {...}}``
     """
     st = full(state)
-    props = {}
-    if '[' in st:
-        for kv in st[st.index('[') + 1:st.rindex(']')].split(','):
-            k, _, v = kv.partition('=')
-            props[k.strip()] = v.strip()
+    props = state_props(st, syntax='argument')
     return {'id': bid(st), 'properties': props}
 
 
@@ -1082,7 +1077,7 @@ def door_frame_issues(plan, block):
         st = plan.cells.get((x, y, z))
         if st is None:
             st = block(x, y, z)
-        return bool(st) and bid(st)[10:] not in ('air', 'cave_air', 'void_air')
+        return bool(st) and bid(st)[10:] not in AIR_IDS
 
     out = []
     for (x, y, z), st in plan.cells.items():

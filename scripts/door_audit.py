@@ -25,8 +25,9 @@ import script_env  # noqa: E402
 
 script_env.ensure_import_paths()
 
+from block_store import block_id
 from cell_registry import latest_cells, view_registry  # noqa: E402
-from site_kit import World  # noqa: E402
+from site_kit import AIR_IDS, World  # noqa: E402
 
 
 def audit():
@@ -53,12 +54,12 @@ def audit():
 
 
 _FRONT = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
-_EMPTY = ('air', 'cave_air', 'void_air')
+_EMPTY = AIR_IDS
 
 
 def _name(state):
     """Bare block name of a state string ('' for an unread block)."""
-    return re.sub(r'^minecraft:', '', (state or 'air').split('[')[0])
+    return block_id(state or 'air', policy='read').removeprefix('minecraft:')
 
 
 def _is_air(state):

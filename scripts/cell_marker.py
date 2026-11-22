@@ -39,14 +39,14 @@ from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E4
 
 import cellmath  # noqa: E402
 import site_kit  # noqa: E402
-from site_kit import Plan, World, apply, bid, warm_reads  # noqa: E402
+from site_kit import AIR_IDS, Plan, World, apply, bid, full, warm_reads  # noqa: E402
 
 HEIGHT_ABOVE = 30
 GROUND_SAMPLE_STEP = 16
 # Pre–flat-ring raises stacked wool per column up to +LEGACY_BUMP_MAX when blocked.
 LEGACY_BUMP_MAX = 5
 WOOL = ('black_wool', 'yellow_wool')
-AIRS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
+AIRS = frozenset(full(name) for name in AIR_IDS)
 CURRENT_FILE = ROOT / 'site' / 'CURRENT-CELL.json'
 REGISTRY_RE = re.compile(r'^cell_marker_(\d+)_(m?)(\d+)$')
 STAGE = 'other'          # journal pass: owns its blocks, no progress meaning

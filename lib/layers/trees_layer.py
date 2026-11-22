@@ -34,9 +34,10 @@ from pathlib import Path
 
 import numpy as np
 
+from block_store import block_id
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, is_air,  # noqa: E402
+from ground_layer import (plan_name as ground_plan_name, ignored_builds, is_air,  # noqa: E402
                           load_masked_positions, neighbour_owned, warm_surface_probe)
 from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
@@ -94,7 +95,7 @@ def may_plant(live: str | None, block: str, owner: str | None) -> bool:
     """
     if owner is None:
         return is_air(live)
-    return owner.startswith('trees ') and 'leaves' in bare(live) and 'leaves' in block
+    return owner.startswith('trees ') and 'leaves' in block_id(live, policy='read') and 'leaves' in block
 
 
 def plan_name(tx: int, tz: int) -> str:
@@ -1159,7 +1160,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     # air-only is asserted now, from the same world the plan was read from, and again here
     mask = annotate_mask_species(build_mask(
         'trees', cell, name, placed,
-        lambda p: is_air(world.block(*p)) or 'leaves' in bare(world.block(*p))),  # leaf-on-leaf merge
+        lambda p: is_air(world.block(*p)) or 'leaves' in block_id(world.block(*p), policy='read')),  # leaf-on-leaf merge
         rep['species'])
     print(f'{name}: {len(placed)} blocks, {len(rep["trees"])} crowns')
     rb = apply(plan, modifies=ignored_builds(cell), stage='trees', cell=cell,

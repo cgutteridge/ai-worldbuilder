@@ -72,7 +72,7 @@ Verdict: **delete** the retired planner, CLI wrapper and dead foliage functions;
 - Wood and scrub map-feature tags: `ground_layer.WOOD_FLOOR_TAGS` (`:101-104`), `decor_layer.WOODLAND_DECOR_TAGS` (`:686-690`), an inline test in `tree_lines.py:394`, the wood source in `land_use` and the `forest` list in `config/land-use-classes.json:404`. The land-use table is meant to own tag meaning.
 - Building class: `garden_sources.NON_RESIDENTIAL_BUILDINGS` and `nonresidential_building` (`:191-200`) is a second residential-or-commercial table next to `config/land-use-classes.json`. It has **no production caller** (only `test_garden_sources.py:220-224`); `meta_class` (`:208-216`) keeps a legacy `nonresidential` flag fallback only because of it.
 - Land-use class keys exist twice: the `CLASSES` tuple (`land_use.py:25`) and the ids in the JSON, checked against each other by the validator. Cheap to leave, noted for completeness.
-- Plant-name substrings: `surface_probe.PLANTS` (`:20-27`), `lidar_heightmap._PLANT` (`:58-60`, a different, hand-kept list) and `foliage.REFINE_PLANTS` (`:19-24`, a deliberate placement subset).
+- Plant-name recognition now lives in `surface_probe`: `PLANTS`, `LIDAR_PLANT_PATTERNS`, `GRASS_LIGHT_PATTERNS` and the deliberate placement subset `REFINE_PLANTS` (housekeeping T11).
 
 Verdict: **wire** species (one table: log, leaves, crown, trunk, heights; `land_use` validates against it) and the wood tag set (read from the land-use table); **delete** the unused building-class table.
 

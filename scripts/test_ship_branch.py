@@ -1,6 +1,6 @@
 """Tests for ship_branch.merge and sweep using throwaway git repositories.
 
-Pure helpers (``_git_env``, ``classify_changed_paths``, tip-plan path policy)
+Pure helpers (``git_env``, ``classify_changed_paths``, tip-plan path policy)
 live in TestCase classes that create neither a Git repository nor commits.
 Merge, sweep, worktree, and lock behaviour keep real temporary repositories.
 """
@@ -16,6 +16,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from shared_git import git_env
 import ship_branch as sb
 
 
@@ -26,7 +27,7 @@ def _git(repo: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
-        env=sb._git_env(),
+        env=git_env(),
     )
     return result.stdout.strip()
 
@@ -52,14 +53,14 @@ def _add_branch_commit(root: Path, branch: str, filename: str, body: str) -> Non
 
 
 class ShipBranchGitEnvTest(unittest.TestCase):
-    """Pure ``_git_env`` behaviour — no repository fixture."""
+    """Pure ``git_env`` behaviour — no repository fixture."""
 
     def test_git_env_clears_hook_overrides(self) -> None:
         """Inherited GIT_DIR must not pin throwaway-repo commands to the host."""
         poisoned = dict(os.environ)
         poisoned['GIT_DIR'] = '/nonexistent/git-dir'
         poisoned['GIT_WORK_TREE'] = '/nonexistent/work-tree'
-        cleaned = sb._git_env(poisoned)
+        cleaned = git_env(poisoned)
         self.assertNotIn('GIT_DIR', cleaned)
         self.assertNotIn('GIT_WORK_TREE', cleaned)
 

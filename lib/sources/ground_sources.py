@@ -76,21 +76,13 @@ def _coords(c):
             yield from _coords(s)
 
 
-def seg_dist(px: float, pz: float, a, b) -> tuple[float, float]:
-    """Distance from a point to segment a-b, and the distance along it."""
-    (ax, az), (bx, bz) = a, b
-    l2 = (bx - ax) ** 2 + (bz - az) ** 2 or 1e-9
-    t = max(0.0, min(1.0, ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2))
-    return math.hypot(px - ax - t * (bx - ax), pz - az - t * (bz - az)), t * math.sqrt(l2)
-
-
 def line_cells(pts, half: float) -> dict:
     """{(x, z): (distance, along)} for columns whose centre is within ``half`` of a polyline."""
     out, acc = {}, 0.0
     for a, b in zip(pts, pts[1:]):
         for x in range(math.floor(min(a[0], b[0]) - half) - 1, math.ceil(max(a[0], b[0]) + half) + 1):
             for z in range(math.floor(min(a[1], b[1]) - half) - 1, math.ceil(max(a[1], b[1]) + half) + 1):
-                d, t = seg_dist(x + .5, z + .5, a, b)
+                d, t = cellmath.segment_distance((x + .5, z + .5), a, b, along=True)
                 if d <= half and ((x, z) not in out or d < out[(x, z)][0]):
                     out[(x, z)] = (d, acc + t)
         acc += math.dist(a, b)

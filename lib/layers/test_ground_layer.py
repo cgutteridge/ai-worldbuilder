@@ -2,6 +2,7 @@
 import unittest
 from collections import Counter
 
+from block_store import block_id
 import ground_layer as gl
 
 
@@ -22,9 +23,9 @@ class TestGroundLayer(unittest.TestCase):
         self.assertTrue(gl.is_air('minecraft:poppy[half=lower]'))
         self.assertFalse(gl.is_air('minecraft:grass_block'))
 
-    def test_bare_strips_state(self):
+    def test_block_id_strips_state(self):
         """World block states compare against plan ids without properties."""
-        self.assertEqual(gl.bare('minecraft:oak_log[axis=y]'), 'minecraft:oak_log')
+        self.assertEqual(block_id('minecraft:oak_log[axis=y]', policy='read'), 'minecraft:oak_log')
 
     def test_cell_contains_edges(self):
         """Cell 48,-44 includes its first and last column and excludes the next."""
@@ -1429,7 +1430,7 @@ class SyntheticGroundBox:
                 mock.patch.object(gl.cellmath, 'bounds', side_effect=box), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
             owned = set(owned) | set(owned_states or {})
-            owned_air = {q for q, b in (owned_states or {}).items() if gl.bare(b) in gl.AIRS}
+            owned_air = {q for q, b in (owned_states or {}).items() if block_id(b, policy='read') in gl.AIRS}
             stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, owned, plan, world or self.world(),
                                                            evidence=ev, settled_fp=set(settled_fp),
                                                            owned_air=owned_air, owned_states=owned_states)

@@ -21,6 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from site_kit import AIR_IDS
 import cellmath
 
 TAG = 'wb_label'
@@ -41,7 +42,7 @@ DIMENSION = 'minecraft:overworld'
 # How far outside the asked-for cells still affects spacing (min gap plus a slide).
 WINDOW_PAD = MIN_SPACING + SLIDE_LIMIT
 
-_AIR = frozenset({'air', 'cave_air', 'void_air'})
+_AIR = frozenset(AIR_IDS)
 
 GroundY = Callable[[int, int], int | None]
 BlockAt = Callable[[int, int, int], str | None]

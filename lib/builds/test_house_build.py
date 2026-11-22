@@ -332,7 +332,8 @@ class RoofGeometryTest(unittest.TestCase):
                 self.assertEqual(p.cells, before)
 
     def test_pitched_slopes_face_uphill_and_caps_meet(self):
-        from roof_lint import _tops, _props
+        from roof_lint import _tops
+        from block_store import state_props
         parts = [{(x, z) for x in range(7) for z in range(11)}]
         p = self.plan(pitch=1, parts=parts)
         top = _tops(p.cells)
@@ -345,7 +346,7 @@ class RoofGeometryTest(unittest.TestCase):
         for (x, z), (y, state) in top.items():
             if '_stairs[' not in state:
                 continue
-            dx, dz = delta[_props(state)['facing']]
+            dx, dz = delta[state_props(state)['facing']]
             nx, nz = x + dx, z + dz
             neighbor = top[nx, nz]
             # At a hip corner only the diagonal is higher; cardinal join stays level.

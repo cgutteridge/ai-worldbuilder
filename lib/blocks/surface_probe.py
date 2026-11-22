@@ -4,6 +4,7 @@ Shared by the ground, trees and decor layers. Nothing here writes to the world.
 """
 from __future__ import annotations
 
+from block_store import block_id
 from site_kit import World
 
 # Small plants: counted as air when finding the surface, and by the ground clear step.
@@ -23,6 +24,19 @@ PLANTS = _LEGACY_PLANT_PATTERNS + (
     'short_dry_grass', 'tall_dry_grass', 'leaf_litter', 'bush', 'firefly_bush',
     'wildflowers', 'pink_petals', 'open_eyeblossom', 'closed_eyeblossom',
     'dead_bush', 'sweet_berry_bush', 'brown_mushroom', 'red_mushroom',
+)
+# Broader lidar recognition also ignores submerged plants and signs. Its order is
+# retained separately from exact surface IDs and the legacy surface patterns.
+LIDAR_PLANT_PATTERNS = (
+    'short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy', 'dandelion', 'bush', 'vine', 'daisy',
+    'bluet', 'orchid', 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom', 'azure', 'peony', 'rose',
+    'lilac', 'sunflower', 'dead_bush', 'petals', 'seagrass', 'kelp', '_sign',
+)
+# Blocks that transmit enough light for grass, beyond exact air/plant IDs. This
+# intentionally includes structural transparent blocks and water, unlike lidar.
+GRASS_LIGHT_PATTERNS = (
+    'leaves', 'glass', 'fence', 'wall', 'door', 'slab', 'stairs', 'carpet', 'sign', 'torch', 'lantern',
+    'snow', 'vine', 'flower', 'sapling', 'fern', 'bush', 'water',
 )
 # Plants the ground layer may place (flowers and ground cover). Newly recognised 26.2 IDs in
 # ``PLANTS`` do not yet have confirmed placement states (notably halves and segmented litter),
@@ -66,7 +80,7 @@ def probe_floor() -> int:
 
 def short_id(block: str) -> str:
     """Block id without ``minecraft:`` or ``[state]``."""
-    return (block or 'minecraft:air').split('[')[0].replace('minecraft:', '')
+    return block_id(block, policy='read').replace('minecraft:', '')
 
 
 def is_water(block: str) -> bool:

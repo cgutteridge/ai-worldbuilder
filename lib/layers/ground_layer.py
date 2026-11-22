@@ -52,6 +52,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from block_store import block_id
 from script_env import ROOT  # noqa: E402
 
 from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb,  # noqa: E402
@@ -61,13 +62,13 @@ from tree_species import DEFAULT_LEAVES  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, masked_overlaps, read_mask  # noqa: E402
-from site_kit import Plan, World, full  # noqa: E402
-from surface_probe import (PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
+from site_kit import AIR_IDS, Plan, World, full  # noqa: E402
+from surface_probe import (GRASS_LIGHT_PATTERNS, PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
                            surface_y)
 
 SCAN_TOP = 120          # highest y the clear step looks at (survey tops out near 110)
 RAISE_FILL = 'dirt'
-AIRS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
+AIRS = frozenset(full(name) for name in AIR_IDS)
 STEM_OR_FLOWER = frozenset(full(p) for p in PLANTS)
 
 # Palette (CRAFTSMANSHIP §3a). One block per kind; markings and kerbs are tarmac extras.
@@ -128,23 +129,16 @@ def shades_grass(above: str | None) -> bool:
 
     Air, plants, leaves, glass and other see-through blocks let grass live; logs, planks, stone and the like do not.
     """
-    b = bare(above)
+    b = block_id(above, policy='read')
     if not above or b in AIRS or b in STEM_OR_FLOWER or is_air(above):
         return False
     name = b.split(':')[-1]
-    clear = ('leaves', 'glass', 'fence', 'wall', 'door', 'slab', 'stairs', 'carpet', 'sign', 'torch', 'lantern',
-             'snow', 'vine', 'flower', 'sapling', 'fern', 'bush', 'water')
-    return not any(c in name for c in clear)
-
-
-def bare(block: str | None) -> str:
-    """Block id without its [state] suffix."""
-    return (block or 'minecraft:air').split('[')[0]
+    return not any(c in name for c in GRASS_LIGHT_PATTERNS)
 
 
 def is_air(block: str | None) -> bool:
     """Air for the ground step: includes flowers and grass stems (§10); grass BLOCK is not air."""
-    return bare(block) in AIRS or bare(block) in STEM_OR_FLOWER
+    return block_id(block, policy='read') in AIRS or block_id(block, policy='read') in STEM_OR_FLOWER
 
 
 def cell_contains(cell: tuple[int, int], x: int, z: int) -> bool:
@@ -237,7 +231,7 @@ def owned_floors(neighbour_owned_states: dict, structure: set) -> dict:
         q = (x, z)
         if q not in structure:
             continue
-        if is_water(full(bare(state))):
+        if is_water(full(block_id(state, policy='read'))):
             wet.add(q)
         if y > floors.get(q, y - 1):
             floors[q] = y
@@ -1276,10 +1270,10 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
 
     def air(p):
         b = block(p)
-        return b is not None and bare(b) in AIRS
+        return b is not None and block_id(b, policy='read') in AIRS
 
     def is_grass_top(p):
-        return bare(block(p) or '') == 'minecraft:grass_block' or bare(block(p) or '') == 'grass_block'
+        return block_id(block(p), policy='read') == 'minecraft:grass_block' or block_id(block(p), policy='read') == 'grass_block'
 
     taken = set()
     for q in sorted(candidates):
@@ -1310,14 +1304,14 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
         tuft_lo, tuft_hi = rule['tufts']
         tall_lo, tall_hi = rule['tall_grass']
         plant = (x, gy + 1, z)
-        live_plant = bare(block(plant) or '')
+        live_plant = block_id(block(plant), policy='read')
         if not air(plant) and live_plant not in ('short_grass', 'tall_grass',
                                                  'minecraft:short_grass', 'minecraft:tall_grass'):
             continue
         # Tall grass first (rarer), then tufts; share rises with aerial texture.
         if rnd.random() < tall_lo + score * (tall_hi - tall_lo):
             upper = (x, gy + 2, z)
-            upper_ok = air(upper) or bare(block(upper) or '') in ('tall_grass', 'minecraft:tall_grass')
+            upper_ok = air(upper) or block_id(block(upper), policy='read') in ('tall_grass', 'minecraft:tall_grass')
             if air(plant) and upper_ok:
                 plan.set(*plant, 'tall_grass[half=lower]')
                 plan.set(*upper, 'tall_grass[half=upper]')
@@ -1353,7 +1347,7 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
             gy = ys[(x, z)]
             plant = (x, gy + 1, z)
             flower = random.Random(f'ground_texture:flower-kind:{tx}:{tz}:{x}:{z}').choice(kinds)
-            live = bare(block(plant) or '')
+            live = block_id(block(plant), policy='read')
             if not (air(plant) or live in (flower, full(flower))):
                 continue
             if not is_grass_top((x, gy, z)):
@@ -1410,7 +1404,7 @@ def plan_woodland_floor(plan: Plan, world: World, cell: tuple[int, int], ys: dic
         return plan.cells[p] if p in plan.cells else world.block(*p)
 
     def is_grass_top(p):
-        name = bare(block(p) or '')
+        name = block_id(block(p), policy='read')
         return name in ('grass_block', 'minecraft:grass_block')
 
     for q in sorted(columns):
@@ -1493,7 +1487,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
     for p in protected:
         x, _y, z = p
         if (x, z) in nearby:
-            name = bare(block(p))
+            name = block_id(block(p), policy='read')
             if name.endswith(('_leaves', '_wall', '_fence', '_fence_gate', '_planks', '_shelf')) or name == full('iron_bars'):
                 retained_barriers.add((x, z))
     barrier_gap = {(x + a, z + b) for x, z in set(barriers) | retained_barriers
@@ -1504,7 +1498,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
 
     def air(p):
         b = block(p)
-        return b is not None and bare(b) in AIRS
+        return b is not None and block_id(b, policy='read') in AIRS
 
     def edge_distance(q, i):
         return min(distance(q, houses.get(i, ())), distance(q, boundaries.get(i, ())))
@@ -1552,7 +1546,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
                 if min(distance(q, houses.get(i, ())), distance(q, bed_edges.get(i, ()))) > 4:
                     continue
                 p = (x, ys[q] + 1, z)
-                if air(p) or bare(block(p)) == full(flower):  # retain the same inferred flower on rerun
+                if air(p) or block_id(block(p), policy='read') == full(flower):  # retain the same inferred flower on rerun
                     candidates.append(q)
             candidates.sort(key=lambda q: (random.Random(f'flower:{i}:{q[0]}:{q[1]}').random(), q))
             for x, z in candidates[:target]:
@@ -1574,7 +1568,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
             if q in blocked or q in shrub_columns or edge_distance(q, i) > COVER_EDGE_REACH_SQ:
                 continue
             p = (x, ys[q] + 1, z)
-            if air(p) or bare(block(p)) in kinds:  # retain the same inferred cover on rerun
+            if air(p) or block_id(block(p), policy='read') in kinds:  # retain the same inferred cover on rerun
                 candidates.append(q)
         candidates.sort(key=lambda q: (random.Random(f'cover:{i}:{q[0]}:{q[1]}').random(), q))
         for x, z in candidates[:target]:
@@ -1782,7 +1776,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         for y in range(gy + 1, SCAN_TOP + 1):             # above the surface: clear (§10)
             pos = (x, y, z)
             b = world.block(x, y, z)
-            if bare(b) in AIRS:
+            if block_id(b, policy='read') in AIRS:
                 continue
             if is_marker_wool(b):          # hazard-tape ring stays
                 retained.append({'position': list(pos), 'reason': 'registry marker'})
@@ -1795,7 +1789,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 stats['kept_masked'] += 1
                 retained.append({'position': list(pos), 'reason': 'tree/decor mask'})
                 continue
-            if bare(b) in STEM_OR_FLOWER and y == gy + 1 and mat == 'grass_block':
+            if block_id(b, policy='read') in STEM_OR_FLOWER and y == gy + 1 and mat == 'grass_block':
                 retained.append({'position': list(pos), 'reason': 'plant on lawn'})
                 continue                                  # a flower or grass stem may stand on lawn
             plan.set(x, y, z, 'air')
@@ -1893,7 +1887,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     world = _fresh_world()
     masked = load_masked_positions()
     states = neighbour_owned_states(cell, ignored_builds(cell))
-    owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
+    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in AIRS}
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                 settled_fp=settled_footprint(cell), owned_states=states)
     from layer_reports import artifact_path, write_report
@@ -1902,7 +1896,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
     floating = stats.pop('floating_columns', [])
-    changes = [p for p, b in plan.cells.items() if bare(world.block(*p)) != b]
+    changes = [p for p, b in plan.cells.items() if block_id(world.block(*p), policy='read') != b]
     print(f'{name}: columns {stats["columns"]}  (levelled {stats["levelled"]})')
     print(f'  vector map: {stats["vector_map_features"]} features')
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
@@ -2005,7 +1999,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     masked = load_masked_positions()
     ignored = ignored_builds(cell)
     states = neighbour_owned_states(cell, ignored)
-    owned, air = set(states), {p for p, b in states.items() if bare(b) in AIRS}
+    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in AIRS}
     with timed_stage('layer planning (includes surface warm-up)'):
         stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                     settled_fp=settled_footprint(cell), owned_states=states)

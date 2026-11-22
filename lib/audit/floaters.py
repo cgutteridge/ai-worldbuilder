@@ -1,15 +1,16 @@
 """Offline floater / attachable glitch detection over saved region files."""
 from __future__ import annotations
 
-import re
 from collections import deque
 from typing import Callable
 
+from block_store import state_prop
 from cellmath import FACING
-from site_kit import ATTACH, bid
+from site_kit import AIR_IDS, ATTACH, bid, full
 from site_walk import solid
 
-_AIR = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:light'})
+_AIR_EXTRAS = frozenset({'minecraft:light'})  # light blocks have no structural volume
+_AIR = frozenset(full(name) for name in AIR_IDS) | _AIR_EXTRAS
 _NEIGH6 = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 _SKIP_UNSUPPORTED = (
     'leaves', 'vine', 'ladder', 'scaffolding', 'chain', 'pane', 'torch', 'sign', 'button',
@@ -17,17 +18,6 @@ _SKIP_UNSUPPORTED = (
     'stem', 'mushroom', 'kelp', 'seagrass', 'coral', 'banner', 'rod', 'candle', 'campfire',
     'pressure_plate', 'tripwire', 'snow', 'ice',
 )
-
-
-def prop(st: str, key: str) -> str | None:
-    """Read a block-state property value.
-
-    @param st: block state string
-    @param key: property name
-    @returns: value or None
-    """
-    m = re.search(rf'{key}=(\w+)', st)
-    return m.group(1) if m else None
 
 
 def is_air(st: str | None) -> bool:
@@ -187,12 +177,12 @@ def cell_glitches(
         out.append(row)
 
     if n in ('lantern', 'soul_lantern'):
-        if prop(st, 'hanging') == 'true' and not solid(above) and 'chain' not in above:
+        if state_prop(st, 'hanging') == 'true' and not solid(above) and 'chain' not in above:
             rec('floating', 'hanging lantern with nothing above')
-        if prop(st, 'hanging') == 'false' and not solid(below) and not below.split('[')[0].endswith(('_fence', '_wall')):
+        if state_prop(st, 'hanging') == 'false' and not solid(below) and not below.split('[')[0].endswith(('_fence', '_wall')):
             rec('floating', 'standing lantern with nothing below')
     elif n.endswith('_wall_sign') or n.endswith('wall_torch'):
-        f = prop(st, 'facing')
+        f = state_prop(st, 'facing')
         if f in FACING:
             dx, dz = FACING[f]
             if not solid(block_at(x - dx, y, z - dz)):
@@ -201,13 +191,13 @@ def cell_glitches(
         if not solid(below) and not bid(below).endswith(('_fence', '_wall')):
             rec('floating', 'standing sign/torch with nothing below')
     elif n.endswith('_door'):
-        half = prop(st, 'half')
+        half = state_prop(st, 'half')
         if half == 'lower' and not bid(above).endswith('_door'):
             rec('broken_bed_or_door', 'door lower half without upper')
         if half == 'upper' and not bid(below).endswith('_door'):
             rec('broken_bed_or_door', 'door upper half without lower')
         if half == 'lower':
-            f = prop(st, 'facing')
+            f = state_prop(st, 'facing')
             if f in FACING:
                 dx, dz = FACING[f]
 
@@ -219,7 +209,7 @@ def cell_glitches(
                 if a or b:
                     rec('door_to_wall', 'door opens onto a solid block')
     elif n.endswith('_bed'):
-        f, part = prop(st, 'facing'), prop(st, 'part')
+        f, part = state_prop(st, 'facing'), state_prop(st, 'part')
         if f in FACING:
             dx, dz = FACING[f]
             ox, oz = (x + dx, z + dz) if part == 'foot' else (x - dx, z - dz)

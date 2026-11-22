@@ -37,6 +37,9 @@ from pathlib import Path
 
 import numpy as np
 
+from block_store import block_id as bid
+from cellmath import segment_distance
+from site_kit import AIR_IDS, full
 from script_env import ROOT  # noqa: E402
 from vector_map_clips import vector_map_clip_root  # noqa: E402
 
@@ -76,28 +79,19 @@ FURNITURE = ('_wall', '_fence', 'fence_gate', 'leaves', '_log', '_wood', 'lanter
 # Roof plates / canopy solids: never use the back-garden shed height exemption
 # (R-008: red_concrete parasols at BACK_RISE on open terrace passed as sheds).
 ROOF_LIKE = ('_concrete', '_slab')
-AIRS = ('minecraft:air', 'minecraft:cave_air', 'minecraft:light', 'minecraft:void_air', 'minecraft:water')
+_AIR_EXTRAS = ('minecraft:light', 'minecraft:water')  # neither counts as a building
+# Retain the established scan order: light precedes void_air.
+AIRS = (tuple(full(name) for name in AIR_IDS[:2]) + _AIR_EXTRAS[:1]
+        + tuple(full(name) for name in AIR_IDS[2:]) + _AIR_EXTRAS[1:])
 MAX_RISE = 2      # front zone (street side of the house line): boundary walls/hedges only
 BACK_RISE = 4     # back gardens: sheds / outbuildings up to ~4 blocks (cite the aerial)
 MARGIN = 2        # footprint dilation (projection + raster error is ~1-2 blocks)
 
 
-def _bid(state: str) -> str:
-    """Namespaced block id without ``[blockstate]`` (same contract as ``site_kit.bid``).
-
-    Kept local so ``guard()`` unit tests need no live ``site_kit`` / world.json.
-
-    @param state: plan cell value (optional ``minecraft:``, optional blockstate)
-    @returns: e.g. ``minecraft:red_concrete`` or ``minecraft:smooth_stone_slab``
-    """
-    head = state.split('[', 1)[0]
-    return head if ':' in head else 'minecraft:' + head
-
-
 def _roof_like(block_id: str) -> bool:
     """True if ``block_id`` is a roof/canopy solid that must not use BACK_RISE.
 
-    @param block_id: namespaced id without blockstate (``_bid`` output)
+    @param block_id: namespaced id without blockstate (``block_store.block_id`` output)
     @returns: whether the block counts as building-like at any rise above MAX_RISE
     """
     return any(k in block_id for k in ROOF_LIKE)
@@ -308,7 +302,7 @@ class OSMIndex:
             if named_only and not name:
                 continue
             for a, b in zip(pts, pts[1:]):
-                d, foot = _seg_dist((x, z), a, b)
+                d, foot = segment_distance((x, z), a, b)
                 if best is None or d < best[0]:
                     best = (d, name, hw, foot)
         return best
@@ -334,14 +328,6 @@ def _inside_grid(x, z, rings):
                     continue                               # horizontal edge: (z1 > z) == (z2 > z), never crosses
                 n ^= ((z1 > z) != (z2 > z)) & (x < (x2 - x1) * (z - z1) / (z2 - z1) + x1)
     return n
-
-
-def _seg_dist(p, a, b):
-    (px, pz), (ax, az), (bx, bz) = p, a, b
-    dx, dz = bx - ax, bz - az
-    t = 0 if dx == dz == 0 else max(0, min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)))
-    foot = (ax + t * dx, az + t * dz)
-    return math.dist(p, foot), foot
 
 
 _HSTORE = re.compile(r'"((?:[^"\\]|\\.)*)"=>"((?:[^"\\]|\\.)*)"')
@@ -385,7 +371,7 @@ def guard(cells: dict, world=None, idx: OSMIndex | None = None) -> dict:
     ground = {}
     out, blind = {}, []
     for (x, y, z), st in cells.items():
-        b = _bid(st)
+        b = bid(st)
         if b in AIRS or any(k in b for k in FURNITURE):
             continue
         covered = idx.covered(x, z)
@@ -573,7 +559,7 @@ def _street_dist(idx, name, v):
         if n != name:
             continue
         for a, b in zip(pts, pts[1:]):
-            d, foot = _seg_dist(v, a, b)
+            d, foot = segment_distance(v, a, b)
             if best is None or d < best[0]:
                 best = (d, n, hw, foot)
     return best
@@ -595,9 +581,10 @@ def _runs(seq):
 
 
 def check(args):
+    from cell_journal import CANCEL
     from cell_registry import latest_cells, view_registry
     if args.all:
-        merged = {q: v for q, v in latest_cells().items() if v[1].split('[')[0] not in ('minecraft:air', 'minecraft:light')}
+        merged = {q: v for q, v in latest_cells().items() if v[1].split('[')[0] not in CANCEL}
         cells = {q: st for q, (_n, st) in merged.items()}
         owner = {q: n for q, (n, _st) in merged.items()}
     else:

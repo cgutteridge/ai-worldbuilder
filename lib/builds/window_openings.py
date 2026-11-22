@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from cellmath import DIRS
+from site_kit import AIR_IDS
 from surface_probe import PLANTS
 
 
@@ -17,11 +18,14 @@ class Window:
     corner_evidence: bool = False
 
 
+_NON_STRUCTURAL_EXTRAS = {'water', 'lava', 'iron_bars', 'snow', 'grass', 'short_grass', 'tall_grass', 'vine'}
+_NON_STRUCTURAL = set(AIR_IDS) | _NON_STRUCTURAL_EXTRAS
+
+
 def structural(state):
     """Whether a block can terminate an opening; doors and glazing are never jambs."""
     name = (state or 'air').split('[')[0].split(':')[-1]
-    return name not in {'air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars',
-                        'snow', 'grass', 'short_grass', 'tall_grass', 'vine'} and name not in PLANTS and not any(
+    return name not in _NON_STRUCTURAL and name not in PLANTS and not any(
         token in name for token in ('glass', 'door', 'fence', 'leaves', 'torch', 'flower',
                                    'button', 'carpet', 'rail', 'sign', 'chain', 'sapling', 'ladder',
                                    'lantern', 'pressure_plate', 'candle', 'banner'))

@@ -31,6 +31,7 @@ _TOOL_ROOT = Path(__file__).resolve().parent.parent
 if str(_TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(_TOOL_ROOT))
 
+from shared_git import git_output
 import python_runtime  # noqa: E402
 
 python_runtime.ensure_python_runtime()
@@ -176,7 +177,7 @@ def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
     bad: list[str] = []
     for path in sorted(set(paths) & TRACKER_PATHS):
         try:
-            text = _git(repo_root, 'show', f':{path}')
+            text = git_output(repo_root, 'show', f':{path}')
             data = json.loads(text)
             tasks = data['tasks']
             if not isinstance(tasks, list) or any(
@@ -244,24 +245,13 @@ def release_wave_lock(repo_root: Path, *, holder: str) -> None:
     path.unlink()
 
 
-def _git(repo_root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ['git', *args],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
-
-
 def staged_paths(repo_root: Path) -> list[str]:
     """List paths staged for commit.
 
     @param repo_root: repository root
     @returns: relative path strings
     """
-    out = _git(repo_root, 'diff', '--cached', '--name-only', '--diff-filter=ACMR')
+    out = git_output(repo_root, 'diff', '--cached', '--name-only', '--diff-filter=ACMR')
     if not out:
         return []
     return [line for line in out.splitlines() if line]
@@ -274,7 +264,7 @@ def current_branch(repo_root: Path) -> str:
     @returns: branch name or empty string
     """
     try:
-        return _git(repo_root, 'symbolic-ref', '--short', 'HEAD')
+        return git_output(repo_root, 'symbolic-ref', '--short', 'HEAD')
     except subprocess.CalledProcessError:
         return ''
 
@@ -296,7 +286,7 @@ def checkout_branch_names(repo_root: Path) -> list[str]:
         return [current]
     names: list[str] = []
     try:
-        pointed = _git(
+        pointed = git_output(
             repo_root,
             'branch',
             '--points-at',
