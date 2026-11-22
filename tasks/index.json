@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 414,
+  "nextTaskId": 415,
   "tasks": [
     
     
@@ -435,6 +435,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Housekeeping review ticket T22. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T22' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s\n- Scope: delete the dead `lib/shims` path inserts and the redundant `sys.path.insert` calls in `lib` tests, and move misplaced tests (`test_door_frames` to `lib/site/`, `EntranceApproachTest` to `test_entrance_approach.py`). The roof-test moves happen in T13.\n- Check: the test count is unchanged, and `git grep -n \"parent.parent / 'shims'\" lib` returns nothing.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process."
+    },
+    {
+      "id": 414,
+      "title": "House pitched roofs: eave edge starts a slab or stair high, not two full blocks",
+      "status": "doing",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Found in the #358 owner review of the pitched Burgess Road houses (world commit b8a3591, applied 2026-11-22): the roof is nicely pitched but its lower edge starts too high. The outermost eave cells are two full blocks tall; the owner expects the edge to be a slab or a stair, depending on pitch.\n\nCause (lib/builds/house_build.py, Build.roof, pitched branch): half_heights = 2*(b+6) + floor(2*d*pitch) with d the edge distance. The d=0 overhang cells therefore get an even half height, which pitched_roof_states turns into a full block at Y=b+6 (at pitch 0.75 the first step to d=1 is only one half-step, so no stair or slab is chosen). The unconditional full-block underlay at y-1 then stacks a second full block under it (Y=b+5). Flatish roofs put a bottom slab at Y=b+6 on the same edge, so pitched starts half a block high and two blocks thick. Numbers for B584 at pitch 0.75: d=0 half 134 y67 (full + underlay y66), d=1 half 135 y68, d=2 137, d=3 138.\n\nScope: make the pitched eave start at the wall top the way the flatish ring does: the outermost cells are a bottom slab (shallow pitch) or a stair (steep pitch) with no redundant full block beneath an overhang; keep full support under stairs and slabs where the stair cutout shows, and keep the legacy flatish output byte-identical (test_legacy_flatish_plans_match_pre_change_output). Decide the base-height phase from the pitch so every pitch above 0.5 gets a slab or stair edge, then the slope. Extend RoofGeometryTest with eave-edge assertions for square, L and group footprints at pitches 0.6, 0.75 and 1.0, including that no eave cell is a full block stacked on the underlay. The underlay assertion in test_pitched_shapes_lint_and_full_underlay may need to relax for overhang cells; say so in the close note. Check roof_lint and guard_roof_jogs stay clean.\n\nNot in scope: the world rebuild and the in-game owner review of I-056 S-103, which stay with #358 (re-undo and re-apply houses_burgess_road after this lands, then review).\n\nbuilderTask false: synthetic fixtures and code review only; the owner's in-game check stays with #358.\n"
     }
   ]
 }
