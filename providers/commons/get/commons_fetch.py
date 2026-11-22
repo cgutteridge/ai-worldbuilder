@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
-from kartaview_fetch import mc_to_ll, ll_to_mc  # noqa: E402
+from world_frame import mc_to_wgs84 as mc_to_ll, wgs84_batch_to_mc as ll_to_mc  # noqa: E402
 
 REF = ROOT / 'reference'
 API = 'https://commons.wikimedia.org/w/api.php'

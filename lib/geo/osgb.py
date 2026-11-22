@@ -31,31 +31,23 @@ def load_offsets(path: Path | None = None) -> dict:
     return wf.legacy_offsets_dict()
 
 
-def to_mc(easting: float, northing: float, offsets: dict | None = None) -> tuple[int, int]:
+def to_mc(easting: float, northing: float) -> tuple[int, int]:
     """Convert OSGB easting/northing to Minecraft X/Z (integer blocks).
 
     @param easting: OSGB36 easting (metres)
     @param northing: OSGB36 northing (metres)
-    @param offsets: optional legacy offset dict (OFFSET_E / OFFSET_N)
     @returns: (x, z)
     """
-    if offsets is not None:
-        x = int(round(easting - offsets['OFFSET_E']))
-        z = int(round(-(northing - offsets['OFFSET_N'])))
-        return x, z
     return wf.osgb_to_mc(easting, northing)
 
 
-def to_osgb(x: float, z: float, offsets: dict | None = None) -> tuple[float, float]:
+def to_osgb(x: float, z: float) -> tuple[float, float]:
     """Convert Minecraft X/Z to OSGB easting/northing.
 
     @param x: Minecraft X
     @param z: Minecraft Z
-    @param offsets: optional legacy offset dict
     @returns: (easting, northing)
     """
-    if offsets is not None:
-        return float(offsets['OFFSET_E'] + x), float(offsets['OFFSET_N'] - z)
     return wf.mc_to_osgb(x, z)
 
 
@@ -76,12 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     cmd = argv[0]
     if cmd == 'to-mc' and len(argv) == 3:
         e, n = float(argv[1]), float(argv[2])
-        x, z = to_mc(e, n, o)
+        x, z = to_mc(e, n)
         print(f'OSGB E{e:.1f} N{n:.1f}  ->  MC X{x} Z{z}')
         return 0
     if cmd == 'to-osgb' and len(argv) == 3:
         x, z = float(argv[1]), float(argv[2])
-        e, n = to_osgb(x, z, o)
+        e, n = to_osgb(x, z)
         print(f'MC X{x:.0f} Z{z:.0f}  ->  OSGB E{e:.1f} N{n:.1f}')
         return 0
     print(__doc__, file=sys.stderr)

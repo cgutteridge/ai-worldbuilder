@@ -1,6 +1,4 @@
 {
-  "catalogue": "system",
-  "types_doc": "reference/TYPES.txt",
   "providers": [
     {
       "id": "google-satellite",

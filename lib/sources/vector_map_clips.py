@@ -10,7 +10,7 @@ Same story as other evidence types (ADR 001 / ``reference/TYPES.txt``):
 3. **Read** via :func:`vector_map_clip_root` / the footprints index — never by
    pointing ``osm_root=`` at another world's tree as the primary path.
 
-Legacy on-disk folder name (``legacy_reference_paths.VECTOR_MAP_LEGACY_DIRNAME``)
+Legacy on-disk folder name (``VECTOR_MAP_LEGACY_DIRNAME``)
 is still resolved when it holds clips and ``vector_map/`` is empty. Manifest rows
 with ``kind=map`` are an optional ledger (same ``ref_manifest`` as aerial); the
 authoritative clip tree for footprints is always under this world's
@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from legacy_reference_paths import VECTOR_MAP_LEGACY_DIRNAME  # noqa: E402
 from script_env import ROOT  # noqa: E402
 
 # Stable evidence type id (``reference/TYPES.txt``).
@@ -28,6 +27,8 @@ TYPE = 'vector_map'
 
 # On-disk layout under the active world root.
 REFERENCE_DIRNAME = 'vector_map'
+# Existing worlds may still hold clips in the pre-type folder.
+VECTOR_MAP_LEGACY_DIRNAME = 'osm'
 DOWNLOADS_DIRNAME = 'downloads'
 
 

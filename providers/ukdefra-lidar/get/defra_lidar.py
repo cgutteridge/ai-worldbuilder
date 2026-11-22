@@ -32,7 +32,7 @@ world needs its own source and frame; nothing here assumes Southampton.
   # Area maps / highs-lows: shims/lidar_query.py --cell TX,TZ --layers dtm,dsm,diff
 
 Cached under downloads/defra-lidar/ (gitignored). Needs Pillow, numpy, and pyproj (catalogue
-polygon via world_frame / geodetic). GDAL remains useful for bulk raster tooling elsewhere,
+polygon via world_frame). GDAL remains useful for bulk raster tooling elsewhere,
 not for this point conversion. Open Government Licence v3: attribute "Contains Environment
 Agency information (c) Environment Agency and/or database right".
 """
@@ -166,7 +166,7 @@ def _http(url: str, data: bytes | None = None, headers: dict | None = None, trie
 
 def catalogue_polygon(e: int, n: int) -> dict:
     """GeoJSON polygon (lon, lat) just inside the 5 km tile at south-west corner (e, n)."""
-    from geodetic import osgb_batch_to_wgs84
+    from world_frame import osgb_batch_to_wgs84
     a, b, c, d = e + INSET_M, n + INSET_M, e + TILE_M - INSET_M, n + TILE_M - INSET_M
     ll = osgb_batch_to_wgs84([(a, b), (c, b), (c, d), (a, d), (a, b)])
     return {'type': 'Polygon', 'coordinates': [[[lon, lat] for lat, lon in ll]]}

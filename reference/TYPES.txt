@@ -48,7 +48,7 @@ lidar
 
   PROVIDER CONTRACT
   A row sets package and modules paths relative to that package, without .py:
-    world:    manage/<module>  exports LidarWorld (or CompositeWorld)
+    world:    manage/<module>  exports LidarWorld
     tiles:    get/<module>     exports LidarTiles, mc_box_en and mc_heights
     query:    review/<module>  exports main(argv=None) -> exit code
     extremes: review/<module> exports main(argv=None) -> exit code
