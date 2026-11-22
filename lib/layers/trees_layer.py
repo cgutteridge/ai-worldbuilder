@@ -29,7 +29,6 @@ import argparse
 import json
 import math
 import random
-import re
 import sys
 from pathlib import Path
 
@@ -46,7 +45,6 @@ from tree_voxels import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
-LAYER_PLAN = re.compile(r'^highfield_\d+_m\d+_(ground|trees|decor|foliage|stripabove|edge_grass|podium_flatten)$')
 LAWN_SURFACES = frozenset({'grass_block', 'dirt', 'podzol', 'coarse_dirt', 'moss_block'})
 # Detector/dense-fill material policy; explicit crowns instead use evidence-led rooting.
 # Rooting never changes the surface block.
@@ -477,16 +475,6 @@ def snap_google_crowns(
         report.append({'from': (i, j), 'to': (pi, pj), 'shift': shift,
                        'status': 'moved', 'ndsm': float(ndsm[pi, pj])})
     return out, report
-
-
-def cell_ndsm(cell: tuple[int, int], *, margin: int = 0) -> np.ndarray | None:
-    """Cached standing-height grid; see ``tree_lines.standing_height`` for provenance.
-
-    Kept as an array-only compatibility helper. Planning uses the shared reader
-    directly so its source label travels with the evidence.
-    """
-    from tree_lines import standing_height
-    return standing_height(cell, margin=margin)[0]
 
 
 def cell_terrain(cell: tuple[int, int]) -> dict | None:

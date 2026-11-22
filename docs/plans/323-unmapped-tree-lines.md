@@ -1,7 +1,7 @@
 # Spike #323: tree lines along hedges and lanes that the map does not mark
 
 Spike, 2026-11-21, world `southampton-build` (save `SouthamptonAI`), cell **87,-48**: the farmland cell of the #259 trial, described in [park-rural.md](park-rural.md).
-Branch `task/323-unmapped-tree-lines`. Prototype: [`lib/layers/tree_lines.py`](../../lib/layers/tree_lines.py) and [`scripts/tree_lines_trial.py`](../../scripts/tree_lines_trial.py). `lib/layers/trees_layer.py` was not edited, because the paused woodland wave owns it (#349, #350).
+Branch `task/323-unmapped-tree-lines`. Prototype: [`lib/layers/tree_lines.py`](../../lib/layers/tree_lines.py). The one-off trial command that drove the dry runs below has been removed; the counts are the record. `lib/layers/trees_layer.py` was not edited, because the paused woodland wave owns it (#349, #350).
 
 ## Verdict
 
@@ -59,13 +59,13 @@ The dark band is the belt's shadow: it lies directly north of the 13-20 m crowns
 
 ## Seam test: last-return reader
 
-The seam is `trees_layer.cell_ndsm`, which returns `mc_heights()['diff']`, last-return DSM minus DTM. Two dry runs, neither of which writes to the world:
+The seam was the trees layer's standing-height grid, which returned `mc_heights()['diff']`, last-return DSM minus DTM. Two dry runs, neither of which writes to the world:
 
 | Path | Crowns from the hand-off | Dropped by the #317 gate | Trees planted in the cell |
 | --- | --- | --- | --- |
 | Baseline trees pass | none | 149 detector crowns (pasture, correctly) | 21 |
-| Ordinary `trees-extra-crowns.json` path, unchanged code (`tree_lines_trial.py seam`) | 62 | 170, so **21 of the hand-off crowns** | 41 |
-| Prototype admission after the gate (`tree_lines_trial.py plan`) | 62 offered, 48 admitted, 14 refused as duplicates of retained crowns | 149 | 64 |
+| Ordinary `trees-extra-crowns.json` path, unchanged code (trial seam subcommand) | 62 | 170, so **21 of the hand-off crowns** | 41 |
+| Prototype admission after the gate (trial plan subcommand) | 62 offered, 48 admitted, 14 refused as duplicates of retained crowns | 149 | 64 |
 
 Those three ran before any trial build, with the v1 hand-off. After v2 landed, `seam --reader last|first`, with and without the v2 hand-off, gave these counts. Planted counts are left out, because the trial trees now occupy the same places.
 
@@ -138,11 +138,6 @@ The cached first-return tile can stay. It is an optional provider product (#320)
 
 ## Reproduce
 
-```sh
-python3 scripts/tree_lines_trial.py --world southampton-build propose --cell 87,-48
-python3 scripts/tree_lines_trial.py --world southampton-build seam --cell 87,-48 --handoff <handoff.json>
-python3 scripts/tree_lines_trial.py --world southampton-build plan --cell 87,-48 --handoff <handoff.json>
-python3 scripts/tree_lines_trial.py --world southampton-build lines-plan --cell 87,-48 --handoff <handoff.json>
-```
+The one-off trial command has been removed. Its subcommands were propose, seam, plan and lines-plan on cell 87,-48. The counts above are the record.
 
 Trial artefacts are under the world's `verification/site/trial323_87_m48_tree_lines-*`: the proposal JSON and PNG, the designer's hand-off and evidence table, and the admission and lines records.

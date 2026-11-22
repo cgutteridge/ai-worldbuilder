@@ -10,7 +10,7 @@ import json
 
 from cell_journal import CANCEL, GHOST_PASSES, Note, Refused
 from block_store import block_id
-from plan_refs import candidate_covered, covered_by_plans, uncovered_candidates
+from plan_refs import covered_by_plans, uncovered_candidates
 
 
 POLICY_VERSION = 1
@@ -116,16 +116,6 @@ def planned_here(reg, cell):
     """
     cell = tuple(cell)
     return covered_by_plans(reg.root, {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell))
-
-
-def accounted_elsewhere(item, elsewhere):
-    """Whether a candidate is a map-ref feature already planned in another cell.
-
-    @param item: candidate dict (``kind``, ``id`` or ``refs``)
-    @param elsewhere: :func:`planned_elsewhere` result
-    @returns: bool
-    """
-    return candidate_covered(item, elsewhere)
 
 
 def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None, owner_cell=None, stale=None):

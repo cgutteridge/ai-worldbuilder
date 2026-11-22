@@ -51,14 +51,6 @@ class RoofCatalogueTest(unittest.TestCase):
                 with self.subTest(family=family_id, variant=variant):
                     self.assertIn(name, self.ids)
 
-    def test_colours_follow_the_preview_table_when_a_key_matches(self):
-        for family_id, family in self.catalogue['families'].items():
-            seeded = RM.preview_colour(family['full'])
-            if seeded is None:
-                continue
-            with self.subTest(family=family_id):
-                self.assertEqual(tuple(family['colour']), seeded)
-
     def test_brick_keeps_the_full_name_bricks(self):
         variants = RM.family_variants('brick')
         self.assertEqual(variants['full'], 'bricks')

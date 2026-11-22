@@ -17,8 +17,9 @@ with no live-world writes.
    - Fetching, sampling and optional reference-heightmap support already exist.
 6. **Next:** reuse the existing product. `add-data-source` is unnecessary because
    it would duplicate an installed provider. Tree-source filtering is task 317;
-   first-return standing height is not yet exposed by its current `cell_ndsm`
-   reader, as explained below. No provider interface changes were made here.
+   first-return standing height was not yet exposed by the trees layer's
+   last-return standing-height reader, as explained below. No provider
+   interface changes were made here.
 
 ## Source score
 
@@ -97,8 +98,9 @@ the table above preserves the useful results independently of those throwaways.
 - The catalogue's `modules.world` implementation already consumes cached first
   returns in reference heightmaps. It uses first-minus-last evidence to identify
   foliage, then first-minus-DTM for the resulting crown height.
-- `lib/layers/trees_layer.py:cell_ndsm` currently returns the provider-neutral
-  `mc_heights()['diff']`, which is last-return DSM minus DTM for this provider.
+- At the time of this evaluation, the trees layer's standing-height helper
+  returned the provider-neutral `mc_heights()['diff']`, which is last-return
+  DSM minus DTM for this provider.
   Merely downloading `DSM_FIRST` therefore does **not** make that reader or
   task 317's gate use first-return standing height. Adding a provider row cannot
   fix it. A future reader change must explicitly handle optional first-return
