@@ -10,7 +10,7 @@ System tracker: `tasks/`. This repo has no world QUEUE/ISSUES.
 
 ## Python setup
 
-Needs Python ≥ 3.10 with the packages in `pyproject.toml` (numpy, Pillow, pyproj). Preferred:
+Needs Python ≥ 3.10 with the packages in `pyproject.toml` (numpy, Pillow, matplotlib, pyproj). Preferred:
 
 ```bash
 python3 -m venv .venv

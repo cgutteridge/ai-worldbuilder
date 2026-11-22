@@ -10,6 +10,7 @@ description = "Build and refine Minecraft worlds from real-place evidence"
 dependencies = [
     "numpy",
     "Pillow",
+    "matplotlib",
     "pyproj",
 ]
 
