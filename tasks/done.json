@@ -1,5 +1,5 @@
 {
-  "_comment": "AGENT: completed tasks archive. Read via the task-index-manager skill. Do not add active tasks here.",
+  "_comment": "AGENT: completed tasks archive. Read via the worldbuilder-tasks skill. Do not add active tasks here.",
   "tasks": [
     {
       "id": 1,
@@ -3800,6 +3800,17 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found during #399 verification and independently reproduced on current main: compiling scripts/airtight.py raises IndentationError at line 60. The script_env.add_world_arg(ap) and script_env.activate_world_from_args(a) lines are outside the __main__ block while adjacent statements remain indented. Restore the existing CLI indentation, verify the module parses and fixture-based argument handling can reach help without a live world. This is a separate follow-up, outside wave 395/399/401. builderTask false: source correction and synthetic CLI validation only; no AI build design or world apply. Use a task branch and normal ship-branch review/test path.\n\nClosed at a7f95a6834eb92f9ef0e00058f157184f03355a1: Restored airtight CLI world-argument indentation; parse and isolated synthetic --help passed; full suites and fresh Codex review passed. Owner authorized this wave at current Codex model/effort and Codex review substitution; local merge only, no push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 410,
+      "title": "Agent guidance: one home per rule, and resolve the contradictions",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T20. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T20' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: m (docs only)\n- Scope:\n  - 1.15 items 1-6 and 9-10: `builderTask`, the branch gate (and the AGENTS.md:19 wording), queue §6, sound cues (one home in `docs/agents/world-and-live-commands.md`; delete `.cursor/rules/agent-soundboard-flair.mdc`), lock and background boilerplate, the house-build path, the refine contradiction.\n  - Item 11, decided: rename the project skill `task-index-manager` (for example `worldbuilder-tasks`). Run `node scripts/check-skill-stubs.mjs --write`, update every reference (`docs/agents/issue-tracker.md`, AGENTS.md, other skills), and drop the clash warning at `issue-tracker.md:60`.\n  - Cut the oversize items in item 10 that do not depend on T5 or T17.\n  - Make usage text and docs agree on `--world` (1.13), or drop `--world` from the two tool-level wrappers.\n- Check: each topic is stated in one file and linked from the others. The agent-facing token total goes down (report before and after).\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 61bb2022bcc32f118035b949b39d737346648b44: Consolidated agent guidance and renamed project tracker skill to worldbuilder-tasks; six focused modules, skill-stub validation, normal full hooks and post-merge suites passed; fresh Codex review approved under owner one-wave substitution. Measured selected guidance corpus 322661 to 306919 bytes (bytes/4 token estimate down 4.9%). Local merge only, no push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
   ]
 }

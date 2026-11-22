@@ -68,6 +68,13 @@ Provisional answers, awaiting confirmation of the complete design:
 - Prefer a rough fallback over skipping a structure when the preferred design
   fails. It may simplify appearance, supports and terrain fit, but must keep the
   route connected, clearance usable and all writes inside the feature footprint.
+- Bridge deck heights use reliable lidar structure columns, checked against
+  crossed roads, railways or water and any railway join levels. Uncertain heights
+  are labelled inference; incomplete evidence may use a simpler usable fallback.
+- Preserve tree crowns outside the structure and its required clear space,
+  including above tunnels. Clear intrusions through the normal feature/journal
+  handling; do not clear an entire vertical column solely because a structure
+  passes through part of it.
 
 The remaining questions below are still open; this is not an accepted design.
 
