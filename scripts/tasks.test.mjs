@@ -63,6 +63,9 @@ const rejectsWithExit = (promise, exitCode) =>
     return true
   })
 
+const claim = { app: "cursor", workingIn: "/tmp/ai-worldbuilder" }
+const claimArgs = ["--app", "cursor", "--working-in", "/tmp/ai-worldbuilder"]
+
 describe("task reads and status changes", () => {
   const task = (id, extra = {}) => ({
     id,
@@ -252,7 +255,7 @@ describe("task reads and status changes", () => {
       const directory = await tracker()
       const before = await contents(directory)
       await writeFile(join(directory, "index.json.lock"), "another writer")
-      await rejectsWith(setTaskStatus(directory, 1, "doing"), "is locked")
+      await rejectsWith(setTaskStatus(directory, 1, "doing", undefined, undefined, claim), "is locked")
       assert.equal(await contents(directory), before)
       assert.equal(
         await readFile(join(directory, "index.json.lock"), "utf8"),
@@ -279,7 +282,7 @@ describe("task reads and status changes", () => {
         const before = await contents(directory)
         assert.deepEqual(await listReadyTasks(directory), [])
         await rejectsWith(
-          setTaskStatus(directory, 1, "doing"),
+          setTaskStatus(directory, 1, "doing", undefined, undefined, claim),
           "unresolved blockers",
         )
         assert.equal(await contents(directory), before)
@@ -291,10 +294,15 @@ describe("task reads and status changes", () => {
       const source =
         '{\r\n "_comment":"Café 😀", "nextTaskId":100, "unknown": [true, null, -2.1e3],\r\n "tasks" : [ {"title":"A \\"quote\\"", "id":1, "status" : "todo", "odd": {"x":[]}},\r\n {"id":2,"title":"Other","status":"todo","notes":"doing"} ]\r\n}\r\n'
       await writeFile(join(directory, "index.json"), source)
-      await setTaskStatus(directory, 1, "doing")
+      await setTaskStatus(directory, 1, "doing", undefined, undefined, claim)
       assert.equal(
         await contents(directory),
-        source.replace('"status" : "todo"', '"status" : "doing"'),
+        source
+          .replace('"status" : "todo"', '"status" : "doing"')
+          .replace(
+            '"odd": {"x":[]}}',
+            `"odd": {"x":[]}, "claimedBy": ${JSON.stringify(claim.app)}, "workingIn": ${JSON.stringify(claim.workingIn)}}`,
+          ),
       )
     })
 
@@ -329,19 +337,22 @@ describe("task reads and status changes", () => {
     it("can add notes, handles escaped property names and leaves same-status updates untouched", async () => {
       const directory = await tracker()
       const source =
-        '{"nextTaskId":100,"tasks":[{"id":1,"title":"A","sta\\u0074us":"doing"  }]}\n'
+        `{"nextTaskId":100,"tasks":[{"id":1,"title":"A","sta\\u0074us":"doing","claimedBy":${JSON.stringify(claim.app)},"workingIn":${JSON.stringify(claim.workingIn)}  }]}\n`
       await writeFile(join(directory, "index.json"), source)
       const before = await readTrackerFile(directory, "index.json")
-      await setTaskStatus(directory, 1, "doing")
+      await setTaskStatus(directory, 1, "doing", undefined, undefined, claim)
       assert.equal(
         (await readTrackerFile(directory, "index.json")).identity,
         before.identity,
       )
       await setTaskStatus(directory, 1, "todo", "Reprioritised.")
       assert.ok((await showTask(directory, 1)).notes.includes("Reprioritised."))
+      const after = await showTask(directory, 1)
+      assert.equal(after.claimedBy, undefined)
+      assert.equal(after.workingIn, undefined)
       assert.ok(
         (await contents(directory)).includes(
-          '"sta\\u0074us":"todo"  , "notes":',
+          '"sta\\u0074us":"todo"',
         ),
       )
     })
@@ -353,19 +364,83 @@ describe("task reads and status changes", () => {
         task(3, { status: "blocked" }),
       ])
       const before = await contents(directory)
-      await rejectsWith(setTaskStatus(directory, 1, "doing"), "reviewer workflow")
+      await rejectsWith(setTaskStatus(directory, 1, "doing", undefined, undefined, claim), "reviewer workflow")
       await rejectsWith(setTaskStatus(directory, 1, "todo"), "reviewer workflow")
       await rejectsWith(
-        setTaskStatus(directory, 2, "doing"),
+        setTaskStatus(directory, 2, "doing", undefined, undefined, claim),
         "unresolved blockers",
       )
       await rejectsWith(
         setTaskStatus(directory, 3, "todo", "Ready"),
         "Only todo and doing",
       )
-      await rejectsWithExit(setTaskStatus(directory, 4, "doing"), 3)
-      await rejectsWithExit(setTaskStatus(directory, 0, "doing"), 2)
+      await rejectsWithExit(setTaskStatus(directory, 4, "doing", undefined, undefined, claim), 3)
+      await rejectsWithExit(setTaskStatus(directory, 0, "doing", undefined, undefined, claim), 2)
       assert.equal(await contents(directory), before)
+    })
+
+    it("insists on claim app and working path when starting, and clears them on cancel", async () => {
+      const directory = await tracker([task(1)])
+      const before = await contents(directory)
+      for (const bad of [
+        undefined,
+        {},
+        { app: "cursor" },
+        { workingIn: "/tmp/x" },
+        { app: "claude-code", workingIn: "/tmp/x" },
+        { app: "cursor", workingIn: "  " },
+      ]) {
+        await rejectsWithExit(
+          setTaskStatus(directory, 1, "doing", undefined, undefined, bad),
+          2,
+        )
+        assert.equal(await contents(directory), before)
+      }
+      const started = await setTaskStatus(
+        directory,
+        1,
+        "doing",
+        undefined,
+        undefined,
+        { app: "codex", workingIn: "/tmp/worktree-438" },
+      )
+      assert.equal(started.claimedBy, "codex")
+      assert.equal(started.workingIn, "/tmp/worktree-438")
+      assert.deepEqual(await showTask(directory, 1), started)
+      const cancelled = await setTaskStatus(
+        directory,
+        1,
+        "todo",
+        "Paused",
+        undefined,
+        { branch: "task/438-claim-status-fields" },
+      )
+      assert.equal(cancelled.claimedBy, undefined)
+      assert.equal(cancelled.workingIn, undefined)
+      assert.match(
+        cancelled.notes,
+        /Returned to todo: Paused Half-done on branch task\/438-claim-status-fields\./,
+      )
+      const shown = await showTask(directory, 1)
+      assert.equal(shown.claimedBy, undefined)
+      assert.equal(shown.workingIn, undefined)
+      assert.equal(
+        run(directory, ["status", "1", "doing"]).status,
+        2,
+      )
+      assert.equal(
+        run(directory, [
+          "status",
+          "1",
+          "doing",
+          "--app",
+          "claude",
+          "--working-in",
+          "/Users/cjg/Projects/ai-worldbuilder",
+        ]).status,
+        0,
+      )
+      assert.equal((await showTask(directory, 1)).claimedBy, "claude")
     })
 
     it("uses predictable CLI exit codes without printing raw contents or stack traces", async () => {
@@ -479,7 +554,7 @@ describe("task addition", () => {
     assert.deepEqual(task.blockedBy, [])
     assert.deepEqual((await showTask(directory, task.id)).blockedBy, [])
     assert.deepEqual((await listReadyTasks(directory)).map((item) => item.id), [task.id])
-    assert.equal((await setTaskStatus(directory, task.id, "doing")).status, "doing")
+    assert.equal((await setTaskStatus(directory, task.id, "doing", undefined, undefined, claim)).status, "doing")
     assert.equal((await showTask(directory, task.id)).status, "doing")
   })
 
@@ -901,11 +976,11 @@ describe("Builder task policy", () => {
       const directory = await fixture()
       const before = await source(directory)
       await rejectsWithExit(checkTaskRun(directory, 1, runner), 2)
-      await rejectsWithExit(setTaskStatus(directory, 1, "doing", undefined, runner), 2)
+      await rejectsWithExit(setTaskStatus(directory, 1, "doing", undefined, runner, claim), 2)
       assert.equal(await source(directory), before)
       await writeFile(join(directory, "index.json"), before.replace('"status": "todo"', '"status": "doing"'))
       const doing = await source(directory)
-      await rejectsWithExit(setTaskStatus(directory, 1, "doing", undefined, runner), 2)
+      await rejectsWithExit(setTaskStatus(directory, 1, "doing", undefined, runner, claim), 2)
       assert.equal(await source(directory), doing)
     })
   }
@@ -927,7 +1002,7 @@ describe("Builder task policy", () => {
       const checked = run(directory, "check-run", "1", ...options)
       assert.equal(checked.status, 0, checked.stderr)
       assert.equal(await source(directory), before)
-      const started = run(directory, "status", "1", "doing", ...options)
+      const started = run(directory, "status", "1", "doing", ...claimArgs, ...options)
       assert.equal(started.status, 0, started.stderr)
       assert.equal((await showTask(directory, 1)).builderTask, true)
       await setTaskStatus(directory, 1, "todo", "Resume later")
@@ -940,7 +1015,7 @@ describe("Builder task policy", () => {
     assert.match(run(directory, "list", "--ready").stdout, /builder task/)
     await writeFile(join(directory, "index.json"), await source(directory).then((s) => s.replace('"builderTask": true', '"builderTask": false')))
     assert.equal(run(directory, "check-run", "1").status, 0)
-    assert.equal(run(directory, "status", "1", "doing").status, 0)
+    assert.equal(run(directory, "status", "1", "doing", ...claimArgs).status, 0)
   })
 
   it("keeps blocked and completed tasks out of dispatch even with a valid runner", async () => {
@@ -1113,7 +1188,7 @@ describe("command-line arguments", () => {
     const directory = await tracker()
     const result = cli(["list", "--ready", `--tracker-dir=${directory}`])
     assert.equal(result.stdout, "1\t-\tOne\n")
-    const started = cli(["status", "1", "doing", "--tracker-dir", directory])
+    const started = cli(["status", "1", "doing", ...claimArgs, "--tracker-dir", directory])
     assert.equal(started.stdout, "Task 1: doing\n")
     const returned = cli([
       "--tracker-dir",

@@ -19,6 +19,23 @@ Read the task by id from `tasks/index.json` (or `tasks/done.json` if it is not i
 
 Tasks carry no triage label, only a status. Workers on `task/*` branches never edit the tracker; the orchestrator on `main` does (ADR 005).
 
+## Tracker edits: main, then commit at once
+
+Every change under `tasks/` (add, status, update, close, priority/blocker edits) is made on `main` and committed immediately in its own tracker commit. Do not leave tracker edits uncommitted, park them on a `task/*` branch, or batch them with unrelated code. The pre-commit hook already refuses tracker edits on worker branches.
+
+## Claiming a task (`status doing`)
+
+`status ID doing` writes who took the task and where they are working onto that row in `tasks/index.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `claimedBy` | `cursor`, `claude`, or `codex` (the app holding the work) |
+| `workingIn` | Absolute path of the main checkout or the worktree |
+
+The CLI insists on `--app` and `--working-in`. This is for coping with parallel sessions and leftover worktrees, not a runner gate. Builder tasks still need the separate `--tool` / `--model` / budget options from [model and effort](model-and-effort.md#task-model-requirement).
+
+When returning a task to `todo` (cancel), the CLI clears `claimedBy` and `workingIn`. Pass `--branch NAME` when work was left half-done so the cancel notes record that branch.
+
 ## Builder-task flag on creation and updates
 
 Follow [task model requirement](model-and-effort.md#task-model-requirement)
@@ -49,20 +66,21 @@ node scripts/tasks.mjs show ID
 node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --builder-task false --notes "Details"  # or --notes-file PATH
 node scripts/tasks.mjs update ID --builder-task true --notes "Updated scope"  # or --notes-file PATH
 node scripts/tasks.mjs check-run ID --tool cursor --model sonnet --external-model-budget available
-node scripts/tasks.mjs status ID doing
-# Builder tasks need the same confirmed runner options on status ID doing:
-node scripts/tasks.mjs status ID doing --tool cursor --model sonnet --external-model-budget available
+node scripts/tasks.mjs status ID doing --app cursor --working-in /path/to/checkout-or-worktree
+# Builder tasks also need the confirmed runner options:
+node scripts/tasks.mjs status ID doing --app cursor --working-in /path/to/wt --tool cursor --model sonnet --external-model-budget available
 node scripts/tasks.mjs status ID todo --reason "Short explanation"
+node scripts/tasks.mjs status ID todo --reason "Paused" --branch task/123-slug
 node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 ```
 
-Run mutations on `main` only, because the pre-commit hook rejects tracker edits
-on `task/*` branches. Read-only `show`, `list` and `check-run` are also available
-to workers. Priority/blocker edits remain direct edits through the
-`worldbuilder-tasks` skill. This tracker has no triage tags, so `list --ready`
-lists every `todo` task with no `blockedBy`, marking builder tasks.
-Readiness alone does not establish runner eligibility: run `check-run` before
-dispatch, including when task status is managed without `status doing`.
+Run mutations on `main` only, then commit them immediately (see above). The
+pre-commit hook rejects tracker edits on `task/*` branches. Read-only `show`,
+`list` and `check-run` are also available to workers. Priority/blocker edits
+remain direct edits through the `worldbuilder-tasks` skill. This tracker has no
+triage tags, so `list --ready` lists every `todo` task with no `blockedBy`,
+marking builder tasks. Readiness alone does not establish runner eligibility:
+run `check-run` before dispatch.
 
 The local CLI and its project extensions are tested by `scripts/tasks.test.mjs`,
 run through `scripts/test_tasks_cli.py` in `scripts/run_tests.py`. Keep project
