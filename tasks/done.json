@@ -3561,5 +3561,16 @@
       "builderTask": false,
       "notes": "GOAL. Remove the temporary support for the old task flag `requiresClaude`, now that tasks/index.json and tasks/done.json use `builderTask` (migrated in 9d42185, task #386).\n\nDO: (1) scripts/tasks.mjs: delete the `isBuilderTask` fallback to `task.requiresClaude`, make `isBuilderTask` read only `builderTask`, drop the `requiresClaude` validator line, and keep the `--requires-claude` rejection message for one more release (it points people at `--builder-task`). (2) scripts/pre_commit_checks.py: delete the legacy `requiresClaude` branch in `invalid_tracker_files`. (3) Update the tests that cover the fallback: remove \"reads a legacy requiresClaude flag only when builderTask is absent\" in scripts/tasks.test.mjs and the legacy-key case in scripts/test_pre_commit_checks.py; keep the rename-rejection test. (4) Check `grep -rn requiresClaude` outside tasks/done.json history text and the glossary _Avoid_ line finds nothing in scripts/ or lib/.\nACCEPTANCE: `node --test scripts/tasks.test.mjs` and `python3 scripts/run_tests.py` pass; a task with only the old key is rejected by the hook and ignored by check-run.\nWORKFLOW: task/* branch, ship-branch skill (merge pushes: confirm with the owner). builderTask false.\n\n\nClosed at 487b13a88ddfadb969d3fb9f226165809e1cc587: Merged 487b13a: isBuilderTask reads only builderTask; requiresClaude validator and pre-commit check removed; --requires-claude rejection kept. Full suite green on the branch and on main.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 392,
+      "title": "Move Southampton supplement roads out of ground_sources into world data",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T2. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T2' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: s\n- Scope: 1.2. Add an optional world file read by `load_osm`, migrate the rows into southampton-build, and delete the constant.\n- Check: a fixture world without the file gets no extra roads. With the file, the features are the same as before.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 3324ab855b0f4a4c4d7299ad11622045c2d68f36: Merged 3324ab8. Southampton rows are in worlds/southampton-build 711897a as reference/supplement-roads.json; load_osm reads that file only when it is present. Full suite green. Follow-up, not blocking: housekeeping-review.md section 1.2 still names SUPPLEMENT_ROADS, and the file format is not yet in layout.md.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

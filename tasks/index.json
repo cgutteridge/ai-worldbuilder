@@ -127,7 +127,7 @@
     {
       "id": 379,
       "title": "Railway evidence: per-cell railway test, through-line vs decor, track pairing, crossing/bridge/tunnel points",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -228,16 +228,7 @@
       "notes": "roof_lint on recorded west_w34391673 reports 1 stair-shape mismatch: (6189,61,-5608) facing=north planned=inner_right expected=straight. It predates the 2026-11-22 rebuild, so it comes from pitched_roof_states, not the roof-jog work. Reproduce from the recorded plan with python3 scripts/roof_lint.py --world southampton-build west_w34391673, add a synthetic fixture of the neighbouring stairs around that cell, and fix the shape choice so the planned shape equals stair_shape_from_neighbours for the final skin (same approach as #169 and the house_build chimney handling). Acceptance: the fixture fails before and passes after, roof_lint on west_w34391673 reports 0 mismatches after a rebuild, other recorded builds' lint output unchanged (compare scripts/roof_lint.py --all before and after)."
     },
     
-    {
-      "id": 392,
-      "title": "Move Southampton supplement roads out of ground_sources into world data",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T2. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T2' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: s\n- Scope: 1.2. Add an optional world file read by `load_osm`, migrate the rows into southampton-build, and delete the constant.\n- Check: a fixture world without the file gets no extra roads. With the file, the features are the same as before.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process."
-    },
+    
     
     {
       "id": 394,
