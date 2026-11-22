@@ -11,8 +11,11 @@ import {
   closeTask,
   defaultTrackerDir,
   editSpans,
+  formatTaskTree,
+  formatTaskTreeLine,
   io,
   listReadyTasks,
+  listTaskTree,
   parseTaskId,
   readTrackerFile,
   replaceTrackerFile,
@@ -947,6 +950,82 @@ describe("task closure", () => {
     )
     assert.equal(result.status, 0)
     assert.equal(result.stdout, "Task 1: done\n")
+  })
+})
+
+describe("Task dependency tree", () => {
+  const task = (id, extra = {}) => ({
+    id,
+    title: `Task ${id}`,
+    status: "todo",
+    blockedBy: [],
+    builderTask: false,
+    ...extra,
+  })
+
+  it("formats claim, builder flag and also-blocked-by on one line", () => {
+    assert.equal(
+      formatTaskTreeLine(
+        task(23, {
+          title: "Title of task",
+          builderTask: true,
+          claimedBy: "cursor",
+          blockedBy: [10, 24, 25],
+        }),
+        { parentId: 10 },
+      ),
+      "#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER",
+    )
+    assert.equal(
+      formatTaskTreeLine(task(7, { title: "Plain" })),
+      "#7 - Plain - NO-BUILDER",
+    )
+  })
+
+  it("indents dependents under each blocker and repeats multi-blocked tasks", () => {
+    const lines = formatTaskTree([
+      task(382, { title: "Railway" }),
+      task(383, { title: "Crossing mechanism", blockedBy: [382] }),
+      task(384, { title: "Corridor trial", builderTask: true, blockedBy: [382] }),
+      task(385, {
+        title: "Level crossing",
+        builderTask: true,
+        blockedBy: [384, 383],
+      }),
+    ])
+    assert.deepEqual(lines, [
+      "#382 - Railway - NO-BUILDER",
+      "  #383 - Crossing mechanism - NO-BUILDER",
+      "    #385 - Level crossing (also blocked by #384) - BUILDER",
+      "  #384 - Corridor trial - BUILDER",
+      "    #385 - Level crossing (also blocked by #383) - BUILDER",
+    ])
+  })
+
+  it("prints the tree through the CLI and listTaskTree", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "task-tree-"))
+    directories.push(directory)
+    await writeFile(
+      join(directory, "index.json"),
+      JSON.stringify({
+        nextTaskId: 10,
+        tasks: [
+          task(1, { title: "Root", claimedBy: "codex" }),
+          task(2, { title: "Child", blockedBy: [1], builderTask: true }),
+        ],
+      }) + "\n",
+    )
+    await writeFile(join(directory, "done.json"), '{"tasks":[]}\n')
+    assert.deepEqual(await listTaskTree(directory), [
+      "#1 - Root - claimed by Codex - NO-BUILDER",
+      "  #2 - Child - BUILDER",
+    ])
+    const result = cli(["--tracker-dir", directory, "tree"], tmpdir())
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(
+      result.stdout,
+      "#1 - Root - claimed by Codex - NO-BUILDER\n  #2 - Child - BUILDER\n",
+    )
   })
 })
 
