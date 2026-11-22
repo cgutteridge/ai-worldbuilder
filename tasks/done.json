@@ -3594,5 +3594,16 @@
       "builderTask": false,
       "notes": "roof_lint on recorded west_w34391673 reports 1 stair-shape mismatch: (6189,61,-5608) facing=north planned=inner_right expected=straight. It predates the 2026-11-22 rebuild, so it comes from pitched_roof_states, not the roof-jog work. Reproduce from the recorded plan with python3 scripts/roof_lint.py --world southampton-build west_w34391673, add a synthetic fixture of the neighbouring stairs around that cell, and fix the shape choice so the planned shape equals stair_shape_from_neighbours for the final skin (same approach as #169 and the house_build chimney handling). Acceptance: the fixture fails before and passes after, roof_lint on west_w34391673 reports 0 mismatches after a rebuild, other recorded builds' lint output unchanged (compare scripts/roof_lint.py --all before and after).\n\nClosed at f7c1a682fc4918151f4adbbd40e65d72b866d891: Merged f7c1a68. West plan stair at 6189,61,-5608 is straight in southampton-build 415db67. roof_lint on west_w34391673 is 0; the other recorded builds are unchanged. Live blocks were not applied; that stays with #358. #415 still has uncommitted roof_geometry edits and will need to take this merge.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 416,
+      "title": "test_tree_review fails when run on its own",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Found in the #397 review (2026-11-22). python3 scripts/run_tests.py --only test_tree_review fails 5 of 7 with: module 'lidar_heightmap' has no attribute 'TREE'. scripts/test_tree_review.py imports L.TREE; scripts/lidar_heightmap.py only defines _TREE. The same failure happens on main, and the full suite still passes, so this is load order rather than the dead-code deletion. cover_summary was not used by these tests. Make --only test_tree_review pass without changing full-suite results. Files: scripts/test_tree_review.py and scripts/lidar_heightmap.py only if the public name must return.\n\nClosed at 4bb83739d8ef6852971d94a0eac7152e66d34db6: Merged 4bb8373: test_tree_review loads the lidar library before the scripts wrapper, so --only test_tree_review passes. lidar_heightmap.py was not changed. Full suite green on main.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
