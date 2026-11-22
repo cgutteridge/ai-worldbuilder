@@ -152,13 +152,13 @@
     {
       "id": 389,
       "title": "Find what triggers Minecraft rate-limit waits during applies",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From the 2026-11-21 B35 rebuild thread. The same plan applied four times: fill stage took 122 s with 1 rate-limit retry, 605 s with 10, 485 s with 7, 125 s with 0 (each retry is a fixed 'Minecraft rate limit: retrying in 60s' wait). Unknown what triggers it. One unverified guess: other Minecraft MCP calls (teleport, scan, capture) from a parallel session while an apply runs. Spike: log request timestamps and the server's limit response during an apply, run once with no other calls and once with background calls, and record the limit, whether it is per second or per window, and whether the writer's pacing (see McpWriter, the paced MCP interval in rules/slow-commands.md) can stay under it. Output: a short finding in docs/ with numbers, and either a tuned pacing constant or a filed fix. Acceptance: the finding states the limit and the cause with measurements.\n\nWave investigation 2026-11-22: partial measured findings at docs/plans/minecraft-rate-limit.md. Installed limiter behavior and 60-second Retry-After are reproduced; current config files say 600 RPM but loaded/historical quotas and the original apply cause need measured traces. Saved B35 spec identified as worlds/southampton-build/site/builds/w146985470.json; live paired undo/apply trial remains pending concrete operation review. Owner approved current Codex model/effort for this wave, fresh Codex reviewers in place of unavailable Sonnet, and local merges only (no push)."
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/389-rate-limit-waits"},
     
     
     
@@ -216,33 +216,33 @@
     {
       "id": 420,
       "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/420-prepare-default-pbf"},
     {
       "id": 421,
       "title": "Make new-world-build's clip folder count in clip_coverage",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "The skill says to use the place name for the clip folder, but _query_bbox only counts clips whose name encodes the extent. Have the extractor encode the extent, or change the skill example. Check: following the skill gives 100% clip_coverage for the home cell. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/6"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/421-clip-folder-coverage"},
     {
       "id": 422,
       "title": "Aerial coverage: stop dark pixels counting as missing and report the uncovered count",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "samples() skips pixels under 1% brightness and the blocker prints a rounded percentage (100.0% when one column is missing). Use an explicit no-data mask or alpha, or a small window, and print the uncovered column count. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/8"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/422-aerial-dark-pixels"},
     {
       "id": 423,
       "title": "Include the home cell in new-world-build's first ghost",
@@ -256,33 +256,33 @@
     {
       "id": 424,
       "title": "Add matplotlib to pyproject.toml dependencies",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"},
     {
       "id": 425,
       "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/425-lidar-y-offset-range"},
     {
       "id": 426,
       "title": "Docs: cell-orchestrator prepare round trips and instance-doc ports and GDAL noise",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Two doc fixes. cell-orchestrator per-task steps: note the re-prepare after raising the marker and prepare --cell <neighbour> --apply --evidence-only for edge-crossing features (and find which evidence fact the marker raise changes if it is a real invalidation bug). Instance doc: only port 8766 listens at the title screen, and Arch GDAL plugin 'ERROR 1' lines are harmless. Two GitHub issues to close when this task closes: GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/9 and GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/12"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/426-docs-prepare-ports-gdal"},
     {
       "id": 427,
       "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
