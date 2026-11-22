@@ -27,8 +27,9 @@ docstring):
   rectangle (drawn square to an angled road: at least 3 degrees off the grid and
   filling 75% of its fitted rectangle) takes its pitched heights from the fitted
   axes, giving a straight ridge with hips; other shapes use the grid edge
-  distance. A rotated ridge can still step one block on some sizes: the jog
-  guard then refuses with the usual `roof_jog_ok` remedy. Full-only flatish
+  distance. If the rotated roof would step its ridge sideways (about one in ten
+  sizes), the roof falls back to the grid distance, so it never refuses a roof the
+  grid distance would plan. Full-only flatish
   materials use full blocks instead of inventing a slab variant. Pitched
   materials without a catalogue triad are refused with shared suggestions.
   `mode: group` labels must have equal effective pitches; the first label's

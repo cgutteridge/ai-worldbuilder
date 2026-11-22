@@ -359,6 +359,17 @@ class Build:
         for line in report_lines(h.no, report):
             print(line)
 
+    @staticmethod
+    def _ridge_jogs(half_heights, states):
+        """Ridge jogs the roof skin would have, judged on its own cells (membrane plus underlay)."""
+        import roof_lint
+        cells = {}
+        for (x, z), state in states.items():
+            y = roof_block_y(half_heights[x, z])
+            cells[x, y, z] = state
+            cells[x, y - 1, z] = 'minecraft:bricks'
+        return roof_lint.ridge_jogs(cells)
+
     def roof(self):
         """Plan shared or individual roof skins, solid underlays and through-chimneys."""
         done = {}
@@ -380,20 +391,27 @@ class Build:
             if not resolved['ok']:
                 raise SystemExit('; '.join(resolved['messages']))
             variants = family_variants(rm)
+            rotated = None
             if pitched:
                 # The outermost eave cell starts half a block below the wall-top level so it is a
                 # bottom slab (shallow pitch) or a stair (steep pitch), as on the flatish ring; an
                 # even start made it a full block (#414).
                 # A footprint drawn square to an angled road is a rotated rectangle: take heights from
-                # its fitted axes so the ridge and hips are straight (#415); other shapes use the grid field.
+                # its fitted axes so the ridge and hips are straight (#415). The eave ring keeps the
+                # start height (#414), and a rotated roof that would jog its ridge falls back to the
+                # grid field, so this never refuses a roof the grid field would plan.
+                materials = dict.fromkeys(dist, rm)
                 rotated = rotated_hip_depth(own, set(dist))
                 if rotated is not None:
-                    half_heights = {c: 2 * (b + 6) - 1 + math.floor(2 * d * pitch + 1e-9)
+                    half_heights = {c: 2 * (b + 6) - 1 + (0 if dist[c] == 0 else math.floor(2 * d * pitch + 1e-9))
                                     for c, d in rotated.items()}
-                else:
+                    states = pitched_roof_states(half_heights, materials)
+                    if self._ridge_jogs(half_heights, states):
+                        rotated = None
+                if rotated is None:
                     half_heights = {c: 2 * (b + 6) - 1 + math.floor(2 * d * pitch)
                                     for c, d in dist.items()}
-                states = pitched_roof_states(half_heights, dict.fromkeys(dist, rm))
+                    states = pitched_roof_states(half_heights, materials)
             for c, d in dist.items():
                 if pitched:
                     y = roof_block_y(half_heights[c])

@@ -511,7 +511,8 @@ def fit_rotated_rectangle(own: set) -> tuple[int, float, float, float, float, fl
 
     A house drawn square to an angled road rasterises to a staircase outline whose Chebyshev
     edge distance wobbles, so a pitch laid on it comes out patchy. Fitting the footprint's own
-    axes gives straight ridge and hip planes instead, quantised to half-block heights. Footprints that are square to the grid, or
+    axes gives straight ridge and hip planes instead, quantised to half-block
+    heights. Footprints that are square to the grid, or
     that do not fill a rectangle well (L shapes, groups), return ``None`` and keep the grid field.
 
     @param own: owned ``(x, z)`` columns of the roof

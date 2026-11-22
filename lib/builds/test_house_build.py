@@ -192,6 +192,34 @@ class RoofGeometryTest(unittest.TestCase):
                                              for s in (p.cells[q] for q in stairs)}),
                                      ['east', 'north', 'south', 'west'])
 
+    def test_rotated_roofs_keep_the_eave_edge_and_never_refuse_more_than_the_grid_field(self):
+        """#415: the eave ring stays a slab or stair on rotated footprints, and the jog fallback holds."""
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        from test_roof_geometry import rotated_rect
+        refused = {'rotated': 0, 'grid': 0}
+        rotated_used = 0
+        for degrees in range(3, 88, 6):
+            for length, width in ((14, 8), (9, 9), (12, 5), (20, 10)):
+                for pitch in (0.75, 1):
+                    cells = rotated_rect(length, width, degrees)
+                    with self.subTest(degrees=degrees, size=(length, width), pitch=pitch):
+                        plan = self.plan(parts=[cells], pitch=pitch, mode='each')
+                        with mock.patch.object(H, 'rotated_hip_depth', return_value=None):
+                            grid = self.plan(parts=[cells], pitch=pitch, mode='each')
+                        for name, p in (('rotated', plan), ('grid', grid)):
+                            if ridge_jogs(p.cells) or stair_shape_mismatches(p.cells):
+                                refused[name] += 1
+                        rotated_used += plan.cells != grid.cells
+                        ring = {(x, z) for (x, y, z) in plan.cells if (x, z) not in cells and y >= 36
+                                and plan.cells[x, y, z] != 'minecraft:air'}
+                        for x, z in ring:
+                            column = {y for (qx, y, qz) in plan.cells if (qx, qz) == (x, z) and y >= 36}
+                            self.assertEqual(column, {36})
+                            state = plan.cells[x, 36, z]
+                            self.assertTrue('_stairs[' in state or 'brick_slab[type=bottom' in state, state)
+        self.assertLessEqual(refused['rotated'], refused['grid'])
+        self.assertGreater(rotated_used, 40)     # the rotated heights are really used, not always the fallback
+
     def test_pitched_eave_edge_is_a_slab_or_stair_with_nothing_under_it(self):
         """#414: the overhanging eave ring starts at wall-top level as a slab (shallow) or stair (steep)."""
         for kind in ('square', 'L', 'group'):
