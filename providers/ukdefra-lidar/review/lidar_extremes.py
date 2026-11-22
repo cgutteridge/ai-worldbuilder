@@ -70,10 +70,12 @@ def suggest_y_offset(ground_min: float, top_max: float) -> dict:
         'ground_floor': ground_floor,
         'top_ceiling': top_ceiling,
         'reason': (
-            'Ground and tops fit with 14 blocks below ground and four above the surface.'
+            f'Integer y_offset fits {lower}..{upper} '
+            '(14 blocks below ground and four above the surface).'
             if fits else
-            'No integer y_offset fits this relief with 14 blocks below ground and four '
-            'above the surface; shrink the survey area or explicitly reconsider the margins.'
+            f'No integer y_offset fits this relief '
+            f'(needed {lower}..{upper} with 14 blocks below ground and four '
+            'above the surface); shrink the survey area or explicitly reconsider the margins.'
         ),
     }
 
@@ -123,13 +125,14 @@ def extremes(
             'top_max': metres_aod_to_y(float(dsm_v.max()), f),
         },
         'vanilla_overworld_y': {'min': -64, 'max': 319},
-        'note': (
-            'Choose y_offset so ground_min and top_max sit comfortably inside '
-            'vanilla −64…319 with headroom. Recommend surveying ≥ 5 km × 5 km.'
-        ),
     }
     out['y_offset_fit'] = suggest_y_offset(out['dtm_m']['min'], out['dsm_m']['max'])
-    out['suggested_y_offset'] = out['y_offset_fit']['suggested_y_offset']
+    fit = out['y_offset_fit']
+    out['suggested_y_offset'] = fit['suggested_y_offset']
+    out['note'] = (
+        f"Fitting y_offset integers: {fit['offset_min']}..{fit['offset_max']}. "
+        'Recommend surveying ≥ 5 km × 5 km.'
+    )
     return out
 
 
@@ -158,8 +161,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"DSM m  min={rec['dsm_m']['min']:.2f}  max={rec['dsm_m']['max']:.2f}  mean={rec['dsm_m']['mean']:.2f}")
     y = rec['mc_y_with_current_offset']
     print(f"MC Y (current offset): ground {y['ground_min']}…{y['ground_max']}  tops {y['top_min']}…{y['top_max']}")
-    print(f"suggested y_offset: {rec['suggested_y_offset']}")
-    print(rec['y_offset_fit']['reason'])
+    fit = rec['y_offset_fit']
+    print(
+        f"suggested y_offset: {fit['suggested_y_offset']}  "
+        f"(fitting range {fit['offset_min']}..{fit['offset_max']})"
+    )
+    print(fit['reason'])
     print(rec['note'])
     return 0
 
