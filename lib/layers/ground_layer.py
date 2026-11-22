@@ -57,6 +57,7 @@ from script_env import ROOT  # noqa: E402
 from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb,  # noqa: E402
                             line_cells, hsv, majority, MARGIN)
 import cellmath  # noqa: E402
+from tree_species import DEFAULT_LEAVES  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
@@ -97,13 +98,9 @@ LAWN_TAGS = frozenset({
     ('leisure', 'garden'),
     ('leisure', 'playground'),
 })
-# Woodland floor (#348): these tags take ground_texture.wood. Scrub stays pasture unless that
-# palette sets scrub true. Shares and the grass-edge reach live in the config, not here.
-WOOD_FLOOR_TAGS = frozenset({
-    ('natural', 'wood'),
-    ('landuse', 'forest'),
-})
-SCRUB_TAG = ('natural', 'scrub')
+# Woodland floor (#348): land_use.WOOD_TAGS take ground_texture.wood. Scrub (land_use.SCRUB_TAGS)
+# stays pasture unless that palette sets scrub true. Shares and the grass-edge reach live in the
+# config, not here.
 TEXTURE_RADIUS = 8          # local brightness spread for aerial variance (#319 prototype)
 BARE_DIRT = ('coarse_dirt', 'rooted_dirt')
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
@@ -1121,9 +1118,9 @@ def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = No
         tags = osm_tags(props)
         pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
         is_lawn = any(pair in LAWN_TAGS for pair in pairs)
-        is_wood = any(pair in WOOD_FLOOR_TAGS for pair in pairs)
-        is_scrub = SCRUB_TAG in pairs
-        is_claimed = any(pair != SCRUB_TAG and pair in ROUGH_GRASS_TAGS for pair in pairs)
+        is_wood = any(pair in land_use.WOOD_TAGS for pair in pairs)
+        is_scrub = any(pair in land_use.SCRUB_TAGS for pair in pairs)
+        is_claimed = any(pair not in land_use.SCRUB_TAGS and pair in ROUGH_GRASS_TAGS for pair in pairs)
         if not (is_lawn or is_wood or is_scrub or is_claimed):
             continue
         cols = set(scan_polygon(rings, bbox))
@@ -1523,7 +1520,7 @@ def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple
             if not all(air(p) for p in positions):
                 continue
             for p in positions:
-                plan.set(*p, 'oak_leaves[persistent=true]')
+                plan.set(*p, DEFAULT_LEAVES)
             row['shrubs'] += 1
             row['items'].append({'kind': 'shrubs', 'position': list(positions[0]), 'height': height,
                                  'label': 'shrub inference (#265)',

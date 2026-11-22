@@ -196,6 +196,23 @@ class CheckedExtent(unittest.TestCase):
         self.assertEqual(F._query_bbox(Path('buildings+highways-cell-3-4.geojson')), (3, 4, 130, 131))
 
 
+class WoodTags(unittest.TestCase):
+    """WOOD_TAGS / SCRUB_TAGS (read by the ground, decor, lines and trees passes) are natural cover (#378)."""
+
+    def test_every_wood_and_scrub_tag_classifies_as_natural(self):
+        for key, value in L.WOOD_TAGS | L.SCRUB_TAGS:
+            with self.subTest(tag=f'{key}={value}'):
+                self.assertEqual(L.area_class({key: value})['class'], 'natural')
+
+    def test_wood_kind(self):
+        self.assertEqual(L.wood_kind({'natural': 'wood'}), 'wood')
+        self.assertEqual(L.wood_kind({'landuse': 'forest'}), 'wood')
+        self.assertEqual(L.wood_kind({'natural': 'scrub', 'landuse': 'forest'}), 'wood')
+        self.assertEqual(L.wood_kind({'natural': 'scrub'}), 'scrub')
+        self.assertIsNone(L.wood_kind({'natural': 'heath'}))
+        self.assertIsNone(L.wood_kind({}))
+
+
 class Table(unittest.TestCase):
     def setUp(self):
         self.doc = copy.deepcopy(json.loads(L.TABLE_PATH.read_text()))

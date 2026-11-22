@@ -19,6 +19,7 @@ import sys
 from functools import lru_cache
 
 from script_env import TOOL_ROOT
+from tree_species import mixable as tree_species  # the species table owns which species exist (#378)
 
 TABLE_PATH = TOOL_ROOT / 'config' / 'land-use-classes.json'
 
@@ -37,7 +38,11 @@ SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 MIN_STANDING_M = 2.0
 LINE_SOURCE = 'lines'  # hedge/lane corridors and the unmapped belt grown from them
 TREE_SOURCES = ('mapped', 'wood', 'lidar', LINE_SOURCE)
-TREE_SPECIES = ('oak', 'birch', 'dark_oak')
+# Wood and scrub map features. All three tags are ``natural`` cover in config/land-use-classes.json
+# (test_land_use checks that); the ground, decor, lines and trees passes read these two sets instead
+# of retyping them. Scrub is separate because ground and decor texture it only when a class says so.
+WOOD_TAGS = frozenset({('natural', 'wood'), ('landuse', 'forest')})
+SCRUB_TAGS = frozenset({('natural', 'scrub')})
 TREE_COVER_MODES = ('shade',)  # trees.cover; absent/null keeps the ordinary aerial cover test (#361)
 GROUND_TEXTURE_PALETTES = ('pasture', 'meadow', 'wood')  # open grass (#319); wood floor (#348)
 GROUND_TEXTURE_KEYS = ('tufts', 'tall_grass', 'bare', 'flowers')
@@ -126,11 +131,11 @@ def validate_table(doc: dict) -> dict:
                 raise TableError(f'{cid}: trees.sources must be null or a list of distinct values from {TREE_SOURCES}')
             weights = trees.get('species_weights')
             if weights is not None:
-                if (not isinstance(weights, dict) or not weights or set(weights) - set(TREE_SPECIES)
+                if (not isinstance(weights, dict) or not weights or set(weights) - set(tree_species())
                         or any(isinstance(w, bool) or not isinstance(w, (int, float))
                                or not 0 <= w <= sys.float_info.max for w in weights.values())
                         or not 0 < sum(weights.values()) <= sys.float_info.max):
-                    raise TableError(f'{cid}: trees.species_weights must map {TREE_SPECIES} to nonnegative finite weights with a positive total')
+                    raise TableError(f'{cid}: trees.species_weights must map {tree_species()} to nonnegative finite weights with a positive total')
             cover = trees.get('cover')
             if cover is not None and cover not in TREE_COVER_MODES:
                 raise TableError(f'{cid}: trees.cover must be null or one of {TREE_COVER_MODES}')
@@ -569,6 +574,19 @@ def area_class(tags: dict) -> dict | None:
             seen = f'{key}={value}'
     if seen:
         return {'class': 'unknown', 'kind': None, 'reason': 'unlisted', 'value': seen}
+    return None
+
+
+def wood_kind(tags: dict) -> str | None:
+    """Whether a polygon's tags make it woodland.
+
+    @param tags: flattened tags
+    @returns: ``'wood'`` (``WOOD_TAGS``: wood or forest), ``'scrub'`` (``SCRUB_TAGS``) or None
+    """
+    if any(tags.get(key) == value for key, value in WOOD_TAGS):
+        return 'wood'
+    if any(tags.get(key) == value for key, value in SCRUB_TAGS):
+        return 'scrub'
     return None
 
 

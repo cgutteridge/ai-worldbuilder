@@ -41,6 +41,7 @@ from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, i
                           load_masked_positions, neighbour_owned, warm_surface_probe)
 from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
+from tree_species import SPECIES  # noqa: E402
 from tree_voxels import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
@@ -74,7 +75,6 @@ FILL_SPACING = 5           # jittered grid pitch of the fill (crowns here are 5-
 FILL_RADII = (2.5, 3.0, 3.0, 3.5, 4.0, 4.5)   # height variance: round 4-6 below 3.5, plane 8-9 above
 MIN_NDSM = 3.0            # metres: inferred fill requires standing lidar canopy when available
 LIDAR_FILL_SPACING = FILL_SPACING  # minimum centre separation for the lidar-only second source
-SPECIES_HEIGHTS = {'birch': (6, 7, 8), 'dark_oak': (6, 7, 8)}  # varied trunk heights for species silhouettes
 
 
 class _InCell:
@@ -656,8 +656,8 @@ def voxels_for(x: int, z: int, gy: int, r: float, *, species: str = 'oak') -> di
     if r < MIN_CROWN_R + 0.2:
         return bush_voxels(x, z, gy)
     if species != 'oak':
-        return tree_voxels(x, z, gy, height=rnd.choice(SPECIES_HEIGHTS[species]),
-                           species=species, style=species,
+        return tree_voxels(x, z, gy, height=rnd.choice(SPECIES[species].heights),
+                           species=species, style='silhouette',
                            rng=random.Random(RNG_SEED + x * 31 + z))
     if r >= 6:
         h, style = rnd.choice((12, 13, 14)), 'plane'
@@ -786,7 +786,7 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0,
     wood = set()
     for rings, props in idx.areas:
         tags = osm_tags(props)
-        if tags.get('natural') in ('wood', 'scrub') or tags.get('landuse') == 'forest':
+        if land_use.wood_kind(tags):
             wood.update(scan_polygon(rings, bbox))
     near = [(di, dj) for di in range(-2, 3) for dj in range(-2, 3) if di * di + dj * dj <= 4]
     from tree_lines import gated_crowns

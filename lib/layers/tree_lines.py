@@ -368,6 +368,7 @@ def propose(cell: tuple[int, int]) -> dict:
     """
     from aerial_coverage import cell_image
     import cellmath
+    import land_use
     from cellmath import CELL
     from coverage import area_classes, scan_polygon
     from ground_sources import OSMGround
@@ -392,9 +393,10 @@ def propose(cell: tuple[int, int]) -> dict:
     for rings, props in idx.areas:
         t = osm_tags(props)
         cols = [(x - x0, z - z0) for x, z in scan_polygon(rings, bounds)]
-        if t.get('natural') == 'wood' or t.get('landuse') == 'forest':
+        kind = land_use.wood_kind(t)
+        if kind == 'wood':
             targets = (wood, covered)
-        elif t.get('natural') == 'scrub':
+        elif kind == 'scrub':
             targets = (covered,)
         elif t.get('landuse') in ('meadow', 'grass', 'farmland') or t.get('natural') == 'grassland':
             targets = (open_grass,)

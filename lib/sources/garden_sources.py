@@ -36,12 +36,13 @@ from script_env import ROOT  # noqa: E402
 
 import cellmath  # noqa: E402
 import decor_plan  # noqa: E402
+from tree_species import DEFAULT_LEAVES  # noqa: E402
 import land_use  # noqa: E402
 import district_profiles  # noqa: E402
 
 GARDENS = ROOT / 'site' / 'gardens'
 DISTRICTS = ROOT / 'site' / 'districts'
-HEDGE_BLOCK = 'oak_leaves[persistent=true]'
+HEDGE_BLOCK = DEFAULT_LEAVES
 DEFAULT_BLOCK = {'hedge': HEDGE_BLOCK, 'brick_wall': 'brick_wall', 'fence': 'spruce_fence',
                  'iron_bars': 'iron_bars'}
 DEFAULT_HEIGHT = {'hedge': 2, 'brick_wall': 1, 'fence': 2, 'iron_bars': 1}
@@ -189,32 +190,20 @@ def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
     return role_resolution(conv, number, role)['open']
 
 
-NON_RESIDENTIAL_BUILDINGS = frozenset({
-    'retail', 'commercial', 'industrial', 'office', 'university', 'college', 'school', 'hospital',
-    'church', 'chapel', 'public', 'civic', 'government', 'supermarket', 'warehouse', 'hotel', 'kiosk',
-    'service', 'religious', 'train_station', 'transportation', 'sports_hall', 'stadium'})
-NON_RESIDENTIAL_KEYS = ('shop', 'amenity', 'office', 'tourism', 'craft')
-
-
-def nonresidential_building(props: dict) -> bool:
-    """True when map tags say a building is not a house (shop, office, campus, ...): no private frontage."""
-    return props.get('building') in NON_RESIDENTIAL_BUILDINGS or any(props.get(k) for k in NON_RESIDENTIAL_KEYS)
-
-
 OPENING_WIDTH = 2        # columns of front boundary left open at an entrance without drive evidence
 MAX_OPENING_WIDTH = 4    # cap on an opening widened to a paved strip (#270)
 FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden
 
 
 def meta_class(meta: dict) -> str:
-    """Land-use class id of a plot: ``meta['land_use']`` (dict from the classifier, or an id), else the
-    legacy ``nonresidential`` flag (commercial), else residential (today's default for a house plot)."""
+    """Land-use class id of a plot: ``meta['land_use']`` (dict from the classifier, or an id), else
+    residential (today's default for a house plot)."""
     lu = meta.get('land_use')
     if isinstance(lu, dict):
         return lu.get('class') or 'unknown'
     if lu:
         return str(lu)
-    return 'commercial' if meta.get('nonresidential') else 'residential'
+    return 'residential'
 
 
 def _front_extent(meta: dict, plot_cells) -> list:
@@ -242,8 +231,6 @@ def _pavement_strip(meta: dict, front, width: float) -> list:
 def frontage_inference_reason(meta: dict, role_cells: dict, row: dict) -> str:
     """Why this plot cannot use class/district inference, or an empty string when eligible."""
     cls, fr = meta_class(meta), row['frontage']
-    if meta.get('nonresidential') and not meta.get('land_use'):
-        return 'building is not residential (shop, office or campus tags)'
     if cls not in land_use.CLASSES or not fr['inference'] or cls in land_use.NO_INFERENCE:
         return f'land-use class {cls} allows no frontage inference'
     requires = fr['requires']
