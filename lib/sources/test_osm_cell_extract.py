@@ -33,6 +33,8 @@ class CellExtractJobList(unittest.TestCase):
         # Base map families the old standard already pulled.
         for preset in ('buildings', 'highways', 'landuse'):
             self.assertIn(preset, names)
+        # Railway is one lines preset, not a second index (#379).
+        self.assertIn('railway', names)
         # Unique, stable order for filenames / CLI.
         self.assertEqual(len(names), len(set(names)))
 
@@ -126,3 +128,15 @@ class CellExtractJobList(unittest.TestCase):
         self.assertIn('--cell', blob)
         self.assertIn('CELL_EXTRACT_LAYERS', blob)
         self.assertNotIn('--layers buildings,highways', blob)
+
+    def test_railway_cell_layer_is_one_lines_query(self):
+        """The per-cell railway skip adds the existing lines preset, nothing heavier."""
+        import osm_extraction as ox
+
+        self.assertIn('railway', oce.CELL_EXTRACT_LAYERS)
+        jobs = ox.LAYER_PRESETS['railway']
+        self.assertEqual(len(jobs), 1)
+        gdal_layer, where, _models = jobs[0]
+        self.assertEqual(gdal_layer, 'lines')
+        self.assertIn('railway', where)
+        self.assertNotIn('multipolygon', where)
