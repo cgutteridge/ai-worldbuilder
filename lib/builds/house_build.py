@@ -50,7 +50,6 @@ from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
 from cellmath import DIRS, N8, OPP  # noqa: E402
-from entrance_approach import entrance_approach, entrances_from_blocks  # noqa: E402,F401  (read-only; #240)
 
 
 def load_spec(path):
@@ -349,11 +348,11 @@ class Build:
     def windows(self, k, h):
         """Apply the shared bounded-opening policy to the house's pier rhythm."""
         from floor_reference import outside_ground
-        from window_openings import Window, DIRECTIONS, choose_windows, report_lines
+        from window_openings import Window, choose_windows, report_lines
         del k
         door = {q for q in (getattr(h, 'door', None), getattr(h, 'rear', None)) if q}
         candidates = []
-        for face in DIRECTIONS:
+        for face in ('N', 'S', 'E', 'W'):
             cols = [c for c in h.walls if self.exposed(c, face)]
             edge = 1 if face in 'NS' else 0
             stepped = len({c[edge] for c in cols}) > 1
@@ -364,7 +363,7 @@ class Build:
                     continue
                 for dy in (2, 5):
                     candidates.append(Window((c[0], h.b + dy, c[1]), face, stepped))
-        positions = {(w.pos[0] + DIRECTIONS[w.face][0], w.pos[2] + DIRECTIONS[w.face][1])
+        positions = {(w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1])
                      for w in candidates}
         ground = outside_ground(positions)
         def block(x, y, z):

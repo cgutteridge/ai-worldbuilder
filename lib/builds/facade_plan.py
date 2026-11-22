@@ -58,10 +58,10 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 import math
 from typing import Any
 
+from cellmath import DIRS
 import provenance as prov
 
 FACES = ('N', 'S', 'E', 'W')
-_OUTWARD = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}
 _FRONT_HIGHWAYS = frozenset({
     'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street',
     'service', 'pedestrian',
@@ -122,7 +122,8 @@ def front_columns(footprint: set, streets: Sequence, *, occupied=(), street_name
             continue
         distance, q = hit
         faces = []
-        for face, (dx, dz) in _OUTWARD.items():
+        for face in FACES:
+            dx, dz = DIRS[face]
             if (x + dx, z + dz) in blocked:
                 continue
             outside = (p[0] + dx, p[1] + dz)
@@ -137,15 +138,15 @@ def front_columns(footprint: set, streets: Sequence, *, occupied=(), street_name
         for sx in range(x - 1, x + 2):
             for sz in range(z - 1, z + 2):
                 if (sx, sz) in footprint:
-                    for dx, dz in _OUTWARD.values():
+                    for dx, dz in DIRS.values():
                         if (sx + dx, sz + dz) not in footprint:
                             nx += dx
                             nz += dz
         normal = math.hypot(nx, nz)
         alignment = ((nx * (q[0] - p[0]) + nz * (q[1] - p[1])) / (normal * distance)
                      if normal else 0)
-        cardinal = max((_OUTWARD[face][0] * (q[0] - p[0]) +
-                        _OUTWARD[face][1] * (q[1] - p[1])) / distance for _, face in faces)
+        cardinal = max((DIRS[face][0] * (q[0] - p[0]) +
+                       DIRS[face][1] * (q[1] - p[1])) / distance for _, face in faces)
         if max(alignment, cardinal) < 0.9:
             continue
         # Trace from just outside the wall to the street, including narrow intervening buildings.

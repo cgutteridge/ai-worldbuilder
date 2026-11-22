@@ -105,7 +105,6 @@ class DoneTest(Base):
             self.assertFalse(H.layers_done((1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
-                mock.patch.object(H, 'ring_cells', return_value=[(1, 1)]), \
                 mock.patch('sys.stdout', new=io.StringIO()) as out:
             H.cmd_plan([])
         self.assertIn('in-flight: highfield_1_1_decor', out.getvalue())

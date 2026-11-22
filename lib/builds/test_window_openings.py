@@ -10,7 +10,8 @@ import numpy as np
 import feature_build as F
 import house_build as H
 from site_kit import Plan
-from window_openings import DIRECTIONS, Window, choose_windows, report_lines
+from cellmath import DIRS
+from window_openings import Window, choose_windows, report_lines
 
 
 class WindowReportTest(unittest.TestCase):
@@ -18,9 +19,9 @@ class WindowReportTest(unittest.TestCase):
         columns = walls if columns is None else columns
         return choose_windows(candidates, block=lambda x, y, z: blocks.get((x, y, z), 'air'),
             walls=walls, exposed=lambda c, face: (
-                c[0] + DIRECTIONS[face][0], c[1] + DIRECTIONS[face][1]) not in columns,
+                c[0] + DIRS[face][0], c[1] + DIRS[face][1]) not in columns,
             outside_ground={
-                (w.pos[0] + DIRECTIONS[w.face][0], w.pos[2] + DIRECTIONS[w.face][1]): -1
+                (w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1]): -1
                 for w in candidates}, protected=protected)
 
     def test_shared_corner_counts_once_on_each_intended_face(self):
@@ -35,7 +36,7 @@ class WindowReportTest(unittest.TestCase):
         walls = {c for c in columns if c[0] in (0, 7) or c[1] in (0, 4)}
         blocks = {(x, y, z): 'bricks' for x, z in walls for y in range(4)}
         candidates = [Window((x, y, z), face) for x, z in sorted(walls)
-            for face, (dx, dz) in DIRECTIONS.items() if (x + dx, z + dz) not in columns
+            for face, (dx, dz) in DIRS.items() if (x + dx, z + dz) not in columns
             for y in (1, 2)]
         expected = {(x, y, z): 'glass_pane[east=true,west=true]'
             for x in range(1, 7) for y in (1, 2) for z in (0, 4)}
@@ -43,7 +44,7 @@ class WindowReportTest(unittest.TestCase):
             for x in (0, 7) for y in (1, 2) for z in range(1, 4)})
         writes, report = self.select(candidates, blocks, walls, columns)
         self.assertEqual(writes, expected)
-        for face in DIRECTIONS:
+        for face in DIRS:
             self.assertEqual(sum(report[face].values()),
                 sum(w.face == face for w in candidates))
         self.assertEqual(self.select(list(reversed(candidates)), blocks, walls, columns),
@@ -104,14 +105,14 @@ class WindowReportTest(unittest.TestCase):
             for dx in (-1, 0, 1) for dz in (-1, 0, 1))}
         blocks = {(x, y, z): 'bricks' for x, z in walls for y in range(4)}
         candidates = [Window((x, y, z), face, stepped=True) for x, z in sorted(walls)
-            for face, (dx, dz) in DIRECTIONS.items() if (x + dx, z + dz) not in columns
+            for face, (dx, dz) in DIRS.items() if (x + dx, z + dz) not in columns
             for y in (1, 2)]
         _, report = self.select(candidates, blocks, walls, columns)
         self.assertEqual(sum(report['E'].values()), 40)
         self.assertEqual(sum(report['W'].values()), 40)
         self.assertEqual(report['E']['corner pier / tread too short'], 22)
         self.assertEqual(report['W']['corner pier / tread too short'], 22)
-        for face in DIRECTIONS:
+        for face in DIRS:
             self.assertEqual(sum(report[face].values()),
                 sum(w.face == face for w in candidates))
 
@@ -146,7 +147,7 @@ class WindowPolicyTest(unittest.TestCase):
             row['rhythm'] = 'W'
         if corner:
             row['corner_glazing'] = [corner]
-        faces = list(DIRECTIONS)
+        faces = list(DIRS)
         if reverse:
             faces.reverse()
         spec = {'name': 'window_test', 'ways': {'1': 'A'}, 'groups': [group],
@@ -204,7 +205,7 @@ class WindowPolicyTest(unittest.TestCase):
                 glass = self.glass(plan)
                 self.assertTrue(any('glass_pane' in s for s in glass.values()))
                 for x, y, z in glass:
-                    self.assertLessEqual(sum(b.exposed((x, z), face) for face in DIRECTIONS), 1)
+                    self.assertLessEqual(sum(b.exposed((x, z), face) for face in DIRS), 1)
                 self.assertIn('corner pier / tread too short', report)
 
     def test_stepped_treads_get_solid_glass_in_both_builders(self):
@@ -215,7 +216,7 @@ class WindowPolicyTest(unittest.TestCase):
                 self.assertTrue(south_glass)
                 self.assertTrue(all(s == 'minecraft:glass' for s in south_glass.values()))
                 for p in self.glass(plan):
-                    self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRECTIONS), 1)
+                    self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1)
                 self.assertIn('solid-glass=', report)
                 self.assertTrue(set(plan) <= set(original), 'windows may not enlarge the shell')
 
@@ -224,7 +225,7 @@ class WindowPolicyTest(unittest.TestCase):
         for kind in ('feature', 'house'):
             plan, _, report, b, h = self.run_builder(kind, cells)
             for p in self.glass(plan):
-                self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRECTIONS), 1)
+                self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1)
             self.assertIn('corner pier / tread too short', report)
 
     def test_outside_sill_and_unknown_ground_in_both_builders(self):

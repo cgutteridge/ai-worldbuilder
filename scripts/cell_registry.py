@@ -53,6 +53,9 @@ from typing import Any, Callable
 
 from script_env import ROOT, make_parser, add_world_arg, activate_world_from_args  # noqa: E402
 
+import cellmath
+import plan_refs
+
 from block_store import BlockStoreError  # noqa: E402
 from cell_journal import APPROVAL_LAYERS, CellJournalError, CellRegistry, CellView, Note  # noqa: E402
 
@@ -73,32 +76,6 @@ REGISTRY_ROOT_ENV = 'AI_WORLDBUILDER_REGISTRY_ROOT'
 
 class RegistryError(ValueError):
     """Bad registry CLI input (cell id, note kind)."""
-
-
-def cell_id(tx: int, tz: int) -> str:
-    """Canonical cell id string ``tx,tz``.
-
-    @param tx: cell X index
-    @param tz: cell Z index
-    @returns: ``\"tx,tz\"``
-    """
-    return f'{tx},{tz}'
-
-
-def parse_cell_id(spec: str) -> tuple[int, int]:
-    """Parse a cell id string.
-
-    @param spec: ``tx,tz``
-    @returns: (tx, tz)
-    @raises RegistryError: on bad input
-    """
-    parts = [p.strip() for p in str(spec).split(',')]
-    if len(parts) != 2:
-        raise RegistryError(f'expected cell id tx,tz got {spec!r}')
-    try:
-        return int(parts[0]), int(parts[1])
-    except ValueError as exc:
-        raise RegistryError(f'expected cell id tx,tz got {spec!r}') from exc
 
 
 def registry_root(root: Path | str | None = None) -> Path:
@@ -178,15 +155,6 @@ def is_empty(v: CellView) -> bool:
             and not any(n.kind == 'coverage' for n in v.notes) and not v.features and not v.in_flight)
 
 
-def coverage_warnings(v: CellView) -> list[dict[str, str]]:
-    """Open vector-map coverage warnings of a cell view.
-
-    @param v: CellView
-    @returns: ``[{'id', 'detail'}]``
-    """
-    return [{'id': n.ref, 'detail': n.body} for n in v.notes if n.kind == 'coverage']
-
-
 def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
     """Every feature on a cell plan: ``{id: {'status', 'cells': ['tx,tz', ...]}}``.
 
@@ -202,7 +170,7 @@ def feature_cells(reg: CellRegistry) -> dict[str, dict[str, Any]]:
             # Prefer built / in-progress over planned when the same id spans cells.
             if f.status == 'built' or (f.status == 'in-progress' and rec['status'] == 'planned'):
                 rec['status'] = f.status
-            rec['cells'].append(cell_id(*v.cell))
+            rec['cells'].append(cellmath.cell_id(v.cell))
     return out
 
 
@@ -223,7 +191,7 @@ def duplicate_plans(reg: CellRegistry) -> list[dict[str, Any]]:
         for pid in reg.plan_dismissed_ids(cell):
             rec = plans.setdefault(pid, {'status': 'dismissed', 'cells': [], 'dismissed': True})
             if rec['dismissed']:
-                rec['cells'].append(cell_id(*cell))
+                rec['cells'].append(cellmath.cell_id(cell))
     return find(reg.root, plans)
 
 
@@ -268,7 +236,7 @@ def cells_above_ghost(reg: CellRegistry) -> dict[str, Any]:
         v = reg.cell(cell)
         features = sum(1 for f in v.features if f.status != 'planned')
         rows.append({
-            'cell': cell_id(*cell),
+            'cell': cellmath.cell_id(cell),
             'ground': 1 if v.ground == 'generated' else 0,
             'trees': 1 if v.trees else 0,
             'decor': 1 if v.decor else 0,
@@ -353,7 +321,7 @@ def _ground_floating(reg, cell) -> list:
 def _format_status(reg: CellRegistry, cid: str | None, *, policy=None) -> str:
     lines = []
     cur = reg.marker_cell()
-    lines.append(f'current_cell: {cell_id(*cur) if cur else "(none)"}')
+    lines.append(f'current_cell: {cellmath.cell_id(cur) if cur else "(none)"}')
     if cid is None:
         views = reg.view()
         lines.append(f'registered_cells: {len(views)}')
@@ -361,7 +329,7 @@ def _format_status(reg: CellRegistry, cid: str | None, *, policy=None) -> str:
         flying = [e for e in reg.entries() if e.status == 'begun']
         lines.append(f'in_flight: {len(flying)}')
         return '\n'.join(lines)
-    v = reg.cell(parse_cell_id(cid))
+    v = reg.cell(cellmath.parse_cell(cid))
     lines.append(f'cell {cid}:')
     lines.append(f'  ground={v.ground} trees={v.trees} decor={v.decor} '
                  f'marker={"up" if v.marker else "none"} hold={v.hold!r}')
@@ -384,7 +352,7 @@ def _format_status(reg: CellRegistry, cid: str | None, *, policy=None) -> str:
     # #142 / #154: unbuilt footprint (incl. portals left inside a built outline)
     try:
         from site_status import cell_footprint, format_footprint
-        fp = cell_footprint(parse_cell_id(cid))
+        fp = cell_footprint(cellmath.parse_cell(cid))
         if fp.get('built_area') or fp.get('unbuilt_area'):
             lines.append(f'  footprint {format_footprint(fp)}')
     except (OSError, ValueError, KeyError, RuntimeError, SystemExit, ImportError):
@@ -426,23 +394,6 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
     return refs[0]
 
 
-def _norm_ref(ref: Any) -> str:
-    """Map ref in comparable form: ``w123`` (a bare ``123`` from a spec is a way id)."""
-    from plan_refs import norm_ref
-    return norm_ref(ref)
-
-
-def planned_refs(root: Path | str, plan_id: str) -> set[str] | None:
-    """Map refs a feature's hand-off ``site/builds/<id>.json`` covers (houses: its ``ways``).
-
-    @param root: world root
-    @param plan_id: feature plan id
-    @returns: refs like ``w176658456``, or None when there is no readable spec to say
-    """
-    from plan_refs import spec_refs
-    return spec_refs(root, plan_id)
-
-
 def feature_plan_ids(reg: CellRegistry) -> set[str]:
     """Every feature plan id currently on any cell (planned or built).
 
@@ -480,9 +431,9 @@ def plan_ids_for_candidates(reg: CellRegistry, cell: tuple[int, int],
         if not is_street or base in dismissed:
             out.append(base)
             continue
-        refs = {_norm_ref(r) for r in item['refs'] if r}
+        refs = {plan_refs.norm_ref(r) for r in item['refs'] if r}
         if base in known:
-            covered = planned_refs(reg.root, base)
+            covered = plan_refs.spec_refs(reg.root, base)
             if covered is not None and refs <= covered:
                 out.append(base)
                 continue
@@ -508,15 +459,15 @@ def _unresolved_legacy_house_pids(reg: CellRegistry, item: dict[str, Any], fid: 
     """
     from plan_refs import NAME_REF
     base = candidate_plan_id(item)
-    refs = {_norm_ref(r) for r in (item.get('refs') or ()) if r}
+    refs = {plan_refs.norm_ref(r) for r in (item.get('refs') or ()) if r}
     out: list[str] = []
     # Same exemption as the suffixed loop: the candidate's own assigned id is not legacy.
-    if base in known and base != fid and planned_refs(reg.root, base) is None:
+    if base in known and base != fid and plan_refs.spec_refs(reg.root, base) is None:
         out.append(base)
     for pid in known:
         if pid == fid or not pid.startswith(f'{base}_'):
             continue
-        if planned_refs(reg.root, pid) is not None:
+        if plan_refs.spec_refs(reg.root, pid) is not None:
             continue
         m = NAME_REF.search(pid)
         if m and m.group(1) in refs:
@@ -579,7 +530,7 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     @returns: list of candidate dicts from ``missing_features`` (kind/label/refs/…)
     """
     import cell_features as cf  # noqa: WPS433
-    tx, tz = parse_cell_id(cid)
+    tx, tz = cellmath.parse_cell(cid)
     return list(cf.missing_features(tx, tz))
 
 
@@ -612,7 +563,7 @@ def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
         # spec still drives partial splits.
         if item.get('kind') == 'houses':
             fid = plan_ids_for_candidates(reg, cell, [item])[0]
-            if fid in covered and planned_refs(reg.root, fid) is None:
+            if fid in covered and plan_refs.spec_refs(reg.root, fid) is None:
                 continue
         out.extend(uncovered_candidates(item, covered))
     return drop_unresolved_legacy_houses(reg, cell, out)
@@ -634,7 +585,7 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     @param candidates: optional precomputed list; default loads via :func:`propose_feature_candidates`
     @returns: list of ``{id, label, kind}`` recorded (skipped when already planned or dismissed)
     """
-    cell = parse_cell_id(cid)
+    cell = cellmath.parse_cell(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
     items = drop_covered_candidates(reg, cell, items)
     skip = feature_plan_ids(reg) | reg.plan_dismissed_ids(cell)
@@ -683,9 +634,9 @@ def mismatch_next_step(item, fix: bool, registry) -> str:
     @returns: one line naming the command
     """
     plan = item.plans[0] if item.plans else '?'
-    cells = ' '.join(cell_id(*c) for c in item.cells)
+    cells = ' '.join(cellmath.cell_id(c) for c in item.cells)
     if not fix:
-        return (f'clear with: reconcile {cell_id(*item.cell)} --fix (the entry also touches cell(s) {cells}; '
+        return (f'clear with: reconcile {cellmath.cell_id(item.cell)} --fix (the entry also touches cell(s) {cells}; '
                 'name them all if positions differ there)')
     from cell_readiness import reapply_command
     reapply = reapply_command(plan, item.layer, item.owner or item.cell, registry=registry)
@@ -713,7 +664,7 @@ def format_drift(drift, *, registry, fix: bool = False) -> str:
         for i in sorted(items, key=lambda i: (i.cell, i.seq)):
             tag = (' [fixed]' if i.fixed else ' [NOT fixed]') if fix else ''
             what = f'{i.count} position(s)' if i.count or i.kind != 'in-flight' else 'every planned block is present'
-            lines.append(f'  {cell_id(*i.cell)}  {what}  plans {", ".join(i.plans) or "-"}'
+            lines.append(f'  {cellmath.cell_id(i.cell)}  {what}  plans {", ".join(i.plans) or "-"}'
                          f'{f"  seq {i.seq}" if i.seq else ""}{tag}')
             for pos, (want, got) in list(i.sample.items())[:3]:
                 lines.append(f'      {pos}: want {want}, got {got}')
@@ -743,7 +694,7 @@ def run_reconcile(root: Path | None, cells: list[str], fix: bool) -> int:
     @returns: 0 when nothing is left drifting, 1 otherwise
     """
     import site_kit
-    scope = [parse_cell_id(c) for c in cells] or None
+    scope = [cellmath.parse_cell(c) for c in cells] or None
     if fix:
         reg, writer = site_kit.live_session(root=root)
         drift = reg.reconcile(scope, fix=True, apply=writer)
@@ -856,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == 'reconcile':
         try:
             return run_reconcile(args.root, args.cells, args.fix)
-        except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
+        except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError, SystemExit) as exc:
             print(f'registry error: {exc}', file=sys.stderr)
             return 2
     root = registry_root(args.root)
@@ -866,7 +817,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd in ('check', 'prepare'):
             from cell_readiness import format_readiness
             from readiness_evidence import policy_for
-            cell = parse_cell_id(args.cell)
+            cell = cellmath.parse_cell(args.cell)
             if args.cmd == 'prepare' and args.apply and not os.environ.get('SITE_OWNER'):
                 import site_lock
                 owner = args.owner or f'prepare-{os.getpid()}'
@@ -917,10 +868,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == 'propose-features':
             from cell_features import clip_coverage
-            fraction = clip_coverage(parse_cell_id(args.cell))
+            fraction = clip_coverage(cellmath.parse_cell(args.cell))
             print(json.dumps({'cell': args.cell, 'clip_coverage': fraction,
                               'kind': 'clip-query-coverage'}, sort_keys=True))
-            items = drop_covered_candidates(reg, parse_cell_id(args.cell),
+            items = drop_covered_candidates(reg, cellmath.parse_cell(args.cell),
                                             propose_feature_candidates(args.cell))
             for item in items:
                 print(json.dumps(item, sort_keys=True, default=_json_default))
@@ -940,7 +891,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'hold':
-            cell = parse_cell_id(args.cell)
+            cell = cellmath.parse_cell(args.cell)
             if args.hold_cmd == 'set':
                 note(reg, cell, 'hold', args.reason)
                 print(f'hold set on {args.cell}: {args.reason}')
@@ -950,13 +901,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'dismiss-coverage':
-            note(reg, parse_cell_id(args.cell), 'coverage-dismiss', args.reason, args.warning_id)
+            note(reg, cellmath.parse_cell(args.cell), 'coverage-dismiss', args.reason, args.warning_id)
             print(f'dismissed {args.warning_id} on {args.cell}')
             return 0
 
         if args.cmd == 'dismiss-clip-coverage':
             from cell_features import clip_coverage
-            cell = parse_cell_id(args.cell)
+            cell = cellmath.parse_cell(args.cell)
             if clip_coverage(cell) >= 1:
                 raise RegistryError(f'no incomplete clip query coverage on {args.cell}')
             from readiness_evidence import policy_for
@@ -967,25 +918,25 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.cmd == 'dismiss-feature':
-            note(reg, parse_cell_id(args.cell), 'plan_feature-dismiss',
+            note(reg, cellmath.parse_cell(args.cell), 'plan_feature-dismiss',
                  args.reason, args.feature)
             print(f'dismissed feature {args.feature} on {args.cell}: {args.reason}')
             return 0
 
         if args.cmd == 'note':
-            note(reg, parse_cell_id(args.cell), args.kind, args.body, args.ref)
+            note(reg, cellmath.parse_cell(args.cell), args.kind, args.body, args.ref)
             print(f'{args.kind} {args.ref} on {args.cell}')
             return 0
 
         if args.cmd == 'approve':
-            note(reg, parse_cell_id(args.cell), 'approval', args.layers.replace(' ', ''))
-            print(f'approval on {args.cell}: {sorted(reg.approved_layers(parse_cell_id(args.cell)))}')
+            note(reg, cellmath.parse_cell(args.cell), 'approval', args.layers.replace(' ', ''))
+            print(f'approval on {args.cell}: {sorted(reg.approved_layers(cellmath.parse_cell(args.cell)))}')
             return 0
 
         if args.cmd == 'next':
             from registry_next import format_next, next_task
-            task = next_task(reg, root=root, exclude={parse_cell_id(c) for c in args.exclude_cell},
-                             cell=parse_cell_id(args.cell) if args.cell else None)
+            task = next_task(reg, root=root, exclude={cellmath.parse_cell(c) for c in args.exclude_cell},
+                             cell=cellmath.parse_cell(args.cell) if args.cell else None)
             print(format_next(task))
             if task is not None:
                 print(json.dumps(task, indent=2, sort_keys=True))
@@ -999,7 +950,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(RV.format_report(report))
             return RV.exit_code(report)
-    except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
+    except (CellJournalError, OSError, ValueError, LookupError, RuntimeError, ImportError, SystemExit) as exc:
         print(f'registry error: {exc}', file=sys.stderr)
         return 2
 

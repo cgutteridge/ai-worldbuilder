@@ -297,4 +297,4 @@ Ground and decor read the shared frontage description from `garden_sources`
 route at the feature approach's outer end. Decor keeps `reserved.openings` clear of
 barriers, furniture and final joins, and reports `reserved.conflicts` and `frontages`
 in its plan. The feature pass is unchanged apart from the read-only
-`house_build.entrance_approach`.
+`entrance_approach.entrance_approach`.

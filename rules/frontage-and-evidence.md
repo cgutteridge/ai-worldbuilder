@@ -188,7 +188,7 @@ builds a second one.
   is exempt from denoise. Decor keeps the route and the feature's clearance columns free of
   barriers and furniture (furniture dropped there appears in `unplaced`). Blocked connections go to
   the ground stats as `frontage_blocked`. Trees are not moved or cleared by either pass.
-- Feature owns door, threshold and external steps (`house_build.entrance_approach` describes
+- Feature owns door, threshold and external steps (`entrance_approach.entrance_approach` describes
   them read-only, rebuilt from current geometry); ground owns the onward route from its outer
   end; decor owns boundary and gate placement. Clearance is shared planning data, not
   ownership of air.

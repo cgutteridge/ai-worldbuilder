@@ -1,7 +1,7 @@
 """Read-only description of a house entrance approach (#240).
 
 Pure data, no world access, so ground, decor and the frontage description can read it without
-importing the feature builder. ``house_build`` re-exports ``entrance_approach``.
+importing either builder. Import these helpers directly from this module.
 """
 from __future__ import annotations
 

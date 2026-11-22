@@ -18,7 +18,7 @@ from datetime import datetime
 from script_env import ROOT  # noqa: E402
 from osm_footprints import OSMIndex, _addr, osm_tags  # noqa: E402
 import land_use  # noqa: E402
-from cellmath import cell_bbox, parse_cell  # noqa: E402,F401
+from cellmath import parse_cell  # noqa: E402
 
 COVERAGE_CHEATSHEET = """
 Commands (prefix: python3 scripts/coverage.py --world <world>):

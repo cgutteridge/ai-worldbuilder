@@ -54,7 +54,6 @@ def shelf_block(plank: str, facing: str | None) -> str:
     return f"{name.removesuffix('_planks')}_shelf[facing={facing}]"
 
 
-CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MIN_BORDER_CELLS = 4
 MAX_FREE_HEDGE_WIDTH = 3
 HEDGE_RAISE = (1, 3)
@@ -93,7 +92,7 @@ def aerial_building_border_hedges(
     skip = canopy or set()
     shade: set[tuple[int, int]] = set()
     for x, z in footprint:
-        for dx, dz in CARDINAL:
+        for dx, dz in cellmath.N4:
             q = (x + dx, z + dz)
             if q in footprint or q in skip or q not in rgb:
                 continue

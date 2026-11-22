@@ -42,6 +42,7 @@ from surface_probe import ground_at, ground_missing_reason, is_water, raised_ove
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from tree_species import SPECIES  # noqa: E402
 from tree_voxels import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
+import cellmath
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
@@ -763,12 +764,11 @@ def unsupported_tree_crowns(cell, crowns, idx, mapped, ndsm, *, margin=0,
     if not idx.areas:
         return []
     from coverage import area_classes, scan_polygon
-    from ground_sources import cell_box
     from osm_footprints import osm_tags
     import land_use
 
     x0, z0 = cell[0] * CELL, cell[1] * CELL
-    bbox = cell_box(cell, 2)
+    bbox = cellmath.bounds(cell, 2)
     classes = area_classes(idx, bbox)
     sources = {cid: land_use.tree_sources(cid) for cid in land_use.CLASSES}
     wood = set()
@@ -821,9 +821,8 @@ def planning_inputs(cell, osm_ground=None):
     # Land class is known before cover so park and rural columns can use the shade test.
     from osm_footprints import OSMIndex
     from coverage import area_classes
-    from ground_sources import cell_box
     idx = OSMIndex()
-    land_classes = {q: hit[0] for q, hit in area_classes(idx, cell_box(cell)).items()}
+    land_classes = {q: hit[0] for q, hit in area_classes(idx, cellmath.bounds(cell)).items()}
     from aerial_coverage import rgb_cache
     with rgb_cache():
         grid = canopy_grid(cell)

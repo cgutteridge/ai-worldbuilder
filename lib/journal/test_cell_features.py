@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'shims'))
 
 import cell_features as cf  # noqa: E402
-import site_handoff as sh  # noqa: E402
+import cellmath
 import water_body as W  # noqa: E402
 
 
@@ -118,9 +118,9 @@ class TestCellFeatures(unittest.TestCase):
         self.assertEqual(other, [])
 
     def test_ring_order(self):
-        self.assertEqual(sh.ring_cells(1), [(48, -45), (49, -45), (49, -44), (49, -43),
+        self.assertEqual(cellmath.ring_cells(1), [(48, -45), (49, -45), (49, -44), (49, -43),
                                             (48, -43), (47, -43), (47, -44), (47, -45)])
-        self.assertEqual(len(set(sh.ring_cells(2))), 16)
+        self.assertEqual(len(set(cellmath.ring_cells(2))), 16)
 
     def test_footprint_progress_built_vs_unbuilt_area_and_names(self):
         """#142: footprint_progress reports column area and names of unbuilt buildings."""
@@ -135,7 +135,8 @@ class TestCellFeatures(unittest.TestCase):
             streets=[],
         )
         # Cover every column of Built Hall; leave Empty Hall untouched.
-        from coverage import scan_polygon, cell_bbox
+        from coverage import scan_polygon
+        from cellmath import cell_bbox
         cb = cell_bbox(48, -44, 48, -44)
         covered = set(scan_polygon(built_rings, cb))
         with mock.patch('cell_features.for_footprint', return_value=[]), \
@@ -190,7 +191,8 @@ class TestCellFeatures(unittest.TestCase):
         """
         # Cell 49,-43 is x 6272..6399, z -5504..-5377.
         big = _square(6275, -5490, 6320, -5430)  # large outline (built)
-        from coverage import scan_polygon, cell_bbox
+        from coverage import scan_polygon
+        from cellmath import cell_bbox
         cb = cell_bbox(49, -43, 49, -43)
         full = set(scan_polygon(big, cb))
         # Cover most of the footprint; leave a strip around the portal columns free.
@@ -221,7 +223,7 @@ class TestCellFeatures(unittest.TestCase):
 
     def _settled(self, covered, dismissed=(), portals=()):
         """settled_footprint_columns over a built hall (w1) and an empty hall (w2) in cell 48,-44."""
-        from coverage import cell_bbox
+        from cellmath import cell_bbox
         idx = SimpleNamespace(buildings=[
             (_square(6160, -5600, 6180, -5580), {'building': 'university', 'id': 'w1'}),
             (_square(6200, -5600, 6220, -5580), {'building': 'university', 'id': 'w2'}),
@@ -234,7 +236,8 @@ class TestCellFeatures(unittest.TestCase):
 
     def test_settled_footprint_is_built_or_dismissed_buildings_only(self):
         """Task 295: a built building's outline is the ground's where no build owns it; an unbuilt one is held."""
-        from coverage import scan_polygon, cell_bbox
+        from coverage import scan_polygon
+        from cellmath import cell_bbox
         cb = cell_bbox(48, -44, 48, -44)
         hall = set(scan_polygon(_square(6160, -5600, 6180, -5580), cb))
         empty = set(scan_polygon(_square(6200, -5600, 6220, -5580), cb))
@@ -249,7 +252,8 @@ class TestCellFeatures(unittest.TestCase):
 
     def test_settled_footprint_holds_uncovered_portals_in_a_built_outline(self):
         """Task 295 / #154: houses swallowed by a built outline keep their columns held."""
-        from coverage import scan_polygon, cell_bbox
+        from coverage import scan_polygon
+        from cellmath import cell_bbox
         hall = set(scan_polygon(_square(6160, -5600, 6180, -5580), cell_bbox(48, -44, 48, -44)))
         portal = {'id': '7-A', 'building': '7', 'x': 6170, 'z': -5590, 'images': []}
         settled = self._settled(hall - {(6170, -5590)}, portals=[portal])
@@ -260,7 +264,7 @@ class TestCellFeatures(unittest.TestCase):
     def test_missing_water_bodies_from_columns(self):
         """#148: connected water columns become water_body candidates until covered."""
         # Cell 48,-45: place a 3×3 pond and a covered 2×2 (below MIN_WATER_COLUMNS after filter).
-        from coverage import cell_bbox
+        from cellmath import cell_bbox
         x0, z0, x1, z1 = cell_bbox(48, -45, 48, -45)
         pond = {(x0 + 10 + dx, z0 + 10 + dz) for dx in range(3) for dz in range(3)}
         covered_pond = {(x0 + 40 + dx, z0 + 40 + dz) for dx in range(3) for dz in range(3)}

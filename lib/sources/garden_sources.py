@@ -437,7 +437,7 @@ def widen_opening(target, front, plot_cells, paved, route=(), cap: int = MAX_OPE
     def hit(q):      # the column itself, or the plot column just inside it (not sideways along the front)
         return q in hard or any((q[0] + a, q[1] + b) in hard and (q[0] + a, q[1] + b) in own
                                 and (q[0] + a, q[1] + b) not in edge
-                                for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                                for a, b in cellmath.N4)
     cand = {tuple(q) for q in front if hit(tuple(q))} | {target}
     chain, todo = {target}, [target]
     while todo:
@@ -656,7 +656,7 @@ def segments(owner: dict, info: dict, street: dict, idx, box) -> dict:
         ax, az = meta['centre'][0] - fx, meta['centre'][1] - fz       # street -> house axis
         n = math.hypot(ax, az) or 1.0
         ax, az = ax / n, az / n
-        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        for dx, dz in cellmath.N4:
             q = (x + dx, z + dz)
             if q in fp or owner.get(q) == i:
                 continue
@@ -750,8 +750,6 @@ def hedge_share(cells: list, rgb: dict, canopy: set | None = None) -> float:
     return (sum(1 for c in seen if c == 'shade') / len(seen)) if seen else 0.0
 
 
-# Compass-word keys (stair/facing names), unlike cellmath.DIRS's N/S/W/E letters, so this table stays.
-DIRS = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}   # Minecraft: south is +z
 PUBLIC_ROLES = ('front', 'side_front')
 
 
@@ -788,7 +786,7 @@ def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict
     for q in cols:
         q = (int(q[0]), int(q[1]))
         own = owner.get(q) == plot_id
-        order = list(DIRS.items())
+        order = list(cellmath.FACING.items())
         order.sort(key=lambda kv: -((kv[1][0] * (q[0] - centre[0])) + (kv[1][1] * (q[1] - centre[1]))))
         cands = []                                         # (direction, owner of the square across)
         for name, (a, b) in order:
@@ -812,27 +810,6 @@ def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict
         facing[f'{q[0]},{q[1]}'] = d
         basis[f'{q[0]},{q[1]}'] = why
     return facing, basis
-
-
-def _run_components(cols) -> list[list]:
-    """8-connected groups of columns, each sorted, in a stable order."""
-    left, out = set(cols), []
-    for start in sorted(left):
-        if start not in left:
-            continue
-        comp, stack = [], [start]
-        left.discard(start)
-        while stack:
-            q = stack.pop()
-            comp.append(q)
-            for a in (-1, 0, 1):
-                for b in (-1, 0, 1):
-                    n = (q[0] + a, q[1] + b)
-                    if n in left:
-                        left.discard(n)
-                        stack.append(n)
-        out.append(sorted(comp))
-    return out
 
 
 PANEL_DRIFT = 2   # a panel run holds its row until the boundary has drifted this many columns (#276)
@@ -866,7 +843,8 @@ def flatten_panel_run(cols, plot_id, owner: dict, avoid=(), clear=(), tol: int =
     """
     avoid, clear = set(avoid), set(clear)
     out: set = set()
-    for comp in _run_components({(int(q[0]), int(q[1])) for q in cols}):
+    for comp in sorted(map(sorted, cellmath.components(
+            {(int(q[0]), int(q[1])) for q in cols}, cellmath.N8)), key=lambda g: g[0]):
         if len(comp) < 4:
             out.update(comp)
             continue
@@ -968,7 +946,7 @@ def panel_runs(cols, plot_id, role: str, owner: dict, street, centre, avoid=(), 
         plain = _panel_runs(cols, plot_id, role, owner, street, centre)
         fitted = _panel_runs(flatten_panel_run(cols, plot_id, owner, avoid, clear), plot_id, role, owner, street, centre)
         shut = set(clear)
-        pieces = lambda run: len(_run_components([q for q in map(tuple, run['cells']) if q not in shut]))
+        pieces = lambda run: len(cellmath.components([q for q in map(tuple, run['cells']) if q not in shut], cellmath.N8))
         if pieces(fitted) <= pieces(plain) and (boards_joined(fitted) or not boards_joined(plain)):
             return fitted                                          # never more pieces (gaps) than the unfitted run
         return plain
@@ -987,7 +965,7 @@ def boards_joined(run: dict) -> bool:
         x, z = map(int, key.split(','))
         b = SHELF_BOARD[f]
         boxes[(x, z)] = (x * 16 + b[0], z * 16 + b[1], x * 16 + b[2], z * 16 + b[3])
-    for group in _run_components(list(boxes)):
+    for group in sorted(map(sorted, cellmath.components(boxes, cellmath.N8)), key=lambda g: g[0]):
         seen, stack = {group[0]}, [group[0]]
         while stack:
             a = boxes[stack.pop()]
@@ -1008,8 +986,8 @@ def _panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     face, basis = outward_facings(cols, plot_id, role, owner, centre)
     cells = {(int(q[0]), int(q[1])) for q in cols}
     run_face: dict = {}
-    for run in _run_components(cells):
-        votes = [DIRS[face[f'{q[0]},{q[1]}']] for q in run]
+    for run in sorted(map(sorted, cellmath.components(cells, cellmath.N8)), key=lambda g: g[0]):
+        votes = [cellmath.FACING[face[f'{q[0]},{q[1]}']] for q in run]
         vx, vz = sum(v[0] for v in votes), sum(v[1] for v in votes)
         mx, mz = sum(q[0] for q in run) / len(run), sum(q[1] for q in run) / len(run)
         sxx = sum((q[0] - mx) ** 2 for q in run)
@@ -1028,7 +1006,7 @@ def _panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
             axis_x = (abs(vx), 0) > (abs(vz), 1) if abs(vx) != abs(vz) else None
             if axis_x is None:
                 first = min(votes, key=lambda v: ('east', 'west', 'south', 'north').index(
-                    next(k for k, d in DIRS.items() if d == v)))
+                    next(k for k, d in cellmath.FACING.items() if d == v)))
                 axis_x = first[0] != 0
         else:
             axis_x = abs(nx) > abs(nz)
@@ -1040,7 +1018,7 @@ def _panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
             run_face[q] = d
     closers: set = set()                                           # columns turned into cross shelves
     for q in sorted(cells):
-        d = DIRS[run_face[q]]
+        d = cellmath.FACING[run_face[q]]
         for a, b in ((1, 0), (0, 1), (1, 1), (1, -1)):
             p = (q[0] + a, q[1] + b)
             if p not in cells or run_face[p] != run_face[q]:
@@ -1063,14 +1041,14 @@ def _panel_runs(cols, plot_id, role: str, owner: dict, street, centre) -> dict:
     out_face, out_basis, cross = {}, {}, {}
     closer_face: dict = {}
     for q in sorted(closers):                                      # closers beside a neighbour decide first
-        d = DIRS[run_face[q]]
+        d = cellmath.FACING[run_face[q]]
         if any((q[0] + a, q[1] + b) in cells for a, b in ((d[1], d[0]), (-d[1], -d[0]))):
             closer_face[q] = _closer_facing(q, run_face[q], cells, closers)
     todo = [q for q in sorted(closers) if q not in closer_face]
     while todo:                                                    # a jog of several rows shares one board edge
         left = []
         for q in todo:
-            d = DIRS[run_face[q]]
+            d = cellmath.FACING[run_face[q]]
             same = [closer_face[n] for n in ((q[0] + d[0], q[1] + d[1]), (q[0] - d[0], q[1] - d[1])) if n in closer_face]
             if same:
                 closer_face[q] = same[0]
@@ -1105,10 +1083,10 @@ def _closer_facing(c, run_dir: str, cells, closers) -> str:
     board end on that edge and the previous row's board at the step. Neighbours that are ordinary
     shelves are preferred to other closers; ties take the fixed order east, west, south, north.
     """
-    d = DIRS[run_dir]
-    sides = [s for s in ('east', 'west', 'south', 'north') if DIRS[s][0] * d[0] + DIRS[s][1] * d[1] == 0]
+    d = cellmath.FACING[run_dir]
+    sides = [s for s in ('east', 'west', 'south', 'north') if cellmath.FACING[s][0] * d[0] + cellmath.FACING[s][1] * d[1] == 0]
     def score(s):
-        n = (c[0] + DIRS[s][0], c[1] + DIRS[s][1])
+        n = (c[0] + cellmath.FACING[s][0], c[1] + cellmath.FACING[s][1])
         return (0 if n not in cells else 1 if n in closers else 2)
     side = max(sides, key=lambda s: (score(s), -sides.index(s)))   # best score; first in the order wins ties
     return {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}[side]
@@ -1127,7 +1105,7 @@ def _joining_chain(it, other, q, p, chains):
                  {f'{x},{z}' for x, z in map(tuple, it.get('closers', ()))}), None)
     if face is None:
         return None
-    d = DIRS[face]
+    d = cellmath.FACING[face]
     ax = 0 if d[0] else 1                                         # the facing axis: the jog is measured along it
     if p[ax] == q[ax]:
         return None                                               # no step along the facing: no preference
@@ -1274,7 +1252,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
             cells = [q for q in cells if math.hypot(q[0] - fx, q[1] - fz) <= spec['depth'] + 12]
         if spec:
             def twin(q):
-                for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                for a, b in cellmath.N4:
                     j = owner.get((q[0] + a, q[1] + b))
                     if j is not None and j < i and role != 'front' and \
                             role_spec(load_convention(info[j]['street']), info[j]['number'], role, meta_class(info[j]),

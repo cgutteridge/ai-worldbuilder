@@ -155,10 +155,6 @@ def poly_cells(rings_list) -> set:
     return out
 
 
-# trees_layer (edited by another task) still imports this name; delete the alias once it uses cellmath.bounds.
-cell_box = cellmath.bounds
-
-
 # --- vector_map ---------------------------------------------------------------------------
 # Optional world file: {"tx,tz": [{"points": [[x, z], ...], "tags": {...}}, ...]}.
 _ROAD_SUPPLEMENT = ROOT / 'reference' / 'supplement-roads.json'

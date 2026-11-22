@@ -1,8 +1,7 @@
 """Pitched-roof geometry shared by the house and feature builders.
 
 Half-block roof heightfields, the stair / slab / full-block state choice over
-them, and the vanilla stair-corner rule the roof audit also checks against
-(``roof_lint.stair_shape_from_neighbours`` re-exports it from here). Pure
+them, and the vanilla stair-corner rule the roof audit also checks against. Pure
 functions over ``{(x, z): ...}`` dicts; no world, plan or builder state.
 """
 from __future__ import annotations
@@ -11,11 +10,12 @@ import math
 from collections import deque
 from dataclasses import dataclass
 
-from cellmath import N4, N8
+from cellmath import FACING, N4, N8
 from roof_material import family_variants
 
 # Cardinal deltas for pitched-roof upslope detection.
-ROOF_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
+# Stair rise direction, as distinct from an outward facade or attachment direction.
+ROOF_DELTA = dict(FACING)
 ROOF_FACE_ORDER = ('north', 'east', 'south', 'west')
 _STAIR_LEFT = {'east': 'north', 'west': 'south', 'south': 'east', 'north': 'west'}
 _STAIR_RIGHT = {'east': 'south', 'west': 'north', 'south': 'west', 'north': 'east'}

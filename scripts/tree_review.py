@@ -73,7 +73,7 @@ def peaks(hgt: np.ndarray, x0: int, z0: int, radius: int = PEAK_R, min_height: i
     top = (hgt >= min_height) & (hgt == _window_max(hgt, radius))
     cols = {(x0 + int(i), z0 + int(j)) for i, j in zip(*np.nonzero(top))}
     out = []
-    for comp in L._group(cols):
+    for comp in cellmath.components(cols, cellmath.N8):
         xs = [x for x, _ in comp]
         zs = [z for _, z in comp]
         cx, cz = round(sum(xs) / len(xs)), round(sum(zs) / len(zs))

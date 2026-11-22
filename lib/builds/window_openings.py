@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from cellmath import DIRS
 from surface_probe import PLANTS
 
-DIRECTIONS = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         w = min(choices, key=lambda v: (not v.corner_evidence, v.face))
         x, y, z = pos
         c = (x, z)
-        corner = sum(exposed(c, d) for d in DIRECTIONS) > 1
+        corner = sum(exposed(c, d) for d in DIRS) > 1
         if pos in protected:
             reason = 'protected entrance'
         elif not structural(block(*pos)):
@@ -66,7 +66,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         elif corner and not any(v.corner_evidence for v in choices):
             reason = 'corner pier / tread too short'
         else:
-            heights = [outside_ground.get((x + DIRECTIONS[v.face][0], z + DIRECTIONS[v.face][1]))
+            heights = [outside_ground.get((x + DIRS[v.face][0], z + DIRS[v.face][1]))
                        for v in choices]
             if any(h is None for h in heights):
                 reason = 'outside ground unavailable'
@@ -94,7 +94,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
             current = active[p][0]
             offsets = offsets_for(current)
             if current.corner_evidence:
-                offsets += tuple((dx, 0, dz) for dx, dz in DIRECTIONS.values())
+                offsets += tuple((dx, 0, dz) for dx, dz in DIRS.values())
             for ox, oy, oz in offsets:
                 q = (p[0] + ox, p[1] + oy, p[2] + oz)
                 if q in remaining and q not in component and (
@@ -113,7 +113,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
                 if not supported and oy == 0 and active[x, y, z][1] and active[x, y, z][0].corner_evidence:
                     # An explicitly observed wraparound corner terminates against
                     # the perpendicular wall instead of inventing an outside jamb.
-                    nx, nz = DIRECTIONS[current.face]
+                    nx, nz = DIRS[current.face]
                     supported = any((x + sign * nx, z + sign * nz) in walls
                         and ((x + sign * nx, y, z + sign * nz) in component or (
                             (x + sign * nx, y, z + sign * nz) not in active
@@ -135,7 +135,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         # must not acquire a third arm from an opening in a perpendicular plane.
         solid = any(active[p][0].stepped or active[p][1] for p in component)
         for x, y, z in component:
-            nx, nz = DIRECTIONS[active[x, y, z][0].face]
+            nx, nz = DIRS[active[x, y, z][0].face]
             for sign in (-1, 1):
                 q = (x + sign * nx, y, z + sign * nz)
                 if q in active or structural(block(*q)) or 'glass' in (block(*q) or '') or 'iron_bars' in (block(*q) or ''):

@@ -33,8 +33,6 @@ OUT = ROOT / 'verification/site'
 
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
 _UP = {'east': ('x', 1), 'west': ('x', -1), 'south': ('z', 1), 'north': ('z', -1)}
-# Facing-word keys (like garden_sources.DIRS), not cellmath.DIRS's N/S/W/E letters, so this table stays.
-_STAIR_DELTA = ROOF_DELTA
 _SKIP = ('minecraft:air', 'minecraft:light', 'minecraft:cave_air')
 _THIN = ('pane', 'pot', 'potted', 'torch', 'lantern', 'sign', 'button', 'fence', 'wall', 'bars',
          'door', 'carpet', 'leaves', 'flower', 'sapling', 'grass[', 'short_grass', 'fern')
@@ -53,7 +51,7 @@ def _stair_facing_half(state: str) -> tuple[str, str] | None:
     p = _props(state)
     facing = p.get('facing')
     half = p.get('half', 'bottom')
-    if facing not in _STAIR_DELTA or half not in ('bottom', 'top'):
+    if facing not in ROOF_DELTA or half not in ('bottom', 'top'):
         return None
     return facing, half
 
@@ -76,7 +74,7 @@ def stair_shape_mismatches(cells: dict) -> list[dict]:
     out = []
     for (x, y, z), (state, facing, half, planned) in by_pos.items():
         adjacent: dict[str, tuple[str, str] | None] = {}
-        for face, (dx, dz) in _STAIR_DELTA.items():
+        for face, (dx, dz) in ROOF_DELTA.items():
             n = by_pos.get((x + dx, y, z + dz))
             adjacent[face] = (n[1], n[2]) if n is not None else None
         expected = stair_shape_from_neighbours(facing, half, adjacent)
