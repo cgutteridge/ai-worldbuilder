@@ -1,5 +1,7 @@
 # Further Claude / offline task splits
 
+> Renamed 2026-11-22: "Claude task" and "offline task" here mean builder task (`builderTask: true`) and non-builder task (`false`); the flag was `requiresClaude`. See GLOSSARY.md.
+
 Recorded 2026-11-21. These are scope and dependency changes, not task dispatches.
 The existing task numbers keep the real-world trials; four new tickets hold
 independently verifiable engineering work.
@@ -23,7 +25,7 @@ flowchart LR
 
 ## Acceptance boundaries
 
-All four new tasks have `requiresClaude: false`. Their full scopes and acceptance
+All four new tasks have `builderTask: false`. Their full scopes and acceptance
 checks are in `tasks/index.json`. They use synthetic fixtures, fake providers and
 source review only. Running ordinary unit tests of the builders is allowed.
 They do not interpret place evidence, generate a real-place build spec, run a
@@ -31,7 +33,7 @@ representative build dry run/apply, download evidence or judge a result in game.
 A successful engineering ticket unblocks its trial; it does not prove the real
 build looks right or close a world snag.
 
-The parent tasks remain `requiresClaude: true`. Claude model/access/budget checks
+The parent tasks remain `builderTask: true`. Claude model/access/budget checks
 still apply when dispatching them. This split does not dispatch any task or
 change the approved model/effort ceiling. Schema and substantial planner changes
 remain stretches when their implementation is dispatched.

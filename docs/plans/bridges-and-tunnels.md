@@ -23,7 +23,7 @@ What the code does with them now:
 - **Other code already routes round them:** road labels skip tunnels and keep clear of decks
   (`lib/layers/road_labels.py`), the water-level pass raises short bridge and culvert dips
   (`lib/builds/water_level.py`), and `lib/layers/ground_float_audit.py` reports bridge columns no real ground owns.
-- **Evidence exists.** OSM gives `bridge`, `tunnel`, `layer`, `bridge:structure`, `man_made=bridge` and the carrier
+- **Evidence exists.** The vector map gives `bridge`, `tunnel`, `layer`, `bridge:structure`, `man_made=bridge` and the carrier
   way. Composite lidar marks tall solid outside any footprint as kind 4 "structure" (`lib/sources/lidar_heightmap.py`),
   which is usable evidence for deck height.
 
@@ -43,7 +43,7 @@ What the code does with them now:
   MAY include rail lines, and records which abutting railway features it joins (cell, level, direction, tracks).
 - It is built **after** the abutting line features and refuses ("not ready") until both exist. The line is planned
   through the span but builds nothing in the gap. Details: [railway](railway.md), decisions 9 and 10.
-- A level crossing's gates, lights and bell come from the OSM tags; style and colours come from Street View as part of
+- A level crossing's gates, lights and bell come from the map tags; style and colours come from Street View as part of
   the crossing's own build. No separate survey step.
 - The rail feature trumps the road in its footprint (decision 7 there). The first crossing to build is the one at
   about 6980,-4343.
@@ -65,7 +65,7 @@ What the code does with them now:
 
 ## Proposed split (owner's rule: Claude only for real build decisions and in-game judgement)
 
-| Task | requiresClaude | Notes |
+| Task | builderTask | Notes |
 | --- | --- | --- |
 | A. Evidence list: for each mapped bridge or tunnel, carrier kind, what it crosses, cells, length, layer, deck height from lidar | false | Fixtures from recorded GeoJSON and a recorded height sample. |
 | B. Decisions: feature type, pass-order rule, rule-built types, ownership across cells; record in glossary, rules and an ADR | false | Owner conversation, then docs. No build step. |

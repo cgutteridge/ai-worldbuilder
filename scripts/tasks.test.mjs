@@ -393,7 +393,7 @@ describe("task addition", () => {
     priority: "medium",
     complexity: "s",
     notes: "Details",
-    requiresClaude: false,
+    builderTask: false,
   }
   async function fixture(tasks = [{ id: 1, title: "Existing", status: "todo" }]) {
     const directory = await temporaryDirectory("task-add-")
@@ -411,7 +411,7 @@ describe("task addition", () => {
   const run = (directory, extra = ["--notes", "Details"]) => cli([
     "--tracker-dir", directory, "add",
     "--title", fields.title, "--priority", fields.priority,
-    "--complexity", fields.complexity, "--requires-claude", "false", ...extra,
+    "--complexity", fields.complexity, "--builder-task", "false", ...extra,
   ], tmpdir())
 
   it("assigns ids, advances nextTaskId, preserves field order and round-trips through show", async () => {
@@ -423,8 +423,8 @@ describe("task addition", () => {
     const shown = cli(["--tracker-dir", directory, "show", "100"], tmpdir())
     assert.equal(shown.status, 0, shown.stderr)
     const task = JSON.parse(shown.stdout)
-    assert.deepEqual(task, { id: 100, title: fields.title, status: "todo", priority: "medium", complexity: "s", blockedBy: [], requiresClaude: false, notes: "Details" })
-    assert.deepEqual(Object.keys(task), ["id", "title", "status", "priority", "complexity", "blockedBy", "requiresClaude", "notes"])
+    assert.deepEqual(task, { id: 100, title: fields.title, status: "todo", priority: "medium", complexity: "s", blockedBy: [], builderTask: false, notes: "Details" })
+    assert.deepEqual(Object.keys(task), ["id", "title", "status", "priority", "complexity", "blockedBy", "builderTask", "notes"])
     assert.equal(run(directory).stdout, "101\n")
     assert.equal(JSON.parse(await text(directory)).nextTaskId, 102)
     assert.equal(await text(directory, "done.json"), done)
@@ -437,7 +437,7 @@ describe("task addition", () => {
     await writeFile(join(directory, "index.json"), source)
     const result = run(directory)
     assert.equal(result.status, 0, result.stderr)
-    const appended = ',\n    {\n      "id": 100,\n      "title": "New task",\n      "status": "todo",\n      "priority": "medium",\n      "complexity": "s",\n      "blockedBy": [],\n      "requiresClaude": false,\n      "notes": "Details"\n    }'
+    const appended = ',\n    {\n      "id": 100,\n      "title": "New task",\n      "status": "todo",\n      "priority": "medium",\n      "complexity": "s",\n      "blockedBy": [],\n      "builderTask": false,\n      "notes": "Details"\n    }'
     const after = await text(directory)
     assert.ok(after.includes(appended))
     assert.equal(after.replace(appended, "").replace('"nextTaskId" : 101', '"nextTaskId" : 100'), source)
@@ -696,7 +696,7 @@ describe("task closure", () => {
 
   it("moves once, preserves unrelated bytes and unblocks only resolved dependencies", async () => {
     const directory = await fixture([
-      task(1, { notes: "Existing notes", requiresClaude: true, custom: { retained: true } }),
+      task(1, { notes: "Existing notes", builderTask: true, custom: { retained: true } }),
       task(2, { status: "blocked", blockedBy: [1] }),
       task(4, { status: "blocked", blockedBy: [1, 8] }),
       task(5, { notes: "Unrelated", blockedBy: [] }),
@@ -728,7 +728,7 @@ describe("task closure", () => {
     assert.ok((await text(directory, "index.json")).includes(other))
     assert.equal(done.tasks[1].id, 1)
     assert.equal(done.tasks[1].status, "done")
-    assert.equal(done.tasks[1].requiresClaude, true)
+    assert.equal(done.tasks[1].builderTask, true)
     assert.deepEqual(done.tasks[1].custom, { retained: true })
     assert.ok(
       done.tasks[1].notes.includes(
@@ -877,7 +877,7 @@ describe("task closure", () => {
 
 describe("Claude task policy", () => {
   const task = (extra = {}) => ({ id: 1, title: "Build trial", status: "todo",
-    requiresClaude: true, notes: "Keep these notes", custom: { keep: true }, ...extra })
+    builderTask: true, notes: "Keep these notes", custom: { keep: true }, ...extra })
   async function fixture(extra = {}) {
     const directory = await temporaryDirectory("task-model-")
     await writeFile(join(directory, "index.json"), JSON.stringify({ _comment: "Keep", nextTaskId: 10, tasks: [task(extra)] }, null, 2) + "\n")
@@ -929,16 +929,16 @@ describe("Claude task policy", () => {
       assert.equal(await source(directory), before)
       const started = run(directory, "status", "1", "doing", ...options)
       assert.equal(started.status, 0, started.stderr)
-      assert.equal((await showTask(directory, 1)).requiresClaude, true)
+      assert.equal((await showTask(directory, 1)).builderTask, true)
       await setTaskStatus(directory, 1, "todo", "Resume later")
-      assert.equal((await showTask(directory, 1)).requiresClaude, true)
+      assert.equal((await showTask(directory, 1)).builderTask, true)
     }
   })
 
   it("shows the requirement in the ready list and leaves tool-only tasks runnable", async () => {
     const directory = await fixture()
-    assert.match(run(directory, "list", "--ready").stdout, /requires Claude/)
-    await writeFile(join(directory, "index.json"), await source(directory).then((s) => s.replace('"requiresClaude": true', '"requiresClaude": false')))
+    assert.match(run(directory, "list", "--ready").stdout, /builder task/)
+    await writeFile(join(directory, "index.json"), await source(directory).then((s) => s.replace('"builderTask": true', '"builderTask": false')))
     assert.equal(run(directory, "check-run", "1").status, 0)
     assert.equal(run(directory, "status", "1", "doing").status, 0)
   })
@@ -956,38 +956,59 @@ describe("Claude task policy", () => {
     const directory = await fixture()
     const before = await source(directory)
     const add = ["add", "--title", "Trial", "--priority", "low", "--complexity", "s", "--notes", "Scope"]
-    for (const args of [add, [...add, "--requires-claude", "yes"],
+    for (const args of [add, [...add, "--builder-task", "yes"],
       ["update", "1", "--notes", "New scope"],
-      ["update", "1", "--requires-claude", "null"]]) {
+      ["update", "1", "--builder-task", "null"]]) {
       assert.equal(run(directory, ...args).status, 2)
       assert.equal(await source(directory), before)
     }
-    const added = run(directory, ...add, "--requires-claude", "true")
+    const added = run(directory, ...add, "--builder-task", "true")
     assert.equal(added.status, 0, added.stderr)
-    assert.equal((await showTask(directory, 10)).requiresClaude, true)
+    assert.equal((await showTask(directory, 10)).builderTask, true)
+  })
+
+  it("rejects the renamed --requires-claude flag with a pointer to --builder-task", async () => {
+    const directory = await fixture()
+    const before = await source(directory)
+    for (const args of [["update", "1", "--requires-claude", "true"],
+      ["add", "--title", "T", "--priority", "low", "--complexity", "s", "--notes", "N", "--requires-claude", "true"]]) {
+      const result = run(directory, ...args)
+      assert.equal(result.status, 2)
+      assert.match(result.stderr, /renamed to '--builder-task'/)
+    }
+    assert.equal(await source(directory), before)
+  })
+
+  it("reads a legacy requiresClaude flag only when builderTask is absent", async () => {
+    const directory = await fixture({ builderTask: undefined, requiresClaude: true })
+    const gated = run(directory, "check-run", "1", "--tool", "claude-code", "--model", "gpt-4")
+    assert.equal(gated.status, 2)
+    assert.match(run(directory, "list", "--ready").stdout, /builder task/)
+    const both = await fixture({ builderTask: false, requiresClaude: true })
+    assert.doesNotMatch(run(both, "list", "--ready").stdout, /builder task/)
   })
 
   it("updates scope without changing other fields and records intentional downgrades", async () => {
     const directory = await fixture()
     const before = await source(directory)
-    const updated = run(directory, "update", "1", "--requires-claude", "true", "--notes", "New scope")
+    const updated = run(directory, "update", "1", "--builder-task", "true", "--notes", "New scope")
     assert.equal(updated.status, 0, updated.stderr)
     assert.equal(await source(directory), before.replace('"Keep these notes"', '"New scope"'))
     const scoped = await source(directory)
-    assert.equal(run(directory, "update", "1", "--requires-claude", "false").status, 2)
+    assert.equal(run(directory, "update", "1", "--builder-task", "false").status, 2)
     assert.equal(await source(directory), scoped)
-    const result = await updateTask(directory, 1, { requiresClaude: false, reason: "Build trial moved to a separate task" })
+    const result = await updateTask(directory, 1, { builderTask: false, reason: "Build trial moved to a separate task" })
     assert.deepEqual(result.custom, { keep: true })
-    assert.match(result.notes, /Claude requirement removed: Build trial moved/)
-    assert.equal((await showTask(directory, 1)).requiresClaude, false)
+    assert.match(result.notes, /builderTask cleared: Build trial moved/)
+    assert.equal((await showTask(directory, 1)).builderTask, false)
   })
 
   it("persists a flag on a legacy task and reads it back through the CLI", async () => {
-    const directory = await fixture({ requiresClaude: undefined })
+    const directory = await fixture({ builderTask: undefined })
     const before = JSON.parse(await source(directory))
-    const result = run(directory, "update", "1", "--requires-claude", "true")
+    const result = run(directory, "update", "1", "--builder-task", "true")
     assert.equal(result.status, 0, result.stderr)
-    const expected = { ...before.tasks[0], requiresClaude: true }
+    const expected = { ...before.tasks[0], builderTask: true }
     const shown = run(directory, "show", "1")
     assert.equal(shown.status, 0, shown.stderr)
     assert.deepEqual(JSON.parse(shown.stdout), expected)
@@ -995,30 +1016,30 @@ describe("Claude task policy", () => {
   })
 
   for (const order of [
-    ["notes", "title", "requiresClaude"],
-    ["requiresClaude", "notes", "title"],
-    ["title", "requiresClaude", "notes"],
+    ["notes", "title", "builderTask"],
+    ["builderTask", "notes", "title"],
+    ["title", "builderTask", "notes"],
   ]) {
     it(`updates flag, title and notes together with source order ${order.join(", ")}`, async () => {
       const directory = await fixture()
-      const original = task({ requiresClaude: false })
+      const original = task({ builderTask: false })
       const reordered = Object.fromEntries(
         ["id", ...order, "status", "custom"].map((key) => [key, original[key]]),
       )
       const tracker = { _comment: "Keep", nextTaskId: 10, tasks: [reordered,
-        task({ id: 2, title: "Unchanged neighbour", requiresClaude: false })] }
+        task({ id: 2, title: "Unchanged neighbour", builderTask: false })] }
       const before = JSON.stringify(tracker, null, 2) + "\n"
       await writeFile(join(directory, "index.json"), before)
       const title = 'Renamed "trial" with a longer title'
       const notes = "Short\nnotes"
-      const result = run(directory, "update", "1", "--requires-claude", "true",
+      const result = run(directory, "update", "1", "--builder-task", "true",
         "--title", title, "--notes", notes)
       assert.equal(result.status, 0, result.stderr)
       const shown = run(directory, "show", "1")
       assert.equal(shown.status, 0, shown.stderr)
-      assert.deepEqual(JSON.parse(shown.stdout), { ...reordered, requiresClaude: true, title, notes })
+      assert.deepEqual(JSON.parse(shown.stdout), { ...reordered, builderTask: true, title, notes })
       assert.equal(await source(directory), before
-        .replace('"requiresClaude": false', '"requiresClaude": true')
+        .replace('"builderTask": false', '"builderTask": true')
         .replace(JSON.stringify(original.title), JSON.stringify(title))
         .replace(JSON.stringify(original.notes), JSON.stringify(notes)))
     })
@@ -1026,8 +1047,8 @@ describe("Claude task policy", () => {
 
   it("rejects nonboolean stored flags", async () => {
     const directory = await fixture()
-    for (const requiresClaude of ["true", null, 1, {}, []]) {
-      await writeFile(join(directory, "index.json"), JSON.stringify({ nextTaskId: 10, tasks: [task({ requiresClaude })] }))
+    for (const builderTask of ["true", null, 1, {}, []]) {
+      await writeFile(join(directory, "index.json"), JSON.stringify({ nextTaskId: 10, tasks: [task({ builderTask })] }))
       await rejectsWith(showTask(directory, 1), "invalid tracker schema")
     }
   })

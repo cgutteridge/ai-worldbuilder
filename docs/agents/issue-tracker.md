@@ -19,16 +19,27 @@ Read the task by id from `tasks/index.json` (or `tasks/done.json` if it is not i
 
 Tasks carry no triage label, only a status. Workers on `task/*` branches never edit the tracker; the orchestrator on `main` does (ADR 005).
 
-## Claude requirement on creation and updates
+## Builder-task flag on creation and updates
 
 Read [task model requirement](model-and-effort.md#task-model-requirement) before
 creating, updating or dispatching a system task. Every active task must have an
-explicit boolean `requiresClaude`; the pre-commit hook checks staged flags even
+explicit boolean `builderTask`; the pre-commit hook checks staged flags even
 on tracker-only commits. Classify from the whole required scope and acceptance
-checks. Use the CLI's required `--requires-claude true|false` on `add` and `update`;
+checks. Use the CLI's required `--builder-task true|false` on `add` and `update`;
 scope updates must reassess it, not blindly copy the old value. Direct edits to
 priority/blockers must preserve it; direct scope edits must reassess it as well.
-Archival retains it. Removing a true requirement needs a recorded scope reason.
+Archival retains it. Clearing a true flag needs a recorded scope reason.
+
+## Sizing tasks
+
+A task should be achievable, self-contained and shippable: one branch, its own tests,
+and an end state that can merge on its own. If it cannot be described that way, split it.
+
+A task with a substantial amount of non-builder work that also has some builder work
+is split in two: a non-builder task (any model; fixtures and tests) and a builder task
+blocked by it. The builder task then holds only the steps that test the model's
+decisions. A task that is almost all builder work with a little code stays one builder
+task. Say in the builder task's notes which non-builder task it follows.
 
 ## Task CLI
 
@@ -39,11 +50,11 @@ unrelated tracker bytes:
 ```sh
 node scripts/tasks.mjs list --ready
 node scripts/tasks.mjs show ID
-node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --requires-claude false --notes "Details"  # or --notes-file PATH
-node scripts/tasks.mjs update ID --requires-claude true --notes "Updated scope"  # or --notes-file PATH
+node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --builder-task false --notes "Details"  # or --notes-file PATH
+node scripts/tasks.mjs update ID --builder-task true --notes "Updated scope"  # or --notes-file PATH
 node scripts/tasks.mjs check-run ID --tool cursor --model sonnet --external-model-budget available
 node scripts/tasks.mjs status ID doing
-# Claude tasks need the same confirmed runner options on status ID doing:
+# Builder tasks need the same confirmed runner options on status ID doing:
 node scripts/tasks.mjs status ID doing --tool cursor --model sonnet --external-model-budget available
 node scripts/tasks.mjs status ID todo --reason "Short explanation"
 node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
@@ -53,7 +64,7 @@ Run mutations on `main` only, because the pre-commit hook rejects tracker edits
 on `task/*` branches. Read-only `show`, `list` and `check-run` are also available
 to workers. Priority/blocker edits remain direct edits through the
 `task-index-manager` skill. This tracker has no triage tags, so `list --ready`
-lists every `todo` task with no `blockedBy`, marking Claude-required tasks.
+lists every `todo` task with no `blockedBy`, marking builder tasks.
 Readiness alone does not establish runner eligibility: run `check-run` before
 dispatch, including when task status is managed without `status doing`.
 

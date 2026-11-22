@@ -108,55 +108,55 @@ Done tickets worth re-reading: #355's "Task 2" deferral is what left the catalog
 
 ## 3. Proposed tasks
 
-Eight tasks, all `requiresClaude: false`, all doable with synthetic fixtures and unit tests (no live world). Task ids are assigned by `tasks.mjs add`; `nextTaskId` is 371 at the time of writing, so adding them in the order below gives A=371 through H=378. `blockedBy` is given by letter; translate when filing.
+Eight tasks, all `builderTask: false`, all doable with synthetic fixtures and unit tests (no live world). Task ids are assigned by `tasks.mjs add`; `nextTaskId` is 371 at the time of writing, so adding them in the order below gives A=371 through H=378. `blockedBy` is given by letter; translate when filing.
 
 Order and rank: A first (it is the only one that can write invalid blocks), then B, C, D, E, F, G, H. A, C, E and F have no blockers and can run in parallel.
 
 ### A. Feature roofs: write flat-roof and roof-detail slabs through the roof catalogue
 
-- priority: high; complexity: s; requiresClaude: false; blockedBy: none
+- priority: high; complexity: s; builderTask: false; blockedBy: none
 - Scope: `roof_flat` (`feature_build.py:3367`) and the `awning_like` and `ledge` detail kinds (`:3771, 3774`) hand-spell `{rm}_slab[type=bottom]`. Make them use `roof_material.family_variants`: slab where the family has one, the full block where it does not (the same fallback `house_build` uses). Delete the `block_family_variants` wrapper (nine uses, `feature_build.py:944`) and the unused `stair()` (`:929`); import `family_variants` directly and repoint the tests that patch `F.block_family_variants` (`test_feature_build.py:3615, 3821, 4067-4079`) at the new name. Check whether `roof_aerial.nearest_roof_material`'s "has a slab" filter (`roof_aerial.py:58`) can then be dropped. Do not change roofs for materials that already work.
 - Check: a synthetic flat roof with `light_gray_concrete`, `terracotta` and `smooth_stone` plans only block ids present in `config/minecraft-block-ids-26.2.txt`; the existing golden `_roof_material_migration_plan` test (`test_feature_build.py:4001-4131`) still passes unchanged for brick, spruce and deepslate_tile; `grep -n "block_family_variants\|{rm}_slab" lib/builds/feature_build.py` returns nothing; `python3 scripts/run_tests.py --only test_feature_build` passes.
 
 ### B. Outbuildings: take shed and garage roof blocks from the roof catalogue
 
-- priority: medium; complexity: s; requiresClaude: false; blockedBy: A
+- priority: medium; complexity: s; builderTask: false; blockedBy: A
 - Scope: replace `ROOF_SLAB`, `ROOF_STAIR` and `ROOF_FULL` (`outbuildings.py:54-56`) with one `ROOF_FAMILY = {'shed': 'spruce', 'garage': 'stone_brick'}` and read full, slab and stairs from `roof_material.family_variants`. Keep the gable geometry (`pitched_roof`, `roof_row`) as is; it is a different, simpler shape and not part of this task. Leave `WALL_BLOCK` and `DOOR_BLOCK` alone.
 - Check: record `outbuildings.voxels` output for a synthetic shed and a synthetic garage (odd and even width, flat and pitched) before the change and assert it is identical after; `grep -n "ROOF_FULL\|ROOF_SLAB\|ROOF_STAIR" lib` finds none; `python3 scripts/run_tests.py --only test_outbuildings` passes.
 
 ### C. Delete the terrace generator; keep `snap_slope`
 
-- priority: medium; complexity: s; requiresClaude: false; blockedBy: none
+- priority: medium; complexity: s; builderTask: false; blockedBy: none
 - Scope: `Terrace`, `House`, `ROOF_FULL`, `line_x`, `passage_xs` and the helpers only they use (`terrace.py`, about 700 of 749 lines) have no production caller. Move `snap_slope` and `_FRIENDLY` to `lib/geo/geo.py` (its only importer), move the three `snap_slope` tests with it, drop `BROADLANDS_N_SLOPE` and the generator tests, delete `lib/builds/terrace.py` and `test_terrace.py`. Fix the text that points at the non-existent `scripts/terrace.py`: `rules/terrace-builds.md:72-77`, `rules/craftsmanship.md:99`, `rules/rules-context.md:30`, `lib/site/rules_context.py:245` and its test, `scripts/site_views.py:163`. Do not touch world repos.
 - Check: `grep -rn "import terrace\|from terrace" lib scripts` returns nothing; `snap_slope` tests pass from their new home; `python3 scripts/run_tests.py` is green; `grep -rn "scripts/terrace.py" rules lib` returns nothing.
 
 ### D. Shared roof geometry module for house and feature builders
 
-- priority: medium; complexity: m; requiresClaude: false; blockedBy: A
+- priority: medium; complexity: m; builderTask: false; blockedBy: A
 - Scope: move `roof_block_y`, `regularise_roof_half_heights`, `RoofRidgeRun`, `roof_ridge_runs`, `pitched_roof_states` and the `_roof_stair` / `_roof_slab` state helpers (`feature_build.py:959-1300`) into `lib/builds/roof_geometry.py`, together with the stair-corner rule from `roof_lint.stair_shape_from_neighbours` (the audit then imports it from there). Add one `edge_distance_field(own, blocked)` that replaces the two copies of the ring-grow and Chebyshev flood (`feature_build.py:3379-3400`, `house_build.py:428-442`). `house_build` stops importing the builder module (`house_build.py:409`). Behaviour must not change; `feature_build` keeps thin imports only where tests need them.
 - Check: golden plans for a feature roof (pitched, with zones) and a house roof (flatish, pitched square, L-shape, group) recorded before the move are byte-identical after; `grep -n "from feature_build import" lib/builds/house_build.py` returns nothing; `roof_lint` tests still pass; `python3 scripts/run_tests.py --only test_house_build`, `--only test_feature_build` and `--only test_roof_lint` pass.
 
 ### E. One cell and grid vocabulary: delete the cellmath wrappers
 
-- priority: medium; complexity: m; requiresClaude: false; blockedBy: none
+- priority: medium; complexity: m; builderTask: false; blockedBy: none
 - Scope: delete the relocating wrappers listed in 1.2 (`cellmath.cell_bounds`, `world_frame.parse_cell/cell_of/cell_bounds`, `coverage.cell_of/cell_bbox` and their `noqa` re-imports, `pass_mask.cell_bounds`, `plant_cell_canopy.cell_bounds`, `cell_marker.cell_bounds`, `ground_sources.cell_box` and `mc_tile_for_cell`) and point every caller at `cellmath` (nine files import `cell_box`). Replace the redefined `N4/N8/DIRS/OPP` tables with `cellmath`'s. Then replace the component finders (`garden_sources.py:712`, `roof_aerial.py:89`, `ground_layer.py:384`, `water_body.py:455`, `outbuildings.py:65`) with `coverage.components(cells, connect)`; before merging each, check whether the caller depends on result order and sort at the call site if it does. Split the component step into its own task if the first part gets large. Task G also edits `plant_cell_canopy.py` and deletes its `cell_bounds`; if G lands first, skip that wrapper here.
 - Check: `git grep -nE "def (cell_box|cell_bounds|cell_bbox|cell_of|parse_cell|mc_tile_for_cell|_?components)\b" lib scripts` lists only the `cellmath` and `coverage` definitions (plus `cell_registry.parse_cell_id`, kept for its error type); a fixture test shows `components` gives the same sets for 4- and 8-connected input as each removed copy; `python3 scripts/run_tests.py` is green.
 
 ### F. Aerial sources: one discovery and sampling path for mosaics and registered images
 
-- priority: medium; complexity: m; requiresClaude: false; blockedBy: none
+- priority: medium; complexity: m; builderTask: false; blockedBy: none
 - Scope: in `lib/evidence/`, give mosaics (`aerial_coverage.Mosaic`) and registered images (`aerial_registered`) one shared small interface (`pixels(points)`, `image()`), with one discovery function for each kind. Move `registered_aerials` and `registered_rgb` out of `ground_sources.py:511-566` to use it (`ground_sources.aerial_rgb` keeps its mosaic-then-registered layering by calling it). `evidence_sheet.py:187-205` drops its own glob. Rewrite `aerial_annot` as a function-based tool on `covering_mosaic` and `Mosaic.pixels`: no import-time `sys.argv`, no hard-coded Portswood path, with a test. Leave `bakeoff/` alone (closed).
 - Check: synthetic 2x2-tile PNG mosaic and a synthetic `.registration.json` fixture; `git grep -n "registration.json" lib` shows the glob in exactly one place; `ground_sources.aerial_rgb` returns the same colours as before on the fixture (registered wins where it covers); `aerial_annot` crop is produced for a fixture bbox with no default mosaic path in the source; `python3 scripts/run_tests.py` is green.
 
 ### G. Retire dead tree and foliage code
 
-- priority: medium; complexity: m; requiresClaude: false; blockedBy: none
+- priority: medium; complexity: m; builderTask: false; blockedBy: none
 - Scope: delete the retired planner in `plant_cell_canopy.py` (`parcels_in_cell`, `columns_for_parcels`, `build_plan`, `plan_hand`, `volume_clear`, `read_mask`, `write_mask_overlay`, the hand-crown list, the Highfield constants, `main`) and `scripts/plant_cell_canopy.py`; rename what remains (`tree_voxels`, `bush_voxels`, `crown_voxels`, species tables, `RNG_SEED`) to a module named for tree voxels and update `trees_layer`, `decor_layer` and `scripts/test_live_read_sweep.py`. Delete the foliage functions with no production caller (1.4); keep `REFINE_PLANTS` where `land_use` can reach it without importing a placement module (for example beside `surface_probe.PLANTS`). Update `rules/foliage.md:15, 111-112` accordingly. This task does not change which species exist.
 - Check: voxel output of `tree_voxels` for oak (round and plane), birch and dark_oak, and of `bush_voxels`, is identical to a recording made before the move; `git grep -n "parcels_in_cell\|columns_for_parcels\|build_cell_foliage" lib scripts` finds nothing; `python3 scripts/run_tests.py` is green; `scripts/plant_cell_canopy.py` is gone and no doc names it as usable.
 
 ### H. One tree-species table, and the wood-tag set read from the land-use table
 
-- priority: medium; complexity: m; requiresClaude: false; blockedBy: G
+- priority: medium; complexity: m; builderTask: false; blockedBy: G
 - Scope: one table keyed by species (log, leaves, crown radii, trunk width, trunk heights), used by the tree voxel generator, `trees_layer` (`SPECIES_HEIGHTS`) and `land_use` (`TREE_SPECIES` is derived from it, `species_weights` validated against it). Split `style` from `species` in the generator signature. One `DEFAULT_LEAVES` / hedge block constant replaces the six spellings in 1.5. `ground_layer.WOOD_FLOOR_TAGS`, `decor_layer.WOODLAND_DECOR_TAGS` and the inline test in `tree_lines.py:394` read the wood and scrub tags from `land_use` (or one shared tuple) instead of retyping them. Delete `garden_sources.NON_RESIDENTIAL_BUILDINGS` / `nonresidential_building` and the legacy `nonresidential` fallback in `meta_class` if the tests that set the flag can use a land-use class instead. Must land before #318 tunes species.
 - Check: adding a fixture species (for example `spruce`) is one table row and appears in `land_use` validation, tree voxels and heights with no other edit (test does this on a copy of the table); the existing species and woodland tests (#350, #348, #351) pass unchanged; `git grep -nE "oak_leaves\[persistent=true\]" lib` finds one definition; `python3 scripts/run_tests.py` is green.
 
