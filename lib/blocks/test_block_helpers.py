@@ -73,7 +73,7 @@ class AirFilterContracts(unittest.TestCase):
     def test_former_collections_equal_base_with_their_named_exceptions(self):
         snapshots = (
             ('cell_journal', 'AIR_IDS', frozenset, ('air', 'cave_air', 'void_air'), True, None, None),
-            ('ground_layer', 'AIRS', frozenset, ('air', 'cave_air', 'void_air'), True, None, None),
+            ('layer_common', 'AIRS', frozenset, ('air', 'cave_air', 'void_air'), True, None, None),
             ('road_labels', '_AIR', frozenset, ('air', 'cave_air', 'void_air'), False, None, None),
             ('cell_marker', 'AIRS', frozenset, ('air', 'cave_air', 'void_air'), True, None, None),
             ('door_audit', '_EMPTY', tuple, ('air', 'cave_air', 'void_air'), False, None, None),

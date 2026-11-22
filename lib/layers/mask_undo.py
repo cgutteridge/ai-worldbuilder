@@ -24,7 +24,7 @@ from pathlib import Path
 from block_store import block_id
 from script_env import ROOT
 
-from ground_layer import ignored_builds
+from layer_common import ignored_builds
 from place_config import plan_name
 from pass_mask import mask_path, mask_placements, read_mask, shared_positions, verify_integrity
 from site_kit import Plan, World, apply, same, undo, warm_reads

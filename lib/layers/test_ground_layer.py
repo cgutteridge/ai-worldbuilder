@@ -4,6 +4,8 @@ from collections import Counter
 
 from block_store import block_id
 import ground_layer as gl
+import layer_common as lc
+import ground_dressing as gd
 import place_config
 
 
@@ -20,9 +22,9 @@ class TestGroundLayer(unittest.TestCase):
 
     def test_flowers_and_stems_are_air(self):
         """§10: flowers and grass stems count as air for the ground step."""
-        self.assertTrue(gl.is_air('minecraft:short_grass'))
-        self.assertTrue(gl.is_air('minecraft:poppy[half=lower]'))
-        self.assertFalse(gl.is_air('minecraft:grass_block'))
+        self.assertTrue(lc.is_air('minecraft:short_grass'))
+        self.assertTrue(lc.is_air('minecraft:poppy[half=lower]'))
+        self.assertFalse(lc.is_air('minecraft:grass_block'))
 
     def test_block_id_strips_state(self):
         """World block states compare against plan ids without properties."""
@@ -30,9 +32,9 @@ class TestGroundLayer(unittest.TestCase):
 
     def test_cell_contains_edges(self):
         """Cell 48,-44 includes its first and last column and excludes the next."""
-        self.assertTrue(gl.cell_contains((48, -44), 6144, -5632))
-        self.assertTrue(gl.cell_contains((48, -44), 6271, -5505))
-        self.assertFalse(gl.cell_contains((48, -44), 6272, -5505))
+        self.assertTrue(lc.cell_contains((48, -44), 6144, -5632))
+        self.assertTrue(lc.cell_contains((48, -44), 6271, -5505))
+        self.assertFalse(lc.cell_contains((48, -44), 6272, -5505))
 
 
 class TestShadesGrass(unittest.TestCase):
@@ -40,12 +42,12 @@ class TestShadesGrass(unittest.TestCase):
 
     def test_opaque_blocks_shade_grass(self):
         for b in ('minecraft:oak_log[axis=y]', 'minecraft:stone', 'minecraft:oak_planks'):
-            self.assertTrue(gl.shades_grass(b), b)
+            self.assertTrue(lc.shades_grass(b), b)
 
     def test_clear_blocks_do_not(self):
         for b in (None, 'minecraft:air', 'minecraft:oak_leaves[distance=1]', 'minecraft:short_grass',
                   'minecraft:poppy', 'minecraft:glass', 'minecraft:oak_fence'):
-            self.assertFalse(gl.shades_grass(b), b)
+            self.assertFalse(lc.shades_grass(b), b)
 
 
 class TestGroundSources(unittest.TestCase):
@@ -339,7 +341,7 @@ class TestGroundDecisions(unittest.TestCase):
                                 (4, 0): 'tarmac', (5, 0): 'brick'})
         self.assertEqual(sum(how.values()), 1)
         self.assertNotEqual(gl.MATERIAL['forecourt'], gl.MATERIAL['paving'])
-        self.assertEqual(gl.BLOCK_KIND[gl.MATERIAL['forecourt']], 'forecourt')
+        self.assertEqual(lc.BLOCK_KIND[gl.MATERIAL['forecourt']], 'forecourt')
         self.assertIn('forecourt', gl.KIND_RGB)
 
     def test_entrance_route_paves_guessed_ground_but_keeps_seen_lawn(self):
@@ -525,7 +527,7 @@ class TestGroundDecisions(unittest.TestCase):
                     raise KeyError('terrain')
                 return 50 if x == 10 else 0
 
-        got = gl.lidar_base_map([(10, 20), (11, 20)], StubMaps())
+        got = lc.lidar_base_map([(10, 20), (11, 20)], StubMaps())
         self.assertEqual(got, {(10, 20): 50})
         self.assertEqual(fields, ['terrain', 'base', 'terrain', 'base'])
 
@@ -550,7 +552,7 @@ class TestGroundDecisions(unittest.TestCase):
                     return 45
                 raise KeyError(field)
 
-        got = gl.lidar_base_map([(5, 5)], StubMaps())
+        got = lc.lidar_base_map([(5, 5)], StubMaps())
         self.assertEqual(got, {(5, 5): 40})
         live = {(5, 5): (40, 'stone')}
         ys = gl.ground_heights(live, got)
@@ -669,7 +671,7 @@ class TestGroundDecisions(unittest.TestCase):
         self.assertEqual(out[(20, 15)], 'paving')
 
     def test_ignored_builds_forget_old_passes_but_not_neighbours(self):
-        ign = gl.ignored_builds((48, -44))
+        ign = lc.ignored_builds((48, -44))
         self.assertIn(place_config.plan_name((48, -44), 'trees'), ign)
         self.assertIn('ghost_48_m44_ground', ign)
         self.assertNotIn('ghost_48_m44_features', ign)
@@ -699,7 +701,7 @@ class TestPlanting(unittest.TestCase):
             self.plan.set(*p, b)
 
     def planting(self, **kwargs):
-        return gl.plan_planting(self.plan, self.world, self.lawn, self.ys, self.plots, self.segments, **kwargs)
+        return gd.plan_planting(self.plan, self.world, self.lawn, self.ys, self.plots, self.segments, **kwargs)
 
     @staticmethod
     def items(row, kind):
@@ -730,7 +732,7 @@ class TestPlanting(unittest.TestCase):
         self.assertTrue(shrubs)
         for x, z in shrubs:
             near = min((x - a) ** 2 + (z - b) ** 2 for a, b in walls + bounds)
-            self.assertLessEqual(near, gl.SHRUB_EDGE_REACH_SQ, (x, z))
+            self.assertLessEqual(near, gd.SHRUB_EDGE_REACH_SQ, (x, z))
         self.assertFalse(any(6 <= x <= 16 and 5 <= z <= 8 for x, z in shrubs))   # open middle of the lawn
 
     def test_cover_mixes_grass_tufts_and_ferns_near_the_edge_without_crowding(self):
@@ -744,7 +746,7 @@ class TestPlanting(unittest.TestCase):
             x, y, z = item['position']
             self.assertNotIn((x, z), taken)
             self.assertEqual(y, 51)
-            self.assertLessEqual(min((x - a) ** 2 + (z - b) ** 2 for a, b in walls + bounds), gl.COVER_EDGE_REACH_SQ)
+            self.assertLessEqual(min((x - a) ** 2 + (z - b) ** 2 for a, b in walls + bounds), gd.COVER_EDGE_REACH_SQ)
             self.assertEqual(self.plan.cells[(x, y, z)], gl.full(item['block']))
             self.assertEqual(item['label'], 'cover inference (#339)')
             self.assertEqual((item['provenance']['source'], item['provenance']['confidence']), ('inference', 'low'))
@@ -755,7 +757,7 @@ class TestPlanting(unittest.TestCase):
         paved = {(x, z) for x, z in guessed if x < 12}
         for x, z in paved:
             self.plan.set(x, 50, z, 'light_gray_concrete')
-        rows = gl.plan_planting(self.plan, self.world, guessed, self.ys, self.plots, self.segments)
+        rows = gd.plan_planting(self.plan, self.world, guessed, self.ys, self.plots, self.segments)
         planted = {(x, z) for item in rows[0]['items'] for x, _, z in [item['position']]}
         self.assertTrue(planted)
         self.assertTrue(planted <= guessed - paved)
@@ -884,7 +886,7 @@ class TestPlanting(unittest.TestCase):
         self.assertIn((6, 50, 5), plan.cells)                   # an unowned neighbour keeps lidar height
 
     def test_owned_solid_keeps_the_column_a_structure_column(self):
-        solid, ceilings = gl.owned_air_ceilings({(1, 50, 1), (1, 51, 1), (2, 52, 2), (2, 50, 2)},
+        solid, ceilings = lc.owned_air_ceilings({(1, 50, 1), (1, 51, 1), (2, 52, 2), (2, 50, 2)},
                                                 {(1, 51, 1), (2, 52, 2), (2, 50, 2)})
         self.assertEqual(solid, {(1, 1)})
         self.assertEqual(ceilings, {(2, 2): 50})
@@ -1002,7 +1004,7 @@ class TestGroundTexture(unittest.TestCase):
                 self.rgb[(x, z)] = (0.42, 0.48, 0.30)          # even green
 
     def texture(self, palettes, **kwargs):
-        return gl.plan_ground_texture(
+        return gd.plan_ground_texture(
             self.plan, self.world, (87, -48), self.ys, self.kind, self.rgb, palettes, **kwargs)
 
     def test_farmland_gets_tufts_and_mottling_park_lawn_stays_clean(self):
@@ -1027,7 +1029,7 @@ class TestGroundTexture(unittest.TestCase):
         meadow = {(x, z) for x, z in self.cols if z >= 8}
         # Even green so bare mottling does not consume every column before flowers.
         rgb = {q: (0.42, 0.48, 0.30) for q in self.cols}
-        report = gl.plan_ground_texture(
+        report = gd.plan_ground_texture(
             self.plan, self.world, (1, 2), self.ys, self.kind, rgb, {q: 'meadow' for q in meadow})
         flowers = [item for item in report['items'] if item['kind'] == 'flowers']
         self.assertGreater(report['flowers'], 0)
@@ -1059,7 +1061,7 @@ class TestGroundTexture(unittest.TestCase):
         self.assertEqual(first, second)
 
     def test_aerial_texture_field_marks_pale_and_scales_variance(self):
-        field = gl.aerial_texture_field(self.rgb, self.cols)
+        field = gd.aerial_texture_field(self.rgb, self.cols)
         self.assertTrue(any(row['bare'] for q, row in field.items() if q[1] < 4))
         scores = [row['score'] for row in field.values()]
         self.assertGreater(max(scores), min(scores))
@@ -1086,7 +1088,7 @@ class TestGroundTexture(unittest.TestCase):
                     classes[(x, z)] = ('rural', 'meadow', 'use')
         idx = SimpleNamespace(areas=[farmland, meadow, lawn])
         with mock.patch('coverage.area_classes', return_value=classes):
-            got = gl.rough_grass_columns((0, 0), idx, classes)
+            got = gd.rough_grass_columns((0, 0), idx, classes)
         self.assertTrue(all(0 <= z < 10 for _x, z in got))
         self.assertTrue(all(got[(x, z)] == 'pasture' for x in range(10) for z in range(10) if (x, z) in got))
         self.assertTrue(all(got[(x, z)] == 'meadow' for x in range(10, 20) for z in range(10) if (x, z) in got))
@@ -1098,7 +1100,7 @@ class TestGroundTexture(unittest.TestCase):
         classes = {q: ('residential', 'r', 'use') for q in self.cols}
         idx = SimpleNamespace(areas=[])
         with mock.patch('coverage.area_classes', return_value=classes):
-            self.assertEqual(gl.rough_grass_columns((0, 0), idx, classes), {})
+            self.assertEqual(gd.rough_grass_columns((0, 0), idx, classes), {})
 
 
 class TestWoodlandFloor(unittest.TestCase):
@@ -1122,7 +1124,7 @@ class TestWoodlandFloor(unittest.TestCase):
         return cols, ys, plan, world
 
     def place(self, plan, world, ys, columns, mask, **kwargs):
-        return gl.plan_woodland_floor(
+        return gd.plan_woodland_floor(
             plan, world, (63, -45), ys, {q: 'grass' for q in ys}, columns, mask, **kwargs)
 
     def test_shares_edge_height_and_seed(self):
@@ -1207,10 +1209,10 @@ class TestWoodlandFloor(unittest.TestCase):
         palettes = {q: 'meadow' for q in meadow}
         kind = {q: 'grass' for q in cols}
         plan, world = fresh()
-        before = gl.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
+        before = gd.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
         plan, world = fresh()
-        after = gl.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
-        floor = gl.plan_woodland_floor(
+        after = gd.plan_ground_texture(plan, world, (46, -46), ys, kind, rgb, palettes)
+        floor = gd.plan_woodland_floor(
             plan, world, (46, -46), ys, kind, {q: 'natural' for q in wood}, set(wood))
         self.assertGreater(floor['podzol'], 0)
         self.assertTrue(set(wood).isdisjoint(meadow | lawn))
@@ -1221,7 +1223,7 @@ class TestWoodlandFloor(unittest.TestCase):
         self.assertEqual(meadow_items, meadow_after)
         self.assertTrue(meadow_items)
         only, _world = fresh()
-        gl.plan_ground_texture(only, _world, (46, -46), ys, kind, rgb, palettes)
+        gd.plan_ground_texture(only, _world, (46, -46), ys, kind, rgb, palettes)
         for q in meadow | lawn:
             self.assertEqual(plan.cells[(q[0], 40, q[1])], only.cells[(q[0], 40, q[1])])
         self.assertTrue(any(plan.cells[(x, 40, z)] == 'minecraft:podzol' for x, z in wood))
@@ -1253,7 +1255,7 @@ class TestWoodlandFloor(unittest.TestCase):
                 else:
                     classes[(x, z)] = ('natural', 'cover', 'cover')
         idx = SimpleNamespace(areas=areas)
-        got, mask = gl.woodland_floor_columns((0, 0), idx, classes)
+        got, mask = gd.woodland_floor_columns((0, 0), idx, classes)
         self.assertEqual(got[(32, 32)], 'natural')
         self.assertIn((32, 32), mask)
         self.assertNotIn((20, 20), got)          # meadow overlapping the wood stays #319
@@ -1265,7 +1267,7 @@ class TestWoodlandFloor(unittest.TestCase):
         self.assertIn((10, 90), mask)
 
         residential = {q: ('residential', 'r', 'use') for q in classes}
-        none, still = gl.woodland_floor_columns((0, 0), idx, residential)
+        none, still = gd.woodland_floor_columns((0, 0), idx, residential)
         self.assertEqual(none, {})
         self.assertIn((32, 32), still)
 
@@ -1278,7 +1280,7 @@ class TestWoodlandFloor(unittest.TestCase):
             return dict(texture, wood=dict(texture['wood'], scrub=True))
 
         with mock.patch('land_use.ground_texture', side_effect=scrub_on):
-            opted, opted_mask = gl.woodland_floor_columns((0, 0), idx, classes)
+            opted, opted_mask = gd.woodland_floor_columns((0, 0), idx, classes)
         self.assertEqual(opted[(60, 60)], 'natural')
         self.assertIn((60, 60), opted_mask)
         self.assertNotIn((20, 60), opted)
@@ -1308,12 +1310,12 @@ class TestWoodlandFloor(unittest.TestCase):
         results = []
         for ordered in (areas, list(reversed(areas))):
             idx = SimpleNamespace(areas=ordered)
-            got, mask = gl.woodland_floor_columns((0, 0), idx, classes)
+            got, mask = gd.woodland_floor_columns((0, 0), idx, classes)
             self.assertEqual(got[(5, 5)], 'natural')
             self.assertFalse((15, 15) in got, 'scrub must keep its pasture palette until opted in')
             self.assertIn((15, 15), mask)  # preserve the enclosing wood's edge geometry
             with mock.patch('land_use.ground_texture', side_effect=scrub_on):
-                opted, opted_mask = gl.woodland_floor_columns((0, 0), idx, classes)
+                opted, opted_mask = gd.woodland_floor_columns((0, 0), idx, classes)
             self.assertEqual(opted[(15, 15)], 'natural')
             results.append((got, mask, opted, opted_mask))
         self.assertEqual(results[0], results[1])
@@ -1339,18 +1341,18 @@ class TestWarmSurfaceProbe(unittest.TestCase):
             def prefetch(self, positions):
                 calls.append(set(positions))
 
-        gl.warm_surface_probe(Stub(), 0, 0, 33, 1)
-        ylo, yhi = gl.probe_y_range()
+        lc.warm_surface_probe(Stub(), 0, 0, 33, 1)
+        ylo, yhi = lc.probe_y_range()
         self.assertEqual(len(calls), 3)                      # 34 x columns in strips of 16
         got = set().union(*calls)
         self.assertEqual(len(got), 34 * 2 * (yhi - ylo + 1))
-        self.assertIn((33, gl.SCAN_TOP, 1), got)
-        self.assertEqual(yhi, gl.SCAN_TOP)
+        self.assertIn((33, lc.SCAN_TOP, 1), got)
+        self.assertEqual(yhi, lc.SCAN_TOP)
         self.assertIn((0, ylo, 0), got)
         self.assertNotIn((0, ylo - 1, 0), got)
 
     def test_world_without_prefetch_is_fine(self):
-        gl.warm_surface_probe(object(), 0, 0, 3, 3)
+        lc.warm_surface_probe(object(), 0, 0, 3, 3)
 
     def test_warm_up_covers_every_read_of_a_low_ground_probe(self):
         """Ground at Y 14 (y_offset 11): every block ``surface_y`` reads was prefetched, so none is a paced call."""
@@ -1374,11 +1376,11 @@ class TestWarmSurfaceProbe(unittest.TestCase):
         for ground in (14, None):
             with self.subTest(ground=ground), bound_world(11):
                 w = Low(ground)
-                gl.warm_surface_probe(w, 0, 0, 3, 3)
+                lc.warm_surface_probe(w, 0, 0, 3, 3)
                 got = {gl.surface_y(w, x, z) for x in range(4) for z in range(4)}
                 self.assertEqual(got, {(14, 'grass_block')} if ground else {None})
                 self.assertEqual(w.cold, [])
-                self.assertEqual(gl.probe_y_range(), (11 - surface_probe.LOW_GROUND_MARGIN_M + 1, gl.SCAN_TOP))
+                self.assertEqual(lc.probe_y_range(), (11 - surface_probe.LOW_GROUND_MARGIN_M + 1, lc.SCAN_TOP))
 
 
 
@@ -1430,7 +1432,7 @@ class SyntheticGroundBox:
                 mock.patch.object(gl.cellmath, 'bounds', side_effect=box), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
             owned = set(owned) | set(owned_states or {})
-            owned_air = {q for q, b in (owned_states or {}).items() if block_id(b, policy='read') in gl.AIRS}
+            owned_air = {q for q, b in (owned_states or {}).items() if block_id(b, policy='read') in lc.AIRS}
             stats, conflicts, kind, skipped = gl.plan_cell((0, 0), {}, owned, plan, world or self.world(),
                                                            evidence=ev, settled_fp=set(settled_fp),
                                                            owned_air=owned_air, owned_states=owned_states)
@@ -1546,12 +1548,12 @@ class TestApplyReporting(unittest.TestCase):
             return stats, [], {(0, 0): 'grass'}, skipped
 
         with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(gl, 'MASK_DIR', Path(tmp) / 'no-masks'), \
+                mock.patch.object(lc, 'MASK_DIR', Path(tmp) / 'no-masks'), \
                 mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world') as fresh_world, \
-                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
-                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(lc, 'load_masked_positions', return_value={}), \
+                mock.patch.object(lc, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('site_kit.apply', return_value={'planned': 1, 'mismatches': 0}) as apply, \
@@ -1640,7 +1642,7 @@ class TestBuriedFeatureBlock(SyntheticGroundBox, unittest.TestCase):
 
     def test_owned_water_is_never_a_buried_floor(self):
         states = {(1, 40, 1): 'minecraft:water', (1, 39, 1): 'minecraft:smooth_stone', (2, 40, 2): 'minecraft:stone'}
-        self.assertEqual(gl.owned_floors(states, {(1, 1), (2, 2)}), {(2, 2): 40})
+        self.assertEqual(lc.owned_floors(states, {(1, 1), (2, 2)}), {(2, 2): 40})
 
 
 class TestRegisteredAerial(unittest.TestCase):
@@ -1702,19 +1704,19 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
     def test_support_needs_a_run_of_ground_not_a_remnant(self):
         col = {y: 'minecraft:stone' for y in [*range(31, 37), 47, 48, 49]}
         block = lambda x, y, z: col.get(y)   # noqa: E731
-        self.assertEqual(gl.support_y(block, 0, 50, 0), 36)
-        self.assertEqual(gl.support_y(lambda x, y, z: None, 0, 50, 0), None)
-        self.assertEqual(gl.support_y(lambda x, y, z: 'minecraft:stone' if y <= 32 else None, 0, 50, 0), 32)
+        self.assertEqual(lc.support_y(block, 0, 50, 0), 36)
+        self.assertEqual(lc.support_y(lambda x, y, z: None, 0, 50, 0), None)
+        self.assertEqual(lc.support_y(lambda x, y, z: 'minecraft:stone' if y <= 32 else None, 0, 50, 0), 32)
 
     def test_surface_on_the_probe_floor_rests_on_the_baseline(self):
         """A surface at the lowest probed y has nothing readable below it; that is not a float."""
-        floor_y = gl.probe_y_range()[0]
+        floor_y = lc.probe_y_range()[0]
         stone = lambda x, y, z: 'minecraft:stone' if y <= floor_y else None   # noqa: E731
-        self.assertEqual(gl.support_y(stone, 0, floor_y, 0), floor_y - 1)
+        self.assertEqual(lc.support_y(stone, 0, floor_y, 0), floor_y - 1)
         self.assertEqual(gl.floating_tops({}, stone, {(0, 0): floor_y}), [])
         # one block up the run is still read, and a column with nothing at all still floats
-        self.assertEqual(gl.support_y(stone, 0, floor_y + 1, 0), floor_y)
-        self.assertEqual(gl.support_y(lambda x, y, z: None, 0, floor_y + 1, 0), None)
+        self.assertEqual(lc.support_y(stone, 0, floor_y + 1, 0), floor_y)
+        self.assertEqual(lc.support_y(lambda x, y, z: None, 0, floor_y + 1, 0), None)
         self.assertEqual(len(gl.floating_tops({}, lambda *_: None, {(0, 0): floor_y + 1})), 1)
 
     def test_guard_fires_on_a_surface_left_floating(self):
@@ -1742,7 +1744,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set())), \
                 mock.patch.object(gl.cellmath, 'bounds', side_effect=lambda c, m=0: (x0 - m, z0 - m, x1 + m, z1 + m)), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0), \
-                mock.patch.object(gl, 'owned_air_ceilings', return_value=(set(), {})):
+                mock.patch.object(lc, 'owned_air_ceilings', return_value=(set(), {})):
             stats, *_ = gl.plan_cell((0, 0), {}, owned_air, Plan('t'), self.world(), evidence=ev)
         self.assertEqual([(r['x'], r['z'], r['air']) for r in stats['floating_columns']], [(x, z, 1)])
 
@@ -1759,11 +1761,11 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
             return stats, [], {(0, 0): 'grass'}, Counter()
 
         with mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
-                mock.patch.object(gl, 'MASK_DIR', Path('/nonexistent-ground-masks')), \
+                mock.patch.object(lc, 'MASK_DIR', Path('/nonexistent-ground-masks')), \
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world'), \
-                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
-                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(lc, 'load_masked_positions', return_value={}), \
+                mock.patch.object(lc, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('layer_reports.write_report'), \
@@ -1790,11 +1792,11 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
-                mock.patch.object(gl, 'MASK_DIR', Path(tmp)), \
+                mock.patch.object(lc, 'MASK_DIR', Path(tmp)), \
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world'), \
-                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
-                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(lc, 'load_masked_positions', return_value={}), \
+                mock.patch.object(lc, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch('layer_reports.write_report'), \
@@ -1928,10 +1930,10 @@ class TestDryArtifacts(unittest.TestCase):
             return stats, conflicts, {(0, 0): 'grass'}, Counter()
 
         with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(gl, 'MASK_DIR', Path(tmp) / 'no-masks'), \
+                mock.patch.object(lc, 'MASK_DIR', Path(tmp) / 'no-masks'), \
                 mock.patch.object(gl, '_fresh_world', return_value=mock.Mock(block=lambda *p: 'minecraft:air')), \
-                mock.patch.object(gl, 'load_masked_positions', return_value={(0, 64, 0): 'decor 0,0'}), \
-                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(lc, 'load_masked_positions', return_value={(0, 64, 0): 'decor 0,0'}), \
+                mock.patch.object(lc, 'neighbour_owned_states', return_value={}), \
                 mock.patch.object(gl, 'settled_footprint', return_value=set()), \
                 mock.patch.object(gl, 'report_journal_floats'), \
                 mock.patch.object(gl, 'plan_cell', side_effect=plan), \

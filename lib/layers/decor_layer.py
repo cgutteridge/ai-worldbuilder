@@ -29,7 +29,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ground_layer import (AIRS, BLOCK_KIND, cell_contains, ignored_builds,  # noqa: E402
+from layer_common import (AIRS, BLOCK_KIND, cell_contains, ignored_builds,  # noqa: E402
                           is_air, neighbour_owned, load_masked_positions, probe_y_range)
 from block_store import SCAN_VOLUME_CAP, block_id  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
@@ -699,7 +699,7 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
     from coverage import scan_polygon
     import cellmath
     from ground_sources import MARGIN
-    from ground_layer import LAWN_TAGS
+    from ground_dressing import LAWN_TAGS
     from osm_footprints import osm_tags
 
     if classes is None:

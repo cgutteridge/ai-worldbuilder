@@ -2,7 +2,7 @@
 
 Reads the cell journal only, never the live world. A ground column floats when, under the top
 block a real ground build owns, some position is unowned or owned as air before solid ground is
-reached: two owned non-air blocks in a row (:func:`ground_layer.support_y`).
+reached: two owned non-air blocks in a row (:func:`layer_common.support_y`).
 
 Between the feature and the ground every column is accounted for (task 297). Each floating
 column says whose it is and the command that settles it:
@@ -32,7 +32,7 @@ import argparse
 import json
 from collections import defaultdict
 
-from ground_layer import is_air, support_y
+from layer_common import is_air, support_y
 
 GROUND_PASS = 'ground'
 GHOST_PASSES = ('ghost-ground', 'ghost-features')
@@ -77,7 +77,7 @@ def floating_ground_tops(owners: dict, ground_plans, passes=None) -> list:
 def buried_cavities(owners: dict, ground_plans, passes=None) -> list:
     """Columns whose real ground sits on a crust of solid blocks over air (task 298).
 
-    Reads the journal only. The crust is the :func:`ground_layer.support_y` run under the top; a
+    Reads the journal only. The crust is the :func:`layer_common.support_y` run under the top; a
     cavity block is any position between the column's lowest owned block and that run that nothing
     owns, or that is owned as air. A feature's highest owned position and everything below it is
     the feature's (a basement, a footing); only the air above it is the ground's to fill.
@@ -176,11 +176,11 @@ def cell_evidence(cell) -> tuple[set, set, dict]:
     @returns: ``(deck, water, terrain)``
     """
     import cellmath
-    from ground_layer import _ring, lidar_base_map
+    from layer_common import column_ring, lidar_base_map
     from ground_sources import OSMGround
     vmap = OSMGround(tuple(cell))
     deck = {q for q in getattr(vmap, 'deck', set()) if _inside(cellmath.bounds(tuple(cell)), q)}
-    return deck, _ring(vmap.water), lidar_base_map(deck)
+    return deck, column_ring(vmap.water), lidar_base_map(deck)
 
 
 def _inside(box, q) -> bool:

@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import coverage
-import ground_layer
+import layer_common
 import house_build
 import place_config
 import rules_context
@@ -83,7 +83,7 @@ class TestNeutralDefaults(unittest.TestCase):
         self.assertEqual(place_config.base_y(), 37)
         self.assertEqual(place_config.retired_ground_passes(), frozenset())
         self.assertEqual(place_config.reverted_builds(), frozenset())
-        self.assertNotIn('highfield_q051_ur', ground_layer.ignored_builds((48, -44)))
+        self.assertNotIn('highfield_q051_ur', layer_common.ignored_builds((48, -44)))
 
 
 class TestConfiguredPlace(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestConfiguredPlace(unittest.TestCase):
             self.assertEqual(site_kit.STRUCTURE_NS, 'southampton_refine')
             self.assertEqual(place_config.base_y(), 37)
             self.assertIn('highfield_q051_ur', place_config.retired_ground_passes())
-            self.assertIn('highfield_q051_ur', ground_layer.ignored_builds((48, -44)))
+            self.assertIn('highfield_q051_ur', layer_common.ignored_builds((48, -44)))
             self.assertIn('broadlands_facade_revert', place_config.reverted_builds())
             self.assertTrue(coverage.touch_excluded('portswood_x_broadlands_terrace_facade_1'))
             self.assertEqual(place_config.ledger_aliases()['hampshire-hub'], ('aerial',))

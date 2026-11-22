@@ -351,8 +351,8 @@ class GroundLayerIgnoresGhosts(unittest.TestCase):
     """Real ground pass may overwrite ghost owners."""
 
     def test_ignored_builds_includes_ghost_ground_owner(self):
-        import ground_layer as gl
-        ign = gl.ignored_builds((48, -44))
+        import layer_common as lc
+        ign = lc.ignored_builds((48, -44))
         self.assertIn('ghost_48_m44_ground', ign)
 
 
