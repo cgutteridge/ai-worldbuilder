@@ -26,9 +26,6 @@ import numpy as np
 from ref_manifest import load_manifest
 import cellmath  # noqa: E402
 
-from script_env import ROOT  # noqa: E402
-NO_DATA_LUM = 0.01                   # window mean below this is a blank mosaic pixel (pure black), not ground
-
 # vector-map surface=* → ground kind. 'paving' is split brick / light by the aerial.
 SURFACE_KIND = {
     'asphalt': 'tarmac', 'paved': 'paving', 'paving_stones': 'paving', 'concrete': 'paving',
@@ -507,66 +504,18 @@ class RegRGB(tuple):
     __slots__ = ()
 
 
-AERIAL_USER_GLOB = 'reference/aerial/**/*.registration.json'
-REG_HALF_BLOCKS = 0.5                # sample window half-width in blocks (median, so render speckle drops out)
-REG_EDGE_BLOCKS = 3.0                # skip columns this close to the image edge (watermark, attribution, UI chrome)
-
-
-def registered_aerials() -> list[dict]:
-    """Every registered user aerial found by globbing reference/aerial/**/*.registration.json.
-
-    Drop a new screenshot and its registration beside the others and it is used with no code change.
-    Each: ``{'name', 'A' (2x3), 'im' (HxWx3 float 0..1), 'ppb' (px per block)}``.
-    """
-    from PIL import Image
-    out = []
-    for rp in sorted(ROOT.glob(AERIAL_USER_GLOB)):
-        try:
-            reg = json.loads(rp.read_text())
-            A = np.array(reg['A'], float)
-            im = np.asarray(Image.open(ROOT / 'reference' / reg['image']).convert('RGB')).astype(float) / 255
-        except (OSError, KeyError, ValueError):
-            continue
-        out.append({'name': rp.name, 'A': A, 'im': im, 'ppb': float(np.hypot(A[0, 0], A[1, 0]))})
-    return out
-
-
-def registered_rgb(pts: list[tuple[int, int]], sources: list[dict] | None = None) -> dict:
-    """RegRGB per column covered by a registered user aerial (median of a ~1-block window).
-
-    Columns whose window leaves the image, or is (near-)black no-data, are skipped so the mosaic
-    can fill them. Earlier sources in ``sources`` (sorted by name) win over later ones.
-    """
-    out: dict = {}
-    for src in (registered_aerials() if sources is None else sources):
-        im, A, ppb = src['im'], src['A'], src['ppb']
-        h = max(2, int(round(REG_HALF_BLOCKS * ppb)))
-        edge = REG_EDGE_BLOCKS * ppb
-        H, W = im.shape[:2]
-        for p in pts:
-            if p in out:
-                continue
-            u, v = A @ [p[0] + 0.5, p[1] + 0.5, 1]
-            if not (edge + h <= u < W - edge - h and edge + h <= v < H - edge - h):
-                continue
-            u, v = int(u), int(v)
-            win = np.median(im[v - h:v + h + 1, u - h:u + h + 1].reshape(-1, 3), axis=0)
-            if win.mean() < NO_DATA_LUM * 5:             # blank / black padding
-                continue
-            out[p] = RegRGB(float(c) for c in win)
-    return out
-
-
 def aerial_rgb(cell: tuple[int, int], margin: int = MARGIN) -> dict:
     """Colour (0..1) per column: registered user aerials where one covers it, else the z19 mosaic.
 
     The mosaic gives a 5x5 pixel mean; registered columns are RegRGB (see ``aerial_class``).
     """
     from aerial_coverage import sample_rgb
+    from aerial_registered import sample_rgb as registered_sample_rgb
     x0, z0, x1, z1 = cellmath.bounds(cell, margin)
     pts = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)]
     out = sample_rgb(cell, margin=margin)
-    out.update(registered_rgb(pts))                      # sharper, truer colour wins where it exists
+    # sharper, truer colour wins where it exists
+    out.update({p: RegRGB(rgb) for p, rgb in registered_sample_rgb(pts).items()})
     return out
 
 

@@ -184,11 +184,10 @@ def aerial_crop_bbox(bbox: tuple[int, int, int, int], out: Path, pad: int = 8, s
     x0, z0, x1, z1 = bbox
     x0, z0, x1, z1 = x0 - pad, z0 - pad, x1 + pad, z1 + pad
     # Prefer a registered user aerial when one covers the bbox.
-    regs = sorted((ROOT / 'reference' / 'aerial').glob('**/*.registration.json'))
-    for reg in regs:
+    from aerial_registered import crop as reg_crop, registered
+    for reg in registered():
         try:
-            from aerial_registered import crop as reg_crop
-            reg_crop(reg, [x0, z0, x1, z1], out, scale)
+            reg_crop(reg.path, [x0, z0, x1, z1], out, scale)
             if out.is_file():
                 return out
         except Exception:

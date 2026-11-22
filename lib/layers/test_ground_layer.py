@@ -1662,16 +1662,6 @@ class TestRegisteredAerial(unittest.TestCase):
         self.assertEqual(gs.aerial_class(R((0.44, 0.49, 0.61))), 'shade')    # leaning blue roof: ground unseen
         self.assertEqual(gs.aerial_class(R((0.1, 0.1, 0.1))), 'dark')
 
-    def test_registered_rgb_skips_outside_edge_and_black(self):
-        import numpy as np
-        import ground_sources as gs
-        im = np.zeros((200, 200, 3)) + (0.35, 0.49, 0.38)
-        im[:, 100:] = 0                                              # black no-data half
-        src = {'name': 't', 'A': np.array([[2.0, 0, 0], [0, 2.0, 0]]), 'im': im, 'ppb': 2.0}
-        out = gs.registered_rgb([(30, 50), (1, 50), (30, 1), (60, 50), (80, 50)], [src])
-        self.assertEqual(set(out), {(30, 50)})                       # (1,50),(30,1) near the edge; (60,50),(80,50) black
-        self.assertEqual(gs.aerial_class(out[(30, 50)]), 'lawn')
-
 
 class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
     """#296: ground fills under its surface down to solid ground, never just to a live top that floats."""
