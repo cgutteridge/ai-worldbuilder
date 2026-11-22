@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 433,
+  "nextTaskId": 434,
   "tasks": [
     
     
@@ -355,6 +355,16 @@
       ],
       "builderTask": true,
       "notes": "Builder task. After the footprint-gates, tag-defaults, roof-layer and chimney-option tasks land, rebuild the Northcote Road west terrace (cell 54,-41, 20 houses; trial #257, docs/plans/typology-buildings.md) from a terrace recipe: one roof per house or per pair rather than mode group across the whole row, one stack per party wall or pair, and alternating roof colour per pair where the aerial shows it (54_-41.png: red tile and grey slate in pairs). The owner judged the trial terrace good except the central chimney and (pending comment) the single continuous roof. Method as trial #257: rule-built spec through the existing builders under the site lock, state minutes and session tokens with the measurement method, owner verdict in game recorded in the findings. Builder task, stretch: do not raise model or effort without asking.\n"
+    },
+    {
+      "id": 433,
+      "title": "Cell-edge features: plan each feature in its primary cell",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Found in trial #257 (parade, Portswood Road). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but their primary cell is 52,-37. The builder then refuses them with \"feature plan absent from cell plan 52,-37\", and `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere. Dismissing the plans on 51,-37 did not make 52,-37 pick them up, so they now have a plan in no cell (parade left at 17 of 19; the unbuilt two and the dismissal are described in docs/plans/typology-buildings.md under Cell edges).\n\nDeliverable: a feature that crosses a cell edge is planned and recorded in its primary cell (the cell holding its main footprint or entrance, say which rule), whichever cell's plans were recorded first; `propose-features` for a cell lists features whose primary cell it is even when an edge cell already recorded them; recording or dismissing a plan on the other cell does not strand the feature. Fixture-only: synthetic two-cell footprint, a plan recorded in the wrong cell, then propose-features and apply preflight on the primary cell. No live world work. Acceptance: tests show the straddling feature is proposed and applies from its primary cell, and that the two-cell plan record is recoverable without a manual registry edit. After it lands, the two parade shops can be built (a separate world step, owner OK).\n"
     }
   ]
 }
