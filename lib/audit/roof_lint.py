@@ -206,7 +206,9 @@ def ridge_jogs(cells: dict) -> list[dict]:
     """Find ridge lines that shift sideways between adjacent rows.
 
     Steps beside a party-wall parapet are allowed: terrace houses may stagger where they
-    meet. A shift anywhere else is one roof displaced against itself.
+    meet, and a ridge that keeps drifting the same way across nearby rows is a rotated roof
+    on the block grid (``_drifts_on``). A shift anywhere else is one roof displaced against
+    itself.
 
     @param cells: {(x, y, z): block state} (a Plan's cells or a recorded journal plan)
     @returns: list of {'axis', 'row', 'pos', 'next_pos', 'y', 'shift'} — one per seam; the
@@ -225,9 +227,41 @@ def ridge_jogs(cells: dict) -> list[dict]:
                     shift = (npos2 - pos2) / 2
                     # half-block shifts are a ridge cap widening by one, not a displaced slope
                     if not nparty and 1 <= abs(shift) <= 4 and abs(ny - y) <= abs(shift) + 1:
+                        if _drifts_on(ridges, row, pos2, npos2):
+                            continue
                         jogs.append({'axis': axis, 'row': row, 'pos': pos2 / 2,
                                      'next_pos': npos2 / 2, 'y': y, 'shift': shift})
     return jogs
+
+
+_DRIFT_ROWS = 3  # rows searched either side of a seam for a ridge that keeps moving the same way
+_DRIFT_REACH2 = 4  # a continuing ridge lies within 2 blocks (pos2 units: 4) of the seam end
+
+
+def _drifts_on(ridges: dict, row: int, pos2: int, npos2: int) -> bool:
+    """True if the ridge keeps moving the same way beyond a seam, as a rotated roof's ridge does.
+
+    A displaced slope is straight on both sides of the seam. A diagonal ridge steps one block
+    every few rows on the block grid, so the ridge one or more rows away on either side has
+    already moved, or goes on moving, in the same direction.
+
+    @param ridges: {row: [(pos2, y, party), ...]} for one axis (see _ridges)
+    @param row: row of the ridge at ``pos2``; the next row (row - 1) holds ``npos2``
+    @param pos2: twice the ridge midpoint at ``row``
+    @param npos2: twice the ridge midpoint at ``row - 1``
+    @returns: whether a ridge before or after the seam continues the shift's direction
+    """
+    sign = 1 if npos2 > pos2 else -1
+    for k in range(1, _DRIFT_ROWS + 1):
+        # rows before the seam (away from row - 1): the ridge should sit behind pos2
+        for q, _, _ in ridges.get(row + k, ()):
+            if 0 < (pos2 - q) * sign <= _DRIFT_REACH2:
+                return True
+        # rows after the seam: the ridge should sit ahead of npos2
+        for q, _, _ in ridges.get(row - 1 - k, ()):
+            if 0 < (q - npos2) * sign <= _DRIFT_REACH2:
+                return True
+    return False
 
 
 def _load(name: str) -> dict:

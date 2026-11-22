@@ -65,6 +65,16 @@ class RidgeJogTest(unittest.TestCase):
         cells[(10, 51, 4)] = 'minecraft:bricks'
         self.assertEqual(len(ridge_jogs(cells)), 1)
 
+    def test_ridge_that_drifts_a_block_every_two_rows_is_a_rotated_roof_not_a_jog(self):
+        cells = {}
+        for z, ridge_x in enumerate((10, 10, 11, 11, 12, 12, 13, 13)):
+            gable(cells, ridge_x, z, z)
+        self.assertEqual(ridge_jogs(cells), [])
+
+    def test_one_block_step_between_two_straight_runs_is_still_a_jog(self):
+        cells = gable(gable({}, 10, 0, 4), 11, 5, 9)
+        self.assertEqual(len(ridge_jogs(cells)), 1)
+
     def test_diagonal_crest_edge_stair_or_slab_is_not_a_jog(self):
         """West Building: one 3-wide crest at x 10..12 in both rows. The crest edge is a stair
         in one row and a corner slab in the next, so the stair ends sit a block apart."""
