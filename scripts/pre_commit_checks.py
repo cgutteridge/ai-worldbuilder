@@ -182,11 +182,11 @@ def is_administrative_only_paths(paths: Iterable[str]) -> bool:
 
 
 def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
-    """Return staged tracker files with invalid JSON or Claude requirement flags.
+    """Return staged tracker files with invalid JSON or builderTask flags.
 
     @param repo_root: repository root
     @param paths: staged file paths relative to the repo root
-    @returns: sorted tracker paths that fail JSON or model-flag validation
+    @returns: sorted tracker paths that fail JSON or builderTask validation
     """
     bad: list[str] = []
     for path in sorted(set(paths) & TRACKER_PATHS):

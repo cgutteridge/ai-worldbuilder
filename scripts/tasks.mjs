@@ -321,7 +321,7 @@ export async function showTask(directory, id) {
   return done
 }
 
-/** The builder-task flag. Reads the deprecated `builderTask` key only when `builderTask` is absent
+/** The builder-task flag. Reads the deprecated `requiresClaude` key only when `builderTask` is absent
  * (transition period while tracker files are migrated; remove with the follow-up change).
  */
 export function isBuilderTask(task) {

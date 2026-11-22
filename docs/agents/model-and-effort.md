@@ -27,7 +27,7 @@ it requires a recorded reason explaining why no AI model is used any more. Sizin
 for splitting tasks by this flag are in [issue-tracker](issue-tracker.md#sizing-tasks).
 
 **Dispatch gate — single task, wave, retry and unattended run.** Read the current
-ticket before claiming it, creating its worktree or starting/resuming its builder.
+ticket before claiming it, creating its worktree or starting or resuming its worker.
 For `builderTask: true`, establish access to the selected Claude Sonnet or Opus
 model. Claude Code can run it directly. Cursor can also take the task when Claude
 access and sufficient **external-model budget for the planned work** are confirmed.

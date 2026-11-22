@@ -875,7 +875,7 @@ describe("task closure", () => {
   })
 })
 
-describe("Claude task policy", () => {
+describe("Builder task policy", () => {
   const task = (extra = {}) => ({ id: 1, title: "Build trial", status: "todo",
     builderTask: true, notes: "Keep these notes", custom: { keep: true }, ...extra })
   async function fixture(extra = {}) {
