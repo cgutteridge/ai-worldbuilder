@@ -45,7 +45,10 @@ class TestCoverPixels(unittest.TestCase):
         self.assertEqual(m[:, 40:][10:30, 10:100].mean(), 0)
 
     def test_park_and_rural_shade_scores_meadow_low_and_canopy_high(self):
-        """Bright meadow is cover today and dull canopy is not; park and rural reverse that pair."""
+        """Bright meadow is cover today and dull canopy is not; park and rural reverse that pair.
+
+        A dark green-grey (slate or damp tarmac) stays out of both tests. Bright paving already did.
+        """
         import land_use
         from PIL import Image
 
@@ -53,8 +56,9 @@ class TestCoverPixels(unittest.TestCase):
         belt = (76, 90, 74)         # shaded canopy: dark, dull green, under the saturation floor
         wood = (94, 83, 58)         # brown-olive shade the ordinary test already counts
         roof = (150, 70, 50)
-        paving = (185, 175, 170)
-        bands = (meadow, belt, wood, roof, paving)
+        paving = (185, 175, 170)    # bright, unsaturated paving
+        slate = (68, 76, 70)        # dark green-grey: damp tarmac or slate, not bright paving
+        bands = (meadow, belt, wood, roof, paving, slate)
         width = 56
         img = np.zeros((48, width * len(bands), 3), np.uint8)
         for i, colour in enumerate(bands):
@@ -72,6 +76,7 @@ class TestCoverPixels(unittest.TestCase):
             self.assertGreater(band(ordinary, 2), 0.95)
             self.assertEqual(band(ordinary, 3), 0)
             self.assertEqual(band(ordinary, 4), 0)
+            self.assertEqual(band(ordinary, 5), 0)
             for cid in ('rural', 'park'):
                 self.assertEqual(land_use.tree_cover(cid), 'shade')
                 got = tl.cover_pixels(p, shade=land_use.tree_cover(cid) == 'shade')
@@ -80,6 +85,7 @@ class TestCoverPixels(unittest.TestCase):
                 self.assertGreater(band(got, 2), 0.95)
                 self.assertEqual(band(got, 3), 0)
                 self.assertEqual(band(got, 4), 0)
+                self.assertEqual(band(got, 5), 0)
             for cid in ('residential', 'natural', 'unknown'):
                 self.assertIsNone(land_use.tree_cover(cid))
                 got = tl.cover_pixels(p, shade=land_use.tree_cover(cid) == 'shade')
@@ -97,6 +103,37 @@ class TestCoverPixels(unittest.TestCase):
         self.assertEqual(got[0, 1], 0.93)
         np.testing.assert_array_equal(ordinary, np.full((4, 4), 0.93))
         np.testing.assert_array_equal(shaded, np.full((4, 4), 0.16))
+
+    def test_planning_inputs_passes_the_land_use_class_of_each_column(self):
+        """cover_grid must receive the class id area_classes read for that world column."""
+        park, rural = (40, 50), (10, 10)
+        idx = types.SimpleNamespace(
+            cells=lambda: set(),
+            areas=[
+                ([[(0, 0), (128, 0), (128, 128), (0, 128), (0, 0)]],
+                 {'landuse': 'farmland', 'osm_way_id': 'farm'}),
+                ([[(30, 40), (50, 40), (50, 60), (30, 60), (30, 40)]],
+                 {'leisure': 'park', 'osm_way_id': 'park'}),
+            ],
+        )
+        cover = mock.Mock(return_value=np.zeros((128, 128)))
+        with mock.patch('osm_footprints.OSMIndex', return_value=idx), \
+                mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
+                mock.patch.object(tl, 'find_crowns', return_value=[]), \
+                mock.patch.object(tl, 'cover_grid', cover), \
+                mock.patch.object(tl, 'extra_crowns', return_value=[]), \
+                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch('tree_lines.standing_height', return_value=(np.zeros((132, 132)), 'first-return')), \
+                mock.patch.object(tl, 'cell_terrain', return_value=None), \
+                mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
+                mock.patch.object(tl, 'ignored_builds', return_value=set()), \
+                mock.patch.object(tl, 'load_masked_positions', return_value={}), \
+                mock.patch('cell_registry.view_registry', return_value=types.SimpleNamespace(recorded=lambda n: None)):
+            tl.planning_inputs((0, 0), osm_ground=_empty_osm_ground())
+        self.assertEqual(cover.call_args.args, ((0, 0),))
+        classes = cover.call_args.kwargs['classes']
+        self.assertEqual(classes[park], 'park')
+        self.assertEqual(classes[rural], 'rural')
 
 
 class TestFillDense(unittest.TestCase):

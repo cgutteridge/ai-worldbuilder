@@ -65,9 +65,10 @@ COVER_FULL = 0.9           # at or above this every fill site gets a tree
 # brown-olive woodland still counts; roofs, paving and bright surfaces stay out.
 # Park and rural point at the shade pair (trees.cover "shade"): sunlit pasture still
 # clears the ordinary ceiling, and dull shadow falls under the ordinary saturation floor.
+# The shade floor stays above a dark green-grey, so slate and damp tarmac are not cover.
 COVER_MIN_SATURATION = 0.22
 COVER_MAX_CHANNEL = 0.62
-SHADE_COVER_MIN_SATURATION = 0.10
+SHADE_COVER_MIN_SATURATION = 0.11
 SHADE_COVER_MAX_CHANNEL = 0.40
 FILL_SPACING = 5           # jittered grid pitch of the fill (crowns here are 5-7 blocks across)
 FILL_RADII = (2.5, 3.0, 3.0, 3.5, 4.0, 4.5)   # height variance: round 4-6 below 3.5, plane 8-9 above
@@ -192,6 +193,7 @@ def cover_pixels(img_path: Path, *, shade: bool = False) -> np.ndarray:
     ``shade`` is the park and rural test (``trees.cover``). The ordinary ceiling still lets sunlit
     meadow through, and the ordinary saturation floor drops dull shadowed canopy. Shade lowers both
     thresholds and keeps the same green-to-olive check, so the meadow scores low and the canopy high.
+    The shade saturation floor still excludes a dark green-grey, so slate and damp tarmac stay out.
     Other classes leave ``shade`` false.
 
     @param img_path: local RGB mosaic
