@@ -1629,40 +1629,30 @@ def mean_rgb_255(samples: list[tuple[float, float, float]]) -> tuple[int, int, i
     return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
 
-def sample_columns_rgb(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tuple[float, float, float]]:
-    """Aerial 0..1 RGB per column from the place mosaic / registered sources.
+class AerialSourceMissing(RuntimeError):
+    """No local aerial mosaic is available, so roof colours cannot be sampled."""
 
-    Soft-fails to ``{}`` when the mosaic or CRS helpers are unavailable (dry-run
-    suggestion only — never a gate).
+
+def sample_columns_rgb(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tuple[float, float, float]]:
+    """Aerial 0..1 RGB per column from the local aerial mosaics.
+
+    Columns no mosaic covers (or that fall on blank pixels) are left out of the
+    result. A missing aerial source is a different matter and raises, so a
+    broken source can never look like "no colours found".
 
     @param pts: MC columns to sample
     @returns: ``{(x, z): (r, g, b)}`` for columns that yielded a colour
+    @raises AerialSourceMissing: when no local aerial mosaic can be found
     """
     if not pts:
         return {}
-    try:
-        from ground_sources import mosaic_px, registered_rgb, MOSAIC, NO_DATA_LUM
-        from PIL import Image
-    except ImportError:
-        return {}
-    try:
-        im = np.asarray(Image.open(MOSAIC).convert('RGB')).astype(float) / 255
-    except OSError:
-        return {}
-    out: dict[tuple[int, int], tuple[float, float, float]] = {}
-    try:
-        for p, (X, Y) in mosaic_px(list(pts)).items():
-            X, Y = int(X), int(Y)
-            if 2 <= X < im.shape[1] - 2 and 2 <= Y < im.shape[0] - 2:
-                win = tuple(im[Y - 2:Y + 3, X - 2:X + 3].reshape(-1, 3).mean(0))
-                if sum(win) / 3 < NO_DATA_LUM:
-                    continue
-                out[p] = (float(win[0]), float(win[1]), float(win[2]))
-        out.update({p: (float(c[0]), float(c[1]), float(c[2]))
-                    for p, c in registered_rgb(list(pts)).items()})
-    except Exception:
-        return out
-    return out
+    import aerial_coverage
+    sources = aerial_coverage.mosaics()
+    if not sources:
+        raise AerialSourceMissing(
+            'no local aerial mosaic under reference/aerial; roof colour cannot be sampled')
+    found = aerial_coverage.samples(list(pts), sources, radius=2)
+    return {p: (float(c[0]), float(c[1]), float(c[2])) for p, (_, _, _, c) in found.items()}
 
 
 def roof_zone_colour_lines(
@@ -1688,7 +1678,11 @@ def roof_zone_colour_lines(
                 continue
             by_level.setdefault(int(level), []).append(c)
         need = [c for cols in by_level.values() for c in cols]
-        rgb_map = aerial_rgb if aerial_rgb is not None else sample_columns_rgb(need)
+        try:
+            rgb_map = aerial_rgb if aerial_rgb is not None else sample_columns_rgb(need)
+        except AerialSourceMissing as exc:
+            lines.append(f'roof colour suggestions skipped: {exc}')
+            return lines
         for level in sorted(by_level):
             samples = [rgb_map[c] for c in by_level[level] if c in rgb_map]
             mean = mean_rgb_255(samples)
