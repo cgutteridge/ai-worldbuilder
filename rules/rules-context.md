@@ -67,8 +67,8 @@ only what the brief / task needs.
  PROPERTY (includes Always + imagery when surveying):
    rules/frontage-and-evidence.md
    rules/craftsmanship.md — full
-   university register entries on the footprint: reference/portals, reference/buildings
-     (shims/portals.py building N, shims/buildings.py building N) — inputs to
+   configured entrance_register / building_register catalogue roles on the footprint
+     (shims/portals.py --world <world> building N, shims/buildings.py --world <world> building N) — inputs to
      ``facade_plan`` entrances, not a separate door stage
    Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
    Water-body (pond) feature: rules/water-body-builds.md

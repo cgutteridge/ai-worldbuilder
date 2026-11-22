@@ -279,7 +279,7 @@ def prepend_world_activation(argv: Sequence[str] | None = None) -> Path:
 def resolve_provider_package(package: str, home: str | None = None) -> Path:
     """Resolve a catalogue ``package`` path against system and/or world roots.
 
-    ``package`` is relative to the chosen repo root (e.g. ``providers/uos-portals``).
+    ``package`` is relative to the chosen repo root (e.g. ``providers/local-register``).
     ``home`` selects which root to use:
 
     - ``"system"`` — under ``TOOL_ROOT``

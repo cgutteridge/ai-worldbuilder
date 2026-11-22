@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shim — canonical module: active world ``providers/hampshire-hub/aerial_mosaic.py``."""
+"""Shim — resolve the catalogue ``aerial_mosaic`` role in the active world."""
 from __future__ import annotations
 
 import sys
@@ -11,7 +11,7 @@ _ps.ensure_import_paths()
 
 from world_provider import load_world_provider, run_world_provider  # noqa: E402
 
-_PACKAGE = "providers/hampshire-hub"
+_ROLE = "aerial_mosaic"
 _FILE = "aerial_mosaic.py"
 
 if __name__ == "__main__":
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     import script_env
 
     script_env.prepend_world_activation()
-    run_world_provider(_PACKAGE, _FILE)
+    run_world_provider(_ROLE, _FILE)
 else:
-    _mod = load_world_provider(_PACKAGE, _FILE, "aerial_mosaic")
+    _mod = load_world_provider(_ROLE, _FILE, "aerial_mosaic")
     globals().update({k: v for k, v in vars(_mod).items() if not k.startswith("__")})

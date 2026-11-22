@@ -37,6 +37,7 @@ class TestProviderCliBoundary(unittest.TestCase):
         # rather than calling the error renderer directly.
         code = r"""
 import sys
+import json
 from pathlib import Path
 from unittest import mock
 import script_env
@@ -49,23 +50,31 @@ with unit_test_world() as root:
     for module in ('portals', 'buildings', 'cell_features'):
         sys.modules.pop(module, None)
     source = 'def describe(*a, **k): return {}\ndef for_footprint(*a, **k): return []\n'
-    for package, filename in (('uos-portals', 'portals.py'), ('uos-buildings', 'buildings.py')):
+    rows = []
+    for package, filename, role in (('fixture-entrances', 'portals.py', 'entrance_register'),
+                                     ('fixture-buildings', 'buildings.py', 'building_register')):
+        rows.append({'id': package, 'role': role, 'package': f'providers/{package}'})
         folder = root / 'providers' / package
-        if package == 'uos-portals' and mode == 'package':
+        if package == 'fixture-entrances' and mode == 'package':
             continue
         folder.mkdir(parents=True)
-        if package == 'uos-portals' and mode == 'module':
+        if package == 'fixture-entrances' and mode == 'module':
             continue
         body = source
-        if package == 'uos-portals' and mode in ('ImportError', 'FileNotFoundError'):
+        if package == 'fixture-entrances' and mode in ('ImportError', 'FileNotFoundError'):
             body = f'raise {mode}("provider bug sentinel")\n'
         (folder / filename).write_text(body)
+    (root / 'config' / 'local-providers.json').write_text(json.dumps({'providers': rows}))
     with mock.patch.object(active_world, 'set_world', return_value=root):
         if entry == 'redo':
+            script_env.prepend_world_activation(['--world', root.name])
+            # Import remains safe; the optional role is validated when queried.
+            import cell_features
+            cell_features.for_footprint([])
             redo_here.main(['--world', root.name, '--at', '1,2', '--json'])
         else:
             script_env.prepend_world_activation(['--world', root.name])
-            world_provider.run_world_provider('providers/uos-portals', 'portals.py')
+            world_provider.run_world_provider('entrance_register', 'portals.py')
 """
         return subprocess.run([sys.executable, '-c', code, mode, entry], cwd=ROOT / 'scripts',
                               text=True, capture_output=True)
@@ -76,7 +85,7 @@ with unit_test_world() as root:
                 result = self.run_cli(mode)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f'local provider {mode} missing', result.stderr)
-                self.assertIn('uos-portals', result.stderr)
+                self.assertIn('entrance_register', result.stderr)
                 self.assertIn('worldbuilder-unit-', result.stderr)
                 self.assertIn('config/local-providers.json', result.stderr)
                 self.assertNotIn('Traceback', result.stderr)

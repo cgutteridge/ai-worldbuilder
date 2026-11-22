@@ -10,7 +10,7 @@ Church, cathedral, chapel, cinema and shopping-centre candidates (`building=chur
 1. **Read the data, not the label.** Lidar height row (`site/cells/<cell>-LIDAR.txt`), `lidar_audit.py --cell`, and the raw
    height grid of the building. Labels (flat/pitched, storeys) are estimates until the grid and a photo agree.
    Done when you can say what lidar shows for shape, top Y and floor level.
-2. **Gather evidence in `rules/evidence-order.md` order.** For a university building run `shims/portals.py cell tx,tz` first: it
+2. **Gather evidence in `rules/evidence-order.md` order.** When the catalogue configures `entrance_register`, run `python3 shims/portals.py --world <world> cell tx,tz` first: it
    gives every entrance's exact position and name (a canopy or door found on the footprint map / the build may be one of them: 42-A, 2026-10-16). One street-level photo frame, an aerial sheet
    (`google_aerial.py`), and a university aerial that covers the building (check `bbox_mc`, `rules/reference-token-budget.md`).
    Log each with `cell_sources.py --record`. Done when storeys, roof and openings each name a source.
@@ -88,7 +88,7 @@ would have settled it.
 
 The approach:
 1. **Evidence table first, in the script docstring**: for each fact (footprint, heights, materials per face, doors, roof features) name the
-   source: vector map footprint, lidar grid cell by cell, aerial z20, campus aerial, every portal photo at 800 px (`shims/portals.py`), block reference for the
+   source: vector map footprint, lidar grid cell by cell, aerial z20, campus aerial, every available entrance-register photo at 800 px (`shims/portals.py`), block reference for the
    block choice (`scripts/block_reference.py`). All relevant references, before the first block. A photo shows ONE face: say which.
 2. **One building = one script** (lidar bands -> per-zone materials -> entrances on ``facade_plan`` from portals/photos -> clear the old build -> keep trees).
    A second fix to the same building means rebuild it whole, never another follow-up. Per-face rules need positions as well, because a

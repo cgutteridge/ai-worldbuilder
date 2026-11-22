@@ -354,9 +354,12 @@ def mapped_entrance_facts(refs, idx=None):
 
 def _portal_photo(p):
     """Local saved copy of a portal's first photo (reference/photos/portals) when there is one, else its 800 px URL."""
-    from portals import PHOTO_DIR, photos
-    local = PHOTO_DIR / f'{p["id"]}.jpg'
-    return str(local.relative_to(ROOT)) if local.exists() else photos(p)[0]
+    from world_provider import load_world_provider
+    provider = load_world_provider('entrance_register', 'portals.py', 'portals', optional=True)
+    if provider is None:
+        return (p.get('images') or [''])[0]
+    local = provider.PHOTO_DIR / f'{p["id"]}.jpg'
+    return str(local.relative_to(ROOT)) if local.exists() else provider.photos(p)[0]
 
 
 def portal_facts(portals):
@@ -385,11 +388,14 @@ def portal_facts(portals):
 
 
 def _building_photo(b):
-    """Local saved copy of a university building photo (reference/photos/buildings) when there is one, else its 800 px URL."""
-    from buildings import PHOTO_DIR, photos
-    local = PHOTO_DIR / f'{b["id"]}.jpg'
+    """Local saved copy of a registered building photo (reference/photos/buildings) when there is one, else its 800 px URL."""
+    from world_provider import load_world_provider
+    provider = load_world_provider('building_register', 'buildings.py', 'buildings', optional=True)
+    if provider is None:
+        return b.get('image') or ''
+    local = provider.PHOTO_DIR / f'{b["id"]}.jpg'
     if not local.exists():
-        return photos(b)[0]
+        return provider.photos(b)[0]
     try:
         return str(local.relative_to(ROOT))
     except ValueError:
@@ -397,7 +403,7 @@ def _building_photo(b):
 
 
 def building_facts(pictures):
-    """Picture lines for a feature item: university buildings (shims/buildings.py) that are this footprint.
+    """Picture lines for a feature item: registered buildings (building_register provider) that are this footprint.
 
     @param pictures: building dicts from the feature (cell_features.missing_features)
     @returns: queue-item lines ([] when none has a photo or an outline)
@@ -405,10 +411,13 @@ def building_facts(pictures):
     pictures = [b for b in pictures or [] if b['image'] or b['rings']]
     if not pictures:
         return []
-    from buildings import describe
-    return (['University building (reference/buildings, maps.soton.ac.uk; photo is look-only evidence for walls, openings,'
+    from world_provider import load_world_provider
+    provider = load_world_provider('building_register', 'buildings.py', 'buildings', optional=True)
+    if provider is None:
+        return []
+    return (['Registered building (reference/buildings; photo is look-only evidence for walls, openings,'
              ' storeys; the outline cross-checks the vector map, lidar still decides heights):']
-            + [f'  {describe(b)}' + (f'  {_building_photo(b)}' if b['image'] else '') for b in pictures[:6]])
+            + [f'  {provider.describe(b)}' + (f'  {_building_photo(b)}' if b['image'] else '') for b in pictures[:6]])
 
 
 def resolved_trees_over_roof(cell):
