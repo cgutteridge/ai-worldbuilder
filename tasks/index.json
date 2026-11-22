@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 374,
+  "nextTaskId": 376,
   "tasks": [
     
     
@@ -132,16 +132,25 @@
       "requiresClaude": true,
       "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nrequiresClaude true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game."
     },
-    
     {
-      "id": 372,
-      "title": "Outbuildings: take shed and garage roof blocks from the roof catalogue",
+      "id": 374,
+      "title": "One cell and grid vocabulary: delete the cellmath wrappers",
       "status": "todo",
       "priority": "medium",
-      "complexity": "s",
+      "complexity": "m",
       "blockedBy": [],
       "requiresClaude": false,
-      "notes": "- Scope: replace `ROOF_SLAB`, `ROOF_STAIR` and `ROOF_FULL` (`outbuildings.py:54-56`) with one `ROOF_FAMILY = {'shed': 'spruce', 'garage': 'stone_brick'}` and read full, slab and stairs from `roof_material.family_variants`. Keep the gable geometry (`pitched_roof`, `roof_row`) as is; it is a different, simpler shape and not part of this task. Leave `WALL_BLOCK` and `DOOR_BLOCK` alone.\n- Check: record `outbuildings.voxels` output for a synthetic shed and a synthetic garage (odd and even width, flat and pitched) before the change and assert it is identical after; `grep -n \"ROOF_FULL\\|ROOF_SLAB\\|ROOF_STAIR\" lib` finds none; `python3 scripts/run_tests.py --only test_outbuildings` passes.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
+      "notes": "- Scope: delete the relocating wrappers listed in 1.2 (`cellmath.cell_bounds`, `world_frame.parse_cell/cell_of/cell_bounds`, `coverage.cell_of/cell_bbox` and their `noqa` re-imports, `pass_mask.cell_bounds`, `plant_cell_canopy.cell_bounds`, `cell_marker.cell_bounds`, `ground_sources.cell_box` and `mc_tile_for_cell`) and point every caller at `cellmath` (nine files import `cell_box`). Replace the redefined `N4/N8/DIRS/OPP` tables with `cellmath`'s. Then replace the component finders (`garden_sources.py:712`, `roof_aerial.py:89`, `ground_layer.py:384`, `water_body.py:455`, `outbuildings.py:65`) with `coverage.components(cells, connect)`; before merging each, check whether the caller depends on result order and sort at the call site if it does. Split the component step into its own task if the first part gets large. Task G also edits `plant_cell_canopy.py` and deletes its `cell_bounds`; if G lands first, skip that wrapper here.\n- Check: `git grep -nE \"def (cell_box|cell_bounds|cell_bbox|cell_of|parse_cell|mc_tile_for_cell|_?components)\\b\" lib scripts` lists only the `cellmath` and `coverage` definitions (plus `cell_registry.parse_cell_id`, kept for its error type); a fixture test shows `components` gives the same sets for 4- and 8-connected input as each removed copy; `python3 scripts/run_tests.py` is green.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
+    },
+    {
+      "id": 375,
+      "title": "Retire dead tree and foliage code",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "- Scope: delete the retired planner in `plant_cell_canopy.py` (`parcels_in_cell`, `columns_for_parcels`, `build_plan`, `plan_hand`, `volume_clear`, `read_mask`, `write_mask_overlay`, the hand-crown list, the Highfield constants, `main`) and `scripts/plant_cell_canopy.py`; rename what remains (`tree_voxels`, `bush_voxels`, `crown_voxels`, species tables, `RNG_SEED`) to a module named for tree voxels and update `trees_layer`, `decor_layer` and `scripts/test_live_read_sweep.py`. Delete the foliage functions with no production caller (1.4); keep `REFINE_PLANTS` where `land_use` can reach it without importing a placement module (for example beside `surface_probe.PLANTS`). Update `rules/foliage.md:15, 111-112` accordingly. This task does not change which species exist.\n- Check: voxel output of `tree_voxels` for oak (round and plane), birch and dark_oak, and of `bush_voxels`, is identical to a recording made before the move; `git grep -n \"parcels_in_cell\\|columns_for_parcels\\|build_cell_foliage\" lib scripts` finds nothing; `python3 scripts/run_tests.py` is green; `scripts/plant_cell_canopy.py` is gone and no doc names it as usable.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
     }
   ]
 }
