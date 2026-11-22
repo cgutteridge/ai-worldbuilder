@@ -185,24 +185,6 @@ def top_at(x: int, z: int, maps: Maps | None = None) -> int:
     return _DEFAULT_MAPS.top_at(x, z)
 
 
-def _group(cols: set) -> list:
-    left, out = set(cols), []
-    while left:
-        seed = min(left)
-        comp, todo = {seed}, [seed]
-        left.discard(seed)
-        while todo:
-            x, z = todo.pop()
-            for dx, dz in cellmath.N8:
-                q = (x + dx, z + dz)
-                if q in left:
-                    left.discard(q)
-                    comp.add(q)
-                    todo.append(q)
-        out.append(comp)
-    return sorted(out, key=lambda c: (-len(c), min(c)))
-
-
 def _erode(cols: set) -> set:
     """Columns whose 8 neighbours are all in cols (one ring of the rim removed)."""
     return {(x, z) for x, z in cols if all((x + dx, z + dz) in cols for dx, dz in cellmath.N8)}
@@ -231,7 +213,7 @@ def lumps(hm: dict, min_columns: int = MIN_COLUMNS) -> list:
     n = cellmath.CELL
     roofs = {(x0 + i, z0 + j) for i, j in zip(*np.nonzero(hm['roof'])) if hm['roof'][i, j] and i < n and j < n}
     out = []
-    for comp in _group(roofs):
+    for comp in cellmath.components(roofs, cellmath.N8):
         if len(comp) < min_columns:
             continue
         ry = {c: int(hm['roof'][c[0] - x0, c[1] - z0]) for c in comp}

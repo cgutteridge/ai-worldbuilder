@@ -578,35 +578,6 @@ if __name__ == '__main__':
     unittest.main()
 
 
-class EntranceApproachTest(unittest.TestCase):
-    def test_no_approach_connects_at_doors_outward_neighbour(self):
-        a = H.entrance_approach((10, 10), 'S')
-        self.assertEqual(a['connection']['cell'], [10, 11])
-        self.assertEqual(a['door']['origin'], 'generated')
-        self.assertFalse(a['connection']['verified'])
-
-    def test_connection_is_outer_end_of_feature_steps(self):
-        a = H.entrance_approach((10, 10), 'S', approach_cells=[(10, 11), (10, 12)], base_y=64)
-        self.assertEqual(a['connection']['cell'], [10, 13])
-        self.assertEqual(a['connection']['y'], 64)
-        self.assertEqual(a['approach'], [[10, 11], [10, 12]])
-        self.assertEqual(a['clearance']['headroom'], 2)
-
-    def test_updated_approach_moves_connection(self):
-        short = H.entrance_approach((4, 4), 'W', approach_cells=[(3, 4)])
-        longer = H.entrance_approach((4, 4), 'W', approach_cells=[(3, 4), (2, 4)])
-        self.assertEqual((short['connection']['cell'], longer['connection']['cell']), ([2, 4], [1, 4]))
-
-    def test_observed_door_is_verified(self):
-        a = H.entrance_approach((4, 4), 'N', generated=False)
-        self.assertTrue(a['connection']['verified'])
-        self.assertEqual(a['provenance']['source'], 'vector_map')
-
-    def test_legacy_build_without_door_is_explicit(self):
-        a = H.entrance_approach(None, 'S')
-        self.assertIsNone(a['connection'])
-        self.assertIn('unavailable', a['reason'])
-
 
 class MarginShelfTest(unittest.TestCase):
     """Task 115 (T18): the margin around a house is cleared, not filled with a stone shelf at floor level."""

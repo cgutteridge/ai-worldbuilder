@@ -489,17 +489,7 @@ def denoise(kind: dict, locked: set, how: Counter) -> dict:
         changed = 0
         for k in MIN_PATCH:
             cols = {q for q, v in out.items() if v == k}
-            left = set(cols)
-            while left:
-                seed = left.pop()
-                comp, todo = {seed}, [seed]
-                while todo:
-                    q = todo.pop()
-                    for n in ((q[0] + 1, q[1]), (q[0] - 1, q[1]), (q[0], q[1] + 1), (q[0], q[1] - 1)):
-                        if n in left:
-                            left.discard(n)
-                            comp.add(n)
-                            todo.append(n)
+            for comp in cellmath.components(cols, traversal='set-pop-dfs'):
                 if len(comp) >= MIN_PATCH[k] or comp & locked:
                     continue
                 border = Counter(out[(q[0] + a, q[1] + b)] for q in comp for a in (-1, 0, 1) for b in (-1, 0, 1)
@@ -691,10 +681,10 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
             out[q] = 'mark'
     for q in free:
         if q in vmap.road and kind.get(q) == 'tarmac':
-            nb = [kind.get((q[0] + a, q[1] + b)) for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+            nb = [kind.get((q[0] + a, q[1] + b)) for a, b in cellmath.N4]
             if any(k in ('grass', 'paving', 'brick') for k in nb) and not any(
                     (q[0] + a, q[1] + b) in vmap.kind and vmap.pri[(q[0] + a, q[1] + b)] in (60, 70)
-                    for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    for a, b in cellmath.N4):
                 out[q] = 'kerb'
     for q in free & set(getattr(vmap, 'steps', ())):    # mapped outdoor steps are paving (#294)
         out[q] = 'paving'

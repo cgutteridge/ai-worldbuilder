@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import random
 
+from cellmath import N4
 from tree_species import DEFAULT_LEAVES, SPECIES, has_silhouette
 
 RNG_SEED = 48045
@@ -108,6 +109,6 @@ def bush_voxels(x: int, z: int, ground_y: int) -> dict[tuple[int, int, int], str
     @returns: voxel map
     """
     out = {(x, ground_y + 1, z): DEFAULT_LEAVES, (x, ground_y + 2, z): DEFAULT_LEAVES}
-    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+    for dx, dz in N4:
         out[(x + dx, ground_y + 1, z + dz)] = DEFAULT_LEAVES
     return out

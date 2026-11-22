@@ -23,7 +23,7 @@ from typing import Any
 
 import cellmath
 from cell_journal import CellRegistry, CellView
-from cell_registry import cell_id, view_registry
+from cell_registry import view_registry
 
 
 def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -40,7 +40,7 @@ def _undone_work_in_cell(v: CellView, report: dict[str, Any] | None = None) -> l
     """
     if v.hold:
         return []
-    cid = cell_id(*v.cell)
+    cid = cellmath.cell_id(v.cell)
     out: list[dict[str, Any]] = []
     for feat in v.features:
         if feat.status != 'built':
@@ -77,7 +77,7 @@ def unplanned_footprint_candidates(reg: CellRegistry, cid: str) -> list[dict[str
     @raises RuntimeError: when propose-features fails for a reason other than no world
     """
     import cell_registry as CR  # noqa: WPS433
-    cell = CR.parse_cell_id(cid)
+    cell = cellmath.parse_cell(cid)
     items = CR.drop_covered_candidates(reg, cell, CR.propose_feature_candidates(cid))
     skip = {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell)
     out: list[dict[str, Any]] = []
@@ -116,7 +116,7 @@ def needs_clip_coverage(reg: CellRegistry, cell: tuple[int, int]) -> dict[str, A
     fraction = clip_coverage(cell)
     if fraction >= 1:
         return None
-    return {'kind': 'needs-clip-coverage', 'cell': cell_id(*cell), 'clip_coverage': fraction}
+    return {'kind': 'needs-clip-coverage', 'cell': cellmath.cell_id(cell), 'clip_coverage': fraction}
 
 
 def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
@@ -146,10 +146,10 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
     eligible = [c for c, v in pending.items() if not v.hold and c not in excluded]
     if not eligible:
         if pending:
-            return {'kind': 'blocked', 'cells': [cell_id(*c) for c in sorted(pending)],
-                    'reasons': {cell_id(*c): reports[c]['blockers'] or ['excluded for this run']
+            return {'kind': 'blocked', 'cells': [cellmath.cell_id(c) for c in sorted(pending)],
+                    'reasons': {cellmath.cell_id(c): reports[c]['blockers'] or ['excluded for this run']
                                 for c in sorted(pending)}}
-        return {'kind': 'complete', 'cell': cell_id(*cell)} if cell is not None else None
+        return {'kind': 'complete', 'cell': cellmath.cell_id(cell)} if cell is not None else None
     home, marker = cellmath.home_cell(), reg.marker_cell()
 
     def order(c):
@@ -160,7 +160,7 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
     cell = min(eligible, key=order)
     report, v = reports[cell], views[cell]
     if not report['ready']:
-        task = {'kind': 'needs-prep', 'cell': cell_id(*cell), 'reasons': report['blockers'],
+        task = {'kind': 'needs-prep', 'cell': cellmath.cell_id(cell), 'reasons': report['blockers'],
                 'clip_coverage': report.get('clip_coverage'),
                 'aerial_coverage': report.get('aerial_coverage'),
                 'next_actions': report.get('next_actions', [])}
@@ -172,9 +172,9 @@ def next_task(registry: CellRegistry | None = None, *, root: Path | None = None,
     if work:
         return work[0]
     if v.marker:
-        return {'kind': 'marker-clear', 'cell': cell_id(*cell)}
+        return {'kind': 'marker-clear', 'cell': cellmath.cell_id(cell)}
     # An unfinished journal invariant must never be reported as an idle queue.
-    return {'kind': 'needs-prep', 'cell': cell_id(*cell), 'reasons': list(v.left)}
+    return {'kind': 'needs-prep', 'cell': cellmath.cell_id(cell), 'reasons': list(v.left)}
 
 
 def _stale_lines(task: dict[str, Any]) -> str:

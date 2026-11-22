@@ -15,8 +15,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import cellmath
 from cell_journal import CellRegistry
-from cell_registry import cell_id, feature_cells, view_registry
+from cell_registry import feature_cells, view_registry
 from script_env import ROOT  # noqa: E402
 
 SEVERITY_ERROR = 'error'
@@ -99,7 +100,7 @@ def check_marker_invariant(reg: CellRegistry) -> list[dict[str, Any]]:
     @param reg: registry
     @returns: issues
     """
-    ups = [cell_id(*c) for c, v in reg.view().items() if v.marker]
+    ups = [cellmath.cell_id(c) for c, v in reg.view().items() if v.marker]
     if len(ups) > 1:
         return [_issue(
             'marker:multiple', SEVERITY_ERROR,
@@ -116,7 +117,7 @@ def check_done_invariants(reg: CellRegistry) -> list[dict[str, Any]]:
     """
     out: list[dict[str, Any]] = []
     for c, v in reg.view().items():
-        cid = cell_id(*c)
+        cid = cellmath.cell_id(c)
         if v.trees and v.ground != 'generated':
             out.append(_issue(
                 f'invariant:trees:{cid}', SEVERITY_ERROR,
@@ -138,7 +139,7 @@ def check_coverage_warnings(reg: CellRegistry) -> list[dict[str, Any]]:
     """
     out: list[dict[str, Any]] = []
     for c, v in reg.view().items():
-        cid = cell_id(*c)
+        cid = cellmath.cell_id(c)
         for n in v.notes:
             if n.kind == 'coverage':
                 out.append(_issue(
@@ -155,7 +156,7 @@ def check_in_flight(reg: CellRegistry) -> list[dict[str, Any]]:
     @returns: issues
     """
     return [_issue(f'in-flight:{e.seq}', SEVERITY_WARN,
-                   f'entry {e.seq} {e.plan} ({e.pass_}, cell {cell_id(*e.cell)}, owner {e.owner}) is still begun '
+                   f'entry {e.seq} {e.plan} ({e.pass_}, cell {cellmath.cell_id(e.cell)}, owner {e.owner}) is still begun '
                    '(python scripts/site_recover.py status)')
             for e in reg.entries() if e.status == 'begun']
 
@@ -225,14 +226,14 @@ def check_readiness(reg, *, policy=None):
     for cell, view in sorted(reg.view().items()):
         report = policy.check(cell)
         for blocker in report['blockers']:
-            out.append(_issue(f'readiness:{cell_id(*cell)}:{len(out)}', SEVERITY_ERROR,
-                              f'cell {cell_id(*cell)} needs-prep: {blocker}'))
+            out.append(_issue(f'readiness:{cellmath.cell_id(cell)}:{len(out)}', SEVERITY_ERROR,
+                              f'cell {cellmath.cell_id(cell)} needs-prep: {blocker}'))
         for layer in ('trees', 'decor'):
             if getattr(view, layer) and not report.get(f'{layer}_current'):
-                out.append(_issue(f'layer-inputs:{cell_id(*cell)}:{layer}', SEVERITY_ERROR,
-                                  f'cell {cell_id(*cell)}: {layer} inputs stale or legacy unvalidated'))
+                out.append(_issue(f'layer-inputs:{cellmath.cell_id(cell)}:{layer}', SEVERITY_ERROR,
+                                  f'cell {cellmath.cell_id(cell)}: {layer} inputs stale or legacy unvalidated'))
         for warning in report['warnings']:
-            out.append(_issue(f'readiness-warning:{cell_id(*cell)}:{len(out)}', SEVERITY_WARN, warning))
+            out.append(_issue(f'readiness-warning:{cellmath.cell_id(cell)}:{len(out)}', SEVERITY_WARN, warning))
     return out
 
 
@@ -257,7 +258,7 @@ def check_world_presence(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
     for cell, v in reg.view().items():
         if v.ground == 'none':
             continue
-        cid = cell_id(*cell)
+        cid = cellmath.cell_id(cell)
         for rx, rz in cellmath.regions_for_cell(cell):  # type: ignore[arg-type]
             name = f'r.{rx}.{rz}.mca'
             if not (region / name).is_file():

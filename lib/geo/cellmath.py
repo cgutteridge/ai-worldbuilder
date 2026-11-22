@@ -1,6 +1,7 @@
 """Single owner of coverage-cell maths for the active world.
 
-Owns cell size, home cell, bounds, cell→region mapping, ring order, ``parse_cell``,
+Owns cell size, home cell, bounds, cell→region mapping, ring order, directions,
+connected components, ``parse_cell``,
 canonical id format ``tx,tz``, and sparse MC tile ids. Home cell and cell size
 come from the active world's ``config/world-frame.json`` (``cell.size``,
 ``cell.home``); defaults match Southampton (128 / 48,-44) when absent.
@@ -29,6 +30,9 @@ _LOADED = False
 N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 N8 = tuple((dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz)
 DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+# Outward block-facing vectors. Keep Minecraft word names and E/W/S/N tie order.
+FACING = {word: DIRS[letter] for word, letter in
+          (('east', 'E'), ('west', 'W'), ('south', 'S'), ('north', 'N'))}
 OPP = {'N': 'S', 'S': 'N', 'W': 'E', 'E': 'W'}
 
 
@@ -171,13 +175,33 @@ def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int, size: int | None = None) -
     return tx0 * s, tz0 * s, (tx1 + 1) * s - 1, (tz1 + 1) * s - 1
 
 
-def components(cells, connect=N4) -> list[set]:
-    """Connected components of a column set, in a stable order.
+def components(cells, connect=N4, *, traversal='stable') -> list[set]:
+    """Connected components of a column set, in stable order by default.
 
     @param cells: iterable of ``(x, z)`` columns
     @param connect: neighbour offsets (:data:`N4` default, or :data:`N8`)
-    @returns: list of sets, largest first, ties by smallest column
+    @param traversal: ``stable`` uses minimum seeds and BFS, sorted largest first;
+        ``set-pop-dfs`` preserves set-pop seeds, DFS neighbour discovery and component
+        discovery order for the ground noise pass's border ties and in-place relabelling
+    @returns: component sets, ordered by the selected traversal
     """
+    if traversal == 'set-pop-dfs':
+        left, out = set(cells), []
+        while left:
+            seed = left.pop()
+            comp, todo = {seed}, [seed]
+            while todo:
+                x, z = todo.pop()
+                for dx, dz in connect:
+                    q = (x + dx, z + dz)
+                    if q in left:
+                        left.discard(q)
+                        comp.add(q)
+                        todo.append(q)
+            out.append(comp)
+        return out
+    if traversal != 'stable':
+        raise ValueError(f'unknown component traversal: {traversal!r}')
     left, out = set(cells), []
     while left:
         seed = min(left)

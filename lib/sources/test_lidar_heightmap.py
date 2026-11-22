@@ -77,6 +77,18 @@ class LumpTest(unittest.TestCase):
         return {'cell': (0, 0), 'x0': 0, 'z0': 0, 'h': np.zeros((n, n), 'int16'), 'base': np.full((n, n), 40, 'int16'),
                 'roof': np.zeros((n, n), 'int16'), 'kind': np.zeros((n, n), 'uint8')}
 
+    def test_diagonal_lumps_keep_largest_first_and_minimum_column_ties(self):
+        hm = self.blank_map()
+        groups = [{(1, 1), (2, 2)}, {(10, 1), (11, 2)}, {(20, 1), (21, 2), (22, 3)}]
+        for group in groups:
+            for x, z in group:
+                hm['roof'][x, z] = 47
+                hm['kind'][x, z] = L.ROOF
+        lumps = L.lumps(hm, min_columns=1)
+        self.assertEqual([item['cols'] for item in lumps], [groups[2], groups[0], groups[1]])
+        self.assertEqual([item['bbox'] for item in lumps],
+                         [[20, 1, 22, 3], [1, 1, 2, 2], [10, 1, 11, 2]])
+
     def test_narrow_pitched_house_stays_pitched(self):
         """A 3-wide gable's interior is only its ridge strip (spread 0): too narrow to judge by, so the whole footprint is used."""
         hm = self.blank_map()

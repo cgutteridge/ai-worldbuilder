@@ -38,6 +38,14 @@ class ReviewTest(unittest.TestCase):
     def verdicts(self, live, pri):
         return sorted((r['verdict'], tuple(r['centre'])) for r in T.review_cell(hmap(live), hmap(pri)))
 
+    def test_diagonal_plateaus_keep_peak_order_for_equal_distance_matching(self):
+        heights = np.zeros((32, 32), dtype=np.int16)
+        for x, z in ((1, 1), (2, 2), (10, 1), (11, 2), (20, 1), (21, 2), (22, 3)):
+            heights[x, z] = 7
+        peaks = T.peaks(heights, 0, 0, radius=0)
+        self.assertEqual(peaks, [(21, 2, 7), (2, 2, 7), (10, 2, 7)])
+        self.assertEqual(T._near((6, 2, 7), peaks, 8), (2, 2, 7))
+
     def test_matching_crowns_are_ok(self):
         self.assertEqual(self.verdicts([(20, 20, 10)], [(21, 20, 11)]), [('ok', (21, 20))])
 

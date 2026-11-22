@@ -114,7 +114,6 @@ def top_open():
 
 LAYER_STAGES = ('ground', 'trees', 'decor')
 QUEUE_DONE = SITE / 'archive' / 'QUEUE-done.txt'
-from cellmath import HOME_CELL, ring_cells  # noqa: E402,F401
 
 
 TREES_OVER_ROOF = 'trees-over-roof'      # journal review-note ref prefix: trees-over-roof:x0,z0,x1,z1

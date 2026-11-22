@@ -5,10 +5,10 @@ import re
 from collections import deque
 from typing import Callable
 
+from cellmath import FACING
 from site_kit import ATTACH, bid
 from site_walk import solid
 
-_FACING = {'north': (0, -1), 'south': (0, 1), 'east': (1, 0), 'west': (-1, 0)}
 _AIR = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:light'})
 _NEIGH6 = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 _SKIP_UNSUPPORTED = (
@@ -193,8 +193,8 @@ def cell_glitches(
             rec('floating', 'standing lantern with nothing below')
     elif n.endswith('_wall_sign') or n.endswith('wall_torch'):
         f = prop(st, 'facing')
-        if f in _FACING:
-            dx, dz = _FACING[f]
+        if f in FACING:
+            dx, dz = FACING[f]
             if not solid(block_at(x - dx, y, z - dz)):
                 rec('floating', 'wall sign/torch with no block behind')
     elif (n.endswith('_sign') and 'hanging' not in n) or n == 'torch':
@@ -208,8 +208,8 @@ def cell_glitches(
             rec('broken_bed_or_door', 'door upper half without lower')
         if half == 'lower':
             f = prop(st, 'facing')
-            if f in _FACING:
-                dx, dz = _FACING[f]
+            if f in FACING:
+                dx, dz = FACING[f]
 
                 def wall(b: str | None) -> bool:
                     return solid(b) and not bid(b or '').endswith('_trapdoor')
@@ -220,8 +220,8 @@ def cell_glitches(
                     rec('door_to_wall', 'door opens onto a solid block')
     elif n.endswith('_bed'):
         f, part = prop(st, 'facing'), prop(st, 'part')
-        if f in _FACING:
-            dx, dz = _FACING[f]
+        if f in FACING:
+            dx, dz = FACING[f]
             ox, oz = (x + dx, z + dz) if part == 'foot' else (x - dx, z - dz)
             if not bid(block_at(ox, y, oz) or '').endswith('_bed'):
                 rec('broken_bed_or_door', 'bed missing its other half')

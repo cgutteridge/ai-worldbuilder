@@ -948,7 +948,7 @@ class TestOutwardFacings(unittest.TestCase):
 class TestFacingIsOutwardNotInward(unittest.TestCase):
     def test_facing_points_to_the_unowned_side_never_into_the_plot(self):
         owner = {(x, z): 1 for x in range(10) for z in range(10)}
-        dirs = gs.DIRS
+        dirs = gs.cellmath.FACING
         runs = {'front': [(x, 0) for x in range(1, 9)],        # street north
                 'rear': [(x, 9) for x in range(1, 9)],         # open land south
                 'side_back': [(0, z) for z in range(1, 9)]}    # path west
@@ -993,7 +993,7 @@ class TestPanelRuns(unittest.TestCase):
             _, owner, _, r = self._run(dx, dz)
             faces = {k: f for k, f in r['facing'].items() if k not in r['cross']}   # cross closers excepted
             self.assertEqual(len(set(faces.values())), 1, (dx, dz))
-            d = gs.DIRS[next(iter(faces.values()))]
+            d = gs.cellmath.FACING[next(iter(faces.values()))]
             for key in faces:
                 x, z = map(int, key.split(','))
                 self.assertEqual(owner.get((x - d[0], z - d[1])), 1, (dx, dz, key))   # back is the garden
@@ -1061,10 +1061,10 @@ class TestPanelRuns(unittest.TestCase):
             self.assertTrue(r['closers'], (dx, dz))
             run = set(r['facing'].values()) - set(r['cross'].values())
             self.assertEqual(len(run), 1, (dx, dz))                   # one facing for the real shelves
-            d = gs.DIRS[next(iter(run))]
+            d = gs.cellmath.FACING[next(iter(run))]
             for key in map(lambda q: f'{q[0]},{q[1]}', r['closers']):
                 self.assertIn(key, r['facing'])                       # every cell carries a shelf facing
-                f = gs.DIRS[r['cross'][key]]
+                f = gs.cellmath.FACING[r['cross'][key]]
                 self.assertEqual(f[0] * d[0] + f[1] * d[1], 0, (dx, dz, key))   # perpendicular
 
     def test_boards_join_into_one_unbroken_line(self):
@@ -1183,7 +1183,7 @@ class TestPanelRuns(unittest.TestCase):
                 cols, owner, street = self._edge(rows, flip)
                 r = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20))
                 raw = gs.panel_runs(cols, 1, 'front', owner, street, (len(rows) / 2, max(rows) + 20), fit=False)
-                pieces = lambda run: len(gs._run_components(list(map(tuple, run['cells']))))
+                pieces = lambda run: len(gs.cellmath.components(map(tuple, run['cells']), gs.cellmath.N8))
                 self.assertLessEqual(pieces(r), pieces(raw), (rows, flip))   # fitting never opens a gap
                 if gs.boards_joined(raw):                          # steep random jumps can defeat the old closers too
                     self.assertTrue(gs.boards_joined(r), (rows, flip))

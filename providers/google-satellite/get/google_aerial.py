@@ -37,7 +37,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from script_env import ROOT  # noqa: E402
 
-from coverage import cell_bbox  # noqa: E402
+from cellmath import cell_bbox  # noqa: E402
 from world_frame import mc_batch_to_wgs84, tile_float  # noqa: E402
 
 BASE = 'https://mt1.google.com/vt/lyrs=s'

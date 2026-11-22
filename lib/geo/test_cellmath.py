@@ -145,6 +145,17 @@ class ComponentsTest(unittest.TestCase):
             self.assertEqual(self._as_sets(C.components(cells, C.N8)), self._as_sets(_legacy_components_8(cells)))
         self.assertEqual(len(C.components({(0, 0), (1, 1)}, C.N8)), 1)
 
+    def test_set_pop_dfs_preserves_discovery_and_member_iteration_order(self):
+        for cells in self._samples():
+            for connect, legacy in ((C.N4, _legacy_components_4), (C.N8, _legacy_components_8)):
+                expected = legacy(cells)
+                actual = C.components(cells, connect, traversal='set-pop-dfs')
+                self.assertEqual([list(c) for c in actual], [list(c) for c in expected])
+
+    def test_unknown_traversal_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'unknown component traversal'):
+            C.components([], traversal='random')
+
     def test_order_is_stable_whatever_the_input_order(self):
         cells = [(3, 3), (0, 0), (1, 0), (2, 0), (9, 9), (3, 4)]
         self.assertEqual(C.components(cells, C.N8), C.components(reversed(cells), C.N8))

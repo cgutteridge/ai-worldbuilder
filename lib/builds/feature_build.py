@@ -2421,7 +2421,7 @@ class Build:
     def windows(self, f: Feature):
         """Resolve intended glazing as complete bounded openings before writing glass."""
         from floor_reference import outside_ground
-        from window_openings import Window, DIRECTIONS, choose_windows, report_lines
+        from window_openings import Window, choose_windows, report_lines
         facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
         if not facades and self._suppress_window_grid(f):
             return  # a dressed class street face replaces the unevidenced all-face storey grid
@@ -2434,9 +2434,9 @@ class Build:
             if '_door[' in state:
                 x, y, z = pos
                 protected.add(pos)
-                for dx, dz in DIRECTIONS.values():
+                for dx, dz in DIRS.values():
                     protected.add((x + dx, y, z + dz))
-        for face in sorted(facades or DIRECTIONS):
+        for face in sorted(facades or DIRS):
             runs = self.face_runs(f, face)
             edge = 1 if face in 'NS' else 0
             stepped = len({c[edge] for run in runs for c in run}) > 1
@@ -2466,7 +2466,7 @@ class Build:
                             wanted = role == 'W' and (dy >= STOREY_H - row['glazed_h'] if row else dy == 2)
                             if wanted:
                                 candidates.append(Window(pos, face, stepped, c in corner_cells))
-        positions = {(w.pos[0] + DIRECTIONS[w.face][0], w.pos[2] + DIRECTIONS[w.face][1])
+        positions = {(w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1])
                      for w in candidates}
         ground = outside_ground(positions, self.zone_data.get(f.no))
         def block(x, y, z):

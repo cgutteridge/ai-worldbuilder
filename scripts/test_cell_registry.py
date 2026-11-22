@@ -62,6 +62,12 @@ class RegistryCliTest(unittest.TestCase):
         self.assertEqual(json.loads(out[:out.index('built:')])['cells'], ['48,-44'])
         self.assertEqual(run('--root', self.root, 'query', '--feature', 'nope')[0], 1)
 
+    def test_malformed_cells_keep_registry_error_exit_status(self):
+        for args in (('status', '--cell', 'bad'), ('hold', 'clear', '1,2,3'),
+                     ('reconcile', 'bad')):
+            with self.subTest(args=args):
+                self.assertEqual(run('--root', self.root, *args)[0], 2)
+
     def test_hold_set_clear_are_journal_notes(self):
         self.assertEqual(run('--root', self.root, 'hold', 'set', '48,-44', '--reason', 'flood')[0], 0)
         self.assertEqual(self.view().hold, 'flood')
@@ -71,12 +77,13 @@ class RegistryCliTest(unittest.TestCase):
     def test_dismiss_coverage_needs_an_open_warning(self):
         from cell_journal import Note
         self.jw.reg.change(Note((48, -44), 'coverage', 'shops unmapped', 'shops'))
-        self.assertEqual(R.coverage_warnings(self.view()), [{'id': 'shops', 'detail': 'shops unmapped'}])
+        self.assertEqual([(n.ref, n.body) for n in self.view().notes if n.kind == 'coverage'],
+                         [('shops', 'shops unmapped')])
         self.assertEqual(run('--root', self.root, 'dismiss-coverage', '48,-44', '--warning-id', 'x',
                              '--reason', 'r')[0], 2)
         self.assertEqual(run('--root', self.root, 'dismiss-coverage', '48,-44', '--warning-id', 'shops',
                              '--reason', 'checked')[0], 0)
-        self.assertEqual(R.coverage_warnings(self.view()), [])
+        self.assertFalse(any(n.kind == 'coverage' for n in self.view().notes))
 
     def test_note_records_a_review(self):
         run('--root', self.root, 'note', '48,-44', '--ref', 'trees-over-roof:1,2,3,4', '--body', 'crown kept')
