@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -10,15 +9,8 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'scripts'))
-sys.path.insert(0, str(ROOT / 'shims'))
-
-import script_env  # noqa: E402
-script_env.ensure_import_paths()
-
-import landmark_gate as LG  # noqa: E402
-import feature_build as F  # noqa: E402
+import feature_build as F
+import landmark_gate as LG
 
 
 class LandmarkClassTest(unittest.TestCase):

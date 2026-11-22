@@ -2,19 +2,14 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / 'scripts'))
-sys.path.insert(0, str(ROOT / 'shims'))
-
-import cell_sources as cs  # noqa: E402
-from ground_sources import cell_coverage  # noqa: E402
+import cell_sources as cs
+from ground_sources import cell_coverage
 
 
 class TestCellSources(unittest.TestCase):

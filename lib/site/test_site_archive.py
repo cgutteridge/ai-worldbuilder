@@ -6,15 +6,11 @@
 from __future__ import annotations
 
 import io
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-
-import site_archive as sa  # noqa: E402
+import site_archive as sa
 
 QUEUE = """\
 SOUTHAMPTON REFINE — QUEUE

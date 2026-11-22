@@ -1,13 +1,9 @@
 """Door-frame guard: a door needs a jamb each side and a lintel (user, 2026-10-16)."""
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-from site_kit import Plan, door_frame_issues  # noqa: E402
+from site_kit import Plan, door_frame_issues
 
 DOOR = 'dark_oak_door[facing=north,half={},hinge=left,open=false]'
 

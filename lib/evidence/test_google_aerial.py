@@ -9,19 +9,15 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-
-import google_aerial as ga  # noqa: E402
-import world_frame as wf  # noqa: E402
+import google_aerial as ga
+import world_frame as wf
 
 # Fictional MC→tile map for markup / tile_range only: 40 MC blocks per tile axis.
 # Zoom is ignored. This is explicit test I/O, not a second conversion library.
