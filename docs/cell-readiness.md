@@ -22,9 +22,11 @@ thresholds and dismissals remain in force; ambiguous legacy street IDs with no
 readable handoff spec are flagged for audit.
 
 Local mosaics may jointly cover a cell. Canonical `mosaic-zZ-NxM-centre-X-Y.png`
-and legacy northwest-tile names are supported. Black/no-data pixels are gaps.
-Trees and ground sampling refuse incomplete core-cell coverage with its fraction;
-checks, preparation and queue selection never download imagery.
+and legacy northwest-tile names are supported. Exact black fill (including
+transparent pixels composited to black) marks no-data gaps; dark real evidence
+still counts. Trees and ground sampling refuse incomplete core-cell coverage and
+name the uncovered column count with the fraction; checks, preparation and queue
+selection never download imagery.
 
 ## Validation and completion
 

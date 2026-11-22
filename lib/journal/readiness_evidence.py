@@ -192,7 +192,7 @@ class LocalEvidence:
         """Coverage and local cache availability for a named cell."""
         cell = tuple(cell)
         if cell not in self._facts:
-            from aerial_coverage import coverage, mosaics
+            from aerial_coverage import coverage_counts, mosaics
             from osm_footprints import clip_coverage
             from vector_map_clips import vector_map_clip_root
             missing, lidar_ids = self.lidar_status(cell)
@@ -204,12 +204,17 @@ class LocalEvidence:
                 fraction = 0.0
                 frame = self.root / 'config' / 'world-frame.json'
                 map_ids = [('world-frame', self.file_id(frame))] if frame.is_file() else []
+            aerial_covered, aerial_uncovered = coverage_counts(cell, mosaics(self.root))
+            aerial_total = aerial_covered + aerial_uncovered
             revision = content_id([self.settings_revision(), map_ids, lidar_ids])
             self._facts[cell] = {'revision': revision,
                                  'source_revision': revision,
                                  'map_revision': content_id(map_ids),
                                  'clip_coverage': fraction,
-                                 'aerial_coverage': coverage(cell, mosaics(self.root)),
+                                 'aerial_coverage': (aerial_covered / aerial_total
+                                                     if aerial_total else 0.0),
+                                 'aerial_covered': aerial_covered,
+                                 'aerial_uncovered': aerial_uncovered,
                                  'lidar_missing': missing}
         return dict(self._facts[cell])
 
