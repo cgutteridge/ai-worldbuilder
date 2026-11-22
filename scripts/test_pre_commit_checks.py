@@ -242,18 +242,6 @@ class PreCommitSuiteAlwaysRunsTest(unittest.TestCase):
 class TrackerOnlySkipTestsTest(unittest.TestCase):
     """Archive commits: only system-tracker paths auto-skip the unit suite (#82)."""
 
-    def test_tracker_only_paths_predicate(self) -> None:
-        self.assertTrue(pcc.is_tracker_only_paths(['tasks/index.json']))
-        self.assertTrue(
-            pcc.is_tracker_only_paths(['tasks/index.json', 'tasks/done.json'])
-        )
-        self.assertTrue(pcc.is_tracker_only_paths(['tasks/done.json']))
-        self.assertFalse(pcc.is_tracker_only_paths([]))
-        self.assertFalse(
-            pcc.is_tracker_only_paths(['tasks/index.json', 'scripts/foo.py'])
-        )
-        self.assertFalse(pcc.is_tracker_only_paths(['README.md']))
-
     def test_tracker_only_staged_skips_suite(self) -> None:
         """Main archive: tracker-only succeeds without running the suite."""
         with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']):

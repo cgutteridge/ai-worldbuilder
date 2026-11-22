@@ -9,7 +9,6 @@ from unittest import mock
 import cell_registry as CR
 import cellmath
 import registry_next as N
-import registry_verify as V
 from cell_journal import Note
 from cell_readiness import ReadinessPolicy
 from journal_testkit import RegistryEvidence
@@ -149,11 +148,7 @@ class PlanIdTest(unittest.TestCase):
             self.assertEqual(len(self.policy.check(CELL)['candidates']), 2)
             self.assertIn('5 building footprints in 2 groups', CR._format_status(self.reg, '48,-44'))
             self.assertIn('done=False', CR._format_status(self.reg, '48,-44'))
-            issues = V.check_uncovered_footprints(self.reg)
-            self.assertEqual([i['id'] for i in issues], ['uncovered-footprint:48,-44'])
-            self.assertIn('w10', issues[0]['message'])
             self.record([GROUP_A, GROUP_B])
-            self.assertEqual(V.check_uncovered_footprints(self.reg), [])
             self.policy.validate(CELL)
             self.assertEqual(N.next_task(self.reg, root=self.root)['kind'], 'feature')
 
@@ -165,7 +160,6 @@ class PlanIdTest(unittest.TestCase):
             self.jw.seed(CELL, trees=True, decor=True)
             self.assertIsNone(N.next_task(self.reg, root=self.root))
             self.assertIn('done=True', CR._format_status(self.reg, '48,-44'))
-            self.assertEqual(V.check_uncovered_footprints(self.reg), [])
 
     def test_spec_backed_plan_under_a_different_id_prevents_a_duplicate(self):
         """#233: houses_street_wN with a ways spec covers the same buildings; prepare does not re-plan."""

@@ -10,8 +10,14 @@ Tool-repo defaults: [`config/build-roles.json`](../config/build-roles.json).
 
 ```bash
 python3 scripts/build_roles.py --world <world> show
+python3 scripts/build_roles.py --world <world> show --block
 python3 scripts/build_roles.py --world <world> resolve --tool cursor --builder composer --json
+python3 scripts/build_roles.py --world <world> resolve --tool cursor --builder composer --block
 ```
+
+`show` prints one line. `show --block` (and `resolve --block`) prints the
+multi-line brief to paste into an agent prompt: both models, who applies, and
+the hand-off.
 
 Override per task (orchestrator / redo prompt). When the tool matches the
 config tool and designer is omitted, the config designer is used. When the

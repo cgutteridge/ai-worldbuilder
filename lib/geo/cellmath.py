@@ -99,14 +99,6 @@ def home_cell() -> tuple[int, int]:
     return HOME_CELL
 
 
-def cell_shift() -> int:
-    """Bit shift equal to log2(cell size); ``x >> shift`` is the cell index.
-
-    @returns: shift amount
-    """
-    return int(math.log2(cell_size()))
-
-
 # Back-compat module constants (updated by reload_grid).
 CELL = _DEFAULT_CELL_SIZE
 HOME_CELL = _DEFAULT_HOME
@@ -138,17 +130,6 @@ def cell_id(cell: tuple[int, int] | str) -> str:
         tx, tz = parse_cell(cell)
         return f'{tx},{tz}'
     return f'{cell[0]},{cell[1]}'
-
-
-def filename_cell_token(cell: tuple[int, int]) -> str:
-    """File-name spelling for a cell (``tx_tz``; negative tz keeps the minus).
-
-    Use only inside file names. Prefer :func:`cell_id` everywhere else.
-
-    @param cell: (tx, tz)
-    @returns: e.g. ``48_-44``
-    """
-    return f'{cell[0]}_{cell[1]}'
 
 
 def cell_of(x: int, z: int, size: int | None = None) -> tuple[int, int]:
@@ -243,16 +224,6 @@ def ring_cells(r: int, home: tuple[int, int] | None = None) -> list[tuple[int, i
             + [(ox + dx, oz + r) for dx in range(r - 1, -r - 1, -1)]
             + [(ox - r, oz + dz) for dz in range(r - 1, -r - 1, -1)]
             + [(ox + dx, oz - r) for dx in range(-r + 1, 0)])
-
-
-def region_of_block(x: int, z: int) -> tuple[int, int]:
-    """Anvil region index covering block (x, z).
-
-    @param x: Minecraft X
-    @param z: Minecraft Z
-    @returns: (rx, rz)
-    """
-    return x >> 9, z >> 9
 
 
 def regions_for_bbox(

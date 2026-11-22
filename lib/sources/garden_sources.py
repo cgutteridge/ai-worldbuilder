@@ -176,20 +176,6 @@ def role_spec(conv: dict | None, number: str, role: str, cls: str = 'residential
             'depth': spec.get('depth')}
 
 
-def role_vetoed(conv: dict | None, number: str, role: str) -> bool:
-    """True when the designer explicitly set this role to ``none`` (blocks aerial hedge).
-
-    Missing street / role is not a veto: aerial hedges may still appear. An override or
-    street entry with ``type: none`` (or a null / empty spec) is a veto.
-
-    @param conv: street convention dict from ``load_convention``, or None
-    @param number: house number string
-    @param role: ``front`` / ``side_front`` / ``side_back`` / ``rear`` / ``perimeter``
-    @returns: whether aerial hedge promotion is forbidden for this role
-    """
-    return role_resolution(conv, number, role)['open']
-
-
 OPENING_WIDTH = 2        # columns of front boundary left open at an entrance without drive evidence
 MAX_OPENING_WIDTH = 4    # cap on an opening widened to a paved strip (#270)
 FRONT_GARDEN_MARGIN = 6  # plot columns this far or nearer to the house line count as front garden

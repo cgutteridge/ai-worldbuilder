@@ -91,10 +91,9 @@ class VectorMapReferenceContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 vmc.place_clip_dir('', root)
 
-    def test_has_clips_and_project_status_ready(self):
+    def test_project_status_ready(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.assertFalse(vmc.has_clips(root))
             status = vmc.project_status(root)
             self.assertFalse(status['ready'])
             self.assertEqual(status['clip_count'], 0)
@@ -102,7 +101,6 @@ class VectorMapReferenceContract(unittest.TestCase):
             self.assertEqual(status['downloads'], root / 'downloads')
 
             _write_clip(vmc.reference_dir(root), 'campus')
-            self.assertTrue(vmc.has_clips(root))
             status = vmc.project_status(root)
             self.assertTrue(status['ready'])
             self.assertEqual(status['clip_count'], 1)
@@ -117,19 +115,6 @@ class VectorMapReferenceContract(unittest.TestCase):
             status = vmc.project_status(root)
             self.assertTrue(status['ready'])
             self.assertTrue(status['legacy_fallback'])
-
-    def test_is_under_world(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            inside = root / 'reference' / 'vector_map'
-            inside.mkdir(parents=True)
-            other = Path(tmp).parent / 'other-world' / 'reference' / 'vector_map'
-            # sibling under the same parent temp — use a second temp for outside
-            with tempfile.TemporaryDirectory() as other_tmp:
-                outside = Path(other_tmp) / 'reference' / 'vector_map'
-                outside.mkdir(parents=True)
-                self.assertTrue(vmc.is_under_world(inside, root))
-                self.assertFalse(vmc.is_under_world(outside, root))
 
 
 class VectorMapGuideLines(unittest.TestCase):

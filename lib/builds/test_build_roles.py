@@ -127,6 +127,21 @@ class TestBuildRolesCli(unittest.TestCase):
             self.assertEqual(show.returncode, 0, msg=show.stderr)
             self.assertIn('designer=opus-low', show.stdout)
 
+            block = subprocess.run(
+                [
+                    sys.executable, '-B', str(script),
+                    '--world', world_name,
+                    '--config', str(path), 'show', '--block',
+                ],
+                cwd=checkout,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(block.returncode, 0, msg=block.stderr)
+            self.assertIn('Designer model: opus-low', block.stdout)
+            self.assertIn('do not apply', block.stdout)
+
             resolved = subprocess.run(
                 [
                     sys.executable,

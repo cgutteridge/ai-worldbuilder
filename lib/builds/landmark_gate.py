@@ -39,15 +39,6 @@ def landmark_class(tags: dict | None) -> str | None:
     return None
 
 
-def is_landmark(tags: dict | None) -> bool:
-    """True when tags are a tier A landmark class.
-
-    @param tags: flattened vector-map tags
-    @returns: whether apply needs a street-level image (or override)
-    """
-    return landmark_class(tags) is not None
-
-
 def landmark_fields(tags: dict | None) -> dict[str, Any]:
     """Candidate fields to merge when tags are a landmark (empty dict otherwise).
 
@@ -58,53 +49,6 @@ def landmark_fields(tags: dict | None) -> dict[str, Any]:
     if not cls:
         return {}
     return {'landmark': True, 'landmark_class': cls}
-
-
-def annotate_landmark_candidates(
-    items: list[dict[str, Any]],
-    *,
-    tags_by_ref: dict[str, dict] | None = None,
-) -> list[dict[str, Any]]:
-    """Copy candidates, setting ``landmark`` / ``landmark_class`` from tags when known.
-
-    Existing ``landmark`` True on a candidate is kept. When ``tags_by_ref`` is given,
-    each building (or group) candidate is flagged if any of its refs is a landmark.
-
-    @param items: propose-features candidate dicts
-    @param tags_by_ref: optional ``{osm_ref: tags}`` for refs that still lack a landmark field
-    @returns: new list of candidate dicts (inputs are not mutated)
-    """
-    out: list[dict[str, Any]] = []
-    for item in items:
-        row = dict(item)
-        if row.get('landmark'):
-            out.append(row)
-            continue
-        if row.get('kind') not in ('building', 'group') or not tags_by_ref:
-            out.append(row)
-            continue
-        for ref in row.get('refs') or []:
-            fields = landmark_fields(tags_by_ref.get(ref))
-            if fields:
-                row.update(fields)
-                break
-        out.append(row)
-    return out
-
-
-def tags_by_ref_from_index(idx) -> dict[str, dict]:
-    """Flattened tags keyed by ``osm_ref`` for every building in an index.
-
-    @param idx: ``OSMIndex`` (or object with ``.buildings`` of ``(rings, props)``)
-    @returns: ``{ref: tags}``
-    """
-    from coverage import osm_ref
-    from osm_footprints import osm_tags
-
-    out: dict[str, dict] = {}
-    for _rings, props in idx.buildings:
-        out[osm_ref(props)] = osm_tags(props)
-    return out
 
 
 def cell_has_street_level_source(tx: int, tz: int) -> bool:

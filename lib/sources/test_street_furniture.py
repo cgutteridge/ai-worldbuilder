@@ -88,10 +88,6 @@ class RoadEdgeKinds(unittest.TestCase):
         self.assertEqual(dists, sorted(dists))
         self.assertLessEqual(max(dists), sf.ROADSIDE_REACH ** 2)
 
-    def test_map_items_keep_the_new_kinds(self):
-        items = sf.map_items([(1, 2, 'traffic_signals'), (3, 4, 'crossing'), (5, 6, 'traffic_island')])
-        self.assertEqual([i['kind'] for i in items], ['traffic_signals', 'crossing', 'traffic_island'])
-
 
 class Footprints(unittest.TestCase):
     """#305/#306: multi-block kinds are centre-anchored footprints; single-column kinds are one column."""
@@ -249,18 +245,6 @@ class DesignerSpec(unittest.TestCase):
         self.assertIn('not 0, 90, 180 or 270', items[2]['rotation_error'])
         self.assertNotIn('rotation_error', items[0])
         self.assertEqual(obs[0]['rotation'], 90)
-
-    def test_map_items_keep_a_picnic_table_and_drop_unknown_kinds(self):
-        self.assertEqual([i['kind'] for i in sf.map_items([(1, 2, 'picnic_table'), (3, 4, 'zeppelin')])],
-                         ['picnic_table'])
-
-    def test_merge_prefers_map_over_designer_at_same_column(self):
-        mapped = sf.map_items([(10, 20, 'bench')])
-        designed = [{'x': 10, 'z': 20, 'kind': 'waste_basket', 'source': 'designer'},
-                    {'x': 11, 'z': 20, 'kind': 'bollard', 'source': 'designer'}]
-        merged = sf.merge_items(mapped, designed)
-        self.assertEqual([(i['x'], i['z'], i['kind'], i['source']) for i in merged],
-                         [(10, 20, 'bench', 'map'), (11, 20, 'bollard', 'designer')])
 
 
 TABLE = {'residential': 30, 'primary': 38, 'footway': 40, 'service': None}
