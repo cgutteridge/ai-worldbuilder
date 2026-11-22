@@ -37,7 +37,7 @@
       "full": "cut_copper",
       "slab": "cut_copper_slab",
       "stairs": "cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [192, 107, 80],
       "texture": "smooth",
       "triad": true
     },
@@ -177,6 +177,14 @@
       "texture": "rough",
       "triad": true
     },
+    "tuff_brick": {
+      "full": "tuff_bricks",
+      "slab": "tuff_brick_slab",
+      "stairs": "tuff_brick_stairs",
+      "colour": [99, 100, 93],
+      "texture": "rough",
+      "triad": true
+    },
     "black_concrete": {
       "full": "black_concrete",
       "colour": [25, 25, 30],
@@ -258,7 +266,7 @@
       "full": "exposed_cut_copper",
       "slab": "exposed_cut_copper_slab",
       "stairs": "exposed_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [161, 125, 103],
       "texture": "smooth",
       "triad": true
     },
@@ -266,7 +274,7 @@
       "full": "weathered_cut_copper",
       "slab": "weathered_cut_copper_slab",
       "stairs": "weathered_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [109, 145, 107],
       "texture": "smooth",
       "triad": true
     },
@@ -274,7 +282,7 @@
       "full": "oxidized_cut_copper",
       "slab": "oxidized_cut_copper_slab",
       "stairs": "oxidized_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [82, 162, 132],
       "texture": "smooth",
       "triad": true
     }
@@ -282,15 +290,15 @@
   "types": {
     "red_clay_tile": {
       "slope": "pitched",
-      "family": "brick",
-      "alternates": ["mud_brick"],
-      "note": "Red or orange-red clay tile or pantile; mud_brick for an older, browner tile."
+      "family": "cut_copper",
+      "alternates": ["brick", "mud_brick"],
+      "note": "Red or orange-red clay tile or pantile, shown as fresh cut copper for its orange-red look (owner choice: by look, not by name); brick for a darker red tile, mud_brick for an older, browner one."
     },
     "grey_slate": {
       "slope": "pitched",
-      "family": "deepslate_tile",
-      "alternates": ["deepslate_brick", "polished_deepslate"],
-      "note": "Dark blue-grey natural or fibre-cement slate in neat courses."
+      "family": "tuff_brick",
+      "alternates": ["deepslate_tile", "deepslate_brick", "polished_deepslate"],
+      "note": "Dark blue-grey natural or fibre-cement slate in neat courses, shown as tuff brick for its cool grey brick-course look (owner choice: by look, not by name); deepslate_tile or deepslate_brick for a darker slate."
     },
     "grey_tile": {
       "slope": "pitched",
