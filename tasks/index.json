@@ -208,18 +208,7 @@
     
     
     
-    {
-      "id": 399,
-      "title": "Finish the cellmath move and drop compatibility re-exports",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T9. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T9' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s–m\n- Scope:\n  - The 1.9 \"aliases and re-exports\" and \"duplicates of cellmath\" items, including the `cell_registry` cell-id copies and pass-throughs.\n  - Before swapping each component finder, check whether its callers depend on order.\n  - Repoint the two rules that say `house_build.entrance_approach`.\n- Check: component sets match on 4- and 8-connected fixtures. No `noqa: F401` re-export of a moved name remains.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T5 (#395) because it both edit coverage.py.\n\nRun coordination and takeover checkpoints: docs/plans/wave-395-399-401.md. Tracker remains the task-state source of truth.\n"
-    },
+    
     {
       "id": 400,
       "title": "Place names out of tool code",
@@ -235,11 +224,11 @@
     {
       "id": 401,
       "title": "One air-block base, one block-state parser, one block-id helper",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [
-        399
+        
       ],
       "builderTask": false,
       "notes": "Housekeeping review ticket T11. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T11' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s–m\n- Scope: the air sets, block-state and id helpers, plant substrings, segment distance and `_git` helper items of 1.10. Air sets become one base in `site_kit` plus named extras, and `state_props()` goes in `block_store`.\n- Check: a test asserts each former set equals the base plus its named extras. Planner fixtures are unchanged.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T9 (#399) because it both touch shared helper modules.\n\nRun coordination and takeover checkpoints: docs/plans/wave-395-399-401.md. Tracker remains the task-state source of truth.\n"
