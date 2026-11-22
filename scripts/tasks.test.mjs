@@ -979,15 +979,6 @@ describe("Builder task policy", () => {
     assert.equal(await source(directory), before)
   })
 
-  it("reads a legacy requiresClaude flag only when builderTask is absent", async () => {
-    const directory = await fixture({ builderTask: undefined, requiresClaude: true })
-    const gated = run(directory, "check-run", "1", "--tool", "claude-code", "--model", "gpt-4")
-    assert.equal(gated.status, 2)
-    assert.match(run(directory, "list", "--ready").stdout, /builder task/)
-    const both = await fixture({ builderTask: false, requiresClaude: true })
-    assert.doesNotMatch(run(both, "list", "--ready").stdout, /builder task/)
-  })
-
   it("updates scope without changing other fields and records intentional downgrades", async () => {
     const directory = await fixture()
     const before = await source(directory)

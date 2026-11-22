@@ -419,17 +419,6 @@ class TrackerModelFlagsTest(unittest.TestCase):
                     Path('/tmp/repo'), ['tasks/index.json']), [])
                 staged.assert_called_once_with(Path('/tmp/repo'), 'show', ':tasks/index.json')
 
-    def test_legacy_requires_claude_key_is_not_the_flag(self) -> None:
-        # The renamed flag: an active task with only the old key is refused, and a non-boolean old key is refused too.
-        for task in ({'id': 1, 'requiresClaude': True}, {'id': 1, 'builderTask': True, 'requiresClaude': 'x'}):
-            with self.subTest(task=task), mock.patch.object(
-                pcc, '_git', return_value=json.dumps({'tasks': [task]})
-            ):
-                self.assertEqual(
-                    pcc.invalid_tracker_files(Path('/tmp/repo'), ['tasks/index.json']),
-                    ['tasks/index.json'],
-                )
-
     def test_archive_accepts_legacy_tasks_and_checks_present_flags(self) -> None:
         for task, expected in (({}, []), ({'builderTask': True}, []),
                                ({'builderTask': False}, []),

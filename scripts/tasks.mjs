@@ -74,7 +74,6 @@ function isValidTask(task) {
     optional(task.tags, arrayOf(isString)) &&
     optional(task.kind, oneOf(kinds)) &&
     optional(task.builderTask, (value) => typeof value === "boolean") &&
-    optional(task.requiresClaude, (value) => typeof value === "boolean") &&
     optional(task.notes, isString)
   )
 }
@@ -321,11 +320,9 @@ export async function showTask(directory, id) {
   return done
 }
 
-/** The builder-task flag. Reads the deprecated `requiresClaude` key only when `builderTask` is absent
- * (transition period while tracker files are migrated; remove with the follow-up change).
- */
+/** The builder-task flag. Reads only `builderTask`; a missing flag is false. */
 export function isBuilderTask(task) {
-  return task.builderTask ?? task.requiresClaude ?? false
+  return task.builderTask ?? false
 }
 
 /** Refuse a builder task unless the runner establishes model and budget access.
