@@ -10,7 +10,8 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
   ways           {"<map way id>": "<label>"} the footprints to build
   roofs          {"<label>": "<roof material>"} from config/roof-materials.json
   roof_pitch     optional {"<label>": rise_per_run}, finite number 0..1 (default 0.5)
-                 <=0.5 keeps legacy slab rings; >0.5 uses stairs/slabs at half-block-snapped heights
+                 <=0.5 keeps legacy slab rings; >0.5 uses stairs/slabs at half-block-snapped heights,
+                 the overhanging eave ring starting at wall-top level as a slab or stair (#414)
                  group roofs require equal effective pitches; first label supplies the material
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
