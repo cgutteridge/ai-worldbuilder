@@ -14,6 +14,9 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
                  the overhanging eave ring starting at wall-top level as a slab or stair (#414)
                  a footprint that is a rotated rectangle takes heights from its fitted axes (#415)
                  group roofs require equal effective pitches; first label supplies the material
+  roof_fit       optional {"<label>": "columns"|"octant"} (default columns). octant designs a pitched
+                 rectangular roof as half-block cells and fits slab/stair/full blocks to it (#415);
+                 needs roof_pitch above 0.5 and mode each
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
   floor_min      minimum floor y (front pavement height) or null
@@ -37,6 +40,7 @@ from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
 from roof_geometry import (edge_distance_field, pitched_roof_states, roof_block_y,  # noqa: E402
                            rotated_hip_depth, stair_shape_from_neighbours)
+from roof_octant import block_states, fit_octant_roof  # noqa: E402
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 import stoop  # noqa: E402
 from stoop import FACE, GROUND, TOWARD, stair  # noqa: E402
@@ -84,10 +88,22 @@ def load_spec(path):
         resolved = roof_blocks(material, roof_class(pitches.get(no, 0.5), 1))
         if not resolved['ok']:
             raise SystemExit(f'{path}: roof {no!r}: {"; ".join(resolved["messages"])}')
+    fits = spec.get('roof_fit', {})
+    if not isinstance(fits, dict):
+        raise SystemExit(f'{path}: roof_fit must be a label-to-fit object')
+    for no, fit in fits.items():
+        if no not in labels or no not in roofs:
+            raise SystemExit(f'{path}: roof_fit label {no!r} needs a way and a roof')
+        if fit not in ('columns', 'octant'):
+            raise SystemExit(f'{path}: roof_fit[{no!r}] must be "columns" or "octant"')
+        if fit == 'octant' and roof_class(pitches.get(no, 0.5), 1) != 'pitched':
+            raise SystemExit(f'{path}: roof_fit[{no!r}] octant needs a roof_pitch above 0.5')
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
         g.setdefault('mode', 'each')
+        if g['mode'] == 'group' and any(fits.get(no) == 'octant' for no in g['nos']):
+            raise SystemExit(f'{path}: roof_fit octant needs mode "each", not a group roof')
         if g['mode'] == 'group' and len({pitches.get(no, 0.5) for no in g['nos']}) > 1:
             raise SystemExit(f'{path}: group roof labels must have equal roof_pitch values')
         for no in g['nos']:
@@ -359,15 +375,20 @@ class Build:
         for line in report_lines(h.no, report):
             print(line)
 
-    @staticmethod
-    def _ridge_jogs(half_heights, states):
+    @classmethod
+    def _ridge_jogs(cls, half_heights, states):
         """Ridge jogs the roof skin would have, judged on its own cells (membrane plus underlay)."""
-        import roof_lint
         cells = {}
         for (x, z), state in states.items():
             y = roof_block_y(half_heights[x, z])
             cells[x, y, z] = state
             cells[x, y - 1, z] = 'minecraft:bricks'
+        return cls._ridge_jogs_of(cells)
+
+    @staticmethod
+    def _ridge_jogs_of(cells):
+        """Ridge jogs in a finished ``{(x, y, z): state}`` roof volume."""
+        import roof_lint
         return roof_lint.ridge_jogs(cells)
 
     def roof(self):
@@ -392,6 +413,30 @@ class Build:
                 raise SystemExit('; '.join(resolved['messages']))
             variants = family_variants(rm)
             rotated = None
+            if pitched and self.spec.get('roof_fit', {}).get(hs[0].no) == 'octant':
+                # Design the roof as a half-block-cell volume and fit blocks to it (#415).
+                depth = rotated_hip_depth(own, set(dist)) or dist
+                chimney = max(dist, key=lambda c: (depth[c] if c in own else -1,
+                                                   -abs(c[0] - sum(x for x, _ in own) / len(own))))
+                fitted = fit_octant_roof(own, set(dist), pitch, b + 6, {chimney})
+                fitted_states = block_states(rm, fitted.blocks) if fitted is not None else None
+                if fitted is None:
+                    print(f'{hs[0].no} roof_fit octant: footprint is not close to a rectangle; using columns')
+                elif self._ridge_jogs_of(fitted_states):
+                    print(f'{hs[0].no} roof_fit octant: the fitted ridge would jog; using columns')
+                else:
+                    print(f'{hs[0].no} roof_fit octant: rectangle at {fitted.angle} degrees, '
+                          f'{fitted.missed} of {fitted.wanted} half-block cells missed')
+                    for pos, state in fitted_states.items():
+                        self.set(*pos, state)
+                        if 'slab' in state and 'type=bottom' in state:
+                            self.p.keep_slab_cells.add(pos)
+                    ridge = max(y for (x, y, z) in fitted.blocks
+                                if abs(x - chimney[0]) <= 1 and abs(z - chimney[1]) <= 1)
+                    for y in range(b + 6, ridge + 2):
+                        self.set(chimney[0], y, chimney[1], WALL)
+                    self.set(chimney[0], ridge + 2, chimney[1], 'flower_pot')
+                    continue
             if pitched:
                 # The outermost eave cell starts half a block below the wall-top level so it is a
                 # bottom slab (shallow pitch) or a stair (steep pitch), as on the flatish ring; an
