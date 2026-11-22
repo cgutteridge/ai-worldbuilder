@@ -12,7 +12,7 @@ import json
 import os
 import sys
 
-from builder_provenance import builder_record, describe_builder, resolve_builder_path, spec_hash
+from builder_provenance import BUILDER_NAMES, builder_record, describe_builder, resolve_builder_path, spec_hash
 from cell_journal import CellJournalError, InFlight, Note, Refused
 from feature_reapply import builder_command
 from script_env import TOOL_ROOT, activate_world_from_args, add_world_arg
@@ -39,7 +39,7 @@ def prepare(name, seq, builder_name, spec_path, reason, registry):
         raise InFlight(entry.cells, flying)
     if describe_builder(name, entries)['source'] in ('recorded', 'registered'):
         raise Refused(f'{name}: entry {seq} already has a recorded or registered builder')
-    if builder_name not in ('house_build', 'feature_build'):
+    if builder_name not in BUILDER_NAMES:
         raise Refused(f'unsupported spec builder {builder_name!r}')
     path = resolve_builder_path(spec_path)
     builder = {**builder_record('spec', path), 'name': builder_name}
@@ -54,7 +54,7 @@ def main(argv=None):
     add_world_arg(ap)
     ap.add_argument('feature')
     ap.add_argument('--seq', type=int, required=True, help='exact live build entry you reviewed')
-    ap.add_argument('--builder', choices=('house_build', 'feature_build'), required=True)
+    ap.add_argument('--builder', choices=BUILDER_NAMES, required=True)
     ap.add_argument('--spec', required=True, help='verified spec; relative paths belong to the world')
     ap.add_argument('--reason', required=True, help='how you verified this builder/spec for this entry')
     ap.add_argument('--apply', action='store_true', help='append registration; no block writes')
