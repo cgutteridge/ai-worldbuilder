@@ -19,6 +19,8 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
+from barrier_vocab import BARRIER_KINDS  # noqa: E402
+
 # Stable kind ids used in recipes, specs, and dry-run reports.
 KINDS = (
     'bench',
@@ -220,7 +222,6 @@ def parse_rotation(raw) -> tuple[int | None, str]:
     return n % 360, ''
 
 
-BARRIER_KINDS = frozenset({'hedge', 'brick_wall', 'iron_bars', 'spruce_fence', 'plank_fence'})
 OUTBUILDING_KINDS = frozenset({'shed', 'garage'})   # designer traces: ``cells`` plus an evidence id (#251)
 
 

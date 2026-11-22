@@ -22,38 +22,10 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+import barrier_vocab as bv
 import cellmath
 import outbuildings as ob
 import provenance as prov
-from tree_species import DEFAULT_LEAVES
-
-HEDGE_BLOCK = DEFAULT_LEAVES
-DEFAULT_HEIGHT = {
-    'hedge': 2,
-    'brick_wall': 1,
-    'iron_bars': 1,
-    'spruce_fence': 2,
-    'plank_fence': 1,
-}
-DEFAULT_BLOCK = {
-    'hedge': HEDGE_BLOCK,
-    'brick_wall': 'brick_wall',
-    'iron_bars': 'iron_bars',
-    'spruce_fence': 'spruce_fence',
-    'plank_fence': 'oak_planks',
-}
-BARRIER_KINDS = frozenset(DEFAULT_BLOCK)
-# Close-boarded timber panels: oak is the default tone; the others only where evidence shows a
-# distinct tone (docs/plans/244-boundary-evidence-findings.md). Block names are from memory and
-# not yet confirmed in-world.
-PLANK_TONES = {
-    'oak': ('oak_planks',),
-    'dark': ('spruce_planks', 'dark_oak_planks'),
-    'reddy': ('jungle_planks', 'acacia_planks', 'mangrove_planks'),
-    'pale': ('birch_planks',),
-    'white': ('pale_oak_planks',),   # painted / white-looking fences; near white, lighter than birch
-}
-PLANK_BLOCKS = frozenset(b for blocks in PLANK_TONES.values() for b in blocks)
 
 FACINGS = ('north', 'south', 'east', 'west')   # Minecraft: north is -z, south +z, east +x, west -x
 
@@ -81,16 +53,6 @@ def shelf_block(plank: str, facing: str | None) -> str:
         return name
     return f"{name.removesuffix('_planks')}_shelf[facing={facing}]"
 
-
-def barrier_kind(type_: str, block: str | None = None) -> str:
-    """Barrier kind for a convention ``type``: ``fence`` with a plank block is a plank panel run.
-
-    ``fence`` with no block or a fence-post block stays ``spruce_fence``. Other types pass through
-    unchanged (an unknown one is reported unplaced by the plan, never dropped).
-    """
-    if type_ == 'fence':
-        return 'plank_fence' if (block or '').removeprefix('minecraft:') in PLANK_BLOCKS else 'spruce_fence'
-    return type_
 
 CARDINAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MIN_BORDER_CELLS = 4
@@ -148,8 +110,8 @@ def aerial_building_border_hedges(
             'kind': 'hedge',
             'role': 'barrier',
             'cells': [list(c) for c in cells],
-            'block': HEDGE_BLOCK,
-            'height': DEFAULT_HEIGHT['hedge'],
+            'block': bv.HEDGE_BLOCK,
+            'height': bv.DEFAULT_HEIGHT['hedge'],
             'height_source': 'default',
             'allow_against_build': True,
             'note': 'aerial dark-green strip against building footprint',
@@ -280,8 +242,8 @@ def _barrier_item(
         'kind': kind,
         'role': 'barrier',
         'cells': [list(c) for c in ordered],
-        'block': block or DEFAULT_BLOCK[kind],
-        'height': int(height if height is not None else DEFAULT_HEIGHT[kind]),
+        'block': block or bv.DEFAULT_BLOCK[kind],
+        'height': int(height if height is not None else bv.DEFAULT_HEIGHT[kind]),
         'height_source': 'default' if height is None else 'explicit',
         'allow_against_build': bool(allow_against_build),
     }
@@ -573,7 +535,7 @@ def build_decor_plan(
 
     district_items = []
     for garden_item in garden:
-        if garden_item.get('kind') not in BARRIER_KINDS:
+        if garden_item.get('kind') not in bv.BARRIER_KINDS:
             items.append(mark_unplaced(
                 garden_item, f"unknown barrier kind {garden_item.get('kind')!r}"))
             continue
@@ -628,7 +590,7 @@ def build_decor_plan(
             continue                                  # outbuilding traces: planned below, after lidar
         if kind not in sf.FURNITURE_KINDS:
             # Designer may propose barrier strips with cells.
-            if kind in BARRIER_KINDS and raw.get('cells'):
+            if kind in bv.BARRIER_KINDS and raw.get('cells'):
                 cells = [(int(c[0]), int(c[1])) for c in raw['cells']]
                 fresh = [c for c in cells if c not in seen_barrier]
                 if not fresh:
@@ -1136,12 +1098,12 @@ def resolved_barriers(
                     f"{provenance['unresolved_reason']}"))
             continue
         kind = item.get('kind')
-        if kind not in BARRIER_KINDS:
+        if kind not in bv.BARRIER_KINDS:
             if unplaced is not None:
                 unplaced.append(mark_unplaced(item, f'unknown barrier kind {kind!r}'))
             continue
-        block = item.get('block') or DEFAULT_BLOCK[kind]
-        height = int(item.get('height') or DEFAULT_HEIGHT[kind])
+        block = item.get('block') or bv.DEFAULT_BLOCK[kind]
+        height = int(item.get('height') or bv.DEFAULT_HEIGHT[kind])
         for c in item.get('cells') or []:
             key = (int(c[0]), int(c[1]))
             out[key] = (kind, block, height)

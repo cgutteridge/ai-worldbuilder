@@ -8,6 +8,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+import barrier_vocab as bv
 import garden_sources as gs
 
 
@@ -773,12 +774,12 @@ class TestConventionFenceType(unittest.TestCase):
     def test_fence_with_plank_block_keeps_block_and_is_one_high(self):
         spec = gs.role_spec({'front': {'type': 'fence', 'block': 'oak_planks'}}, '7', 'front')
         self.assertEqual((spec['block'], spec['height']), ('oak_planks', 1))
-        self.assertEqual(gs.decor_plan.barrier_kind(spec['type'], spec['block']), 'plank_fence')
+        self.assertEqual(bv.barrier_kind(spec['type'], spec['block']), 'plank_fence')
 
     def test_fence_without_block_is_spruce_fence_two_high(self):
         spec = gs.role_spec({'front': {'type': 'fence'}}, '7', 'front')
         self.assertEqual((spec['block'], spec['height']), ('spruce_fence', 2))
-        self.assertEqual(gs.decor_plan.barrier_kind('fence', spec['block']), 'spruce_fence')
+        self.assertEqual(bv.barrier_kind('fence', spec['block']), 'spruce_fence')
 
     def test_explicit_height_wins_for_plank_panels(self):
         spec = gs.role_spec({'front': {'type': 'fence', 'block': 'birch_planks', 'height': 2}}, '7', 'front')
@@ -787,6 +788,10 @@ class TestConventionFenceType(unittest.TestCase):
     def test_unknown_type_survives_role_spec(self):
         spec = gs.role_spec({'front': {'type': 'picket'}}, '7', 'front')
         self.assertEqual(spec['type'], 'picket')
+
+    def test_a_plan_kind_is_not_filled_from_the_fence_alias(self):
+        spec = gs.role_spec({'front': {'type': 'spruce_fence'}}, '7', 'front')
+        self.assertEqual((spec['type'], spec['block'], spec['height']), ('spruce_fence', '', 1))
 
 
 class TestStreetRunConventions(unittest.TestCase):

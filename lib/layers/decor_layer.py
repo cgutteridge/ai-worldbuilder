@@ -34,6 +34,7 @@ from ground_layer import (AIRS, BLOCK_KIND, bare, cell_contains, ignored_builds,
 from block_store import SCAN_VOLUME_CAP  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
+import barrier_vocab as bv  # noqa: E402
 import decor_plan as dplan  # noqa: E402
 import outbuildings as ob  # noqa: E402
 from stage_timing import timed_stage
@@ -453,7 +454,7 @@ def place_barriers_from_plan(
     for item in items:
         if item.get('role') != 'barrier' or item.get('cells'):
             continue
-        if prov.is_unresolved(item.get('provenance')) or item.get('kind') not in dplan.BARRIER_KINDS:
+        if prov.is_unresolved(item.get('provenance')) or item.get('kind') not in bv.BARRIER_KINDS:
             continue
         unplaced.append(dplan.mark_unplaced(item, 'no cells'))
     for q in sorted(columns):
@@ -1003,7 +1004,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     present: dict[tuple[int, int, int], str] = {}
     # Re-scan for present standing pieces (join_pieces needs them).
     for item in barrier_items:
-        mat = item.get('block') or dplan.DEFAULT_BLOCK.get(item.get('kind') or '', '')
+        mat = item.get('block') or bv.DEFAULT_BLOCK.get(item.get('kind') or '', '')
         if item.get('kind') == 'plank_fence':           # panels stand as shelves: same wood, other block id
             mat = dplan.shelf_block(mat, 'north').split('[')[0] if item.get('facing') else mat
         for raw in item.get('cells') or []:
