@@ -53,7 +53,6 @@ NEIGHBOURS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1
 
 
 WARM_RING = 1                    # columns around each decor column warmed (join candidates sit beside pieces)
-WARM_BUDGET = 60_000             # positions warmed at most; LiveBlocks drops its whole cache past 65 536
 
 
 def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
@@ -73,28 +72,6 @@ def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
             x, z = int(i['x']), int(i['z'])
             out.update((x + a, z + b) for a in range(-r, r + 1) for b in range(-r, r + 1))
     return out
-
-
-def warm_decor_columns(world, cols) -> int:
-    """Prefetch the blocks ``surface_y``, the terrain-Y ground reads and the placement checks need, for ``cols`` only.
-
-    A whole-cell probe (132 x 132 x 90) is far over the live store's cache cap, so it
-    evicted itself and every later read was its own paced MCP scan. Stops at
-    :data:`WARM_BUDGET` positions; reads beyond that still work, one section scan each.
-
-    @param world: :class:`World` or any duck; no-op without ``prefetch``
-    @param cols: iterable of ``(x, z)``
-    @returns: number of positions requested
-    """
-    warm = getattr(world, 'prefetch', None)
-    if warm is None:
-        return 0
-    ylo, yhi = probe_y_range()
-    per_col = yhi - ylo + 1
-    ordered = sorted(cols)[:max(0, WARM_BUDGET // per_col)]
-    for i in range(0, len(ordered), 64):
-        warm((x, y, z) for x, z in ordered[i:i + 64] for y in range(ylo, yhi + 1))
-    return len(ordered) * per_col
 
 
 class DecorColumnView:

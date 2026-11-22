@@ -6,13 +6,10 @@ is flat(ish) and may be any catalogue full block or slab; steeper is pitched
 and needs a triad (full block, slab and stairs). Lidar flattening stays in
 ``feature_build`` and is not decided here.
 
-Colours are seeded from ``site_kit.PREVIEW_COLOURS`` when a table key occurs in
-the full block name (longest key wins). Names the table does not cover store an
-approximate vanilla colour in the catalogue. The preview table itself is not
-edited. There is no ``minecraft:concrete`` id in the 26.2 list, so the
-flat(ish)-only concrete rows are the solid colour blocks (black, gray,
-light gray, white). Terracotta and those concretes have neither slab nor
-stairs. ``smooth_stone`` has a slab only.
+Each family stores an RGB ``colour``. There is no ``minecraft:concrete`` id in
+the 26.2 list, so the flat(ish)-only concrete rows are the solid colour
+blocks (black, gray, light gray, white). Terracotta and those concretes have
+neither slab nor stairs. ``smooth_stone`` has a slab only.
 
 Roof types (``types`` in the catalogue) name the common real roofs a designer
 meets: each maps to a recommended family plus one or two alternates, chosen
@@ -31,7 +28,6 @@ import json
 from pathlib import Path
 
 from script_env import TOOL_ROOT
-from site_kit import PREVIEW_COLOURS
 
 CATALOGUE_PATH = TOOL_ROOT / 'config' / 'roof-materials.json'
 BLOCK_IDS_PATH = TOOL_ROOT / 'config' / 'minecraft-block-ids-26.2.txt'
@@ -41,27 +37,6 @@ SUGGESTION_LIMIT = 3
 TEXTURE_MISMATCH_PENALTY = 40_000
 
 _CACHE: dict[str, dict] = {}
-
-
-def preview_colour(block_name: str) -> tuple[int, int, int] | None:
-    """Longest ``PREVIEW_COLOURS`` key that occurs in ``block_name``.
-
-    Longer keys win so ``light_gray_concrete`` does not take ``gray_concrete``
-    and ``stone_bricks`` does not take ``stone``. The longer key wins even when
-    it is the less specific word, so ``red_sandstone`` takes ``stone`` rather
-    than ``red``. ``colour()`` still walks the table in order; this seeder does
-    not change that table.
-
-    @param block_name: catalogue block name without a ``minecraft:`` prefix
-    @returns: RGB triple, or None when no key matches
-    """
-    best: tuple[int, int, int] | None = None
-    best_len = -1
-    for key, rgb in PREVIEW_COLOURS:
-        if key in block_name and len(key) > best_len:
-            best = rgb
-            best_len = len(key)
-    return best
 
 
 def load_catalogue(path: Path | None = None) -> dict:

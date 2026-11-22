@@ -730,16 +730,6 @@ class TestPrefetchBatching(unittest.TestCase):
         self.assertLessEqual(w.cold_reads, 5)             # ... almost all served from prefetch
         self.assertLessEqual(w.prefetch_calls, 20)
 
-    def test_warm_stays_under_budget(self):
-        w = FakeLive()
-        cols = {(x, z) for x in range(130) for z in range(130)}
-        n = dl.warm_decor_columns(w, cols)
-        self.assertLessEqual(n, dl.WARM_BUDGET)
-        self.assertEqual(len(w.warmed), n)
-
-    def test_world_without_prefetch_is_fine(self):
-        self.assertEqual(dl.warm_decor_columns(object(), {(0, 0)}), 0)
-
     def test_apply_cell_prefetches_placements_for_mask(self):
         plan = mock.Mock()
         plan.name = 'x_decor'
@@ -812,7 +802,7 @@ class CappedLive:
 
 
 class TestChunkedSnapshot(unittest.TestCase):
-    """A long fence (more columns than the warm budget) must not thrash the live cache."""
+    """A long fence must not thrash the live cache."""
 
     def items(self):
         cells = [[x, z] for z in (10, 40, 70, 100) for x in range(2, 126)]
@@ -827,25 +817,23 @@ class TestChunkedSnapshot(unittest.TestCase):
     def test_snapshot_bounds_cold_scans_and_keeps_placements(self):
         items = self.items()
         cols = dl.decor_columns(items, [])
-        self.assertGreater(len(cols), dl.WARM_BUDGET // 90)       # the old warm truncated here
+        self.assertGreater(len(cols) * 90, 65536)                # more columns than one scan can hold
 
-        old = CappedLive()                                       # before: one global warm
-        dl.warm_decor_columns(old, cols)
-        before = self.plan(old, items, old)
+        baseline = FakeLive()                                   # direct reads, no cache cap
+        before = self.plan(baseline, items, baseline)
 
-        new = CappedLive()                                       # after: chunk-wise snapshot
-        view = dl.snapshot_decor_columns(new, cols)
-        after = self.plan(new, items, view)
+        live = CappedLive()                                     # chunk-wise snapshot
+        view = dl.snapshot_decor_columns(live, cols)
+        after = self.plan(live, items, view)
 
         self.assertEqual(len(after[0]), 4 * 124 * 2)
         self.assertEqual(after, before)                          # same placements and reports
         chunks = {(x >> 4, z >> 4) for x, z in cols}
-        self.assertLessEqual(max(new.scans.values()), 1)         # no section or box scanned twice
-        self.assertLessEqual(max(new.pos_scans.values()), 1)     # every position fetched once
-        self.assertLessEqual(new.total_scans, len(chunks) * 7)   # y 31..120 spans 7 sections
-        self.assertGreater(old.total_scans, 2 * new.total_scans)
-        self.assertLess(len(new.box_scans), len(chunks))         # fewer scans than one per chunk (#263)
-        for lo, hi in new.box_scans:
+        self.assertLessEqual(max(live.scans.values()), 1)        # no section or box scanned twice
+        self.assertLessEqual(max(live.pos_scans.values()), 1)    # every position fetched once
+        self.assertLessEqual(live.total_scans, len(chunks) * 7)  # y 31..120 spans 7 sections
+        self.assertLess(len(live.box_scans), len(chunks))        # fewer scans than one per chunk (#263)
+        for lo, hi in live.box_scans:
             vol = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
             self.assertLessEqual(vol, 65536)                     # MCP volume cap
 

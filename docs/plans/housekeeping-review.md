@@ -120,7 +120,7 @@ These are worse than plain dead code: a test or a rule gives false assurance.
 - `site_cleanup.size_of` (`:60`)
 - `scripts/tree_review.cover_summary` (`:125`)
 - `scripts/ship_branch.ShipBranchError` (`:66`, never raised)
-- `trees_layer.cell_ndsm` (`:482`; still named in two done plans)
+- `trees_layer.cell_ndsm` (`:482`)
 - `trees_layer.LAYER_PLAN` (`:49`)
 - `decor_layer.warm_decor_columns` and `WARM_BUDGET` (kept alive only as an "old" baseline in `test_decor_layer.py:733-741,830-833`)
 - `roof_material.preview_colour` (`:46`, test-only, and the reason `roof_material` imports `site_kit` at module level)

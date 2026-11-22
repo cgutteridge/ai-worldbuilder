@@ -57,13 +57,6 @@ class Item:
     extra: dict = field(default_factory=dict)
 
 
-def size_of(p: Path) -> int:
-    """Bytes in a file or directory tree."""
-    if p.is_file():
-        return p.stat().st_size
-    return sum(f.stat().st_size for f in p.rglob('*') if f.is_file())
-
-
 def mb(n: int) -> str:
     return f'{n / 2**20:,.0f} MB'
 

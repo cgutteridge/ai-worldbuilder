@@ -577,30 +577,3 @@ def format_portal_inputs(
         'portal register still gets entrances from street-level photos (photo_read).'
     )
     return lines
-
-
-def load_and_validate_facade_plan(
-    spec: Mapping[str, Any],
-    *,
-    labels: set[str] | Iterable[str],
-    path: str,
-    portal_ids: Sequence[str] | None = None,
-) -> dict[str, Any]:
-    """Read ``facade_plan`` from a feature spec and validate it.
-
-    @param spec: feature build spec
-    @param labels: way labels
-    @param path: spec path for error text
-    @param portal_ids: optional portals that must be accounted for
-    @returns: facade_plan dict (possibly empty)
-    @raises FacadePlanError: on invalid plan
-    """
-    plan = spec.get('facade_plan') or {}
-    validate_facade_plan(
-        plan,
-        labels=labels,
-        storeys=spec.get('storeys') or {},
-        portal_ids=portal_ids,
-        path=f'{path}: facade_plan',
-    )
-    return plan if isinstance(plan, dict) else {}

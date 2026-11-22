@@ -122,12 +122,6 @@ def review_cell(live: dict, pri: dict, match_r: int = MATCH_R, height_tol: int =
     return out
 
 
-def cover_summary(live: dict, pri: dict) -> dict:
-    """Column counts: lidar tree columns, live tree columns, and how many are both."""
-    pm, lm = tree_mask(pri), tree_mask(live)
-    return {'lidar': int(pm.sum()), 'live': int(lm.sum()), 'both': int((pm & lm).sum())}
-
-
 def cells_for_zone(x0: int, z0: int, x1: int, z1: int) -> list[tuple[int, int]]:
     """Cells a block rectangle touches, in ring order from the focus is not needed: row by row."""
     n = cellmath.CELL

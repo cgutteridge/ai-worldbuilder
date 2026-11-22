@@ -63,10 +63,6 @@ _FULL_SUITE_FORCE_PATHS = frozenset(
 )
 
 
-class ShipBranchError(RuntimeError):
-    """Merge / cleanup refused or git state is wrong."""
-
-
 def _git_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """Environment for git that honours ``cwd`` over inherited hook vars.
 

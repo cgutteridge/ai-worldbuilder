@@ -665,21 +665,6 @@ def wm_position_to_mc(
     return {'x': mx, 'z': mz}
 
 
-def mc_to_wm(
-    x: float, z: float, zoom: int, frame: WorldFrame | None = None,
-) -> tuple[int, int]:
-    """Minecraft column → web-mercator tile indices (compatibility wrapper).
-
-    @param x: Minecraft X
-    @param z: Minecraft Z
-    @param zoom: zoom level
-    @param frame: optional frame
-    @returns: (xtile, ytile)
-    """
-    pos = mc_to_wm_position(x, z, zoom, frame)
-    return pos['x'], pos['y']
-
-
 def wm_tile_bbox_mc(
     z: int, x: int, y: int, frame: WorldFrame | None = None,
 ) -> tuple[int, int, int, int]:
