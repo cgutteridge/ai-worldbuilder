@@ -46,6 +46,17 @@ class PathAuditTest(unittest.TestCase):
                 path.write_text('`scripts/history.py`\n')
             self.assertEqual(len(A.scan(root)), 5)
 
+    def test_missing_bakeoff_and_root_module_paths_are_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / 'README.md').write_text(
+                '`bakeoff/missing.py`, `active_world.py`, `python_runtime.py`\n')
+            (root / 'python_runtime.py').touch()
+            self.assertEqual(A.scan(root), [
+                A.Hit('README.md', 1, 'bakeoff/missing.py'),
+                A.Hit('README.md', 1, 'active_world.py'),
+            ])
+
     def test_tool_catalogue_is_checked(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

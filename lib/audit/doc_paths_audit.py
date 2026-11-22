@@ -18,8 +18,10 @@ from script_env import TOOL_ROOT
 SCAN_DIRS = ('rules', '.agents/skills', 'docs/agents', 'docs/specs')
 # These roots belong to the tool, independent of the selected world.
 _PATH = re.compile(
-    r'(?<![\w/])(?:lib|scripts|shims|rules|docs|\.agents|templates|config)/[\w./<>*?{}\[\]-]+'
+    r'(?<![\w/])(?:lib|scripts|shims|rules|docs|\.agents|templates|config|bakeoff)/[\w./<>*?{}\[\]-]+'
     r'|(?<![\w/])reference/TYPES\.txt'
+    # Root-level Python interfaces remain recognizable even when removed.
+    r'|(?<![\w/])(?:active_world|python_runtime)\.py(?![\w/])'
 )
 _PLACEHOLDER = re.compile(r'[<>*?{}\[\]]')
 _WORLD_CONFIG = {'config/world.json', 'config/world-frame.json',

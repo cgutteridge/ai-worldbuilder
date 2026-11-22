@@ -66,7 +66,7 @@ The element is now unbuilt, so `cell_registry.py next` will offer it in the norm
 - **Cell / above-ghost:** follow `next`; cell journal ring order and the done-bar apply (`rules/radial-good-enough.md`). Ghost stays; redesign starts from generated ground upward.
 - **Project:** after `dryrun_reset`, re-raise the ghost frontier first, then follow `next` from empty registry (ghost was wiped with the rest).
 
-Name designer and builder first (`build_roles.py show`, `rules/build-roles.md`).
+Name designer and builder first (`python3 scripts/build_roles.py --world <world> show`, `rules/build-roles.md`).
 
 Done when the redesign has started from the evidence table, or the user has deferred it and `next` shows the scope as open.
 
