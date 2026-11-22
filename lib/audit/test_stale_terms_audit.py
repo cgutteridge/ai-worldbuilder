@@ -18,10 +18,16 @@ class ScanTest(unittest.TestCase):
             hits = S.scan(root)
         self.assertTrue(any(h.term == 'QUEUE.txt' and h.path.endswith('rules/bad.md') for h in hits))
 
+    def test_recently_retired_build_names_are_banned(self):
+        for term in ('plant_cell_canopy', 'scripts/terrace.py',
+                     'block_family_variants', 'oakdene_court'):
+            with self.subTest(term=term):
+                self.assertEqual(S._find_terms(f'Run {term} now'), [(1, term)])
+
     def test_allows_adr_and_audit_history(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            for rel in ('docs/adr', 'docs/audits', 'docs/plans'):
+            for rel in ('docs/adr', 'docs/audits', 'docs/plans', 'docs/archive', 'docs/snags'):
                 p = root / rel
                 p.mkdir(parents=True)
                 (p / 'old.md').write_text('QUEUE.txt and restore-ghost and STAGES.json\n')

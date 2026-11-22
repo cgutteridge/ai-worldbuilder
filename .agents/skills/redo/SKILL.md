@@ -73,7 +73,7 @@ Always put the player above the target, looking straight down — before the fir
 
    ```bash
    python3 scripts/mc_player.py --world <world> move \
-     --why "Hovering over oakdene_court so you can see the redo" \
+     --why "Hovering over the feature so you can see the redo" \
      --pos x,y,z --facing x,y,z --gamemode spectator
    ```
 
@@ -102,7 +102,7 @@ Done when they are hovering and looking down at the target.
    | Fact | Source |
    | --- | --- |
    | Footprint | vector map (+ university outline if campus) |
-   | Heights / roof levels | lidar (`lidar_parts` / grid), not aerial colour reads |
+   | Heights / roof levels | lidar (`scripts/lidar_heightmap.py` / grid), not aerial colour reads |
    | Walls, openings, doors | street photos; optional `entrance_register` + `building_register` catalogue roles → `facade_plan` entrances (`python3 shims/portals.py --world <world>`, `python3 shims/buildings.py --world <world>`) |
    | Roof colour + **greeblies** | aerial sheet (`python3 shims/google_aerial.py --world <world>` / `python3 shims/google_window.py --world <world>`) |
 

@@ -18,7 +18,7 @@ vector_map
   Layout (same download → cache → project reference story as other evidence):
   regional source once under ``downloads/`` (e.g. Geofabrik ``.osm.pbf``), then
   place clips under ``reference/vector_map/<place>/`` — once per world, shared
-  across cells. Glue: ``scripts/vector_map_clips.py`` (clip root + status).
+  across cells. Glue: ``lib/sources/vector_map_clips.py`` (clip root + status).
   Readers: ``OSMIndex`` / ``feature_build``. Do not use cross-world ``osm_root=``
   or a live symlink into another checkout as the primary path; recovery is copy
   into this world's ``reference/vector_map/``.

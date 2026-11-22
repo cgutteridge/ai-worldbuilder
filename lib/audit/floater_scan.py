@@ -6,10 +6,10 @@ Looks at every block in the box, counts air vs non-air, and reports:
   - unsupported mass: solid blocks with no solid support within ``--depth`` below
     (default 10; only straight down — fast heuristic)
 
-  python3 scripts/floater_scan.py 7090,64,-5530,7110,90,-5510
-  python3 scripts/floater_scan.py --bbox 7090,-5530,7110,-5510 --y 64,90
-  python3 scripts/floater_scan.py --cell 48,-44 --y 50,90 --no-structural
-  python3 scripts/floater_scan.py 7090,64,-5530,7110,90,-5510 --no-attachables -o verification/site/my-floater-scan.json
+  python3 scripts/floater_scan.py --world <world> 7090,64,-5530,7110,90,-5510
+  python3 scripts/floater_scan.py --world <world> --bbox 7090,-5530,7110,-5510 --y 64,90
+  python3 scripts/floater_scan.py --world <world> --cell 48,-44 --y 50,90 --no-structural
+  python3 scripts/floater_scan.py --world <world> 7090,64,-5530,7110,90,-5510 --no-attachables -o verification/site/my-floater-scan.json
 
 Save the world first. ``hit_scan_floor`` on a finding means support may sit below ``y0``.
 """

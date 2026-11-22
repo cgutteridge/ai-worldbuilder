@@ -17,7 +17,7 @@ Rules
    undo is exact (mask_undo.py).
  - A tree is never ROOTED (crown centre) in a feature zone: a column the ground layer
    did not surface (building footprint, structure build, bridge; read from
-   verification/site/<cell>_ground-cells.json plus footprint-map polygons). Trees inside a
+   journal-owned ground columns plus footprint-map polygons). Trees inside a
    feature are the feature build's own job, provided they do not overspill its zone.
    Crowns rooted outside may overhang a feature.
  - Crowns on a cell edge: HANDOFF-LAYERED-PASSES §6 (overhang into neighbour air or
@@ -108,6 +108,4 @@ Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave
     then run the same selection with --apply in the background and check its final exit/result.
     The wrapper owns its lock; trees-only redo leaves cleared decor pending. Include decor only if requested.
 
-Retired and deleted (do not look for them): build_cell_foliage.py, the "foliage last" cadence and the aerial
-canopy pass plant_cell_canopy.py with HAND_CROWNS (Q-064; its 48,-45 result was
-reverted 2026-10-14). Trees come only from trees_layer.py; voxel shapes live in lib/layers/tree_voxels.py.
+Trees come from trees_layer.py; voxel shapes live in lib/layers/tree_voxels.py.

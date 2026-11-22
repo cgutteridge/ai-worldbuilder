@@ -1,8 +1,8 @@
 # Cell journal interface (task 41; ADR 004)
 
-Code: `scripts/cell_journal.py`, `scripts/block_store.py`; the active world's registry is
-`cell_registry.open_registry()` / `view_registry()`. Tests: `scripts/test_cell_journal.py`,
-`scripts/test_block_store.py`. `site_kit.apply` / `site_kit.undo` record through it (task 42).
+Code: `lib/journal/cell_journal.py`, `lib/blocks/block_store.py`; the active world's registry is
+`cell_registry.open_registry()` / `view_registry()`. Tests: `lib/journal/test_cell_journal.py`,
+`lib/blocks/test_block_store.py`. `site_kit.apply` / `site_kit.undo` record through it (task 42).
 
 ## Types
 

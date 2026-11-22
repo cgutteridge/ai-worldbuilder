@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shim: type-facing ``lidar_tiles`` → active lidar provider tiles module.
 
-Prefer ``scripts/lidar_provider.tile_client()`` from glue code. This shim
+Prefer ``lidar_provider.tile_client()`` from glue code. This shim
 keeps a stable import / CLI name that does not spell a vendor id.
 Historical ``defra_lidar`` remains for older docs and provider-local tests.
 """

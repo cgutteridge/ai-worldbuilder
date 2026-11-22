@@ -12,7 +12,7 @@ with no heartbeat for STALE_MIN minutes may be taken over.
   python3 scripts/site_lock.py run <owner> "<task>" --budget-min N [--kill-factor F] [--cell tx,tz] -- <cmd>
 ``run`` claims, exports SITE_OWNER for <cmd>, runs it and always releases (command
 failure, Ctrl-C and SIGTERM included); it exits with the command's status. Example:
-  python3 scripts/site_lock.py run me "baseline" -- python3 scripts/lidar_ghost.py apply
+  python3 scripts/site_lock.py run me "baseline" -- python3 shims/lidar_ghost.py apply
 With ``--budget-min N`` it prints one OVER-BUDGET line at N minutes, kills the
 process group at N times ``--kill-factor`` (default 1.5) and exits 124, and
 appends a verdict to site/run-budget.jsonl. Without ``--budget-min`` nothing

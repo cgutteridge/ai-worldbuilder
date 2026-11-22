@@ -649,7 +649,7 @@ class World:
     :func:`planning_world` for dry-run / planner reads over on-disk ``.mca`` after a save
     (#111). Unloaded / omitted chunks follow the BlockStore contract (``None`` under
     FakeScanMcp with ``loaded_chunks`` or a missing region chunk; live MCP lists
-    ``minecraft:air`` — see ``docs/audits/region-block-reads.md`` §7).
+    ``minecraft:air`` — see ``docs/archive/region-block-reads.md`` §7).
     """
 
     def __init__(self, region=None, *, store=None):

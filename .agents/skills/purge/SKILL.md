@@ -40,7 +40,7 @@ Done when the run reported clean readback for every undo, or `dryrun_reset.py` f
 The old build must not be readable as a reference. For each purged feature or layer:
 
 1. Retire its build script or `site/builds/<name>.json` out of the working tree: tar to `backups/retired-<what>-<date>.tar.gz`, `git rm` (the `cleanup.md` build-scripts route). Keep the re-run mechanism only: if a generator is shared, leave it, delete the per-element inputs.
-2. Archive leftovers named for the element: its `verification/site/*-cells.json` / `-backup.json` / `-preview` files, mask archives (`masks/undone/`), per-element notes in `site/`. Anything an agent could `Read` as "what was there" moves into the same tar or goes.
+2. Archive leftovers named for the element: its `verification/site/*-backup.json` / `*-preview` / `*-result.json` files, mask archives (`masks/undone/`), per-element notes in `site/`. Anything an agent could `Read` as "what was there" moves into the same tar or goes.
 3. Note purged scope on matching snags (`scripts/issues.py`); do not use retired `cell_registry.py issues`.
 
 For **above-ghost**, retire every feature and layer that the undo removed across the listed cells (one tar per feature/layer, or one dated above-ghost tar if the set is large), then confirm `above-ghost` no longer names those builds.

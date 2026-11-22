@@ -9,8 +9,8 @@ Every **feature**, **trees**, or **decor** place task must name which model
 Tool-repo defaults: [`config/build-roles.json`](../config/build-roles.json).
 
 ```bash
-python3 scripts/build_roles.py show
-python3 scripts/build_roles.py resolve --tool cursor --builder composer --json
+python3 scripts/build_roles.py --world <world> show
+python3 scripts/build_roles.py --world <world> resolve --tool cursor --builder composer --json
 ```
 
 Override per task (orchestrator / redo prompt) or bake-off `open --designer` /

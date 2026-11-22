@@ -1,9 +1,9 @@
 ---
-description: Agent soundboard cues for Southampton Refine (core + optional flair)
+description: Agent soundboard cues for ai-worldbuilder (core + optional flair)
 alwaysApply: true
 ---
 
-# Sound cues (Southampton Refine)
+# Sound cues (ai-worldbuilder)
 
 **Top-level agents only** — play cues only from the agent the user triggered. Do **not** play from subagents, Task runners, worktree workers, or other nested agents; only the user-facing parent may cue.
 

@@ -26,7 +26,7 @@ python3 bakeoff/model_bakeoff.py --world bakeoff open --tool cursor --model comp
 
 vector_map footprints come from `worlds/bakeoff/reference/vector_map/` (same
 download → cache → project reference story as any world; see
-`scripts/vector_map_clips.py`). Never pass `osm_root=` pointing at
+`lib/sources/vector_map_clips.py`). Never pass `osm_root=` pointing at
 `southampton-build` or another world. If clips are missing, copy a populated
 `reference/vector_map/` into bakeoff (real files) — recovery only, not a live
 symlink or cross-world read.

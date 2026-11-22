@@ -217,7 +217,7 @@ GROUND AND MASKS
   - Ground should not touch a masked tree/decor position at all. If a ground plan
     does, that is a fault: undo that one mask first (§3), then re-run that pass
     after the ground. Undo is only for the case where ground hits a mask.
-  - scripts/pass_mask.py masked_overlaps() finds these positions before apply.
+  - lib/layers/pass_mask.py masked_overlaps() finds these positions before apply.
 
 KEEP MASKS
   - Keep the current trees and decor mask per cell (one file per pass per cell,
@@ -242,7 +242,7 @@ remain useful archaeology.
 
 WHAT EXISTS IN CODE (still true)
   - scripts/ground_layer.py / trees_layer.py / decor_layer.py (journal via CellRegistry)
-  - scripts/pass_mask.py; scripts/coverage.py write (registry rollup + holds)
+  - lib/layers/pass_mask.py; scripts/coverage.py write (registry rollup + holds)
   - Interrupted apply: site_recover.py; drift: cell_registry.py reconcile
 
 ------------------------------------------------------------------------

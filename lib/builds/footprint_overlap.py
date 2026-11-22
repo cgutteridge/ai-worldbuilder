@@ -9,8 +9,8 @@ Dry run lists footprint cells that sit on map ``footway`` / ``steps`` / ``cyclew
 bands (import half-widths), optional open lidar columns (DSM−DTM below a threshold),
 and the share of the footprint classified as ground on the aerial.
 
-  python3 scripts/footprint_overlap.py --way 33830305
-  python3 scripts/footprint_overlap.py --cells-json '[[10,20],[11,20]]' \\
+  python3 scripts/footprint_overlap.py --world <world> --way 33830305
+  python3 scripts/footprint_overlap.py --world <world> --cells-json '[[10,20],[11,20]]' \\
       --street footway,10.0,22.5,20.0,22.5
 
 Pure helpers accept synthetic footprint + street polylines so tests need no map clips.

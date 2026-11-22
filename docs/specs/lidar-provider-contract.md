@@ -1,11 +1,12 @@
 # Lidar provider contract and provider-neutral resolution (task #262)
 
-Design only. Owner constraint: others install their own lidar provider; callers ask for the type `lidar`, never a vendor. Claims were checked by reading the code; nothing was run. Items marked **(unverified)** were not checked.
+Owner constraint: others install their own lidar provider; callers ask for the type `lidar`, never a vendor. Sections 0 and 4 describe the landed implementation. The remaining sections preserve the original design proposals; use `lib/sources/lidar_provider.py`, `reference/TYPES.txt` and the integration tests for the current API. Items marked **(unverified)** were not checked.
 
-## 0. Starting point
+## 0. Current entry points
 
-- Already type-facing: `lidar_provider.tile_client / composite_world / mc_heights / mc_box_en`. About 12 callers in `lib/builds`, `lib/layers` and `lib/sources` call `tile_client(download=False)` then `.sample` or `mc_heights`, and tests patch those two names. Keep the names and signatures.
-- Vendor-bound today: `shims/lidar_ghost|query|extremes.py` (literal `'ukdefra-lidar'`); `readiness_evidence.lidar_status` (`pick_uri`, `TILE_MB`, `tiles_for`, `client.cache/catalogue/<E>E-<N>N.json`, `client.tiles`); `lidar_query` and `lidar_extremes` (import `defra_lidar`, `DEFRA_CRS`, `--bbox-osgb`); `lidar_provider_row` (first lidar row, and system rows are listed first).
+`lib/sources/lidar_provider.py` selects a catalogue row by type, preferring the first world lidar row over system rows. The selected row's package and `modules` map resolve `world`, `tiles`, `query` and `extremes` entry points. Callers use `tile_client`, `composite_world`, `mc_box_en`, `mc_heights` and `default_heights`, without provider ids.
+
+`shims/lidar_ghost.py` enters the shared planner in `lib/sources/lidar_ghost.py`. The query and extremes shims resolve their provider roles through `load_lidar_module`. Readiness uses the client's `tile_status(*bbox_en)` pair `(missing, cached_paths)`; it does not inspect vendor catalogue internals. Missing rows raise `NoLidarProviderError`; missing module roles raise `ValueError`. Uncached tiles remain `LookupError`.
 
 ## 1. What a lidar provider supplies
 
@@ -54,11 +55,11 @@ A provider without `tile_status` falls back to `missing()`: labels only, no size
 - `_MODULE_CACHE` is keyed by id and path; add `home` and the world root.
 - Aliases (`ukdefra-dtm`, `ukdefra-dsm`) stay for checklist and ledger keys only. Lidar selection never goes through an alias.
 
-## 4. Ghost as shared code; `default_heights`
+## 4. Shared ghost and provider heights
 
-- Move `providers/ukdefra-lidar/manage/lidar_ghost.py` to `lib/sources/lidar_ghost.py` (its test already lives there; `ensure_import_paths` puts every `lib/*/` on the path, so the five importers are unchanged). `shims/lidar_ghost.py` is deleted; the CLI path in docs and the `new-world-build` skill becomes `lib/sources/lidar_ghost.py` **(unverified: whether lib modules are run as CLIs elsewhere; if not, keep a 5-line shim with no provider id)**.
-- `default_heights` stays in the ghost but calls only the seam: `client = lidar_provider.tile_client(download=False)`; `client.ensure(*lidar_provider.mc_box_en(...))`; `return lidar_provider.mc_heights(client, ...)`. Nothing ghost-specific goes into the provider.
-- `lidar_provider.mc_box_en` and `mc_heights` get shared bodies, lifted from `defra_lidar` (which uses only `world_frame` offsets and `client.sample`; `osgb.to_osgb` delegates to `world_frame.mc_to_osgb`, so they agree). They use the tiles module's own function when it defines one. The shared path raises `LidarProviderError` if `client.crs != load_frame().crs`.
+Ghost planning lives in `lib/sources/lidar_ghost.py`, with `shims/lidar_ghost.py` as the world-activated CLI. It is tool code and imports provider-neutral height helpers.
+
+`lidar_provider.default_heights` opens `tile_client(download=False)`, calls `client.ensure(*mc_box_en(...))`, then returns `mc_heights(client, ...)`. The `mc_box_en` and `mc_heights` bodies are provided by the selected tiles module, so each provider is responsible for converting the world frame and returning height arrays. There is no shared CRS-check fallback in this implementation. `mc_heights_float` requests `geocraft=False` when the provider supports it, otherwise warns once and uses its normal height grid.
 
 ## 5. Typed no-provider error
 
@@ -70,7 +71,7 @@ Who catches it: `cell_readiness.py:42,61`, `cell_preparation.py:132` and `cell_r
 
 ## 6. Synthetic-provider test
 
-`scripts/test_lidar_provider_neutral.py`. Each case runs a child `python3 -c` via `subprocess`, because `run_tests.py` is one process and the shims replace `sys.modules` entries. The child calls `active_world.set_world_root(tmp)` before importing anything else (`cell_sources` fixes its paths at import).
+`lib/sources/test_lidar_provider_integration.py`. Each case runs a child `python3 -c` via `subprocess`, because `run_tests.py` is one process and the shims replace `sys.modules` entries. The child calls `active_world.set_world_root(tmp)` before importing anything else (`cell_sources` fixes its paths at import).
 
 Fixture: temp world with `config/world-frame.json`, `config/local-providers.json` (row `synthetic-lidar`, `home` world by merge) and `providers/synthetic-lidar/` holding a `LidarTiles` that returns a sloped plane and a `tile_status`, a stub `LidarWorld`, and a `query` module whose `main` prints a marker. The system row stays.
 
@@ -86,7 +87,7 @@ In-process static test: no catalogue id, `defra` or `ukdefra` in `shims/lidar_*.
 4. `tile_status` on the DEFRA client; `lidar_status` uses it, with the `missing()` fallback.
 5. `query` and `extremes` roles in `config/system-providers.json`; type-facing shims; `--bbox-en`; `crs` from the client.
 6. Fresh-process synthetic-provider test and the static check.
-7. Docs: lidar section of `reference/TYPES.txt` (this contract; stale `scripts/lidar_provider.py` path becomes `lib/sources/`), seams table in `docs/provider-name-audit.md`, provider README pointer; refresh the audit baseline if lines were removed.
+7. Docs: lidar section of `reference/TYPES.txt` (this contract; link to `lib/sources/lidar_provider.py`), seams table in `docs/provider-name-audit.md`, provider README pointer; refresh the audit baseline if lines were removed.
 
 ## 8. Risks
 

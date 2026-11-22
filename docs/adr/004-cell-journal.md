@@ -27,7 +27,7 @@ Three overlapping records used to describe one cell's state and routinely disagr
 
 ### Block read path (decided by task 39; region-disk exception #111)
 
-Audit: [docs/audits/region-block-reads.md](../audits/region-block-reads.md). **One guarded reader behind `BlockStore`** (`read`, `read_many`, `flush`), with `MemoryBlocks` for tests, `LiveBlocks` for live MCP, and `RegionBlocks` for **read-only** planning / dry-run after a server save (#111; owner-authorised 2026-10-26).
+Audit: [docs/archive/region-block-reads.md](../archive/region-block-reads.md). **One guarded reader behind `BlockStore`** (`read`, `read_many`, `flush`), with `MemoryBlocks` for tests, `LiveBlocks` for live MCP, and `RegionBlocks` for **read-only** planning / dry-run after a server save (#111; owner-authorised 2026-10-26).
 
 `LiveBlocks` reads via MCP `block_scan_region` (tiles volume ≤ 65 536, raises `limit` to the tile size, parses verbose text); it still accepts only the active or bake-off save, requires `flush()` (`server_save_all_worlds`) after any write before it will read, and checks the region matches the world MCP has open. Per-position `block_get_state` is rejected for bulk block-state reads; task #67 deliberately allows it for one-off light probes (`LiveBlocks.light` / `site_audit` dark cells). Live applies and their readback stay on MCP.
 

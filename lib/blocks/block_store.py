@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Iterator, Mapping, Protocol, runtime_chec
 
 Pos = tuple[int, int, int]
 
-# MCP block_scan_region caps (docs/audits/region-block-reads.md §7).
+# MCP block_scan_region caps (docs/archive/region-block-reads.md §7).
 SCAN_VOLUME_CAP = 65536
 # When a read_many AABB would need more tiles than this, LiveBlocks scans per chunk instead.
 MAX_ENSURE_TILES = 64

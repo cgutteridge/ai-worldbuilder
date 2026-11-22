@@ -14,8 +14,8 @@ states may persist until a neighbour update, so live readback is separate. Plans
 must set facing so that rule yields the intended outer/inner/straight mitre, and
 write that same shape into the state; otherwise joins change after apply (#169).
 
-  python3 scripts/roof_lint.py <build> [<build> ...]   # recorded plans in the cell journal
-  python3 scripts/roof_lint.py --all
+  python3 scripts/roof_lint.py --world <world> <build> [<build> ...]   # recorded plans in the cell journal
+  python3 scripts/roof_lint.py --world <world> --all
 
 site_kit.apply() runs ridge_jogs() on every plan and refuses jogs unless the plan
 sets `roof_jog_ok = "<reason + evidence id>"`.

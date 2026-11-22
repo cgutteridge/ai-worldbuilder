@@ -34,7 +34,7 @@ docstring):
 
 Write the spec from **this** run's evidence (footprint ways, lidar storeys/roof,
 Street View / aerial frontage). Do not copy a peer spec or a per-run build
-script. Old one-off scripts: `scripts/legacy/` if present.
+script.
 
 House only: no gardens. Lawn is GROUND; trees/shrubs TREES; fences, sheds,
 planting DECOR.

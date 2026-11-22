@@ -164,6 +164,6 @@ class DefraWorld:
         return max(bottom, min(top, self._col(x, z)[1]))
 
 
-# Type-facing names for scripts/lidar_provider.py (catalogue modules.world).
+# Type-facing names for lib/sources/lidar_provider.py (catalogue modules.world).
 LidarWorld = DefraWorld
 CompositeWorld = DefraWorld

@@ -31,7 +31,7 @@ and `highway` value (which #260 reads).
 A building with no class of its own inherits the class of the smallest *use* polygon containing its
 centroid. If there is none: `residential` when it has a house number (this is today's eligibility, see
 risk 1), otherwise `unknown`. Other tags on the building are tested before the `building` value, so a
-`building=house` with `shop=*` is commercial, as `garden_sources.nonresidential_building` decides today.
+`building=house` with `shop=*` is commercial, as `land_use.building_class` decides.
 
 **Area tags** (non-building polygons). Two kinds, because the cached campus clip holds 214 `landuse=grass`
 polygons that would otherwise beat the campus they sit in:

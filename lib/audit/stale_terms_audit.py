@@ -25,6 +25,10 @@ BANNED_TERMS: tuple[str, ...] = (
     'QUEUE.txt',
     'signoff',
     'STAGES.json',
+    'plant_cell_canopy',
+    'scripts/terrace.py',
+    'block_family_variants',
+    'oakdene_court',
 )
 
 SCAN_DIRS: tuple[str, ...] = (
@@ -44,6 +48,8 @@ DOCS_ALLOW_PREFIXES: tuple[str, ...] = (
     'docs/adr/',
     'docs/audits/',
     'docs/plans/',
+    'docs/archive/',
+    'docs/snags/',
 )
 
 TEXT_SUFFIXES = {'.md', '.txt', '.html'}
