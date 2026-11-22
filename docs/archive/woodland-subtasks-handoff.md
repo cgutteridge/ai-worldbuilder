@@ -86,7 +86,7 @@ python3 scripts/ship_branch.py merge task/<id>-<slug>
 
 ## Per task
 
-**347 plant vocabulary.** Names come from a confirmed source (see preflight step 5), never guessed. Update `PLANTS` and everything that mirrors it (`ground_layer.STEM_OR_FLOWER` derives from it; also check `foliage.REFINE_PLANTS`, `block_reference` patterns, decor and the readback or audit code that classifies plants). Note which plants are two-block. Probe tests for each plant above grass, dirt and podzol.
+**347 plant vocabulary.** Names come from a confirmed source (see preflight step 5), never guessed. Update `PLANTS` and everything that mirrors it (`layer_common.STEM_OR_FLOWER` derives from it; also check `foliage.REFINE_PLANTS`, `block_reference` patterns, decor and the readback or audit code that classifies plants). Note which plants are two-block. Probe tests for each plant above grass, dirt and podzol.
 
 **349 lidar second crown source.** A pure function (for example `lidar_fill(ndsm, crowns, cover, ...)`) called from `planning_inputs`, after detected and aerial-fill crowns and before mapped crowns (mapped crowns still win). `MIN_NDSM` (start 3.0 m) and the other parameters are named constants. With no nDSM, output must be unchanged. Report counts crowns by source. Lidar is height truth; the aerial is a guide.
 

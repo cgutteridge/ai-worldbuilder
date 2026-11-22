@@ -16,7 +16,7 @@
 - Trees/decor over a later ground: not caught, and that is deliberate in the current code.
   `test_ground_redo_stales_unexecuted_plans_but_preserves_current_completion` and the
   cell-orchestrator skill both say a ground redo preserves trees/decor completion. Yet
-  `ground_layer.ignored_builds` does not count the cell's own trees/decor as owners. Left as is;
+  `layer_common.ignored_builds` does not count the cell's own trees/decor as owners. Left as is;
   open question below.
 
 ## Rule

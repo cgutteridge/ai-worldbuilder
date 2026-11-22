@@ -64,7 +64,7 @@ def probe_floor() -> int:
 
     Derived from the active world: sea level (``world-frame.json`` ``y_offset``) minus
     :data:`LOW_GROUND_MARGIN_M`, never below :data:`WORLD_FLOOR_Y`. ``surface_y``, the layer
-    warm-ups (``ground_layer.probe_y_range``) and the ground layer's support and cavity searches all
+    warm-ups (``layer_common.probe_y_range``) and the ground layer's support and cavity searches all
     use it, so the prefetch always covers what the probe reads. Not below the ghost fill: the
     cavity search would otherwise fill the empty save's air under every column. With no world
     selected (unit tests) it is :data:`WORLD_FLOOR_Y`.

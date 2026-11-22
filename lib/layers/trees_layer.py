@@ -37,7 +37,7 @@ import numpy as np
 from block_store import block_id
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (ignored_builds, is_air,  # noqa: E402
+from layer_common import (ignored_builds, is_air,  # noqa: E402
                           load_masked_positions, neighbour_owned, warm_surface_probe)
 from place_config import plan_name  # noqa: E402
 from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402

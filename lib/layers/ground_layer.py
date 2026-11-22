@@ -47,30 +47,24 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import random
 import sys
 from collections import Counter
 from pathlib import Path
 
 from block_store import block_id
-from script_env import ROOT  # noqa: E402
 
 from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb,  # noqa: E402
                             line_cells, hsv, majority, MARGIN)
 import cellmath  # noqa: E402
-from tree_species import DEFAULT_LEAVES  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
-from pass_mask import MASK_DIR, mask_placements, masked_overlaps, read_mask  # noqa: E402
-from place_config import grounds_prefix, plan_name, retired_ground_passes  # noqa: E402
-from site_kit import AIR_IDS, Plan, World, full  # noqa: E402
-from surface_probe import (GRASS_LIGHT_PATTERNS, PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
-                           surface_y)
+from place_config import plan_name  # noqa: E402
+from site_kit import Plan, World, full  # noqa: E402
+from surface_probe import is_water, probe_floor, short_id, surface_y  # noqa: E402
+import layer_common as lc
+import ground_dressing as gd
 
-SCAN_TOP = 120          # highest y the clear step looks at (survey tops out near 110)
 RAISE_FILL = 'dirt'
-AIRS = frozenset(full(name) for name in AIR_IDS)
-STEM_OR_FLOWER = frozenset(full(p) for p in PLANTS)
 
 # Palette (CRAFTSMANSHIP §3a). One block per kind; markings and kerbs are tarmac extras.
 MATERIAL = {
@@ -79,32 +73,7 @@ MATERIAL = {
     'mark': 'white_concrete', 'kerb': 'smooth_stone',
     'forecourt': 'andesite',                          # private forecourt, apart from public pavement (#254)
 }
-BLOCK_KIND = {'gray_concrete': 'tarmac', 'light_gray_concrete': 'paving', 'polished_granite': 'brick',
-              'grass_block': 'grass', 'gravel': 'gravel', 'andesite': 'forecourt'}
 STITCH_DEPTH = 2        # columns from a seam that copy the finished neighbour's surface
-SHRUB_EDGE_REACH_SQ = 2   # shrubs only within one column (diagonals too) of the house wall or plot boundary (#339)
-COVER_EDGE_REACH_SQ = 8   # grass tufts and ferns within two columns of that edge (#339)
-# Rough grass (#319): OSM tags that take a pasture/meadow palette; lawn tags never.
-ROUGH_GRASS_TAGS = {
-    ('landuse', 'meadow'): 'meadow',
-    ('landuse', 'farmland'): 'pasture',
-    ('natural', 'grassland'): 'meadow',
-    ('natural', 'heath'): 'pasture',
-    ('natural', 'scrub'): 'pasture',
-    ('leisure', 'nature_reserve'): 'pasture',
-}
-LAWN_TAGS = frozenset({
-    ('landuse', 'grass'),
-    ('leisure', 'pitch'),
-    ('leisure', 'golf_course'),
-    ('leisure', 'garden'),
-    ('leisure', 'playground'),
-})
-# Woodland floor (#348): land_use.WOOD_TAGS take ground_texture.wood. Scrub (land_use.SCRUB_TAGS)
-# stays pasture unless that palette sets scrub true. Shares and the grass-edge reach live in the
-# config, not here.
-TEXTURE_RADIUS = 8          # local brightness spread for aerial variance (#319 prototype)
-BARE_DIRT = ('coarse_dirt', 'rooted_dirt')
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
 FILL_REACH = 12         # how far shade/canopy columns look for ground around them
 STRUCTURE_TOPS = ('stairs', 'slab', '_wall', '_fence', 'bars', 'planks', '_carpet')
@@ -112,189 +81,8 @@ STEP_STAIR = 'polished_andesite_stairs'   # outdoor step riser beside light_gray
 # facing of a stair that climbs toward +axis / -axis (Minecraft: east +x, south +z)
 STEP_FACING = {('x', 1): 'east', ('x', -1): 'west', ('z', 1): 'south', ('z', -1): 'north'}
 
-def shades_grass(above: str | None) -> bool:
-    """True when the block directly above a grass top is opaque, so grass would decay to dirt (#242).
-
-    Air, plants, leaves, glass and other see-through blocks let grass live; logs, planks, stone and the like do not.
-    """
-    b = block_id(above, policy='read')
-    if not above or b in AIRS or b in STEM_OR_FLOWER or is_air(above):
-        return False
-    name = b.split(':')[-1]
-    return not any(c in name for c in GRASS_LIGHT_PATTERNS)
-
-
-def is_air(block: str | None) -> bool:
-    """Air for the ground step: includes flowers and grass stems (§10); grass BLOCK is not air."""
-    return block_id(block, policy='read') in AIRS or block_id(block, policy='read') in STEM_OR_FLOWER
-
-
-def cell_contains(cell: tuple[int, int], x: int, z: int) -> bool:
-    """True if column (x, z) is inside the 128² cell."""
-    x0, z0, x1, z1 = cellmath.bounds(cell)
-    return x0 <= x <= x1 and z0 <= z <= z1
-
-
-def ignored_builds(cell: tuple[int, int]) -> frozenset:
-    """Builds that do not count as owners for this cell's ground pass.
-
-    Earlier ground passes (retired), plus this cell's own layer plans: the old foliage pass and
-    the ground/trees/decor plans that are being redone, and cell marker rings (wool ~30 m up, not
-    ground: counting them left the cell's outer ring of columns unsurfaced). Lidar ghosts
-    (ADR 004, ghost owners yield to real owners) are placeholders real ground overwrites. Another cell's
-    trees stay owners.
-    """
-    from lidar_ghost import ghost_owners_for
-
-    own = {plan_name(cell, layer) for layer in ('ground', 'trees', 'decor', 'foliage')}
-    own |= set(ghost_owners_for(cell))
-    # Earlier ground passes are place data (``retired_ground_passes``). Their blocks are what
-    # this layer replaces, so they are not owners. Grounds markers are the same kind of name.
-    return retired_ground_passes() | own | {n for n in _all_build_names()
-                                            if n.startswith((grounds_prefix(), 'cell_marker_'))}
-
-
-def _all_build_names() -> set:
-    from cell_registry import view_registry
-    return {e.plan for e in view_registry().entries()}
-
-
-def neighbour_owned_states(cell: tuple[int, int], exclude=()) -> dict:
-    """Positions other builds own in the cell and its 8 neighbours, with the owned block state.
-
-    @param cell: (tx, tz)
-    @param exclude: plan names that do not count (``ignored_builds``)
-    @returns: {(x, y, z): state, ...}
-    """
-    from cell_registry import view_registry
-    tx, tz = cell
-    around = [(tx + dx, tz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)]
-    return view_registry().owner_states(around, exclude=exclude)
-
-
-def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
-    """Positions the cell journal says other builds own, in the cell and its 8 neighbours.
-
-    The layer passes read this instead of the old whole-world ownership merge: their plans
-    (with tree overhang) never reach past the neighbour cells.
-
-    @param cell: (tx, tz)
-    @param exclude: plan names that do not count (``ignored_builds``)
-    @returns: {(x, y, z), ...}
-    """
-    return set(neighbour_owned_states(cell, exclude))
-
-
-def owned_air_ceilings(neighbour_owned: set, owned_air: set) -> tuple[set, dict]:
-    """Split owned columns into structure columns and air-only (feature margin) columns.
-
-    A feature's margin clear owns only air beside its walls. Features now land before the cell's
-    ground (task 286), so ground must still surface those columns, below the lowest owned air;
-    a column with any owned solid block stays the structure's.
-
-    @param neighbour_owned: owned positions
-    @param owned_air: the subset whose owned state is air
-    @returns: (structure columns, {(x, z): lowest owned air y} for air-only columns)
-    """
-    solid = {(x, z) for x, y, z in neighbour_owned if (x, y, z) not in owned_air}
-    ceilings: dict = {}
-    for x, y, z in owned_air:
-        if (x, z) not in solid and y < ceilings.get((x, z), y + 1):
-            ceilings[(x, z)] = y
-    return solid, ceilings
-
-
-def owned_floors(neighbour_owned_states: dict, structure: set) -> dict:
-    """Highest owned y in each structure column, for the buried-feature test (task 297).
-
-    Between the feature and the ground every column is accounted for: where every block a feature
-    owns lies below the ground's surface, the column above the highest of them is the ground's.
-    A column holding owned water is a pond or channel, never ground's to cover.
-
-    @param neighbour_owned_states: ``{(x, y, z): state}`` owned positions
-    @param structure: columns with an owned solid block (:func:`owned_air_ceilings`)
-    @returns: ``{(x, z): highest owned y}`` (owned air counts: the ground never fills it)
-    """
-    floors: dict = {}
-    wet = set()
-    for (x, y, z), state in neighbour_owned_states.items():
-        q = (x, z)
-        if q not in structure:
-            continue
-        if is_water(full(block_id(state, policy='read'))):
-            wet.add(q)
-        if y > floors.get(q, y - 1):
-            floors[q] = y
-    return {q: y for q, y in floors.items() if q not in wet}
-
-
-def load_masked_positions() -> dict:
-    """Every position owned by a tree or decor mask: {pos: 'pass tx,tz'}."""
-    owned: dict = {}
-    if MASK_DIR.exists():
-        for path in sorted(MASK_DIR.glob('*.mask.json')):
-            mask = read_mask(path)
-            for pos in mask_placements(mask):
-                owned[pos] = f"{mask['pass']} {mask['cell'][0]},{mask['cell'][1]}"
-    return owned
-
-
-def mask_plan_overlaps(planned: dict, mask_dir: Path | None = None) -> list[tuple]:
-    """Positions in a finished ground plan that a tree or decor mask owns.
-
-    This is the check before apply (``pass_mask.masked_overlaps``). The planner
-    also refuses these positions while it builds the plan; this catches any that
-    still landed in the plan that would be written.
-
-    @param planned: ``{(x, y, z): block}`` the plan would write
-    @param mask_dir: directory of ``*.mask.json`` files (default ``MASK_DIR``)
-    @returns: ``(pos, planned block, 'pass tx,tz')`` hits, in mask-file order
-    """
-    directory = MASK_DIR if mask_dir is None else mask_dir
-    hits: list[tuple] = []
-    if not directory.exists():
-        return hits
-    for path in sorted(directory.glob('*.mask.json')):
-        mask = read_mask(path)
-        why = f"{mask['pass']} {mask['cell'][0]},{mask['cell'][1]}"
-        for pos in masked_overlaps(planned, mask):
-            hits.append((pos, planned[pos], why))
-    return hits
-
 
 # --- 1. which columns are ours -----------------------------------------------------------
-SUPPORT_RUN = 4                  # solid blocks in a row that count as ground under a surface (#296)
-PROBE_STRIP = 16                 # x columns warmed per prefetch (keeps each request's position list small)
-
-
-def probe_y_range() -> tuple[int, int]:
-    """Inclusive Y levels the probes read: ``surface_y`` (110 down to the world's probe floor) and the clear step.
-
-    The low end is one above :func:`surface_probe.probe_floor`, so a warm-up over this range covers
-    every block ``surface_y`` reads, however low the world's ground lies.
-
-    @returns: ``(lowest y read, SCAN_TOP)``
-    """
-    return probe_floor() + 1, SCAN_TOP
-
-
-def warm_surface_probe(world: World, x0: int, z0: int, x1: int, z1: int) -> None:
-    """Prefetch every block ``surface_y`` can read (:func:`probe_y_range`), in batched scans.
-
-    Only worth it on a store that keeps what it read: a whole cell is far over the live store's
-    cache cap (``block_store.MAX_CACHE_BLOCKS``), which evicts the warm-up as it goes, so the layer
-    applies plan from saved region files (``fresh_planning_world``) instead of the live store.
-    """
-    warm = getattr(world, 'prefetch', None)
-    if warm is None:
-        return
-    ylo, yhi = probe_y_range()
-    from stage_timing import timed_stage
-    with timed_stage('ground/tree surface warm-up'):
-        for xs in range(x0, x1 + 1, PROBE_STRIP):
-            xe = min(xs + PROBE_STRIP - 1, x1)
-            warm((x, y, z) for x in range(xs, xe + 1) for z in range(z0, z1 + 1)
-                 for y in range(ylo, yhi + 1))
 
 
 def _deck(vmap) -> set:
@@ -302,16 +90,11 @@ def _deck(vmap) -> set:
     return set(vmap.deck if hasattr(vmap, 'deck') else getattr(vmap, 'bridge', ()))
 
 
-def _ring(columns) -> set:
-    """``columns`` and their eight neighbours (the bank of a water set)."""
-    return {(x + a, z + b) for x, z in columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
-
-
 def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, owned_cols: set, details=None,
                  floors=None, heights=None):
     """Columns this layer may surface, with their live surface (y, block).
 
-    An owned structure column stays the structure's unless ``floors`` (:func:`owned_floors`) puts
+    An owned structure column stays the structure's unless ``floors`` (:func:`layer_common.owned_floors`) puts
     every owned block below the column's surface: lidar ``heights``, else the live surface (task 297).
 
     A mapped bridge or tunnel does not take its columns out: the ground under a bridge is the
@@ -329,16 +112,16 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
     live, skipped = {}, Counter()
     water = set(vmap.water)
     probed = {}
-    warm_surface_probe(world, x0 - 1, z0 - 1, x1 + 1, z1 + 1)
+    lc.warm_surface_probe(world, x0 - 1, z0 - 1, x1 + 1, z1 + 1)
     for x in range(x0 - 1, x1 + 2):
         for z in range(z0 - 1, z1 + 2):
             probed[(x, z)] = surface_y(world, x, z)
             if probed[(x, z)] and (is_water(f'minecraft:{probed[(x, z)][1]}') or
                                    'waterlogged=true' in (world.block(x, probed[(x, z)][0], z) or '')):
                 water.add((x, z))
-    bank = _ring(water)
+    bank = lc.column_ring(water)
     # A mapped stream line with no water built keeps its bank, but not under a mapped bridge (#298).
-    stream_bank = _ring(vmap.water_line)
+    stream_bank = lc.column_ring(vmap.water_line)
     deck = _deck(vmap)
     steps = getattr(vmap, 'steps', {})
     for x in range(x0, x1 + 1):
@@ -365,7 +148,6 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
                 if details is not None:
                     details.append({'x': x, 'z': z, 'reason': reason})
     return live, skipped
-
 
 
 def buried_under(q, top, floors, heights) -> bool:
@@ -696,39 +478,6 @@ PIT_MAX_RADIUS = 2      # max Chebyshev dist from a pit cell to outside the comp
 PIT_RIM_REACH = 4       # how far to look for rim columns around a candidate
 
 
-def lidar_base_map(columns, maps=None) -> dict:
-    """Lidar HOW-HIGH Y for free columns via ``lidar_heightmap.Maps`` (#172 / #167).
-
-    Prefers bare-terrain ``terrain`` (DTM) so cars, planters and kiosks on the
-    DSM surface do not raise road or paving. Falls back to ``base`` when a
-    provider or live ``Maps`` has no ``terrain`` array. Footprint / roof
-    columns keep using ``base`` elsewhere; this helper only serves free ground.
-
-    Lookups load neighbouring cells when a column sits on a cell edge. Columns
-    whose Y is 0 (empty / missing) are omitted so callers can fall back to
-    the live surface when lidar is absent.
-
-    @param columns: iterable of ``(x, z)``
-    @param maps: optional ``Maps`` (tests / injected evidence); default is the
-        shared lidar reference
-    @returns: ``{(x, z): y}`` for columns with a positive lidar height
-    """
-    from lidar_heightmap import Maps
-    m = maps if maps is not None else Maps()
-    out = {}
-    for x, z in columns:
-        y = None
-        for field in ('terrain', 'base'):
-            try:
-                y = int(m.get(x, z, field))
-                break
-            except (LookupError, KeyError, IndexError, TypeError, ValueError):
-                continue
-        if y is not None and y > 0:
-            out[(x, z)] = y
-    return out
-
-
 def step_stairs(steps: dict, ys: dict) -> dict:
     """Stair block per steps column where the surface rises along the way (#294).
 
@@ -755,47 +504,18 @@ def step_stairs(steps: dict, ys: dict) -> dict:
     return out
 
 
-def support_y(block, x: int, top: int, z: int, floor: int | None = None) -> int | None:
-    """Highest y below ``top`` where solid ground starts (#296).
-
-    Ground is ``SUPPORT_RUN`` non-air blocks in a row, or a run that reaches ``floor``. A shorter
-    run over air is a stale remnant, not ground: a surface left floating when its support was
-    undone, or ghost ground with holes where a feature once stood. It must not stop the fill.
-
-    A surface at the probe floor has nothing readable below it: the probe never reads ``floor`` or
-    lower, so the search range is empty and would report a float over solid stone. It rests on the
-    baseline there, and ``floor`` is its support. The cost is that a genuine float at that lowest
-    level is not detected. Only a call without ``floor`` gets this: a caller passing its own floor,
-    such as the journal audit, still sees a lone top block as unsupported.
-
-    @param block: ``callable(x, y, z) -> state | None``
-    @param top: the surface y; the search starts one below it
-    @param floor: highest y not read (``surface_y`` reads no deeper than ``floor + 1``); None means the
-      probe floor, :func:`surface_probe.probe_floor`
-    @returns: y of the support's top block, or None when nothing holds the column up
-    """
-    if floor is None:
-        floor = probe_floor()
-        if top - 1 <= floor:
-            return floor
-    for y in range(top - 1, floor, -1):
-        if all(not is_air(block(x, y - i, z)) for i in range(SUPPORT_RUN) if y - i > floor):
-            return y
-    return None
-
-
 def hollow_ys(block, x: int, z: int, base: int | None, owned_floor: int | None = None,
               floor: int | None = None) -> list:
     """Air positions under a column's crust, down to the baseline floor (task 298).
 
-    :func:`support_y` stops at the first solid run under the surface, so a crust of solid blocks
+    :func:`layer_common.support_y` stops at the first solid run under the surface, so a crust of solid blocks
     over air (ghost stone left floating when a stone ring was undone) reads as ground. Every air
     block below that run, down to ``floor``, is a hidden cavity: nothing holds it, and a player
     can fall into it where the crust is missing. Solid blocks are never listed, so the crust and
     whatever lies under the cavity are kept.
 
     @param block: ``callable(x, y, z) -> state | None``
-    @param base: y of the support's top block (:func:`support_y`); None means there is none
+    @param base: y of the support's top block (:func:`layer_common.support_y`); None means there is none
     @param owned_floor: highest y a feature owns in the column (task 297); the feature answers for
       it and everything below
     @param floor: highest y not read; default :func:`surface_probe.probe_floor`
@@ -806,14 +526,14 @@ def hollow_ys(block, x: int, z: int, base: int | None, owned_floor: int | None =
     if floor is None:
         floor = probe_floor()
     low = floor if owned_floor is None else max(floor, owned_floor)
-    return [y for y in range(low + 1, base) if is_air(block(x, y, z))]
+    return [y for y in range(low + 1, base) if lc.is_air(block(x, y, z))]
 
 
 def floating_tops(cells: dict, block, tops: dict, floors=None) -> list:
     """Planned surfaces that would stand over air once the plan lands (#296).
 
     A column floats when nothing below holds it up, or when air is left between its surface and
-    the solid ground below (:func:`support_y`, found in the world as it is) once the plan is read
+    the solid ground below (:func:`layer_common.support_y`, found in the world as it is) once the plan is read
     over the world. Ground found in the plan itself does not count: planned dirt over an air
     pocket is not ground.
 
@@ -828,11 +548,11 @@ def floating_tops(cells: dict, block, tops: dict, floors=None) -> list:
         return cells.get((x, y, z)) or block(x, y, z)
     out = []
     for (x, z), gy in sorted(tops.items()):
-        base = support_y(block, x, gy, z)
+        base = lc.support_y(block, x, gy, z)
         if floors and (x, z) in floors:
             base = floors[(x, z)] if base is None else max(base, floors[(x, z)])
         low = probe_floor() if base is None else base
-        air = sum(1 for y in range(low + 1, gy) if is_air(state(x, y, z)))
+        air = sum(1 for y in range(low + 1, gy) if lc.is_air(state(x, y, z)))
         if base is None or air:
             out.append({'x': x, 'z': z, 'surface_y': gy, 'support_y': base, 'air': air})
     return out
@@ -847,10 +567,10 @@ def ground_heights(live: dict, lidar_ys: dict) -> dict:
     not applied on top of lidar — a wide wrong-baseline void still rises.
 
     When lidar height is missing (absent or 0), the live surface Y is kept.
-    Values come from :func:`lidar_base_map` (``terrain``, else ``base``).
+    Values come from :func:`layer_common.lidar_base_map` (``terrain``, else ``base``).
 
     @param live: ``{(x, z): (y, block)}`` free columns
-    @param lidar_ys: ``{(x, z): y}`` from :func:`lidar_base_map`
+    @param lidar_ys: ``{(x, z): y}`` from :func:`layer_common.lidar_base_map`
     @returns: height map; ``_from_lidar`` counts columns that used lidar height
     """
     out = {}
@@ -1011,565 +731,11 @@ def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:
                 continue
             ref = (edge + dx, q[1]) if axis == 'x' else (q[0], edge + dz)
             top = surface_y(world, *ref)
-            want = BLOCK_KIND.get(top[1]) if top else None
+            want = lc.BLOCK_KIND.get(top[1]) if top else None
             if want and want != kind[q]:
                 kind[q] = want
                 changed += 1
     return changed
-
-
-def rough_grass_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
-    """``{column: palette}`` for open-grass columns gated by OSM tag and ``ground_texture`` (#319).
-
-    Gates: ``landuse=meadow|farmland``, ``natural=grassland|heath|scrub``, ``leisure=nature_reserve``.
-    Lawns (``landuse=grass``, ``leisure=pitch|golf_course|garden|playground``) are never included.
-    Meadow beats pasture when both cover a column. The column's land-use class must ship a matching
-    ``ground_texture`` palette.
-
-    @param cell: ``(tx, tz)``
-    @param idx: ``OSMIndex``
-    @param classes: ``coverage.area_classes`` result when the caller already has it
-    @returns: only eligible columns; empty when no class enables ground texture
-    """
-    import land_use
-    from coverage import area_classes, scan_polygon
-    from osm_footprints import osm_tags
-
-    if classes is None:
-        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
-    enabled = {cid: land_use.ground_texture(cid) for cid in land_use.CLASSES}
-    if not any(enabled.values()):
-        return {}
-    bbox = cellmath.bounds(cell, MARGIN)
-    lawn: set = set()
-    pasture: set = set()
-    meadow: set = set()
-    for rings, props in getattr(idx, 'areas', ()) or ():
-        tags = osm_tags(props)
-        pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
-        if any(pair in LAWN_TAGS for pair in pairs):
-            lawn.update(scan_polygon(rings, bbox))
-            continue
-        for key, value in pairs:
-            palette = ROUGH_GRASS_TAGS.get((key, value))
-            if palette == 'meadow':
-                meadow.update(scan_polygon(rings, bbox))
-            elif palette == 'pasture':
-                pasture.update(scan_polygon(rings, bbox))
-    out = {}
-    for q, hit in classes.items():
-        if q in lawn:
-            continue
-        palettes = enabled.get(hit[0])
-        if not palettes:
-            continue
-        name = 'meadow' if q in meadow and 'meadow' in palettes else (
-            'pasture' if q in pasture and 'pasture' in palettes else None)
-        if name is None and q in meadow and 'pasture' in palettes:
-            name = 'pasture'
-        if name is None and q in pasture and 'meadow' in palettes:
-            name = 'meadow'
-        if name is not None:
-            out[q] = name
-    return out
-
-
-def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> tuple[dict, set]:
-    """``({column: class id}, wood mask)`` for the woodland floor (#348).
-
-    Wood is ``natural=wood`` or ``landuse=forest``. A column is eligible when its land-use class
-    ships ``ground_texture.wood``, it is not a lawn, and a meadow or pasture tag does not already
-    claim it (#319 stays on those columns). ``natural=scrub`` stays on the pasture palette unless
-    that class's wood palette sets ``scrub`` true, in which case the floor takes the column.
-    The mask is every wood column (and opted-in scrub), including the scan margin, so the edge
-    test sees the polygon rather than the cell border. The grass rim itself is applied later
-    from the class ``edge`` reach.
-
-    @param cell: ``(tx, tz)``
-    @param idx: ``OSMIndex``
-    @param classes: ``coverage.area_classes`` result when the caller already has it
-    @returns: eligible columns (empty when no class ships a wood palette) and the wood mask
-    """
-    import land_use
-    from coverage import scan_polygon
-    from osm_footprints import osm_tags
-
-    if classes is None:
-        from coverage import area_classes
-        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
-    wood_rules = {}
-    for cid in land_use.CLASSES:
-        texture = land_use.ground_texture(cid) or {}
-        rule = texture.get('wood') if isinstance(texture, dict) else None
-        if isinstance(rule, dict):
-            wood_rules[cid] = rule
-    if not wood_rules:
-        return {}, set()
-    reach = max(int(rule['edge']) for rule in wood_rules.values())
-    bbox = cellmath.bounds(cell, max(MARGIN, reach))
-    lawn: set = set()
-    claimed: set = set()
-    wood: set = set()
-    scrub: set = set()
-    for rings, props in getattr(idx, 'areas', ()) or ():
-        tags = osm_tags(props)
-        pairs = [(k, tags[k]) for k in ('landuse', 'leisure', 'natural') if tags.get(k)]
-        is_lawn = any(pair in LAWN_TAGS for pair in pairs)
-        is_wood = any(pair in land_use.WOOD_TAGS for pair in pairs)
-        is_scrub = any(pair in land_use.SCRUB_TAGS for pair in pairs)
-        is_claimed = any(pair not in land_use.SCRUB_TAGS and pair in ROUGH_GRASS_TAGS for pair in pairs)
-        if not (is_lawn or is_wood or is_scrub or is_claimed):
-            continue
-        cols = set(scan_polygon(rings, bbox))
-        if is_lawn:
-            lawn.update(cols)
-            continue
-        if is_wood:
-            wood.update(cols)
-        if is_scrub:
-            scrub.update(cols)
-        if is_claimed:
-            claimed.update(cols)
-    wood -= lawn
-    scrub -= lawn
-    claimed -= lawn
-    mask = set(wood)
-    eligible = {}
-    for q in wood:
-        if q in claimed:
-            continue
-        hit = classes.get(q)
-        if hit and hit[0] in wood_rules:
-            if q in scrub and not wood_rules[hit[0]].get('scrub'):
-                continue
-            eligible[q] = hit[0]
-    for q in scrub:
-        if q in wood or q in claimed:
-            continue
-        hit = classes.get(q)
-        if not hit or hit[0] not in wood_rules or not wood_rules[hit[0]].get('scrub'):
-            continue
-        mask.add(q)
-        eligible[q] = hit[0]
-    return eligible, mask
-
-
-def _wood_floor_edge(q: tuple[int, int], mask: set, reach: int) -> bool:
-    """True when ``q`` is within ``reach`` columns (Chebyshev) of a column outside ``mask``.
-
-    @param q: column
-    @param mask: wood polygon columns, including those outside the cell
-    @param reach: grass rim in columns; 0 keeps no rim
-    @returns: whether the column keeps grass as polygon edge
-    """
-    if reach <= 0:
-        return False
-    x, z = q
-    for dx in range(-reach, reach + 1):
-        for dz in range(-reach, reach + 1):
-            if (x + dx, z + dz) not in mask:
-                return True
-    return False
-
-
-def aerial_texture_field(rgb: dict, columns, *, radius: int = TEXTURE_RADIUS) -> dict:
-    """Per-column aerial texture score and pale/brown flag from local brightness spread (#319).
-
-    Score is local brightness standard deviation over ``±radius``, scaled between the set's
-    10th and 90th percentiles into ``[0, 1]``. Pale or brown (brightness above the 85th percentile,
-    or red ≥ 0.98 × green) marks dry/bare ground.
-
-    @param rgb: ``{(x, z): (r, g, b)}`` in 0..1
-    @param columns: columns to score
-    @param radius: neighbourhood half-width in blocks
-    @returns: ``{(x, z): {'score': float, 'bare': bool}}``
-    """
-    cols = [q for q in columns if q in rgb]
-    if not cols:
-        return {}
-    bright = {q: sum(rgb[q][:3]) / 3 for q in cols}
-    spreads = {}
-    for x, z in cols:
-        samples = [bright[n] for dx in range(-radius, radius + 1) for dz in range(-radius, radius + 1)
-                   if (n := (x + dx, z + dz)) in bright]
-        if len(samples) < 2:
-            spreads[(x, z)] = 0.0
-            continue
-        mean = sum(samples) / len(samples)
-        spreads[(x, z)] = (sum((v - mean) ** 2 for v in samples) / len(samples)) ** 0.5
-    ordered = sorted(spreads.values())
-    lo = ordered[max(0, int(0.10 * (len(ordered) - 1)))]
-    hi = ordered[min(len(ordered) - 1, int(0.90 * (len(ordered) - 1)))]
-    span = hi - lo
-    bright_vals = sorted(bright.values())
-    pale_cut = bright_vals[min(len(bright_vals) - 1, int(0.85 * (len(bright_vals) - 1)))]
-    out = {}
-    for q in cols:
-        r, g, _b = rgb[q][:3]
-        score = 0.0 if span <= 1e-9 else max(0.0, min(1.0, (spreads[q] - lo) / span))
-        # Strict above the cut so a flat field (every column the same) is not all "bare".
-        out[q] = {'score': score, 'bare': bright[q] > pale_cut or r >= 0.98 * g}
-    return out
-
-
-def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dict, kind: dict,
-                        rgb: dict, palettes: dict, *, masked=(), owned=(), clear=(),
-                        barriers=()) -> dict:
-    """Place rough-grass tufts, tall grass, mottled dirt and meadow flowers (#319).
-
-    Driven by ``ground_texture`` palettes and aerial texture, not by ``planting`` (null when
-    ``frontage.inference`` is false). Flower kinds come from ``surface_probe.REFINE_PLANTS``. Skips
-    footprints, routes, tree/decor masks, neighbour-owned columns and barrier columns. Seeded
-    per cell and column so reruns match. Counts land in the ground report; plants sit in air
-    above grass (cleared on redo / foliage strip); dirt replaces the grass surface.
-
-    @param plan: ground plan under construction
-    @param world: live world reader
-    @param cell: ``(tx, tz)`` for seeds
-    @param ys: surface Y per column
-    @param kind: surface kind per column (only ``grass`` is eligible)
-    @param rgb: aerial colours
-    @param palettes: ``{column: 'pasture'|'meadow'}`` from :func:`rough_grass_columns`
-    @param masked: tree/decor mask positions
-    @param owned: neighbour-owned positions
-    @param clear: reserved route/opening columns
-    @param barriers: hedge/wall/fence columns
-    @returns: counts and item rows for the report
-    """
-    import land_use
-    import provenance as prov
-
-    report = {'tufts': 0, 'tall_grass': 0, 'bare': 0, 'flowers': 0, 'lawn_skipped': 0, 'items': []}
-    if not palettes:
-        return report
-    tx, tz = cell
-    protected = set(masked) | set(owned)
-    blocked = set(clear) | {(x, z) for x, _y, z in protected} | set(barriers)
-    candidates = {q: name for q, name in palettes.items()
-                  if q in ys and q in kind and kind[q] == 'grass' and q not in blocked}
-    report['lawn_skipped'] = sum(1 for q in ys if q in kind and kind[q] == 'grass'
-                                 and q not in palettes and q not in blocked)
-    texture = aerial_texture_field(rgb, candidates)
-    rules: dict = {}
-    for cid in ('park', 'rural', 'natural'):
-        for name, palette in (land_use.ground_texture(cid) or {}).items():
-            rules.setdefault(name, palette)
-
-    def block(p):
-        return plan.cells[p] if p in plan.cells else world.block(*p)
-
-    def air(p):
-        b = block(p)
-        return b is not None and block_id(b, policy='read') in AIRS
-
-    def is_grass_top(p):
-        return block_id(block(p), policy='read') == 'minecraft:grass_block' or block_id(block(p), policy='read') == 'grass_block'
-
-    taken = set()
-    for q in sorted(candidates):
-        name = candidates[q]
-        rule = rules.get(name)
-        # Wood floor is a different palette (#348); only open-grass rules place tufts here.
-        if not rule or 'bare' not in rule:
-            continue
-        x, z = q
-        gy = ys[q]
-        top = (x, gy, z)
-        if top in protected or not is_grass_top(top):
-            continue
-        field = texture.get(q) or {'score': 0.0, 'bare': False}
-        rnd = random.Random(f'ground_texture:{tx}:{tz}:{x}:{z}')
-        if rule['bare'] and field['bare']:
-            dirt = rnd.choice(BARE_DIRT)
-            plan.set(x, gy, z, dirt)
-            report['bare'] += 1
-            report['items'].append({
-                'kind': 'bare', 'position': list(top), 'block': dirt,
-                'palette': name, 'label': 'ground texture bare (#319)',
-                'provenance': prov.provenance_record(source='inference', confidence='low'),
-            })
-            taken.add(q)
-            continue
-        score = field['score']
-        tuft_lo, tuft_hi = rule['tufts']
-        tall_lo, tall_hi = rule['tall_grass']
-        plant = (x, gy + 1, z)
-        live_plant = block_id(block(plant), policy='read')
-        if not air(plant) and live_plant not in ('short_grass', 'tall_grass',
-                                                 'minecraft:short_grass', 'minecraft:tall_grass'):
-            continue
-        # Tall grass first (rarer), then tufts; share rises with aerial texture.
-        if rnd.random() < tall_lo + score * (tall_hi - tall_lo):
-            upper = (x, gy + 2, z)
-            upper_ok = air(upper) or block_id(block(upper), policy='read') in ('tall_grass', 'minecraft:tall_grass')
-            if air(plant) and upper_ok:
-                plan.set(*plant, 'tall_grass[half=lower]')
-                plan.set(*upper, 'tall_grass[half=upper]')
-                report['tall_grass'] += 1
-                report['items'].append({
-                    'kind': 'tall_grass', 'position': list(plant), 'block': 'tall_grass',
-                    'palette': name, 'label': 'ground texture tall grass (#319)',
-                    'provenance': prov.provenance_record(source='inference', confidence='low'),
-                })
-                taken.add(q)
-                continue
-        if rnd.random() < tuft_lo + score * (tuft_hi - tuft_lo):
-            plan.set(*plant, 'short_grass')
-            report['tufts'] += 1
-            report['items'].append({
-                'kind': 'tufts', 'position': list(plant), 'block': 'short_grass',
-                'palette': name, 'label': 'ground texture tuft (#319)',
-                'provenance': prov.provenance_record(source='inference', confidence='low'),
-            })
-            taken.add(q)
-
-    meadow_cols = [q for q, name in candidates.items() if name == 'meadow' and q not in taken]
-    flower_rule = (rules.get('meadow') or {}).get('flowers')
-    if flower_rule and meadow_cols:
-        target = round(flower_rule['share'] * len(meadow_cols))
-        kinds = flower_rule['kinds']
-        ranked = sorted(
-            meadow_cols,
-            key=lambda q: (random.Random(f'ground_texture:flower:{tx}:{tz}:{q[0]}:{q[1]}').random(), q))
-        for x, z in ranked:
-            if report['flowers'] >= target:
-                break
-            gy = ys[(x, z)]
-            plant = (x, gy + 1, z)
-            flower = random.Random(f'ground_texture:flower-kind:{tx}:{tz}:{x}:{z}').choice(kinds)
-            live = block_id(block(plant), policy='read')
-            if not (air(plant) or live in (flower, full(flower))):
-                continue
-            if not is_grass_top((x, gy, z)):
-                continue
-            plan.set(*plant, flower)
-            report['flowers'] += 1
-            report['items'].append({
-                'kind': 'flowers', 'position': list(plant), 'block': flower,
-                'palette': 'meadow', 'label': 'ground texture flower (#319)',
-                'provenance': prov.provenance_record(source='inference', confidence='low'),
-            })
-    return report
-
-
-def plan_woodland_floor(plan: Plan, world: World, cell: tuple[int, int], ys: dict, kind: dict,
-                        columns: dict, mask: set, *, masked=(), owned=(), clear=(),
-                        barriers=()) -> dict:
-    """Replace the grass surface with the woodland floor mix at lidar height (#348).
-
-    ``columns`` is ``{column: class id}`` from :func:`woodland_floor_columns` (the rim included).
-    Columns within the class ``edge`` reach of a column outside ``mask`` keep grass. Interior
-    columns take ``podzol``, ``coarse_dirt`` and ``moss_block`` at the configured shares; the
-    rest keep grass. Nothing is written at any other Y, and no plant is placed. Skips columns
-    that are not grass, plus footprints, routes, tree and decor masks, feature and neighbour
-    columns, and barriers. Seeded per cell and column so a rerun matches. Counts land in the
-    ground report.
-
-    @param plan: ground plan under construction; the grass surface is already set
-    @param world: live world reader
-    @param cell: ``(tx, tz)`` for seeds
-    @param ys: surface Y per column (lidar height); not modified
-    @param kind: surface kind per column (only ``grass`` is eligible)
-    @param columns: eligible ``{column: class id}``
-    @param mask: wood polygon columns used for the edge test
-    @param masked: tree/decor mask positions
-    @param owned: feature and neighbour owned positions
-    @param clear: reserved route, opening and footprint columns
-    @param barriers: hedge/wall/fence columns
-    @returns: per-block counts (``edge`` is the grass rim) and item rows for replaced blocks
-    """
-    import land_use
-    import provenance as prov
-
-    report = {'podzol': 0, 'coarse_dirt': 0, 'moss_block': 0, 'grass': 0,
-              'edge': 0, 'skipped': 0, 'items': []}
-    if not columns:
-        return report
-    tx, tz = cell
-    protected = set(masked) | set(owned)
-    blocked = set(clear) | {(x, z) for x, _y, z in protected} | set(barriers)
-    rules = {}
-
-    def block(p):
-        return plan.cells[p] if p in plan.cells else world.block(*p)
-
-    def is_grass_top(p):
-        name = block_id(block(p), policy='read')
-        return name in ('grass_block', 'minecraft:grass_block')
-
-    for q in sorted(columns):
-        if q not in ys or q not in kind or kind[q] != 'grass' or q not in mask or q in blocked:
-            report['skipped'] += 1
-            continue
-        x, z = q
-        gy = ys[q]
-        top = (x, gy, z)
-        if top in protected or not is_grass_top(top):
-            report['skipped'] += 1
-            continue
-        cid = columns[q]
-        if cid not in rules:
-            rules[cid] = (land_use.ground_texture(cid) or {}).get('wood')
-        rule = rules[cid]
-        if not rule:
-            report['skipped'] += 1
-            continue
-        if _wood_floor_edge(q, mask, int(rule['edge'])):
-            report['edge'] += 1
-            continue
-        roll = random.Random(f'woodland_floor:{tx}:{tz}:{x}:{z}').random()
-        cursor = 0.0
-        chosen = None
-        for name in land_use.WOOD_FLOOR_BLOCKS:
-            cursor += rule[name]
-            if roll < cursor:
-                chosen = name
-                break
-        if chosen is None:
-            report['grass'] += 1
-            continue
-        plan.set(x, gy, z, chosen)
-        report[chosen] += 1
-        report['items'].append({
-            'kind': chosen, 'position': [x, gy, z], 'block': chosen,
-            'palette': 'wood', 'label': 'woodland floor (#348)',
-            'provenance': prov.provenance_record(source='inference', confidence='low'),
-        })
-    return report
-
-
-def plan_planting(plan: Plan, world: World, guessed: set, ys: dict, plots: tuple, segments: dict,
-                  *, clear=(), masked=(), owned=(), barriers=()) -> list[dict]:
-    """Plan labelled planting on guessed grass only; return per-plot counts and provenance.
-
-    ``plots`` and ``segments`` are the existing garden-source geometry. Mask and ownership exclusions
-    apply to whole columns; retained shrubs and barriers also reserve their neighbours. Clearance
-    and placement air checks read the ground plan over the input world.
-    """
-    import land_use
-    import provenance as prov
-
-    owner, info, _street, idx = plots
-    fp = idx.cells()
-    protected = set(masked) | set(owned)
-    blocked = set(clear) | set(fp) | {(x, z) for x, _y, z in protected}
-    houses, boundaries, bed_edges, lawns = {}, {}, {}, {}
-    for q, i in fp.items():
-        houses.setdefault(i, set()).add(q)
-    for (i, role), cols in segments.items():
-        boundaries.setdefault(i, set()).update(cols)
-        if role in ('front', 'side_front', 'side_back'):
-            bed_edges.setdefault(i, set()).update(cols)
-    for q in sorted(ys):
-        if q in owner:
-            lawns.setdefault(owner[q], [])
-            if q in guessed and plan.cells.get((q[0], ys[q], q[1])) == full('grass_block'):
-                lawns[owner[q]].append(q)
-
-    def block(p):
-        return plan.cells[p] if p in plan.cells else world.block(*p)
-
-    # Retained leaves and barriers also need a column's gap, including content just outside
-    # this cell. Read only protected positions near candidate lawn, after planned clearing.
-    nearby = {(x + a, z + b) for lawn in lawns.values() for x, z in lawn
-              for a in (-1, 0, 1) for b in (-1, 0, 1)}
-    retained_barriers = set()
-    for p in protected:
-        x, _y, z = p
-        if (x, z) in nearby:
-            name = block_id(block(p), policy='read')
-            if name.endswith(('_leaves', '_wall', '_fence', '_fence_gate', '_planks', '_shelf')) or name == full('iron_bars'):
-                retained_barriers.add((x, z))
-    barrier_gap = {(x + a, z + b) for x, z in set(barriers) | retained_barriers
-                   for a in (-1, 0, 1) for b in (-1, 0, 1)}
-
-    def distance(q, cols):
-        return min(((q[0] - x) ** 2 + (q[1] - z) ** 2 for x, z in cols), default=math.inf)
-
-    def air(p):
-        b = block(p)
-        return b is not None and block_id(b, policy='read') in AIRS
-
-    def edge_distance(q, i):
-        return min(distance(q, houses.get(i, ())), distance(q, boundaries.get(i, ())))
-
-    shrub_gap = set()
-    report = []
-    for i, lawn in sorted(lawns.items()):
-        meta = info[i]
-        lu = meta.get('land_use') or 'unknown'
-        cls = lu.get('class', 'unknown') if isinstance(lu, dict) else lu
-        row = {'plot': i, 'street': meta.get('street', ''), 'number': meta.get('number', ''),
-               'land_use': cls, 'guessed_lawn': len(lawn), 'shrubs': 0, 'flowers': 0, 'cover': 0, 'items': []}
-        report.append(row)
-        rule = land_use.planting_rule(cls, 'shrubs')
-        target = len(lawn) // rule['per_columns'] if rule is not None else 0
-        candidates = sorted((q for q in lawn if edge_distance(q, i) <= SHRUB_EDGE_REACH_SQ),
-                            key=lambda q: (distance(q, houses.get(i, ())),
-                                           distance(q, boundaries.get(i, ())), q))
-        for x, z in candidates:
-            if row['shrubs'] >= target:
-                break
-            if (x, z) in blocked or (x, z) in barrier_gap or (x, z) in shrub_gap:
-                continue
-            height = 2 if (row['shrubs'] + 1) % 3 == 0 else 1
-            positions = [(x, ys[(x, z)] + dy, z) for dy in range(1, height + 1)]
-            if not all(air(p) for p in positions):
-                continue
-            for p in positions:
-                plan.set(*p, DEFAULT_LEAVES)
-            row['shrubs'] += 1
-            row['items'].append({'kind': 'shrubs', 'position': list(positions[0]), 'height': height,
-                                 'label': 'shrub inference (#265)',
-                                 'provenance': prov.provenance_record(source='inference', confidence='low')})
-            shrub_gap.update((x + a, z + b) for a in (-1, 0, 1) for b in (-1, 0, 1))
-        rule = land_use.planting_rule(cls, 'flowers')
-        if rule is not None:
-            target = round(rule['share'] * len(lawn))
-            flower = random.Random(f'flower-kind:{i}').choice(rule['kinds'])
-            shrub_columns = {(item['position'][0], item['position'][2]) for item in row['items']}
-            candidates = []
-            for x, z in lawn:                              # already sorted by (x,z)
-                q = (x, z)
-                if q in blocked or q in shrub_columns:
-                    continue
-                if min(distance(q, houses.get(i, ())), distance(q, bed_edges.get(i, ()))) > 4:
-                    continue
-                p = (x, ys[q] + 1, z)
-                if air(p) or block_id(block(p), policy='read') == full(flower):  # retain the same inferred flower on rerun
-                    candidates.append(q)
-            candidates.sort(key=lambda q: (random.Random(f'flower:{i}:{q[0]}:{q[1]}').random(), q))
-            for x, z in candidates[:target]:
-                p = (x, ys[(x, z)] + 1, z)
-                plan.set(*p, flower)
-                row['flowers'] += 1
-                row['items'].append({'kind': 'flowers', 'position': list(p), 'block': flower,
-                                     'label': 'flower inference (#266)',
-                                     'provenance': prov.provenance_record(source='inference', confidence='low')})
-        rule = land_use.planting_rule(cls, 'cover')
-        if rule is None:
-            continue
-        kinds = [full(k) for k in rule['kinds']]
-        target = round(rule['share'] * len(lawn))
-        shrub_columns = {(item['position'][0], item['position'][2]) for item in row['items']}
-        candidates = []
-        for x, z in lawn:
-            q = (x, z)
-            if q in blocked or q in shrub_columns or edge_distance(q, i) > COVER_EDGE_REACH_SQ:
-                continue
-            p = (x, ys[q] + 1, z)
-            if air(p) or block_id(block(p), policy='read') in kinds:  # retain the same inferred cover on rerun
-                candidates.append(q)
-        candidates.sort(key=lambda q: (random.Random(f'cover:{i}:{q[0]}:{q[1]}').random(), q))
-        for x, z in candidates[:target]:
-            p = (x, ys[(x, z)] + 1, z)
-            kind = random.Random(f'cover-kind:{i}:{x}:{z}').choice(rule['kinds'])
-            plan.set(*p, full(kind))
-            row['cover'] += 1
-            row['items'].append({'kind': 'cover', 'position': list(p), 'block': kind,
-                                 'label': 'cover inference (#339)',
-                                 'provenance': prov.provenance_record(source='inference', confidence='low')})
-    return report
 
 
 def settled_footprint(cell: tuple[int, int]) -> set:
@@ -1640,10 +806,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     x0, z0, x1, z1 = cellmath.bounds(cell, 2)
     idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
-    owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
-    floors = owned_floors(owned_states, owned_cols) if owned_states else {}
-    floors = {q: y for q, y in floors.items() if cell_contains(cell, *q)}
-    floor_heights = lidar_base_map(floors, ev.get('lidar_maps')) if floors else {}
+    owned_cols, ceilings = lc.owned_air_ceilings(neighbour_owned, owned_air)
+    floors = lc.owned_floors(owned_states, owned_cols) if owned_states else {}
+    floors = {q: y for q, y in floors.items() if lc.cell_contains(cell, *q)}
+    floor_heights = lc.lidar_base_map(floors, ev.get('lidar_maps')) if floors else {}
     excluded = []
     live, skipped = free_columns(cell, world, vmap, fp - set(settled_fp), owned_cols, excluded,
                                  floors=floors, heights=floor_heights)
@@ -1672,7 +838,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     how['car park bay line (perpendicular to the mapped aisle)'] = mark_car_park_bays(kind, vmap)   # #336
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
-    lidar_ys = lidar_base_map(live, ev.get('lidar_maps'))
+    lidar_ys = lc.lidar_base_map(live, ev.get('lidar_maps'))
     ys = ground_heights(live, lidar_ys)
     from_lidar = ys.pop('_from_lidar', 0)
     missing = {q: live[q] for q in live if q not in lidar_ys}
@@ -1725,7 +891,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         mat = MATERIAL[k]
         top = (x, gy, z)
         cover = world.block(x, gy + 1, z)
-        if mat == 'grass_block' and shades_grass(cover):   # #242: grass dies under an opaque block
+        if mat == 'grass_block' and lc.shades_grass(cover):   # #242: grass dies under an opaque block
             mat = 'dirt'
             stats['dirt_under_opaque'] += 1
         if q in stairs:
@@ -1737,14 +903,14 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
             stats['top'] += 1
         # Solid under the new top, down to the ground that holds the column up, not just down to the
         # live top: a live top can itself float over air (#296).
-        base = support_y(world.block, x, gy, z)
+        base = lc.support_y(world.block, x, gy, z)
         low = old if base is None else base
         if q in buried:                                   # a buried feature block: fill from above it (#297)
             low = max(low, buried[q])
         for y in range(low + 1, gy):
             pos = (x, y, z)
             b = world.block(x, y, z)
-            if pos in neighbour_owned or (y > old and not is_air(b)):
+            if pos in neighbour_owned or (y > old and not lc.is_air(b)):
                 continue
             if pos in masked:
                 conflicts.append((pos, RAISE_FILL, masked[pos]))
@@ -1763,10 +929,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 plan.set(x, y, z, RAISE_FILL)
                 stats['cavity_filled'] += 1
                 cavity_cols.add(q)
-        for y in range(gy + 1, SCAN_TOP + 1):             # above the surface: clear (§10)
+        for y in range(gy + 1, lc.SCAN_TOP + 1):             # above the surface: clear (§10)
             pos = (x, y, z)
             b = world.block(x, y, z)
-            if block_id(b, policy='read') in AIRS:
+            if block_id(b, policy='read') in lc.AIRS:
                 continue
             if is_marker_wool(b):          # hazard-tape ring stays
                 retained.append({'position': list(pos), 'reason': 'registry marker'})
@@ -1779,7 +945,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 stats['kept_masked'] += 1
                 retained.append({'position': list(pos), 'reason': 'tree/decor mask'})
                 continue
-            if block_id(b, policy='read') in STEM_OR_FLOWER and y == gy + 1 and mat == 'grass_block':
+            if block_id(b, policy='read') in lc.STEM_OR_FLOWER and y == gy + 1 and mat == 'grass_block':
                 retained.append({'position': list(pos), 'reason': 'plant on lawn'})
                 continue                                  # a flower or grass stem may stand on lawn
             plan.set(x, y, z, 'air')
@@ -1791,7 +957,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     # soft_grass survivors can include low-priority mapped surfaces; planting must exclude them.
     clear_cols = gs.reserved_route(frontages) | gs.reserved_openings(frontages)
     barriers = vmap.hedge | vmap.wall | vmap.fence
-    stats['planting'] = plan_planting(
+    stats['planting'] = gd.plan_planting(
         plan, world, guessed.difference(vmap.kind), ys, plots, segments,
         clear=clear_cols, masked=masked, owned=neighbour_owned, barriers=barriers)
     stats['shrubs'] = sum(row['shrubs'] for row in stats['planting'])
@@ -1806,7 +972,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         if classes is None:
             from coverage import area_classes
             classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
-        texture_palettes = rough_grass_columns(cell, idx, classes)
+        texture_palettes = gd.rough_grass_columns(cell, idx, classes)
     if 'woodland_floor' in ev:
         floor_columns, floor_mask = ev['woodland_floor']
     elif not getattr(idx, 'areas', None):
@@ -1815,19 +981,19 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
         if classes is None:
             from coverage import area_classes
             classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
-        floor_columns, floor_mask = woodland_floor_columns(cell, idx, classes)
+        floor_columns, floor_mask = gd.woodland_floor_columns(cell, idx, classes)
     # Opted-in scrub leaves the pasture palette; meadow, pasture and lawn columns are not in
     # floor_columns, so their #319 placement is unchanged.
     if floor_columns:
         texture_palettes = {q: name for q, name in texture_palettes.items() if q not in floor_columns}
-    stats['ground_texture'] = plan_ground_texture(
+    stats['ground_texture'] = gd.plan_ground_texture(
         plan, world, cell, ys, kind, rgb, texture_palettes,
         masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
     stats['texture_tufts'] = stats['ground_texture']['tufts']
     stats['texture_tall_grass'] = stats['ground_texture']['tall_grass']
     stats['texture_bare'] = stats['ground_texture']['bare']
     stats['texture_flowers'] = stats['ground_texture']['flowers']
-    stats['woodland_floor'] = plan_woodland_floor(
+    stats['woodland_floor'] = gd.plan_woodland_floor(
         plan, world, cell, ys, kind, floor_columns, floor_mask,
         masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
     stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live},  # #296 guard
@@ -1874,9 +1040,9 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     name = plan_name(cell, 'ground')
     plan = Plan(f'{name}-dry', input_cells=[cell])
     world = _fresh_world()
-    masked = load_masked_positions()
-    states = neighbour_owned_states(cell, ignored_builds(cell))
-    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in AIRS}
+    masked = lc.load_masked_positions()
+    states = lc.neighbour_owned_states(cell, lc.ignored_builds(cell))
+    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in lc.AIRS}
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                 settled_fp=settled_footprint(cell), owned_states=states)
     from layer_reports import artifact_path, write_report
@@ -1906,7 +1072,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  woodland floor: podzol {floor["podzol"]}, coarse dirt {floor["coarse_dirt"]}, '
           f'moss {floor["moss_block"]}, grass kept {floor["grass"]}, edge {floor["edge"]} '
           '(#348; see woodland_floor report)')
-    overlaps = mask_plan_overlaps(plan.cells)
+    overlaps = lc.mask_plan_overlaps(plan.cells)
     print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}  '
           f'planned on a mask: {len(overlaps)}')
     for pos, want, why in conflicts[:10]:
@@ -1984,10 +1150,10 @@ def apply_cell(cell: tuple[int, int]) -> int:
     require_ready([cell], 'ground', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name, input_cells=[cell])
     world = _fresh_world(strict=True)
-    masked = load_masked_positions()
-    ignored = ignored_builds(cell)
-    states = neighbour_owned_states(cell, ignored)
-    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in AIRS}
+    masked = lc.load_masked_positions()
+    ignored = lc.ignored_builds(cell)
+    states = lc.neighbour_owned_states(cell, ignored)
+    owned, air = set(states), {p for p, b in states.items() if block_id(b, policy='read') in lc.AIRS}
     with timed_stage('layer planning (includes surface warm-up)'):
         stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                     settled_fp=settled_footprint(cell), owned_states=states)
@@ -1998,7 +1164,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     stats.pop('retained_positions', None)
     floating = stats.pop('floating_columns', [])
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
-    overlaps = mask_plan_overlaps(plan.cells)
+    overlaps = lc.mask_plan_overlaps(plan.cells)
     if conflicts or overlaps:
         print(f'REFUSED: {len(conflicts) + len(overlaps)} mask conflict(s); undo the masks first (§3, §10)')
         return 1
