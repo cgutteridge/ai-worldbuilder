@@ -140,35 +140,39 @@ def outside_stairs_reshaped(cells: dict[tuple[int, int, int], str], outside) -> 
 
     A stair placed beside an earlier build's stair retargets that stair's shape. The plan cannot
     fix it (the stair is not the plan's to write); this reports it so the owner can see which
-    earlier stairs will change.
+    earlier stairs will change. Only world stairs beside a stair the plan writes are examined
+    (a plan block that replaces a stair beside a world stair is not), and a world stair that was
+    already out of step with its neighbours is reported as changing even though the plan is not
+    the cause. Each world cell is read once.
 
     @param cells: ``{(x, y, z): block state}`` the plan will write
     @param outside: ``outside(x, y, z)`` returning the world's block state string or ``None``
     @returns: list of ``{pos, facing, now, then}`` for each world stair whose shape would change
     """
     plan_stairs = {pos: p for pos, s in cells.items() if (p := _stair_facing_half(s)) is not None}
-    seen: dict[tuple[int, int, int], tuple[str, str, str]] = {}
-    for (x, y, z) in plan_stairs:
-        for dx, dz in ROOF_DELTA.values():
-            pos = (x + dx, y, z + dz)
-            if pos in cells or pos in seen:
-                continue
-            parsed = _stair_facing_half(outside(*pos) or '')
-            if parsed is not None:
-                seen[pos] = parsed
+    memo: dict[tuple[int, int, int], tuple[str, str, str] | None] = {}
+
+    def world(pos):
+        if pos not in memo:
+            state = outside(*pos)
+            memo[pos] = _stair_facing_half(state) if state else None
+        return memo[pos]
+
+    candidates = {(x + dx, y, z + dz) for (x, y, z) in plan_stairs for dx, dz in ROOF_DELTA.values()} - set(cells)
     out = []
-    for (x, y, z), (facing, half, now) in seen.items():
+    for pos in sorted(candidates):
+        parsed = world(pos)
+        if parsed is None:
+            continue
+        facing, half, now = parsed
         adjacent: dict[str, tuple[str, str] | None] = {}
         for face, (dx, dz) in ROOF_DELTA.items():
-            pos = (x + dx, y, z + dz)
-            n = plan_stairs.get(pos) if pos in cells else seen.get(pos)
-            if n is None and pos not in cells and pos not in seen:
-                parsed = _stair_facing_half(outside(*pos) or '')
-                n = parsed
-            adjacent[face] = None if n is None else (n[0], n[1])
+            n = (pos[0] + dx, pos[1], pos[2] + dz)
+            neighbour = plan_stairs.get(n) if n in cells else world(n)
+            adjacent[face] = None if neighbour is None else (neighbour[0], neighbour[1])
         then = stair_shape_from_neighbours(facing, half, adjacent)
         if then != now:
-            out.append({'pos': (x, y, z), 'facing': facing, 'now': now, 'then': then})
+            out.append({'pos': pos, 'facing': facing, 'now': now, 'then': then})
     return out
 
 

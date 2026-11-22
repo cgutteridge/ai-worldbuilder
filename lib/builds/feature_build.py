@@ -3105,6 +3105,14 @@ class Build:
         guard_door_frames(self.p, self.live.block)
         self.p.keep = set(self.keep)
         self._preserve_real_owners()
+        # Last word on stair shapes: later steps (pv rows, entrance covers, the street face, the
+        # real-owner prune) may have added or removed stairs, so shape them all once more (#415).
+        for (x, y, z), state in align_stair_shapes(
+                self.p.cells, self.live.block, getattr(self.live, 'prefetch', None)).items():
+            if self.p.cells.get((x, y, z)) != state:
+                self.set(x, y, z, state)
+        for line in stair_effect_lines(self.p.cells, self.live.block):
+            print(line)
         self.p.signs = [row for row in self.p.signs if '_wall_sign[' in self.p.cells.get(row[0], '')]
         for line in self._zone_pad_lines:
             print(line)
@@ -3454,8 +3462,6 @@ class Build:
                 self.p.cells, self.live.block, getattr(self.live, 'prefetch', None)).items():
             if self.p.cells.get((x, y, z)) != state:
                 self.set(x, y, z, state)
-        for line in stair_effect_lines(self.p.cells, self.live.block):
-            print(line)
 
 
 def build(

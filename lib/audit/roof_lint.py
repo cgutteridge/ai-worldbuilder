@@ -19,7 +19,8 @@ write that same shape into the state; otherwise joins change after apply (#169).
   python3 scripts/roof_lint.py --world <world> --live <build> [<build> ...]   # also read the live world
 
 ``--live`` flushes and reads the open world around each recorded plan's stairs and reports
-(a) live stairs whose shape disagrees with the neighbour rule on the live neighbours, and
+(a) live stairs beside the plan's stairs whose shape disagrees with the neighbour rule on the live
+neighbours (judged only where all four neighbours were read), and
 (b) planned stairs whose live shape differs from the plan (or that are no longer stairs).
 The apply readback ignores stair ``shape`` because the game rewrites it, so this is the check
 that the world shows the shapes that were designed.
@@ -94,12 +95,16 @@ def stair_shape_mismatches(cells: dict) -> list[dict]:
     return out
 
 
-def live_stair_cells(planned: dict, block, margin: int = 1) -> dict:
+def live_stair_cells(planned: dict, block, margin: int = 2, prefetch=None) -> dict:
     """Live stair states in the box around a plan's stairs.
+
+    The margin must be at least 2: a stair next to a planned stair is judged by its own four
+    neighbours, which therefore have to lie inside the box (see :func:`live_rule_mismatches`).
 
     @param planned: ``{(x, y, z): state}`` recorded plan
     @param block: ``block(x, y, z)`` reader returning a state string or ``None``
     @param margin: cells of margin around the planned stairs (catches neighbouring stairs)
+    @param prefetch: optional ``prefetch(positions)`` that warms ``block`` for the whole box
     @returns: ``{(x, y, z): state}`` of the stairs found
     """
     spots = [pos for pos, s in planned.items() if _stair_facing_half(s) is not None]
@@ -107,14 +112,32 @@ def live_stair_cells(planned: dict, block, margin: int = 1) -> dict:
         return {}
     lo = [min(p[i] for p in spots) - margin for i in range(3)]
     hi = [max(p[i] for p in spots) + margin for i in range(3)]
+    box = [(x, y, z) for x in range(lo[0], hi[0] + 1) for y in range(lo[1], hi[1] + 1)
+           for z in range(lo[2], hi[2] + 1)]
+    if prefetch is not None:
+        prefetch(box)
     live = {}
-    for x in range(lo[0], hi[0] + 1):
-        for y in range(lo[1], hi[1] + 1):
-            for z in range(lo[2], hi[2] + 1):
-                state = block(x, y, z)
-                if state and _stair_facing_half(state) is not None:
-                    live[x, y, z] = state
+    for x, y, z in box:
+        state = block(x, y, z)
+        if state and _stair_facing_half(state) is not None:
+            live[x, y, z] = state
     return live
+
+
+def live_rule_mismatches(planned: dict, live: dict) -> list[dict]:
+    """Live stairs beside the plan's stairs whose shape disagrees with the neighbour rule.
+
+    Only stairs within one cell (same height) of a planned stair are judged, because only they
+    have all four neighbours inside the box read by :func:`live_stair_cells`; a stair at the edge
+    would be judged against neighbours that were never read.
+
+    @param planned: recorded plan cells
+    @param live: ``live_stair_cells`` result
+    @returns: ``stair_shape_mismatches`` entries for the judged stairs
+    """
+    near = {(x + dx, y, z + dz) for (x, y, z), s in planned.items() if _stair_facing_half(s) is not None
+            for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
+    return [m for m in stair_shape_mismatches(live) if (m['x'], m['y'], m['z']) in near]
 
 
 def plan_vs_live_shapes(planned: dict, live: dict) -> list[dict]:
@@ -302,18 +325,19 @@ def main() -> int:
     if not names:
         ap.error('name a build or pass --all')
     bad = 0
-    block = None
+    block = prefetch = None
     if a.live:
         from site_kit import fresh_planning_world
-        block = fresh_planning_world(strict=True).block
+        world = fresh_planning_world(strict=True)
+        block, prefetch = world.block, getattr(world, 'prefetch', None)
     for n in names:
         cells = _load(n)
         jogs = ridge_jogs(cells)
         shapes = stair_shape_mismatches(cells)
         if block is not None:
-            live = live_stair_cells(cells, block)
+            live = live_stair_cells(cells, block, prefetch=prefetch)
             drift = plan_vs_live_shapes(cells, live)
-            seen = stair_shape_mismatches(live)
+            seen = live_rule_mismatches(cells, live)
             print(f'{n}: live read {len(live)} stair(s): {len(drift)} differ from the plan, '
                   f'{len(seen)} disagree with the neighbour rule')
             for m in drift[:8]:

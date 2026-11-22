@@ -295,3 +295,14 @@ class WorldNeighbourStairTest(unittest.TestCase):
         self.assertIn('1 stair(s) already in the world will change shape', lines[0])
         self.assertEqual(RG.stair_effect_lines({(5, 60, 9): self.stair('west')}, lambda *p: None), [])
 
+    def test_a_neighbouring_world_stair_can_keep_another_straight_and_each_cell_is_read_once(self):
+        plan = {(5, 60, 4): self.stair('west')}
+        reads = []
+        for world, expected in (({(5, 60, 5): self.stair('north')}, [(5, 60, 5)]),
+                                # a second world stair beside it, facing the same way, blocks the corner
+                                ({(5, 60, 5): self.stair('north'), (6, 60, 5): self.stair('north')}, [])):
+            reads.clear()
+            moved = RG.outside_stairs_reshaped(
+                plan, lambda x, y, z: reads.append((x, y, z)) or world.get((x, y, z)))
+            self.assertEqual([m['pos'] for m in moved], expected)
+            self.assertEqual(len(reads), len(set(reads)))
