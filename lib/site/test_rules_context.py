@@ -36,7 +36,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertNotIn('rules/geocraft-accuracy.md', paths)
 
     def test_terrace(self) -> None:
-        it = self._item('TERRACE Broadlands scripts/terrace.py broadlands_rd_14_24')
+        it = self._item('TERRACE Broadlands terrace-builds broadlands_rd_14_24')
         ctx, _ = detect_context(it)
         self.assertEqual(ctx, WorkContext.TERRACE)
         plan = plan_for_item(it)
