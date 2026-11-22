@@ -397,16 +397,6 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 parade snags S-108 (signs always default oak, no colour palette) and S-109 (sign text colour clashes with its background), issue I-059, and S-112 (fascia colours). The builder side of the sign options. Deliverable: in lib/builds/feature_build.py facade_plan, let a sign name its wood (sign and hanging-sign block families) and its text colour, plus a fascia colour option, and add a contrast rule: given the sign wood and the fascia, choose the text colour with enough contrast (a small colour table of block map colours; reuse the roof-material catalogue pattern of I-057 and block_store/ map colours where they exist) and refuse low-contrast pairs. No palette values here: where a district profile or the typology recipe (task 431) supplies colours, it feeds these options; defaults stay as today. Tied to 431 (the class recipe carries the palette) and 333; land this builder option first so the recipe has something to name. Non-builder: fixtures that the options validate, emit the chosen sign block and glow/ink colour, and that contrast refuses the owner's \"Tidal vape\" case (grey text on pale oak). No live apply. Acceptance: tests, docs in rules/feature-builds.md, and a spec example.\n"
-    },
-    {
-      "id": 438,
-      "title": "Status doing records claim app and working path; tracker edits commit on main immediately",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Policy + CLI for the system tracker:\n\n1. Any change under tasks/ is made on main and committed immediately (strengthen docs: issue-tracker, worldbuilder-tasks skill, ADR 005 note if needed). Workers still never edit the tracker.\n\n2. node scripts/tasks.mjs status ID doing insists on --app cursor|claude|codex and --working-in PATH, and writes claimedBy + workingIn onto the task in tasks/index.json. No silent claim. Builder runner options (--tool/--model/budget) stay as today.\n\n3. status ID todo clears claimedBy and workingIn. --reason stays required. Optional --branch NAME: when work was left half-done, note that branch in the cancel notes.\n\nTests: refuse doing without app/path; write and clear fields; branch note on cancel; existing builder-gate tests updated with claim flags.\n\nCheck: status doing without --app/--working-in exits 2 with no write; with flags, show prints claimedBy and workingIn; todo clears them; docs say main+immediate commit."
     }
   ]
 }
