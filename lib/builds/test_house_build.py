@@ -139,7 +139,7 @@ class RoofGeometryTest(unittest.TestCase):
         return [{(x, z) for x in range(lo, hi) for z in range(8)}
                 for lo, hi in ((0, 6), (6, 12))]
 
-    def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None):
+    def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None, fit=None):
         from site_kit import Plan
         parts = parts or self.footprints(kind)
         labels = [str(i) for i in range(len(parts))]
@@ -155,6 +155,8 @@ class RoofGeometryTest(unittest.TestCase):
         b.spec = {'roofs': dict.fromkeys(labels, material)}
         if pitch is not None:
             b.spec['roof_pitch'] = dict.fromkeys(labels, pitch)
+        if fit is not None:
+            b.spec['roof_fit'] = dict.fromkeys(labels, fit)
         b.p = Plan('synthetic_roof')
         b.roof()
         return b.p
@@ -219,6 +221,53 @@ class RoofGeometryTest(unittest.TestCase):
                             self.assertTrue('_stairs[' in state or 'brick_slab[type=bottom' in state, state)
         self.assertLessEqual(refused['rotated'], refused['grid'])
         self.assertGreater(rotated_used, 40)     # the rotated heights are really used, not always the fallback
+
+    def test_octant_fit_option_builds_a_clean_rectangular_roof(self):
+        """#415: roof_fit octant fits blocks to a half-block-cell design and keeps eave, lint and chimney."""
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        from test_roof_geometry import rotated_rect
+        for degrees in (0, 20, 35, 55):
+            with self.subTest(degrees=degrees):
+                cells = rotated_rect(14, 8, degrees)
+                with redirect_stdout(io.StringIO()) as out:
+                    p = self.plan(parts=[cells], pitch=0.75, mode='each', fit='octant')
+                self.assertIn('roof_fit octant: rectangle at', out.getvalue())
+                self.assertEqual(ridge_jogs(p.cells), [])
+                self.assertEqual(stair_shape_mismatches(p.cells), [])
+                H.guard_roof_jogs(p)
+                self.assertEqual(sum('flower_pot' in s for s in p.cells.values()), 1)
+                for x, z in {(x, z) for (x, y, z) in p.cells if (x, z) not in cells and y >= 36
+                             and p.cells[x, y, z] != 'minecraft:air'}:
+                    column = {y for (qx, y, qz) in p.cells if (qx, qz) == (x, z) and y >= 36}
+                    self.assertEqual(column, {36})       # the eave ring is one slab or stair, nothing under it
+                self.assertTrue(any('_stairs[' in s for s in p.cells.values()))
+
+    def test_octant_fit_falls_back_to_columns_for_an_l_shape(self):
+        ell = {(x, z) for x in range(10) for z in range(10) if x < 5 or z < 5}
+        with redirect_stdout(io.StringIO()) as out:
+            fitted = self.plan(parts=[ell], pitch=0.75, mode='each', fit='octant')
+        plain = self.plan(parts=[ell], pitch=0.75, mode='each')
+        self.assertIn('not close to a rectangle; using columns', out.getvalue())
+        self.assertEqual(fitted.cells, plain.cells)
+
+    def test_roof_fit_spec_is_validated(self):
+        base = {'name': 'demo', 'ways': {'1': 'A'}, 'roofs': {'A': 'brick'}, 'roof_pitch': {'A': 0.75},
+                'groups': [{'nos': ['A'], 'front': 'N', 'mode': 'each'}]}
+        def load(**changes):
+            spec = {**base, **changes}
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 's.json'
+                path.write_text(json.dumps(spec))
+                return H.load_spec(path)
+        self.assertEqual(load(roof_fit={'A': 'octant'})['roof_fit'], {'A': 'octant'})
+        for bad, text in (({'A': 'sphere'}, 'columns" or "octant'), ({'B': 'octant'}, 'needs a way and a roof'),
+                          (['A'], 'label-to-fit object')):
+            with self.subTest(fit=bad), self.assertRaisesRegex(SystemExit, text):
+                load(roof_fit=bad)
+        with self.assertRaisesRegex(SystemExit, 'above 0.5'):
+            load(roof_fit={'A': 'octant'}, roof_pitch={'A': 0.5})
+        with self.assertRaisesRegex(SystemExit, 'mode "each"'):
+            load(roof_fit={'A': 'octant'}, groups=[{'nos': ['A'], 'front': 'N', 'mode': 'group'}])
 
     def test_pitched_eave_edge_is_a_slab_or_stair_with_nothing_under_it(self):
         """#414: the overhanging eave ring starts at wall-top level as a slab (shallow) or stair (steep)."""

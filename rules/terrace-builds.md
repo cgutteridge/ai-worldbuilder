@@ -17,6 +17,15 @@ docstring):
   The same flat(ish)/pitched rule as features: rise/run up to 1 in 2 may be
   any full block or slab in `config/roof-materials.json`; steeper than that
   needs a triad (full block, slab and stairs). See `rules/feature-builds.md`.
+- `roof_fit` — optional `{label: "columns"|"octant"}` (default `columns`). `octant`
+  designs a pitched roof over a rectangular footprint as a solid volume of half-block
+  cells (each block is 2 x 2 x 2), with the surface a plane through the footprint's fitted
+  rectangle, then fits each block to the closest of air, full block, bottom or top slab and
+  bottom stair (four facings, five shapes) by cells matched. A stair's corner shape comes
+  from the same-height neighbour rule inside the fit, whatever the stair material, so
+  corners come out of the design. It needs `roof_pitch` above 0.5 and `mode: each`. A
+  footprint that is not close to a rectangle, or a fitted ridge that would jog, falls back
+  to `columns` with a printed note. The dry run prints how many half-block cells it missed.
 - `roof_pitch` — optional `{label: rise_per_run}`, finite numbers from 0 to 1.
   Missing labels default to 0.5. At or below 0.5 the existing half-block slab
   rings remain unchanged; above 0.5 the roof rises inward at the supplied ratio,

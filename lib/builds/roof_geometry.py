@@ -503,10 +503,11 @@ def chebyshev_depth(rs: set) -> dict[tuple[int, int], int]:
 
 
 ROTATED_MIN_FILL = 0.75     # footprint cells / fitted rectangle area below which no rectangle is fitted
+ROTATED_ALIGNED_FILL = 0.9    # fill an axis-aligned footprint needs to count as a rectangle (an L fills 0.75)
 ROTATED_MIN_ANGLE = 3       # degrees from a cardinal axis below which the footprint counts as square-on
 
 
-def fit_rotated_rectangle(own: set) -> tuple[int, float, float, float, float, float] | None:
+def fit_rotated_rectangle(own: set, min_angle: int = ROTATED_MIN_ANGLE) -> tuple[int, float, float, float, float, float] | None:
     """Minimum-area rectangle around footprint cell centres, when the footprint is a rotated rectangle.
 
     A house drawn square to an angled road rasterises to a staircase outline whose Chebyshev
@@ -516,6 +517,7 @@ def fit_rotated_rectangle(own: set) -> tuple[int, float, float, float, float, fl
     that do not fill a rectangle well (L shapes, groups), return ``None`` and keep the grid field.
 
     @param own: owned ``(x, z)`` columns of the roof
+    @param min_angle: degrees from a grid axis below which ``None`` is returned (0 accepts any angle)
     @returns: ``(angle_deg, u_min, u_max, v_min, v_max, fill)`` in the rotated frame
         (``u`` along ``(cos a, sin a)``, ``v`` across), or ``None``
     """
@@ -533,7 +535,9 @@ def fit_rotated_rectangle(own: set) -> tuple[int, float, float, float, float, fl
             best = (area, deg, min(us), max(us), min(vs), max(vs))
     area, deg, u0, u1, v0, v1 = best
     fill = len(own) / area
-    if fill < ROTATED_MIN_FILL or min(deg, 90 - deg) < ROTATED_MIN_ANGLE:
+    if fill < ROTATED_MIN_FILL or min(deg, 90 - deg) < min_angle:
+        return None
+    if min(deg, 90 - deg) < ROTATED_MIN_ANGLE and fill < ROTATED_ALIGNED_FILL:
         return None
     return deg, u0, u1, v0, v1, fill
 
