@@ -209,18 +209,7 @@
     
     
     
-    {
-      "id": 400,
-      "title": "Place names out of tool code",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T10. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T10' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: m\n- Scope:\n  - 1.7 except `site_views`, which is T19.\n  - One `plan_name(cell, layer)` with the prefix from world config; the area default, retired passes and the base Y (`range(37, …)`) also from world config.\n  - The structure namespace default must be neutral, without changing an existing world's namespace.\n  - Rename the crown list to type language, migrating the world file.\n  - Generic User-Agent and docstrings.\n  - Other touch points: `mask_undo.py:27`, `trees_layer.py:40,904`, `decision_record.py:9`, `restore_structure_backup.py:7-8,75`, `rules/handoff-layered-passes.md:63,238`, `rules/foliage.md:70`, about 32 test lines.\n- Check: `git grep -niE \"highfield|portswood|broadlands|southampton|susu\" lib scripts shims providers` returns only world-config readers. southampton-build keeps its plan names, structure namespace and base Y through its config (fixture).\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T3 (#393) because it both edit cell_features and world-provider config."
-    },
+    
     
     {
       "id": 402,
@@ -229,7 +218,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        400
+        
       ],
       "builderTask": false,
       "notes": "Housekeeping review ticket T12. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T12' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: m\n- Scope: 1.12 rows (a) and (b). Retarget the test patches of `neighbour_owned_states`, `load_masked_positions`, `owned_air_ceilings` and `ignored_builds`. Sequence against 318 and 360.\n- Check: golden ground plans for fixture cells are byte-identical. No other module imports helpers from `ground_layer`.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T10 (#400) because it moves plan_name, which the place-names ticket rewrites."
