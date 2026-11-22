@@ -215,16 +215,7 @@
       "builderTask": false,
       "notes": "GOAL. Remove the temporary support for the old task flag `requiresClaude`, now that tasks/index.json and tasks/done.json use `builderTask` (migrated in 9d42185, task #386).\n\nDO: (1) scripts/tasks.mjs: delete the `isBuilderTask` fallback to `task.requiresClaude`, make `isBuilderTask` read only `builderTask`, drop the `requiresClaude` validator line, and keep the `--requires-claude` rejection message for one more release (it points people at `--builder-task`). (2) scripts/pre_commit_checks.py: delete the legacy `requiresClaude` branch in `invalid_tracker_files`. (3) Update the tests that cover the fallback: remove \"reads a legacy requiresClaude flag only when builderTask is absent\" in scripts/tasks.test.mjs and the legacy-key case in scripts/test_pre_commit_checks.py; keep the rename-rejection test. (4) Check `grep -rn requiresClaude` outside tasks/done.json history text and the glossary _Avoid_ line finds nothing in scripts/ or lib/.\nACCEPTANCE: `node --test scripts/tasks.test.mjs` and `python3 scripts/run_tests.py` pass; a task with only the old key is rejected by the hook and ignored by check-run.\nWORKFLOW: task/* branch, ship-branch skill (merge pushes: confirm with the owner). builderTask false.\n"
     },
-    {
-      "id": 388,
-      "title": "Fill writer: batch fill calls or skip boxes already correct",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From the 2026-11-21 B35/West rebuild thread. A feature apply sends one fill call per box: B35 is about 30,700 planned positions but only ~7,600 change per run, yet ~2,270 fill calls go out; with no rate-limit retries the fill stage took ~125 s (about 55 ms per call), West (35,820 positions, 3,511 boxes) similar. Investigate: does McpWriter use block_fill_batch (the Minecraft tool exists); can boxes whose positions the journal-begin guard read already shows as correct be skipped. Measure before and after on a repeat apply of an unchanged plan (B35 w146985470 is a ready fixture: replanning it changes nothing). Acceptance: fewer fill calls on an unchanged or mostly-unchanged apply, readback still 0 mismatches, unit tests for the skip/batch choice. Related timing figures: rules/slow-commands.md."
-    },
+    
     {
       "id": 389,
       "title": "Find what triggers Minecraft rate-limit waits during applies",

@@ -3528,5 +3528,16 @@
       "builderTask": false,
       "notes": "Non-builder half of the typology trial, split from #257 on 2026-11-22 with the owner's agreement. Plan: docs/plans/vibe-at-scale.md sections 2 (tier B, typology) and 6.\n\nBuild a deterministic, rules-only generator (no AI model) that turns each building's vector-map footprint, lidar height and map tags (building, building:levels, roof:shape), plus the district vibe profile (#255) and a small per-district palette and roof-form choice, into minimal specs for the existing builders: house_build specs for house-like classes (terrace, semi-detached, detached) and minimal feature_build specs for other classes (for example a shop with flats above).\n\nScope limits:\n- Change neither house_build.py nor feature_build.py, and add no third builder. The output is spec JSON that the existing builders already accept. Because of this it does not wait for #407 or #408.\n- Pitched roofs use pitched_roof_states as it is today.\n- A building the rules cannot decide (missing tags, odd footprint, unknown class) is reported as needs-designer with a reason, not guessed.\n- Own module under lib/builds/ with a thin scripts/ CLI that takes a required --world, a set of map way ids or a bounding box, and an output directory (the trial writes into the world's site/builds/). Dry run by default; it writes specs only, never blocks.\n\nCheck: synthetic-fixture tests for a terrace row, a semi-detached pair and a shop parade assert the generated specs, and each generated spec loads and plans (dry run) in its target builder on a fixture; a needs-designer case is covered.\n\n\nClosed at 18d2747df85694e5c2513c7e40c5bf5e502bf1ea: Rules-only typology specs for house_build and feature_build. Reviewer APPROVE. Writes specs only, never places blocks.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 388,
+      "title": "Fill writer: batch fill calls or skip boxes already correct",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From the 2026-11-21 B35/West rebuild thread. A feature apply sends one fill call per box: B35 is about 30,700 planned positions but only ~7,600 change per run, yet ~2,270 fill calls go out; with no rate-limit retries the fill stage took ~125 s (about 55 ms per call), West (35,820 positions, 3,511 boxes) similar. Investigate: does McpWriter use block_fill_batch (the Minecraft tool exists); can boxes whose positions the journal-begin guard read already shows as correct be skipped. Measure before and after on a repeat apply of an unchanged plan (B35 w146985470 is a ready fixture: replanning it changes nothing). Acceptance: fewer fill calls on an unchanged or mostly-unchanged apply, readback still 0 mismatches, unit tests for the skip/batch choice. Related timing figures: rules/slow-commands.md.\n\nClosed at 951f50e8dadf6fb6955c7362ef29134f38dc53b7: Skips cells the begin snapshot already accepts. Recorded B35 seq 1718 would drop 2270 fill boxes to 1207 (23040 of 30698 already correct; writer was 126s). An unchanged plan sends 0. Readback still checks every cell. Not re-timed live.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
