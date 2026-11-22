@@ -24,7 +24,7 @@
     {
       "id": 257,
       "title": "Trial: rule-built typology buildings versus per-building specs (study locations selected)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [],
@@ -43,15 +43,7 @@
     
     
     
-    {
-      "id": 326,
-      "title": "River levels: real-lidar profile and in-game stepped-reach trial",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Split 2026-11-21: the sample-to-profile pure function already landed in #354. Spec validation, optional per-segment levels and water/bed/bank/clipping geometry are now fixture-only task #365. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task waits for that implementation and retains the real-world work.\n\nScope: sample real lidar along the Itchen reach; interpret the samples and select a stepped level profile using the existing water_level_profile function; prepare the real-place spec through the implemented per-segment interface. Choose and assess how level transitions should look in the actual reach. Run the representative dry run and authorized apply under the site lock, then inspect the reach across at least two cells. Store place evidence, specs and trial artifacts in the active world checkout.\n\nAcceptance: the reach follows the real terrain, with no stranded water, dry bed, artificial internal bank wall or broken join at the cell boundary; record the in-game result and owner verdict. If fixtures pass but the real transition is wrong, diagnose it and file/fix the resulting issue rather than treating offline completion as the trial verdict.\n\nbuilderTask true: real place evidence becomes a build spec, a representative build is run and the result is judged in game. Closing #365 only unblocks this trial. The ordinary stretch and model/effort rules still apply to any further schema/geometry change.\nOWNER DECISIONS (2026-11-22): (1) Accept the flat profile (one segment, level Y13) as the real answer; the trial verifies the per-segment clip join in game only, not stepped transitions. (2) REBUILD AUTHORIZED for Itchen cells 63,-45 and 64,-45 (replaces the old trial build in 63,-45, water Y12 -> Y13), and dismiss-clip-coverage on 64,-45 is approved in principle, but the owner has NOT yet given the recorded reason; get it before running dismiss-clip-coverage. Then prepare --apply both cells and apply under site_lock.py run, in-game check under the same lock. Dry-run results and specs: worlds/southampton-build/site/task-326-river-trial/TRIAL.md. Overlaps #352 (same readiness blockers); do them together.\n\n\nReturned to todo: Dry run done, owner decisions and authorisation recorded in notes; live build not run yet\n\n[tasks CLI] Status update recorded; subject to human review.\n\nLIVE TRIAL PARTLY DONE (2026-11-22, world commit 00fc4d4): 63,-45 rebuilt with the flat one-segment Y13 lidar profile (old trial build undone exactly, new build 8,063 blocks, 5 grass bank blocks read back as dirt under a Y14 concrete layer); in-game views clean. 64,-45 NOT built: blocked on aerial coverage 24.6% (needs owner local data) and 1 unaccounted feature plan, so the join to 64,-45 is unchecked. Details: worlds/southampton-build/site/task-326-river-trial/TRIAL.md. OWNER VERDICT PENDING. Overlaps #352.\n\n\nOWNER VERDICT (2026-11-22, chat): \"Both pass\" for the 63,-45 views. Remaining: build 64,-45 (needs owner aerial data and the unaccounted feature plan handled) and check the join; then close.\n"
-    , "builderTask": true},
+    
     
     
     
