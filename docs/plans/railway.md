@@ -163,8 +163,8 @@ None of these may be lost when the tickets are written. Each ticket should quote
 10. **Order at a crossing, bridge or tunnel:** the line is planned straight through the span, builds nothing in the
     gap, and records level, direction and tracks at each end of the gap. The crossing, bridge or tunnel is built
     afterwards, reads those records, and refuses ("not ready") until both abutting line features exist.
-11. **Trial D reuses the trial corridor.** It already has two OSM level crossings (one at about 6980,-4343:
-    `crossing:barrier=double_half`, `crossing:light=yes`, `crossing:bell=yes`, `crossing:activation=remote`,
+11. **Trial D reuses the trial corridor.** It already has one OSM level crossing (a node on each of its two tracks, about 4 blocks apart, near
+    6980,-4343, cell 54,-34: `crossing:barrier=double_half`, `crossing:light=yes`, `crossing:bell=yes`, `crossing:activation=remote`,
     description "Manually Controlled Barriers monitored with Closed-Circuit Television (MCB-CCTV)"), 19 rail
     switches, and two mapped rail bridges. A hillier stretch can be a later ticket.
 12. **Trial corridor removed.** The 14 backup tiles were loaded back and checked; the corridor cells keep ghost ground.
@@ -175,18 +175,20 @@ None of these may be lost when the tickets are written. Each ticket should quote
 
 ## Ticket plan
 
+Filed 2026-11-22 as #379 to #385 in `tasks/index.json`; the full text for each model is in its `notes`.
+
 `requiresClaude` follows `docs/agents/model-and-effort.md`: true only for build design from evidence, a
 representative build, or in-game judgement.
 
 | Ticket | requiresClaude | Depends on | Scope in one line |
 | --- | --- | --- | --- |
-| A. Railway evidence | false | none | Per-cell "has railway?" test; through line versus decor classification (decision 4); double-track pairing; points for level crossings (with barrier, light, bell tags), bridges, tunnels. Fixtures from the recorded GeoJSON and points. |
-| B. Line planner (pure function) | false | A | Snap, level profile, corridor, ballast, powered rail and torches, lidar planting (decisions 3 to 8); the 2048 box with cut and join records; gaps at crossings, bridges and tunnels with end records (decision 10); fails loudly. Synthetic fixtures. |
-| C. Line feature integration | false | B | Journal ownership of the footprint, covered-cell marking and the instant skips (decision 2), structure backup, undo, read-back and retry, cell trees and decor skipping the footprint. `MemoryBlocks` tests. |
-| X. Crossing feature: spec and builder | false | C | Spec schema for a crossing (and the shared join records), the "not ready" gate, building the road surface, rails and gates/lights from a spec. Proposed addition: decisions 9 and 10 need this mechanism before Claude can design a crossing. |
-| D. Real-stretch trial | **true** | C | Build the trial corridor with the production builder and judge it in game (ride a cart, list spots for humans). Notes decor sidings as next step. |
-| Y. First crossing feature | **true** | D, X | Claude designs the crossing at about 6980,-4343 from the OSM tags and Street View, builds it, and judges it in game. |
-| G. Bridge and tunnel decisions | false | none | Owner conversation; output is glossary, rules and an ADR (see the scope note). |
+| #379 A. Railway evidence | false | none | Per-cell "has railway?" test; through line versus decor classification (decision 4); double-track pairing; points for level crossings (with barrier, light, bell tags), bridges, tunnels. Fixtures from the recorded GeoJSON and points. |
+| #381 B. Line planner (pure function) | false | A | Snap, level profile, corridor, ballast, powered rail and torches, lidar planting (decisions 3 to 8); the 2048 box with cut and join records; gaps at crossings, bridges and tunnels with end records (decision 10); fails loudly. Synthetic fixtures. |
+| #382 C. Line feature integration | false | B | Journal ownership of the footprint, covered-cell marking and the instant skips (decision 2), structure backup, undo, read-back and retry, cell trees and decor skipping the footprint. `MemoryBlocks` tests. |
+| #383 X. Crossing feature: spec and builder | false | C | Spec schema for a crossing (and the shared join records), the "not ready" gate, building the road surface, rails and gates/lights from a spec. Proposed addition: decisions 9 and 10 need this mechanism before Claude can design a crossing. |
+| #384 D. Real-stretch trial | **true** | C | Build the trial corridor with the production builder and judge it in game (ride a cart, list spots for humans). Notes decor sidings as next step. |
+| #385 Y. First crossing feature | **true** | D, X | Claude designs the crossing at about 6980,-4343 from the OSM tags and Street View, builds it, and judges it in game. |
+| #380 G. Bridge and tunnel decisions | false | none | Owner conversation; output is glossary, rules and an ADR (see the scope note). |
 
 Not filed: decor sidings (decision 14); the bridge and tunnel evidence, planner, integration and trial tickets
 (decision 13).
