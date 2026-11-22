@@ -213,16 +213,7 @@
       "builderTask": false,
       "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
     },
-    {
-      "id": 420,
-      "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/420-prepare-default-pbf"},
+    
     {
       "id": 421,
       "title": "Make new-world-build's clip folder count in clip_coverage",

@@ -3872,5 +3872,16 @@
       "builderTask": false,
       "notes": "Policy + CLI for the system tracker:\n\n1. Any change under tasks/ is made on main and committed immediately (strengthen docs: issue-tracker, worldbuilder-tasks skill, ADR 005 note if needed). Workers still never edit the tracker.\n\n2. node scripts/tasks.mjs status ID doing insists on --app cursor|claude|codex and --working-in PATH, and writes claimedBy + workingIn onto the task in tasks/index.json. No silent claim. Builder runner options (--tool/--model/budget) stay as today.\n\n3. status ID todo clears claimedBy and workingIn. --reason stays required. Optional --branch NAME: when work was left half-done, note that branch in the cancel notes.\n\nTests: refuse doing without app/path; write and clear fields; branch note on cancel; existing builder-gate tests updated with claim flags.\n\nCheck: status doing without --app/--working-in exits 2 with no write; with flags, show prints claimedBy and workingIn; todo clears them; docs say main+immediate commit.\n\nClosed at 9e887c58925c2bf41ce3711842d508de0319c04d: Claim fields and immediate tracker-commit docs landed via ship_branch merge of task/438-claim-status-fields.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 420,
+      "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5\n\nClosed at 94a827a086c1f71ddceb07eb248ed90fe647837c: Prepare resolves PBF from vector_map provider.json; extractor uses --place prepared-{tx}-{tz}.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/420-prepare-default-pbf"}
   ]
 }
