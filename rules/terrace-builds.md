@@ -59,7 +59,7 @@ planting DECOR.
   a default for a street.
 - Find terrace ends first: `.venv/bin/python scripts/aerial_annot.py x0,z0,x1,z1 out.png`.
 - Plot angle: `python3 scripts/geo.py slope --bearing …` or `--points x0,z0,x1,z1`
-  (snaps via `terrace.snap_slope`). Frontage pitch: `geo.py party --bbox …`.
+  (snaps via `geo.snap_slope`). Frontage pitch: `geo.py party --bbox …`.
 - Pass every earlier build that touched the plots in `modifies`.
 
 If something looks wrong, fix the **spec** (or `house_build.py` if the bug is
@@ -68,9 +68,3 @@ shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.
 Verify: readback, `osm_footprints.py check`, walks door to first floor and
 door to back garden for every house, contact sheet (photo camera, front 3/4,
 rear, top).
-
-## `terrace.py` (kept, not an apply path)
-
-`scripts/terrace.py` remains for **`snap_slope`** and related geometry used by
-`scripts/geo.py` (plot bearings → even block stairs). It is not a live
-feature apply entry point; do not wire new house builds through it.

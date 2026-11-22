@@ -36,9 +36,41 @@ from script_env import ROOT  # noqa: E402
 from geodetic import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
 from osgb import load_offsets, to_mc, to_osgb  # noqa: E402
 from ref_manifest import mc_tiles_for_bbox  # noqa: E402
-from terrace import snap_slope  # noqa: E402
 from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402
 from surface_probe import PLANTS, short_id
+
+# |dx|:|dz| in {0, 1:4, 1:3, 1:2, 1:1} and the swapped mirrors, signs applied later.
+_FRIENDLY = ((0, 1), (1, 4), (1, 3), (1, 2), (1, 1), (2, 1), (3, 1), (4, 1), (1, 0))
+
+
+def snap_slope(dx: float, dz: float) -> tuple[int, int]:
+    """Snap a plot direction to an even block stair.
+
+    Allowed slopes are 0, 1:4, 1:3, 1:2, 1:1 and their mirrors (about 0, 14,
+    18, 27, 45, 63, 72, 76 and 90 degrees). Exact 15° steps are uneven on a
+    block grid, so they are not candidates.
+
+    @param dx: easting of the direction from the house toward the rear boundary
+    @param dz: Minecraft dz of that same direction (negative is north)
+    @returns: (sx, sz) in lowest terms, signs matching dx and dz
+    """
+    if dx == 0 and dz == 0:
+        raise ValueError('plot direction is zero')
+    ang = math.atan2(dx, dz)
+    best, best_d = (0, 1), 1e9
+    for a, b in _FRIENDLY:
+        sxs = (0,) if a == 0 else (a, -a)
+        szs = (0,) if b == 0 else (b, -b)
+        for sx in sxs:
+            for sz in szs:
+                if sx == 0 and sz == 0:
+                    continue
+                d = abs(math.atan2(sx, sz) - ang)
+                d = min(d, 2 * math.pi - d)
+                if d < best_d:
+                    best_d, best = d, (sx, sz)
+    return best
+
 
 SKIP_LIDAR_TOP = ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
 

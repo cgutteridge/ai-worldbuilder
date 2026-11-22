@@ -160,7 +160,7 @@ VIEWS = {
     'broadlands-28-30-street': ([7071, 30, -5531], [7078, 32, -5542]),
     'broadlands-28-30-front': ([7080, 31, -5532], [7078, 32, -5546]),
     'broadlands-28-30-top': ([7078, 55, -5552], [7078, 30, -5552]),
-    # Q-018 Broadlands Rd 26-36 terrace (terrace.py): photo camera, front 3/4, rear, top
+    # Q-018 Broadlands Rd 26-36 terrace: photo camera, front 3/4, rear, top
     'broadlands-26-36-street': ([7071, 29, -5531], [7099, 31, -5521]),
     'broadlands-26-36-front': ([7062, 34, -5527], [7078, 31, -5543]),
     'broadlands-26-36-front-e': ([7096, 33, -5524], [7078, 31, -5542]),

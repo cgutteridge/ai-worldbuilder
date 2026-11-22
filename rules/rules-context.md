@@ -27,7 +27,7 @@ only what the brief / task needs.
  GROUND        Layered passes: ground_layer, trees_layer, decor_layer; no new house shells.
  FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
  PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
- TERRACE       Broadlands-type row; scripts/terrace.py generator.
+ TERRACE       Broadlands-type row; house_build specs (rules/terrace-builds.md).
  ISSUE         Snag / issue work (`snag` skill; scripts/issues.py). Never blocks a cell.
 
 ------------------------------------------------------------------------

@@ -96,7 +96,7 @@ rule-file copy.
  Which pitch (one rule):
   - Victorian/Edwardian terraces and semis (Broadlands Rd type): slate at
     ~40°, built as 45° `deepslate_tile_stairs`, ridge parallel to the street.
-    Build them with `scripts/terrace.py` (rules/terrace-builds.md); do not
+    Build them with `house_build` (rules/terrace-builds.md); do not
     hand-roll roofs.
   - Genuinely shallow roofs (modern, ~22°): 1:2 slab courses, no stairs on
     the skin.
