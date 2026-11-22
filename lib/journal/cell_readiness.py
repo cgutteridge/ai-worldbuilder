@@ -17,6 +17,21 @@ POLICY_VERSION = 1
 CLI = 'python3 scripts/cell_registry.py --world <world>'
 
 
+def _aerial_coverage_blocker(facts: dict) -> str:
+    """User-facing aerial gap line with an uncovered column count when known.
+
+    @param facts: readiness evidence facts including ``aerial_coverage``
+    @returns: blocker string that names uncovered columns when ``aerial_uncovered`` is set
+    """
+    uncovered = facts.get('aerial_uncovered')
+    covered = facts.get('aerial_covered')
+    if uncovered is None or covered is None:
+        return f"aerial coverage: {facts['aerial_coverage']:.1%}"
+    from aerial_coverage import coverage_fraction_text
+    return (f'aerial coverage: {uncovered} uncovered columns '
+            f'({coverage_fraction_text(covered, uncovered)})')
+
+
 def reapply_command(plan, layer, cell, *, registry):
     """The command that re-applies ``plan`` (a ``layer`` entry whose own cell is ``cell``).
 
@@ -333,7 +348,7 @@ class ReadinessPolicy:
             elif facts['clip_coverage'] < 1 and dismissals[-1]['ref'] != facts.get('map_revision', facts['revision']):
                 blockers.append('map coverage dismissal stale')
         if facts['aerial_coverage'] < 1:
-            blockers.append(f"aerial coverage: {facts['aerial_coverage']:.1%}")
+            blockers.append(_aerial_coverage_blocker(facts))
         if facts['lidar_missing']:
             blockers.append('lidar cache: missing local tiles')
         if v.ground not in ('ghost', 'generated'):
@@ -588,9 +603,17 @@ def format_readiness(report):
     if report.get('scope') == 'evidence':
         lines.append(f"  scope: evidence only (cross-cell neighbour); records no feature plans; "
                      f"the cell's own builds still need prepare --cell {report['cell']} --apply")
-    for key in ('clip_coverage', 'aerial_coverage'):
-        if key in report:
-            lines.append(f"  {key}: {report[key]:.1%}")
+    if 'clip_coverage' in report:
+        lines.append(f"  clip_coverage: {report['clip_coverage']:.1%}")
+    if 'aerial_coverage' in report:
+        uncovered = report.get('aerial_uncovered')
+        covered = report.get('aerial_covered')
+        if uncovered and covered is not None:
+            from aerial_coverage import coverage_fraction_text
+            lines.append(f"  aerial_coverage: {uncovered} uncovered columns "
+                         f"({coverage_fraction_text(covered, uncovered)})")
+        else:
+            lines.append(f"  aerial_coverage: {report['aerial_coverage']:.1%}")
     for key in ('blockers', 'warnings', 'prepare_actions', 'next_actions'):
         lines += [f'  {key}: {item}' for item in report.get(key, [])]
     lines += [f'  clear: {b} -> {cmd}' for b, cmd in report.get('clear_with', {}).items()]
