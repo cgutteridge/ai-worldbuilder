@@ -232,18 +232,7 @@
     },
     
     
-    {
-      "id": 411,
-      "title": "Move place history out of tool rules, skills and templates",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T21. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T21' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: l (splittable per file)\n- Scope:\n  - 1.16 and 1.15 items 7-8.\n  - Rename `rules/terrace-builds.md` to `house-builds.md`.\n  - Cut the history in `handoff-layered-passes.md` and move its decisions into an ADR.\n  - Move the university register, campus and dated review notes into southampton-build.\n  - Make the acceptance fixture generic.\n  - Delete the six template redirect stubs and `ISSUES.txt`.\n- Check: `git grep -niE \"highfield|portswood|broadlands|oakdene|susu|university\" rules .agents templates` returns only deliberate generic examples, and the moved text exists in the world repo.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T20 (#410) because it both rewrite rules files."
-    },
+    
     {
       "id": 419,
       "title": "Remove default player UUID and structure namespace; fail early and fill from player_list_online",
