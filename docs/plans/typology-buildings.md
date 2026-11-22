@@ -127,9 +127,41 @@ did not find the cause; another session was using the same world during the firs
 - **Estate, Begonia Road:** "yes, they read as the real streets and are good," except that the roof material
   appears to be applied one layer below the roof (Roof layer).
 - **Terrace, Northcote Road:** "looks great," except for one chimney right in the middle of the whole group
-  (Chimneys). The owner had not yet commented on the terrace's single continuous roof when this was recorded.
-- **Shop parade, Portswood Road:** not yet judged. Rule-built shops are flat-roofed brick boxes; two of them
-  were rebuilt from hand specs for comparison (w122706815, w122706803).
+  (Chimneys). The owner's comment on the single continuous roof is covered by the chimney finding: the one
+  roof over 20 houses and the one chimney are the same `mode: group` cause.
+- **Shop parade, Portswood Road:** the owner's verdict is the snags below (Parade verdict). Rule-built shops
+  are flat-roofed brick boxes; two of them were rebuilt from hand specs for comparison (w122706815, w122706803).
+
+## Parade verdict (owner snags)
+
+The owner reviewed the parade in game and filed snags in the world's issues (`registry/issues.json`); the
+owner's stated verdict is that these snags are the verdict, with no pass or fail beyond them. Nine are listed.
+"Generator" means the rule generator and its class recipe or data; "builder" means `feature_build` or
+`house_build` code that both the rule path and the hand-spec path run.
+
+| Snag | What the owner saw | Where the gap is | Rule path | Hand-spec path |
+| --- | --- | --- | --- | --- |
+| S-105 | Roof stair rotation wrong on the hotpot shop (w122706803). It is a `feature_build` spec, so not octant (octant is `house_build` `roof_fit` only) | Builder: `feature_build` pitched roof stair shapes (I-022 area) | Rule shops are flat, so not shown | Shown: the hand spec chose a pitched roof |
+| S-106 | Some signs fell off from illegal placement | Builder: sign and fascia placement (default entrance awning and sign) | Yes | Yes |
+| S-107 | Doors one level too low | Builder: door floor height against outside ground (I-017 guard) | Yes | Yes |
+| S-108 | Signs always default oak, no colour palette for sign wood | Both: the builder has no sign wood option; a recipe or profile has no palette to feed it | Yes | Yes (my hand spec set no sign wood) |
+| S-109 | Sign text colour clashes with its background | Both: no text colour option and no palette | Yes | Yes |
+| S-110 | Owner decision: give up squaring shop fronts unless the row is near axis-aligned (the squaring directive in `rules/craftsmanship.md`) | Rule and builder: shop fronts on a rotated row become steps | Yes (diagonal parade) | Yes |
+| S-111 | The whole grey flat-roof run is really two-storey pitched brick buildings with a one-storey flat shopfront roof added in front (owner's street view of 233 Portswood Road, saved at `worlds/southampton-build/registry/issues/img/S-111-streetview.png`) | Generator and recipe: the class typology is wrong. The rule gave one flat roof per footprint; it needs a pitched building body plus a flat single-storey front. Related to task 333 | Yes: all 19 flat | Partly: w122706803 pitched, the rest of the run flat |
+| S-112 | Real fascia colours are mostly black, Burga grey and Stravs teal, not bright defaults | Generator and data: per-building fascia colour needs street-level evidence or a district palette; the rules have neither | Yes | Yes |
+| S-113 | The hairdresser (w122706815, my hand spec) is built at its own height but belongs to the building next door | Generator and designer: the map has the part as a separate footprint, so rules and my hand spec both built a separate unit. Hand-spec error as well as a join the map does not state | Yes | Yes: my hand spec |
+
+What this changes in the conclusions:
+
+- The parade is the weakest of the three class recipes. The rules covered footprint and storeys, but the
+  typology (pitched building behind a flat shopfront) and the facade colours were wrong or default, and the
+  hand-spec path inherits most of these gaps because they sit in the builder.
+- Builder gaps (S-105, S-106, S-107, and the sign options behind S-108 and S-109) are not recipe problems and
+  are not fixed by the rule route. A class recipe that names sign colour or door height changes nothing until
+  the builder honours it.
+- Per-building facts (S-112 fascia colour, S-113 which footprints are one building) cannot come from the
+  map tags. They need street-level evidence (the owner's street view) or a designer pass, so the shop class
+  stays a designer-assisted class.
 
 ## Findings on the defects
 
@@ -208,10 +240,26 @@ stale neighbouring cell (51,-36).
    for whole rows; alternate roof colour per pair where the aerial shows it.
 4. **Shop recipe:** a class default for a shopfront (ground glazing of height 3, upper storeys of height 2
    with piers), an entrance with awning, and a roof form chosen from the aerial (flat with PV rows, or pitched).
+   Revised by the parade snags: the shop typology is a two-storey pitched building body plus a one-storey flat
+   shopfront roof in front (S-111), not one flat roof per footprint; the recipe carries a fascia colour and a
+   sign wood and text colour palette per district, overridable per building from street-level evidence (S-108,
+   S-109, S-112); and shop fronts are not squared unless the row is near axis-aligned (S-110, an owner
+   decision that retires that part of the squaring directive for shop rows).
 5. **Roof and facade detail (I-006) and glazing become class recipes: yes.** Both are the same few numbers per
    class (glazed height, pier width, rhythm, roof edge) and they are the difference between the plain shop
    boxes and the hand-built unit. Roof detail needs the builder fixes first (roof layer, chimney per stack).
 6. **Keep a designer** for landmarks, odd footprints, mixed roof forms and buildings across cell edges.
+7. **Builder fixes before any shop recipe is trusted:** sign placement that cannot fall off (S-106), door
+   floor height (S-107), roof stair rotation in `feature_build` (S-105), and sign wood and text colour options
+   (S-108, S-109). These are builder tasks, separate from the generator work.
+8. **Footprints that belong to one building** (S-113) are not in the map tags. The generator should flag
+   shops of clearly different footprint height beside a neighbour as needs-designer, not build them as a unit.
+
+Effect on the filed tasks (not edited here): 427 gains "do not square fronts on a non-axis-aligned row" (S-110).
+428 stands; shop storeys come from street evidence where tags are missing (S-111). 429, 430 and 432 are
+unaffected. 431 should carry the sign palette and fascia colour fields as well as glazing. S-105 to S-107 need
+new builder tasks that I have not filed. Task 333 is the home of the pitched-building-plus-shopfront typology
+(S-111), and its notes already point here.
 
 Implementation tasks filed from these findings (owner approved 2026-11-22), none started:
 
