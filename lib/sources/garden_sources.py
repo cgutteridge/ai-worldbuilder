@@ -759,7 +759,7 @@ def outward_facings(cols, plot_id, role: str, owner: dict, centre) -> tuple[dict
     A shelf's back board sits flush on the edge opposite its facing, so ``out`` here means the board
     lands on the inner edge of the boundary column and its open front looks to the street / neighbour.
     Boundary columns are the plot's own outermost columns (``segments``), so the board stands about one
-    block inside the true plot line (see docs/plans/244-boundary-evidence-findings.md, #272).
+    block inside the true plot line (see docs/archive/244-boundary-evidence-findings.md, #272).
 
     "Out" is the cardinal neighbour that is not this plot's own land. Preference, per column:
 

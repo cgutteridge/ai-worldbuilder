@@ -19,7 +19,7 @@ The owner will rebuild 53,-43 once, after every task that changes how it builds 
 
 ## Part A: #252 (bushes, flowers, garden ponds)
 
-Read the task notes first (`node scripts/tasks.mjs show 252`) and `docs/plans/land-use-classes.md` (planting section). Measure each, for front gardens in 53,-43, with per-plot counts:
+Read the task notes first (`node scripts/tasks.mjs show 252`) and `docs/adr/006-land-use-classes.md` (planting section). Measure each, for front gardens in 53,-43, with per-plot counts:
 
 1. **Bushes.** Do shrubs visible on the aerial reach the canopy mask, or are they lost? Files: `lib/layers/trees_layer.py` (`bush_voxels`, `MIN_CROWN_R`). Count aerial shrub patches per front garden against placed bush voxels.
 2. **Flowers.** Does guessed lawn in private frontage get any flowers? Files: `lib/layers/foliage.py` (flower list), `lib/layers/ground_layer.py`. Count flower blocks in front gardens in the live world or the ground report.

@@ -1,17 +1,4 @@
 {
-  "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here.",
-  "keys": [
-    "docs/specs/lidar-provider-contract.md:20",
-    "docs/specs/lidar-provider-contract.md:25",
-    "docs/specs/lidar-provider-contract.md:27",
-    "docs/specs/lidar-provider-contract.md:29",
-    "docs/specs/lidar-provider-contract.md:31",
-    "docs/specs/lidar-provider-contract.md:46",
-    "docs/specs/lidar-provider-contract.md:56",
-    "docs/specs/lidar-provider-contract.md:62",
-    "docs/specs/lidar-provider-contract.md:80",
-    "docs/specs/lidar-provider-contract.md:85",
-    "docs/specs/lidar-provider-contract.md:87",
-    "docs/specs/lidar-provider-contract.md:95"
-  ]
+  "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here. The lidar provider contract moved to docs/archive/ (task #403), which the audit already skips.",
+  "keys": []
 }

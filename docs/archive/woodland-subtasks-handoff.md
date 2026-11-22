@@ -24,7 +24,7 @@ Out of scope, never start: #318 itself (it needs Claude, a running world and the
 2. `docs/agents/parallel-task-wave.md` and `.agents/skills/parallel-task-wave/SKILL.md` (the wave procedure and the project's settings).
 3. `.agents/skills/ship-branch/SKILL.md` (the test, review and merge loop you run on each returned branch).
 4. `docs/agents/model-and-effort.md#task-model-requirement` (the dispatch gate).
-5. `docs/plans/park-rural.md` sections "Woodland is its own treatment" and "Rough-grass prototype" (the source of the floor and plant shares; they are the owner-accepted starting values).
+5. `docs/archive/park-rural.md` sections "Woodland is its own treatment" and "Rough-grass prototype" (the source of the floor and plant shares; they are the owner-accepted starting values).
 6. Each task's full text: `node scripts/tasks.mjs show <id>`. The notes are the spec and are firm; do not widen them.
 
 ## The tasks

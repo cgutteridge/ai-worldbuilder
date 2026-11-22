@@ -1,12 +1,14 @@
-# Land-use classes: one design for #253, #254, #255, #240, #252, #260
+# ADR 006: Land-use classes
 
-Status: design for owner review, 2026-11-11. Read-only pass: no code changed, no live-world command, no
-aerial opened. Parent plan: `docs/plans/vibe-at-scale.md`. Items marked **UNVERIFIED** were not checked.
+**Status:** Accepted (design 2026-11-11; recorded as an ADR 2026-11-22, task #403). `config/land-use-classes.json` and `lib/sources/land_use.py` implement this design. Parent plan, still open for task #257: `docs/plans/vibe-at-scale.md`.
 
-Owner constraints carried through: anywhere in the UK with other people's providers; vibe over 1:1; few
-tokens per cell (classification is code, zero tokens; a district profile is written once); classes now,
-refined with experience; an unknown class never invents fences; evidence ladder unchanged; residential
-behaviour stays as today, expressed as one row.
+## Context
+
+The tool has to work anywhere in the UK with other people's providers. The aim is the vibe of a place rather than a 1:1 copy, with few tokens per cell. Classification is code (no model tokens). A district profile is written once. Classes exist now and are refined with experience. An unknown class never invents fences. The evidence ladder is unchanged. Residential behaviour stays as it was, expressed as one row.
+
+## Decision
+
+The class list, tag mapping and per-class defaults in the sections below are the decision for tasks #253, #254, #255, #240, #252 and #260. Items marked **UNVERIFIED** were not checked when the design was written.
 
 ## 1. Classes and tag mapping
 

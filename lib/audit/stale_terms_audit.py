@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail when retired progress terms creep back into agent-facing docs (task #47).
 
-Scans rules, skills, templates, and living docs. ADR / audit / plan history is
+Scans rules, skills, templates, and living docs. ADR, plan and archive history is
 exempt so the old names can still appear in the decision record.
 """
 from __future__ import annotations
@@ -50,10 +50,8 @@ ROOT_FILES: tuple[str, ...] = (
 
 DOCS_ALLOW_PREFIXES: tuple[str, ...] = (
     'docs/adr/',
-    'docs/audits/',
     'docs/plans/',
     'docs/archive/',
-    'docs/snags/',
 )
 
 TEXT_SUFFIXES = {'.md', '.txt', '.html'}

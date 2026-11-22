@@ -15,7 +15,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 
 1. **Dry-run reset** — `scripts/dryrun_reset.py`: delete overworld region chunks (after `--confirm-logged-out` and no `session.lock`/MCP), re-scaffold `site/` from `templates/new-world-site/` (no QUEUE / CURRENT-CELL / HANDOFF), erase `registry/` (journal and plan blobs; the first journal write recreates it, nothing is scaffolded, ADR 004), clear lock/holds/builds/cells/verification; **preserve** world frame, providers, reference catalogue, and caches. Then reopen the save and raise the home cell to seed the ghost frontier.
 2. **Lidar ghost v2 (amended #68)** — Maintain a **frontier** of cells that should show placeholders: any cell with an **Element** started in the **registry** (feature, ground, trees, or decor) seeds a **Chebyshev ring** (default **2**) of neighbours. Each target cell gets **ghost ground** (DTM fill + colour-coded top from DSM − DTM) until **real ground** exists there. After **every successful Element apply**, **refresh** the frontier and ensure missing ghost ground.
-3. **Acceptance** — [Southampton dry run 001](../plans/southampton-dryrun-001.md) is the behavioural proof after unit tests guard core rules.
+3. **Acceptance** — Southampton dry run 001 (`worlds/southampton-build/docs/plans/southampton-dryrun-001.md`) is the behavioural proof after unit tests guard core rules.
 
 ## User Stories
 
@@ -92,7 +92,7 @@ Empty-world refine needs a **repeatable dry-run loop**: wipe the Minecraft build
 - **Principle:** test **observable behaviour** — which cells get plans, skip reasons, stage transitions after strip, frontier membership — using injected height fixtures and temporary STAGES directories (existing lidar ghost test style). Do not assert internal helper names.
 - **Modules under test:** lidar ghost library, reset CLI (dry-run output, refuse when lock file present), post-apply hook behaviour via small integration tests with mocked apply.
 - **Prior art:** existing lidar ghost unit tests (neighbour ring, real-work skip, ensure idempotency, ghost owners in ground layer ignored builds).
-- **Primary checkpoint:** [Southampton dry run 001](../plans/southampton-dryrun-001.md) — human quit/reopen, reset, all 48,-44 features, ground pass; verify with ghost status JSON and views that ring-2 belt behaves and overlap strips grey mass. Unit tests gate merges; dry run proves end-to-end.
+- **Primary checkpoint:** Southampton dry run 001 (`worlds/southampton-build/docs/plans/southampton-dryrun-001.md`) — human quit/reopen, reset, all 48,-44 features, ground pass; verify with ghost status JSON and views that ring-2 belt behaves and overlap strips grey mass. Unit tests gate merges; dry run proves end-to-end.
 
 ## Out of Scope
 

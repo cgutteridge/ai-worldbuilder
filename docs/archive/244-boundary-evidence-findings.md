@@ -1,6 +1,6 @@
 # #244 research: front boundary evidence for Kitchener Road and Sirdar Road (cell 53,-43)
 
-Research only, 2026-11-12. No code, world data, or rebuild changed. Draft data: `docs/plans/244-draft/kitchener_road.json` and `sirdar_road.json` (not under `worlds/`; both load through `garden_sources.role_spec`).
+Research only, 2026-11-12. No code, world data, or rebuild changed. Draft data: `docs/archive/244-draft/kitchener_road.json` and `sirdar_road.json` (not under `worlds/`; both load through `garden_sources.role_spec`).
 
 ## Evidence used
 
@@ -90,7 +90,7 @@ Shelf panels (#272) show open slots from the street. Owner reviewed the oak pane
 
 ## Draft data
 
-See the two JSON files in `docs/plans/244-draft/`. They carry `evidence_ids`, a run-level `provenance`, and per-house provenance inside each `front` spec (the code reads provenance from the role spec). `SV` id `photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png` is a proposed id: it must be registered before the data task lands.
+See the two JSON files in `docs/archive/244-draft/`. They carry `evidence_ids`, a run-level `provenance`, and per-house provenance inside each `front` spec (the code reads provenance from the role spec). `SV` id `photos-streetview-kitchener-road-owner-s073-67-kitchener-rd-2025-08-png` is a proposed id: it must be registered before the data task lands.
 
 ## Owner review, 2026-11-12
 

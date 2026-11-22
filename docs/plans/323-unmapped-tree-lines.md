@@ -1,6 +1,6 @@
 # Spike #323: tree lines along hedges and lanes that the map does not mark
 
-Spike, 2026-11-21, world `southampton-build` (save `SouthamptonAI`), cell **87,-48**: the farmland cell of the #259 trial, described in [park-rural.md](park-rural.md).
+Spike, 2026-11-21, world `southampton-build` (save `SouthamptonAI`), cell **87,-48**: the farmland cell of the #259 trial, described in [park-rural.md](../archive/park-rural.md).
 Branch `task/323-unmapped-tree-lines`. Prototype: [`lib/layers/tree_lines.py`](../../lib/layers/tree_lines.py). The one-off trial command that drove the dry runs below has been removed; the counts are the record. `lib/layers/trees_layer.py` was not edited, because the paused woodland wave owns it (#349, #350).
 
 ## Verdict
