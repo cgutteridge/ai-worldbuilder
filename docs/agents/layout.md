@@ -16,6 +16,7 @@ Read this when you need to find where a tool, config or record is kept. `AGENTS.
 | Evidence types | `reference/TYPES.txt` |
 | Place SOURCES | active world `reference/SOURCES.txt` (URLs / ToS / fetch how) |
 | Shared libraries | `lib/<category>/` (bare imports via `script_env`; see [`lib/README.md`](../../lib/README.md)) |
+| Feature building | `feature_build` orchestrates shell and roofs; `feature_spec`, `feature_roof_zones`, `feature_doors`, `feature_facade` and `feature_details` own the other planning seams. Spec reference: [`rules/feature-builds.md`](../../rules/feature-builds.md). |
 | Block and geometry helpers | `site_kit.AIR_IDS` is the air base; domain filters name extras/exclusions. `block_store` owns block IDs and state properties; `surface_probe` owns plant recognition policies; `cellmath.segment_distance` owns segment projection. Repo commands use `scripts/shared_git.py` for git subprocesses. |
 | CLI entry points | `scripts/` (agent/hook commands; often thin wrappers over `lib/`; see [`scripts/README.md`](../../scripts/README.md)) |
 | Craft / process rules | `rules/` (process, craftsmanship, foliage, layered passes, cleanup, …) |

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import facade_plan as FP
 import feature_build as F
+import feature_spec as FS
 import provenance as prov
 
 
@@ -291,7 +292,7 @@ class FacadePlanValidateTest(unittest.TestCase):
 
 
 class FacadePlanLoadSpecTest(unittest.TestCase):
-    """Seam: feature_build.load_spec accepts facade_plan and defaults it."""
+    """Seam: feature_spec.load_spec accepts facade_plan and defaults it."""
 
     def write(self, spec: dict) -> Path:
         tmp = tempfile.TemporaryDirectory()
@@ -310,11 +311,11 @@ class FacadePlanLoadSpecTest(unittest.TestCase):
         }
 
     def test_facade_plan_default_empty_and_legacy_doors_refused(self):
-        spec = F.load_spec(self.write(self.good()))
+        spec = FS.load_spec(self.write(self.good()))
         self.assertEqual(spec['facade_plan'], {})
         self.assertNotIn('doors', spec)
         with self.assertRaises(SystemExit) as ctx:
-            F.load_spec(self.write({
+            FS.load_spec(self.write({
                 **self.good(),
                 'doors': {'42-A': {'leaves': 1, 'block': 'iron_door'}},
             }))
@@ -334,7 +335,7 @@ class FacadePlanLoadSpecTest(unittest.TestCase):
                 ],
             },
         }
-        spec = F.load_spec(self.write({**self.good(), 'facade_plan': plan}))
+        spec = FS.load_spec(self.write({**self.good(), 'facade_plan': plan}))
         self.assertEqual(spec['facade_plan']['A']['entrances'][0]['id'], '42-B')
 
     def test_load_spec_refuses_bad_facade_plan(self):
@@ -345,7 +346,7 @@ class FacadePlanLoadSpecTest(unittest.TestCase):
             },
         }
         with self.assertRaises(SystemExit):
-            F.load_spec(self.write({**self.good(), 'facade_plan': bad}))
+            FS.load_spec(self.write({**self.good(), 'facade_plan': bad}))
 
 
 class PortalBriefTest(unittest.TestCase):

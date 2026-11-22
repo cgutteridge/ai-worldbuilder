@@ -11,7 +11,7 @@ ahead of `scripts/` (where CLI wrappers with the same names live).
 | `journal/` | Cell journal, registry helpers, registry coverage rollup |
 | `sources/` | Place sources, lidar, vector map, OSM footprints |
 | `layers/` | Ground / trees / decor passes; shared ownership, mask and probe helpers (`layer_common`); seeded ground dressing (`ground_dressing`); tree voxels, masks |
-| `builds/` | House and feature builders, roof geometry, shared door-stoop helpers (`stoop.py`), half-block-cell roof fit (`roof_octant.py`), pure railway corridor plans (`railway_plan.py`) |
+| `builds/` | House builder; feature orchestration (`feature_build.py`), spec validation (`feature_spec.py`), roof zones (`feature_roof_zones.py`), doors (`feature_doors.py`), facades (`feature_facade.py`), details and PV (`feature_details.py`); shared roof geometry, door-stoop helpers (`stoop.py`), half-block-cell roof fit (`roof_octant.py`), pure railway corridor plans (`railway_plan.py`) |
 | `site/` | site_kit (canonical `AIR_IDS`; callers name their own air extras/exclusions), lock, handoff, recover, status, cleanup |
 | `evidence/` | Evidence / contact sheets, registered aerials |
 | `audit/` | Floaters, roof lint, name / stale-term / documentation-path audits |

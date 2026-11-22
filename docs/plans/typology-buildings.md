@@ -39,8 +39,8 @@ changed; every relaxation below lives in a scratch emitter outside the repo.
 - **Tokens:** `get_usage` context-window figure read before and after a stage in this one session
   (`tokensUsed`). It is context growth, not billed tokens, and it includes tool output and my own messages, so
   it is an upper bound for a stage and not exact per building.
-- Evidence: the local Hampshire OSM extract (footprints, tags, streets), lidar via the cached tiles, and the
-  aerial for each cell (Google sheet for reading, Hampshire Hub mosaic for coverage).
+- Evidence: the local Hampshire vector-map extract (footprints, tags, streets), lidar via the cached tiles, and the
+  aerial for each cell (aerial sheet for reading, Hampshire Hub mosaic for coverage).
 
 ## What the rules covered
 
@@ -213,8 +213,8 @@ read this page.
   Iris Road, Honeysuckle Road and the parade's other shops) and the cell 54,-41 plans, plus evidence-only
   prepares of 49,-49 and 51,-36.
 - Local data fetched, with owner approval: vector-map extracts for cells 54,-41 and 51,-37
-  (`reference/vector_map/typology-trial/`, 53,288 and 45,184 bytes, cut from the OSM file on disk), three
-  Google aerial sheets under `instance/google-aerial/` (2,295,220, 1,716,190 and 2,381,596 bytes) and three
+  (`reference/vector_map/typology-trial/`, 53,288 and 45,184 bytes, cut from the vector-map file on disk), three
+  aerial sheets under `instance/google-aerial/` (2,295,220, 1,716,190 and 2,381,596 bytes) and three
   Hampshire Hub mosaics under `reference/aerial/typology-trial/` (about 1 MB each).
 - A first terrace apply aborted because a parallel `site_lock.py run` with the same owner name released the
   lock; use a distinct owner per command when running two at once.
