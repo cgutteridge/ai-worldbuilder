@@ -140,16 +140,6 @@
       "blockedBy": [],
       "requiresClaude": true,
       "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nrequiresClaude true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game."
-    },
-    {
-      "id": 370,
-      "title": "Fix stale MOSAIC import in feature_build.sample_columns_rgb (roof-colour suggestions empty)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Found by the roof types task. feature_build.sample_columns_rgb imports MOSAIC from ground_sources, which no longer exists, so it silently returns {} and the dry-run roof_zone_colour_lines suggestions are empty. The roof types worker sampled via aerial_coverage.samples instead. Fix: point it at the current aerial source (or reuse aerial_coverage.samples), and make it fail loudly instead of returning {} when the source is missing. Test: synthetic fixtures only; a test that fails if sample_columns_rgb returns nothing for a footprint that has aerial cover. No live build."
     }
   ]
 }
