@@ -3495,5 +3495,16 @@
       "builderTask": false,
       "notes": "Housekeeping review ticket T1. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T1' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: m\n- Scope:\n  - Fix every row of 1.13 except the coverage rows (T5).\n  - Add the newly retired names to `stale_terms_audit.BANNED_TERMS`.\n  - Add a unit test that fails when a tool-root path named in `rules/`, `.agents/skills/`, READMEs, root docs, `docs/agents/`, `docs/specs/` or `reference/TYPES.txt` does not exist. It skips world-relative paths and placeholders.\n- Check: the new test passes, and it fails on a fixture doc that names a missing path. `stale_terms_audit` passes.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at c6395e23bfb94822abc54ee183f6eac9b25abf8c: Merged locally after owner-authorized Codex review; two audit/CLI findings fixed and final integrated state approved. Focused audit/stub checks, normal full commit hooks, full tip and post-merge suites passed. Rebased onto main to obey tracker ownership. No remote push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 405,
+      "title": "Small geo and vendor shims",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T16. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T16' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s\n- Scope: everything in 1.11.\n- Check: checklist item 1 for every name, and the provider-name audit passes with a smaller allowlist.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at d7b1395aaa488c0246f0b3f1e18c24f310e76421: Merged locally after owner-authorized Codex review; approved edits unchanged through rebase onto the combined wave. Focused geo/lidar/source and new audit suites, normal full commit hook, full tip and post-merge suites passed. World source commits: southampton-build ab842d8a29aae68c389e6034c5339b16546f38a6; ventnor-build 49088c11464d24b828e1e906a722ba35f7f2978c. No remote push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
