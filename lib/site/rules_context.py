@@ -100,7 +100,7 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
     if 'CELL_SOURCES.PY' in b or ('SOURCES' in b and '--WRITE' in b):
         return WorkContext.SOURCES, 'cell_sources --write'
 
-    if any(k in b for k in ('BUILD_CELL_FOLIAGE', 'FOLIAGE LAST', 'FOLIAGE PASS', 'FOLIAGE.')):
+    if any(k in b for k in ('FOLIAGE LAST', 'FOLIAGE PASS', 'FOLIAGE.')):
         return WorkContext.FOLIAGE, 'foliage-last cell pass'
     if any(k in b for k in ('TERRACE-BUILDS', 'BROADLANDS_RD', ' BROADLANDS ')):
         return WorkContext.TERRACE, 'terrace house builds / Broadlands'
@@ -237,7 +237,7 @@ _DONE_HINTS: dict[WorkContext, str] = {
     WorkContext.SOURCES: 'Write SOURCES file; one imagery judge pass; TOKEN NOTES in file.',
     WorkContext.GROUND: 'Apply → readback → status --write → gaps (parcels done at 100% touched).',
     WorkContext.FOLIAGE: (
-        'build_cell_foliage dry-run then SITE_OWNER --apply; script signs in-cell open/gap.'
+        'Trees pass dry run, then redo_layer.py --layers trees --apply (rules/foliage.md).'
     ),
     WorkContext.PROPERTY: (
         'Whole property on vector-map footprint; osm_footprints check; photo + aerial contact views.'

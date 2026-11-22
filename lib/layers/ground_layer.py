@@ -1224,7 +1224,7 @@ def plan_ground_texture(plan: Plan, world: World, cell: tuple[int, int], ys: dic
     """Place rough-grass tufts, tall grass, mottled dirt and meadow flowers (#319).
 
     Driven by ``ground_texture`` palettes and aerial texture, not by ``planting`` (null when
-    ``frontage.inference`` is false). Flower kinds come from ``foliage.REFINE_PLANTS``. Skips
+    ``frontage.inference`` is false). Flower kinds come from ``surface_probe.REFINE_PLANTS``. Skips
     footprints, routes, tree/decor masks, neighbour-owned columns and barrier columns. Seeded
     per cell and column so reruns match. Counts land in the ground report; plants sit in air
     above grass (cleared on redo / foliage strip); dirt replaces the grass surface.

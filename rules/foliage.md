@@ -12,7 +12,7 @@ Rules
    apply: builds stop being idempotent, readback lies, and ground work
    gets undone. Strip stock/vendor saplings in the ground pass; do not replant them.
  - Canopy is static: log + leaves[persistent=true] massing (or hedge/wall), sized from
-   the aerial. Allowlist: scripts/foliage.py (REFINE_FOLIAGE).
+   the aerial. Placement allowlist: `surface_probe.REFINE_PLANTS`.
  - Trees and decor go only where the live block is air (or a grass stem/flower), so
    undo is exact (mask_undo.py).
  - A tree is never ROOTED (crown centre) in a feature zone: a column the ground layer
@@ -108,6 +108,6 @@ Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave
     then run the same selection with --apply in the background and check its final exit/result.
     The wrapper owns its lock; trees-only redo leaves cleared decor pending. Include decor only if requested.
 
-Retired (do not use): build_cell_foliage.py, the "foliage last" cadence and the aerial
+Retired and deleted (do not look for them): build_cell_foliage.py, the "foliage last" cadence and the aerial
 canopy pass plant_cell_canopy.py with HAND_CROWNS (Q-064; its 48,-45 result was
-reverted 2026-10-14).
+reverted 2026-10-14). Trees come only from trees_layer.py; voxel shapes live in lib/layers/tree_voxels.py.

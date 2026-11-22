@@ -835,7 +835,7 @@ def plan_woodland_decor(
     """Place woodland understorey bushes and ground cover inside wood polygons (#351).
 
     Driven by ``woodland_decor`` shares, not by ``planting``. One kind per column, seeded
-    per cell and column. Bushes reuse :func:`plant_cell_canopy.bush_voxels` (height 1 or 2
+    per cell and column. Bushes reuse :func:`tree_voxels.bush_voxels` (height 1 or 2
     from ``bush_tall``). Skips roads, water, footprints, clearance, neighbour/feature ownership,
     tree and other pass masks, and any voxel that is not air or that sits in a trunk or crown.
     Counts land in the decor report per kind; placements join the decor mask.
@@ -856,7 +856,7 @@ def plan_woodland_decor(
     import random
     import land_use
     import provenance as prov
-    from plant_cell_canopy import bush_voxels
+    from tree_voxels import bush_voxels
     from surface_probe import ground_at
 
     report = {k: 0 for k in ('bushes',) + WOODLAND_PLANT_ROLL}

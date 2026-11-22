@@ -1,6 +1,6 @@
 """Read-only helpers for finding the ground surface in a saved column.
 
-Shared by the ground, trees and foliage tools. Nothing here writes to the world.
+Shared by the ground, trees and decor layers. Nothing here writes to the world.
 """
 from __future__ import annotations
 
@@ -24,6 +24,15 @@ PLANTS = _LEGACY_PLANT_PATTERNS + (
     'wildflowers', 'pink_petals', 'open_eyeblossom', 'closed_eyeblossom',
     'dead_bush', 'sweet_berry_bush', 'brown_mushroom', 'red_mushroom',
 )
+# Plants the ground layer may place (flowers and ground cover). Newly recognised 26.2 IDs in
+# ``PLANTS`` do not yet have confirmed placement states (notably halves and segmented litter),
+# so placement stays on this narrower allowlist. ``land_use`` validates planting kinds against it.
+REFINE_PLANTS = frozenset({
+    'short_grass', 'tall_grass', 'fern', 'flower', 'poppy', 'dandelion', 'daisy',
+    'cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'red_tulip', 'white_tulip',
+    'blue_orchid', 'orange_tulip', 'pink_tulip', 'lily_of_the_valley', 'wither_rose',
+    'sunflower', 'rose_bush', 'peony', 'lilac',
+})
 JUNK_ABOVE = ('_log', 'leaves', '_carpet', 'sapling')
 # Cell-marker hazard tape (cell_marker.WOOL): ~30 above ground, so any height, not just high ones.
 MARKER_WOOL = ('black_wool', 'yellow_wool')

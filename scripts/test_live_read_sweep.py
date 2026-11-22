@@ -113,21 +113,6 @@ class SiteWalkPrefetchTest(unittest.TestCase):
         self.assertLessEqual(_scans(mcp), 16, f'too many scans: {_scans(mcp)}')
 
 
-class VolumeClearPrefetchTest(unittest.TestCase):
-    def test_volume_clear_bounds_scans(self):
-        import plant_cell_canopy as pcc
-        blocks = _column(10, 10, ground=48)
-        for dx in range(-3, 4):
-            for dz in range(-3, 4):
-                for y in range(49, 60):
-                    blocks[(10 + dx, y, 10 + dz)] = AIR
-        world, mcp, tmp = _live(blocks)
-        self.addCleanup(tmp.cleanup)
-        voxels = pcc.bush_voxels(10, 10, 48)
-        self.assertTrue(pcc.volume_clear(world, voxels, 48, set()))
-        self.assertLessEqual(_scans(mcp), 8, f'too many scans: {_scans(mcp)}')
-
-
 class MaskUndoPrefetchTest(unittest.TestCase):
     def test_conflict_check_bounds_scans(self):
         import mask_undo
