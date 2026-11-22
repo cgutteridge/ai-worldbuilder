@@ -86,6 +86,10 @@ class Mosaic:
     tile_y: int
     scale: float = 1.0
 
+    def image(self):
+        """The mosaic as an RGB PIL image."""
+        return Image.open(self.path).convert('RGB')
+
     def pixels(self, points):
         """MC column centres to actual image pixels using the canonical CRS/XYZ functions."""
         ll = mc_batch_to_wgs84([(x + .5, z + .5) for x, z in points])

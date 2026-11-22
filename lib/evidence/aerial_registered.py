@@ -11,14 +11,22 @@ similarity fit px = A . [x, z, 1], and the residual in blocks. Make or refit one
 Image is not true ortho (3D-tile render, tall roofs lean ~1-2 blocks), so ties are on map corners that coincide
 with ground-level or low-roof features; treat accuracy as about 1 block near the ties, 2-3 away from them.
 """
+from __future__ import annotations
+
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from aerial_coverage import load_rgb  # noqa: E402
 from script_env import ROOT  # noqa: E402
+
+REG_HALF_BLOCKS = 0.5                # sample window half-width in blocks (median, so render speckle drops out)
+REG_EDGE_BLOCKS = 3.0                # skip columns this close to the image edge (watermark, attribution, UI chrome)
+NO_DATA_MEAN = 0.05                  # window mean below this is blank / black padding, not ground
 
 
 def fit_similarity(ties):
@@ -49,6 +57,84 @@ def refit(reg_path):
     return reg
 
 
+@dataclass(frozen=True, eq=False)
+class Registered:
+    """One registered user aerial: the same ``pixels(points)`` / ``image()`` interface as ``aerial_coverage.Mosaic``.
+
+    ``path`` is the ``.registration.json``; ``A`` its 2x3 fit (MC x,z -> image px).
+    """
+
+    path: Path
+    image_path: Path
+    A: np.ndarray
+
+    @property
+    def px_per_block(self) -> float:
+        return float(np.hypot(self.A[0, 0], self.A[1, 0]))
+
+    def pixels(self, points):
+        """MC column centres to image pixels through the registration matrix."""
+        return {p: to_px(self.A, p[0] + .5, p[1] + .5) for p in points}
+
+    def image(self):
+        """The aerial as an RGB PIL image."""
+        return Image.open(self.image_path).convert('RGB')
+
+
+def load_registered(reg_path, root=None) -> Registered:
+    """The registered aerial described by one ``.registration.json`` (image path is under ``<root>/reference``)."""
+    reg = json.loads(Path(reg_path).read_text())
+    base = Path(root) if root is not None else Path(ROOT)
+    return Registered(Path(reg_path), base / 'reference' / reg['image'], np.array(reg['A'], float))
+
+
+def registered(root=None) -> list[Registered]:
+    """Every registered user aerial found under ``reference/aerial`` (sorted by registration path).
+
+    The only place registrations are discovered. Drop a new screenshot and its registration beside the
+    others and it is used with no code change. A registration that is unreadable or whose image is
+    missing is skipped.
+    """
+    base = Path(root) if root is not None else Path(ROOT)
+    out = []
+    for rp in sorted(base.glob('reference/aerial/**/*.registration.json')):
+        try:
+            reg = load_registered(rp, base)
+        except (OSError, KeyError, ValueError, TypeError):
+            continue
+        if reg.image_path.is_file():
+            out.append(reg)
+    return out
+
+
+def sample_rgb(points, sources=None) -> dict:
+    """RGB (0..1) per column covered by a registered aerial (median of a ~1-block window).
+
+    Columns whose window leaves the image, or is (near-)black no-data, are skipped so another source
+    can fill them. Earlier sources win over later ones (default: ``registered()``, sorted by path).
+    """
+    out: dict = {}
+    for src in (registered() if sources is None else sources):
+        try:
+            im = load_rgb(src.image_path).astype(float) / 255
+        except OSError:
+            continue
+        ppb = src.px_per_block
+        h = max(2, int(round(REG_HALF_BLOCKS * ppb)))
+        edge = REG_EDGE_BLOCKS * ppb
+        H, W = im.shape[:2]
+        todo = [p for p in points if p not in out]
+        for p, (u, v) in src.pixels(todo).items():
+            if not (edge + h <= u < W - edge - h and edge + h <= v < H - edge - h):
+                continue
+            u, v = int(u), int(v)
+            win = np.median(im[v - h:v + h + 1, u - h:u + h + 1].reshape(-1, 3), axis=0)
+            if win.mean() < NO_DATA_MEAN:
+                continue
+            out[p] = tuple(float(c) for c in win)
+    return out
+
+
 def to_px(A, x, z):
     u, v = A @ [x, z, 1]
     return float(u), float(v)
@@ -62,8 +148,9 @@ def to_mc(A, u, v):
 
 def crop(reg_path, bbox, out, scale=2):
     from osm_footprints import OSMIndex
-    reg, A = load(reg_path)
-    im = Image.open(ROOT / 'reference' / reg['image']).convert('RGB')
+    src = load_registered(reg_path)
+    A = src.A
+    im = src.image()
     x0, z0, x1, z1 = bbox
     pts = [to_px(A, x, z) for x in (x0, x1) for z in (z0, z1)]
     bx0, by0 = int(min(p[0] for p in pts)), int(min(p[1] for p in pts))
