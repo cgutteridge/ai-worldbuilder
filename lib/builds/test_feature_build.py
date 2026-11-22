@@ -2842,6 +2842,39 @@ class ZoneMaterialsColourTest(unittest.TestCase):
         self.assertIn('rgb=', out)
 
 
+class SampleColumnsRgbTest(unittest.TestCase):
+    """#370: roof-colour sampling reads the current aerial source and fails loudly."""
+
+    def test_samples_columns_the_aerial_source_covers(self):
+        import aerial_coverage as aerial
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'tile.png'
+            Image.new('RGB', (64, 64), (200, 100, 50)).save(path)
+            mosaic = aerial.Mosaic(path, 19, 0, 0)
+            pts = [(10, 10), (500, 500)]
+            with mock.patch.object(aerial.Mosaic, 'pixels',
+                                   lambda self, p: {q: (q[0], q[1]) for q in p}), \
+                    mock.patch.object(aerial, 'mosaics', return_value=[mosaic]):
+                got = F.sample_columns_rgb(pts)
+        self.assertEqual(list(got), [(10, 10)])
+        self.assertAlmostEqual(got[(10, 10)][0], 200 / 255, places=2)
+
+    def test_missing_aerial_source_raises_instead_of_returning_nothing(self):
+        import aerial_coverage as aerial
+        with mock.patch.object(aerial, 'mosaics', return_value=[]):
+            with self.assertRaises(F.AerialSourceMissing):
+                F.sample_columns_rgb([(1, 1)])
+
+    def test_dry_run_says_when_colour_suggestions_are_skipped(self):
+        import aerial_coverage as aerial
+        feat = mock.Mock(no='A', cells={(1, 1)}, zone_level={(1, 1): 45})
+        with mock.patch.object(aerial, 'mosaics', return_value=[]):
+            lines = F.roof_zone_colour_lines([feat])
+        self.assertEqual(len(lines), 1)
+        self.assertIn('skipped', lines[0])
+
+
 class DetailsSpecTest(unittest.TestCase):
     """Seam: per-label details table (roof + facade greeblies) validates and defaults."""
 
