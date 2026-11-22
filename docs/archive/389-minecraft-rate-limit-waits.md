@@ -31,17 +31,20 @@ writer is not what empties the bucket.
 One `Paced` instance is about **54.5 requests/minute**, well under 600. Concurrent
 MCP callers (agent sessions, scans, teleports, captures, a second `Paced`) share
 the same IP bucket. When they drain it, the apply’s next call gets 429 and — before
-this ticket’s client cap — paid a full minute even though a token was back in
+this ticket’s backoff — paid a full minute even though a token was back in
 about 100 ms. Historical fills with 1 / 7 / 10 retries are that collision pattern;
 retry count tracks other load, not slab count.
 
 ## Fix landed with this finding
 
-`mcp.Client` now caps the 429 sleep at **2 s** (still honours a shorter
-`Retry-After`). Two seconds is about twenty tokens at 600 RPM — enough to clear
-a collision without turning it into a sixty-second stall. The 1.1 s `Paced`
-interval is **unchanged**; slowing it further would not address shared-bucket
-drain.
+`mcp.Client` uses **bounded exponential backoff** on 429: start at **0.25 s**,
+grow by ×16 each retry, and spend at most about **60 s** across the three
+retries (still treating a numeric `Retry-After` as a per-sleep upper bound).
+With the usual `Retry-After: 60` that is **0.25 s → 4 s → ~55.75 s** before the
+request fails — enough to ride out a shared-IP drain without sleeping a full
+minute on the first collision, and without aborting after only a few seconds of
+flat short caps. The 1.1 s `Paced` interval is **unchanged**; slowing it further
+would not address shared-bucket drain.
 
 ## Still optional live apply
 

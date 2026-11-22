@@ -8,25 +8,44 @@ import time
 
 # Fabric MCP returns Retry-After: 60 for a token bucket that refills far sooner
 # (100 ms per token at the loaded 600 RPM; see docs/archive/389-minecraft-rate-limit-waits.md).
-# Cap the client sleep so a shared-IP collision is not a full minute pause.
-RATE_LIMIT_RETRY_CAP_S = 2.0
+# Bounded exponential backoff: start short, grow, and spend at most ~60 s across retries —
+# still treating a numeric Retry-After as a per-sleep upper bound.
+RATE_LIMIT_RETRY_BASE_S = 0.25
+RATE_LIMIT_RETRY_GROWTH = 16
+RATE_LIMIT_RETRY_BUDGET_S = 60.0
 
 
-def rate_limit_retry_delay_s(retry_after_header: str | None) -> float:
-    """Seconds to wait after HTTP 429 before retrying an MCP request.
+def rate_limit_retry_delay_s(
+    retry_after_header: str | None,
+    *,
+    attempt: int,
+    waited_s: float = 0.0,
+) -> float:
+    """Seconds to wait after HTTP 429 before the next MCP retry.
 
-    Honours a numeric ``Retry-After`` when it is shorter than
-    :data:`RATE_LIMIT_RETRY_CAP_S`; otherwise uses the cap. Non-numeric or
-    missing headers fall back to the cap.
+    Bounded exponential backoff from :data:`RATE_LIMIT_RETRY_BASE_S`, growing by
+    :data:`RATE_LIMIT_RETRY_GROWTH` each attempt. Each sleep is capped by the
+    lesser of a numeric ``Retry-After`` and the remaining total budget
+    (:data:`RATE_LIMIT_RETRY_BUDGET_S` minus ``waited_s``). Missing or non-numeric
+    headers use the budget as that upper bound only — they do not force a long
+    first sleep.
 
     @param retry_after_header: raw ``Retry-After`` response header, or None
+    @param attempt: zero-based retry index (0 = first sleep after a 429)
+    @param waited_s: seconds already slept on earlier retries for this request
     @returns: sleep seconds (>= 0.05)
     """
     try:
-        header_s = float(retry_after_header) if retry_after_header is not None else RATE_LIMIT_RETRY_CAP_S
+        header_s = (
+            float(retry_after_header)
+            if retry_after_header is not None
+            else RATE_LIMIT_RETRY_BUDGET_S
+        )
     except ValueError:
-        header_s = RATE_LIMIT_RETRY_CAP_S
-    return max(0.05, min(RATE_LIMIT_RETRY_CAP_S, header_s))
+        header_s = RATE_LIMIT_RETRY_BUDGET_S
+    remaining = max(0.05, RATE_LIMIT_RETRY_BUDGET_S - waited_s)
+    backoff = RATE_LIMIT_RETRY_BASE_S * (RATE_LIMIT_RETRY_GROWTH ** attempt)
+    return max(0.05, min(backoff, header_s, remaining))
 
 
 class Client:
@@ -59,6 +78,7 @@ class Client:
             payload["id"] = self.sequence
         req = urllib.request.Request(self.url, json.dumps(payload).encode(), self.headers)
         # A 429 is rejected before dispatch, so retrying it cannot duplicate an edit.
+        waited_s = 0.0
         for attempt in range(4):
             try:
                 with self.opener.open(req, timeout=60) as response:
@@ -70,9 +90,14 @@ class Client:
             except urllib.error.HTTPError as error:
                 if error.code != 429 or attempt == 3:
                     raise
-                delay = rate_limit_retry_delay_s(error.headers.get("Retry-After"))
+                delay = rate_limit_retry_delay_s(
+                    error.headers.get("Retry-After"),
+                    attempt=attempt,
+                    waited_s=waited_s,
+                )
                 print(f"Minecraft rate limit: retrying in {delay}s", file=__import__("sys").stderr, flush=True)
                 time.sleep(delay)
+                waited_s += delay
                 if not notification:
                     self.sequence += 1
                     payload["id"] = self.sequence

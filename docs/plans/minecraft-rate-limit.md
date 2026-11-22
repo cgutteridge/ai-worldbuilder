@@ -5,7 +5,9 @@
 Summary: loaded limiter is a **600 RPM per-IP token bucket**; 429s carry a
 literal **`Retry-After: 60`** even though a token returns in about **100 ms**.
 A single `Paced` writer at 1.1 s cannot exhaust that budget; **concurrent MCP
-clients** on loopback can. `mcp.Client` now caps the retry sleep at **2 s**.
+clients** on loopback can. `mcp.Client` now uses bounded exponential 429
+backoff (0.25 s → grow → ~60 s total across retries; `Retry-After` still caps
+each sleep).
 
 ## Earlier jar and live notes (kept for detail)
 
