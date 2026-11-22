@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
+from roof_geometry import stair_shape_from_neighbours  # noqa: E402
 from roof_lint import (  # noqa: E402
     ridge_jogs,
-    stair_shape_from_neighbours,
     stair_shape_mismatches,
 )
 
