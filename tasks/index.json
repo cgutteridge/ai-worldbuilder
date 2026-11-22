@@ -67,7 +67,7 @@
     {
       "id": 326,
       "title": "River levels: real-lidar profile and in-game stepped-reach trial",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "m",
       "blockedBy": [],
@@ -122,7 +122,7 @@
     {
       "id": 357,
       "title": "Roof types and recommended triads from real roofs (I-057 S-104)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
@@ -142,7 +142,7 @@
     {
       "id": 359,
       "title": "Tree heights: rural build trial of first-return reader",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
