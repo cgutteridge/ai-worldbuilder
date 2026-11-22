@@ -245,16 +245,7 @@
       "builderTask": false,
       "notes": "roof_lint on recorded west_w34391673 reports 1 stair-shape mismatch: (6189,61,-5608) facing=north planned=inner_right expected=straight. It predates the 2026-11-22 rebuild, so it comes from pitched_roof_states, not the roof-jog work. Reproduce from the recorded plan with python3 scripts/roof_lint.py --world southampton-build west_w34391673, add a synthetic fixture of the neighbouring stairs around that cell, and fix the shape choice so the planned shape equals stair_shape_from_neighbours for the final skin (same approach as #169 and the house_build chimney handling). Acceptance: the fixture fails before and passes after, roof_lint on west_w34391673 reports 0 mismatches after a rebuild, other recorded builds' lint output unchanged (compare scripts/roof_lint.py --all before and after)."
     },
-    {
-      "id": 391,
-      "title": "Docs: fix every stale path, name and flag, and add a path audit test",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T1. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T1' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: m\n- Scope:\n  - Fix every row of 1.13 except the coverage rows (T5).\n  - Add the newly retired names to `stale_terms_audit.BANNED_TERMS`.\n  - Add a unit test that fails when a tool-root path named in `rules/`, `.agents/skills/`, READMEs, root docs, `docs/agents/`, `docs/specs/` or `reference/TYPES.txt` does not exist. It skips world-relative paths and placeholders.\n- Check: the new test passes, and it fails on a fixture doc that names a missing path. `stale_terms_audit` passes.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process."
-    },
+    
     {
       "id": 392,
       "title": "Move Southampton supplement roads out of ground_sources into world data",
