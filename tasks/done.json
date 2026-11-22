@@ -3342,5 +3342,38 @@
       "requiresClaude": false,
       "notes": "Found by the roof types task. feature_build.sample_columns_rgb imports MOSAIC from ground_sources, which no longer exists, so it silently returns {} and the dry-run roof_zone_colour_lines suggestions are empty. The roof types worker sampled via aerial_coverage.samples instead. Fix: point it at the current aerial source (or reuse aerial_coverage.samples), and make it fail loudly instead of returning {} when the source is missing. Test: synthetic fixtures only; a test that fails if sample_columns_rgb returns nothing for a footprint that has aerial cover. No live build.\n\nClosed at 75efd0cc6d6c407e5f4b7cacee41722a03dd9719: sample_columns_rgb now samples via aerial_coverage and raises AerialSourceMissing; dry run prints a skipped line. Other stale ground_sources MOSAIC imports remain in evidence_sheet and garden_sources.overlay (see follow-up task).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 371,
+      "title": "Feature roofs: write flat-roof and roof-detail slabs through the roof catalogue",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "- Scope: `roof_flat` (`feature_build.py:3367`) and the `awning_like` and `ledge` detail kinds (`:3771, 3774`) hand-spell `{rm}_slab[type=bottom]`. Make them use `roof_material.family_variants`: slab where the family has one, the full block where it does not (the same fallback `house_build` uses). Delete the `block_family_variants` wrapper (nine uses, `feature_build.py:944`) and the unused `stair()` (`:929`); import `family_variants` directly and repoint the tests that patch `F.block_family_variants` (`test_feature_build.py:3615, 3821, 4067-4079`) at the new name. Check whether `roof_aerial.nearest_roof_material`'s \"has a slab\" filter (`roof_aerial.py:58`) can then be dropped. Do not change roofs for materials that already work.\n- Check: a synthetic flat roof with `light_gray_concrete`, `terracotta` and `smooth_stone` plans only block ids present in `config/minecraft-block-ids-26.2.txt`; the existing golden `_roof_material_migration_plan` test (`test_feature_build.py:4001-4131`) still passes unchanged for brick, spruce and deepslate_tile; `grep -n \"block_family_variants\\|{rm}_slab\" lib/builds/feature_build.py` returns nothing; `python3 scripts/run_tests.py --only test_feature_build` passes.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356).\n\nClosed at 46223839093eeb5861989873ce76503af2b5ae15: Flat-roof deck, awning and ledge use the catalogue slab or full block; block_family_variants wrapper removed. stair() kept: it has callers in feature_build (the review said none).\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 373,
+      "title": "Delete the terrace generator; keep `snap_slope`",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "- Scope: `Terrace`, `House`, `ROOF_FULL`, `line_x`, `passage_xs` and the helpers only they use (`terrace.py`, about 700 of 749 lines) have no production caller. Move `snap_slope` and `_FRIENDLY` to `lib/geo/geo.py` (its only importer), move the three `snap_slope` tests with it, drop `BROADLANDS_N_SLOPE` and the generator tests, delete `lib/builds/terrace.py` and `test_terrace.py`. Fix the text that points at the non-existent `scripts/terrace.py`: `rules/terrace-builds.md:72-77`, `rules/craftsmanship.md:99`, `rules/rules-context.md:30`, `lib/site/rules_context.py:245` and its test, `scripts/site_views.py:163`. Do not touch world repos.\n- Check: `grep -rn \"import terrace\\|from terrace\" lib scripts` returns nothing; `snap_slope` tests pass from their new home; `python3 scripts/run_tests.py` is green; `grep -rn \"scripts/terrace.py\" rules lib` returns nothing.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356).\n\nClosed at 3837785b1f8e3a6cf79e438cc4e17451f9f080a5: terrace.py generator deleted; snap_slope moved to geo.py; stale scripts/terrace.py text fixed.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 356,
+      "title": "Review: rationalise half-shared modules and parallel seams (started by roof materials)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "Owner prompt 2026-11-21 after #355: a shared roof-material catalogue landed that only feature_build uses, while house_build still invents `{mat}_slab`, and terrace.py / outbuildings.py keep their own ROOF_FULL tables. That is bad code: a \"shared\" seam with one caller, deferred \"Task 2\" still open, and parallel material maps elsewhere. Feel bad; do not paper over it.\n\nDeliverable: a short review of the tool codebase and the open system tracker (tasks/index.json, not world ISSUES), then proposed new tasks that rationalise duplicated or half-shared seams. Write findings under docs/plans/ (one file). The review itself does not change production code; the follow-up tickets do.\n\nPrompting example (must address): roof materials. Catalogue + roof_material.py + feature_build wrapper versus house_build string slabs versus terrace ROOF_FULL versus outbuildings ROOF_FULL. Propose either wire every builder through one module, or delete the pretence of sharing and keep one call site.\n\nAlso scan for the same pattern elsewhere: modules or configs that claim to be shared but have one caller; thin wrappers that only relocate names; deferred \"phase 2\" notes that left the first merge as bloat; parallel tables for the same vocabulary (block families, plant names, land-use keys, builder registration).\n\nOpen tasks: read every active ticket's title and notes. Flag tickets that add more parallel seams, that depend on unfinished sharing, or that should be rewritten or blocked until a rationalisation task lands. Do not close tickets in this pass unless the owner agrees; propose closes or rewrites in the plan.\n\nOut of scope: live world builds, cell registry work, rewriting #355 in place without a filed follow-up. requiresClaude false: source and tracker reading only.\n\nCheck: plan file exists with (1) concrete bad seams found, (2) open-task interactions, (3) proposed new task titles and one-paragraph scopes ready to add. Owner reviews before any of those are filed.\n\nImplementation reference (2026-11-21): #366 implements house_build shared roof materials and pitched geometry; #358 retains real-spec/in-game validation. Review the remaining terrace.py/outbuildings.py tables and other half-shared seams against that landed integration; do not file a duplicate house_build integration ticket.\n\n\nClosed at 46223839093eeb5861989873ce76503af2b5ae15: Review is docs/plans/seam-rationalisation-review.md. Filed A-C (#371, #372, #373). Tasks D-H and the ticket-note rewrites (#257, #318, #333, #358) await owner review. Note the review wrongly says stair() has no callers.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }

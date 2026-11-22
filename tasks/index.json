@@ -109,16 +109,7 @@
       "requiresClaude": true,
       "notes": "Live check left over from #321 (per-cell clipped water bodies, merged in 6e33f44). Check: the Itchen reach across 63,-45 joins its neighbours 62,-45 and 64,-45 in game with no seam and no bank wall. Offline, both joins already equal the whole-river build with 0 bank blocks over water. The world still holds the old trial build of 63,-45, which put 36 grass bank blocks on the river at x 8063 and x 8192.\nBlockers (cell_registry check, 2026-11-21):\n- 63,-45: validation stale; needs prepare --apply.\n- 64,-45 and 62,-45: validation required; the river clip is unaccounted for; map query coverage is 0.0%; aerial coverage is 24.6% and 26.2%.\n- Each neighbour needs the owner to supply local aerial data (source, filename and size approved before any download) and either a fix to the map extract or dismiss-clip-coverage with a reason.\nSteps, once those are settled: prepare all three cells, then run the README steps from #321's notes (specs plus make_itchen_clip_specs.py; ask the orchestrator for the path, or regenerate them) under site_lock.py run. Dry-run each cell first. Build 62,-45 too if the bank at x=8063 has to go.\n"
     },
-    {
-      "id": 356,
-      "title": "Review: rationalise half-shared modules and parallel seams (started by roof materials)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "Owner prompt 2026-11-21 after #355: a shared roof-material catalogue landed that only feature_build uses, while house_build still invents `{mat}_slab`, and terrace.py / outbuildings.py keep their own ROOF_FULL tables. That is bad code: a \"shared\" seam with one caller, deferred \"Task 2\" still open, and parallel material maps elsewhere. Feel bad; do not paper over it.\n\nDeliverable: a short review of the tool codebase and the open system tracker (tasks/index.json, not world ISSUES), then proposed new tasks that rationalise duplicated or half-shared seams. Write findings under docs/plans/ (one file). The review itself does not change production code; the follow-up tickets do.\n\nPrompting example (must address): roof materials. Catalogue + roof_material.py + feature_build wrapper versus house_build string slabs versus terrace ROOF_FULL versus outbuildings ROOF_FULL. Propose either wire every builder through one module, or delete the pretence of sharing and keep one call site.\n\nAlso scan for the same pattern elsewhere: modules or configs that claim to be shared but have one caller; thin wrappers that only relocate names; deferred \"phase 2\" notes that left the first merge as bloat; parallel tables for the same vocabulary (block families, plant names, land-use keys, builder registration).\n\nOpen tasks: read every active ticket's title and notes. Flag tickets that add more parallel seams, that depend on unfinished sharing, or that should be rewritten or blocked until a rationalisation task lands. Do not close tickets in this pass unless the owner agrees; propose closes or rewrites in the plan.\n\nOut of scope: live world builds, cell registry work, rewriting #355 in place without a filed follow-up. requiresClaude false: source and tracker reading only.\n\nCheck: plan file exists with (1) concrete bad seams found, (2) open-task interactions, (3) proposed new task titles and one-paragraph scopes ready to add. Owner reviews before any of those are filed.\n\nImplementation reference (2026-11-21): #366 implements house_build shared roof materials and pitched geometry; #358 retains real-spec/in-game validation. Review the remaining terrace.py/outbuildings.py tables and other half-shared seams against that landed integration; do not file a duplicate house_build integration ticket.\n"
-    },
+    
     
     {
       "id": 358,
@@ -141,16 +132,7 @@
       "requiresClaude": true,
       "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nrequiresClaude true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game."
     },
-    {
-      "id": 371,
-      "title": "Feature roofs: write flat-roof and roof-detail slabs through the roof catalogue",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "- Scope: `roof_flat` (`feature_build.py:3367`) and the `awning_like` and `ledge` detail kinds (`:3771, 3774`) hand-spell `{rm}_slab[type=bottom]`. Make them use `roof_material.family_variants`: slab where the family has one, the full block where it does not (the same fallback `house_build` uses). Delete the `block_family_variants` wrapper (nine uses, `feature_build.py:944`) and the unused `stair()` (`:929`); import `family_variants` directly and repoint the tests that patch `F.block_family_variants` (`test_feature_build.py:3615, 3821, 4067-4079`) at the new name. Check whether `roof_aerial.nearest_roof_material`'s \"has a slab\" filter (`roof_aerial.py:58`) can then be dropped. Do not change roofs for materials that already work.\n- Check: a synthetic flat roof with `light_gray_concrete`, `terracotta` and `smooth_stone` plans only block ids present in `config/minecraft-block-ids-26.2.txt`; the existing golden `_roof_material_migration_plan` test (`test_feature_build.py:4001-4131`) still passes unchanged for brick, spruce and deepslate_tile; `grep -n \"block_family_variants\\|{rm}_slab\" lib/builds/feature_build.py` returns nothing; `python3 scripts/run_tests.py --only test_feature_build` passes.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
-    },
+    
     {
       "id": 372,
       "title": "Outbuildings: take shed and garage roof blocks from the roof catalogue",
@@ -160,16 +142,6 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "- Scope: replace `ROOF_SLAB`, `ROOF_STAIR` and `ROOF_FULL` (`outbuildings.py:54-56`) with one `ROOF_FAMILY = {'shed': 'spruce', 'garage': 'stone_brick'}` and read full, slab and stairs from `roof_material.family_variants`. Keep the gable geometry (`pitched_roof`, `roof_row`) as is; it is a different, simpler shape and not part of this task. Leave `WALL_BLOCK` and `DOOR_BLOCK` alone.\n- Check: record `outbuildings.voxels` output for a synthetic shed and a synthetic garage (odd and even width, flat and pitched) before the change and assert it is identical after; `grep -n \"ROOF_FULL\\|ROOF_SLAB\\|ROOF_STAIR\" lib` finds none; `python3 scripts/run_tests.py --only test_outbuildings` passes.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
-    },
-    {
-      "id": 373,
-      "title": "Delete the terrace generator; keep `snap_slope`",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "- Scope: `Terrace`, `House`, `ROOF_FULL`, `line_x`, `passage_xs` and the helpers only they use (`terrace.py`, about 700 of 749 lines) have no production caller. Move `snap_slope` and `_FRIENDLY` to `lib/geo/geo.py` (its only importer), move the three `snap_slope` tests with it, drop `BROADLANDS_N_SLOPE` and the generator tests, delete `lib/builds/terrace.py` and `test_terrace.py`. Fix the text that points at the non-existent `scripts/terrace.py`: `rules/terrace-builds.md:72-77`, `rules/craftsmanship.md:99`, `rules/rules-context.md:30`, `lib/site/rules_context.py:245` and its test, `scripts/site_views.py:163`. Do not touch world repos.\n- Check: `grep -rn \"import terrace\\|from terrace\" lib scripts` returns nothing; `snap_slope` tests pass from their new home; `python3 scripts/run_tests.py` is green; `grep -rn \"scripts/terrace.py\" rules lib` returns nothing.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356)."
     }
   ]
 }
