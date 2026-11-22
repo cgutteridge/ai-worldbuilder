@@ -161,7 +161,7 @@ from roof_geometry import (
     ROOF_DELTA, ROOF_FACE_ORDER, align_stair_shapes, edge_distance_field, pitched_roof_states,
     regularise_roof_half_heights, roof_block_y,
 )
-from roof_material import family_variants, roof_material_warnings
+from roof_material import block_id_names, family_variants, roof_material_warnings
 import facade_plan as facade_plan_mod  # noqa: E402
 import land_use  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
@@ -3135,13 +3135,10 @@ class Build:
         for f in self.features:
             for line in roof_material_warnings(f.roof):
                 print(line)
-        valid_ids = {
-            line for line in (TOOL_ROOT / 'config/minecraft-block-ids-26.2.txt').read_text().splitlines()
-            if line and not line.startswith('#')
-        }
+        valid_ids = block_id_names()
         counts = Counter(state.split('[', 1)[0] for state in self.p.cells.values())
         for name, count in sorted(counts.items()):
-            if name not in valid_ids:
+            if name.removeprefix('minecraft:') not in valid_ids:
                 print(f'unknown block id {name} x{count} (source: vendored Minecraft 26.2 client blockstates; config/minecraft-block-ids-26.2.txt)')
         # Re-stamp from the finished geometry so roof overhangs into neighbours are
         # part of the plan identity apply will check (task 232).

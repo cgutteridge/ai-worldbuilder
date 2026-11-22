@@ -127,7 +127,8 @@ class EntranceExtractPreset(unittest.TestCase):
     def test_entrances_preset_is_in_cell_extract_layers(self):
         import osm_cell_extract as oce
         self.assertIn('entrances', oce.CELL_EXTRACT_LAYERS)
-        presets = oce.landscape_layer_presets()
+        presets: dict = {}
+        oce.install_cell_extract_layer_presets(presets)
         self.assertIn('entrances', presets)
         gdal_layer, where, _models = presets['entrances'][0]
         self.assertEqual(gdal_layer, 'points')

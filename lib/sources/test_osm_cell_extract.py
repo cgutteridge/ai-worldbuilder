@@ -23,6 +23,13 @@ REQUIRED_PRESETS = (
 )
 
 
+def _installed_presets() -> dict:
+    """Presets the production installer writes into an empty layer table."""
+    presets: dict = {}
+    oce.install_cell_extract_layer_presets(presets)
+    return presets
+
+
 class CellExtractJobList(unittest.TestCase):
     """Proof: the per-cell extract job list names every landscape preset."""
 
@@ -40,7 +47,7 @@ class CellExtractJobList(unittest.TestCase):
 
     def test_landscape_presets_match_geometry_families(self):
         """Each landscape preset is the GDAL layer + WHERE the layers already read."""
-        presets = oce.landscape_layer_presets()
+        presets = _installed_presets()
         self.assertEqual(presets['water'][0][0], 'multipolygons')
         self.assertIn("natural = 'water'", presets['water'][0][1])
         self.assertEqual(presets['waterway'][0][0], 'lines')
@@ -76,7 +83,7 @@ class CellExtractJobList(unittest.TestCase):
 
     def test_kerb_nodes_stay_out_and_crossings_come_only_through_furniture(self):
         """Kerb points stay out of the standard extract jobs; crossing nodes are street furniture (#334)."""
-        jobs = oce.landscape_layer_presets()
+        jobs = _installed_presets()
         blob = ' '.join(where for name, js in jobs.items() if name != 'furniture' for _g, where, _m in js).lower()
         self.assertNotIn('kerb', blob)
         self.assertNotIn('crossing', blob)

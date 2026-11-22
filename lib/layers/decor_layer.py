@@ -427,9 +427,11 @@ def place_barriers_from_plan(
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place barrier plan items (hedges, walls, fences) anywhere but the carriageway.
 
-    Building-border hedges with ``allow_against_build`` may occupy the near1 ring;
-    other barriers still skip it. Columns that cannot be placed are returned as
-    unplaced copies with an unresolved reason.
+    Which columns exist, and their kind, block and height, come from
+    :func:`decor_plan.resolved_barriers`. Building-border hedges with
+    ``allow_against_build`` may occupy the near1 ring; other barriers still skip
+    it. Columns that cannot be placed are returned as unplaced copies with an
+    unresolved reason.
 
     @param cell: (tx, tz)
     @param items: barrier role plan items
@@ -444,97 +446,93 @@ def place_barriers_from_plan(
     from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
-    present: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
     unplaced: list[dict] = []
+    sources: dict[tuple[int, int], Mapping[str, Any]] = {}
+    columns = dplan.resolved_barriers({'items': list(items)}, unplaced, sources)
     for item in items:
-        if item.get('role') != 'barrier':
+        if item.get('role') != 'barrier' or item.get('cells'):
             continue
-        if prov.is_unresolved(item.get('provenance')):
+        if prov.is_unresolved(item.get('provenance')) or item.get('kind') not in dplan.BARRIER_KINDS:
             continue
-        kind = item.get('kind')
-        mat = item.get('block') or dplan.DEFAULT_BLOCK.get(kind or '', '')
-        height = int(item.get('height') or dplan.DEFAULT_HEIGHT.get(kind or '', 1))
+        unplaced.append(dplan.mark_unplaced(item, 'no cells'))
+    for q in sorted(columns):
+        kind, mat, height = columns[q]
+        item = sources[q]
         allow = bool(item.get('allow_against_build'))
         facings = item.get('facing') or {}              # '{x},{z}' -> outward direction (plank panels)
         bases = item.get('facing_basis') or {}
-        cells = item.get('cells') or []
-        if not cells:
-            unplaced.append(dplan.mark_unplaced(item, 'no cells'))
+        if not cell_contains(cell, *q):
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"}, 'outside cell'))
             continue
-        for raw in cells:
-            q = (int(raw[0]), int(raw[1]))
-            if not cell_contains(cell, *q):
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"}, 'outside cell'))
+        if q in near1 and not allow:
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                'against build',
+            ))
+            continue
+        top = ground_at(world, lidar_hm, *q, owned, masked)
+        if not top or q in way:
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                'on road/path/water or no surface' if q in way or terrain_y(lidar_hm, *q) is None
+                else ground_missing_reason(lidar_hm, *q, owned),
+            ))
+            continue
+        if on_carriageway(world, q[0], q[1], lidar_hm):
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                'on carriageway',
+            ))
+            continue
+        if top[1].endswith('_carpet'):
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
+                'on carpet top',
+            ))
+            continue
+        col_ok = False
+        excluded = []
+        placed_positions = []
+        facing = facings.get(f'{q[0]},{q[1]}') if kind == 'plank_fence' else None
+        state = dplan.shelf_block(mat, facing) if kind == 'plank_fence' else mat
+        for i in range(1, height + 1):
+            pos = (q[0], top[0] + i, q[1])
+            reason = ('not air' if not is_air(world.block(*pos)) else
+                      'owned block' if pos in owned else
+                      'masked block' if pos in masked else
+                      'overlapping placement' if pos in found else None)
+            if reason:
+                excluded.append({'position': list(pos), 'reason': reason})
                 continue
-            if q in near1 and not allow:
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'against build',
-                ))
-                continue
-            top = ground_at(world, lidar_hm, *q, owned, masked)
-            if not top or q in way:
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'on road/path/water or no surface' if q in way or terrain_y(lidar_hm, *q) is None
-                    else ground_missing_reason(lidar_hm, *q, owned),
-                ))
-                continue
-            if on_carriageway(world, q[0], q[1], lidar_hm):
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'on carriageway',
-                ))
-                continue
-            if top[1].endswith('_carpet'):
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}"},
-                    'on carpet top',
-                ))
-                continue
-            col_ok = False
-            excluded = []
-            placed_positions = []
-            facing = facings.get(f'{q[0]},{q[1]}') if kind == 'plank_fence' else None
-            state = dplan.shelf_block(mat, facing) if kind == 'plank_fence' else mat
-            for i in range(1, height + 1):
-                pos = (q[0], top[0] + i, q[1])
-                reason = ('not air' if not is_air(world.block(*pos)) else
-                          'owned block' if pos in owned else
-                          'masked block' if pos in masked else
-                          'overlapping placement' if pos in found else None)
-                if reason:
-                    excluded.append({'position': list(pos), 'reason': reason})
-                    continue
-                found[pos] = state
-                placed_positions.append(list(pos))
-                col_ok = True
-            if col_ok:
-                report.append({
-                    'x': q[0], 'z': q[1], 'kind': kind, 'block': mat, 'height': height,
-                    **({'state': state, 'facing': facing,
-                        'facing_basis': bases.get(f'{q[0]},{q[1]}') or 'no outward evidence: solid plank'}
-                       if kind == 'plank_fence' else {}),
-                    'source': (item.get('provenance') or {}).get('source', ''),
-                    'provenance': dict(item.get('provenance') or {}),
-                    'scope': dict(item.get('scope') or {}),
-                    'reason': item.get('reason', ''),
-                    'plan_id': item.get('id'),
-                    'allow_against_build': allow,
-                    'placed_positions': placed_positions, 'excluded_positions': excluded,
-                    **({'on_terrain': True, 'moved_to_terrain': raised_over_terrain(world, q[0], q[1], top[0])}
-                       if terrain_y(lidar_hm, *q) is not None else {}),
-                    **({'partial': True} if excluded else {}),   # placed, but some of the column was refused
-                })
-            else:
-                unplaced.append(dplan.mark_unplaced(
-                    {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}",
-                     'excluded_positions': excluded},
-                    'feature above terrain' if any(tuple(e['position']) in owned for e in excluded)
-                    else 'blocked by live or owned block',
-                ))
+            found[pos] = state
+            placed_positions.append(list(pos))
+            col_ok = True
+        if col_ok:
+            report.append({
+                'x': q[0], 'z': q[1], 'kind': kind, 'block': mat, 'height': height,
+                **({'state': state, 'facing': facing,
+                    'facing_basis': bases.get(f'{q[0]},{q[1]}') or 'no outward evidence: solid plank'}
+                   if kind == 'plank_fence' else {}),
+                'source': (item.get('provenance') or {}).get('source', ''),
+                'provenance': dict(item.get('provenance') or {}),
+                'scope': dict(item.get('scope') or {}),
+                'reason': item.get('reason', ''),
+                'plan_id': item.get('id'),
+                'allow_against_build': allow,
+                'placed_positions': placed_positions, 'excluded_positions': excluded,
+                **({'on_terrain': True, 'moved_to_terrain': raised_over_terrain(world, q[0], q[1], top[0])}
+                   if terrain_y(lidar_hm, *q) is not None else {}),
+                **({'partial': True} if excluded else {}),   # placed, but some of the column was refused
+            })
+        else:
+            unplaced.append(dplan.mark_unplaced(
+                {**item, 'cells': [list(q)], 'id': f"{item.get('id', kind)}-{q[0]}-{q[1]}",
+                 'excluded_positions': excluded},
+                'feature above terrain' if any(tuple(e['position']) in owned for e in excluded)
+                else 'blocked by live or owned block',
+            ))
     return found, report, unplaced
 
 

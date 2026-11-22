@@ -73,7 +73,7 @@ class FacadePlanValidateTest(unittest.TestCase):
             },
         }
         FP.validate_facade_plan(plan, labels={'A'}, storeys={'A': 2})
-        placed = FP.placed_entrances(plan)
+        placed = [e for e in FP.iter_entrances(plan) if not prov.is_unresolved(e.get('provenance'))]
         self.assertEqual({e['id'] for e in placed}, {'57-A', '40-A'})
         self.assertEqual(next(e for e in placed if e['id'] == '40-A')['leaves'], 2)
 
@@ -135,7 +135,7 @@ class FacadePlanValidateTest(unittest.TestCase):
             },
         }
         FP.validate_facade_plan(plan, labels={'A'}, storeys={'A': 1})
-        unresolved = FP.unresolved_entrances(plan)
+        unresolved = [e for e in FP.iter_entrances(plan) if prov.is_unresolved(e.get('provenance'))]
         self.assertEqual([e['id'] for e in unresolved], ['99-Z'])
         self.assertTrue(prov.is_unresolved(unresolved[0]['provenance']))
 
@@ -285,9 +285,9 @@ class FacadePlanValidateTest(unittest.TestCase):
             },
         }
         FP.validate_facade_plan(plan, labels={'A'}, storeys={'A': 1})
-        found = FP.unresolved_entrances_for_cell((48, -44), plan)
+        found = prov.unresolved_for_cell((48, -44), FP.iter_entrances(plan))
         self.assertEqual([e['id'] for e in found], ['99-Z'])
-        self.assertEqual(FP.unresolved_entrances_for_cell((49, -44), plan), [])
+        self.assertEqual(prov.unresolved_for_cell((49, -44), FP.iter_entrances(plan)), [])
 
 
 class FacadePlanLoadSpecTest(unittest.TestCase):

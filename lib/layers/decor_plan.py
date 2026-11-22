@@ -1112,11 +1112,16 @@ def unresolved_items(plan: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 def resolved_barriers(
     plan: Mapping[str, Any],
     unplaced: list[dict[str, Any]] | None = None,
+    sources: dict[tuple[int, int], Mapping[str, Any]] | None = None,
 ) -> dict[tuple[int, int], tuple[str, str, int]]:
     """Resolved barrier columns → ``(kind, block, height)`` for the decor layer.
 
+    Later items win when two resolved barriers share a column. ``sources``
+    receives that winning item so the placer can keep facing and provenance.
+
     @param plan: decor plan
     @param unplaced: optional list receiving skipped unresolved or unknown-kind items, with reasons
+    @param sources: optional map filled with the plan item that owns each column
     @returns: column map ready for placement
     """
     out: dict[tuple[int, int], tuple[str, str, int]] = {}
@@ -1138,7 +1143,10 @@ def resolved_barriers(
         block = item.get('block') or DEFAULT_BLOCK[kind]
         height = int(item.get('height') or DEFAULT_HEIGHT[kind])
         for c in item.get('cells') or []:
-            out[(int(c[0]), int(c[1]))] = (kind, block, height)
+            key = (int(c[0]), int(c[1]))
+            out[key] = (kind, block, height)
+            if sources is not None:
+                sources[key] = item
     return out
 
 

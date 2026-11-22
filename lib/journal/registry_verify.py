@@ -178,66 +178,6 @@ def check_decision_records(reg: CellRegistry, root: Path) -> list[dict[str, Any]
     return out
 
 
-def check_uncovered_footprints(reg: CellRegistry) -> list[dict[str, Any]]:
-    """Error per landed ground whose skipped building footprints lack a plan or feature (#141).
-
-    Ground never paints building-footprint columns. After ground lands, every vector-map
-    building those columns belong to must have a ``plan_feature`` (or dismiss) or a
-    landed feature — same coverage as ``registry_next.unplanned_footprint_candidates``.
-
-    @param reg: registry view
-    @returns: one error issue per cell with uncovered buildings (names in the message)
-    """
-    import registry_next as RN  # noqa: WPS433
-
-    out: list[dict[str, Any]] = []
-    for cell, v in sorted(reg.view().items()):
-        if v.ground != 'generated':
-            continue
-        cid = cell_id(*cell)
-        candidates = RN.unplanned_footprint_candidates(reg, cid)
-        if not candidates:
-            continue
-        buildings = [str(c.get('label') or c.get('id') or '?') for c in candidates]
-        ids = [str(c['id']) for c in candidates if c.get('id')]
-        named = ', '.join(
-            f"{c.get('label') or c.get('id') or '?'} ({c['id']})" if c.get('id')
-            else str(c.get('label') or '?')
-            for c in candidates
-        )
-        out.append(_issue(
-            f'uncovered-footprint:{cid}', SEVERITY_ERROR,
-            f'cell {cid} ground skipped building footprints with no planned or landed feature: {named}; '
-            f'{RN.describe_uncovered(candidates)}',
-            buildings=buildings,
-            features=ids,
-        ))
-    return out
-
-
-def check_clip_query_coverage(reg: CellRegistry) -> list[dict[str, Any]]:
-    """Warn when generated ground has incomplete, undismissed vector-map query coverage.
-
-    @param reg: cell journal
-    @returns: warning issues, one per cell with incomplete query coverage
-    """
-    from registry_next import needs_clip_coverage
-    out = []
-    for cell, view in sorted(reg.view().items()):
-        if view.ground != 'generated':
-            continue
-        task = needs_clip_coverage(reg, cell)
-        if task is not None:
-            cid, fraction = task['cell'], task['clip_coverage']
-            out.append(_issue(
-                f'clip-query-coverage:{cid}', SEVERITY_WARN,
-                f'cell {cid}: {fraction:.1%} queried by vector-map clips; '
-                f'extract missing clips or dismiss-clip-coverage {cid} --reason R',
-                clip_coverage=fraction,
-            ))
-    return out
-
-
 def run_verify(
     *,
     root: Path | None = None,

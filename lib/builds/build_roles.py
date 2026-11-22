@@ -164,22 +164,33 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = ap.add_subparsers(dest='cmd', required=True)
 
-    sub.add_parser('show', help='print default roles from config')
+    p_show = sub.add_parser('show', help='print default roles from config')
+    p_show.add_argument(
+        '--block',
+        action='store_true',
+        help='print the multi-line role brief for agent prompts',
+    )
 
     p_res = sub.add_parser('resolve', help='resolve roles with optional overrides')
     p_res.add_argument('--tool', default=None)
     p_res.add_argument('--designer', default=None)
     p_res.add_argument('--builder', default=None)
-    p_res.add_argument(
+    out = p_res.add_mutually_exclusive_group()
+    out.add_argument(
         '--json',
         action='store_true',
         help='print JSON instead of the one-line declaration',
+    )
+    out.add_argument(
+        '--block',
+        action='store_true',
+        help='print the multi-line role brief for agent prompts',
     )
 
     args = ap.parse_args(argv)
     if args.cmd == 'show':
         roles = resolve_roles(config_path=args.config)
-        print(format_roles_line(roles))
+        print(format_roles_block(roles) if args.block else format_roles_line(roles))
         return 0
     if args.cmd == 'resolve':
         roles = resolve_roles(
@@ -193,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
             payload['same_model'] = roles.same_model
             payload['split_sessions'] = roles.split_sessions
             print(json.dumps(payload, indent=2))
+        elif args.block:
+            print(format_roles_block(roles))
         else:
             print(format_roles_line(roles))
         return 0

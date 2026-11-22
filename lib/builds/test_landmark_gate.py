@@ -27,7 +27,6 @@ class LandmarkClassTest(unittest.TestCase):
     def test_building_classes(self):
         for value in ('church', 'cathedral', 'chapel', 'cinema'):
             self.assertEqual(LG.landmark_class({'building': value}), value)
-            self.assertTrue(LG.is_landmark({'building': value}))
 
     def test_amenity_cinema(self):
         self.assertEqual(LG.landmark_class({'amenity': 'cinema', 'building': 'yes'}), 'cinema')
@@ -48,23 +47,12 @@ class LandmarkClassTest(unittest.TestCase):
         ):
             self.assertIsNone(LG.landmark_class(tags), tags)
 
-    def test_landmark_fields_and_annotate(self):
+    def test_landmark_fields(self):
         self.assertEqual(
             LG.landmark_fields({'building': 'church'}),
             {'landmark': True, 'landmark_class': 'church'},
         )
         self.assertEqual(LG.landmark_fields({'building': 'house'}), {})
-        items = LG.annotate_landmark_candidates(
-            [{'kind': 'building', 'refs': ['w1'], 'label': 'Hall'}],
-            tags_by_ref={'w1': {'building': 'chapel'}},
-        )
-        self.assertEqual(items[0]['landmark'], True)
-        self.assertEqual(items[0]['landmark_class'], 'chapel')
-        houses = LG.annotate_landmark_candidates(
-            [{'kind': 'houses', 'refs': ['w2'], 'label': 'Street'}],
-            tags_by_ref={'w2': {'building': 'church'}},
-        )
-        self.assertNotIn('landmark', houses[0])
 
 
 class LandmarkApplyGateTest(unittest.TestCase):

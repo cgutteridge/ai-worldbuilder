@@ -330,8 +330,8 @@ def water_body_plan_item(
     water_level: int | None = None,
     bank: Mapping[str, Any] | None = None,
     edge: Mapping[str, Any] | None = None,
-    source: str,
-    confidence: str,
+    source: str | None = None,
+    confidence: str = 'high',
     evidence_ids: Sequence[str] = (),
     unresolved_reason: str = '',
     root: Path | None = None,
@@ -345,8 +345,8 @@ def water_body_plan_item(
     @param water_level: surface Y when known; ``None`` until read
     @param bank: bank dict when known
     @param edge: edge dict when known
-    @param source: provenance source kind
-    @param confidence: provenance confidence
+    @param source: provenance source kind; omitted when the candidate has no source yet
+    @param confidence: provenance confidence when ``source`` is set
     @param evidence_ids: ``registry/evidence`` ids
     @param unresolved_reason: non-empty when level/bank/edge still open
     @param root: world root for evidence checks
@@ -367,14 +367,15 @@ def water_body_plan_item(
         'edge': dict(edge) if edge else None,
         'cells': [[int(cell[0]), int(cell[1])]],
     }
-    prov.attach_provenance(
-        item,
-        source=source,
-        confidence=confidence,
-        evidence_ids=evidence_ids,
-        unresolved_reason=unresolved_reason,
-        root=root,
-    )
+    if source is not None:
+        prov.attach_provenance(
+            item,
+            source=source,
+            confidence=confidence,
+            evidence_ids=evidence_ids,
+            unresolved_reason=unresolved_reason,
+            root=root,
+        )
     return item
 
 
@@ -497,29 +498,21 @@ def water_body_components(
         else:
             refs = [f'water_{bbox[0]}_{bbox[1]}']
         outline = sorted(comp)
-        body: dict[str, Any] = {
-            'kind': 'water_body',
-            'label': f'pond ({len(comp)} columns)',
-            'street': None,
-            'refs': refs,
-            'bbox': bbox,
-            'area': len(comp),
-            'outline': [[x, z] for x, z in outline],
-            'cells': [[int(cell[0]), int(cell[1])]],
-            'portals': [],
-            'pictures': [],
-            'water_level': None,
-            'bank': None,
-            'edge': None,
-        }
-        if provenance_source is not None:
-            prov.attach_provenance(
-                body,
-                source=provenance_source,
-                confidence=provenance_confidence,
-                unresolved_reason=unresolved_reason,
-                root=root,
-            )
+        body = water_body_plan_item(
+            label=f'pond ({len(comp)} columns)',
+            outline=outline,
+            cell=cell,
+            refs=refs,
+            water_level=None,
+            source=provenance_source,
+            confidence=provenance_confidence,
+            unresolved_reason=unresolved_reason if provenance_source else '',
+            root=root,
+        )
+        # Same candidate shape as a building row (street / portals / pictures).
+        body['street'] = None
+        body['portals'] = []
+        body['pictures'] = []
         out.append(body)
     return out
 

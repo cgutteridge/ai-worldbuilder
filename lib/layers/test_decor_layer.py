@@ -702,7 +702,7 @@ class TestPrefetchBatching(unittest.TestCase):
     def barrier_items(self):
         # ~200 barrier columns: two long hedges/fences in cell (0, 0) with a gap to join.
         cells = [[x, 10] for x in range(5, 105)] + [[x, 12] for x in range(5, 105)]
-        return [{'role': 'barrier', 'kind': 'fence', 'block': 'spruce_fence', 'height': 1,
+        return [{'role': 'barrier', 'kind': 'spruce_fence', 'block': 'spruce_fence', 'height': 1,
                  'id': 'f1', 'cells': cells, 'provenance': {'source': 'map'}}]
 
     def test_columns_cover_cells_furniture_and_ring(self):
@@ -806,7 +806,7 @@ class TestChunkedSnapshot(unittest.TestCase):
 
     def items(self):
         cells = [[x, z] for z in (10, 40, 70, 100) for x in range(2, 126)]
-        return [{'role': 'barrier', 'kind': 'fence', 'block': 'spruce_fence', 'height': 2,
+        return [{'role': 'barrier', 'kind': 'spruce_fence', 'block': 'spruce_fence', 'height': 2,
                  'id': 'f1', 'cells': cells, 'provenance': {'source': 'map'}}]
 
     def plan(self, w, items, view):

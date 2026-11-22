@@ -1545,6 +1545,7 @@ class TestApplyReporting(unittest.TestCase):
             return stats, [], {(0, 0): 'grass'}, skipped
 
         with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(gl, 'MASK_DIR', Path(tmp) / 'no-masks'), \
                 mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world') as fresh_world, \
@@ -1747,6 +1748,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
     def test_apply_refuses_a_floating_plan(self):
         import io
         from contextlib import redirect_stdout
+        from pathlib import Path
         from unittest import mock
         stats = Counter(columns=1, top=1)
         stats['floating_columns'] = [{'x': 0, 'z': 0, 'surface_y': 49, 'support_y': 36, 'air': 12}]
@@ -1756,6 +1758,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
             return stats, [], {(0, 0): 'grass'}, Counter()
 
         with mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
+                mock.patch.object(gl, 'MASK_DIR', Path('/nonexistent-ground-masks')), \
                 mock.patch('readiness_evidence.require_ready'), \
                 mock.patch.object(gl, '_fresh_world'), \
                 mock.patch.object(gl, 'load_masked_positions', return_value={}), \
@@ -1768,6 +1771,39 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
             self.assertEqual(gl.apply_cell((0, 0)), 1)
         apply.assert_not_called()
         self.assertIn('REFUSED: 1 ground surface(s) would float', output.getvalue())
+
+    def test_apply_refuses_a_plan_that_lands_on_a_mask(self):
+        """A finished plan that touches a mask is refused before apply."""
+        import io
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from unittest import mock
+        from pass_mask import build_mask, write_mask
+
+        stats = Counter(columns=1, top=1)
+
+        def plan_cell(cell, masked, owned, plan, world, owned_air=(), settled_fp=(), owned_states=None):
+            plan.set(0, 64, 0, 'grass_block')
+            return stats, [], {(0, 0): 'grass'}, Counter()
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict('os.environ', {'SITE_OWNER': 'test'}), \
+                mock.patch.object(gl, 'MASK_DIR', Path(tmp)), \
+                mock.patch('readiness_evidence.require_ready'), \
+                mock.patch.object(gl, '_fresh_world'), \
+                mock.patch.object(gl, 'load_masked_positions', return_value={}), \
+                mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \
+                mock.patch.object(gl, 'plan_cell', side_effect=plan_cell), \
+                mock.patch.object(gl, 'settled_footprint', return_value=set()), \
+                mock.patch('layer_reports.write_report'), \
+                mock.patch('site_kit.apply') as apply, \
+                redirect_stdout(io.StringIO()) as output:
+            mask = build_mask('decor', (0, 0), 'unit', {(0, 64, 0): 'minecraft:oak_fence'}, lambda _p: True)
+            write_mask(mask, Path(tmp))
+            self.assertEqual(gl.apply_cell((0, 0)), 1)
+        apply.assert_not_called()
+        self.assertIn('REFUSED: 1 mask conflict', output.getvalue())
 
 
 class TestBridgeTunnelAndCavity(SyntheticGroundBox, unittest.TestCase):
@@ -1891,6 +1927,7 @@ class TestDryArtifacts(unittest.TestCase):
             return stats, conflicts, {(0, 0): 'grass'}, Counter()
 
         with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(gl, 'MASK_DIR', Path(tmp) / 'no-masks'), \
                 mock.patch.object(gl, '_fresh_world', return_value=mock.Mock(block=lambda *p: 'minecraft:air')), \
                 mock.patch.object(gl, 'load_masked_positions', return_value={(0, 64, 0): 'decor 0,0'}), \
                 mock.patch.object(gl, 'neighbour_owned_states', return_value={}), \

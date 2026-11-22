@@ -12,9 +12,7 @@ same list — no hand-picked ``buildings,highways`` subset.
 """
 from __future__ import annotations
 
-from building_evidence import ENTRANCE_EXTRACT_JOBS
 from building_evidence import install_entrances_layer_preset
-from street_furniture import EXTRACT_JOBS as FURNITURE_EXTRACT_JOBS
 from street_furniture import install_furniture_layer_preset
 
 # Preset name → list of (gdal_layer, SQL WHERE, default model tags).
@@ -123,19 +121,6 @@ CELL_EXTRACT_LAYERS: tuple[str, ...] = (
     'landclass',
     'trees',
 )
-
-
-def landscape_layer_presets() -> dict[str, list[tuple[str, str, list[str]]]]:
-    """Copy of tool-owned landscape presets including furniture and entrances.
-
-    @returns: preset name → GDAL extract jobs
-    """
-    out: dict[str, list[tuple[str, str, list[str]]]] = {
-        name: list(jobs) for name, jobs in _LANDSCAPE_PRESETS.items()
-    }
-    out['furniture'] = list(FURNITURE_EXTRACT_JOBS)
-    out['entrances'] = list(ENTRANCE_EXTRACT_JOBS)
-    return out
 
 
 def cell_extract_layers_csv() -> str:

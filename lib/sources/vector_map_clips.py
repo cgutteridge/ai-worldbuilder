@@ -121,18 +121,6 @@ def clip_count(path: Path) -> int:
     return sum(1 for _ in path.glob('*/*.geojson'))
 
 
-def has_clips(world_root: Path | None = None) -> bool:
-    """True when this world has at least one vector_map (or legacy) GeoJSON clip.
-
-    @param world_root: world root override (default: active ``ROOT``)
-    @returns: whether a populated clip tree exists
-    """
-    root = _world_root(world_root)
-    preferred = reference_dir(root)
-    legacy = legacy_reference_dir(root)
-    return _has_clips(preferred) or _has_clips(legacy)
-
-
 def vector_map_clip_root(world_root: Path | None = None) -> Path:
     """Directory of vector-map GeoJSON clips for a world checkout.
 
@@ -194,21 +182,3 @@ def project_status(world_root: Path | None = None) -> dict:
         'reference': preferred,
         'legacy_fallback': legacy_fallback,
     }
-
-
-def is_under_world(path: Path, world_root: Path | None = None) -> bool:
-    """True when ``path`` resolves inside the given world checkout.
-
-    Used to refuse treating another world's ``reference/vector_map`` as the
-    primary clip root (tests may still pass an alternate tree under a temp dir).
-
-    @param path: candidate clip root
-    @param world_root: world root override (default: active ``ROOT``)
-    @returns: whether ``path`` is under the world root
-    """
-    root = _world_root(world_root).resolve()
-    try:
-        Path(path).resolve().relative_to(root)
-        return True
-    except ValueError:
-        return False

@@ -60,7 +60,7 @@ import cellmath  # noqa: E402
 from tree_species import DEFAULT_LEAVES  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
-from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
+from pass_mask import MASK_DIR, mask_placements, masked_overlaps, read_mask  # noqa: E402
 from site_kit import Plan, World, full  # noqa: E402
 from surface_probe import (PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
                            surface_y)
@@ -253,6 +253,29 @@ def load_masked_positions() -> dict:
             for pos in mask_placements(mask):
                 owned[pos] = f"{mask['pass']} {mask['cell'][0]},{mask['cell'][1]}"
     return owned
+
+
+def mask_plan_overlaps(planned: dict, mask_dir: Path | None = None) -> list[tuple]:
+    """Positions in a finished ground plan that a tree or decor mask owns.
+
+    This is the check before apply (``pass_mask.masked_overlaps``). The planner
+    also refuses these positions while it builds the plan; this catches any that
+    still landed in the plan that would be written.
+
+    @param planned: ``{(x, y, z): block}`` the plan would write
+    @param mask_dir: directory of ``*.mask.json`` files (default ``MASK_DIR``)
+    @returns: ``(pos, planned block, 'pass tx,tz')`` hits, in mask-file order
+    """
+    directory = MASK_DIR if mask_dir is None else mask_dir
+    hits: list[tuple] = []
+    if not directory.exists():
+        return hits
+    for path in sorted(directory.glob('*.mask.json')):
+        mask = read_mask(path)
+        why = f"{mask['pass']} {mask['cell'][0]},{mask['cell'][1]}"
+        for pos in masked_overlaps(planned, mask):
+            hits.append((pos, planned[pos], why))
+    return hits
 
 
 # --- 1. which columns are ours -----------------------------------------------------------
@@ -1910,10 +1933,14 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     print(f'  woodland floor: podzol {floor["podzol"]}, coarse dirt {floor["coarse_dirt"]}, '
           f'moss {floor["moss_block"]}, grass kept {floor["grass"]}, edge {floor["edge"]} '
           '(#348; see woodland_floor report)')
-    print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}')
+    overlaps = mask_plan_overlaps(plan.cells)
+    print(f'  mask positions known: {len(masked)}  conflicts: {len(conflicts)}  '
+          f'planned on a mask: {len(overlaps)}')
     for pos, want, why in conflicts[:10]:
         print(f'    CONFLICT {pos}: wanted {want}, masked by {why}')
-    if conflicts:
+    for pos, want, why in overlaps[:10]:
+        print(f'    OVERLAP {pos}: planned {want}, masked by {why}')
+    if conflicts or overlaps:
         print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/mask_undo.py; HANDOFF-LAYERED §3, §10).')
     report_floating(floating)
     report_journal_floats(cell, plan)
@@ -1925,7 +1952,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
         pv = artifact_path(name, 'preview.png', dry=True)
         preview(plan, pv, scale=2)
         print(f'  preview: {pv}')
-    return len(conflicts) + len(floating)
+    return len(conflicts) + len(overlaps) + len(floating)
 
 
 def report_floating(floating: list) -> None:
@@ -1999,8 +2026,9 @@ def apply_cell(cell: tuple[int, int]) -> int:
     stats.pop('retained_positions', None)
     floating = stats.pop('floating_columns', [])
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
-    if conflicts:
-        print(f'REFUSED: {len(conflicts)} mask conflict(s); undo the masks first (§3, §10)')
+    overlaps = mask_plan_overlaps(plan.cells)
+    if conflicts or overlaps:
+        print(f'REFUSED: {len(conflicts) + len(overlaps)} mask conflict(s); undo the masks first (§3, §10)')
         return 1
     if floating:
         report_floating(floating)

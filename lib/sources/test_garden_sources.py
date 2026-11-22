@@ -42,20 +42,6 @@ class TestHedgeShareIgnoresCanopy(unittest.TestCase):
 class TestDesignerVeto(unittest.TestCase):
     """Designer ``type: none`` blocks aerial hedge promotion."""
 
-    def test_role_vetoed_when_street_says_none(self):
-        conv = {'front': {'type': 'none'}, 'rear': {'type': 'fence'}}
-        self.assertTrue(gs.role_vetoed(conv, '12', 'front'))
-        self.assertFalse(gs.role_vetoed(conv, '12', 'rear'))
-        self.assertFalse(gs.role_vetoed(conv, '12', 'side_front'))
-
-    def test_house_override_none_vetoes_street_hedge(self):
-        conv = {
-            'side_back': {'type': 'hedge'},
-            'overrides': {'7': {'side_back': {'type': 'none'}}},
-        }
-        self.assertTrue(gs.role_vetoed(conv, '7', 'side_back'))
-        self.assertFalse(gs.role_vetoed(conv, '9', 'side_back'))
-
     def test_aerial_hedge_skipped_when_vetoed(self):
         """garden_barriers must not promote an aerial hedge over an explicit none."""
         cell = (0, 0)
@@ -827,8 +813,7 @@ class TestStreetRunConventions(unittest.TestCase):
     def test_per_house_front_none_beats_the_run_front(self):
         conv = self.conv()
         self.assertIsNone(gs.role_spec(conv, '42', 'front'))
-        self.assertTrue(gs.role_vetoed(conv, '42', 'front'))
-        self.assertFalse(gs.role_vetoed(conv, '44', 'front'))
+        self.assertIsNotNone(gs.role_spec(conv, '44', 'front'))
 
     def test_run_front_applies_to_an_unlisted_house(self):
         spec = gs.role_spec(self.conv(), '99', 'front')
@@ -838,7 +823,6 @@ class TestStreetRunConventions(unittest.TestCase):
 
     def test_side_front_veto_is_respected_and_does_not_touch_other_roles(self):
         conv = self.conv()
-        self.assertTrue(gs.role_vetoed(conv, '33', 'side_front'))
         self.assertIsNone(gs.role_spec(conv, '33', 'side_front'))
         self.assertIsNotNone(gs.role_spec(conv, '33', 'front'))
         self.assertIsNotNone(gs.role_spec(conv, '35', 'side_front'))

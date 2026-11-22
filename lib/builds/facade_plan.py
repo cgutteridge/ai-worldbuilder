@@ -190,37 +190,6 @@ def iter_entrances(plan: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     return out
 
 
-def placed_entrances(plan: Mapping[str, Any] | None) -> list[dict[str, Any]]:
-    """Entrances whose provenance has no unresolved reason.
-
-    @param plan: ``facade_plan`` object
-    @returns: placed entrance rows
-    """
-    return [e for e in iter_entrances(plan) if not prov.is_unresolved(e.get(PROVENANCE_KEY))]
-
-
-def unresolved_entrances(plan: Mapping[str, Any] | None) -> list[dict[str, Any]]:
-    """Entrances declared unresolved via shared provenance.
-
-    @param plan: ``facade_plan`` object
-    @returns: unresolved entrance rows
-    """
-    return [e for e in iter_entrances(plan) if prov.is_unresolved(e.get(PROVENANCE_KEY))]
-
-
-def unresolved_entrances_for_cell(
-    cell: Sequence[int] | tuple[int, int],
-    plan: Mapping[str, Any] | None,
-) -> list[Mapping[str, Any]]:
-    """Unresolved entrances that touch a cell (for the cell view).
-
-    @param cell: ``(tx, tz)``
-    @param plan: ``facade_plan`` object
-    @returns: matching unresolved entrances in plan order
-    """
-    return prov.unresolved_for_cell(cell, iter_entrances(plan))
-
-
 def _portal_keys(entrance: Mapping[str, Any]) -> set[str]:
     keys: set[str] = set()
     eid = entrance.get('id')

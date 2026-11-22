@@ -364,33 +364,6 @@ def designer_observations(cell: tuple[int, int], path: Path | None = None) -> li
     return out
 
 
-def map_items(furniture: list[tuple[int, int, str]]) -> list[dict]:
-    """Normalise OSMGround furniture triples to the same item dicts as the designer.
-
-    @param furniture: ``(x, z, kind)`` from the vector-map cache
-    @returns: item dicts with ``source='map'``
-    """
-    out: list[dict] = []
-    for x, z, kind in furniture:
-        if kind not in FURNITURE_KINDS:
-            continue
-        out.append({'x': int(x), 'z': int(z), 'kind': kind, 'source': 'map'})
-    return out
-
-
-def merge_items(mapped: list[dict], designed: list[dict]) -> list[dict]:
-    """Combine map and designer items; a mapped point at the same column wins.
-
-    @param mapped: items from the map cache
-    @param designed: items from the designer spec
-    @returns: sorted unique items (by x, z, kind)
-    """
-    by_col: dict[tuple[int, int], dict] = {}
-    for item in designed + mapped:  # map last so it overwrites designer
-        by_col[(item['x'], item['z'])] = item
-    return sorted(by_col.values(), key=lambda i: (i['x'], i['z'], i['kind']))
-
-
 # --- inferred furniture (#260, I-008) ----------------------------------------------------
 # Where the map has no points, lamps and benches are inferred from the ways themselves. Every
 # item is labelled ``source='inference'``, ``confidence='low'``: a guess from road class or land

@@ -135,21 +135,6 @@ def forbidden_tracker_paths(branch_names: Iterable[str], paths: Iterable[str]) -
     return sorted(hit)
 
 
-def is_tracker_only_paths(paths: Iterable[str]) -> bool:
-    """Return True when staged paths are non-empty and only the system tracker.
-
-    Allowlist is exactly :data:`TRACKER_PATHS` (``tasks/index.json``,
-    ``tasks/done.json``). Empty staging or any other path is not tracker-only.
-
-    @param paths: staged file paths relative to the repo root
-    @returns: whether the commit is an archive-style tracker-only change
-    """
-    staged = list(paths)
-    if not staged:
-        return False
-    return all(p in TRACKER_PATHS for p in staged)
-
-
 # Markdown that audits or tests inspect (provider-name and stale-term audits on
 # rules/, skill stub check on skills): never on the fast path.
 CHECKED_MARKDOWN_PREFIXES = ('rules/', '.agents/', '.claude/')
