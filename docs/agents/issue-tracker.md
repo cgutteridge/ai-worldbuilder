@@ -62,6 +62,7 @@ unrelated tracker bytes:
 
 ```sh
 node scripts/tasks.mjs list --ready
+node scripts/tasks.mjs tree
 node scripts/tasks.mjs show ID
 node scripts/tasks.mjs add --title "Title" --priority medium --complexity s --builder-task false --notes "Details"  # or --notes-file PATH
 node scripts/tasks.mjs update ID --builder-task true --notes "Updated scope"  # or --notes-file PATH
@@ -74,9 +75,14 @@ node scripts/tasks.mjs status ID todo --reason "Paused" --branch task/123-slug
 node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 ```
 
+`tree` prints the active dependency forest: one line per task, children indented
+under each blocker. Multi-blocked tasks appear under every parent, with
+`(also blocked by #…)` for the other ids. Each line ends with `BUILDER` or
+`NO-BUILDER`, and `claimed by Cursor|Claude|Codex` when `claimedBy` is set.
+
 Run mutations on `main` only, then commit them immediately (see above). The
 pre-commit hook rejects tracker edits on `task/*` branches. Read-only `show`,
-`list` and `check-run` are also available to workers. Priority/blocker edits
+`list`, `tree` and `check-run` are also available to workers. Priority/blocker edits
 remain direct edits through the `worldbuilder-tasks` skill. This tracker has no
 triage tags, so `list --ready` lists every `todo` task with no `blockedBy`,
 marking builder tasks. Readiness alone does not establish runner eligibility:

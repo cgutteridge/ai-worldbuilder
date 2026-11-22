@@ -15,6 +15,7 @@
 //   check-run <id> [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]
 //   status <id> doing --app cursor|claude|codex --working-in PATH [runner options as for check-run]
 //   status <id> todo --reason TEXT [--branch BRANCH]
+//   tree
 //   close <id> --sha FULL_COMMIT_SHA --note TEXT
 // Default tracker directory: tasks/ under the git root of the current
 // directory, or ./tasks when there is no git root.
@@ -309,6 +310,63 @@ export async function listReadyTasks(directory) {
       (!usesTags || task.tags?.includes("ready-for-agent")) &&
       unresolvedBlockers(task).length === 0,
   )
+}
+
+const claimAppLabels = { cursor: "Cursor", claude: "Claude", codex: "Codex" }
+
+/** One tree line for a task under an optional parent blocker. */
+export function formatTaskTreeLine(task, { parentId } = {}) {
+  const title = String(task.title ?? "").replace(/\s+/g, " ").trim() || "(untitled)"
+  const blockers = unresolvedBlockers(task)
+  const others = blockers
+    .filter((id) => id !== parentId)
+    .sort((a, b) => a - b)
+  const also =
+    parentId !== undefined && others.length
+      ? ` (also blocked by ${others.map((id) => `#${id}`).join(", ")})`
+      : ""
+  const claim =
+    typeof task.claimedBy === "string" && claimAppLabels[task.claimedBy]
+      ? ` - claimed by ${claimAppLabels[task.claimedBy]}`
+      : ""
+  const kind = isBuilderTask(task) ? "BUILDER" : "NO-BUILDER"
+  return `#${task.id} - ${title}${also}${claim} - ${kind}`
+}
+
+/** Active-task dependency forest: roots first, then indented children under each blocker. */
+export function formatTaskTree(tasks) {
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const children = new Map()
+  for (const task of tasks) {
+    for (const blocker of unresolvedBlockers(task)) {
+      if (!byId.has(blocker)) continue
+      const list = children.get(blocker) ?? []
+      list.push(task.id)
+      children.set(blocker, list)
+    }
+  }
+  for (const list of children.values()) list.sort((a, b) => a - b)
+  const roots = tasks
+    .filter((task) => unresolvedBlockers(task).every((id) => !byId.has(id)))
+    .sort((a, b) => a.id - b.id)
+  const lines = []
+  const walk = (id, depth, path, parentId) => {
+    if (path.has(id)) return
+    const task = byId.get(id)
+    if (!task) return
+    lines.push(`${"  ".repeat(depth)}${formatTaskTreeLine(task, { parentId })}`)
+    const next = new Set(path)
+    next.add(id)
+    for (const child of children.get(id) ?? []) walk(child, depth + 1, next, id)
+  }
+  for (const root of roots) walk(root.id, 0, new Set(), undefined)
+  return lines
+}
+
+/** Load the active tracker and return the dependency tree lines. */
+export async function listTaskTree(directory) {
+  const { tasks } = await readTrackerFile(directory, "index.json")
+  return formatTaskTree(tasks)
 }
 
 export async function showTask(directory, id) {
@@ -862,6 +920,15 @@ const commands = {
     values: [],
     required: ["--ready"],
   },
+  tree: {
+    usage: "tree",
+    summary:
+      "Print the active task dependency tree (blockers as parents; BUILDER/NO-BUILDER and claim).",
+    positional: [],
+    flags: [],
+    values: [],
+    required: [],
+  },
   show: {
     usage: "show <id>",
     summary: "Print one complete active or completed task as JSON.",
@@ -1049,6 +1116,8 @@ async function run(request) {
         `${task.id}\t${task.priority ?? "-"}\t${title.length > 120 ? `${title.slice(0, 117)}...` : title}${isBuilderTask(task) ? "\t[builder task]" : ""}`,
       )
     }
+  } else if (request.command === "tree") {
+    for (const line of await listTaskTree(directory)) console.log(line)
   } else if (request.command === "show") {
     console.log(
       JSON.stringify(await showTask(directory, parseTaskId(id)), null, 2),
