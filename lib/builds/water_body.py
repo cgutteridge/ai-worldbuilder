@@ -37,9 +37,12 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   clear_above    optional int >= 0 (default 0): air placed over the water columns
                  from water_level + 1 up this many layers, so a pond sits below
                  the surrounding paving instead of under a ground lid
-  bank_clear_above  optional int >= 0 (default 0): air placed over every bank cell
-                 from its bank Y + 1 up this many layers, so a ghost or terrain block
-                 standing on the bank does not turn the bank grass to dirt (#318)
+  clear_to       optional [[x, z, top_y], ...] (#318): the lidar ground height of a
+                 column the body or its bank sits on. Air is placed from that column's
+                 surface (water level, or bank Y) + 1 up to top_y, i.e. exactly the
+                 ground that stands above the new surface and nothing higher, so a
+                 low bridge deck above the ground is never cleared. Columns the body
+                 does not build, and top_y at or below the surface, are ignored.
   bank           {"material": "<block>", "width"?: 1, "rise"?: 0} shore ring
                  (N8 × width) at water_level + rise; rise lifts the coping to
                  paving height around a sunken pond
@@ -280,9 +283,11 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     clear_above = spec.get('clear_above', 0)
     if not isinstance(clear_above, int) or isinstance(clear_above, bool) or clear_above < 0:
         _fail(path, 'clear_above must be an int >= 0')
-    bank_clear_above = spec.get('bank_clear_above', 0)
-    if not isinstance(bank_clear_above, int) or isinstance(bank_clear_above, bool) or bank_clear_above < 0:
-        _fail(path, 'bank_clear_above must be an int >= 0')
+    clear_to = spec.get('clear_to') or []
+    if not isinstance(clear_to, list) or any(
+            not isinstance(row, (list, tuple)) or len(row) != 3
+            or any(not isinstance(v, int) or isinstance(v, bool) for v in row) for row in clear_to):
+        _fail(path, 'clear_to must be a list of [x, z, top_y] integer rows')
     bank = _validate_bank(path, spec['bank'])
     edge = _validate_edge(path, spec.get('edge'))
     clip = _validate_clip(path, spec.get('clip'), outline, bank)
@@ -306,7 +311,7 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
         'depth': depth,
         'floor': floor,
         'clear_above': clear_above,
-        'bank_clear_above': bank_clear_above,
+        'clear_to': [list(row) for row in clear_to],
         'bank': bank,
         'edge': edge,
         'clip': clip,
@@ -596,13 +601,14 @@ def build(spec: Mapping[str, Any]) -> Plan:
         bank = {q for q in bank if cellmath.cell_of(*q) == cell}
 
     plan = Plan(str(spec['name']))
+    ground_top = {(int(x), int(z)): int(top) for x, z, top in spec.get('clear_to') or []}
     for x, z in outline:
         local = levels[(x, z)]
         bed_y = local - depth
         plan.set(x, bed_y, z, floor)
         for y in range(bed_y + 1, local + 1):
             plan.set(x, y, z, 'water')
-        for y in range(local + 1, local + int(spec.get('clear_above', 0)) + 1):
+        for y in range(local + 1, max(local + int(spec.get('clear_above', 0)), ground_top.get((x, z), 0)) + 1):
             plan.set(x, y, z, 'air')
     for x, z in bank:
         bank_y = bank_levels.get((x, z), level) + int(bank_spec.get('rise', 0))
@@ -610,7 +616,7 @@ def build(spec: Mapping[str, Any]) -> Plan:
             plan.set(x, bank_y, z, edge_spec['material'])
         else:
             plan.set(x, bank_y, z, bank_spec['material'])
-        for y in range(bank_y + 1, bank_y + int(spec.get('bank_clear_above', 0)) + 1):
+        for y in range(bank_y + 1, ground_top.get((x, z), 0) + 1):
             plan.set(x, y, z, 'air')
     # Stamp against every cell the water body and bank touch (task 232); one cell when clipped.
     plan.capture_inputs()
