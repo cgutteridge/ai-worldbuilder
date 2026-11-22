@@ -158,8 +158,8 @@ import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 from chimney import chimney_layers, validate_chimney
 from roof_geometry import (
-    ROOF_DELTA, ROOF_FACE_ORDER, edge_distance_field, pitched_roof_states, regularise_roof_half_heights,
-    roof_block_y,
+    ROOF_DELTA, ROOF_FACE_ORDER, align_stair_shapes, edge_distance_field, pitched_roof_states,
+    regularise_roof_half_heights, roof_block_y,
 )
 from roof_material import family_variants, roof_material_warnings
 import facade_plan as facade_plan_mod  # noqa: E402
@@ -3420,6 +3420,9 @@ class Build:
     def details(self) -> None:
         """Place every ``details`` row after the shell and roof.
 
+        A vent pad, chimney or skylight can replace a roof stair. Corner shapes
+        are chosen again afterwards, against the stairs that remain (#390).
+
         @returns: None
         """
         self._detail_clip_lines = []
@@ -3447,6 +3450,10 @@ class Build:
                 continue
             for row in rows:
                 self._place_detail(f, row, roof_cells)
+        # Details replace roof stairs, so choose corner states against the final skin.
+        for (x, y, z), state in align_stair_shapes(self.p.cells).items():
+            if self.p.cells.get((x, y, z)) != state:
+                self.set(x, y, z, state)
 
 
 def build(
