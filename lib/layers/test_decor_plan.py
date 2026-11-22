@@ -831,7 +831,7 @@ class TestUnresolvedBarrierReporting(unittest.TestCase):
                            side_effect=lambda n, r, **kw: write_report(n, r, Path(tmp), **kw)), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(dl.run((0, 0)), 0)
-            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-dry-report.json').read_text())
+            saved = json.loads((Path(tmp) / 'cell_0_0_decor-dry-report.json').read_text())
         self.assertEqual(saved['stats']['unresolved_items'], [item])
         self.assertEqual(output.getvalue().count('1 barrier runs skipped as unresolved: boundary'), 1)
 

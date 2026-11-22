@@ -37,8 +37,9 @@ import numpy as np
 from block_store import block_id
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import (plan_name as ground_plan_name, ignored_builds, is_air,  # noqa: E402
+from ground_layer import (ignored_builds, is_air,  # noqa: E402
                           load_masked_positions, neighbour_owned, warm_surface_probe)
+from place_config import plan_name  # noqa: E402
 from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
 from tree_species import SPECIES  # noqa: E402
@@ -96,11 +97,6 @@ def may_plant(live: str | None, block: str, owner: str | None) -> bool:
     if owner is None:
         return is_air(live)
     return owner.startswith('trees ') and 'leaves' in block_id(live, policy='read') and 'leaves' in block
-
-
-def plan_name(tx: int, tz: int) -> str:
-    """Build name, e.g. highfield_48_m44_trees."""
-    return f"highfield_{tx}_{'m' if tz < 0 else ''}{abs(tz)}_trees"
 
 
 def _axis_slice(a: np.ndarray, start: int, end: int, axis: int) -> np.ndarray:
@@ -390,7 +386,7 @@ def extra_crowns(cell: tuple[int, int], path: Path | None = None) -> list[tuple[
     return out
 
 
-GOOGLE_CROWNS = ROOT / 'reference/trees-google-crowns.json'
+AERIAL_CROWNS = ROOT / 'reference/trees-aerial-crowns.json'
 # Hand-read aerial crowns often sit a few blocks off the real canopy (S-017 / I-011). Before planting,
 # snap each to the highest nDSM column in this Chebyshev window; no peak or a peak on a building → leave
 # and mark unconfirmed. No road rule — positions come from lidar evidence, not a "keep off carriageway" filter.
@@ -403,8 +399,8 @@ MAPPED_YOUNG_TREE_R = 2.0
 TREE_ROW_SPACING = 4          # blocks between crowns sampled along natural=tree_row
 
 
-def google_crowns(cell: tuple[int, int], path: Path | None = None):
-    """Crowns read by eye from the aerial PNG sheet, from reference/trees-google-crowns.json.
+def aerial_crowns(cell: tuple[int, int], path: Path | None = None):
+    """Crowns read by eye from the aerial PNG sheet, from reference/trees-aerial-crowns.json.
 
     {"tx,tz": {"evidence": "...", "zones": [[x0, z0, x1, z1]], "crowns": [{"x", "z", "r", "note"}]}}. Inside a zone the
     detector's crowns (mosaic detection, dense fill, extra crowns) are DROPPED and these replace them: the aerial sheet
@@ -412,11 +408,11 @@ def google_crowns(cell: tuple[int, int], path: Path | None = None):
     Outside the zones the detector is unchanged. Aerial-sheet crowns go first (they win overlaps), are exempt from the
     vector-map feature-zone skip (a courtyard tree is real) and may root on hard ground (a plaza tree has a soil pit);
     every other rule (trunk in cell, air only, mask) is the normal one. Positions are then snapped to nearby lidar
-    nDSM peaks (see ``snap_google_crowns``).
+    nDSM peaks (see ``snap_aerial_crowns``).
 
     @returns: (zones, [(dx, dz, r) cell-local]) or None when the cell has no entry
     """
-    path = path or GOOGLE_CROWNS
+    path = path or AERIAL_CROWNS
     if not path.exists():
         return None
     e = json.loads(path.read_text()).get(f'{cell[0]},{cell[1]}')
@@ -427,7 +423,7 @@ def google_crowns(cell: tuple[int, int], path: Path | None = None):
     return [tuple(z) for z in e.get('zones', [])], [c for c in out if 0 <= c[0] < 128 and 0 <= c[1] < 128]
 
 
-def snap_google_crowns(
+def snap_aerial_crowns(
     crowns: list[tuple[int, int, float]],
     ndsm: np.ndarray,
     footprints: set[tuple[int, int]],
@@ -556,7 +552,7 @@ def resolve_mapped_tree_crowns(
     """Turn mapped tree points and tree_row lines into cell-local crown candidates (#157).
 
     Each in-cell point is snapped to the highest nearby lidar canopy peak (same
-    window and nDSM floor as #129 / ``snap_google_crowns``). Young trees with no
+    window and nDSM floor as #129 / ``snap_aerial_crowns``). Young trees with no
     peak (or a peak on a building) are **kept** as small crowns with snap status
     ``unconfirmed`` and reason ``no lidar canopy peak`` / ``peak on building`` —
     matching #129, not rejected. Points outside the 128² cell are rejected with
@@ -598,7 +594,7 @@ def resolve_mapped_tree_crowns(
                   'status': 'unconfirmed', 'ndsm': 0.0,
                   'reason': 'no lidar canopy peak'} for i, j, _r in candidates]
         return crowns, rejections, snaps
-    snapped, snaps = snap_google_crowns(candidates, ndsm, footprints)
+    snapped, snaps = snap_aerial_crowns(candidates, ndsm, footprints)
     crowns: list[tuple[int, int, float]] = []
     enriched: list[dict] = []
     for (i, j, _r), snap in zip(snapped, snaps):
@@ -672,7 +668,7 @@ class TreeInputs:
     ground_cols: set | None
     masked: dict
     footprints: set
-    crown_snaps: list | None = None  # google-crown lidar snap report, when snapped
+    crown_snaps: list | None = None  # aerial-crown lidar snap report, when snapped
     mapped: set | None = None         # world (x, z) of mapped vector-map crowns (#157)
     mapped_rejections: list | None = None  # logged rejects for mapped points/rows
     mapped_snaps: list | None = None  # per-mapped-crown lidar snap report
@@ -845,16 +841,16 @@ def planning_inputs(cell, osm_ground=None):
     fp = {q for q in idx.cells() if x0 - 2 <= q[0] <= x0 + 129 and z0 - 2 <= q[1] <= z0 + 129}
     fp_local = {(x - x0, z - z0) for x, z in fp
                 if 0 <= x - x0 < CELL and 0 <= z - z0 < CELL}
-    g = google_crowns(cell)
+    g = aerial_crowns(cell)
     if g:
         zones, gc = g
-        google_origins = [(x0 + i, z0 + j) for i, j, _r in gc]
+        aerial_origins = [(x0 + i, z0 + j) for i, j, _r in gc]
         if ndsm is not None:
-            gc, crown_snaps = snap_google_crowns(gc, ndsm, fp_local)
+            gc, crown_snaps = snap_aerial_crowns(gc, ndsm, fp_local)
         retained = [(c, origin) for c, origin in zip(crowns, crown_origins)
                     if not any(a <= x0 + c[0] <= cx and b <= z0 + c[1] <= cz for a, b, cx, cz in zones)]
         crowns = gc + [c for c, _origin in retained]
-        crown_origins = google_origins + [origin for _c, origin in retained]
+        crown_origins = aerial_origins + [origin for _c, origin in retained]
         aerial_sheet = {(x0 + i, z0 + j) for i, j, _r in gc}
     # Mapped natural=tree points + tree_row crown sequences (#157).
     if osm_ground is None:
@@ -889,7 +885,7 @@ def planning_inputs(cell, osm_ground=None):
     crown_origins = [origin for _c, origin in retained]
     owned = neighbour_owned(cell, ignored_builds(cell))
     from cell_registry import view_registry
-    ground = view_registry().recorded(ground_plan_name(tx, tz, 'ground'))
+    ground = view_registry().recorded(plan_name((tx, tz), 'ground'))
     ground_cols = {(x, z) for x, _y, z in ground} if ground is not None else None
     return TreeInputs(crowns, n_detected, extra, aerial_sheet, owned, ground_cols, load_masked_positions(), fp,
                       crown_snaps, mapped, mapped_rejections, mapped_snaps,
@@ -1072,7 +1068,7 @@ def run(cell: tuple[int, int]) -> int:
     require_coverage(cell)
 
     tx, tz = cell
-    name = plan_name(tx, tz)
+    name = plan_name(cell, 'trees')
     plan = Plan(f'{name}-dry', input_cells=[cell])
     world = fresh_planning_world()
     undo = plan_after_undo('trees', cell, world)
@@ -1093,7 +1089,7 @@ def run(cell: tuple[int, int]) -> int:
     if snaps:
         x0, z0 = tx * CELL, tz * CELL
         n_moved = sum(1 for s in snaps if s['shift'] != (0, 0))
-        print(f'  google-crown lidar snap: {n_moved}/{len(snaps)} moved '
+        print(f'  aerial-crown lidar snap: {n_moved}/{len(snaps)} moved '
               f'({100.0 * n_moved / len(snaps):.0f}%), radius {CROWN_SNAP_RADIUS}, '
               f'nDSM≥{CROWN_SNAP_MIN_NDSM_M:g} m')
     mapped_snaps = rep.get('mapped_snaps') or []
@@ -1141,8 +1137,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
     from readiness_evidence import require_ready
-    tx, tz = cell
-    name = plan_name(tx, tz)
+    name = plan_name(cell, 'trees')
     require_ready([cell], 'trees', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name, input_cells=[cell])
     world = fresh_planning_world(strict=True)

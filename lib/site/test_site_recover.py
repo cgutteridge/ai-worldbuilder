@@ -95,7 +95,7 @@ class TestApplyRecordsInTheJournal(Base):
         e = self.entry()
         self.assertEqual(e.status, 'begun')
         self.assertEqual(e.owner, 'alice')
-        self.assertEqual(e.meta['structure']['name'], 'southampton_refine:before_p')
+        self.assertEqual(e.meta['structure']['name'], 'worldbuilder:before_p')
         self.assertEqual(e.meta['structure']['from'], [X0 - 1, 60, Z0 - 1])
         self.assertTrue(e.ts)
 
@@ -113,7 +113,7 @@ class TestApplyRecordsInTheJournal(Base):
         with self.assertRaises(RuntimeError):
             self.run_apply(make_plan())
         name = self.entry().meta['structure']['name']
-        self.assertNotEqual(name, 'southampton_refine:before_p')          # the first-time one is the original
+        self.assertNotEqual(name, 'worldbuilder:before_p')          # the first-time one is the original
         self.assertEqual(FakePaced.structures[name][(X0, 60, Z0)], 'minecraft:coal_block')
 
     def test_mismatch_without_strict_is_recorded(self):
@@ -211,7 +211,7 @@ class TestMasks(Base):
             self.run_apply(plan, stage='trees', cell=CELL, mask=mask)
         e = self.entry()
         self.assertEqual(e.status, 'landed')
-        self.assertEqual(self.reg().entries()[-1].meta['structure']['name'], 'southampton_refine:before_p')
+        self.assertEqual(self.reg().entries()[-1].meta['structure']['name'], 'worldbuilder:before_p')
         self.assertTrue((self.t / 'masks' / 'trees-48_-44.mask.json').exists())
 
     def test_masked_mismatch_does_not_publish_mask_or_finish(self):
@@ -412,13 +412,13 @@ class TestUndo(Aborted):
         self.trees()
         FakePaced.abort_on_save = True                                   # the undo's writes land, the save dies
         with self.assertRaises(RuntimeError):
-            self.run_undo((CELL, 'trees'), meta={'undo_plan': 'highfield_48_m44_trees_undo'})
+            self.run_undo((CELL, 'trees'), meta={'undo_plan': 'cell_48_m44_trees_undo'})
         FakePaced.abort_on_save = False
         self.set_lock('alice', age_min=200)
         res = self.recover()
         self.assertEqual(res['action'], 'applied')
         self.assertFalse(self.mpath.exists())
-        self.assertTrue((self.t / 'masks' / 'undone' / 'highfield_48_m44_trees_undo.mask.json').exists())
+        self.assertTrue((self.t / 'masks' / 'undone' / 'cell_48_m44_trees_undo.mask.json').exists())
         self.assertFalse(self.view().trees)
 
     def test_reapply_aborted_after_undo_restores_the_before_undo_snapshot(self):
@@ -431,8 +431,8 @@ class TestUndo(Aborted):
         loaded = []
         res = self.recover(loader=self.loader(loaded))
         self.assertEqual(res['action'], 'rolled-back')
-        self.assertEqual(loaded[0][0], 'southampton_refine:before_p')     # this apply first, then the pre-undo world
-        self.assertTrue(loaded[1][0].startswith('southampton_refine:before_undo_tp'))
+        self.assertEqual(loaded[0][0], 'worldbuilder:before_p')     # this apply first, then the pre-undo world
+        self.assertTrue(loaded[1][0].startswith('worldbuilder:before_undo_tp'))
         self.assertEqual({self.blocks.read(p) for p in plan.cells}, {'minecraft:oak_leaves'})   # not left bare
         self.assertNotEqual(dict(self.blocks._blocks), bare)
         self.assertTrue(self.mpath.exists())                                                     # mask put back

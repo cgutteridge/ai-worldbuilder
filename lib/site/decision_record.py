@@ -6,7 +6,7 @@ Source of truth is JSON in the active world, regenerated into HTML by ``site_pag
   registry/evidence/<id>.json     one reference, stored once; any number of elements and cells point at it
   registry/decisions/<element>.json   {element, kind, cells, phases: [{phase, ts, owner, available, consulted, decision}]}
 
-An element is a plan id (``highfield_48_m44_ground``, a feature id). A phase is a decision question
+An element is a plan id (``cell_48_m44_ground``, a feature id). A phase is a decision question
 (``footprint``, ``roof form``, ``ground surface``, ``tree cover``; see ``rules/evidence-order.md``).
 ``available`` is what the tool offered (build tools may pass it automatically); ``consulted`` is what the
 agent actually used, each with ``used_for``. Anything consulted is also available.

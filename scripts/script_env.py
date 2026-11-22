@@ -196,6 +196,9 @@ def clear_world_caches() -> None:
                 mc_paced.reload_world_config()
             except (KeyError, FileNotFoundError, RuntimeError, OSError):
                 pass
+    place_config = sys.modules.get("place_config")
+    if place_config is not None and hasattr(place_config, "clear_place_config"):
+        place_config.clear_place_config()
     footprints = sys.modules.get("osm_footprints")
     if footprints is not None and hasattr(footprints, "_VECTOR_MAP_CLIPS"):
         footprints._VECTOR_MAP_CLIPS = None
@@ -210,7 +213,7 @@ def add_world_arg(parser: argparse.ArgumentParser) -> None:
         "--world",
         required=True,
         metavar="NAME",
-        help="world directory under worlds/ (e.g. southampton-build, bakeoff)",
+        help="world directory under worlds/ (e.g. my-world, bakeoff)",
     )
 
 

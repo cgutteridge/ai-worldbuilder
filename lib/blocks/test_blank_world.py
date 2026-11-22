@@ -28,7 +28,6 @@ class BlankWorldTest(unittest.TestCase):
     def test_level_name_defaults_to_folder_name(self):
         out = BW.create_blank_world(self.saves / 'ventnor-build')
         self.assertEqual(self._level_name(out), 'ventnor-build')
-        self.assertNotIn(b'SouthamptonAI', gzip.decompress((out / 'level.dat').read_bytes()))
 
     def test_level_name_can_be_given_and_is_unicode_safe(self):
         out = BW.create_blank_world(self.saves / 'v', name='Ventnor \u2013 seafront')

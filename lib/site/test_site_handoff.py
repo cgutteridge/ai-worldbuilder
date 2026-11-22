@@ -16,7 +16,7 @@ from unittest import mock
 
 import site_handoff as H
 
-QUEUE_TEXT = '''SOUTHAMPTON REFINE — QUEUE
+QUEUE_TEXT = '''WORLDBUILDER — QUEUE
 
 [ ] Q-001  CELL 1,1 (r=0) layered passes: ground, trees, decor. RULES: ground.
            Auto-queued.
@@ -93,18 +93,18 @@ class DoneTest(Base):
         """An aborted apply leaves a 'begun' entry: never done, listed as 'in-flight: <plan>' by next --plan."""
         from cell_journal import Build
         self.registry_layers((1, 1), decor=False)
-        self.jw.reg.begin(Build('highfield_1_1_decor', 'decor', {(140, 61, 140): 'minecraft:poppy'}, cell=(1, 1)))
+        self.jw.reg.begin(Build('cell_1_1_decor', 'decor', {(140, 61, 140): 'minecraft:poppy'}, cell=(1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]):
             g = H.cell_gaps((1, 1))
-            self.assertEqual(g['in_flight'], ['in-flight: highfield_1_1_decor'])
+            self.assertEqual(g['in_flight'], ['in-flight: cell_1_1_decor'])
             self.assertEqual(g['layers'], ['decor'])
             self.assertFalse(H.layers_done((1, 1)))
         with mock.patch('pass_mask.trees_rule_current', return_value=True), \
                 mock.patch.object(H, 'residual_features', return_value=[]), \
                 mock.patch('sys.stdout', new=io.StringIO()) as out:
             H.cmd_plan([])
-        self.assertIn('in-flight: highfield_1_1_decor', out.getvalue())
+        self.assertIn('in-flight: cell_1_1_decor', out.getvalue())
 
     def test_missing_layer_short_circuits_scan(self):
         self.registry_layers((1, 1), trees=False, decor=False)

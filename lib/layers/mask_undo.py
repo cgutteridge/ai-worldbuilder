@@ -24,7 +24,8 @@ from pathlib import Path
 from block_store import block_id
 from script_env import ROOT
 
-from ground_layer import ignored_builds, plan_name
+from ground_layer import ignored_builds
+from place_config import plan_name
 from pass_mask import mask_path, mask_placements, read_mask, shared_positions, verify_integrity
 from site_kit import Plan, World, apply, same, undo, warm_reads
 
@@ -118,7 +119,7 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
         print(f'  --skip-changed: {len(conflicts)} position(s) no longer hold their masked block (air or another build) and are left in place')
     elif conflicts:
         raise SystemExit(f'STOP: {len(conflicts)} position(s) differ from the mask; nothing written, mask kept.')
-    name = plan_name(tx, tz, f'{pass_name}_undo')
+    name = plan_name((tx, tz), f'{pass_name}_undo')
     plan = Plan(name, input_cells=[(tx, tz)])
     for pos in to_air:
         plan.set(*pos, 'air')

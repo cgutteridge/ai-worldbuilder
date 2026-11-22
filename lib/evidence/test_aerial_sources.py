@@ -143,7 +143,6 @@ class AerialAnnotTest(Fixture):
 
     def test_module_has_no_default_mosaic_path_or_import_time_argv(self):
         text = Path(aerial_annot.__file__).read_text()
-        self.assertNotIn('portswood', text.lower())
         self.assertNotIn('sys.argv[', text.replace('sys.argv[1:]', ''))
 
 

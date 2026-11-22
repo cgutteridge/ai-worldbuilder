@@ -30,7 +30,7 @@ import lidar_heightmap as lh
 
 BUILDING_MIN = 3             # Geocraft config/blocks feature_min_height for building classes
 FEATURE_TREE_MIN = 3         # feature height outside a footprint that is drawn as leaves
-CANOPY_MIN = 1.5             # metres first return sits above last return: foliage. Chosen on Highfield cell 48,-44: roofs and
+CANOPY_MIN = 1.5             # metres first return sits above last return: foliage. Chosen on a campus cell: roofs and
                              # lawns stay below it, crowns are well above (median 1.65 m, 90th percentile 5.5 m)
 STONE, WALL, CARPET, LEAVES = 'minecraft:stone', 'minecraft:bricks', 'minecraft:light_gray_carpet', 'minecraft:oak_leaves'
 

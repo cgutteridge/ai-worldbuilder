@@ -5,7 +5,7 @@ A real pitched roof (gable or hip) on a squared Minecraft footprint keeps each r
 on one straight block line. A ridge whose position shifts by one or more columns from
 one row to the next means the slope under it has been displaced sideways, so every stair
 on that seam changes height and the roof reads as zig-zagged / misaligned blocks
-(I-034: broadlands_rd_56_62 squared a 22 deg pair as three stepped segments, each with
+(I-034: one terrace squared a 22 deg pair as three stepped segments, each with
 its own ridge column).
 
 The stable stair ``shape`` follows stairs at the **same Y** (and same ``half``)

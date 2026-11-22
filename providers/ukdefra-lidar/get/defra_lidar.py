@@ -24,7 +24,7 @@ Method (matches Geocraft, so a column here equals the column Geocraft drew):
 
 CRS: DEFRA data is British National Grid, so this module speaks eastings/northings. The Minecraft frame is the
 only place that knows the world offsets (scripts/osgb.py, ``mc_heights`` below). A world elsewhere in the
-world needs its own source and frame; nothing here assumes Southampton.
+world needs its own source and frame; nothing here assumes one place's offsets.
 
   python3 shims/defra_lidar.py tiles --cell 48,-44          # which 5 km tiles, cached or not
   python3 shims/defra_lidar.py fetch --cell 48,-44          # download what is missing (large: ~75 MB a tile)
@@ -63,7 +63,7 @@ DEFRA_CRS = 'EPSG:27700'
 CACHE = ROOT / 'downloads' / 'defra-lidar'
 CATALOGUE_URL = 'https://environment.data.gov.uk/backend/catalog/api/tiles/collections/survey/search'
 KEY = 'subscription-key=public'         # the public key the DEFRA data portal itself uses
-USER_AGENT = 'Southampton-Refine/defra_lidar'
+USER_AGENT = 'worldbuilder/defra_lidar'
 TILE_M = 5000                           # DEFRA 5 km tiles
 INSET_M = 50                            # catalogue polygon sits this far inside the tile, so neighbours are not returned
 PRODUCTS = {
@@ -348,7 +348,7 @@ class DefraLidar:
 LidarTiles = DefraLidar
 
 
-# ---- the Minecraft frame (Southampton2023 offsets from scripts/osgb.py) ----------------------------------------
+# ---- the Minecraft frame (offsets from the active world's world frame) ------------------------------------------
 
 def mc_box_en(x0: int, z0: int, x1: int, z1: int) -> tuple[float, float, float, float]:
     """E/N box (south-west, north-east) of an inclusive block box; north is -Z."""

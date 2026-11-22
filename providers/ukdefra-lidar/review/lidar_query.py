@@ -40,7 +40,7 @@ Formats:
   npz        numpy file: one [row, col] array per layer plus x0, z0 (or e0, n0), step; orientation as json.
   png        colour map per layer side by side (low = blue, high = red, scaled per layer).
 
-Values: Geocraft whole-metre rounding by default, so ground_y/top_y equal what the Southampton2023 world holds; --float
+Values: Geocraft whole-metre rounding by default, so ground_y/top_y equal the active world's whole-metre heights; --float
 gives true float heights and null for no data. Text output is capped at --max-cells values per layer (default 4096) by
 choosing a step; the answer always says which step it used.
 
@@ -155,7 +155,7 @@ def query(area: tuple[str, object], layers: tuple[str, ...] = ('dtm', 'dsm'), ma
 
     @param area: ('cell', (tx, tz)) | ('mc', (x0, z0, x1, z1)) | ('osgb', (e0, n0, e1, n1))
     @param layers: names from LAYERS
-    @param geocraft: Geocraft whole-metre rounding (matches the Southampton2023 world); False = float, NaN for no data
+    @param geocraft: Geocraft whole-metre rounding (matches the active world's heights); False = float, NaN for no data
     @param fetch: download missing tiles (else LookupError names what to fetch)
     @param step: keep every Nth row and column (None = automatic so each layer has at most ``max_cells`` values; 1 = all)
     @returns: {'area', 'layers': {name: ndarray[row, col]}, 'step', 'rows', 'cols', 'units', 'no_data_columns', 'notes'}

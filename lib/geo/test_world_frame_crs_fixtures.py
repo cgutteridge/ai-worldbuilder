@@ -38,7 +38,7 @@ def _dms(deg: int, minutes: int, seconds: float, hemi: str) -> float:
 
 
 # ---- British National Grid (EPSG:27700) ------------------------------------
-# Southampton O.S.O. FBM: bench-marks.org.uk/bm1150
+# O.S.O. FBM: bench-marks.org.uk/bm1150
 # With OSTN15 these agree to centimetres; Helmert fallback is ~metre-level.
 BNG_LAT, BNG_LON = 50.91313038, -1.40294699
 BNG_E, BNG_N = 442070.0, 112800.0

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single-builder lock for Southampton Refine.
+"""Single-builder lock for the active world.
 
 Only the thread holding a fresh lock may change the live world. apply()
 checks it (env SITE_OWNER must match) and refreshes the heartbeat. A lock

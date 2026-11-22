@@ -273,7 +273,8 @@ class TestAdditionalRedoChecks(unittest.TestCase):
                     mock.patch('readiness_evidence.require_ready', side_effect=SystemExit('stop')) as ready:
                 with self.assertRaises(SystemExit):
                     module.apply_cell((3, -4))
-            self.assertEqual(ready.call_args.kwargs['redoing'], (module.plan_name(3, -4),), layer)
+            from place_config import plan_name
+            self.assertEqual(ready.call_args.kwargs['redoing'], (plan_name((3, -4), layer),), layer)
 
     def test_undo_mask_drift_is_preflight_failure_before_any_mutation(self):
         from types import SimpleNamespace

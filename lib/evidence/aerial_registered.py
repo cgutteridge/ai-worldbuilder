@@ -4,8 +4,8 @@
 A registration is <image>.registration.json next to the image: tie points (MC x,z <-> image px), a
 similarity fit px = A . [x, z, 1], and the residual in blocks. Make or refit one with `fit`; crop with `crop`.
 
-  .venv/bin/python scripts/aerial_registered.py fit  reference/aerial/highfield-user/<img>.registration.json
-  .venv/bin/python scripts/aerial_registered.py crop reference/aerial/highfield-user/<img>.registration.json x0,z0,x1,z1 out.png [scale]
+  .venv/bin/python scripts/aerial_registered.py fit  reference/aerial/user/<img>.registration.json
+  .venv/bin/python scripts/aerial_registered.py crop reference/aerial/user/<img>.registration.json x0,z0,x1,z1 out.png [scale]
   .venv/bin/python scripts/aerial_registered.py at   <registration.json> x z      # prints image px
 
 Image is not true ortho (3D-tile render, tall roofs lean ~1-2 blocks), so ties are on map corners that coincide

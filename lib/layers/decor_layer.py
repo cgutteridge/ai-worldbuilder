@@ -33,6 +33,7 @@ from ground_layer import (AIRS, BLOCK_KIND, cell_contains, ignored_builds,  # no
                           is_air, neighbour_owned, load_masked_positions, probe_y_range)
 from block_store import SCAN_VOLUME_CAP, block_id  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
+from place_config import plan_name  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import barrier_vocab as bv  # noqa: E402
 import decor_plan as dplan  # noqa: E402
@@ -40,11 +41,6 @@ import outbuildings as ob  # noqa: E402
 from stage_timing import timed_stage
 import provenance as prov  # noqa: E402
 import street_furniture as sf  # noqa: E402
-
-
-def plan_name(tx: int, tz: int) -> str:
-    """Build name, e.g. highfield_48_m44_decor."""
-    return f"highfield_{tx}_{'m' if tz < 0 else ''}{abs(tz)}_decor"
 
 
 JOINABLE = ('brick_wall', 'iron_bars', 'spruce_fence')
@@ -1144,7 +1140,7 @@ def run(cell: tuple[int, int]) -> int:
     from layer_planning import plan_after_undo
     from layer_reports import artifact_path, write_report
 
-    name = plan_name(*cell)
+    name = plan_name(cell, 'decor')
     plan = Plan(f'{name}-dry', input_cells=[cell])
     undo = plan_after_undo('decor', cell, fresh_planning_world())
     if undo.conflicts:
@@ -1199,8 +1195,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
     from readiness_evidence import require_ready
-    tx, tz = cell
-    name = plan_name(tx, tz)
+    name = plan_name(cell, 'decor')
     require_ready([cell], 'decor', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name, input_cells=[cell])
     world = World()

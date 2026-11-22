@@ -441,13 +441,16 @@ MIN_AERIAL_COVERAGE = 0.5   # an aerial counts for a cell only if it shows at le
 # Re-check HAVE/TRIED evidence older than this (manifest ``added`` or attempt ``date``).
 STALE_DAYS = 183  # ~6 months
 
-# Legacy attempt-ledger keys that predate provider ids. When scoring ``have``, treat
-# these as the same provider so old JSONL rows still count.
-_LEDGER_ALIASES: dict[str, tuple[str, ...]] = {
-    'google-satellite': ('google',),
-    'hampshire-hub': ('aerial',),
-    'google-streetview': ('streetview',),
-}
+def _ledger_aliases() -> dict[str, tuple[str, ...]]:
+    """Old attempt-ledger keys that still count as a provider id.
+
+    System aliases live in :func:`place_config.ledger_aliases`. A world adds its
+    own under ``ledger_aliases`` in ``config/world.json``.
+
+    @returns: provider id → old keys
+    """
+    from place_config import ledger_aliases
+    return ledger_aliases()
 
 
 def parse_iso_day(value: str | date | None) -> date | None:
@@ -545,7 +548,7 @@ def record_attempt(
     if result not in RESULTS:
         raise SystemExit(f'result must be one of {", ".join(RESULTS)}')
     ref_day = today or date.today()
-    ledger_names = {source, *_LEDGER_ALIASES.get(source, ())}
+    ledger_names = {source, *_ledger_aliases().get(source, ())}
     prior = [a for a in load_attempts(tx, tz) if a['source'] in ledger_names]
     reason = retry_reason.strip()
     if prior and not reason and not SOURCE_FAMILIES[source].get('repeat_ok'):
@@ -601,7 +604,7 @@ def source_status(
         kinds = {fam['kind']} | ({'facade'} if fam['kind'] == 'street' else set())
         hits = [r for r in refs if fam['tags'] and r.get('source') in fam['tags'] and r.get('kind') in kinds
                 and (fam['kind'] != 'aerial' or cell_coverage(r, tx, tz) >= MIN_AERIAL_COVERAGE)]
-        ledger_names = {name, *_LEDGER_ALIASES.get(name, ())}
+        ledger_names = {name, *_ledger_aliases().get(name, ())}
         mine = [a for a in attempts if a['source'] in ledger_names]
         as_of: date | None = None
         if hits:

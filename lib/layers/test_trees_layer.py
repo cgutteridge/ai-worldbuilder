@@ -122,7 +122,7 @@ class TestCoverPixels(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', return_value=[]), \
                 mock.patch.object(tl, 'cover_grid', cover), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=None), \
                 mock.patch('tree_lines.standing_height', return_value=(np.zeros((132, 132)), 'first-return')), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
@@ -202,7 +202,7 @@ class TestLidarFill(unittest.TestCase):
                 mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', return_value=aerial), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=None), \
                 mock.patch('tree_lines.standing_height', side_effect=lambda c, margin=0:
                                   (None, 'none') if ndsm is None else (np.pad(ndsm, margin), 'first-return')), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
@@ -346,7 +346,7 @@ class TestTreeSources(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', return_value=[(127, 50, 3.), (40, 40, 3.)]), \
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=None), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
                 mock.patch.object(tl, 'ignored_builds', return_value=set()), \
@@ -375,7 +375,7 @@ class TestTreeSources(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.)]), \
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=None), \
                 mock.patch('tree_lines.standing_height', side_effect=lambda c, margin=0: (None, 'none') if margin else (ndsm, 'first-return')), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
@@ -398,7 +398,7 @@ class TestTreeSources(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', return_value=[(40, 40, 3.), (127, 50, 3.)]), \
                 mock.patch.object(tl, 'cover_grid', return_value=cover(1., 1.)), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[(100, 100, 3.)]), \
-                mock.patch.object(tl, 'google_crowns', return_value=([(x0 + 60, z0 + 60, x0 + 70, z0 + 70)], [(65, 65, 3.)])), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=([(x0 + 60, z0 + 60, x0 + 70, z0 + 70)], [(65, 65, 3.)])), \
                 mock.patch('tree_lines.standing_height', return_value=(ndsm, 'first-return')), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
@@ -511,7 +511,7 @@ class TestLineSource(unittest.TestCase):
                 mock.patch.object(tl, 'find_crowns', return_value=crowns), \
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=None), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=None), \
                 mock.patch('tree_lines.standing_height', side_effect=standing), \
                 mock.patch.object(tl, 'cell_terrain', return_value=None), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
@@ -689,7 +689,7 @@ class TestExtraCrowns(unittest.TestCase):
 
 
 class TestGoogleCrowns(unittest.TestCase):
-    """reference/trees-google-crowns.json: crowns read from Google replace the detector inside the zones."""
+    """reference/trees-aerial-crowns.json: crowns read from the aerial sheet replace the detector inside the zones."""
 
     X0, Z0 = CELL[0] * 128, CELL[1] * 128
 
@@ -704,7 +704,7 @@ class TestGoogleCrowns(unittest.TestCase):
             fp = {(self.X0 + 60, self.Z0 + 60)} if in_footprint else set()
             osm.OSMIndex = lambda: types.SimpleNamespace(cells=lambda: fp, areas=[])
             plan = types.SimpleNamespace(set=lambda *a: None)
-            with mock.patch.object(tl, 'GOOGLE_CROWNS', f), \
+            with mock.patch.object(tl, 'AERIAL_CROWNS', f), \
                     mock.patch.object(tl, 'canopy_grid', lambda c: np.zeros((128, 128))), \
                     mock.patch.object(tl, 'find_crowns', lambda g: list(detected)), \
                     mock.patch.object(tl, 'cover_grid', lambda c, **_kw: np.zeros((128, 128))), \
@@ -716,11 +716,11 @@ class TestGoogleCrowns(unittest.TestCase):
                     mock.patch.dict(sys.modules, {'osm_footprints': osm}):
                 return tl.plan_cell(CELL, plan, FakeWorld())
 
-    def test_detector_crown_inside_a_zone_is_dropped_and_the_google_crown_planted(self):
+    def test_detector_crown_inside_a_zone_is_dropped_and_the_aerial_crown_planted(self):
         _placed, rep = self.run_plan('grass_block')
         self.assertEqual([(x, z) for x, z, _r, _k in rep['trees']], [(self.X0 + 60, self.Z0 + 60)])
 
-    def test_google_crown_may_stand_on_paving_and_in_a_footprint(self):
+    def test_aerial_crown_may_stand_on_paving_and_in_a_footprint(self):
         _placed, rep = self.run_plan('light_gray_concrete', in_footprint=True)
         self.assertEqual(len(rep['trees']), 1)
 
@@ -733,7 +733,7 @@ class TestGoogleCrowns(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / 'g.json'
             f.write_text(json.dumps({'1,1': {'crowns': []}}))
-            self.assertIsNone(tl.google_crowns(CELL, f))
+            self.assertIsNone(tl.aerial_crowns(CELL, f))
 
 
 class TestSnapGoogleCrowns(unittest.TestCase):
@@ -750,7 +750,7 @@ class TestSnapGoogleCrowns(unittest.TestCase):
         # No peak in reach of (10, 10).
         crowns = [(64, 60, 3.0), (40, 40, 3.0), (10, 10, 3.0)]
         footprints = {(44, 40)}
-        snapped, report = tl.snap_google_crowns(crowns, ndsm, footprints)
+        snapped, report = tl.snap_aerial_crowns(crowns, ndsm, footprints)
         self.assertEqual(snapped[0], (68, 63, 3.0))
         self.assertEqual(report[0]['status'], 'moved')
         self.assertEqual(report[0]['shift'], (4, 3))
@@ -766,7 +766,7 @@ class TestSnapGoogleCrowns(unittest.TestCase):
                 ndsm = np.zeros((128, 128))
                 ndsm[20, 20] = 5.
                 ndsm[14, 14] = invalid  # visited first in the search window
-                snapped, report = tl.snap_google_crowns([(20, 20, 3.)], ndsm, set())
+                snapped, report = tl.snap_aerial_crowns([(20, 20, 3.)], ndsm, set())
                 self.assertEqual(snapped, [(20, 20, 3.)])
                 self.assertEqual(report[0]['ndsm'], 5.)
                 x0, z0 = CELL[0] * 128, CELL[1] * 128
@@ -781,7 +781,7 @@ class TestSnapGoogleCrowns(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 ndsm = np.zeros((128, 128))
                 ndsm[14, 14] = invalid
-                snapped, report = tl.snap_google_crowns([(20, 20, 3.)], ndsm, set())
+                snapped, report = tl.snap_aerial_crowns([(20, 20, 3.)], ndsm, set())
                 self.assertEqual(snapped, [(20, 20, 3.)])
                 self.assertEqual(report[0]['status'], 'unconfirmed')
                 self.assertEqual(report[0]['ndsm'], 0.)
@@ -906,7 +906,7 @@ class TestRetainedCrownOrigins(unittest.TestCase):
         with mock.patch.object(tl, 'canopy_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'cover_grid', return_value=np.zeros((128, 128))), \
                 mock.patch.object(tl, 'extra_crowns', return_value=[]), \
-                mock.patch.object(tl, 'google_crowns', return_value=([(0, 0, 127, 127)], list(aerial))), \
+                mock.patch.object(tl, 'aerial_crowns', return_value=([(0, 0, 127, 127)], list(aerial))), \
                 mock.patch('tree_lines.standing_height', side_effect=lambda c, margin=0: (np.pad(ndsm, margin), 'first-return')), \
                 mock.patch.object(tl, 'neighbour_owned', return_value=set()), \
                 mock.patch.object(tl, 'ignored_builds', return_value=set()), \
@@ -1248,7 +1248,8 @@ class TestDryRunUndo(unittest.TestCase):
                 inputs = tl.TreeInputs(crowns, len(crowns), set(), set(), set(), None, {}, set())
                 expected, _ = tl.plan_cell((0, 0), Plan('empty'), Ground(), inputs)
                 write_mask(build_mask('trees', (0, 0), 'old', expected, lambda p: True), masks)
-                name = tl.plan_name(0, 0)
+                from place_config import plan_name
+                name = plan_name((0, 0), 'trees')
                 originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in
                              ('report.json', 'preview.png', 'crowns.png', 'plan.json')}
                 for path, data in originals.items():
@@ -1284,6 +1285,7 @@ class TestDryRunUndo(unittest.TestCase):
         from contextlib import redirect_stdout
         from layer_reports import artifact_path
         from site_kit import Plan
+        from place_config import plan_name
         placed, report = tl.plan_cell((0, 0), Plan('empty'), FakeWorld(),
                                      tl.TreeInputs([], 0, set(), set(), set(), None, {}, set()))
         placed = {(10, 61, 10): 'oak_log'}
@@ -1297,7 +1299,7 @@ class TestDryRunUndo(unittest.TestCase):
                     artifact_path(n, a, **{**kw, 'directory': Path(tmp)})), \
                 redirect_stdout(io.StringIO()):
             self.assertEqual(tl.apply_cell((0, 0)), 0)
-            self.assertEqual([p.name for p in Path(tmp).iterdir()], [tl.plan_name(0, 0) + '-report.json'])
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], [plan_name((0, 0), 'trees') + '-report.json'])
             fresh.assert_called_once_with(strict=True)   # plans from saved regions, not the live store
 
 

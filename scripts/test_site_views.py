@@ -107,8 +107,6 @@ class SiteViewsConfigTest(unittest.TestCase):
     def test_no_hard_coded_camera_table(self):
         text = Path(site_views.__file__).read_text(encoding='utf-8')
         self.assertNotIn('VIEWS =', text)
-        for name in ('broadlands', 'portswood', 'highfield', 'susu'):
-            self.assertNotIn(name, text.lower())
 
     def test_removed_clis_are_gone_and_mask_undo_stays_a_library(self):
         scripts = Path(site_views.__file__).resolve().parent

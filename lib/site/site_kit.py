@@ -1,11 +1,11 @@
-"""Southampton Refine build kit: plan cells offline, preview, back up, batch-fill, read back.
+"""Build kit: plan cells offline, preview, back up, batch-fill, read back.
 
 A Plan maps (x, y, z) -> block state string ('minecraft:' optional). Every planned
 cell is written, including air (so excavation is explicit). apply():
   1. runs the guards (floating posts, vector-map footprint, door frames, roof jogs, clashes
      with earlier owners in the cell journal, protect),
   2. saves one structure template of the plan's bounding box (+1 margin)
-     as southampton_refine:before_<name> (the first time; timestamped afterwards),
+     as <structure_namespace>:before_<name> (the first time; timestamped afterwards),
   3. journals the plan 'begun' in the cell journal (registry/journal.jsonl, ADR 004),
   4. writes merged boxes with block_fill_batch (<= FILL_BATCH entries/call),
      skipping cells the journal begin snapshot already matches, solids first
@@ -21,6 +21,7 @@ from pathlib import Path
 
 import script_env  # noqa: E402
 from block_store import block_id as bid, state_props
+from place_config import DEFAULT_STRUCTURE_NAMESPACE, clear_place_config
 
 _CFG = None
 REGION = None
@@ -36,6 +37,7 @@ def clear_world_config() -> None:
     REGION = None
     STRUCTURE_NS = None
     OUT = None
+    clear_place_config()
 
 
 def reload_world_config() -> None:
@@ -53,7 +55,7 @@ def reload_world_config() -> None:
     import active_world
     save = active_world.resolve_save(_CFG.get('save_path'), False)
     REGION = (save / 'dimensions' / 'minecraft' / 'overworld' / 'region') if save else (root / 'save' / 'region')
-    STRUCTURE_NS = _CFG.get('structure_namespace', 'southampton_refine')
+    STRUCTURE_NS = _CFG.get('structure_namespace') or DEFAULT_STRUCTURE_NAMESPACE
     OUT = root / 'verification/site'
 
 
@@ -523,7 +525,7 @@ def gameworld_id_from_region(region: Path) -> str:
     """Save-folder identity for a region path (``…/saves/<id>/dimensions/…/region``).
 
     @param region: overworld region directory
-    @returns: save folder name (e.g. ``bakeoff``, ``SouthamptonAI``)
+    @returns: save folder name (e.g. ``bakeoff``, ``my-world``)
     @raises ValueError: when the path does not contain a ``saves/<id>/`` segment
     """
     parts = Path(region).resolve().parts
@@ -1046,8 +1048,8 @@ def reset_to_base(build, records):
     ``modifies=(build, *records)``. The returned plan records ``parent_feature=build``
     so readiness accounts for the existing feature while checking every touched cell.
 
-    @param build: base feature name (e.g. ``highfield_susu_west``)
-    @param records: iterable of follow-up record names (e.g. ``highfield_susu_west-lower``)
+    @param build: base feature name (e.g. ``hall_west``)
+    @param records: iterable of follow-up record names (e.g. ``hall_west-lower``)
     @returns: Plan named ``{build}-reset``
     @raises SystemExit: if the base build is not in the journal
     """

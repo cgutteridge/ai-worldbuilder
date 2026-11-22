@@ -4,6 +4,7 @@ from collections import Counter
 
 from block_store import block_id
 import ground_layer as gl
+import place_config
 
 
 class TestGroundLayer(unittest.TestCase):
@@ -11,11 +12,11 @@ class TestGroundLayer(unittest.TestCase):
 
     def test_plan_name_negative_tz(self):
         """Negative tz encodes as m prefix, matching cell_marker naming."""
-        self.assertEqual(gl.plan_name(48, -44), 'highfield_48_m44_ground')
+        self.assertEqual(place_config.plan_name((48, -44), 'ground'), 'cell_48_m44_ground')
 
     def test_plan_name_positive_tz(self):
         """Non-negative tz stays numeric."""
-        self.assertEqual(gl.plan_name(48, 3), 'highfield_48_3_ground')
+        self.assertEqual(place_config.plan_name((48, 3), 'ground'), 'cell_48_3_ground')
 
     def test_flowers_and_stems_are_air(self):
         """§10: flowers and grass stems count as air for the ground step."""
@@ -669,11 +670,10 @@ class TestGroundDecisions(unittest.TestCase):
 
     def test_ignored_builds_forget_old_passes_but_not_neighbours(self):
         ign = gl.ignored_builds((48, -44))
-        self.assertIn('highfield_q051_ur', ign)
-        self.assertIn('highfield_48_m44_trees', ign)
+        self.assertIn(place_config.plan_name((48, -44), 'trees'), ign)
         self.assertIn('ghost_48_m44_ground', ign)
         self.assertNotIn('ghost_48_m44_features', ign)
-        self.assertNotIn('highfield_48_m45_trees', ign)
+        self.assertNotIn(place_config.plan_name((48, -45), 'trees'), ign)
 
 
 class TestPlanting(unittest.TestCase):
@@ -1559,7 +1559,7 @@ class TestApplyReporting(unittest.TestCase):
                 mock.patch('layer_reports.write_report', side_effect=lambda n, r, **kw: write_report(n, r, Path(tmp), **kw)), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(gl.apply_cell((0, 0)), 0)
-            saved = json.loads((Path(tmp) / 'highfield_0_0_ground-report.json').read_text())
+            saved = json.loads((Path(tmp) / 'cell_0_0_ground-report.json').read_text())
 
         self.assertEqual(saved['stats']['excluded_columns'], excluded)
         self.assertEqual(saved['stats']['retained_positions'], retained)
@@ -1940,7 +1940,7 @@ class TestDryArtifacts(unittest.TestCase):
                     artifact_path(n, a, **{**kw, 'directory': Path(tmp)})), \
                 redirect_stdout(io.StringIO()) as output:
             directory = Path(tmp)
-            name = gl.plan_name(0, 0)
+            name = place_config.plan_name((0, 0), 'ground')
             originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in
                          ('report.json', 'preview.png', 'kinds.png')}
             for path, data in originals.items():

@@ -15,7 +15,7 @@
 
 - Agents can trust evidence-order without naming Google.
 - Adding a provider is config + SOURCES via skills `evaluate-data-source` / `add-data-source`.
-- Hot-path scripts import `world_frame`; noisy artifact renames (`trees-google-crowns.json`, `instance/google-aerial/`) wait.
+- Hot-path scripts import `world_frame`. Hand-read crowns live in `reference/trees-aerial-crowns.json`. The `instance/google-aerial/` rename still waits.
 - Auto stale-source refresh (~6 months) is implemented in ``cell_sources``
   (``STALE_DAYS``, checklist ``STALE``, ``--todo`` / ``--record``); readiness is
   documented in TYPES.txt.

@@ -6,7 +6,7 @@ clearer than keepable aerial. Uses the unofficial plain-image tile URL: download
 them, overlay the MC grid, write a PNG under ``instance/google-aerial/`` (gitignored), and ``Read`` that file.
 Do not open a browser for this. Keep grids small (ToS): at most MAX_TILES tiles per side, never looped over many cells.
 Sheets are throwaway: do not hash or commit them into ``reference/``. One exception, by owner decision: a single
-small mosaic (<= 3x3 tiles, e.g. the z18 3x3 in worlds/bakeoff/reference/aerial/susu/ made for bake-off R-015) may be
+small mosaic (<= 3x3 tiles, e.g. a z18 3x3 kept for a bake-off round) may be
 kept under the world's ``reference/aerial/`` as a fixed comparison image; that is one saved image, not a bulk harvest.
 Aerial lean: a tall roof sits a few blocks off its ground footprint.
 

@@ -66,7 +66,7 @@ class TestApplyRefusesGroundLayerWithoutGround(LiveApplyCase):
 
     def test_ground_marking_lands_once_the_ground_pass_has(self):
         self.ghost_only_cell()
-        ground = site_kit.Plan('highfield_48_m44_ground')
+        ground = site_kit.Plan('cell_48_m44_ground')
         ground.set(X0 + 10, 59, Z0, 'minecraft:stone')
         self.run_apply(ground, stage='ground-layer', cell=CELL)
         self.run_apply(self.bay_lines(), stage='other', cell=CELL)

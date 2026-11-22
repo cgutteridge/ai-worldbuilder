@@ -60,7 +60,7 @@ One file per pass per cell. Fields:
 
   pass        "trees" | "decor"
   cell        [tx, tz]
-  plan        kit plan name that wrote it, e.g. highfield_48_m44_trees
+  plan        kit plan name that wrote it, e.g. cell_48_m44_trees
   created     ISO timestamp
   bbox        [x0, y0, z0, x1, y1, z1]   inclusive; a trees mask may reach past the cell edge (§6)
   offset      [ox, oy, oz] = bbox minimum corner (positions below are relative to it)
@@ -235,7 +235,7 @@ Kept as a worked example of the first ground pass on 48,-44. Use the cell journa
 (`/cell_registry.py`), not retired queue/hold files. Footprint override notes below
 remain useful archaeology.
 
-  - Ground layer APPLIED to cell 48,-44 (plan highfield_48_m44_ground).
+  - Ground layer APPLIED to cell 48,-44 (plan cell_48_m44_ground).
   - (A region snapshot was taken then; region backups no longer exist, ADR 004.)
   - Footprint guard overridden for THAT cell only (7 polished_diorite blocks);
     do not copy the override elsewhere.

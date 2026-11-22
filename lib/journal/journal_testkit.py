@@ -67,7 +67,7 @@ class JournalWorld:
         """Land small layer / feature plans in a cell (one block row each).
 
         @param cell: (tx, tz)
-        @param ground: generated ground (``highfield_<tx>_<tz>_ground`` style names are not needed)
+        @param ground: generated ground (layer-style names are not needed)
         @param trees: trees pass (needs ground)
         @param decor: decor pass (needs ground)
         @param features: feature plan ids to land in the cell

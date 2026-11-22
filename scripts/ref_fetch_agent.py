@@ -32,12 +32,11 @@ from typing import Mapping
 from urllib.parse import urlparse
 
 DEFAULT_PORT = 18765
-DEFAULT_UA = 'SouthamptonRefine/ref_fetch_agent (+local build reference)'
+DEFAULT_UA = 'worldbuilder/ref_fetch_agent (+local build reference)'
 
-# Only these hosts may be fetched (SSRF guard).
+# National hosts the sidecar may fetch (SSRF guard). A world adds its own
+# tile hosts under ``fetch_hosts`` in config/world.json.
 ALLOWED_HOSTS = frozenset({
-    'tiles.maps.southampton.ac.uk',
-    'maps.southampton.ac.uk',
     'api.openstreetcam.org',
     'openstreetcam.org',
     'www.openstreetcam.org',
@@ -81,7 +80,8 @@ def host_allowed(url: str) -> bool:
     if parsed.scheme not in ('http', 'https'):
         return False
     host = (parsed.hostname or '').lower()
-    return host in ALLOWED_HOSTS
+    from place_config import extra_fetch_hosts
+    return host in ALLOWED_HOSTS or host in extra_fetch_hosts()
 
 
 def looks_like_sandbox_proxy_error(exc: BaseException) -> bool:
@@ -283,19 +283,36 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, 'application/octet-stream')
 
 
+def _probe_request() -> tuple[str, dict[str, str]] | None:
+    """URL and headers for the world's configured connectivity probe.
+
+    @returns: ``(url, headers)``, or None when ``fetch_probe`` is unset
+    """
+    from place_config import fetch_probe
+    probe = fetch_probe()
+    if probe is None:
+        return None
+    headers = {'User-Agent': DEFAULT_UA}
+    if probe['referer']:
+        headers['Referer'] = probe['referer']
+    return probe['url'], headers
+
+
 def probe_host_network() -> tuple[bool, str]:
-    """Probe whether this process can reach Hampshire Hub (not sandboxed).
+    """Probe whether this process can reach the world's configured tile host.
+
+    Worlds without ``fetch_probe`` skip the check.
 
     @returns: (ok, detail)
     """
-    url = 'https://tiles.maps.southampton.ac.uk/aer/18/130063/87836.png'
+    request = _probe_request()
+    if request is None:
+        return True, 'no fetch_probe configured'
+    url, headers = request
     try:
         data = direct_fetch(
             url,
-            {
-                'User-Agent': DEFAULT_UA,
-                'Referer': 'https://maps.southampton.ac.uk/',
-            },
+            headers,
             timeout=20.0,
         )
         if len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n':
@@ -314,7 +331,7 @@ def serve() -> int:
     ok, detail = probe_host_network()
     if not ok:
         print(
-            'ERROR: this process cannot reach tiles.maps.southampton.ac.uk\n'
+            'ERROR: this process cannot reach the configured fetch probe\n'
             f'  ({detail})\n'
             'You started the sidecar inside the Cursor agent sandbox.\n'
             'Stop it, then start from macOS Terminal / iTerm instead:\n'
@@ -353,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         '--probe',
         action='store_true',
-        help='test whether THIS process can reach Hampshire Hub (no server)',
+        help='test whether THIS process can reach the configured fetch probe (no server)',
     )
     p.add_argument('--get', metavar='URL', help='fetch URL (via sidecar if needed) to stdout or -o')
     p.add_argument('-o', '--output', help='write --get bytes to this path')
@@ -374,19 +391,18 @@ def main(argv: list[str] | None = None) -> int:
         detail = 'sidecar down'
         if ok:
             # Sidecar may be "up" but sandboxed — probe via a real fetch.
-            try:
-                data = sidecar_fetch(
-                    'https://tiles.maps.southampton.ac.uk/aer/18/130063/87836.png',
-                    {
-                        'User-Agent': DEFAULT_UA,
-                        'Referer': 'https://maps.southampton.ac.uk/',
-                    },
-                    timeout=20.0,
-                )
-                usable = len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n'
-                detail = f'{len(data)} byte PNG' if usable else 'bad body'
-            except Exception as exc:  # noqa: BLE001
-                detail = str(exc)
+            request = _probe_request()
+            if request is None:
+                usable = True
+                detail = 'no fetch_probe configured'
+            else:
+                url, headers = request
+                try:
+                    data = sidecar_fetch(url, headers, timeout=20.0)
+                    usable = len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n'
+                    detail = f'{len(data)} byte PNG' if usable else 'bad body'
+                except Exception as exc:  # noqa: BLE001
+                    detail = str(exc)
         print(json.dumps({
             'ok': ok,
             'usable': usable,

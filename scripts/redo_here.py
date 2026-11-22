@@ -19,7 +19,7 @@ from script_env import ROOT, SCRIPTS, TOOL_ROOT, add_world_arg, activate_world_f
 
 from cellmath import cell_of  # noqa: E402
 from coverage import touched_by_build  # noqa: E402
-from ground_layer import RETIRED_GROUND_PASSES  # noqa: E402
+from place_config import retired_ground_passes  # noqa: E402
 from pass_mask import mask_path  # noqa: E402
 
 _NAME_RE = re.compile(r"""^NAME\s*=\s*['"]([^'"]+)['"]""", re.M)
@@ -61,7 +61,7 @@ def features_covering(x: int, z: int) -> list[str]:
         name for name, cols in touched_by_build().items()
         if (x, z) in cols
         and is_feature_build(name)
-        and name not in RETIRED_GROUND_PASSES
+        and name not in retired_ground_passes()
     )
 
 

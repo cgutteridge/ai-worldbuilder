@@ -282,13 +282,13 @@ def build_specs(site=SITE, keep_reviews=DEFAULT_KEEP_REVIEWS):
     """
     defs = [
         Spec('QUEUE.txt', 'QUEUE-done.txt',
-             'SOUTHAMPTON REFINE — QUEUE (archived [x] items, oldest first)',
+             'WORLDBUILDER — QUEUE (archived [x] items, oldest first)',
              'Done items: site/archive/QUEUE-done.txt (moved by scripts/site_archive.py).'),
         Spec('ISSUES.txt', 'ISSUES-closed.txt',
-             'SOUTHAMPTON REFINE — ISSUES (archived done/fixed, oldest first)',
+             'WORLDBUILDER — ISSUES (archived done/fixed, oldest first)',
              'Closed issues: site/archive/ISSUES-closed.txt (scripts/site_archive.py).'),
         Spec('REVIEWS.txt', 'REVIEWS-archive.txt',
-             'SOUTHAMPTON REFINE — REVIEWS (archived entries, oldest first)',
+             'WORLDBUILDER — REVIEWS (archived entries, oldest first)',
              'Older reviews: site/archive/REVIEWS-archive.txt (scripts/site_archive.py).'),
     ]
     planners = {

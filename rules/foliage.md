@@ -68,7 +68,7 @@ non-tree"). Cells whose neighbours' crowns overhang the edge: review them togeth
 Redo from aerial (user, 2026-10-16: the trees pass reads the z19 mosaic; aerial is the position source)
 ------------------------------------------------------------------------
 Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crop PNGs
-(`google_window.py`; tiles downloaded, not browser HTML) and stored in reference/trees-google-crowns.json:
+(`google_window.py`; tiles downloaded, not browser HTML) and stored in reference/trees-aerial-crowns.json:
   {"tx,tz": {"evidence", "zones": [[x0,z0,x1,z1]], "crowns": [{"x","z","r","note"}]}}
 Inside a zone these crowns replace the detector; outside it the detector/dense-fill generation and
 lawn/feature-zone restrictions stay unchanged. Evidence-led rooting applies to aerial-sheet crowns,
@@ -100,7 +100,7 @@ full per-item details are in the printed world-local verification report.
 Radius guide: r>=6 plane tree, 3.5-6 mid tree, 2-3.5 small round, <2 bush (leave bushes to decor).
   1 python3 shims/google_window.py --world <world> crop --at X,Z --half 32x16 --ppb 13
     Read the cached gridded crop PNG; read centre and radius from the grid.
-  2 Write crowns into reference/trees-google-crowns.json (zones = the part read).
+  2 Write crowns into reference/trees-aerial-crowns.json (zones = the part read).
   3 python3 scripts/trees_replan.py --world <world> --cell tx,tz --out plan.json
     python3 shims/google_window.py --world <world> plan --at X,Z --half 32x16 --plan plan.json
     Compare planned crowns and skipped reasons against the evidence; inspect both snap and root adjustments.
