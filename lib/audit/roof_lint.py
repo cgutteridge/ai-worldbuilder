@@ -153,8 +153,8 @@ def plan_vs_live_shapes(planned: dict, live: dict) -> list[dict]:
         if fh is None:
             continue
         got = live.get((x, y, z))
-        want = (fh[0], fh[1], _props(state).get('shape', 'straight'))
-        have = None if got is None else (*_stair_facing_half(got), _props(got).get('shape', 'straight'))
+        want = (fh[0], fh[1], state_props(state).get('shape', 'straight'))
+        have = None if got is None else (*_stair_facing_half(got), state_props(got).get('shape', 'straight'))
         if have != want:
             out.append({'x': x, 'y': y, 'z': z, 'planned': want, 'live': have})
     return out
