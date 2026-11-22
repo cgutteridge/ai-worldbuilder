@@ -3872,5 +3872,49 @@
       "builderTask": false,
       "notes": "Policy + CLI for the system tracker:\n\n1. Any change under tasks/ is made on main and committed immediately (strengthen docs: issue-tracker, worldbuilder-tasks skill, ADR 005 note if needed). Workers still never edit the tracker.\n\n2. node scripts/tasks.mjs status ID doing insists on --app cursor|claude|codex and --working-in PATH, and writes claimedBy + workingIn onto the task in tasks/index.json. No silent claim. Builder runner options (--tool/--model/budget) stay as today.\n\n3. status ID todo clears claimedBy and workingIn. --reason stays required. Optional --branch NAME: when work was left half-done, note that branch in the cancel notes.\n\nTests: refuse doing without app/path; write and clear fields; branch note on cancel; existing builder-gate tests updated with claim flags.\n\nCheck: status doing without --app/--working-in exits 2 with no write; with flags, show prints claimedBy and workingIn; todo clears them; docs say main+immediate commit.\n\nClosed at 9e887c58925c2bf41ce3711842d508de0319c04d: Claim fields and immediate tracker-commit docs landed via ship_branch merge of task/438-claim-status-fields.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 420,
+      "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5\n\nClosed at a0d52c0f614f909709adb479a70bde3ffd31214e: Prepare resolves PBF from vector_map provider.json; extractor uses --place prepared-{tx}-{tz}.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/420-prepare-default-pbf"}
+  ,
+    {
+      "id": 439,
+      "title": "CLI task tree report with blockers and claim",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Add node scripts/tasks.mjs tree (easy one-liner from the repo root) that prints the active task dependency tree.\n\nOne line per task, indented under each blocker parent:\n#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER\n\nRules:\n- Roots: active tasks with no blockedBy entries, sorted by id.\n- Children: active tasks that list the parent id in blockedBy, indented two spaces per level, sorted by id.\n- If a child has other blockers besides the parent shown, append (also blocked by #…, #…) for those ids (sorted).\n- A task with several blockers appears under each of them (DAG as a forest), with also-blocked-by listing the others.\n- claimed by only when claimedBy is set; display Cursor/Claude/Codex.\n- Always show BUILDER or NO-BUILDER from builderTask.\n- Guard cycles (skip already-seen ids on a path).\n- Docs: issue-tracker Task CLI section. Tests in tasks.test.mjs.\n\nCheck: tree exits 0; fixture with multi-blocker prints also-blocked-by; builder and claim suffixes present; indentation matches depth.\n\nClosed at 8a7d2d80088c27941c65555d76d51bcdb665ed39: tree command landed via ship_branch merge of task/439-task-tree-report.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
+  ,
+    {
+      "id": 425,
+      "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11\n\nClosed at 57f7bbf8e42da9e70568de29caca08a46e094f28: lidar_extremes prints offset_min..offset_max with the y_offset suggestion.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/425-lidar-y-offset-range"}
+  ,
+    {
+      "id": 422,
+      "title": "Aerial coverage: stop dark pixels counting as missing and report the uncovered count",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "samples() skips pixels under 1% brightness and the blocker prints a rounded percentage (100.0% when one column is missing). Use an explicit no-data mask or alpha, or a small window, and print the uncovered column count. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/8\n\nClosed at 26c9037646a422e07ff1917e3d116d1c78fa2b23: Dark aerial pixels count as covered; blockers report uncovered column counts.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/422-aerial-dark-pixels"}
   ]
 }
