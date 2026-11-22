@@ -24,6 +24,9 @@ MOSAIC_RGB = (60 / 255, 100 / 255, 40 / 255)
 REG_RGB = (90 / 255, 125 / 255, 97 / 255)
 
 
+_REAL_PIXELS = aerial_coverage.Mosaic.pixels
+
+
 def identity_pixels(self, points):
     return {p: (p[0], p[1]) for p in points}
 
@@ -122,6 +125,21 @@ class AerialAnnotTest(Fixture):
             aerial_annot.covering_source(self.BOX, self.root / 'other.png')
         with self.assertRaises(ValueError):
             aerial_annot.covering_source((500, 500, 600, 600))
+
+    def test_annotation_position_is_the_pre_change_projection(self):
+        """No half-block shift: exact MC coordinates land where the old px() put them.
+
+        Expected values come from the old implementation (to_osgb -> wgs84 -> world pixel, no +.5)
+        for a real, unmocked Mosaic.pixels.
+        """
+        mosaic = aerial_coverage.Mosaic(Path('unused.png'), 18, 130062, 87835, 1.0)
+        with mock.patch.object(aerial_coverage.Mosaic, 'pixels', _REAL_PIXELS):
+            got = aerial_annot.locate(mosaic, [(0, 0), (47, -45), (-20, 33)])
+        want = [(-18464.13962544501, 14854.067977398634), (-18338.76727669686, 14735.373189173639),
+                (-18517.74305698648, 14941.379081647843)]
+        for g, w in zip(got, want):
+            self.assertAlmostEqual(g[0], w[0], places=6)
+            self.assertAlmostEqual(g[1], w[1], places=6)
 
     def test_module_has_no_default_mosaic_path_or_import_time_argv(self):
         text = Path(aerial_annot.__file__).read_text()
