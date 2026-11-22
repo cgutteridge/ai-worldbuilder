@@ -40,7 +40,7 @@ from pathlib import Path
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
 from roof_geometry import (edge_distance_field, pitched_roof_states, roof_block_y,  # noqa: E402
-                           rotated_hip_depth, stair_shape_from_neighbours)
+                           align_stair_shapes, rotated_hip_depth, stair_effect_lines, stair_shape_from_neighbours)
 from roof_octant import block_states, fit_octant_roof  # noqa: E402
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 import stoop  # noqa: E402
@@ -426,7 +426,8 @@ class Build:
                     print(f'{hs[0].no} roof_fit octant: the fitted ridge would jog; using columns')
                 else:
                     print(f'{hs[0].no} roof_fit octant: rectangle at {fitted.angle} degrees, '
-                          f'{fitted.missed} of {fitted.wanted} half-block cells missed')
+                          f'{fitted.missed} of {fitted.wanted} half-block cells missed'
+                          + ('' if fitted.settled else ' (facing search stopped at its pass limit)'))
                     for pos, state in fitted_states.items():
                         self.set(*pos, state)
                         if 'slab' in state and 'type=bottom' in state:
@@ -543,6 +544,14 @@ class Build:
         owned = view_registry().owned(self.p.cells, exclude={self.name}, real_only=True)
         for q in [q for q, st in self.p.cells.items() if q in owned and owned[q][1] != st and q not in self.keep]:
             del self.p.cells[q]
+        # Every stair, roof or step, takes the shape the game gives it from the stairs beside it in
+        # the plan and in the world, whatever their material (#415).
+        aligned = align_stair_shapes(self.p.cells, self.live.block, getattr(self.live, 'prefetch', None))
+        for pos, state in aligned.items():
+            if self.p.cells[pos] != state:
+                self.p.cells[pos] = state
+        for line in stair_effect_lines(self.p.cells, self.live.block):
+            print(line)
         # same refusals as the live apply, so the designer sees them before hand-off (#99)
         guard_door_frames(self.p, self.live.block)
         guard_roof_jogs(self.p)

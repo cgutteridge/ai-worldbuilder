@@ -80,11 +80,13 @@ class OctantRoof:
     @ivar wanted: cells in the designed roof volume
     @ivar missed: cells where the placed blocks differ from the design
     @ivar angle: fitted rectangle angle in degrees
+    @ivar settled: whether the facing descent stopped on its own (False: it hit ``MAX_PASSES``)
     """
     blocks: dict
     wanted: int
     missed: int
     angle: int
+    settled: bool = True
 
 
 def _surface(own: set, pitch: float, y0: int, pad: float):
@@ -182,6 +184,7 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
                 candidates.append((len(stair_cells(face, shape) ^ want), len(candidates), ('stair', face)))
         grid[pos] = min(candidates)[2]
     fixed = {pos for pos in order if (pos[0], pos[2]) in full_columns}
+    settled = False
     for _ in range(MAX_PASSES):
         changed = False
         for pos in order:
@@ -203,6 +206,7 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
             grid[pos] = best
             changed |= best != current
         if not changed:
+            settled = True
             break
     blocks = {}
     for pos, state in grid.items():
@@ -213,7 +217,7 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
     placed = {pos: cells_of(pos) for pos in grid}
     missed = sum(len(placed.get(pos, frozenset()) ^ design.get(pos, frozenset()))
                  for pos in set(design) | set(placed))
-    return OctantRoof(blocks, sum(len(c) for c in design.values()), missed, deg)
+    return OctantRoof(blocks, sum(len(c) for c in design.values()), missed, deg, settled)
 
 
 def block_states(material: str, blocks: dict) -> dict:

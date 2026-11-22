@@ -88,8 +88,9 @@ def _with_stair_shape(state: str, old: str, new: str) -> str:
     return state[:-1] + f',shape={new}]'
 
 
-def align_stair_shapes(cells: dict[tuple[int, int, int], str]) -> dict[tuple[int, int, int], str]:
-    """Rewrite stair shapes so each one matches its same-Y neighbours.
+def align_stair_shapes(cells: dict[tuple[int, int, int], str], outside=None,
+                       prefetch=None) -> dict[tuple[int, int, int], str]:
+    """Rewrite stair shapes so each one matches its same-Y neighbours, in the plan and the world.
 
     :func:`pitched_roof_states` chooses shapes from the roof membrane. A later
     pass can replace a stair with a full block (a vent pad or a chimney) or
@@ -98,7 +99,14 @@ def align_stair_shapes(cells: dict[tuple[int, int, int], str]) -> dict[tuple[int
     (#169, #390). Neighbour facing and half are what the rule reads, so
     rewriting shape does not change what a neighbour expects.
 
+    A stair's shape depends on every stair beside it, whatever its material, so a stair that
+    meets an earlier build's stair (a roof beside a roof, a stoop beside a step) is shaped
+    against that too: ``outside`` reads the world for neighbours the plan does not write. A
+    cell the plan writes always wins over the world.
+
     @param cells: ``{(x, y, z): block state}``
+    @param outside: optional ``outside(x, y, z)`` returning a block state string or ``None``
+    @param prefetch: optional ``prefetch(positions)`` that warms ``outside`` for the cells it will read
     @returns: new dict with the same keys; non-stairs and already-matching stairs unchanged
     """
     stairs: dict[tuple[int, int, int], tuple[str, str, str]] = {}
@@ -106,16 +114,80 @@ def align_stair_shapes(cells: dict[tuple[int, int, int], str]) -> dict[tuple[int
         parsed = _stair_facing_half(state)
         if parsed is not None:
             stairs[pos] = parsed
+    world: dict[tuple[int, int, int], tuple[str, str, str] | None] = {}
+    if outside is not None and stairs:
+        wanted = {(x + dx, y, z + dz) for (x, y, z) in stairs for dx, dz in ROOF_DELTA.values()} - set(cells)
+        if prefetch is not None:
+            prefetch(sorted(wanted))
+        for pos in wanted:
+            state = outside(*pos)
+            world[pos] = _stair_facing_half(state) if state else None
     out = dict(cells)
     for (x, y, z), (facing, half, planned) in stairs.items():
         adjacent: dict[str, tuple[str, str] | None] = {}
         for face, (dx, dz) in ROOF_DELTA.items():
-            neighbour = stairs.get((x + dx, y, z + dz))
+            pos = (x + dx, y, z + dz)
+            neighbour = stairs.get(pos) if pos in cells else world.get(pos)
             adjacent[face] = None if neighbour is None else (neighbour[0], neighbour[1])
         shape = stair_shape_from_neighbours(facing, half, adjacent)
         if shape != planned:
             out[(x, y, z)] = _with_stair_shape(cells[(x, y, z)], planned, shape)
     return out
+
+
+def outside_stairs_reshaped(cells: dict[tuple[int, int, int], str], outside) -> list[dict]:
+    """Stairs outside the plan whose shape the plan's stairs will change (the game updates them).
+
+    A stair placed beside an earlier build's stair retargets that stair's shape. The plan cannot
+    fix it (the stair is not the plan's to write); this reports it so the owner can see which
+    earlier stairs will change.
+
+    @param cells: ``{(x, y, z): block state}`` the plan will write
+    @param outside: ``outside(x, y, z)`` returning the world's block state string or ``None``
+    @returns: list of ``{pos, facing, now, then}`` for each world stair whose shape would change
+    """
+    plan_stairs = {pos: p for pos, s in cells.items() if (p := _stair_facing_half(s)) is not None}
+    seen: dict[tuple[int, int, int], tuple[str, str, str]] = {}
+    for (x, y, z) in plan_stairs:
+        for dx, dz in ROOF_DELTA.values():
+            pos = (x + dx, y, z + dz)
+            if pos in cells or pos in seen:
+                continue
+            parsed = _stair_facing_half(outside(*pos) or '')
+            if parsed is not None:
+                seen[pos] = parsed
+    out = []
+    for (x, y, z), (facing, half, now) in seen.items():
+        adjacent: dict[str, tuple[str, str] | None] = {}
+        for face, (dx, dz) in ROOF_DELTA.items():
+            pos = (x + dx, y, z + dz)
+            n = plan_stairs.get(pos) if pos in cells else seen.get(pos)
+            if n is None and pos not in cells and pos not in seen:
+                parsed = _stair_facing_half(outside(*pos) or '')
+                n = parsed
+            adjacent[face] = None if n is None else (n[0], n[1])
+        then = stair_shape_from_neighbours(facing, half, adjacent)
+        if then != now:
+            out.append({'pos': (x, y, z), 'facing': facing, 'now': now, 'then': then})
+    return out
+
+
+def stair_effect_lines(cells: dict[tuple[int, int, int], str], outside, limit: int = 6) -> list[str]:
+    """Dry-run lines naming earlier stairs whose shape this plan's stairs will change.
+
+    @param cells: ``{(x, y, z): block state}`` the plan will write
+    @param outside: ``outside(x, y, z)`` world reader
+    @param limit: most example stairs to name
+    @returns: empty when nothing outside the plan changes, else a count line and examples
+    """
+    moved = outside_stairs_reshaped(cells, outside)
+    if not moved:
+        return []
+    lines = [f'stairs: {len(moved)} stair(s) already in the world will change shape beside this plan\'s stairs']
+    for m in moved[:limit]:
+        x, y, z = m['pos']
+        lines.append(f"  ({x},{y},{z}) facing {m['facing']}: {m['now']} -> {m['then']}")
+    return lines
 
 
 def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bottom') -> str:

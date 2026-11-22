@@ -250,3 +250,48 @@ class RotatedHipFitTest(unittest.TestCase):
         self.assertLess(max(across) - min(across), 2.5)
         along = [(x + 0.5) * math.cos(a) + (z + 0.5) * math.sin(a) for x, z in ridge]
         self.assertGreater(max(along) - min(along), 3.0)
+
+
+import roof_geometry as RG  # noqa: E402
+
+
+class WorldNeighbourStairTest(unittest.TestCase):
+    """#415: a stair is shaped by every stair beside it in the plan and in the world, whatever the material."""
+
+    @staticmethod
+    def stair(facing, shape='straight', mat='brick'):
+        return f'minecraft:{mat}_stairs[facing={facing},half=bottom,shape={shape},waterlogged=false]'
+
+    def test_a_stair_in_the_world_shapes_a_planned_stair_of_another_material(self):
+        plan = {(5, 60, 5): self.stair('north')}
+        world = {(5, 60, 4): self.stair('west', mat='stone')}       # in front, turned left: an outer corner
+        aligned = RG.align_stair_shapes(plan, lambda x, y, z: world.get((x, y, z)))
+        self.assertIn('shape=outer_left', aligned[5, 60, 5])
+        self.assertIn('shape=straight', RG.align_stair_shapes(plan)[5, 60, 5])      # no world: unchanged
+
+    def test_the_plan_wins_over_the_world_and_the_world_is_read_once_per_cell(self):
+        plan = {(5, 60, 5): self.stair('north'), (5, 60, 4): 'minecraft:bricks'}
+        world = {(5, 60, 4): self.stair('west')}
+        reads, warmed = [], []
+        aligned = RG.align_stair_shapes(
+            plan, lambda x, y, z: reads.append((x, y, z)) or world.get((x, y, z)), warmed.extend)
+        self.assertIn('shape=straight', aligned[5, 60, 5])           # the plan's full block hides the world stair
+        self.assertNotIn((5, 60, 4), reads)
+        self.assertEqual(sorted(reads), sorted(set(reads)))
+        self.assertEqual(sorted(warmed), sorted(reads))
+
+    def test_inner_corner_from_a_world_stair_behind(self):
+        plan = {(5, 60, 5): self.stair('north')}
+        world = {(5, 60, 6): self.stair('west', mat='oak')}            # behind, turned left: an inner corner
+        aligned = RG.align_stair_shapes(plan, lambda x, y, z: world.get((x, y, z)))
+        self.assertIn('shape=inner_left', aligned[5, 60, 5])
+
+    def test_world_stairs_the_plan_will_retarget_are_reported(self):
+        plan = {(5, 60, 4): self.stair('west')}
+        world = {(5, 60, 5): self.stair('north')}                      # the plan puts a stair in front of it
+        moved = RG.outside_stairs_reshaped(plan, lambda x, y, z: world.get((x, y, z)))
+        self.assertEqual([(m['pos'], m['now'], m['then']) for m in moved], [((5, 60, 5), 'straight', 'outer_left')])
+        lines = RG.stair_effect_lines(plan, lambda x, y, z: world.get((x, y, z)))
+        self.assertIn('1 stair(s) already in the world will change shape', lines[0])
+        self.assertEqual(RG.stair_effect_lines({(5, 60, 9): self.stair('west')}, lambda *p: None), [])
+

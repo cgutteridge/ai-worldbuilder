@@ -159,6 +159,7 @@ import osm_footprints  # noqa: E402
 from chimney import chimney_layers, validate_chimney
 from roof_geometry import (
     ROOF_DELTA, ROOF_FACE_ORDER, align_stair_shapes, edge_distance_field, pitched_roof_states,
+    stair_effect_lines,
     regularise_roof_half_heights, roof_block_y,
 )
 from roof_material import block_id_names, family_variants, roof_material_warnings
@@ -3448,9 +3449,13 @@ class Build:
             for row in rows:
                 self._place_detail(f, row, roof_cells)
         # Details replace roof stairs, so choose corner states against the final skin.
-        for (x, y, z), state in align_stair_shapes(self.p.cells).items():
+        # Every stair is also shaped against stairs already in the world, whatever their material (#415).
+        for (x, y, z), state in align_stair_shapes(
+                self.p.cells, self.live.block, getattr(self.live, 'prefetch', None)).items():
             if self.p.cells.get((x, y, z)) != state:
                 self.set(x, y, z, state)
+        for line in stair_effect_lines(self.p.cells, self.live.block):
+            print(line)
 
 
 def build(

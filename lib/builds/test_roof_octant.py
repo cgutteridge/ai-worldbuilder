@@ -75,6 +75,28 @@ class FitTest(unittest.TestCase):
                 self.assertEqual(y, 36)
                 self.assertIn(block[0], ('slab', 'stair'))
 
+    def test_every_stair_and_slab_in_an_owned_column_stands_on_a_block(self):
+        from test_roof_geometry import rotated_rect
+        for degrees in (0, 20, 35, 55, 70):
+            for pitch in (0.6, 0.75, 1):
+                with self.subTest(degrees=degrees, pitch=pitch):
+                    own = rotated_rect(14, 8, degrees)
+                    fitted = self.fit(own, pitch=pitch)
+                    for (x, y, z), block in fitted.blocks.items():
+                        if (x, z) in own and y > 36:
+                            self.assertIn((x, y - 1, z), fitted.blocks, f'{block} floats at {(x, y, z)}')
+
+    def test_a_search_that_hits_its_pass_limit_still_gives_rule_consistent_shapes_and_says_so(self):
+        from unittest import mock
+        from test_roof_geometry import rotated_rect
+        own = rotated_rect(16, 10, 35)
+        with mock.patch.object(R, 'MAX_PASSES', 1):
+            fitted = self.fit(own)
+        self.assertFalse(fitted.settled)
+        cells = {pos: 'minecraft:' + state for pos, state in R.block_states('brick', fitted.blocks).items()}
+        self.assertEqual(stair_shape_mismatches(cells), [])
+        self.assertTrue(self.fit(own).settled)
+
     def test_the_fit_is_deterministic(self):
         from test_roof_geometry import rotated_rect
         own = rotated_rect(12, 9, 33)

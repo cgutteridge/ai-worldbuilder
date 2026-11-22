@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 from roof_geometry import stair_shape_from_neighbours  # noqa: E402
 from roof_lint import (  # noqa: E402
+    live_stair_cells,
+    plan_vs_live_shapes,
     ridge_jogs,
     stair_shape_mismatches,
 )
@@ -185,6 +187,45 @@ class StairShapeMismatchLintTest(unittest.TestCase):
         # gable helper omits shape= → defaults to straight; same-Y neighbours face
         # the same way along each row, so expected is straight.
         self.assertEqual(stair_shape_mismatches(cells), [])
+
+
+def _stair(facing, shape='straight', mat='brick'):
+    return f'minecraft:{mat}_stairs[facing={facing},half=bottom,shape={shape},waterlogged=false]'
+
+
+class LiveStairAuditTest(unittest.TestCase):
+    """The apply readback ignores stair shape; the live audit compares it with the plan and the rule."""
+
+    def plan(self):
+        # an outer corner: a north-facing stair with a west-facing stair in front (north) of it
+        return {(5, 60, 5): _stair('north', 'outer_left'), (5, 60, 4): _stair('west'), (9, 60, 9): 'minecraft:bricks'}
+
+    def test_live_reader_collects_only_stairs_in_the_box_around_the_plan(self):
+        world = {**self.plan(), (6, 60, 5): _stair('south', mat='stone'), (30, 60, 30): _stair('east')}
+        live = live_stair_cells(self.plan(), lambda x, y, z: world.get((x, y, z)))
+        self.assertEqual(set(live), {(5, 60, 5), (5, 60, 4), (6, 60, 5)})     # any material, near the plan only
+
+    def test_a_world_that_matches_the_plan_and_the_rule_is_clean(self):
+        planned = self.plan()
+        live = live_stair_cells(planned, lambda x, y, z: planned.get((x, y, z)))
+        self.assertEqual(plan_vs_live_shapes(planned, live), [])
+        self.assertEqual(stair_shape_mismatches(live), [])
+
+    def test_a_rewritten_shape_and_a_lost_stair_are_reported(self):
+        planned = self.plan()
+        world = dict(planned)
+        world[5, 60, 5] = _stair('north', 'straight')          # game rewrote the corner
+        world[5, 60, 4] = 'minecraft:air'                      # and a stair went missing
+        live = live_stair_cells(planned, lambda x, y, z: world.get((x, y, z)))
+        drift = {(m['x'], m['y'], m['z']): m for m in plan_vs_live_shapes(planned, live)}
+        self.assertEqual(drift[5, 60, 5]['live'], ('north', 'bottom', 'straight'))
+        self.assertEqual(drift[5, 60, 4]['live'], None)
+
+    def test_a_live_stair_next_to_another_materials_stair_is_judged_by_the_rule(self):
+        # a stone stair in front, turned west, must make the brick stair an outer corner: material is irrelevant
+        live = {(5, 60, 5): _stair('north', 'straight'), (5, 60, 4): _stair('west', mat='stone')}
+        expected = {(m['x'], m['y'], m['z']): m['expected'] for m in stair_shape_mismatches(live)}
+        self.assertEqual(expected[5, 60, 5], 'outer_left')
 
 
 if __name__ == '__main__':

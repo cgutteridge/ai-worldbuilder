@@ -16,6 +16,13 @@ write that same shape into the state; otherwise joins change after apply (#169).
 
   python3 scripts/roof_lint.py --world <world> <build> [<build> ...]   # recorded plans in the cell journal
   python3 scripts/roof_lint.py --world <world> --all
+  python3 scripts/roof_lint.py --world <world> --live <build> [<build> ...]   # also read the live world
+
+``--live`` flushes and reads the open world around each recorded plan's stairs and reports
+(a) live stairs whose shape disagrees with the neighbour rule on the live neighbours, and
+(b) planned stairs whose live shape differs from the plan (or that are no longer stairs).
+The apply readback ignores stair ``shape`` because the game rewrites it, so this is the check
+that the world shows the shapes that were designed.
 
 site_kit.apply() runs ridge_jogs() on every plan and refuses jogs unless the plan
 sets `roof_jog_ok = "<reason + evidence id>"`.
@@ -84,6 +91,49 @@ def stair_shape_mismatches(cells: dict) -> list[dict]:
                 'facing': facing, 'half': half,
                 'planned': planned, 'expected': expected,
             })
+    return out
+
+
+def live_stair_cells(planned: dict, block, margin: int = 1) -> dict:
+    """Live stair states in the box around a plan's stairs.
+
+    @param planned: ``{(x, y, z): state}`` recorded plan
+    @param block: ``block(x, y, z)`` reader returning a state string or ``None``
+    @param margin: cells of margin around the planned stairs (catches neighbouring stairs)
+    @returns: ``{(x, y, z): state}`` of the stairs found
+    """
+    spots = [pos for pos, s in planned.items() if _stair_facing_half(s) is not None]
+    if not spots:
+        return {}
+    lo = [min(p[i] for p in spots) - margin for i in range(3)]
+    hi = [max(p[i] for p in spots) + margin for i in range(3)]
+    live = {}
+    for x in range(lo[0], hi[0] + 1):
+        for y in range(lo[1], hi[1] + 1):
+            for z in range(lo[2], hi[2] + 1):
+                state = block(x, y, z)
+                if state and _stair_facing_half(state) is not None:
+                    live[x, y, z] = state
+    return live
+
+
+def plan_vs_live_shapes(planned: dict, live: dict) -> list[dict]:
+    """Planned stairs whose live state differs in facing, half or shape (or is no longer a stair).
+
+    @param planned: recorded plan cells
+    @param live: ``live_stair_cells`` result
+    @returns: list of ``{x, y, z, planned, live}`` with shapes (``live`` is ``None`` when missing)
+    """
+    out = []
+    for (x, y, z), state in planned.items():
+        fh = _stair_facing_half(state)
+        if fh is None:
+            continue
+        got = live.get((x, y, z))
+        want = (fh[0], fh[1], _props(state).get('shape', 'straight'))
+        have = None if got is None else (*_stair_facing_half(got), _props(got).get('shape', 'straight'))
+        if have != want:
+            out.append({'x': x, 'y': y, 'z': z, 'planned': want, 'live': have})
     return out
 
 
@@ -241,6 +291,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('builds', nargs='*')
     ap.add_argument('--all', action='store_true', help='every build recorded in the cell journal')
+    ap.add_argument('--live', action='store_true',
+                    help='also read the open world: live stair shapes against the rule and the plan')
     a = ap.parse_args()
     if a.all:
         from cell_registry import latest_entries, view_registry
@@ -250,10 +302,26 @@ def main() -> int:
     if not names:
         ap.error('name a build or pass --all')
     bad = 0
+    block = None
+    if a.live:
+        from site_kit import fresh_planning_world
+        block = fresh_planning_world(strict=True).block
     for n in names:
         cells = _load(n)
         jogs = ridge_jogs(cells)
         shapes = stair_shape_mismatches(cells)
+        if block is not None:
+            live = live_stair_cells(cells, block)
+            drift = plan_vs_live_shapes(cells, live)
+            seen = stair_shape_mismatches(live)
+            print(f'{n}: live read {len(live)} stair(s): {len(drift)} differ from the plan, '
+                  f'{len(seen)} disagree with the neighbour rule')
+            for m in drift[:8]:
+                print(f"   ({m['x']},{m['y']},{m['z']}) planned={m['planned']} live={m['live']}")
+            for m in seen[:8]:
+                print(f"   live ({m['x']},{m['y']},{m['z']}) facing={m['facing']} "
+                      f"live shape={m['planned']} rule says {m['expected']}")
+            bad += bool(drift or seen)
         if jogs or shapes:
             bad += 1
             if jogs:

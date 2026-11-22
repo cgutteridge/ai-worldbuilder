@@ -156,7 +156,7 @@ class RoofGeometryTest(unittest.TestCase):
         if pitch is not None:
             b.spec['roof_pitch'] = dict.fromkeys(labels, pitch)
         if fit is not None:
-            b.spec['roof_fit'] = dict.fromkeys(labels, fit)
+            b.spec['roof_fit'] = fit if isinstance(fit, dict) else dict.fromkeys(labels, fit)
         b.p = Plan('synthetic_roof')
         b.roof()
         return b.p
@@ -248,6 +248,47 @@ class RoofGeometryTest(unittest.TestCase):
                         self.assertTrue('_stairs[' in column[36] or 'brick_slab[type=bottom' in column[36], column[36])
                 self.assertTrue(any('_stairs[' in s for s in p.cells.values()))
 
+    def test_octant_chimney_is_a_full_column_to_the_ridge_with_a_pot_above(self):
+        from test_roof_geometry import rotated_rect
+        cells = rotated_rect(14, 8, 35)
+        with redirect_stdout(io.StringIO()):
+            p = self.plan(parts=[cells], pitch=0.75, mode='each', fit='octant')
+        pots = [q for q, s in p.cells.items() if 'flower_pot' in s]
+        self.assertEqual(len(pots), 1)
+        px, py, pz = pots[0]
+        self.assertEqual([p.cells.get((px, y, pz)) for y in range(36, py)], ['minecraft:bricks'] * (py - 36))
+        near = [y for (x, y, z), s in p.cells.items()
+                if abs(x - px) <= 1 and abs(z - pz) <= 1 and (x, z) != (px, pz) and 'brick' in s]
+        self.assertEqual(py, max(near) + 2)
+
+    def test_octant_falls_back_to_columns_when_the_fitted_ridge_would_jog(self):
+        from test_roof_geometry import rotated_rect
+        cells = rotated_rect(14, 8, 35)
+        from roof_lint import ridge_jogs
+        calls = []
+
+        def jog_first(volume):         # the octant check comes first; the column path's own check is real
+            calls.append(1)
+            return [{'jog': 1}] if len(calls) == 1 else ridge_jogs(volume)
+
+        with mock.patch.object(H.Build, '_ridge_jogs_of', side_effect=jog_first), \
+                redirect_stdout(io.StringIO()) as out:
+            fitted = self.plan(parts=[cells], pitch=0.75, mode='each', fit='octant')
+        with redirect_stdout(io.StringIO()):
+            plain = self.plan(parts=[cells], pitch=0.75, mode='each')
+        self.assertIn('the fitted ridge would jog; using columns', out.getvalue())
+        self.assertEqual(fitted.cells, plain.cells)
+
+    def test_an_octant_house_beside_a_column_roof_house_lints_clean(self):
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        left = {(x, z) for x in range(10, 20) for z in range(20, 28)}
+        right = {(x, z) for x in range(20, 30) for z in range(20, 28)}      # shares a wall with the first
+        with redirect_stdout(io.StringIO()) as out:
+            p = self.plan(parts=[left, right], pitch=0.75, mode='each', fit={'0': 'octant'})
+        self.assertIn('0 roof_fit octant', out.getvalue())
+        self.assertEqual(stair_shape_mismatches(p.cells), [])
+        self.assertEqual(ridge_jogs(p.cells), [])
+
     def test_octant_fit_falls_back_to_columns_for_an_l_shape(self):
         ell = {(x, z) for x in range(10) for z in range(10) if x < 5 or z < 5}
         with redirect_stdout(io.StringIO()) as out:
@@ -274,6 +315,17 @@ class RoofGeometryTest(unittest.TestCase):
             load(roof_fit={'A': 'octant'}, roof_pitch={'A': 0.5})
         with self.assertRaisesRegex(SystemExit, 'mode "each"'):
             load(roof_fit={'A': 'octant'}, groups=[{'nos': ['A'], 'front': 'N', 'mode': 'group'}])
+
+    def test_every_stair_is_shaped_against_the_plan_and_the_world(self):
+        """#415: the final pass reads the world, and the finished plan agrees with the neighbour rule."""
+        from roof_lint import stair_shape_mismatches
+        ground = lambda x, z: 49 - min(3, max(0, z - 26))
+        with mock.patch.object(H, 'align_stair_shapes', wraps=H.align_stair_shapes) as aligned:
+            cells = MarginShelfTest().plan(ground)[0]
+        outside = aligned.call_args.args[1]
+        self.assertTrue(callable(outside))
+        self.assertTrue(any('_stairs[' in s for s in cells.values()))
+        self.assertEqual(stair_shape_mismatches(cells), [])
 
     def test_pitched_eave_edge_is_a_slab_or_stair_with_nothing_under_it(self):
         """#414: the overhanging eave ring starts at wall-top level as a slab (shallow) or stair (steep)."""
