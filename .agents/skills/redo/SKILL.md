@@ -103,7 +103,7 @@ Done when they are hovering and looking down at the target.
    | --- | --- |
    | Footprint | vector map (+ university outline if campus) |
    | Heights / roof levels | lidar (`lidar_parts` / grid), not aerial colour reads |
-   | Walls, openings, doors | portal + building photos → `facade_plan` entrances (`python3 shims/portals.py --world <world>`, `python3 shims/buildings.py --world <world>`) |
+   | Walls, openings, doors | street photos; optional `entrance_register` + `building_register` catalogue roles → `facade_plan` entrances (`python3 shims/portals.py --world <world>`, `python3 shims/buildings.py --world <world>`) |
    | Roof colour + **greeblies** | aerial sheet (`python3 shims/google_aerial.py --world <world>` / `python3 shims/google_window.py --world <world>`) |
 
    **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the aerial sheet, list every plant box, capped box vent, louvre, recessed skylight, hollow industrial chimney, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible` in the spec `notes`. A shell-only plan is not a finished redo. For `feature_build`, put them in the spec `details` table (`rules/feature-builds.md`); they rebuild with the building. Heights of plinths/plant from lidar; colours and XY from the aerial sheet. Skylight at means roof-top Y and its entire box must be on roof; it replaces one layer. Vents are concrete boxes with trapdoor caps. Chimneys are hollow open rings, round or square and optionally tapered: size from photos and explicit spec dimensions, with lidar only a rough warning. Facade greeblies (drainpipe, sign, canopy, ledge, fascia) come from street photos into the same table.

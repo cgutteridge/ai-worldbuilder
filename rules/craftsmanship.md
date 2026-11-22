@@ -238,11 +238,11 @@ DOORS ARE FRAMED (user, 2026-10-16)
  the old ones (142 of 700 doors on 2026-10-16): see the matching issue / next-task item.
 
 
-ENTRANCES (university register → facade_plan, user, 2026-10-16 / #145–#146)
- reference/portals/portals.json lists every university entrance with its real position (the door, not the photo), name
- and, for 80, a photo. shims/portals.py cell tx,tz | building N | near x,z. The feature queue item and
- cell_features.py print the portals on each feature's footprint as designer inputs.
-  - portals.for_footprint(rings) lists register entries on the mass; the designer writes each into
+ENTRANCES (optional entrance_register catalogue role → facade_plan, #145–#146)
+ When configured, the entrance register supplies positions (the door, not the photo), names and available photos.
+ Use `python3 shims/portals.py --world <world> cell tx,tz | building N | near x,z`.
+ cell_features.py prints registered entrances on each footprint; without the role it returns no register entries.
+  - `cell_features.for_footprint(rings)` lists register entries on the mass; the designer writes each into
     ``facade_plan`` entrances (placed or unresolved with provenance). Build places doors from that plan only.
   - The portal fixes where the door is and what it is called (a "Main" entrance gets the canopy/stoop, a "Rear" or
     "Lower ground" one is plainer, one "Concourse entrance" can be a wide opening). Its photo decides door type: look
@@ -269,10 +269,10 @@ GREEBLIES ARE THE DECOR STEP OF A FEATURE (user, 2026-10-16)
  - Placement rule: never place a greeblie over slab-type blocks (slabs, carpets, stairs, trapdoors...); it hovers. Coping slabs
    along a roof edge are the usual case. This is not "keep off the edge": a full block at the edge is fine.
 
-BUILDING PICTURES (university register, user, 2026-10-16)
- reference/buildings/buildings.json: for each university building its number, name, a photo (247 of 370, saved at 800 px in
- reference/photos/buildings/<number>.jpg) and the university's own outline (232). shims/buildings.py cell tx,tz | building N |
- near x,z. The feature queue item and cell_features.py print the picture of each feature's footprint.
+BUILDING PICTURES (optional building_register catalogue role)
+ When configured, the building register supplies names, photos and independent outlines.
+ Use `python3 shims/buildings.py --world <world> cell tx,tz | building N | near x,z`.
+ cell_features.py prints pictures for each footprint; without the role it returns no registered pictures.
   - Look at the photo once, before planning a campus building: walls (material, bay rhythm), openings (glazing, doors),
     storeys, roof edge and colour. Write what it shows in the build docstring next to the source id.
   - Storeys: the photo is a photo (rules/evidence-order.md), so it ranks above map levels and lidar for campus buildings.

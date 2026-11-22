@@ -171,7 +171,7 @@ def topdown_camera(bbox: tuple[int, int, int, int], pad: int = 16) -> tuple[list
 
 
 def aerial_crop_bbox(bbox: tuple[int, int, int, int], out: Path, pad: int = 8, scale: int = 2) -> Path | None:
-    """Crop the university z19 mosaic (or a registered aerial) to the footprint.
+    """Crop a registered aerial mosaic to the footprint.
 
     @param bbox: MC (x0, z0, x1, z1)
     @param out: output PNG path
@@ -253,7 +253,7 @@ def _capture_view(
 def portal_photo_path(portal_id: str) -> Path | None:
     """Local portal photo on disk when present.
 
-    @param portal_id: university portal id (e.g. ``42-A``)
+    @param portal_id: registered entrance id (e.g. ``42-A``)
     @returns: JPG/PNG path or None
     """
     for ext in ('.jpg', '.jpeg', '.png'):
@@ -401,7 +401,11 @@ def _portals_for_build(name: str, bbox: tuple[int, int, int, int]) -> list[dict]
     @returns: portal dicts with id, x, z
     """
     import facade_plan as FP
-    import portals as P
+    from world_provider import load_world_provider
+    P = load_world_provider(
+        'entrance_register', 'portals.py', 'portals', optional=True)
+    if P is None:
+        return []
 
     spec_path = BUILDS / f'{name}.json'
     wanted: set[str] | None = None

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find major features (buildings and water bodies) a cell still lacks, packaged for queueing.
 
-Each building feature also lists the university entrances ("portals", shims/portals.py)
+Each building feature also lists registered entrances (catalogue role ``entrance_register``)
 on its footprint: designer inputs for ``facade_plan`` entrances (positions, names, photos).
 
 A feature is any build recorded in the cell journal that is not a layer pass
@@ -48,8 +48,7 @@ from coverage import (  # noqa: E402
 )
 from osm_footprints import OSMIndex  # noqa: E402
 from cellmath import cell_bbox  # noqa: E402
-from portals import describe, for_footprint  # noqa: E402
-from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
+from world_provider import load_world_provider  # noqa: E402
 from water_body import (  # noqa: E402
     MIN_WATER_COLUMNS,
     bank_columns_in_cell,
@@ -68,6 +67,31 @@ MIN_COLUMNS = 12      # ignore slivers (kiosks, bin stores)
 LAYER_BUILD = re.compile(
     r'(_ground|_trees|_decor|_foliage|_canopy|_undo|_grounds_\w+)$|^cell_marker_|^clear_floating|'
     r'^highfield_grounds_|_grounds$|^ghost_')
+
+
+
+def for_footprint(rings):
+    """Registered entrances on a footprint, or [] without an entrance provider."""
+    provider = load_world_provider('entrance_register', 'portals.py', 'portals', optional=True)
+    return provider.for_footprint(rings) if provider is not None else []
+
+
+def pictures_for(rings):
+    """Registered building pictures on a footprint, or [] without a provider."""
+    provider = load_world_provider('building_register', 'buildings.py', 'buildings', optional=True)
+    return provider.for_footprint(rings) if provider is not None else []
+
+
+def describe(portal):
+    """Describe a registered entrance using its configured provider."""
+    provider = load_world_provider('entrance_register', 'portals.py', 'portals', optional=True)
+    return provider.describe(portal) if provider is not None else str(portal.get('id', 'entrance'))
+
+
+def describe_building(building):
+    """Describe a registered building using its configured provider."""
+    provider = load_world_provider('building_register', 'buildings.py', 'buildings', optional=True)
+    return provider.describe(building) if provider is not None else str(building.get('id', 'building'))
 
 
 def footprint_cells(columns) -> list[tuple[int, int]]:
@@ -633,7 +657,7 @@ def missing_features(
     @returns: [{'kind': 'building'|'group'|'houses'|'water_body', 'label': str,
                 'street': str|None, 'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
                 'portals': [portal],
-                'pictures': [university building (shims/buildings.py: photo + outline)]}],
+                'pictures': [registered building (building_register provider: photo + outline)]}],
         buildings and groups first, then streets, then water bodies
     """
     covered = feature_columns() if covered is None else covered

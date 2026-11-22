@@ -29,6 +29,9 @@ Linked tool worktrees always use the main checkout's `worlds/` (their own copy i
 ## Provider roots (dual)
 
 Catalogue rows may set `package` (e.g. `providers/<id>`). Resolve it with
+`world_provider` resolves optional entrance/building, tree-preservation and aerial-mosaic
+integrations by catalogue role; see `docs/active-world-contract.md`.
+
 `cell_sources.provider_package_dir(id)` / `script_env.resolve_provider_package`:
 
 - **system** → `ai-worldbuilder/providers/<id>/` (`home: system`)

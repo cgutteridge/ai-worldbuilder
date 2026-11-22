@@ -18,6 +18,16 @@ Scripts resolve place memory through `WORLD_ROOT`, never through “where the to
 Catalogue `package` paths resolve via `script_env.resolve_provider_package` /
 `cell_sources.provider_package_dir` against **both** `TOOL_ROOT` and `WORLD_ROOT`.
 
+Optional place integrations select a catalogue `role`, independent of provider id
+and evidence `types`: `entrance_register` (entrances), `building_register` (building
+photos/outlines), `tree_preservation` (protected trees) and `aerial_mosaic` (local
+mosaic fetcher). Add the matching `role` to the provider row alongside `package`.
+`world_provider.load_world_provider(role, module_file, module_name, optional=True)`
+returns no provider when that role is unconfigured; tool queries return empty
+extra evidence. A configured role must have one usable package and module;
+ambiguity, missing files and provider bugs remain errors. Direct provider CLIs
+require their role. Provider homes still control system/world root resolution.
+
 ## World (e.g. `worlds/my-world`)
 
 World repos live under `worlds/<name>/` inside the worldbuilder checkout. That
