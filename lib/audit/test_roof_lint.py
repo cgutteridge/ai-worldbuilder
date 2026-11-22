@@ -65,6 +65,33 @@ class RidgeJogTest(unittest.TestCase):
         cells[(10, 51, 4)] = 'minecraft:bricks'
         self.assertEqual(len(ridge_jogs(cells)), 1)
 
+    def test_ridge_that_drifts_a_block_every_two_rows_is_a_rotated_roof_not_a_jog(self):
+        cells = {}
+        for z, ridge_x in enumerate((10, 10, 11, 11, 12, 12, 13, 13)):
+            gable(cells, ridge_x, z, z)
+        self.assertEqual(ridge_jogs(cells), [])
+
+    def test_one_block_step_between_two_straight_runs_is_still_a_jog(self):
+        cells = gable(gable({}, 10, 0, 4), 11, 5, 9)
+        self.assertEqual(len(ridge_jogs(cells)), 1)
+
+    def test_diagonal_crest_edge_stair_or_slab_is_not_a_jog(self):
+        """West Building: one 3-wide crest at x 10..12 in both rows. The crest edge is a stair
+        in one row and a corner slab in the next, so the stair ends sit a block apart."""
+        up = f'{T}_stairs[facing=east,half=bottom]'
+        down = f'{T}_stairs[facing=west,half=bottom]'
+        slab = f'{T}_slab[type=bottom]'
+        cells = {}
+        for z, (left, right) in ((0, (up, slab)), (1, (slab, down))):
+            cells[(10, 50, 0 + z)] = left
+            cells[(11, 50, z)] = f'{T}s'
+            cells[(12, 50, z)] = right
+            for d in (1, 2):
+                cells[(10 - d, 50 - d, z)] = up
+                cells[(12 + d, 50 - d, z)] = down
+        # the lone stair at crest height counts as the ridge's end in row 0 and the slab does in row 1
+        self.assertEqual(ridge_jogs(cells), [])
+
     def test_ridge_along_x_is_checked_too(self):
         cells = {}
         for x, rz in ((0, 10), (1, 10), (2, 13), (3, 13)):
