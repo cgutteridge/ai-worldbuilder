@@ -34,13 +34,16 @@ Pos = tuple[int, int, int]
 
 
 def cell_bounds(tx: int, tz: int) -> tuple[int, int, int, int]:
-    """Inclusive x/z bounds of a 128-block cell: (x0, z0, x1, z1)."""
+    """Inclusive x/z bounds of a cell: (x0, z0, x1, z1).
+
+    Kept only because ``trees_layer`` still imports it; delete once that module calls ``cellmath.bounds``.
+    """
     return cellmath.bounds((tx, tz))
 
 
 def clip_to_cell(placements: dict[Pos, str], tx: int, tz: int) -> tuple[dict[Pos, str], int]:
     """Keep placements inside the cell's x/z bounds. Returns (kept, dropped_count)."""
-    x0, z0, x1, z1 = cell_bounds(tx, tz)
+    x0, z0, x1, z1 = cellmath.bounds((tx, tz))
     kept = {p: b for p, b in placements.items() if x0 <= p[0] <= x1 and z0 <= p[2] <= z1}
     return kept, len(placements) - len(kept)
 

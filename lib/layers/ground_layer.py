@@ -54,8 +54,9 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb, cell_box,  # noqa: E402
+from ground_sources import (OSMGround, PRI, RegRGB, aerial_class, aerial_rgb,  # noqa: E402
                             line_cells, hsv, majority, MARGIN)
+import cellmath  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, read_mask  # noqa: E402
@@ -151,7 +152,7 @@ def is_air(block: str | None) -> bool:
 
 def cell_contains(cell: tuple[int, int], x: int, z: int) -> bool:
     """True if column (x, z) is inside the 128² cell."""
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     return x0 <= x <= x1 and z0 <= z <= z1
 
 
@@ -320,7 +321,7 @@ def free_columns(cell: tuple[int, int], world: World, vmap: OSMGround, fp: set, 
 
     Returns (live: {(x,z): (y, short block)}, skipped: Counter of reasons).
     """
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     live, skipped = {}, Counter()
     water = set(vmap.water)
     probed = {}
@@ -381,25 +382,6 @@ BRIDGE_REACH = 30       # longest shaded stretch a path is carried across, in bl
 BRIDGE_ANGLE = 0.82     # cos of the largest bend allowed between a path's two ends (~35°)
 
 
-def _components(cells: set) -> list:
-    """8-connected components of a set of columns."""
-    left, out = set(cells), []
-    while left:
-        seed = left.pop()
-        comp, todo = {seed}, [seed]
-        while todo:
-            q = todo.pop()
-            for a in (-1, 0, 1):
-                for b in (-1, 0, 1):
-                    n = (q[0] + a, q[1] + b)
-                    if n in left:
-                        left.discard(n)
-                        comp.add(n)
-                        todo.append(n)
-        out.append(comp)
-    return out
-
-
 def _path_ends(shade: set, kind: dict) -> list:
     """Where a seen path meets a shaded patch: (kind, entry point, unit direction into the shade, width).
 
@@ -409,7 +391,7 @@ def _path_ends(shade: set, kind: dict) -> list:
     ends = []
     border = {q for q in kind if kind[q] in PATH_KINDS and
               any((q[0] + a, q[1] + b) in shade for a in (-1, 0, 1) for b in (-1, 0, 1))}
-    for grp in _components(border):
+    for grp in cellmath.components(border, cellmath.N8):
         k = Counter(kind[q] for q in grp).most_common(1)[0][0]
         cx = sum(q[0] for q in grp) / len(grp)
         cz = sum(q[1] for q in grp) / len(grp)
@@ -563,7 +545,7 @@ def classify(cell: tuple[int, int], live: dict, vmap: OSMGround, rgb: dict,
     free = set(live)
     path_kind = {q: vmap.kind[q] for q in vmap.feat if vmap.pri.get(q) == PRI['path'] and q in vmap.kind} \
         if path_widen else {}
-    x0, z0, x1, z1 = cell_box(cell, MARGIN)
+    x0, z0, x1, z1 = cellmath.bounds(cell, MARGIN)
     aer = {q: aerial_class(c) for q, c in rgb.items() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     raw = aer
     aer = majority(aer, set(aer))
@@ -986,7 +968,7 @@ def level_pits(live: dict, kind: dict, fp: set, ys: dict | None = None) -> dict:
             candidates.add(q)
 
     filled = 0
-    for comp in _components(candidates):
+    for comp in cellmath.components(candidates, cellmath.N8):
         if _pit_chebyshev_radius(comp) > PIT_MAX_RADIUS:
             continue
         rim_ys = []
@@ -1023,7 +1005,7 @@ def stitch_seams(cell: tuple[int, int], kind: dict, world: World) -> int:
     surface kind at the same lateral position (mark / kerb / dirt and water are left alone).
     Returns the number of columns changed.
     """
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     sides = (((-1, 0), x0, 'x'), ((1, 0), x1, 'x'), ((0, -1), z0, 'z'), ((0, 1), z1, 'z'))
     changed = 0
     for (dx, dz), edge, axis in sides:
@@ -1060,11 +1042,11 @@ def rough_grass_columns(cell: tuple[int, int], idx, classes: dict | None = None)
     from osm_footprints import osm_tags
 
     if classes is None:
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     enabled = {cid: land_use.ground_texture(cid) for cid in land_use.CLASSES}
     if not any(enabled.values()):
         return {}
-    bbox = cell_box(cell, MARGIN)
+    bbox = cellmath.bounds(cell, MARGIN)
     lawn: set = set()
     pasture: set = set()
     meadow: set = set()
@@ -1120,7 +1102,7 @@ def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = No
 
     if classes is None:
         from coverage import area_classes
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     wood_rules = {}
     for cid in land_use.CLASSES:
         texture = land_use.ground_texture(cid) or {}
@@ -1130,7 +1112,7 @@ def woodland_floor_columns(cell: tuple[int, int], idx, classes: dict | None = No
     if not wood_rules:
         return {}, set()
     reach = max(int(rule['edge']) for rule in wood_rules.values())
-    bbox = cell_box(cell, max(MARGIN, reach))
+    bbox = cellmath.bounds(cell, max(MARGIN, reach))
     lawn: set = set()
     claimed: set = set()
     wood: set = set()
@@ -1606,7 +1588,7 @@ def settled_footprint(cell: tuple[int, int]) -> set:
     @returns: set of ``(x, z)`` within two columns of the cell
     """
     from cell_features import settled_footprint_columns
-    return settled_footprint_columns(cell_box(cell, 2))
+    return settled_footprint_columns(cellmath.bounds(cell, 2))
 
 
 def unmapped_paving_columns(cell: tuple[int, int], idx, classes: dict | None = None) -> dict:
@@ -1621,7 +1603,7 @@ def unmapped_paving_columns(cell: tuple[int, int], idx, classes: dict | None = N
 
     if classes is None:
         from coverage import area_classes
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     kinds = {c: land_use.unmapped_paving(c) for c in land_use.CLASSES}
     return {q: kinds[hit[0]] for q, hit in classes.items() if kinds.get(hit[0])}
 
@@ -1638,7 +1620,7 @@ def path_widen_columns(cell: tuple[int, int], idx, classes: dict | None = None) 
 
     if classes is None:
         from coverage import area_classes
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     reach = {c: land_use.path_widen(c) for c in land_use.CLASSES}
     return {q: reach[hit[0]] for q, hit in classes.items() if reach.get(hit[0])}
 
@@ -1661,7 +1643,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     ev = evidence or {}
     vmap = ev.get('vmap') or OSMGround(cell)
     rgb = ev.get('rgb') or aerial_rgb(cell)
-    x0, z0, x1, z1 = cell_box(cell, 2)
+    x0, z0, x1, z1 = cellmath.bounds(cell, 2)
     idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
     owned_cols, ceilings = owned_air_ceilings(neighbour_owned, owned_air)
@@ -1686,7 +1668,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     classes = None
     if 'unmapped_paving' not in ev or 'path_widen' not in ev:
         from coverage import area_classes
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     unmapped = ev['unmapped_paving'] if 'unmapped_paving' in ev else unmapped_paving_columns(cell, idx, classes)
     widen = ev['path_widen'] if 'path_widen' in ev else path_widen_columns(cell, idx, classes)
     kind, how = classify(cell, live, vmap, rgb, fp, private, route, pavement, guessed_out=guessed,
@@ -1809,9 +1791,9 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
             plan.set(x, y, z, 'air')
             stats['clear'] += 1
     stats['cavity_columns'] = len(cavity_cols)
-    plots = ev['plots'] if 'plots' in ev else gs.plots_for(cell_box(cell))
+    plots = ev['plots'] if 'plots' in ev else gs.plots_for(cellmath.bounds(cell))
     owner, info, street, idx = plots
-    segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cell_box(cell))
+    segments = ev['segments'] if 'segments' in ev else gs.segments(owner, info, street, idx, cellmath.bounds(cell))
     # soft_grass survivors can include low-priority mapped surfaces; planting must exclude them.
     clear_cols = gs.reserved_route(frontages) | gs.reserved_openings(frontages)
     barriers = vmap.hedge | vmap.wall | vmap.fence
@@ -1829,7 +1811,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     else:
         if classes is None:
             from coverage import area_classes
-            classes = area_classes(idx, cell_box(cell, MARGIN))
+            classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
         texture_palettes = rough_grass_columns(cell, idx, classes)
     if 'woodland_floor' in ev:
         floor_columns, floor_mask = ev['woodland_floor']
@@ -1838,7 +1820,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     else:
         if classes is None:
             from coverage import area_classes
-            classes = area_classes(idx, cell_box(cell, MARGIN))
+            classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
         floor_columns, floor_mask = woodland_floor_columns(cell, idx, classes)
     # Opted-in scrub leaves the pasture palette; meadow, pasture and lawn columns are not in
     # floor_columns, so their #319 placement is unchanged.
@@ -1870,7 +1852,7 @@ def kinds_image(cell: tuple[int, int], kind: dict, out: Path, scale: int = 4) ->
     from PIL import Image
     from aerial_coverage import cell_image
 
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     img = np.full((128, 128, 3), 35, np.uint8)
     for (x, z), k in kind.items():
         img[z - z0, x - x0] = KIND_RGB[k]

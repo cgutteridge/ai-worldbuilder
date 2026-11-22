@@ -41,10 +41,8 @@ GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_gr
           'minecraft:gray_concrete', 'minecraft:black_concrete')
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
-DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+from cellmath import DIRS, N8, OPP  # noqa: E402
 from entrance_approach import entrance_approach, entrances_from_blocks  # noqa: E402,F401  (read-only; #240)
-OPP = {'N': 'S', 'S': 'N', 'W': 'E', 'E': 'W'}
-N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}       # facing of a stair that rises toward the house
 

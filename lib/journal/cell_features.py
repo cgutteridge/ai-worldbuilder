@@ -41,13 +41,13 @@ from script_env import ROOT  # noqa: E402
 from coverage import (  # noqa: E402
     HOMES,
     OUTBUILDINGS,
-    cell_bbox,
     osm_ref,
     property_label,
     scan_polygon,
     touched_by_build,
 )
 from osm_footprints import OSMIndex  # noqa: E402
+from cellmath import cell_bbox  # noqa: E402
 from portals import describe, for_footprint  # noqa: E402
 from buildings import describe as describe_building, for_footprint as pictures_for  # noqa: E402
 from water_body import (  # noqa: E402

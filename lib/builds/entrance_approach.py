@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+from cellmath import DIRS  # noqa: E402
 FACING_FACE = {'north': 'N', 'south': 'S', 'west': 'W', 'east': 'E'}   # door facing = outward
 SCAN_DOWN = 5          # steps/landings are looked for this far below the door's floor
 MAX_APPROACH = 8       # outward columns scanned for feature steps

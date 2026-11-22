@@ -175,10 +175,11 @@ def cell_evidence(cell) -> tuple[set, set, dict]:
 
     @returns: ``(deck, water, terrain)``
     """
-    from ground_layer import _ring, cell_box, lidar_base_map
+    import cellmath
+    from ground_layer import _ring, lidar_base_map
     from ground_sources import OSMGround
     vmap = OSMGround(tuple(cell))
-    deck = {q for q in getattr(vmap, 'deck', set()) if _inside(cell_box(tuple(cell)), q)}
+    deck = {q for q in getattr(vmap, 'deck', set()) if _inside(cellmath.bounds(tuple(cell)), q)}
     return deck, _ring(vmap.water), lidar_base_map(deck)
 
 

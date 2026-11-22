@@ -85,12 +85,6 @@ class OsGbMcTest(unittest.TestCase):
                 wf.load_frame(path)
 
 
-class CellTest(unittest.TestCase):
-    def test_cell_of_and_bounds(self):
-        self.assertEqual(wf.cell_of(6144, -5632), (48, -44))
-        self.assertEqual(wf.cell_bounds((48, -44)), (6144, -5632, 6271, -5505))
-
-
 class YOffsetTest(unittest.TestCase):
     def test_aod_to_y(self):
         self.assertEqual(wf.metres_aod_to_y(45.9), 11 + 45)

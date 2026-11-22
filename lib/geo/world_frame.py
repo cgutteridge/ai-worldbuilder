@@ -410,41 +410,6 @@ def y_to_metres_aod(y: int, frame: WorldFrame | None = None) -> float:
     return float(y - f.y_offset)
 
 
-# ---- cells (owned by cellmath) -----------------------------------------------
-
-def parse_cell(spec: str) -> tuple[int, int]:
-    """Parse ``tx,tz`` (delegates to cellmath).
-
-    @param spec: comma-separated cell indices
-    @returns: (tx, tz)
-    """
-    return cellmath.parse_cell(spec)
-
-
-def cell_of(x: int, z: int, size: int | None = None) -> tuple[int, int]:
-    """Coverage cell of a block column (delegates to cellmath).
-
-    @param x: Minecraft X
-    @param z: Minecraft Z
-    @param size: cell edge (default: configured cell size)
-    @returns: (tx, tz)
-    """
-    return cellmath.cell_of(x, z, size=size)
-
-
-def cell_bounds(
-    cell: tuple[int, int], margin: int = 0, size: int | None = None,
-) -> tuple[int, int, int, int]:
-    """Inclusive (x0, z0, x1, z1) of a cell (delegates to cellmath).
-
-    @param cell: (tx, tz)
-    @param margin: blocks grown on every side
-    @param size: cell edge (default: configured cell size)
-    @returns: bbox
-    """
-    return cellmath.bounds(cell, margin=margin, size=size)
-
-
 # ---- web-mercator / tile XYZ -------------------------------------------------
 
 WM_TILE_PX = 256
@@ -974,7 +939,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == 'to-cell':
         f = f or load_frame()
         x, z = (int(v) for v in _parse_pair(args.mc, 'x,z'))
-        tx, tz = cell_of(x, z)
+        tx, tz = cellmath.cell_of(x, z)
         print(f'cell {tx},{tz}')
         return 0
 

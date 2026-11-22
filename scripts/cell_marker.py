@@ -37,7 +37,7 @@ from pathlib import Path
 
 from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
-import coverage as cov  # noqa: E402
+import cellmath  # noqa: E402
 import site_kit  # noqa: E402
 from site_kit import Plan, World, apply, bid, warm_reads  # noqa: E402
 
@@ -66,16 +66,6 @@ def marker_name(tx: int, tz: int) -> str:
     return f'cell_marker_{tx}_{tz_tag}'
 
 
-def cell_bounds(tx: int, tz: int) -> tuple[int, int, int, int]:
-    """Inclusive MC bounds for one coverage cell.
-
-    @param tx: cell X index
-    @param tz: cell Z index
-    @returns: (x0, z0, x1, z1)
-    """
-    return cov.cell_bbox(tx, tz, tx, tz)
-
-
 def perimeter_columns(tx: int, tz: int) -> list[tuple[int, int]]:
     """Edge columns of one 128² cell (closed ring, no duplicate corners).
 
@@ -83,7 +73,7 @@ def perimeter_columns(tx: int, tz: int) -> list[tuple[int, int]]:
     @param tz: cell Z index
     @returns: [(x, z), ...] in order along the boundary
     """
-    x0, z0, x1, z1 = cell_bounds(tx, tz)
+    x0, z0, x1, z1 = cellmath.bounds((tx, tz))
     top = [(x, z0) for x in range(x0, x1 + 1)]
     right = [(x1, z) for z in range(z0 + 1, z1 + 1)]
     bottom = [(x, z1) for x in range(x1 - 1, x0 - 1, -1)]
@@ -99,7 +89,7 @@ def reference_ground_y(world: World, tx: int, tz: int) -> int | None:
     @param tz: cell Z index
     @returns: ground Y or None if no samples
     """
-    x0, z0, x1, z1 = cell_bounds(tx, tz)
+    x0, z0, x1, z1 = cellmath.bounds((tx, tz))
     peak: int | None = None
     step = GROUND_SAMPLE_STEP
     for x in range(x0, x1 + 1, step):

@@ -32,6 +32,7 @@ OUT = ROOT / 'verification/site'
 
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
 _UP = {'east': ('x', 1), 'west': ('x', -1), 'south': ('z', 1), 'north': ('z', -1)}
+# Facing-word keys (like garden_sources.DIRS), not cellmath.DIRS's N/S/W/E letters, so this table stays.
 _STAIR_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
 _STAIR_LEFT = {'east': 'north', 'west': 'south', 'south': 'east', 'north': 'west'}
 _STAIR_RIGHT = {'east': 'south', 'west': 'north', 'south': 'west', 'north': 'east'}

@@ -29,6 +29,7 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+import cellmath
 import provenance as prov
 from roof_material import family_variants
 
@@ -59,11 +60,6 @@ FACINGS = {(0, -1): 'north', (0, 1): 'south', (-1, 0): 'west', (1, 0): 'east'}
 
 def _item_id(*parts: Any) -> str:
     return 'outbuilding-' + '-'.join(str(p).replace('-', 'm') for p in parts)
-
-
-def _components(cells: Iterable[tuple[int, int]]) -> list[list[tuple[int, int]]]:
-    from garden_sources import components
-    return components(cells)
 
 
 def mapped_type(building_tag: str) -> str:
@@ -105,10 +101,9 @@ def lidar_rise(cell: tuple[int, int], margin: int = LIDAR_MARGIN) -> dict[str, A
     @returns: ``{'x0', 'z0', 'rise'}`` with ``rise[x - x0, z - z0]``; NaN where there is no data
     """
     import numpy as np
-    from ground_sources import cell_box
     from lidar_provider import mc_heights, tile_client
 
-    box = cell_box(cell, margin)
+    box = cellmath.bounds(cell, margin)
     try:
         h = mc_heights(tile_client(download=False), *box, geocraft=False)
     except (LookupError, FileNotFoundError, OSError):
@@ -281,7 +276,7 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
     columns -= exclude | canopy
     x0, z0, x1, z1 = cell_box
     out = []
-    for group in sorted(_components(columns), key=min):
+    for group in sorted(map(sorted, cellmath.components(columns, cellmath.N8)), key=min):
         if len(group) < MIN_BLOB_COLUMNS:
             continue
         if not any(x0 <= x <= x1 and z0 <= z <= z1 for x, z in group):

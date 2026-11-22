@@ -367,9 +367,10 @@ def propose(cell: tuple[int, int]) -> dict:
         per-crown last/first-return gate support and calibration info
     """
     from aerial_coverage import cell_image
+    import cellmath
     from cellmath import CELL
     from coverage import area_classes, scan_polygon
-    from ground_sources import OSMGround, cell_box
+    from ground_sources import OSMGround
     from osm_footprints import OSMIndex, osm_tags
 
     tx, tz = cell
@@ -377,7 +378,7 @@ def propose(cell: tuple[int, int]) -> dict:
     bounds = (x0, z0, x0 + CELL - 1, z0 + CELL - 1)
     g = OSMGround(cell)
     idx = OSMIndex()
-    classes = area_classes(idx, cell_box(cell, 0))
+    classes = area_classes(idx, cellmath.bounds(cell, 0))
     wood = np.zeros((CELL, CELL), bool)        # darkness reference: wood and forest
     covered = np.zeros((CELL, CELL), bool)     # already passes the gate: wood, scrub, forest
     open_grass = np.zeros((CELL, CELL), bool)  # brightness reference

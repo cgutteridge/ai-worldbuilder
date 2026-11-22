@@ -34,6 +34,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
+import cellmath  # noqa: E402
 import decor_plan  # noqa: E402
 import land_use  # noqa: E402
 import district_profiles  # noqa: E402
@@ -424,9 +425,7 @@ def residential_frontage(meta: dict, plot_cells, role_cells: dict, house_cells, 
 
 def frontages_for_cell(cell: tuple[int, int]) -> list:
     """Shared frontage descriptions for the plots touching ``cell`` (same plots/segments as the garden pass)."""
-    from ground_sources import cell_box
-
-    box = cell_box(cell)
+    box = cellmath.bounds(cell)
     owner, info, street, idx = plots_for(box)
     try:
         approaches = landed_approaches(cell)
@@ -709,25 +708,6 @@ def segments(owner: dict, info: dict, street: dict, idx, box) -> dict:
     return seg
 
 
-def components(cells) -> list:
-    """8-connected groups of columns."""
-    left, out = set(cells), []
-    while left:
-        seed = left.pop()
-        group, stack = [seed], [seed]
-        while stack:
-            x, z = stack.pop()
-            for a in (-1, 0, 1):
-                for b in (-1, 0, 1):
-                    q = (x + a, z + b)
-                    if q in left:
-                        left.remove(q)
-                        group.append(q)
-                        stack.append(q)
-        out.append(group)
-    return out
-
-
 def walk(group) -> list:
     """Order a group's columns along itself: start at an end, then always step to the nearest unvisited."""
     pts = set(group)
@@ -777,7 +757,7 @@ def line4(a, b) -> list:
 def straighten(cells) -> list:
     """Replace a rasterised plot edge by straight, 4-connected runs between its corner points."""
     out = []
-    for g in components(cells):
+    for g in map(sorted, cellmath.components(cells, cellmath.N8)):
         pts = simplify(walk(g)) if len(g) > 1 else g
         for a, b in zip(pts, pts[1:]):
             out += line4(a, b)
@@ -803,6 +783,7 @@ def hedge_share(cells: list, rgb: dict, canopy: set | None = None) -> float:
     return (sum(1 for c in seen if c == 'shade') / len(seen)) if seen else 0.0
 
 
+# Compass-word keys (stair/facing names), unlike cellmath.DIRS's N/S/W/E letters, so this table stays.
 DIRS = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}   # Minecraft: south is +z
 PUBLIC_ROLES = ('front', 'side_front')
 
@@ -1287,10 +1268,10 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
     and explicit property/street none vetoes win over aerial promotion. District area evidence
     supplies missing roles/materials only when the class's frontage conditions hold.
     """
-    from ground_sources import aerial_rgb, cell_box
+    from ground_sources import aerial_rgb
     import provenance as prov
 
-    box = cell_box(cell)
+    box = cellmath.bounds(cell)
     rgb = rgb if rgb is not None else aerial_rgb(cell)
     canopy = tree_canopy_columns(cell)
     owner, info, street, idx = plots_for(box)
@@ -1463,9 +1444,8 @@ def overlay(cell, barriers: list, path: Path, rgb_cells=None) -> None:
     import numpy as np
     from PIL import Image
     import aerial_coverage
-    from ground_sources import cell_box
 
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     k = 4
     keys = [(x, z) for x in range(x0, x1 + 2) for z in range(z0, z1 + 2)]
     # block corners (Mosaic.pixels adds .5 to its input, so ask for x - .5)

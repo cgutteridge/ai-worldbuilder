@@ -39,17 +39,6 @@ class GeometryTest(unittest.TestCase):
         self.assertIn((5, 1), got)
         self.assertNotIn((5, 2), got)
 
-    def test_cells(self):
-        self.assertEqual(C.cell_of(127, -1), (0, -1))
-        self.assertEqual(C.cell_of(-128, -129), (-1, -2))
-        self.assertEqual(C.cell_bbox(55, -44, 55, -44), (7040, -5632, 7167, -5505))
-
-    def test_components_split_and_order(self):
-        cells = {(0, 0), (1, 0), (5, 5), (5, 6), (5, 7)}
-        comps = C.components(cells)
-        self.assertEqual([len(c) for c in comps], [3, 2])
-        self.assertEqual(comps[1], {(0, 0), (1, 0)})
-
 
 class SeamTest(unittest.TestCase):
     def test_narrow_strip_is_seam_wide_is_not(self):

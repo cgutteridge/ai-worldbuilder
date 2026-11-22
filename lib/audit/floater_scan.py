@@ -23,7 +23,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-import coverage as cov  # noqa: E402
+import cellmath  # noqa: E402
 from floaters import scan_box  # noqa: E402
 from site_kit import OUT, World  # noqa: E402
 
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cell:
         tx, tz = parse_cell(args.cell)
         cell_key = (tx, tz)
-        x0, z0, x1, z1 = cov.cell_bbox(tx, tz, tx, tz)
+        x0, z0, x1, z1 = cellmath.cell_bbox(tx, tz, tx, tz)
         y0, y1 = parse_y_range(args.y) if args.y else (0, 319)
     else:
         raw = args.bbox or args.bbox_flag

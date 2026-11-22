@@ -12,6 +12,7 @@ reading the world frame for size/home.
 from __future__ import annotations
 
 import math
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -175,11 +176,6 @@ def bounds(cell: tuple[int, int], margin: int = 0, size: int | None = None) -> t
     return x0 - margin, z0 - margin, x0 + s - 1 + margin, z0 + s - 1 + margin
 
 
-def cell_bounds(cell: tuple[int, int], margin: int = 0, size: int | None = None) -> tuple[int, int, int, int]:
-    """Alias of :func:`bounds` (legacy name used by world_frame / pass_mask callers)."""
-    return bounds(cell, margin=margin, size=size)
-
-
 def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int, size: int | None = None) -> tuple[int, int, int, int]:
     """Inclusive block bbox of a rectangle of cells.
 
@@ -192,6 +188,30 @@ def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int, size: int | None = None) -
     """
     s = cell_size() if size is None else size
     return tx0 * s, tz0 * s, (tx1 + 1) * s - 1, (tz1 + 1) * s - 1
+
+
+def components(cells, connect=N4) -> list[set]:
+    """Connected components of a column set, in a stable order.
+
+    @param cells: iterable of ``(x, z)`` columns
+    @param connect: neighbour offsets (:data:`N4` default, or :data:`N8`)
+    @returns: list of sets, largest first, ties by smallest column
+    """
+    left, out = set(cells), []
+    while left:
+        seed = min(left)
+        comp, todo = {seed}, deque([seed])
+        left.discard(seed)
+        while todo:
+            x, z = todo.popleft()
+            for dx, dz in connect:
+                n = (x + dx, z + dz)
+                if n in left:
+                    left.discard(n)
+                    comp.add(n)
+                    todo.append(n)
+        out.append(comp)
+    return sorted(out, key=lambda c: (-len(c), min(c)))
 
 
 def ring_distance(cell: tuple[int, int], home: tuple[int, int] | None = None) -> int:

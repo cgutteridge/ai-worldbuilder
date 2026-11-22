@@ -17,7 +17,8 @@ from pathlib import Path
 
 from script_env import ROOT, SCRIPTS, TOOL_ROOT, add_world_arg, activate_world_from_args  # noqa: E402
 
-from coverage import cell_of, touched_by_build  # noqa: E402
+from cellmath import cell_of  # noqa: E402
+from coverage import touched_by_build  # noqa: E402
 from ground_layer import RETIRED_GROUND_PASSES  # noqa: E402
 from pass_mask import mask_path  # noqa: E402
 
