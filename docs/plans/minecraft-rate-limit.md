@@ -62,4 +62,71 @@ Still required before closing #389:
    pacing with evidence or file the concrete fix. Do not lower retry delays
    against the server's header merely because the isolated bucket refills sooner.
 
-No pacing constant or running-game configuration was changed by this experiment.
+No pacing constant or running-game configuration was changed by these experiments.
+
+## Live ping observations
+
+Two bounded ping-only probes ran against the world transport under the site lock.
+They changed no blocks. These were **not isolated**: other Codex MCP connections
+remained open, and the client trace does not account for their requests.
+
+| Probe | Observation |
+| --- | --- |
+| First burst | 601 accepted pings; request 602 rejected at 0.305 s with HTTP 429 and `Retry-After: 60` |
+| After that rejection | Immediate and 20 ms later: 429; after a further 120 ms: 200 |
+| Second burst, after partial refill | 206 accepted pings; request 207 rejected at 0.106 s |
+| Second refill measurement | After draining again and waiting 1.055 s, six pings succeeded before another 429 |
+
+The first burst supports a capacity near the configured 600; it does not establish
+the initial token count or exclude concurrent consumers. The last observation is
+below the ten tokens expected from a quiet 600-RPM bucket over that interval, so
+it cannot be used as a clean refill measurement. Open connections alone do not
+prove which client was consuming quota. The low-latency acceptance after a 429
+does confirm that a rejected request need not remain blocked for a full minute;
+the fixed server header, rather than a fixed-minute reset, produces the Python
+client's 60-second pause.
+
+## Prepared real-apply comparison
+
+The original building is the existing feature `w146985470` (B35). Its active
+landed journal entry is 1718, spanning cells `49,-44`, `49,-43`, `50,-44` and
+`50,-43`. Read-only preparation reports full evidence coverage, no missing lidar,
+no candidates, no blockers and no preparation actions for all four cells. Their
+validation stamps are stale. Under this snapshot, `prepare --apply` would refresh
+local validation notes and create no ghosts or frontier. Recheck immediately
+before execution; do not bypass a new blocker.
+
+The recorded plan contains 30,698 positions, merged into 2,270 fill boxes in one
+`block_fill_batch`, plus **112 individually placed bottom-half slabs**. At the
+existing 1.1-second pace, those 113 writer calls account for about 124 seconds,
+consistent with the reported 125-second fill without retries. An ordinary
+overwrite would skip already-correct positions and would not reproduce that work.
+Undo restores a prior with 7,658 differing positions, including all 112 slab
+positions, so undo/replay retains the relevant request workload.
+
+The unchanged spec's SHA256 is
+`833cd0aa840cadddc2943f7541142352bc8c214b7b6fde3d8af282468351b76b`.
+Current-code, read-only disk-world planning produced the same 30,698-position
+plan twice (47.099 and 47.258 seconds), but five states differ from journal 1718.
+For a controlled comparison, replay the exact recorded plan rather than silently
+changing the building. Its normalized SHA256 is
+`20a5f2de87ed1a4551cc95577f91d8c63ad4672a8eb2410439716c2a55e0cc35`.
+
+The original structure backup
+`southampton_refine:before_w146985470_20261122000928` exists (302,388 bytes).
+The journal's prior blob `40903aab175ea7a1deadf4bf9b69b5fa` and plan blob
+`c523712b15c9877a1fd4facc4a2318d1` also exist. Preserve them throughout the trial.
+
+A prepared guarded runner has passed its default read-only preflight. Execution
+must remain pending until the owner authorizes two B35 undo/replays. The proposed
+second run injects one bounded ping burst immediately before the first fill,
+stopping at the first 429, then lets the normal client's retry complete. Record
+all request timestamps, tool names, statuses and retry headers without arguments
+or authorization headers. A quiet baseline additionally requires other MCP
+apps/runs to stop, or comprehensive server-side request tracing; the site lock
+alone cannot establish it. Allow at least four minutes of writer pacing across
+the pair, plus undo, journal, backup, readback and any 60-second retries.
+
+The exact cause of the original four timings remains unproven. The live apply
+comparison and a concrete pacing fix remain open; these ping observations do not
+close #389.
