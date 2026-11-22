@@ -3605,5 +3605,16 @@
       "builderTask": false,
       "notes": "Found in the #397 review (2026-11-22). python3 scripts/run_tests.py --only test_tree_review fails 5 of 7 with: module 'lidar_heightmap' has no attribute 'TREE'. scripts/test_tree_review.py imports L.TREE; scripts/lidar_heightmap.py only defines _TREE. The same failure happens on main, and the full suite still passes, so this is load order rather than the dead-code deletion. cover_summary was not used by these tests. Make --only test_tree_review pass without changing full-suite results. Files: scripts/test_tree_review.py and scripts/lidar_heightmap.py only if the public name must return.\n\nClosed at 4bb83739d8ef6852971d94a0eac7152e66d34db6: Merged 4bb8373: test_tree_review loads the lidar library before the scripts wrapper, so --only test_tree_review passes. lidar_heightmap.py was not changed. Full suite green on main.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 404,
+      "title": "Freeze the closed bake-off in place",
+      "status": "done",
+      "priority": "low",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T15. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T15' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s–m\n- Scope:\n  - The bake-off is about 3,000 lines of code, 64 tests (2.4%), two `scripts/` shims, about 14 MB of photos and a skill.\n  - The real cost is coupling: it imports `site_lock`, `cell_registry`, `site_kit`, the private `evidence_sheet._capture_view`, `mc_paced`, `world_frame` and `atomic_json`, so every refactor of those must keep a closed experiment green.\n  - Decided: freeze. Keep the files and `bakeoff/PROTOCOL.md`, drop the two `scripts/` shims, stop `run_tests.py` discovering `bakeoff/` by default (keep an explicit opt-in), and mark the skill and `bakeoff/OVERVIEW.md` historical.\n  - Touch points: `run_tests.py:5-12,70-82,204-209`, `ship_branch.py:278-311`, AGENTS.md:17, `docs/agents/layout.md:20`, `scripts/README.md:19`, `docs/active-world-contract.md:41`, `rules/build-roles.md:79`, the skill and its stub.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 7ed1b5a799eea54e04393e2f80315c52e62c1816: Merged 7ed1b5a: bake-off stays in the tree; the default suite no longer collects it; --bakeoff is the opt-in. The two scripts/ shims are gone. Full suite green. Archived notes in done.json still name the old shim paths; left as history.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
