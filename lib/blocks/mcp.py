@@ -6,6 +6,28 @@ import urllib.request
 import urllib.error
 import time
 
+# Fabric MCP returns Retry-After: 60 for a token bucket that refills far sooner
+# (100 ms per token at the loaded 600 RPM; see docs/archive/389-minecraft-rate-limit-waits.md).
+# Cap the client sleep so a shared-IP collision is not a full minute pause.
+RATE_LIMIT_RETRY_CAP_S = 2.0
+
+
+def rate_limit_retry_delay_s(retry_after_header: str | None) -> float:
+    """Seconds to wait after HTTP 429 before retrying an MCP request.
+
+    Honours a numeric ``Retry-After`` when it is shorter than
+    :data:`RATE_LIMIT_RETRY_CAP_S`; otherwise uses the cap. Non-numeric or
+    missing headers fall back to the cap.
+
+    @param retry_after_header: raw ``Retry-After`` response header, or None
+    @returns: sleep seconds (>= 0.05)
+    """
+    try:
+        header_s = float(retry_after_header) if retry_after_header is not None else RATE_LIMIT_RETRY_CAP_S
+    except ValueError:
+        header_s = RATE_LIMIT_RETRY_CAP_S
+    return max(0.05, min(RATE_LIMIT_RETRY_CAP_S, header_s))
+
 
 class Client:
     def __init__(self, port=8765, resume_stateless=False):
@@ -48,7 +70,7 @@ class Client:
             except urllib.error.HTTPError as error:
                 if error.code != 429 or attempt == 3:
                     raise
-                delay = min(60, max(1, int(error.headers.get("Retry-After", "2"))))
+                delay = rate_limit_retry_delay_s(error.headers.get("Retry-After"))
                 print(f"Minecraft rate limit: retrying in {delay}s", file=__import__("sys").stderr, flush=True)
                 time.sleep(delay)
                 if not notification:
