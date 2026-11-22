@@ -14,7 +14,7 @@ Rules
  - Canopy is static: log + leaves[persistent=true] massing (or hedge/wall), sized from
    the aerial. Placement allowlist: `surface_probe.REFINE_PLANTS`.
  - Trees and decor go only where the live block is air (or a grass stem/flower), so
-   undo is exact (mask_undo.py).
+   undo is exact (lib/layers/mask_undo.py, run with scripts/element_undo.py).
  - A tree is never ROOTED (crown centre) in a feature zone: a column the ground layer
    did not surface (building footprint, structure build, bridge; read from
    journal-owned ground columns plus footprint-map polygons). Trees inside a
@@ -32,7 +32,7 @@ One cell
   SITE_OWNER=<lock-owner> python3 scripts/trees_layer.py --cell tx,tz --apply
 
 Check the crown review image and the kinds against the aerial before apply. Undo for
-a re-run: scripts/mask_undo.py --cell tx,tz --pass trees (decor first, then trees).
+a re-run: scripts/element_undo.py --world <world> --cell tx,tz --pass trees (decor first, then trees).
 python3 scripts/cross_zone.py --world <world> report --cell tx,tz --json reports cell bounds
 and neighbouring cells. Check cell-edge structures against neighbouring registry
 state and place evidence.

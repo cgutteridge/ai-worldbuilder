@@ -291,7 +291,7 @@ def latest_entries(reg: CellRegistry, *, prefix: str = '', ghosts: bool = False)
 def latest_cells(reg: CellRegistry | None = None, *, prefix: str = '', ghosts: bool = False) -> dict:
     """Every recorded block of the latest plan of each build, later builds win (air included).
 
-    The journal replacement of merging every ``*-cells.json`` by mtime (site_audit, site_patrol,
+    The journal replacement of merging every ``*-cells.json`` by mtime (site_patrol,
     door_audit, osm_footprints).
 
     @param reg: registry (default: view registry of the active world)

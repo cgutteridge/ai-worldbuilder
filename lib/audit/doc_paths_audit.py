@@ -2,7 +2,8 @@
 
 World-relative roots (site, registry, providers, reference, downloads and
 verification) are excluded, except the evidence-types index. World configuration filenames
-are excluded explicitly; other config paths belong to the tool.
+are excluded explicitly (identity, frame, local providers, and the optional views
+catalogue); other config paths belong to the tool.
 Placeholders, globs and URLs are not concrete paths. Plans, ADRs and archived
 findings are history rather than current path instructions; they are not scanned.
 """
@@ -25,7 +26,7 @@ _PATH = re.compile(
 )
 _PLACEHOLDER = re.compile(r'[<>*?{}\[\]]')
 _WORLD_CONFIG = {'config/world.json', 'config/world-frame.json',
-                 'config/local-providers.json'}
+                 'config/local-providers.json', 'config/views.json'}
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,6 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  registry/issues.json   live snags / issues (scripts/issues.py; never block a cell)
  registry/issues-closed.json   archived confirmed/wontfix issues; pictures in issues/img-closed/
  site/REVIEWS.txt       review log
- site/BUILDS-INDEX.txt  generated list of kit builds (scripts/site_index.py)
  site/archive/          closed notes / older reviews
  site/LOCK.json         who holds the live world (scripts/site_lock.py)
  scripts/site_kit.py    plan / preview / apply / readback (journals via CellRegistry)
@@ -33,6 +32,9 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  reference/manifest.jsonl  append-only index of every fetched asset
  config/world.json      gameworld_id + save_path (save lives in the standalone Minecraft instance; read-only to the tool)
  config/world-frame.json         CRS, offsets, Y offset, bounds (sole home; not in the save)
+ config/views.json      optional cameras for scripts/site_views.py.
+                        Each name maps to eye and look (three numbers each).
+                        No file means no views. Captures: verification/site/views/.
 
  Retired progress files (do not recreate; `cell_registry.py verify` fails if
  present): old queue / focus / holds / retired coverage-done files / aerial-review /
@@ -67,8 +69,8 @@ BUILT plan in place to “fix” the world.
  Every session start GLITCH PATROL when refining built cells:
                      scripts/site_patrol.py sweep (+ views N when useful).
                      Log in REVIEWS.txt; file snags via scripts/issues.py.
- Every 3 phases      scripts/site_audit.py: drift from archived cells,
-                     dark walkable cells. Log REVIEWS; file snags.
+ Every 3 phases      scripts/cell_registry.py reconcile: drift from the journal.
+                     Log REVIEWS; file snags.
  After a place done  FULL REVIEW of that place against photos / aerial.
                      Fix or schedule high issues before starting the next.
 
@@ -81,7 +83,7 @@ BUILT plan in place to “fix” the world.
  1. Kit builds: site_kit structure backup (verification/site/*-backup.json)
     stays the undo for planned kit applies; `site_recover.py` uses it for an
     interrupted apply.
- 2. Mask undo for the layered passes (trees, decor): scripts/mask_undo.py.
+ 2. Trees and decor undo: scripts/element_undo.py (the mask check stays in the library).
  3. Mess in a cell (blocks drifted from the journal): 
     `python3 scripts/cell_registry.py reconcile [tx,tz] [--fix]`.
  4. Interrupted apply (journal entry still `begun`):
@@ -178,8 +180,8 @@ BUILT plan in place to “fix” the world.
     Light character pass: note distinctive local features as snags (`scripts/issues.py`).
  3. Plan — `cell_registry.py next` picks the next layer or feature (snags never steer next).
  4. Features — each its own build, normal cadence (§2); registry marks built on clean apply.
- 5. Layered passes — live flow per cell: claim lock; mask_undo.py (decor then trees) if
-    masks exist; ground_layer.py --apply; trees_layer.py --apply; decor_layer.py --apply;
+ 5. Layered passes — live flow per cell: claim lock; scripts/element_undo.py (decor then
+    trees) if masks exist; ground_layer.py --apply; trees_layer.py --apply; decor_layer.py --apply;
     patrol sweep; clean applies land journal entries (CellRegistry); release lock.
     Dry-run first and check verification/site/<plan>-kinds.png against the aerial.
     Python: .venv/bin/python. Vegetation rules: rules/foliage.md.
@@ -329,7 +331,6 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
         help"` outside any command sandbox, say in one or two lines what needs
         deciding, then stop. Do not chain further attempts.
  End    release the lock; save the world; update ISSUES / REVIEWS / COVERAGE;
-        regenerate BUILDS-INDEX;
         python3 scripts/site_cleanup.py due (if it prints CLEANUP DUE: rules/cleanup.md);
         python3 scripts/run_tests.py (stdlib unit tests, including roof-lint fixtures); then TOKEN NOTES
         (2–5 lines in REVIEWS or place CHANGE LOG: what wasted tokens

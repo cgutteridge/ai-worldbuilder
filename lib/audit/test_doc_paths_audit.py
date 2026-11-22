@@ -27,7 +27,7 @@ class PathAuditTest(unittest.TestCase):
             (root / 'scripts' / 'present.py').touch()
             (root / 'README.md').write_text(
                 '`scripts/present.py`, `scripts/<name>.py`, `lib/*/test_*.py`, '
-                '`lib/...`, `config/world.json`, `site/builds/a.json`, `reference/photos/a.jpg`, '
+                '`lib/...`, `config/world.json`, `config/views.json`, `site/builds/a.json`, `reference/photos/a.jpg`, '
                 '`providers/local/get/fetch.py`, `scripts/{a,b}.py`\n'
                 '[external](https://example.org/scripts/remote.py)\n')
             self.assertEqual(A.scan(root), [])

@@ -249,7 +249,7 @@ WHAT EXISTS IN CODE (still true)
 14. 2026-10-14 (user): 48,-44 DONE; ALL OTHER CELLS RESTART
 ------------------------------------------------------------------------
 48,-44 is the first done cell (ground from first principles: ground_layer.py + ground_sources.py;
-trees_layer.py; decor_layer.py; mask_undo.py). Every other cell starts from scratch for
+trees_layer.py; decor_layer.py; element_undo.py). Every other cell starts from scratch for
 ground, trees and decor; features are done as needed.
 When doing ground and decor for a cell, REVIEW THE NEIGHBOURING CELLS first (edge paths,
 roads, hedges, shade-bridged paths and noise filters all read evidence across the cell edge).
