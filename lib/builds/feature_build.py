@@ -941,21 +941,6 @@ def stair(mat: str, facing: str, half: str = 'bottom') -> str:
 _ROOF_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
 
 
-def block_family_variants(mat: str) -> dict[str, str]:
-    """Full / slab / stairs short names for a roof material family.
-
-    Thin call into :func:`roof_material.family_variants`. Catalogue families
-    list only the variants they have. Other names keep the historical prefix
-    and never borrow another material. Pitched roofs with no stair still fall
-    back to the full block in :func:`pitched_roof_states`; this function does
-    not raise.
-
-    @param mat: roof material prefix (e.g. ``brick``, ``smooth_stone``)
-    @returns: ``{'full': ...}`` plus optional ``slab`` / ``stairs``
-    """
-    return family_variants(mat)
-
-
 def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bottom') -> str:
     """Pitched-roof stair state (bottom half, waterlogged false).
 
@@ -966,7 +951,7 @@ def _roof_stair(mat: str, facing: str, shape: str = 'straight', half: str = 'bot
     @returns: block state string
     """
     return (
-        f'{block_family_variants(mat)["stairs"]}[facing={facing},half={half},shape={shape},waterlogged=false]'
+        f'{family_variants(mat)["stairs"]}[facing={facing},half={half},shape={shape},waterlogged=false]'
     )
 
 
@@ -977,7 +962,22 @@ def _roof_slab(mat: str, typ: str) -> str:
     @param typ: ``bottom`` or ``top``
     @returns: block state string
     """
-    return f'{block_family_variants(mat)["slab"]}[type={typ},waterlogged=false]'
+    return f'{family_variants(mat)["slab"]}[type={typ},waterlogged=false]'
+
+
+def _bottom_slab_or_full(mat: str) -> str:
+    """Bottom slab of a roof material family, or its full block when it has no slab.
+
+    Catalogue families such as terracotta and the concretes have no slab, so a
+    spelled-out ``{mat}_slab`` would be a block that does not exist.
+
+    @param mat: roof material family or block alias
+    @returns: block state string
+    """
+    variants = family_variants(mat)
+    if 'slab' in variants:
+        return f'{variants["slab"]}[type=bottom]'
+    return variants['full']
 
 
 def roof_block_y(half_height: int) -> int:
@@ -1160,7 +1160,7 @@ def pitched_roof_states(
 
     def fam(mat: str) -> dict[str, str]:
         if mat not in fam_cache:
-            fam_cache[mat] = block_family_variants(mat)
+            fam_cache[mat] = family_variants(mat)
         return fam_cache[mat]
 
     def fallback(mat: str, want: str) -> str:
@@ -2280,7 +2280,7 @@ class Build:
             if pitched_states is not None:
                 self._set_roof(x, ry, z, pitched_states[(x, z)])
             else:
-                self.set(x, ry, z, block_family_variants(rm)['full'])
+                self.set(x, ry, z, family_variants(rm)['full'])
             if wants_edge(x, z, ry):
                 self.set(x, ry + 1, z, edge['block'])
             else:
@@ -2690,7 +2690,7 @@ class Build:
             start = cells[0]
             width = len(cells)
             raw = f.roof.get('material') or 'smooth_stone'
-            material = block_family_variants(raw)
+            material = family_variants(raw)
             if 'slab' in material:
                 cover_state = f"{material['slab']}[type=bottom]"
             else:
@@ -3364,7 +3364,7 @@ class Build:
                     if n not in self.owner and n not in self.foreign and n not in self.shared:
                         rs.add(n)
         for x, z in rs:
-            self.set(x, eave, z, f'{rm}_slab[type=bottom]')
+            self.set(x, eave, z, _bottom_slab_or_full(rm))
 
     def roof_pitched(self, features: list[Feature], own: set):
         """Hip roof from the footprint edge, with slab or opposed-stair ridge caps.
@@ -3637,7 +3637,7 @@ class Build:
         """
         ax, ay, az = at
         sx, _sy, sz = size
-        mat = block_family_variants(mat)['full']
+        mat = family_variants(mat)['full']
         for dx in range(sx):
             for dz in range(sz):
                 x, z = ax + dx, az + dz
@@ -3768,10 +3768,10 @@ class Build:
                     x, z = ax + i, az
                 else:
                     x, z = ax, az + i
-                place(x + dx, ay, z + dz, f'{rm}_slab[type=bottom]')
+                place(x + dx, ay, z + dz, _bottom_slab_or_full(rm))
         elif kind == 'ledge':
             for x, y, z in self._detail_box(at, (sx, 1, sz)):
-                place(x, y, z, f'{rm}_slab[type=bottom]')
+                place(x, y, z, _bottom_slab_or_full(rm))
         elif kind == 'fascia_band':
             for x, y, z in self._detail_box(at, size):
                 place(x, y, z, 'terracotta')
@@ -3796,7 +3796,7 @@ class Build:
             mats.extend((f.roof.get('zone_materials') or {}).values())
             full_of = {}
             for mat in mats:
-                variants = block_family_variants(mat)
+                variants = family_variants(mat)
                 for name in variants.values():
                     full_of[name] = variants['full']
             tops: dict[tuple[int, int], int] = {}
@@ -3847,7 +3847,7 @@ class Build:
             materials = [f.roof.get('material') or 'smooth_stone', self.wall, self.floor_mat]
             materials.extend((f.roof.get('zone_materials') or {}).values())
             for material in materials:
-                support_names.update(block_family_variants(material).values())
+                support_names.update(family_variants(material).values())
             edge = f.roof.get('edge') or {}
             block = bid(edge.get('block') or 'air')[10:]
             if not block.endswith(('_carpet', '_trapdoor', '_wall', '_fence', '_pane')):

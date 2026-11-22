@@ -256,6 +256,32 @@ class BuildPlanTest(unittest.TestCase):
             self.assertEqual(world.reg.owned([higher])[higher][0], 'old_ground')
             self.assertEqual(world.reg.owned([neighbour])[neighbour][0], 'old_ground')
 
+    def test_flat_roof_of_a_full_block_only_family_uses_real_block_ids(self):
+        """#371: concrete and terracotta have no slab, so a flat deck must use the full block."""
+        from pathlib import Path as _P
+        valid = {line.strip().removeprefix('minecraft:') for line in
+                 (_P(F.TOOL_ROOT) / 'config' / 'minecraft-block-ids-26.2.txt').read_text().splitlines()
+                 if line.strip() and not line.startswith('#')}
+        for material, deck in (('light_gray_concrete', 'light_gray_concrete'),
+                               ('terracotta', 'terracotta'),
+                               ('smooth_stone', 'smooth_stone_slab')):
+            with self.subTest(material=material), redirect_stdout(io.StringIO()):
+                plan = F.build(self.spec(kind='flat', material=material),
+                               footprints={'A': self.cells}, world=_StoneWorld())
+            roof_y = 50 + 3 * F.STOREY_H
+            states = {st for (x, y, z), st in plan.cells.items() if y == roof_y and (x, z) in self.cells}
+            self.assertIn(f'minecraft:{deck}[type=bottom]' if 'slab' in deck else f'minecraft:{deck}', states)
+            for st in plan.cells.values():
+                name = st.split('[')[0].removeprefix('minecraft:')
+                if name.endswith(('_slab', 'concrete', 'terracotta')):
+                    self.assertIn(name, valid, st[:80])
+
+    def test_ledge_and_awning_details_use_the_catalogue_slab_or_full_block(self):
+        self.assertEqual(F._bottom_slab_or_full('brick'), 'brick_slab[type=bottom]')
+        self.assertEqual(F._bottom_slab_or_full('smooth_stone'), 'smooth_stone_slab[type=bottom]')
+        self.assertEqual(F._bottom_slab_or_full('terracotta'), 'terracotta')
+        self.assertEqual(F._bottom_slab_or_full('light_gray_concrete'), 'light_gray_concrete')
+
     def test_dry_run_reports_unknown_planned_block_ids_and_source(self):
         spec = self.spec()
         spec['wall'] = 'made_up_wall'
@@ -3381,22 +3407,22 @@ class PvArraysTest(unittest.TestCase):
 
 
 class BlockFamilyVariantsTest(unittest.TestCase):
-    """Seam: block_family_variants exposes full/slab/stairs without cross-mat swaps."""
+    """Seam: family_variants exposes full/slab/stairs without cross-mat swaps."""
 
     def test_brick_has_all_three(self):
-        v = F.block_family_variants('brick')
+        v = F.family_variants('brick')
         self.assertEqual(v['full'], 'bricks')
         self.assertEqual(v['slab'], 'brick_slab')
         self.assertEqual(v['stairs'], 'brick_stairs')
 
     def test_smooth_stone_has_no_stairs(self):
-        v = F.block_family_variants('smooth_stone')
+        v = F.family_variants('smooth_stone')
         self.assertEqual(v['full'], 'smooth_stone')
         self.assertEqual(v['slab'], 'smooth_stone_slab')
         self.assertNotIn('stairs', v)
 
     def test_deepslate_tile_full_is_plural(self):
-        v = F.block_family_variants('deepslate_tile')
+        v = F.family_variants('deepslate_tile')
         self.assertEqual(v['full'], 'deepslate_tiles')
         self.assertEqual(v['stairs'], 'deepslate_tile_stairs')
 
@@ -3612,7 +3638,7 @@ class PitchedRoofStatesTest(unittest.TestCase):
     def test_slab_family_fallback_still_full_block(self):
         half = {(0, 0): 10, (1, 0): 11}
         warns: list[str] = []
-        with mock.patch.object(F, 'block_family_variants',
+        with mock.patch.object(F, 'family_variants',
                                return_value={'full': 'stone', 'stairs': 'stone_stairs'}):
             states = F.pitched_roof_states(half, {c: 'stone' for c in half}, warns)
         self.assertEqual(states[(1, 0)], 'stone')
@@ -3818,7 +3844,7 @@ class RoofTerraceEdgesTest(unittest.TestCase):
             with self.subTest(material=material, drop=drop):
                 half = {(x, 0): h for x, h in enumerate((22 - drop, 22, 22, 22, 24))}
                 warnings = []
-                with mock.patch.object(F, 'block_family_variants', return_value={'full': material}):
+                with mock.patch.object(F, 'family_variants', return_value={'full': material}):
                     states = F.pitched_roof_states(half, dict.fromkeys(half, material), warnings)
                 self.assertEqual(states[(1, 0)], material)
                 self.assertTrue(any(f'no {missing}' in warning for warning in warnings))
@@ -4004,7 +4030,7 @@ def _roof_material_migration_plan():
     One pitched zoned mass carries ``zone_materials`` into ``pitched_roof_states``
     and the detail support set. One flat zoned mass places the full-block deck.
     A covered entrance and a plant room on a stair reach the other callers.
-    ``block_family_variants`` is wrapped only to record those callers.
+    ``family_variants`` is wrapped only to record those callers.
 
     @returns: ``(plan, caller names)``
     """
@@ -4064,7 +4090,7 @@ def _roof_material_migration_plan():
         }
 
     seen = set()
-    real = F.block_family_variants
+    real = F.family_variants
 
     def wrapped(mat):
         frame = inspect.currentframe()
@@ -4076,7 +4102,7 @@ def _roof_material_migration_plan():
         return real(mat)
 
     def build(detail):
-        with mock.patch.object(F, 'block_family_variants', wrapped), \
+        with mock.patch.object(F, 'family_variants', wrapped), \
                 mock.patch.object(F, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
                 redirect_stdout(io.StringIO()):
             return F.build(
