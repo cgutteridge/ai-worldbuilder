@@ -236,10 +236,16 @@ class RoofGeometryTest(unittest.TestCase):
                 self.assertEqual(stair_shape_mismatches(p.cells), [])
                 H.guard_roof_jogs(p)
                 self.assertEqual(sum('flower_pot' in s for s in p.cells.values()), 1)
-                for x, z in {(x, z) for (x, y, z) in p.cells if (x, z) not in cells and y >= 36
-                             and p.cells[x, y, z] != 'minecraft:air'}:
-                    column = {y for (qx, y, qz) in p.cells if (qx, qz) == (x, z) and y >= 36}
-                    self.assertEqual(column, {36})       # the eave ring is one slab or stair, nothing under it
+                roof = cells | {(x + dx, z + dz) for x, z in cells for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
+                rim = {(x, z) for x, z in roof - cells
+                       if any((x + dx, z + dz) not in roof for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
+                self.assertTrue(rim)
+                for x, z in rim:
+                    column = {y: p.cells[qx, y, qz] for (qx, y, qz) in p.cells
+                              if (qx, qz) == (x, z) and y >= 36 and p.cells[qx, y, qz] != 'minecraft:air'}
+                    if column:       # a slab or stair one block thick, nothing under it (#414)
+                        self.assertEqual(set(column), {36}, (x, z))
+                        self.assertTrue('_stairs[' in column[36] or 'brick_slab[type=bottom' in column[36], column[36])
                 self.assertTrue(any('_stairs[' in s for s in p.cells.values()))
 
     def test_octant_fit_falls_back_to_columns_for_an_l_shape(self):

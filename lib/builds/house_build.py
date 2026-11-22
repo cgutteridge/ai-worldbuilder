@@ -16,7 +16,8 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
                  group roofs require equal effective pitches; first label supplies the material
   roof_fit       optional {"<label>": "columns"|"octant"} (default columns). octant designs a pitched
                  rectangular roof as half-block cells and fits slab/stair/full blocks to it (#415);
-                 needs roof_pitch above 0.5 and mode each
+                 needs roof_pitch above 0.5 and mode each; only the rim of the eave is held to one
+                 slab or stair thick, notch columns of a rotated outline are fitted freely
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
   floor_min      minimum floor y (front pavement height) or null

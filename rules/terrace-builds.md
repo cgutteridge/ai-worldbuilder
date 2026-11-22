@@ -23,7 +23,9 @@ docstring):
   rectangle, then fits each block to the closest of air, full block, bottom or top slab and
   bottom stair (four facings, five shapes) by cells matched. A stair's corner shape comes
   from the same-height neighbour rule inside the fit, whatever the stair material, so
-  corners come out of the design. It needs `roof_pitch` above 0.5 and `mode: each`. A
+  corners come out of the design. Only the rim (the outermost overhanging columns, with an
+  open side) is limited to one slab or stair with nothing under it; columns in a notch of a
+  rotated outline are fitted freely. It needs `roof_pitch` above 0.5 and `mode: each`. A
   footprint that is not close to a rectangle, or a fitted ridge that would jog, falls back
   to `columns` with a printed note. The dry run prints how many half-block cells it missed.
 - `roof_pitch` — optional `{label: rise_per_run}`, finite numbers from 0 to 1.

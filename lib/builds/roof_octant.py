@@ -9,6 +9,10 @@ it from same-height neighbouring stairs, so the fit evaluates every stair with t
 ``roof_geometry.stair_shape_from_neighbours`` gives it in the current arrangement and adjusts
 facings until that settles. A stair is a stair whatever its material.
 
+The rim (eave columns outside the footprint with an open side) is held to one first-layer block that
+is air, a bottom slab or a stair, so the roof edge is never a thick full-block lip (#414); columns
+elsewhere, including notches of a staircase outline, are fitted freely.
+
 Cell patterns, per block, for a bottom stair facing ``f`` (the tall side is the ``f`` side):
 
 * bottom layer: all four cells;
@@ -36,8 +40,8 @@ OPTIONS = ((('air',), frozenset()), (('full',), FULL),
            (('slab', 'bottom'), BOTTOM), (('slab', 'top'), TOP),
            *((('stair', face), None) for face in DIRS))
 STATIC_CELLS = {state: cells for state, cells in OPTIONS if cells is not None}
-# The overhanging eave ring is one slab or stair thick with nothing under it (#414): never a full block.
-RING_OPTIONS = tuple(o for o in OPTIONS if o[0][0] in ('air', 'stair') or o[0] == ('slab', 'bottom'))
+# The rim of the roof (its outermost overhanging columns) is one slab or stair thick with nothing under it (#414).
+RIM_OPTIONS = tuple(o for o in OPTIONS if o[0][0] in ('air', 'stair') or o[0] == ('slab', 'bottom'))
 
 
 def _side(face: str) -> frozenset:
@@ -128,20 +132,24 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
     if surface is None:
         return None
     full_columns = full_columns or set()
-    target: dict = {}
-    top_y = y0
+    # Rim: eave columns outside the footprint with an open side. Columns in a notch of a staircase
+    # outline are inside the roof and are fitted freely.
+    rim = {(x, z) for x, z in columns if (x, z) not in own
+           and any((x + dx, z + dz) not in columns for dx, dz in DIRS.values())}
+    design: dict = {}
     for x, z in sorted(columns):
         heights = {(dx, dz): surface(x + (dx + 0.5) / 2, z + (dz + 0.5) / 2)
                    for dx in (0, 1) for dz in (0, 1)}
         y = y0
-        while y == y0 or (x, z) in own:
+        while True:
             cells = frozenset((dx, dy, dz) for (dx, dz), h in heights.items() if h is not None
                               for dy in (0, 1) if y + (dy + 0.5) / 2 < h)
             if not cells:
                 break
-            target[x, y, z] = cells
-            top_y = max(top_y, y)
+            design[x, y, z] = cells
             y += 1
+    # The fit works to the design, except that a rim column only ever holds its first layer.
+    target = {pos: cells for pos, cells in design.items() if (pos[0], pos[2]) not in rim or pos[1] == y0}
     order = sorted(target, key=lambda p: (p[1], p[2], p[0]))
     grid: dict = {}
 
@@ -166,7 +174,7 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
             grid[pos] = ('full',)
             continue
         want = target[pos]
-        options = OPTIONS if (pos[0], pos[2]) in own else RING_OPTIONS
+        options = RIM_OPTIONS if (pos[0], pos[2]) in rim else OPTIONS
         candidates = [(len(cells ^ want), i, state) for i, (state, cells) in enumerate(options)
                       if cells is not None]
         for face in DIRS:
@@ -185,7 +193,7 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
             def local():
                 return cost(pos) + sum(cost(n) for n in around if n in grid)
             best, best_cost = current, local()
-            for state, _cells in (OPTIONS if (pos[0], pos[2]) in own else RING_OPTIONS):
+            for state, _cells in (RIM_OPTIONS if (pos[0], pos[2]) in rim else OPTIONS):
                 if state == current:
                     continue
                 grid[pos] = state
@@ -201,8 +209,11 @@ def _fit(own: set, columns: set, pitch: float, y0: int, full_columns: set | None
         if state[0] == 'air':
             continue
         blocks[pos] = ('stair', state[1], effective(state, pos)) if state[0] == 'stair' else state
-    return OctantRoof(blocks, sum(len(c) for c in target.values()),
-                      sum(cost(pos) for pos in order), deg)
+    # Quality is measured against the whole design, so cells a rim column gives up count as missed.
+    placed = {pos: cells_of(pos) for pos in grid}
+    missed = sum(len(placed.get(pos, frozenset()) ^ design.get(pos, frozenset()))
+                 for pos in set(design) | set(placed))
+    return OctantRoof(blocks, sum(len(c) for c in design.values()), missed, deg)
 
 
 def block_states(material: str, blocks: dict) -> dict:

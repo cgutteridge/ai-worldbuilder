@@ -58,6 +58,23 @@ class FitTest(unittest.TestCase):
                     self.assertEqual(stair_shape_mismatches(cells), [])
                 self.assertLess(fitted.missed / fitted.wanted, 0.2)
 
+    def test_the_rim_rule_does_not_reach_columns_inside_a_staircase_outline(self):
+        """#415: only the open edge of the roof is one slab or stair thick; notch columns are fitted freely."""
+        from test_roof_geometry import rotated_rect
+        own = rotated_rect(14, 8, 35)
+        columns = ring(own)
+        fitted = R.fit_octant_roof(own, columns, 0.75, 36)
+        rim = {(x, z) for x, z in columns - own
+               if any((x + dx, z + dz) not in columns for dx, dz in R.DIRS.values())}
+        notch = (columns - own) - rim
+        self.assertTrue(notch)
+        tall = {(x, z) for (x, y, z) in fitted.blocks if (x, z) in notch and y > 36}
+        self.assertTrue(tall, 'no notch column rises above the first layer')
+        for (x, y, z), block in fitted.blocks.items():
+            if (x, z) in rim:
+                self.assertEqual(y, 36)
+                self.assertIn(block[0], ('slab', 'stair'))
+
     def test_the_fit_is_deterministic(self):
         from test_roof_geometry import rotated_rect
         own = rotated_rect(12, 9, 33)
