@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 439,
+  "nextTaskId": 442,
   "tasks": [
     
     
@@ -51,7 +51,7 @@
       "blockedBy": [
         
       ],
-      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial.\n\nPointer (2026-11-22, parade snag S-111/S-113): the owner's street view of 233 Portswood Road shows the typology: a two-storey brick building with a pitched roof behind and a one-storey flat shopfront roof added in front; the real run is mostly black fascias. Footprints that belong to one building (Kovan & Ramo's belongs to its neighbour) cannot come from the map tags and are needs-designer. Builder tasks from the same snags: 434 (feature roof stairs/octant), 435 (signs falling off), 436 (doors one level low), 437 (sign and fascia options)."
+      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial.\n\nPointer (2026-11-22, parade snag S-111/S-113): the owner's street view of 233 Portswood Road shows the typology: a two-storey brick building with a pitched roof behind and a one-storey flat shopfront roof added in front; the real run is mostly black fascias. Footprints that belong to one building (Kovan & Ramo's belongs to its neighbour) cannot come from the map tags and are needs-designer. Builder tasks from the same snags: 434 (feature roof stairs/octant), 435 (signs falling off), 436 (doors one level low), 437 (sign and fascia options).\n\nReview correction (2026-11-22): also read task 427 (rotated footprints, rows by adjacency) and 431 (glazing and facade recipe)."
     , "builderTask": true},
     
     
@@ -152,13 +152,13 @@
     {
       "id": 389,
       "title": "Find what triggers Minecraft rate-limit waits during applies",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From the 2026-11-21 B35 rebuild thread. The same plan applied four times: fill stage took 122 s with 1 rate-limit retry, 605 s with 10, 485 s with 7, 125 s with 0 (each retry is a fixed 'Minecraft rate limit: retrying in 60s' wait). Unknown what triggers it. One unverified guess: other Minecraft MCP calls (teleport, scan, capture) from a parallel session while an apply runs. Spike: log request timestamps and the server's limit response during an apply, run once with no other calls and once with background calls, and record the limit, whether it is per second or per window, and whether the writer's pacing (see McpWriter, the paced MCP interval in rules/slow-commands.md) can stay under it. Output: a short finding in docs/ with numbers, and either a tuned pacing constant or a filed fix. Acceptance: the finding states the limit and the cause with measurements.\n\nWave investigation 2026-11-22: partial measured findings at docs/plans/minecraft-rate-limit.md. Installed limiter behavior and 60-second Retry-After are reproduced; current config files say 600 RPM but loaded/historical quotas and the original apply cause need measured traces. Saved B35 spec identified as worlds/southampton-build/site/builds/w146985470.json; live paired undo/apply trial remains pending concrete operation review. Owner approved current Codex model/effort for this wave, fresh Codex reviewers in place of unavailable Sonnet, and local merges only (no push)."
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/389-rate-limit-waits"},
     
     
     
@@ -213,36 +213,27 @@
       "builderTask": false,
       "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
     },
-    {
-      "id": 420,
-      "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5"
-    },
+    
     {
       "id": 421,
       "title": "Make new-world-build's clip folder count in clip_coverage",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "The skill says to use the place name for the clip folder, but _query_bbox only counts clips whose name encodes the extent. Have the extractor encode the extent, or change the skill example. Check: following the skill gives 100% clip_coverage for the home cell. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/6"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/421-clip-folder-coverage"},
     {
       "id": 422,
       "title": "Aerial coverage: stop dark pixels counting as missing and report the uncovered count",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "samples() skips pixels under 1% brightness and the blocker prints a rounded percentage (100.0% when one column is missing). Use an explicit no-data mask or alpha, or a small window, and print the uncovered column count. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/8"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/422-aerial-dark-pixels"},
     {
       "id": 423,
       "title": "Include the home cell in new-world-build's first ghost",
@@ -256,33 +247,24 @@
     {
       "id": 424,
       "title": "Add matplotlib to pyproject.toml dependencies",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10"
-    },
-    {
-      "id": 425,
-      "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
-      "status": "todo",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"},
+    
     {
       "id": 426,
       "title": "Docs: cell-orchestrator prepare round trips and instance-doc ports and GDAL noise",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Two doc fixes. cell-orchestrator per-task steps: note the re-prepare after raising the marker and prepare --cell <neighbour> --apply --evidence-only for edge-crossing features (and find which evidence fact the marker raise changes if it is a real invalidation bug). Instance doc: only port 8766 listens at the title screen, and Arch GDAL plugin 'ERROR 1' lines are harmless. Two GitHub issues to close when this task closes: GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/9 and GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/12"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/426-docs-prepare-ports-gdal"},
     {
       "id": 427,
       "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
@@ -291,7 +273,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257, findings in docs/plans/typology-buildings.md (sections \"Where the shipped generator stops\" and Recommendation 1). The #413 generator refused every real footprint as \"odd footprint\": 0 of 18 estate, 42 terrace and 42 parade buildings produced a spec, because _box accepts only filled axis-aligned rectangles and real streets are rotated (bounding-box fill 0.29 to 0.94). house_build already fits rotated rectangles (#415) and feature_build takes the footprint as drawn. Change lib/builds/typology_spec.py: (a) accept any footprint of a minimum area and leave the fit to the builder, still reporting a needs-designer reason for slivers and multi-part shapes; (b) form rows from footprints within one block of each other, not a full shared side (_relation, _mark_partial, _components); (c) choose a front from the nearest street when the two axes are close (_front, the shop parade sits on a diagonal road), reporting no-clear-front only when no street is within reach. Colocated tests with fixtures cut from the real Begonia Road, Northcote Road and Portswood Road footprints (record them as small JSON fixtures). Non-builder: synthetic fixtures and unit tests only. Does not touch the district profile or tag defaults (see the tag-defaults task).\n\n\nParade verdict addition (2026-11-22, snag S-110, owner decision): do not square shop fronts into steps on a row that is not close to axis-aligned (the squaring directive in rules/craftsmanship.md); the generator should keep the real angle and let the builder fit it, and mark a front 'needs designer' where it cannot. The owner has given up that directive for such rows."
+      "notes": "From trial #257, findings in docs/plans/typology-buildings.md (sections \"Where the shipped generator stops\" and Recommendation 1). The #413 generator refused every real footprint as \"odd footprint\": 0 of 18 estate, 42 terrace and 42 parade buildings produced a spec, because _box accepts only filled axis-aligned rectangles and real streets are rotated (bounding-box fill 0.29 to 0.94). house_build already fits rotated rectangles (#415) and feature_build takes the footprint as drawn. Change lib/builds/typology_spec.py: (a) accept any footprint of a minimum area and leave the fit to the builder, still reporting a needs-designer reason for slivers and multi-part shapes; (b) form rows from footprints within one block of each other, not a full shared side (_relation, _mark_partial, _components); (c) choose a front from the nearest street when the two axes are close (_front, the shop parade sits on a diagonal road), reporting no-clear-front only when no street is within reach. Colocated tests with fixtures cut from the real Begonia Road, Northcote Road and Portswood Road footprints (record them as small JSON fixtures). Non-builder: synthetic fixtures and unit tests only. Does not touch the district profile or tag defaults (see the tag-defaults task).\n\nReview corrections (2026-11-22): thresholds the trial used and the task keeps unless changed: bounding-box fill of at least 0.45 for houses and at least 20 cells for shops. Not a stretch: three changes in one file (lib/builds/typology_spec.py) with three fixtures, one branch; task 428 edits the same file, so run them one at a time. Squaring of shop fronts is not in this file: it is feature_facade.fit_straight_runs (#332); the owner's decision to give up squaring on rows that are not near axis-aligned (snag S-110) is a separate task."
     },
     {
       "id": 428,
@@ -311,7 +293,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n"
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n\n\nReview corrections (2026-11-22): cite #414. Today's code is `if not eave: self.set(x, y-1, z, full)` in lib/builds/house_build.py (about line 492), so the eave ring already has no underlay; the leftover is the first row below the eave, which at pitch 0.6 sits at the wall top plus 6, so its underlay lands at plus 5, the wall's top course. The live column scan (x 6347, full tiles at y 63 and 64) was taken before #414 was checked and is NOT re-checked; it is also not verified that this is the exact spot the owner means (\"one layer below the roof\"). Constraint: legacy flat output must stay byte-identical (test_legacy_flatish_plans_match_pre_change_output). This is a stretch because it starts as a diagnosis, even though complexity is m. Also check whether feature_build roofs have the same extra layer (cheap)."
     },
     {
       "id": 430,
@@ -321,7 +303,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Chimneys\"). house_build.roof() plans one chimney per roof unit (chim.append((best, b)): the deepest column nearest the unit's centre) and the spec has no chimney option; a terrace spec in mode group is one roof unit, so 20 houses got one chimney in the middle (owner: wrong for a terrace). feature_build's details kind chimney is only an industrial hollow stack (base_diameter at least 3), so the hand path has no domestic stack either. Add an optional per-label spec key, for example chimneys: {\"<label>\": \"per_house\" | \"per_pair\" | \"party_walls\" | [{at}] | \"none\"}, default per roof unit so existing specs are unchanged, placing a one-by-one brick stack on the ridge at each chosen position (party walls: where two adjacent footprints in a group share a wall line). Reuse the existing stack-through-the-roof code (WALL column to ridge + 2, flower_pot cap). Tests with synthetic fixtures: a three-house terrace and a semi. Non-builder.\n"
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Chimneys\"). house_build.roof() plans one chimney per roof unit (chim.append((best, b)): the deepest column nearest the unit's centre) and the spec has no chimney option; a terrace spec in mode group is one roof unit, so 20 houses got one chimney in the middle (owner: wrong for a terrace). feature_build's details kind chimney is only an industrial hollow stack (base_diameter at least 3), so the hand path has no domestic stack either. Add an optional per-label spec key, for example chimneys: {\"<label>\": \"per_house\" | \"per_pair\" | \"party_walls\" | [{at}] | \"none\"}, default per roof unit so existing specs are unchanged, placing a one-by-one brick stack on the ridge at each chosen position (party walls: where two adjacent footprints in a group share a wall line). Reuse the existing stack-through-the-roof code (WALL column to ridge + 2, flower_pot cap). Tests with synthetic fixtures: a three-house terrace and a semi. Non-builder.\n\n\nReview corrections (2026-11-22): the existing per-roof-unit default chimney behaviour must stay unchanged unless the new option is set (add a test). Party walls come from footprint adjacency in lib/builds/house_build.py; name that as the detection source."
     },
     {
       "id": 431,
@@ -331,7 +313,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 4 and 5). Rule-built shops came out as plain brick boxes with the builder's default entrance and awning; the hand specs that added a facade_plan (ground storey glazed_h 3 pier 1, upper storeys glazed_h 2 pier 3, entrance with awning_like) read much closer to real shopfronts. Make glazing and facade detail (I-006) a class recipe in the typology spec generator: a small per-class table (glazing rows per storey, pier width, rhythm, entrance awning, roof edge) under the district profile or the land-use class table, emitted into the generated feature_build spec's facade_plan and roofs.edge. Houses keep the house_build windows. The recipe is a default that a profile can override, and a class with no recipe stays as today. Non-builder: fixtures and tests that the generated spec validates in feature_build (dry run on a synthetic footprint). Overlaps task 333 (shop typology: shopfront ground floor, dormers, bay windows): do the class-recipe table here and leave per-side storeys, dormers and bays to 333.\n\n\nParade verdict addition (2026-11-22, snags S-108, S-109, S-112): the class recipe also carries a sign palette (sign wood and text colour) and a per-building fascia colour; real fascias on the Portswood parade are mostly black, Burga grey and Stravs teal, not bright defaults. Per-building colour needs street-level evidence or a district profile, so the shop class stays designer-assisted. The builder options these feed are task 437 (sign wood, text colour, fascia colour, contrast rule): land 437 first. Shop typology (pitched building behind a flat shopfront) is task 333."
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 4 and 5). Rule-built shops came out as plain brick boxes with the builder's default entrance and awning; the hand specs that added a facade_plan (ground storey glazed_h 3 pier 1, upper storeys glazed_h 2 pier 3, entrance with awning_like) read much closer to real shopfronts. Make glazing and facade detail (I-006) a class recipe in the typology spec generator: a small per-class table (glazing rows per storey, pier width, rhythm, entrance awning, roof edge) under the district profile or the land-use class table, emitted into the generated feature_build spec's facade_plan and roofs.edge. Houses keep the house_build windows. The recipe is a default that a profile can override, and a class with no recipe stays as today. Non-builder: fixtures and tests that the generated spec validates in feature_build (dry run on a synthetic footprint). Overlaps task 333 (shop typology: shopfront ground floor, dormers, bay windows): do the class-recipe table here and leave per-side storeys, dormers and bays to 333.\n\nReview corrections (2026-11-22, parade snags S-108, S-109, S-112): this task keeps the glazing, pier and entrance-awning table and adds a default sign palette (sign wood and text colour) per land-use class. The one home for the recipe is the land-use class table (#253, #254), not a district profile: the world has no district profiles. Per-building fascia colour is NOT part of this task: it is world data from street view (real fascias on the Portswood parade are mostly black, Burga grey and Stravs teal), supplied through the per-building fascia key that task 437 adds, or a district file. It must follow task 437 (sign wood, fascia colour and contrast options): land 437 first, the tracker cannot record the blockedBy here. The shop typology (pitched building behind a flat shopfront) is task 333."
     },
     {
       "id": 432,
@@ -346,7 +328,7 @@
         430
       ],
       "builderTask": true,
-      "notes": "Builder task. After the footprint-gates, tag-defaults, roof-layer and chimney-option tasks land, rebuild the Northcote Road west terrace (cell 54,-41, 20 houses; trial #257, docs/plans/typology-buildings.md) from a terrace recipe: one roof per house or per pair rather than mode group across the whole row, one stack per party wall or pair, and alternating roof colour per pair where the aerial shows it (54_-41.png: red tile and grey slate in pairs). The owner judged the trial terrace good except the central chimney and (pending comment) the single continuous roof. Method as trial #257: rule-built spec through the existing builders under the site lock, state minutes and session tokens with the measurement method, owner verdict in game recorded in the findings. Builder task, stretch: do not raise model or effort without asking.\n"
+      "notes": "Builder task. After the footprint-gates, tag-defaults, roof-layer and chimney-option tasks land, rebuild the Northcote Road west terrace (cell 54,-41, 20 houses; trial #257, docs/plans/typology-buildings.md) from a terrace recipe: one roof per house or per pair rather than mode group across the whole row, one stack per party wall or pair, and alternating roof colour per pair where the aerial shows it (54_-41.png: red tile and grey slate in pairs). The owner judged the trial terrace good except the central chimney and (pending comment) the single continuous roof. Method as trial #257: rule-built spec through the existing builders under the site lock, state minutes and session tokens with the measurement method, owner verdict in game recorded in the findings. Builder task, stretch: do not raise model or effort without asking.\n\n\nReview corrections (2026-11-22): blocked by 427 (rotated footprints, rows by adjacency), 428 (default storeys), 429 (roof underlay), 430 (domestic chimney) and 441 (terrace recipe: separate roofs per house or pair, alternating roof colour, the generator code this trial needs). The tracker cannot record 428, 429 and 441 as blockedBy here, so do not dispatch this task until all five have landed. Settle the owner's open comment on the terrace's single continuous roof before dispatch: it has the same cause as the chimney finding (one roof unit per group)."
     },
     {
       "id": 433,
@@ -356,7 +338,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "Found in trial #257 (parade, Portswood Road). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but their primary cell is 52,-37. The builder then refuses them with \"feature plan absent from cell plan 52,-37\", and `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere. Dismissing the plans on 51,-37 did not make 52,-37 pick them up, so they now have a plan in no cell (parade left at 17 of 19; the unbuilt two and the dismissal are described in docs/plans/typology-buildings.md under Cell edges).\n\nDeliverable: a feature that crosses a cell edge is planned and recorded in its primary cell (the cell holding its main footprint or entrance, say which rule), whichever cell's plans were recorded first; `propose-features` for a cell lists features whose primary cell it is even when an edge cell already recorded them; recording or dismissing a plan on the other cell does not strand the feature. Fixture-only: synthetic two-cell footprint, a plan recorded in the wrong cell, then propose-features and apply preflight on the primary cell. No live world work. Acceptance: tests show the straddling feature is proposed and applies from its primary cell, and that the two-cell plan record is recoverable without a manual registry edit. After it lands, the two parade shops can be built (a separate world step, owner OK).\n"
+      "notes": "Found in trial #257 (parade, Portswood Road; findings in docs/plans/typology-buildings.md, Cell edges). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but they are built from 52,-37. The builder refuses them with \"feature plan absent from cell plan 52,-37\"; `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere; dismissing the plans on 51,-37 did not release them, so they now have a plan in no cell (the parade stays at 17 of 19).\n\nA finished task (#288) already sets the rule: a feature that crosses a cell line is planned once, in the cell holding most of its columns (site_kit.primary_cell, cell_journal). This task must agree with it, not replace it.\n\nStep 1, diagnose (read-only): give the column count each of the two shops has in 51,-37 and in 52,-37, and name which of propose-features, the plan record and the builder disagrees with #288's rule for them. The cause is NOT diagnosed yet.\nStep 2: make propose-features, the plan record and the builder all follow #288's rule, and make a plan recorded in the wrong cell recoverable without a manual registry edit (including after a dismissal).\nNon-builder: fixtures, no live world work. Acceptance: a synthetic two-cell footprint fixture where a feature planned in the wrong cell is proposed and applied from its primary cell; the two shops then propose and apply from their primary cell. Building the two shops is a separate world step with the owner's OK.\n"
     },
     {
       "id": 434,
@@ -366,7 +348,7 @@
       "complexity": "l",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 parade snag S-105 (issue I-022, docs/plans/typology-buildings.md \"Parade verdict\"). The owner saw poor stair rotation on the roof of Xionqi Hotpot (w122706803, hand full spec built by feature_build) and asked whether it used the octant roof system. It does not: octant exists only as house_build's roof_fit option (default columns, #415); feature_build has no octant code and its pitched roofs come from pitched_roof_states. Deliverable: decide and implement how feature_build pitched roofs get the same quality as house_build's octant fit: either accept an octant fit per roof label in the feature spec (reusing lib/builds/roof_octant.py: fit_octant_roof, block_states) or fix the stair shape and facing of pitched_roof_states against neighbours so the owner's S-105 view no longer has bad rotation; state which in the notes and why. Stretch (changes roof geometry that spans builders): ask before raising model or effort. Non-builder: fixtures that a pitched feature roof of the hotpot's footprint shape has no mismatched stair corners (compare against house_build octant output where both apply) and a validated spec option; no live world work. Acceptance: tests; roof stair rotation on that footprint verified offline; the owner reviews S-105 in game after a rebuild (a separate world step).\n"
+      "notes": "From trial #257 parade snag S-105 (issue I-022 roof stair rotation; history #169, #310, #390). The owner saw poor stair rotation on the roof of Xionqi Hotpot (w122706803, a hand full spec built by feature_build) and asked whether it uses the octant roof system. It does not: octant is house_build's roof_fit option only (default columns, #415); feature_build has no octant code. But #415 also added align_stair_shapes as a final pass in feature_build (about line 598), so S-105 may predate that and may already be fixed.\n\nStep 1, reproduce (read-only): dry-run the hotpot spec (site/builds/w122706803.json in the world) and count stair shape and facing mismatches with stair_effect_lines and roof_lint. If the count is 0, report that and stop: the owner re-checks in game after a rebuild (a separate world step) and S-105 goes to review. If it is above 0, diagnose which neighbour case produces them.\nStep 2, decide from the diagnosis, and state the rule used: fix pitched_roof_states / align_stair_shapes for that case, or accept an octant fit per roof label in the feature spec by reusing lib/builds/roof_octant.py (fit_octant_roof, block_states). Note the hotpot footprint sits on a rotated diagonal; octant falls back to columns unless the footprint is near a rectangle, so octant alone may not help it.\nStretch (diagnosis, roof geometry across builders): ask before raising model or effort. Non-builder: fixtures and a dry run, no live apply. Acceptance: the reproduction count before and after, tests for the fixed case, and the owner's in-game check of S-105 after a rebuild.\n"
     },
     {
       "id": 435,
@@ -376,7 +358,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 parade snag S-106 (new issue I-058, \"Shop signs missing or loose: placed where they can't stay\"). The owner saw some shop signs that \"seem to have fallen off due to illegal placement\". Not yet diagnosed: signs and entities are written after the fills (McpWriter), so a wall sign whose support face is air, not solid, or overwritten by an awning or fascia block at that cell drops as an item. Deliverable: find which sign placements are illegal in the parade shops (rule-built and hand specs: w122706795 area, cell 51,-37), then make facade_plan sign placement in lib/builds/feature_build.py (and house_build if it places signs) validate the support face and the written block order: refuse or move a sign whose backing block is not solid at placement, and place signs after the blocks they hang on and after awnings. Non-builder: synthetic-footprint fixtures that every emitted sign has a solid backing block and survives the write order; a read-only live check of the parade signs is allowed to pick the cases. No live apply here. Acceptance: tests, a list of the failing parade signs with cause, and a validator that would have refused them.\n"
+      "notes": "From trial #257 parade snag S-106 (issue I-058, \"Shop signs missing or loose\"). The owner said some signs \"seem to have fallen off due to illegal placement\". Checked 2026-11-22 by block count only: the parade shop plans place 13 wall signs in cell 51,-37 and 13 oak wall signs stand in the world, so no sign block was dropped by count. A plan-time guard already exists in lib/builds/feature_facade.py (about lines 575 and 693: a sign is placed only where the wall block is the fascia and the outside block is air), and rows whose cell is not a wall sign are dropped at lib/builds/feature_build.py:605. NOT verified: what the owner is seeing: shops with no sign, the oak_trapdoor awnings (25 in the cell), a sign overwritten after the write, or a sign whose text did not land. Also unverified: the write order (whether McpWriter writes signs after the fills).\n\nStep 1, diagnose (read-only live check allowed): list each parade shop (51,-37 and 52,-37) with its planned sign, the block now at that position, and its text; ask the owner for one example if nothing is wrong by this check. Step 2: add a post-write validator that reads back every planned sign (block, facing, text) and reports differences, and fix the cause the diagnosis finds. Stretch (diagnosis): ask before raising model or effort. Non-builder: fixtures, no live apply. Acceptance: a stated cause with the example, the validator in tests, and the owner confirms S-106 in game after a rebuild.\n"
     },
     {
       "id": 436,
@@ -386,7 +368,7 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 parade snag S-107 (existing issue I-017, \"Doors placed at the wrong height\"). The owner saw shop doors \"one level too low\" on the Portswood Road parade (rule-built and hand-specced shops, cell 51,-37, element w122706795 area): door bottoms sit one block below the pavement. The earlier I-017 fix (#145/#146) sets the door floor against outside ground in the facade plan; this is a new case, one block not four. Deliverable: diagnose it. Read-only: for several parade shops compare the door's floor Y, the stoop/entrance step, the outside ground (lidar terrain and the live surface) and the footprint's ground level, and say which input is one block off (the facade plan's door floor, the stoop helper from #407, the ground layer's level at the shopfront, or a lowered shop floor); then fix it in the builder and add a fixture that catches it. Possible link to the ghost-ground or pavement height at shopfronts. Non-builder: no live apply, a read-only world check is allowed. Acceptance: a stated cause with numbers, a fix, and tests; the owner confirms S-107 in game after a rebuild (a separate world step).\n"
+      "notes": "From trial #257 parade snag S-107 (issue I-017 doors at the wrong height; earlier fixes #145, #146, #204, #243, #407). The owner saw shop doors \"one level too low\" on the Portswood Road parade (rule-built and hand-specced shops, cell 51,-37): door bottoms sit one block below the pavement. Shop doors on the street-face path take their floor from _column_floor(f, cell) in lib/builds/feature_facade.py (about lines 358 and 498), which is not the facade-plan _outside_door_floor of #145/#146/#204; that is the first suspect, with the stoop helper from #407. Cause NOT verified.\n\nStep 1, diagnose read-only: for several parade shops compare the door floor Y, the stoop or entrance step, the outside ground (lidar terrain and the live surface) and the footprint's ground level, and say which input is one block off. Step 2: fix it in the builder and add a fixture that catches it. Stop rule: if the cause is data (the lidar or ground height at the shopfront) and not code, report it with the numbers instead of patching the builder. Stretch (diagnosis): ask before raising model or effort. Non-builder: no live apply, a read-only world check is allowed. Acceptance: a stated cause with numbers, a fix or the data report, tests, and the owner confirms S-107 in game after a rebuild (a separate world step).\n"
     },
     {
       "id": 437,
@@ -396,7 +378,31 @@
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From trial #257 parade snags S-108 (signs always default oak, no colour palette) and S-109 (sign text colour clashes with its background), issue I-059, and S-112 (fascia colours). The builder side of the sign options. Deliverable: in lib/builds/feature_build.py facade_plan, let a sign name its wood (sign and hanging-sign block families) and its text colour, plus a fascia colour option, and add a contrast rule: given the sign wood and the fascia, choose the text colour with enough contrast (a small colour table of block map colours; reuse the roof-material catalogue pattern of I-057 and block_store/ map colours where they exist) and refuse low-contrast pairs. No palette values here: where a district profile or the typology recipe (task 431) supplies colours, it feeds these options; defaults stay as today. Tied to 431 (the class recipe carries the palette) and 333; land this builder option first so the recipe has something to name. Non-builder: fixtures that the options validate, emit the chosen sign block and glow/ink colour, and that contrast refuses the owner's \"Tidal vape\" case (grey text on pale oak). No live apply. Acceptance: tests, docs in rules/feature-builds.md, and a spec example.\n"
+      "notes": "From trial #257 parade snags S-108 (signs always default oak), S-109 (sign text colour clashes with its background) and S-112 (fascia colours not the real ones); issue I-059. Checked 2026-11-22: the sign block is hard-coded oak_wall_sign in lib/builds/feature_facade.py (about lines 579 and 696) and lib/builds/feature_details.py:201. Fascia colour comes from FASCIA_COLOURS, six bright colours picked by hash (fascia_colour), with no black, grey or teal and no per-building override. Text colour is chosen against the fascia by contrasting_sign_colour (black or white), but the board is always pale oak, so grey text on the oak board clashes (the owner's \"Tidal vape\" sign); one sign path (about line 697) forces white glowing text. Not verified: the contrast on every parade sign.\n\nDeliverable: (1) a spec key for sign wood (the wall-sign and hanging-sign families), default oak as today; (2) a spec key for fascia colour that overrides the hash, default unchanged; (3) text colour computed against the sign board, not only the fascia, using block map colours, and a refusal of low-contrast pairs (reuse the catalogue pattern of I-057); (4) the second sign path honours the same keys. No palette values here: task 431 (the class recipe) and world data supply the values, so land this before 431. Non-builder: fixtures that the keys validate and emit the chosen blocks, and that the \"Tidal vape\" case (grey text on pale oak) is refused or recoloured. Acceptance: tests, a note in rules/feature-builds.md, a spec example, and the owner reviews S-108, S-109 and S-112 in game after a rebuild.\n"
+    },
+    
+    {
+      "id": 440,
+      "title": "Shop fronts: stop squaring rows that aren't near axis-aligned",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 parade snag S-110 (issue I-060, \"Shop rows that aren't axis-aligned get squared into steps\"). The owner's decision: squaring shop fronts does not work unless the row is close to square anyway, so give up that directive for rows that are not near axis-aligned. Cause (checked 2026-11-22): the shop street-face squaring in lib/builds/feature_facade.py, fit_straight_runs (#332, limited by MAX_SHOP_STEP), turns a diagonal row into steps. It was added so awnings and signs touch the wall, so reversing it brings that problem back. rules/craftsmanship.md also says to axis-align long wall runs and square corners. Not verified: the row angle at which squaring starts to look wrong.\n\nDeliverable: skip the squaring when the row's angle is beyond a named threshold (measure the Portswood parade's angle first and state the threshold in the notes); say how awnings, signs and doors attach to an angled front instead (for example per wall step); change the squaring wording in rules/craftsmanship.md to match. Non-builder: fixtures only, no live apply. Acceptance: a fixture with an angled row shows an unsquared front with awnings and signs still touching the wall; a near-axis-aligned row is squared as today; the owner confirms in game that the parade fronts are no longer stepped (S-110) after a rebuild (a separate world step). Related: #257 findings (docs/plans/typology-buildings.md, Parade verdict) and task 427 (rotated footprints in the generator).\n"
+    },
+    {
+      "id": 441,
+      "title": "Typology generator: terrace recipe (separate roofs per house or pair, alternating roof colour)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        427,
+        430
+      ],
+      "builderTask": false,
+      "notes": "From trial #257 (docs/plans/typology-buildings.md: terrace verdict, chimney finding, Recommendation on terrace recipes). The Northcote Road terrace was built with spec mode `group`: one roof over all 20 houses, hence one continuous roof and a single central chimney (house_build.roof() plans one chimney per roof unit). The aerial shows roofs per house or pair, alternating red tile and grey slate. Deliverable: in the typology generator (lib/builds/typology_spec.py) add a terrace recipe: emit mode `each` or per-pair roof units for a terrace row, one chimney stack per party wall (using the domestic chimney option from task 430), and alternating roof material per house or pair taken from a small class palette. Defaults for other classes unchanged. Non-builder: fixtures on a synthetic terrace footprint (20 houses in a row, plus a rotated row) show per-house roof units, stacks on the party walls, and alternating materials; the emitted spec validates in house_build; no live apply. Blocked by 427 (rotated footprints, rows by adjacency) and 430 (domestic chimney option); task 432 (terrace recipe trial on Northcote Road) follows it and runs the live build and the owner's verdict.\n"
     }
   ]
 }
