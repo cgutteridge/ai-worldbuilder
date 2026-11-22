@@ -151,16 +151,6 @@
       "blockedBy": [],
       "requiresClaude": false,
       "notes": "- Scope: in `lib/evidence/`, give mosaics (`aerial_coverage.Mosaic`) and registered images (`aerial_registered`) one shared small interface (`pixels(points)`, `image()`), with one discovery function for each kind. Move `registered_aerials` and `registered_rgb` out of `ground_sources.py:511-566` to use it (`ground_sources.aerial_rgb` keeps its mosaic-then-registered layering by calling it). `evidence_sheet.py:187-205` drops its own glob. Rewrite `aerial_annot` as a function-based tool on `covering_mosaic` and `Mosaic.pixels`: no import-time `sys.argv`, no hard-coded Portswood path, with a test. Leave `bakeoff/` alone (closed).\n- Check: synthetic 2x2-tile PNG mosaic and a synthetic `.registration.json` fixture; `git grep -n \"registration.json\" lib` shows the glob in exactly one place; `ground_sources.aerial_rgb` returns the same colours as before on the fixture (registered wins where it covers); `aerial_annot` crop is produced for a fixture bbox with no default mosaic path in the source; `python3 scripts/run_tests.py` is green.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356). Written before tasks A, B, C, E, G landed; re-check line numbers."
-    },
-    {
-      "id": 378,
-      "title": "One tree-species table, and the wood-tag set read from the land-use table",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "- Scope: one table keyed by species (log, leaves, crown radii, trunk width, trunk heights), used by the tree voxel generator, `trees_layer` (`SPECIES_HEIGHTS`) and `land_use` (`TREE_SPECIES` is derived from it, `species_weights` validated against it). Split `style` from `species` in the generator signature. One `DEFAULT_LEAVES` / hedge block constant replaces the six spellings in 1.5. `ground_layer.WOOD_FLOOR_TAGS`, `decor_layer.WOODLAND_DECOR_TAGS` and the inline test in `tree_lines.py:394` read the wood and scrub tags from `land_use` (or one shared tuple) instead of retyping them. Delete `garden_sources.NON_RESIDENTIAL_BUILDINGS` / `nonresidential_building` and the legacy `nonresidential` fallback in `meta_class` if the tests that set the flag can use a land-use class instead. Must land before #318 tunes species.\n- Check: adding a fixture species (for example `spruce`) is one table row and appears in `land_use` validation, tree voxels and heights with no other edit (test does this on a copy of the table); the existing species and woodland tests (#350, #348, #351) pass unchanged; `git grep -nE \"oak_leaves\\[persistent=true\\]\" lib` finds one definition; `python3 scripts/run_tests.py` is green.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356). Written before tasks A, B, C, E, G landed; re-check line numbers."
     }
   ]
 }
