@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dry plan of the trees pass for a cell that already has trees: its own old trees mask is treated as undone. Writes nothing to the world.
 
-Like trees_layer.py's dry run, this plans as if scripts/mask_undo.py had run
+Like trees_layer.py's dry run, this plans as if scripts/element_undo.py had run
 (the old crowns' blocks are air, their mask positions are not owned), prints the
 counts and skips, and writes the plan JSON that shims/google_window.py plan draws over the aerial sheet.
 

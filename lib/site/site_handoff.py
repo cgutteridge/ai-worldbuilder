@@ -633,7 +633,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
             f'(project focus, site/CURRENT-CELL.json) must be up: cell_marker.py --raise {tx},{tz} '
             f'if not already. {_LIDAR_GHOST_V2_FRONTIER} Real ground here supersedes ghost ground. '
             f'{_LIDAR_GHOST_V2_SPLIT}',
-            'Check neighbour edges; cell_sources --write; mask_undo trees/decor if masks exist;',
+            'Check neighbour edges; cell_sources --write; element_undo.py for trees and decor if masks exist;',
             'dry run, check kinds + crowns against the aerial; apply with SITE_OWNER;',
             'patrol sweep (each apply records itself in the cell journal);',
             'Done = evidence-backed features plus layered passes and masks (empty-world DoD); not clearing vendor lumps.',
@@ -643,7 +643,7 @@ def plan_cell_items(tx, tz, r, gaps, lumps):
     if not gaps['layers'] and gaps['trees_stale']:
         items.append((f'CELL {tx},{tz} (r={r}) TREES re-run (overhang rule, I-061). RULES: foliage.', [
             'Auto-queued: finished cell whose trees mask predates the overhang rule (no rule stamp).',
-            'mask_undo trees; re-plan trees with trees_layer (tree belongs to the cell of its trunk, crowns overhang',
+            'element_undo.py --pass trees; re-plan trees with trees_layer (tree belongs to the cell of its trunk, crowns overhang',
             'neighbours, tree-on-tree leaves merge: HANDOFF-LAYERED-PASSES §6); dry run, apply with SITE_OWNER;',
             'Ground and decor stay as they are; check decor interplay.',
         ]))

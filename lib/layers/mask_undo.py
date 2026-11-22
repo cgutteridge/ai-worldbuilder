@@ -5,8 +5,10 @@ Trees and decor only ever place into air, so the undo is exact: every masked pos
 back to air. Steps: integrity check, conflict check against the live world (any position that
 no longer holds the masked block stops the undo with nothing written), then one air plan.
 
-  python3 scripts/mask_undo.py --cell 48,-44 --pass trees            # dry run
-  SITE_OWNER=<owner> python3 scripts/mask_undo.py --cell 48,-44 --pass trees --apply
+Run it through element_undo (this module stays a library):
+
+  python3 scripts/element_undo.py --world <world> --cell tx,tz --pass trees
+  SITE_OWNER=<owner> python3 scripts/element_undo.py --world <world> --cell tx,tz --pass trees --apply
 
 Undo order is the reverse of the pass order: decor first, then trees.
 The erase is a journal Undo of the cell's pass (``site_kit.undo``): the cell journal computes the
@@ -16,18 +18,15 @@ site_recover.py for an aborted run.
 """
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import sys
 from pathlib import Path
 
 from block_store import block_id
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT
 
-from ground_layer import ignored_builds, plan_name  # noqa: E402
-from pass_mask import PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
-from site_kit import Plan, World, apply, same, undo, warm_reads  # noqa: E402
+from ground_layer import ignored_builds, plan_name
+from pass_mask import mask_path, mask_placements, read_mask, shared_positions, verify_integrity
+from site_kit import Plan, World, apply, same, undo, warm_reads
 
 
 def finish_undo(cell: tuple[int, int], pass_name: str, name: str, mask_dir: Path | None = None) -> Path | None:
@@ -71,10 +70,17 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
     returning, so a calling script cannot carry on and overwrite the mask. After a mismatch the
     journal Undo entry stays 'begun' (site_recover.py).
 
-    ``skip_changed`` (CLI --skip-changed): a masked position that no longer holds its masked block (already air because
+    ``skip_changed`` (element_undo ``--skip-changed``): a masked position that no longer holds its masked block (already air because
     another pass cleared it, or replaced by a later build, e.g. a roof over an old crown) is not ours any more: it is
     listed and left alone, and the rest is undone. Without it any such position stops the undo (an aborted run goes
     through site_recover.py, not through this flag).
+
+    @param cell: ``(tx, tz)``
+    @param pass_name: trees or decor
+    @param live: when True, write the undo; otherwise dry-run
+    @param skip_changed: leave positions that no longer hold the masked block
+    @returns: 0 on success
+    @raises SystemExit: conflict, flush failure, or readback mismatch
     """
     tx, tz = cell
     path = mask_path(pass_name, cell)
@@ -129,17 +135,3 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
     finish_undo(cell, pass_name, name)
     print(f'{pass_name} undone; mask archived')
     return 0
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('--cell', required=True)
-    ap.add_argument('--pass', dest='pass_name', required=True, choices=PASSES)
-    ap.add_argument('--apply', action='store_true', help='LIVE: needs SITE_OWNER + claimed lock')
-    ap.add_argument('--skip-changed', action='store_true', help='leave masked positions that now hold a different non-air block instead of stopping')
-    a = ap.parse_args()
-    return run(tuple(int(v) for v in a.cell.split(',')), a.pass_name, a.apply, a.skip_changed)
-
-
-if __name__ == '__main__':
-    sys.exit(main())

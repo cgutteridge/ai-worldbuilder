@@ -327,3 +327,13 @@ class TestAdditionalRedoChecks(unittest.TestCase):
                         backend.hover((0, 0))
                 move.assert_called_once()
                 m.call.assert_called_once_with('player_get_info', {'uuid': 'selected-player'})
+
+    def test_undo_runs_element_undo(self):
+        from layer_redo import LayerCommands
+        backend = LayerCommands('demo', (3, -4))
+        calls = []
+        backend.command = lambda *args: calls.append(args)
+        backend.undo((3, -4), 'decor')
+        self.assertEqual(calls, [
+            ('element_undo.py', '--cell', '3,-4', '--pass', 'decor', '--apply'),
+        ])

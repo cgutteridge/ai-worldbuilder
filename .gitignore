@@ -14,6 +14,7 @@
 !/worlds/README.md
 .worktrees/
 
-# Ephemeral MCP/view captures (regenerated locally; see scripts/site_views.py)
+# Old tool-root view captures. site_views.py now writes under the active world
+# (verification/site/views), which lives in the world checkout.
 /verification/site/views/*.png
 

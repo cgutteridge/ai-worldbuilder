@@ -137,8 +137,8 @@ class LayerCommands:
                     raise ValueError(f'{layer}: malformed mask; nothing undone ({exc})') from exc
 
     def undo(self, cell, layer):
-        """Use the existing fail-closed mask undo CLI."""
-        self.command('mask_undo.py', '--cell', f'{cell[0]},{cell[1]}', '--pass', layer, '--apply')
+        """Undo one trees or decor pass through element_undo."""
+        self.command('element_undo.py', '--cell', f'{cell[0]},{cell[1]}', '--pass', layer, '--apply')
 
     def preview(self, cell, layer):
         """Plan the layer after its prerequisite undos."""

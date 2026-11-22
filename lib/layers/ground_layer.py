@@ -37,7 +37,7 @@ crust of solid blocks over unowned air (a cavity left when a stone ring was undo
 crust is filled down to the baseline floor, the crust kept (task 298). Ground-level mapped outdoor steps (highway=steps) are surfaced at lidar height as paving,
 with a stair block wherever the lidar rises along the way (task 294). Trees and decor are
 separate later passes that write masks; a ground plan that lands on a masked position is a
-conflict and does not apply (undo that mask first: scripts/mask_undo.py).
+conflict and does not apply (undo that mask first: scripts/element_undo.py).
 
   python3 scripts/ground_layer.py --cell 48,-44                 # dry run + preview + kinds image
   SITE_OWNER=<owner> python3 scripts/ground_layer.py --cell 48,-44 --apply
@@ -1925,7 +1925,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     for pos, want, why in overlaps[:10]:
         print(f'    OVERLAP {pos}: planned {want}, masked by {why}')
     if conflicts or overlaps:
-        print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/mask_undo.py; HANDOFF-LAYERED §3, §10).')
+        print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/element_undo.py; HANDOFF-LAYERED §3, §10).')
     report_floating(floating)
     report_journal_floats(cell, plan)
     out = artifact_path(name, 'kinds.png', dry=True)

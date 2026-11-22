@@ -73,7 +73,7 @@ def _old(p: Path, days: float, now: float) -> bool:
 # ---------------------------------------------------------------- SAFE classes
 
 def plan_views(days: float = VIEW_DAYS, now: float | None = None, text: str | None = None) -> list[Item]:
-    """View PNGs older than ``days`` that no live site file names (site_views.py regenerates them)."""
+    """World view PNGs older than ``days`` and not named in live site files (site_views.py regenerates them)."""
     root = ROOT / 'verification' / 'site' / 'views'
     if not root.exists():
         return []
