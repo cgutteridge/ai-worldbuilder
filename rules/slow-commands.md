@@ -1,8 +1,27 @@
 # Slow commands: run in the background from the start
 
-Foreground shell calls time out at 2 minutes by default (10 maximum). Anything below that
-may run past it: start it with `run_in_background` (or poll its log) instead of waiting
-and being moved to the background mid-run.
+## Execution
+
+Use the lock runner for live writes and player-moving captures:
+
+```sh
+python3 scripts/site_lock.py --world <world> run <owner> "<task>" -- <command>
+```
+
+It claims `site/LOCK.json`, supplies `SITE_OWNER` to the child and releases on
+success, failure or interrupt. A fresh lock held by another owner is a stop.
+`redo_layer.py --apply` and `reapply_feature.py --apply` own their sequence
+locks: call those wrappers directly, without another outer lock runner.
+
+Launch slow commands in the background from the start (or use a tool session
+that can be polled); foreground shell calls may time out before they finish.
+Keep the whole command's log and final exit status. Wait for completion and
+readback before the next live command or a success report. A logging pipeline
+must not replace the command's failure status. Failure stops the sequence;
+inspect `site_recover.py --world <world> status` for unfinished journal writes,
+or `cell_registry.py --world <world> reconcile <cell>` for block drift.
+
+## Typical times
 
 | Command | Typical time | Basis |
 | --- | --- | --- |
@@ -13,10 +32,6 @@ and being moved to the background mid-run.
 | First lidar fetch for a new world (`lidar_extremes --fetch`; DTM + DSM tiles) | about 1 min per tile per product (45-73 MB each); 4 tiles x 2 products took about 7.5 min and 495 MB | Measured from file times in `worlds/ventnor-build/downloads/defra-lidar/` (Ventnor, 2026-10-28, 18:50:21 first catalogue lookup to 18:57:41 last tile). Sea-edge tiles are smaller (42-46 MB) and quicker. Ran before the progress output existed, so start is the first catalogue lookup, not an exact timer |
 | Bottom-half slabs kept in an apply (`McpWriter`, pitched-roof low steps) | one `block_set_state` per slab at about 1.1 s; 500 slabs about 9 min | Approximate, from the paced MCP interval (#209); not re-timed on a live apply |
 | `site_lock.py run` | adds nothing | Wraps any of the above; use it for live commands |
-
-Launch the whole `redo_layer.py --apply` command in the background; it owns
-one lock and keeps child commands synchronous. Keep its log and final exit
-status, and wait for completion before starting another live command.
 
 Dry runs without live reads are seconds. Figures are for the bake-off world on the
 author's machine; re-measure from the journal (`begin` to `finish` `ts`) rather than

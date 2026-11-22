@@ -2,7 +2,7 @@
 
 Read before any campus / hall / shed / odd-mass building feature (not houses or
 terraces). Roof and fabric rules: `rules/craftsmanship.md`. Houses stay on
-`rules/terrace-builds.md` + `scripts/house_build.py`.
+`rules/terrace-builds.md` (the house build path).
 
 ## Live path
 
@@ -14,8 +14,7 @@ builder with current inputs; it does not reproduce historical blocks exactly.
 `python3 scripts/reapply_feature.py --world <world> <name>` validates and dry-runs;
 `--apply` owns one lock through validation, undo and rebuilding. Before undo it
 checks current feature readiness and the recorded script identity. It requires a new
-landed feature entry with zero mismatches before reporting success. The caller
-backgrounds the whole live command and checks its final exit status.
+landed feature entry with zero mismatches before reporting success. Execution follows `rules/slow-commands.md#execution`.
 
 Provenance is supported for `feature_build` specs and world-owned `build_*.py`
 entry points declaring a literal matching `NAME` and applying through

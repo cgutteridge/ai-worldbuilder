@@ -114,8 +114,6 @@ separator. Set the variable before starting the command. Without the grid,
 conversions use the documented metre-level fallback; no grid download happens
 unless PROJ network access is enabled explicitly.
 
-Agent soundboard cues are optional local conveniences. If
-`~/Projects/agent-soundboard/scripts/play.py` is absent, skip cues; a missing cue
-must never block a tool command or imply that extra software is required.
+Optional sound cues: [agent cue policy](agents/world-and-live-commands.md#sound-cues).
 Repository docs use portable home-relative or example paths. World-owned
 `config/world.json` may contain that world's machine-specific absolute save path.
