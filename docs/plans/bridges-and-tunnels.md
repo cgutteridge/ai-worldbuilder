@@ -66,7 +66,8 @@ Provisional answers, awaiting confirmation of the complete design:
 - One named feature spans all touched cells. Its whole 3D footprint, excavation
   and required clear air share one backup and whole-structure undo.
 - Prefer a rough fallback over skipping a structure when the preferred design
-  fails. Which constraints that fallback may relax is still being clarified.
+  fails. It may simplify appearance, supports and terrain fit, but must keep the
+  route connected, clearance usable and all writes inside the feature footprint.
 
 The remaining questions below are still open; this is not an accepted design.
 
