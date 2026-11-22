@@ -378,7 +378,10 @@ class Build:
                 raise SystemExit('; '.join(resolved['messages']))
             variants = family_variants(rm)
             if pitched:
-                half_heights = {c: 2 * (b + 6) + math.floor(2 * d * pitch)
+                # The outermost eave cell starts half a block below the wall-top level so it is a
+                # bottom slab (shallow pitch) or a stair (steep pitch), as on the flatish ring; an
+                # even start made it a full block (#414).
+                half_heights = {c: 2 * (b + 6) - 1 + math.floor(2 * d * pitch)
                                 for c, d in dist.items()}
                 states = pitched_roof_states(half_heights, dict.fromkeys(dist, rm))
             for c, d in dist.items():
@@ -394,22 +397,24 @@ class Build:
                              else variants['full'])
                 cur = done.get(c)
                 if cur is None or key > cur[0]:
-                    done[c] = (key, b, c in self.owner, rm, state, pitched)
+                    done[c] = (key, b, c in self.owner, rm, state, pitched, dist[c] == 0)
             best = max(dist, key=lambda c: (dist[c] if c in own else -1, -abs(c[0] - sum(x for x, _ in own) / len(own))))
             chim.append((best, b))
         # Chimneys replace roof stairs, so choose corner states against the final skin.
         chimney_cells = {c for c, _b in chim}
         facings = {c: state.split('facing=', 1)[1].split(',', 1)[0]
-                   for c, (_key, _b, _inside, _rm, state, _pitched) in done.items()
+                   for c, (_key, _b, _inside, _rm, state, _pitched, _eave) in done.items()
                    if '_stairs[' in state and c not in chimney_cells}
-        for (x, z), (key, b, inside, rm, state, pitched) in done.items():
+        for (x, z), (key, b, inside, rm, state, pitched, eave) in done.items():
             y = key[0]
             if inside:
                 for yy in range(b + 6, y):
                     self.set(x, yy, z, WALL)
             if pitched:
-                # A two-layer skin seals the stair cutouts, including the eave fringe.
-                self.set(x, y - 1, z, family_variants(rm)['full'])
+                # A two-layer skin seals the stair cutouts; the overhanging eave ring stays one
+                # slab or stair thick, with nothing under it (#414).
+                if not eave:
+                    self.set(x, y - 1, z, family_variants(rm)['full'])
                 if (x, z) in facings:
                     adjacent = {FACE[face]: (facings[n], 'bottom')
                                 if n in facings and done[n][0][0] == y else None

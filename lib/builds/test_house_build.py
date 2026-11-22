@@ -172,6 +172,28 @@ class RoofGeometryTest(unittest.TestCase):
                              for q, state in self.plan(kind, pitch).cells.items()}
                     self.assertEqual(hashlib.sha256(json.dumps(sorted(short.items())).encode()).hexdigest(), digest)
 
+    def test_pitched_eave_edge_is_a_slab_or_stair_with_nothing_under_it(self):
+        """#414: the overhanging eave ring starts at wall-top level as a slab (shallow) or stair (steep)."""
+        for kind in ('square', 'L', 'group'):
+            own = set().union(*self.footprints(kind))
+            for pitch in (0.6, 0.75, 1):
+                with self.subTest(kind=kind, pitch=pitch):
+                    p = self.plan(kind, pitch)
+                    ring = {(x, z) for (x, y, z) in p.cells
+                            if (x, z) not in own and y >= 36 and p.cells[x, y, z] != 'minecraft:air'}
+                    self.assertTrue(ring)
+                    for x, z in ring:
+                        column = {y: p.cells[x, y, z] for (qx, y, qz) in p.cells
+                                  if (qx, qz) == (x, z) and y >= 36}
+                        self.assertEqual(list(column), [36], f'eave column {(x, z)} spans {sorted(column)}')
+                        state = column[36]
+                        self.assertTrue('_stairs[' in state or 'brick_slab[type=bottom' in state, state)
+                        self.assertNotIn((x, 35, z), p.cells)   # no full block stacked under the overhang
+                    if pitch >= 1:
+                        self.assertTrue(all('_stairs[' in p.cells[x, 36, z] for x, z in ring))
+                    if pitch <= 0.75:
+                        self.assertTrue(any('brick_slab' in p.cells[x, 36, z] for x, z in ring))
+
     def test_pitched_shapes_lint_and_full_underlay(self):
         from roof_lint import ridge_jogs, stair_shape_mismatches
         for kind in ('square', 'L', 'group'):
@@ -185,13 +207,16 @@ class RoofGeometryTest(unittest.TestCase):
                 self.assertEqual(stair_shape_mismatches(p.cells), [])
                 self.assertEqual(ridge_jogs(p.cells), [])
                 H.guard_roof_jogs(p)
+                own = set().union(*self.footprints(kind))
                 for (x, y, z), state in stairs.items():
                     self.assertIn('shape=', state)
-                    self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
+                    if (x, z) in own:      # the overhanging eave ring hangs free (#414)
+                        self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
                 for q in p.keep_slab_cells:
                     self.assertIn('type=bottom', p.cells[q])
                     x, y, z = q
-                    self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
+                    if (x, z) in own:
+                        self.assertEqual(p.cells[x, y - 1, z], 'minecraft:bricks')
                 # Owned roof columns stay solid from wall plate to the membrane.
                 from roof_lint import _tops
                 for cells in self.footprints(kind):
