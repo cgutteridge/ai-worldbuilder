@@ -193,23 +193,20 @@ def aerial_crop_bbox(bbox: tuple[int, int, int, int], out: Path, pad: int = 8, s
                 return out
         except Exception:
             continue
-    # Fall back to the highfield z19 mosaic when present.
+    # Fall back to a local XYZ aerial mosaic that covers the whole bbox.
+    # Mosaic.pixels locates column centres, so ask for the bbox's outer corners.
     try:
-        from ground_sources import MOSAIC, mosaic_px
+        import aerial_coverage
+        found = aerial_coverage.covering_mosaic([(x0 - .5, z0 - .5), (x1 + .5, z1 + .5)])
     except Exception:
         return None
-    if not Path(MOSAIC).is_file():
+    if found is None:
         return None
-    corners = [(x0, z0), (x1, z0), (x0, z1), (x1, z1)]
-    try:
-        px = mosaic_px(corners)
-    except Exception:
-        return None
-    us = [px[p][0] for p in corners]
-    vs = [px[p][1] for p in corners]
-    im = Image.open(MOSAIC).convert('RGB')
-    box = (max(0, int(min(us))), max(0, int(min(vs))),
-           min(im.width, int(max(us)) + 1), min(im.height, int(max(vs)) + 1))
+    mosaic, px = found
+    (u0, v0), (u1, v1) = px[(x0 - .5, z0 - .5)], px[(x1 + .5, z1 + .5)]
+    with Image.open(mosaic.path) as src:
+        im = src.convert('RGB')
+    box = (int(min(u0, u1)), int(min(v0, v1)), int(max(u0, u1)) + 1, int(max(v0, v1)) + 1)
     if box[2] <= box[0] or box[3] <= box[1]:
         return None
     crop = im.crop(box)

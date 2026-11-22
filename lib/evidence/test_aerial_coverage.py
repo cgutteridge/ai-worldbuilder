@@ -46,6 +46,23 @@ class MosaicCoverageTest(unittest.TestCase):
                 self.assertEqual(aerial.coverage((0, 0), [mosaic]), 1.0)
                 self.assertEqual(len(aerial.sample_rgb((0, 0), [mosaic])), 128 * 128)
 
+    def test_covering_mosaic_picks_the_finest_one_that_holds_every_point(self):
+        import aerial_coverage as aerial
+        with tempfile.TemporaryDirectory() as tmp:
+            small = Path(tmp) / 'small.png'
+            big = Path(tmp) / 'big.png'
+            Image.new('RGB', (32, 32), (10, 10, 10)).save(small)
+            Image.new('RGB', (128, 128), (10, 10, 10)).save(big)
+            sources = [aerial.Mosaic(small, 19, 0, 0), aerial.Mosaic(big, 18, 0, 0)]
+            with mock.patch.object(aerial.Mosaic, 'pixels',
+                                   lambda self, pts: {p: (p[0], p[1]) for p in pts}):
+                mosaic, px = aerial.covering_mosaic([(5, 5), (20, 20)], sources)
+                self.assertEqual(mosaic.path, small)
+                self.assertEqual(px[(20, 20)], (20, 20))
+                mosaic, _ = aerial.covering_mosaic([(5, 5), (100, 100)], sources)
+                self.assertEqual(mosaic.path, big)
+                self.assertIsNone(aerial.covering_mosaic([(5, 5), (500, 500)], sources))
+
     def test_rgb_cache_returns_the_same_array_inside_one_run(self):
         import aerial_coverage as aerial
         with tempfile.TemporaryDirectory() as tmp:

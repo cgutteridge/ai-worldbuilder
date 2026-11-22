@@ -1462,14 +1462,20 @@ def overlay(cell, barriers: list, path: Path, rgb_cells=None) -> None:
     """Aerial crop of the cell with the barrier columns marked (fence cyan, wall red, hedge green)."""
     import numpy as np
     from PIL import Image
-    from ground_sources import MOSAIC, cell_box, mosaic_px
+    import aerial_coverage
+    from ground_sources import cell_box
 
     x0, z0, x1, z1 = cell_box(cell)
     k = 4
     keys = [(x, z) for x in range(x0, x1 + 2) for z in range(z0, z1 + 2)]
-    # block corners (the sampler adds .5 to its input, so ask for x - .5)
-    px = dict(zip(keys, mosaic_px([(x - .5, z - .5) for x, z in keys]).values()))
-    im = np.asarray(Image.open(MOSAIC).convert('RGB'))
+    # block corners (Mosaic.pixels adds .5 to its input, so ask for x - .5)
+    found = aerial_coverage.covering_mosaic([(x - .5, z - .5) for x, z in keys])
+    if found is None:
+        raise aerial_coverage.CoverageError(
+            f'no single local aerial mosaic covers cell {cell[0]},{cell[1]}; overlay not drawn')
+    mosaic, pixels = found
+    px = {key: pixels[(key[0] - .5, key[1] - .5)] for key in keys}
+    im = aerial_coverage.load_rgb(mosaic.path)
     W = (x1 - x0 + 1) * k
     H = (z1 - z0 + 1) * k
     out = np.zeros((H, W, 3), np.uint8)

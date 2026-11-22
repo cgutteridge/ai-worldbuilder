@@ -63,6 +63,20 @@ class SheetProductionTest(unittest.TestCase):
         self.assertEqual(data['contact_sheet'], 'verification/site/demo-contact.png')
         self.assertEqual(E.find_contact_sheet('demo'), sheet)
 
+    def test_aerial_crop_falls_back_to_a_covering_local_mosaic(self):
+        import aerial_coverage
+        mosaic_path = self._png(self.root / 'mosaic.png', (10, 200, 10))
+        Image.new('RGB', (400, 400), (10, 200, 10)).save(mosaic_path)
+        mosaic = aerial_coverage.Mosaic(mosaic_path, 19, 0, 0)
+        dest = self.out / 'crop.png'
+        with mock.patch.object(aerial_coverage.Mosaic, 'pixels',
+                               lambda self, pts: {p: (p[0] * 4, p[1] * 4) for p in pts}), \
+                mock.patch.object(aerial_coverage, 'mosaics', return_value=[mosaic]):
+            got = E.aerial_crop_bbox((20, 20, 30, 30), dest, pad=0, scale=1)
+            self.assertEqual(got, dest)
+            self.assertEqual(Image.open(dest).size, (45, 45))
+            self.assertIsNone(E.aerial_crop_bbox((500, 500, 510, 510), self.out / 'none.png', pad=0))
+
     def test_capture_pipeline_tiles_portal_topdown_aerial(self):
         captured = []
 
