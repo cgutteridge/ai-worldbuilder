@@ -281,8 +281,8 @@ def validate_roof_material(
 def roof_material_warnings(roof: dict, *, catalogue: dict | None = None) -> list[str]:
     """List material warnings for one ``roofs[label]`` object.
 
-    Uses ``kind: flat`` as flat(ish) and ``kind: pitched`` as pitched. Zone
-    material overrides are checked with the same class. The spec is not changed.
+    Uses ``kind: flat`` as flat(ish) and ``kind: pitched`` as pitched. Zone and
+    region material overrides are checked with the same class. The spec is not changed.
 
     @param roof: roof dict with ``kind``, ``material``, optional ``zone_materials``
     @param catalogue: optional loaded catalogue
@@ -292,7 +292,9 @@ def roof_material_warnings(roof: dict, *, catalogue: dict | None = None) -> list
     names: list[str] = []
     primary = roof.get('material') or 'smooth_stone'
     names.append(str(primary))
-    for extra in (roof.get('zone_materials') or {}).values():
+    extras = list((roof.get('zone_materials') or {}).values())
+    extras += [row['material'] for row in roof.get('material_regions') or [] if row.get('material')]
+    for extra in extras:
         text = str(extra)
         if text not in names:
             names.append(text)

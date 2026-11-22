@@ -14,7 +14,7 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   roofs          {"<label>": {"kind": "flat"|"pitched", "material": "<slab mat>",
                    "edge"?: {"block": "<mat>", "where": "outer"|"all"},
                    "zone_materials"?: {"<level_m_AOD>": "<mat>", ...},
-                   "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...]}],
+                   "material_regions"?: [{"level": <m_AOD>, "polygon": [[x,z], ...], "material"?: "<mat>"}],
                    "flat_tol_m"?: <metres 0..3, pitched only, default 1.5>,
                    "pv_arrays"?: [{"box": [x0, z0, x1, z1], "rows": "x"|"z",
                                    "pitch"?: <int >= 1, default 2>, "source": "<evidence>"}]}}
@@ -26,6 +26,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
                  Pitched roofs may set material_regions [{level, polygon}]
                  from photo/aerial evidence to assign a roof's material across
                  lidar-zone boundaries. Unmapped columns retain zone lookup.
+                 A row with its own "material" gives just those columns that
+                 material (level still names their plateau), so a region
+                 needs no spare plateau of its own.
                  Material choice: flat(ish) (kind flat, rise/run <= 1 in 2) may
                  use any catalogue full block or slab; pitched needs a triad
                  (roof_material.py, config/roof-materials.json). Lidar
@@ -1510,8 +1513,10 @@ def _validate_material_regions(path, spec: dict) -> None:
         configured = spec['zones'][lab]['levels']
         for i, row in enumerate(rows):
             prefix = f'{context}[{i}]'
-            if not isinstance(row, dict) or set(row) != {'level', 'polygon'}:
-                raise SystemExit(f'{prefix} needs {{level, polygon}}')
+            if not isinstance(row, dict) or not {'level', 'polygon'} <= set(row) <= {'level', 'polygon', 'material'}:
+                raise SystemExit(f'{prefix} needs {{level, polygon}} and optionally material')
+            if 'material' in row and (not isinstance(row['material'], str) or not row['material'].strip()):
+                raise SystemExit(f'{prefix}.material must be a non-empty material name')
             level = row['level']
             if isinstance(level, bool) or not isinstance(level, (int, float)) or not math.isfinite(level):
                 raise SystemExit(f'{prefix}.level must be a finite plateau number')
@@ -1529,17 +1534,24 @@ def _validate_material_regions(path, spec: dict) -> None:
                 raise SystemExit(f'{prefix}.polygon needs three distinct vertices')
 
 
-def roof_material_for_zone(roof: dict, level: int | float | None) -> str:
+REGION_MATERIAL_PREFIX = 'region:'   # material-level key for a material_regions row with its own material
+
+
+def roof_material_for_zone(roof: dict, level: int | float | str | None) -> str:
     """Resolve slab/full material for one roof column.
 
-    Prefers ``zone_materials[level]`` (int or str key) when present; otherwise
-    the label-wide ``material``.
+    A ``region:<i>`` key (from :func:`roof_material_levels`) gives that
+    ``material_regions`` row's own material. Otherwise prefers
+    ``zone_materials[level]`` (int or str key) when present, then the
+    label-wide ``material``.
 
     @param roof: roofs[label] dict
-    @param level: plateau metres AOD (from ``zone_level``), or None
+    @param level: plateau metres AOD (from ``zone_level``), a ``region:<i>`` key, or None
     @returns: material name without ``minecraft:``
     """
     default = roof['material']
+    if isinstance(level, str) and level.startswith(REGION_MATERIAL_PREFIX):
+        return roof['material_regions'][int(level[len(REGION_MATERIAL_PREFIX):])]['material']
     zm = roof.get('zone_materials') or {}
     if level is None or not zm:
         return default
@@ -1593,10 +1605,12 @@ def roof_material_levels(
             raise SystemExit(f'{label} material_regions[{i}]: no roof columns inside polygon')
         if cells & assigned:
             raise SystemExit(f'{label} material_regions[{i}]: overlapping roof columns')
-        owners.update({c: level for c in cells})
+        key = f'{REGION_MATERIAL_PREFIX}{i}' if row.get('material') else level
+        owners.update({c: key for c in cells})
         assigned.update(cells)
         if reports is not None:
-            reports.append(f'{label} material region {i}: level {level:g} columns {len(cells)}')
+            reports.append(f'{label} material region {i}: level {level:g} columns {len(cells)}'
+                           + (f' material {row["material"]}' if row.get('material') else ''))
     return owners
 
 

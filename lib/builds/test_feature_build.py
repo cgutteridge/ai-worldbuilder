@@ -2582,6 +2582,29 @@ class PitchedMaterialOwnershipTest(unittest.TestCase):
                             (c, state))
         self.assertEqual(levels[(0, 0)], 45, 'evidence zones are not rewritten')
 
+    def test_region_material_sets_only_its_columns_and_needs_no_spare_plateau(self):
+        heights = {(x, z): h for z in range(3)
+                   for x, h in enumerate([90, 92, 94, 96, 97, 96, 94, 92, 90])}
+        levels = {c: 47 if 2 <= c[0] <= 6 else 45 for c in heights}
+        region = dict(self._region(x0=-1, x1=3.9), material='polished_diorite')
+
+        blocks, owners = self._shell(heights, levels, [region])
+
+        inside = {c for c, o in owners.items() if o == 'region:0'}
+        self.assertEqual(inside, {c for c in heights if c[0] <= 3})
+        self.assertEqual(levels[(0, 0)], 45, 'evidence zones are not rewritten')
+        for c in inside:
+            self.assertTrue(blocks[c].startswith('minecraft:polished_diorite'), (c, blocks[c]))
+        for c in set(heights) - inside:
+            self.assertNotIn('polished_diorite', blocks[c])
+            self.assertEqual(owners[c], levels[c])
+
+    def test_region_without_material_still_uses_its_plateau_material(self):
+        heights = {(x, z): 94 for z in range(2) for x in range(4)}
+        levels = {c: 45 for c in heights}
+        _blocks, owners = self._shell(heights, levels, [self._region(level=45)])
+        self.assertEqual(set(owners.values()), {45})
+
     def test_odd_h_column_gets_bottom_half_slab_at_roof_block_y_with_wall_below(self):
         heights = {(x, z): h for z in range(3)
                    for x, h in enumerate([90, 92, 94, 96, 97, 96, 94, 92, 90])}
@@ -2702,6 +2725,8 @@ class PitchedMaterialOwnershipTest(unittest.TestCase):
             (None, 'must be a list'),
             ([{}], 'needs'),
             ([dict(self._region(), extra=True)], 'needs'),
+            ([dict(self._region(), material='')], 'material'),
+            ([dict(self._region(), material=3)], 'material'),
             ([dict(self._region(), level=49)], 'unknown plateau'),
             ([dict(self._region(), level='47')], 'finite plateau'),
             ([dict(self._region(), level=True)], 'finite plateau'),

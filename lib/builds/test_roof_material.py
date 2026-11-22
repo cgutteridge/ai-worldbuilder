@@ -132,6 +132,19 @@ class RoofCatalogueTest(unittest.TestCase):
             'material': 'brick',
         }), [])
 
+    def test_warnings_cover_a_region_material_and_skip_regions_without_one(self):
+        roof = {
+            'kind': 'pitched',
+            'material': 'brick',
+            'material_regions': [
+                {'level': 44, 'polygon': [[0, 0], [1, 0], [1, 1]], 'material': 'smooth_stone'},
+                {'level': 44, 'polygon': [[5, 5], [6, 5], [6, 6]]},
+            ],
+        }
+        messages = RM.roof_material_warnings(roof)
+        self.assertEqual(len(messages), 1)
+        self.assertIn('smooth_stone', messages[0])
+
 
 class RoofTypeTest(unittest.TestCase):
     """Seam: a named roof type resolves to catalogue families and blocks (#357)."""
