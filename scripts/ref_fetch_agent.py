@@ -8,11 +8,12 @@ This process binds 127.0.0.1 only (on NO_PROXY) so a sandboxed agent can
 pull bytes while the sidecar uses the host network. Start it only if you
 want agent-driven downloads; never as a per-session chore.
 
-  python3 scripts/ref_fetch_agent.py              # optional, external Terminal
-  python3 scripts/ref_fetch_agent.py --health
-  python3 scripts/ref_fetch_agent.py --get URL [-o PATH]
+  python3 scripts/ref_fetch_agent.py --world <name>
+  python3 scripts/ref_fetch_agent.py --world <name> --health
+  python3 scripts/ref_fetch_agent.py --world <name> --get URL [-o PATH]
 
   from ref_fetch_agent import fetch_bytes          # used by aerial_mosaic
+                                                   # (that caller has already selected a world)
 
 Env:
   REF_FETCH_PORT   listen / client port (default 18765)
@@ -67,8 +68,26 @@ def listen_port() -> int:
     return int(os.environ.get('REF_FETCH_PORT', DEFAULT_PORT))
 
 
+def _place_config():
+    """Import place config once library paths are on ``sys.path``.
+
+    The sidecar process starts with ``scripts/`` on the path and does not
+    select a world. A caller that has already selected one (``fetch_bytes``
+    from aerial mosaic) keeps that world; this does not choose one.
+
+    @returns: the ``place_config`` module
+    """
+    import script_env
+    script_env.ensure_import_paths()
+    import place_config
+    return place_config
+
+
 def host_allowed(url: str) -> bool:
     """Return whether url's host is on the allowlist.
+
+    National hosts are always allowed. A bound world's ``fetch_hosts`` are
+    allowed as well. With no world selected, only the national list applies.
 
     @param url: absolute http(s) URL
     @returns: True if fetch is permitted
@@ -80,8 +99,8 @@ def host_allowed(url: str) -> bool:
     if parsed.scheme not in ('http', 'https'):
         return False
     host = (parsed.hostname or '').lower()
-    from place_config import extra_fetch_hosts
-    return host in ALLOWED_HOSTS or host in extra_fetch_hosts()
+    extra = _place_config().extra_fetch_hosts()
+    return host in ALLOWED_HOSTS or host in extra
 
 
 def looks_like_sandbox_proxy_error(exc: BaseException) -> bool:
@@ -288,8 +307,7 @@ def _probe_request() -> tuple[str, dict[str, str]] | None:
 
     @returns: ``(url, headers)``, or None when ``fetch_probe`` is unset
     """
-    from place_config import fetch_probe
-    probe = fetch_probe()
+    probe = _place_config().fetch_probe()
     if probe is None:
         return None
     headers = {'User-Agent': DEFAULT_UA}
@@ -335,9 +353,9 @@ def serve() -> int:
             f'  ({detail})\n'
             'You started the sidecar inside the Cursor agent sandbox.\n'
             'Stop it, then start from macOS Terminal / iTerm instead:\n'
-            '  open scripts/start-ref-fetch.command\n'
+            '  scripts/start-ref-fetch.command <world>\n'
             'or:\n'
-            '  python3 scripts/ref_fetch_agent.py\n',
+            '  python3 scripts/ref_fetch_agent.py --world <name>\n',
             file=sys.stderr,
             flush=True,
         )
@@ -347,7 +365,7 @@ def serve() -> int:
         f'ref_fetch_agent listening on http://127.0.0.1:{port}  (Ctrl+C to stop)\n'
         f'host network: {detail}\n'
         f'health: curl -s http://127.0.0.1:{port}/health\n'
-        f'or double-click: scripts/start-ref-fetch.command',
+        f'or: scripts/start-ref-fetch.command <world>',
         flush=True,
     )
     try:
@@ -365,7 +383,9 @@ def main(argv: list[str] | None = None) -> int:
     @param argv: args without program name
     @returns: exit code
     """
+    import script_env
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    script_env.add_world_arg(p)
     p.add_argument('--health', action='store_true', help='check sidecar and exit')
     p.add_argument(
         '--probe',
@@ -377,6 +397,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--direct', action='store_true', help='with --get, force process-direct fetch')
     p.add_argument('--port', type=int, help=f'override listen/client port (default {DEFAULT_PORT})')
     args = p.parse_args(argv)
+    script_env.activate_world_from_args(args)
     if args.port:
         os.environ['REF_FETCH_PORT'] = str(args.port)
 
@@ -409,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
             'base': base_url(),
             'detail': detail,
             'hint': None if usable else (
-                'Start outside Cursor: open scripts/start-ref-fetch.command'
+                'Start outside Cursor: scripts/start-ref-fetch.command <world>'
             ),
         }, indent=2))
         return 0 if usable else 1
