@@ -68,7 +68,7 @@ only what the brief / task needs.
    rules/frontage-and-evidence.md
    rules/craftsmanship.md — full
    university register entries on the footprint: reference/portals, reference/buildings
-     (scripts/portals.py building N, scripts/buildings.py building N) — inputs to
+     (shims/portals.py building N, shims/buildings.py building N) — inputs to
      ``facade_plan`` entrances, not a separate door stage
    Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
    Water-body (pond) feature: rules/water-body-builds.md

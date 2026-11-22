@@ -365,7 +365,7 @@ def survey_bbox(x: int, z: int, preset: str) -> dict:
         'bbox_mc': bbox,
         'commands': {
             'osm_extract': (
-                f'python3 scripts/osm_extract.py --at {x},{z} --radius-m {p["radius_m"]} '
+                f'python3 shims/osm_extract.py --at {x},{z} --radius-m {p["radius_m"]} '
                 f'--place SURVEY --dir vector_map/survey'
             ),
             'frontage': f'python3 scripts/osm_footprints.py frontage --bbox {bbox}',
@@ -514,7 +514,7 @@ def tiles_for_bbox(bbox: str, zoom: int, mosaic: int) -> dict:
         'mc_tiles': mc_tiles_for_bbox(x0, z0, x1, z1),
         'wm_tile_bbox_mc': list(wm_tile_bbox_mc(zoom, tx, ty)),
         'aerial_mosaic': (
-            f'python3 scripts/aerial_mosaic.py --wm {zoom}/{tx}/{ty} --zoom {zoom} '
+            f'python3 shims/aerial_mosaic.py --wm {zoom}/{tx}/{ty} --zoom {zoom} '
             f'--dir aerial/survey --size {mosaic}'
         ),
     }

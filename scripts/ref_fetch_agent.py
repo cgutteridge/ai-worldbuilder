@@ -204,7 +204,7 @@ def fetch_bytes(
     start = (
         'Cursor sandbox cannot reach Hub. Prefer a one-shot in Terminal:\n'
         f'  cd {root}\n'
-        '  python3 scripts/aerial_mosaic.py --at X,Z --place PLACE '
+        '  python3 shims/aerial_mosaic.py --at X,Z --place PLACE '
         '--dir aerial/… --size 3 --add\n'
         '(Optional sidecar only if you want agent-driven fetches — not at handoff.)\n'
         f'Detail: {"; ".join(errors)}'

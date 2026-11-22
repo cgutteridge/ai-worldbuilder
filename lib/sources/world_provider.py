@@ -5,7 +5,7 @@ root, e.g. ``providers/uos-portals``). Catalogue-aware dual-root resolution
 lives in ``cell_sources.provider_package_dir`` /
 ``script_env.resolve_provider_package`` (system + world). Thin ``scripts/``
 shims call :func:`load_world_provider` so ``import portals`` and
-``python3 scripts/portals.py`` keep working for world-home packages.
+``python3 shims/portals.py`` keep working for world-home packages.
 """
 from __future__ import annotations
 

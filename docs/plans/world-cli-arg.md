@@ -81,7 +81,7 @@ Do not call the work done until a repo-wide search for `AI_WORLDBUILDER_WORLD_RO
 | Place CLIs | Every `scripts/*.py` entry that is not in the world-free set; thin wrappers parse `--world` before `runpy` |
 | Bake-off CLI + tests | `bakeoff/model_bakeoff.py`, `bakeoff/test_model_bakeoff.py` — drop `BAKEOFF_WORLD_PREFIX` |
 | System provider CLIs | Modules under `providers/<id>/` that `from script_env import ROOT` at import and are run via `shims/` (aerial sheet, street-level sample, lidar get/review/manage, photo fetch helpers) — parse `--world` before binding (or via shared shim preamble in `shims/_provider_shim.py`) |
-| World shims | `shims/tpo_fetch`, `buildings`, `portals`, `osm_extract`, `aerial_mosaic` + deprecated `scripts/tpo_fetch.py` |
+| World shims | `shims/tpo_fetch`, `buildings`, `portals`, `osm_extract`, `aerial_mosaic` |
 | Tests | `scripts/unit_test_world.py`, `scripts/test_active_world.py`, `scripts/test_run_tests.py`, `scripts/pre_commit_checks.py` / its tests — no env gate |
 | Docs listed above | Env → `--world` |
 
