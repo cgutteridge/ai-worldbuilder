@@ -397,7 +397,7 @@ def _building_photo(b):
 
 
 def building_facts(pictures):
-    """Picture lines for a feature item: university buildings (scripts/buildings.py) that are this footprint.
+    """Picture lines for a feature item: university buildings (shims/buildings.py) that are this footprint.
 
     @param pictures: building dicts from the feature (cell_features.missing_features)
     @returns: queue-item lines ([] when none has a photo or an outline)

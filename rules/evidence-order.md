@@ -18,7 +18,7 @@ below the first row `hint` or `estimate`.
 | Roof colour, material | `aerial` | `streetlevel` | hint (default tile) |
 | Roof edge (parapet / coping / flat fringe) | `aerial` (is there an edge? which block? outer only or zone steps too?) | `streetlevel` when the cap shows | none: leave `roofs[].edge` absent |
 | Walls, openings, doors, bays | `streetlevel` (incl. campus building photo) | `aerial` (wall colour, wings) | same-terrace hint |
-| Where a university building's entrances are, and their names | `poi_register` portals (`scripts/portals.py`), exact position | portal photo / `streetlevel` | `vector_map` `entrance` nodes, same-building hint |
+| Where a university building's entrances are, and their names | `poi_register` portals (`shims/portals.py`), exact position | portal photo / `streetlevel` | `vector_map` `entrance` nodes, same-building hint |
 | Ground surface: lawn, paving, drive, car park, path | `aerial` | other `aerial`, `vector_map` surface/landuse | same-terrace / nearby hint |
 | Trees, canopy cover | `aerial` cover + `lidar` tree columns (kind 2, 3) | other `aerial` | none: never invent crowns |
 | Building missing from vector map or lidar | `streetlevel` or `aerial` show it: build it anyway | `lidar` standing height with no footprint polygon | |

@@ -240,7 +240,7 @@ DOORS ARE FRAMED (user, 2026-10-16)
 
 ENTRANCES (university register → facade_plan, user, 2026-10-16 / #145–#146)
  reference/portals/portals.json lists every university entrance with its real position (the door, not the photo), name
- and, for 80, a photo. scripts/portals.py cell tx,tz | building N | near x,z. The feature queue item and
+ and, for 80, a photo. shims/portals.py cell tx,tz | building N | near x,z. The feature queue item and
  cell_features.py print the portals on each feature's footprint as designer inputs.
   - portals.for_footprint(rings) lists register entries on the mass; the designer writes each into
     ``facade_plan`` entrances (placed or unresolved with provenance). Build places doors from that plan only.
@@ -271,7 +271,7 @@ GREEBLIES ARE THE DECOR STEP OF A FEATURE (user, 2026-10-16)
 
 BUILDING PICTURES (university register, user, 2026-10-16)
  reference/buildings/buildings.json: for each university building its number, name, a photo (247 of 370, saved at 800 px in
- reference/photos/buildings/<number>.jpg) and the university's own outline (232). scripts/buildings.py cell tx,tz | building N |
+ reference/photos/buildings/<number>.jpg) and the university's own outline (232). shims/buildings.py cell tx,tz | building N |
  near x,z. The feature queue item and cell_features.py print the picture of each feature's footprint.
   - Look at the photo once, before planning a campus building: walls (material, bay rhythm), openings (glazing, doors),
     storeys, roof edge and colour. Write what it shows in the build docstring next to the source id.

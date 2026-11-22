@@ -20,8 +20,7 @@ API.
 | Bootstrap | `script_env.py` (path preamble; import this, do not move it) |
 
 World-provider shims (`buildings`, `portals`, `osm_extract`, `aerial_mosaic`,
-`tpo_fetch`) live under `shims/`. `scripts/tpo_fetch.py` remains a deprecated
-stub for older world `SOURCES` lines; prefer `python3 shims/tpo_fetch.py`.
+`tpo_fetch`) live under `shims/`; invoke them as `python3 shims/<name>.py --world <world> …`.
 
 ## Path bootstrap
 

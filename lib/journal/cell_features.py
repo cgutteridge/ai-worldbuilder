@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find major features (buildings and water bodies) a cell still lacks, packaged for queueing.
 
-Each building feature also lists the university entrances ("portals", scripts/portals.py)
+Each building feature also lists the university entrances ("portals", shims/portals.py)
 on its footprint: designer inputs for ``facade_plan`` entrances (positions, names, photos).
 
 A feature is any build recorded in the cell journal that is not a layer pass
@@ -633,7 +633,7 @@ def missing_features(
     @returns: [{'kind': 'building'|'group'|'houses'|'water_body', 'label': str,
                 'street': str|None, 'refs': [map ref], 'bbox': (x0, z0, x1, z1), 'area': int,
                 'portals': [portal],
-                'pictures': [university building (scripts/buildings.py: photo + outline)]}],
+                'pictures': [university building (shims/buildings.py: photo + outline)]}],
         buildings and groups first, then streets, then water bodies
     """
     covered = feature_columns() if covered is None else covered

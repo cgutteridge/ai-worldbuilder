@@ -722,7 +722,7 @@ def fetch_commands(tx: int, tz: int) -> list[str]:
         'obtain owner authorization before rerunning with --download-authorized, then Read and --record google-satellite',
         f'python3 scripts/ref_manifest.py find --xz {cx},{cz}',
         f'python3 scripts/geo.py tiles --bbox {bbox} --zoom 18 --mosaic 3',
-        f'# then: scripts/aerial_mosaic.py … → reference/aerial/<place>/{rec["mosaic_filename"]}',
+        f'# then: shims/aerial_mosaic.py … → reference/aerial/<place>/{rec["mosaic_filename"]}',
         '# COVERAGE: check the z19 aerial actually covers the whole cell (it can stop short, e.g. 47,-43 west of ~x6058). '
         'If not, use the zoomed-out (z18) mosaic for the gap: the manifest `find` above lists what covers this cell, else fetch it with the geo.py line below.',
         f'# ref_manifest.py add … --useful yes --models footprint,roof,landscape --at {cx},{cz}',
