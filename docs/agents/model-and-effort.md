@@ -55,8 +55,10 @@ node scripts/tasks.mjs check-run 323 --tool cursor --model sonnet --external-mod
 The CLI checks caller-supplied capabilities; it cannot query a host's account or
 credit balance. Supply `available` only after establishing the budget above.
 `check-run` also refuses blocked/completed tasks. Pass the same runner options to
-`status ID doing` when claiming a flagged task. A refusal changes no task state;
-leave it pending and report why (preserve unrelated holds and blockers).
+`status ID doing` when claiming a flagged task, together with the required
+`--app` and `--working-in` claim fields (see [issue tracker](issue-tracker.md#claiming-a-task-status-doing)).
+A refusal changes no task state; leave it pending and report why (preserve
+unrelated holds and blockers).
 
 Representative build trials use the normal designer/builder models and effort
 from `scripts/build_roles.py --world <world> show` and `rules/build-roles.md`,

@@ -13,7 +13,8 @@
 //   add --title T --priority low|medium|high --complexity s|m|l --builder-task true|false --notes TEXT
 //   update <id> --builder-task true|false [--title T] [--notes TEXT] [--reason TEXT]
 //   check-run <id> [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]
-//   status <id> <todo|doing> [--reason TEXT] [runner options as for check-run]
+//   status <id> doing --app cursor|claude|codex --working-in PATH [runner options as for check-run]
+//   status <id> todo --reason TEXT [--branch BRANCH]
 //   close <id> --sha FULL_COMMIT_SHA --note TEXT
 // Default tracker directory: tasks/ under the git root of the current
 // directory, or ./tasks when there is no git root.
@@ -48,8 +49,12 @@ const statuses = ["todo", "doing", "blocked", "done"]
 const priorities = ["critical", "high", "medium", "low"]
 const complexities = ["xs", "s", "m", "l", "xl"]
 const kinds = ["task", "review-finding"]
+/** Apps that may claim a task via status doing (separate from builder --tool). */
+const claimApps = ["cursor", "claude", "codex"]
 const shaPattern = /^[0-9a-f]{40}$/
 const pendingName = "close-task.pending.json"
+const jsonTokenPattern =
+  /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,]/g
 
 const isId = (value) =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0
@@ -74,6 +79,8 @@ function isValidTask(task) {
     optional(task.tags, arrayOf(isString)) &&
     optional(task.kind, oneOf(kinds)) &&
     optional(task.builderTask, (value) => typeof value === "boolean") &&
+    optional(task.claimedBy, oneOf(claimApps)) &&
+    optional(task.workingIn, (value) => typeof value === "string" && value.length > 0) &&
     optional(task.notes, isString)
   )
 }
@@ -83,11 +90,7 @@ function isValidTask(task) {
  * A span is { start, end, properties?: Map<string, span>, items?: span[] }.
  */
 function locate(text) {
-  const tokens = [
-    ...text.matchAll(
-      /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,]/g,
-    ),
-  ]
+  const tokens = [...text.matchAll(jsonTokenPattern)]
   let cursor = 0
   function value() {
     const token = tokens[cursor++]
@@ -339,6 +342,72 @@ export function checkTaskRunner(task, { tool, model, externalModelBudget } = {})
     throw new TaskError(`Task ${task.id}: Cursor external-model budget is ${externalModelBudget ?? "unknown"}; leave it pending.`, 2)
 }
 
+/** Require the claiming app and checkout path written onto a doing task. */
+export function checkTaskClaim({ app, workingIn } = {}) {
+  if (!claimApps.includes(app))
+    throw new TaskError(
+      "Starting a task needs --app cursor|claude|codex.",
+      2,
+    )
+  if (typeof workingIn !== "string" || !workingIn.trim())
+    throw new TaskError(
+      "Starting a task needs a nonempty --working-in path (main checkout or worktree).",
+      2,
+    )
+  return { app, workingIn: workingIn.trim() }
+}
+
+/** Remove one object property, including its key, colon and neighbouring comma. */
+function removeProperty(text, objectSpan, key) {
+  const value = objectSpan.properties.get(key)
+  if (!value) return null
+  const tokens = [...text.matchAll(jsonTokenPattern)]
+  let keyIndex = -1
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (token.index >= value.start) break
+    if (token.index < objectSpan.start) continue
+    if (!token[0].startsWith('"')) continue
+    if (JSON.parse(token[0]) !== key) continue
+    const colon = tokens[i + 1]
+    const next = tokens[i + 2]
+    if (colon?.[0] === ":" && next?.index === value.start) {
+      keyIndex = i
+      break
+    }
+  }
+  if (keyIndex < 0)
+    throw new TaskError(`Could not locate property ${JSON.stringify(key)} for removal.`)
+  const keyToken = tokens[keyIndex]
+  const keys = [...objectSpan.properties.keys()]
+  const index = keys.indexOf(key)
+  if (keys.length === 1)
+    return { span: { start: keyToken.index, end: value.end }, text: "" }
+  if (index < keys.length - 1) {
+    let end = value.end
+    while (end < objectSpan.end && /\s/.test(text[end])) end++
+    if (text[end] === ",") end++
+    return { span: { start: keyToken.index, end }, text: "" }
+  }
+  let start = keyToken.index
+  while (start > objectSpan.start && /\s/.test(text[start - 1])) start--
+  if (text[start - 1] === ",") start--
+  return { span: { start, end: value.end }, text: "" }
+}
+
+/** Remove several properties without overlapping comma spans. */
+function removeProperties(text, objectSpan, keys) {
+  const edits = []
+  const remaining = new Map(objectSpan.properties)
+  const ordered = [...remaining.keys()].filter((key) => keys.includes(key)).reverse()
+  for (const key of ordered) {
+    const edit = removeProperty(text, { ...objectSpan, properties: remaining }, key)
+    if (edit) edits.push(edit)
+    remaining.delete(key)
+  }
+  return edits
+}
+
 /** Check dispatch eligibility without changing task status or tracker bytes. */
 export async function checkTaskRun(directory, id, runner) {
   const task = await showTask(directory, id)
@@ -427,7 +496,7 @@ export async function updateTask(directory, id, { builderTask, title, notes, rea
   return updated
 }
 
-export async function setTaskStatus(directory, id, status, reason, runner) {
+export async function setTaskStatus(directory, id, status, reason, runner, claim = {}) {
   if (!isId(id) || !["todo", "doing"].includes(status))
     throw new TaskError("Use a valid task id and status todo or doing.", 2)
   const snapshot = await readTrackerFile(directory, "index.json")
@@ -446,20 +515,52 @@ export async function setTaskStatus(directory, id, status, reason, runner) {
     )
   if (status === "doing" && unresolvedBlockers(task).length)
     throw new TaskError("Task has unresolved blockers.", 2)
-  if (status === "doing") checkTaskRunner(task, runner)
-  if (task.status === status) return task
+  let claimed
+  if (status === "doing") {
+    claimed = checkTaskClaim(claim)
+    checkTaskRunner(task, runner)
+    if (
+      task.status === "doing" &&
+      task.claimedBy === claimed.app &&
+      task.workingIn === claimed.workingIn
+    )
+      return task
+  }
   const trimmed = reason?.trim()
+  const branch = typeof claim.branch === "string" ? claim.branch.trim() : ""
   if (status === "todo" && (!trimmed || trimmed.length > 300))
     throw new TaskError(
       "Returning to todo requires a reason of 1–300 characters.",
       2,
     )
+  if (status === "todo" && branch.length > 200)
+    throw new TaskError("Half-done branch name must be at most 200 characters.", 2)
+  if (status === "todo" && task.status === "todo") return task
   const taskSpan = snapshot.root.properties.get("tasks").items[index]
   const fields = taskSpan.properties
-  const edits = [{ span: fields.get("status"), text: JSON.stringify(status) }]
-  let notes = task.notes
-  if (status === "todo") {
-    notes = `${notes ? `${notes}\n\n` : ""}Returned to todo: ${trimmed}\n\n[tasks CLI] Status update recorded; subject to human review.`
+  const edits = []
+  if (task.status !== status)
+    edits.push({ span: fields.get("status"), text: JSON.stringify(status) })
+  const result = { ...task, status }
+  if (status === "doing") {
+    const missing = []
+    for (const [key, value] of [
+      ["claimedBy", claimed.app],
+      ["workingIn", claimed.workingIn],
+    ]) {
+      const field = fields.get(key)
+      if (field) edits.push({ span: field, text: JSON.stringify(value) })
+      else missing.push(`${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+      result[key] = value
+    }
+    if (missing.length)
+      edits.push({
+        span: { start: taskSpan.end - 1, end: taskSpan.end - 1 },
+        text: `, ${missing.join(", ")}`,
+      })
+  } else {
+    const branchNote = branch ? ` Half-done on branch ${branch}.` : ""
+    const notes = `${task.notes ? `${task.notes}\n\n` : ""}Returned to todo: ${trimmed}${branchNote}\n\n[tasks CLI] Status update recorded; subject to human review.`
     const notesSpan = fields.get("notes")
     if (notesSpan) edits.push({ span: notesSpan, text: JSON.stringify(notes) })
     else
@@ -467,9 +568,13 @@ export async function setTaskStatus(directory, id, status, reason, runner) {
         span: { start: taskSpan.end - 1, end: taskSpan.end - 1 },
         text: `, "notes": ${JSON.stringify(notes)}`,
       })
+    result.notes = notes
+    edits.push(...removeProperties(snapshot.text, taskSpan, ["claimedBy", "workingIn"]))
+    delete result.claimedBy
+    delete result.workingIn
   }
   await replaceTrackerFile(snapshot, editSpans(snapshot.text, edits))
-  return { ...task, status, ...(notes === undefined ? {} : { notes }) }
+  return result
 }
 
 const digest = (text) => createHash("sha256").update(text).digest("hex")
@@ -791,12 +896,21 @@ const commands = {
     required: [],
   },
   status: {
-    usage: "status <id> <todo|doing> [--reason TEXT] [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]",
+    usage:
+      "status <id> doing --app cursor|claude|codex --working-in PATH [--tool claude-code|cursor] [--model MODEL] [--external-model-budget available|unavailable|unknown]\n       status <id> todo --reason TEXT [--branch BRANCH]",
     summary:
-      "Start a task (doing) or return it to todo with a reason of 1–300 characters.",
+      "Start a task (doing) with claim app and working path, or return it to todo (clears the claim; optional --branch notes half-done work).",
     positional: ["id", "status"],
     flags: [],
-    values: ["--reason", "--tool", "--model", "--external-model-budget"],
+    values: [
+      "--reason",
+      "--app",
+      "--working-in",
+      "--branch",
+      "--tool",
+      "--model",
+      "--external-model-budget",
+    ],
     required: [],
   },
   close: {
@@ -911,6 +1025,8 @@ export function parseArguments(argv) {
     throw new UsageError("'--builder-task' must be true or false")
   if (options["--external-model-budget"] !== undefined && !["available", "unavailable", "unknown"].includes(options["--external-model-budget"]))
     throw new UsageError("'--external-model-budget' must be available, unavailable or unknown")
+  if (options["--app"] !== undefined && !claimApps.includes(options["--app"]))
+    throw new UsageError("'--app' must be cursor, claude or codex")
   return {
     help: false,
     command: name,
@@ -977,6 +1093,11 @@ async function run(request) {
       status,
       request.options["--reason"],
       runner,
+      {
+        app: request.options["--app"],
+        workingIn: request.options["--working-in"],
+        branch: request.options["--branch"],
+      },
     )
     console.log(`Task ${task.id}: ${task.status}`)
   } else if (request.command === "close") {
