@@ -10,6 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import barrier_vocab as bv
 import decision_record as dr
 import decor_plan as dp
 import provenance as prov
@@ -209,7 +210,7 @@ class TestLidarIsOnlyAHint(unittest.TestCase):
         cells = {(5, z) for z in range(2, 7)}
         plan = self.plan({}, map_barriers={'wall': cells})
         wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
-        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+        self.assertEqual(wall['height'], bv.DEFAULT_HEIGHT['brick_wall'])
 
     def test_explicit_garden_height_beats_lidar(self):
         cols = {(5, z): 1 for z in range(2, 7)}
@@ -251,11 +252,11 @@ class TestLidarIsOnlyAHint(unittest.TestCase):
             (0, 0), map_barriers={'wall': set(cols)}, garden={}, rgb={},
             footprint=set(), canopy=set(), lidar_hm=hm)
         wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
-        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+        self.assertEqual(wall['height'], bv.DEFAULT_HEIGHT['brick_wall'])
         taller = {q: 9 for q in cols}
         plan = self.plan(taller, map_barriers={'wall': set(cols)})
         wall = next(i for i in plan['items'] if i['kind'] == 'brick_wall')
-        self.assertEqual(wall['height'], dp.DEFAULT_HEIGHT['brick_wall'])
+        self.assertEqual(wall['height'], bv.DEFAULT_HEIGHT['brick_wall'])
 
 
 class TestBuildDecorPlan(unittest.TestCase):
@@ -764,8 +765,8 @@ class TestUnresolvedBarrierReporting(unittest.TestCase):
         item = self.barrier()
         unplaced = []
         self.assertEqual(dp.resolved_barriers({'items': [item]}, unplaced), {
-            (10, 20): ('hedge', dp.HEDGE_BLOCK, 1),
-            (11, 20): ('hedge', dp.HEDGE_BLOCK, 1)})
+            (10, 20): ('hedge', bv.HEDGE_BLOCK, 1),
+            (11, 20): ('hedge', bv.HEDGE_BLOCK, 1)})
         self.assertEqual(unplaced, [])
         world = mock.Mock()
         world.block.return_value = 'minecraft:air'
@@ -773,12 +774,24 @@ class TestUnresolvedBarrierReporting(unittest.TestCase):
                 mock.patch('decor_layer.on_carriageway', return_value=False):
             found, report, unplaced = place_barriers_from_plan(
                 (0, 0), [item], world, way=set(), near1=set(), owned=set(), masked={})
-        self.assertEqual(found, {(10, 65, 20): dp.HEDGE_BLOCK, (11, 65, 20): dp.HEDGE_BLOCK})
+        self.assertEqual(found, {(10, 65, 20): bv.HEDGE_BLOCK, (11, 65, 20): bv.HEDGE_BLOCK})
         self.assertEqual(len(report), 2)
         self.assertEqual(unplaced, [])
         with redirect_stdout(io.StringIO()) as output:
             dp.print_unresolved_barriers([item])
         self.assertEqual(output.getvalue(), '')
+
+    def test_later_resolved_barrier_wins_a_shared_column(self):
+        first = {'id': 'first', 'role': 'barrier', 'kind': 'hedge', 'block': 'oak_leaves',
+                 'height': 2, 'cells': [[1, 1], [2, 1]]}
+        second = {'id': 'second', 'role': 'barrier', 'kind': 'brick_wall', 'block': 'brick_wall',
+                  'height': 1, 'cells': [[2, 1]]}
+        sources = {}
+        got = dp.resolved_barriers({'items': [first, second]}, sources=sources)
+        self.assertEqual(got[(1, 1)], ('hedge', 'oak_leaves', 2))
+        self.assertEqual(got[(2, 1)], ('brick_wall', 'brick_wall', 1))
+        self.assertEqual(sources[(1, 1)]['id'], 'first')
+        self.assertEqual(sources[(2, 1)]['id'], 'second')
 
     def test_none_opening_and_unresolved_furniture_are_not_reported_as_barriers(self):
         opening = self.barrier('opening', reason='deliberate open frontage', kind='none')
@@ -1016,11 +1029,11 @@ class TestConventionFenceReachesPlacement(unittest.TestCase):
         self.assertIn('unknown barrier kind', lost[0]['provenance']['unresolved_reason'])
 
     def test_barrier_kind_and_tone_table(self):
-        self.assertEqual(dp.barrier_kind('fence', 'minecraft:spruce_planks'), 'plank_fence')
-        self.assertEqual(dp.barrier_kind('fence', None), 'spruce_fence')
-        self.assertEqual(dp.barrier_kind('picket'), 'picket')
-        self.assertEqual(dp.PLANK_TONES['oak'], ('oak_planks',))
-        self.assertIn('mangrove_planks', dp.PLANK_TONES['reddy'])
+        self.assertEqual(bv.barrier_kind('fence', 'minecraft:spruce_planks'), 'plank_fence')
+        self.assertEqual(bv.barrier_kind('fence', None), 'spruce_fence')
+        self.assertEqual(bv.barrier_kind('picket'), 'picket')
+        self.assertEqual(bv.PLANK_TONES['oak'], ('oak_planks',))
+        self.assertIn('mangrove_planks', bv.PLANK_TONES['reddy'])
 
 
 class TestShelfBlock(unittest.TestCase):
@@ -1034,7 +1047,7 @@ class TestShelfBlock(unittest.TestCase):
 
     def test_every_tone_plank_has_a_shelf_variant(self):
         shelves = {'oak', 'spruce', 'dark_oak', 'jungle', 'acacia', 'mangrove', 'birch', 'pale_oak'}
-        for blocks in dp.PLANK_TONES.values():
+        for blocks in bv.PLANK_TONES.values():
             for b in blocks:
                 self.assertIn(b.removesuffix('_planks'), shelves)
                 self.assertIn('_shelf[facing=north]', dp.shelf_block(b, 'north'))
@@ -1044,7 +1057,7 @@ class TestShelfBlock(unittest.TestCase):
         self.assertEqual(dp.shelf_block('oak_planks', 'up'), 'oak_planks')
 
     def test_pale_oak_is_a_plank_tone(self):
-        self.assertEqual(dp.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
+        self.assertEqual(bv.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
 
     def test_facing_survives_planning(self):
         garden = [{'id': 'garden-0-front', 'role': 'barrier', 'kind': 'plank_fence', 'block': 'oak_planks',
@@ -1069,11 +1082,11 @@ class TestPanelVersusPicketKinds(unittest.TestCase):
         return dp.build_decor_plan((0, 0), map_barriers={}, garden=[item], rgb={}, footprint=set(), canopy=set())
 
     def test_convention_author_choice(self):
-        self.assertEqual(dp.barrier_kind('fence', 'oak_planks'), 'plank_fence')       # panel
-        self.assertEqual(dp.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
-        self.assertEqual(dp.barrier_kind('fence', None), 'spruce_fence')              # picket / slatted
-        self.assertEqual(dp.barrier_kind('fence', 'oak_fence'), 'spruce_fence')
-        self.assertEqual(dp.barrier_kind('fence', 'spruce_fence'), 'spruce_fence')
+        self.assertEqual(bv.barrier_kind('fence', 'oak_planks'), 'plank_fence')       # panel
+        self.assertEqual(bv.barrier_kind('fence', 'pale_oak_planks'), 'plank_fence')
+        self.assertEqual(bv.barrier_kind('fence', None), 'spruce_fence')              # picket / slatted
+        self.assertEqual(bv.barrier_kind('fence', 'oak_fence'), 'spruce_fence')
+        self.assertEqual(bv.barrier_kind('fence', 'spruce_fence'), 'spruce_fence')
 
     def test_panel_and_picket_resolve_independently(self):
         panel = dp.resolved_barriers(self._plan('plank_fence', 'oak_planks'))[(5, 8)]

@@ -8,6 +8,7 @@ from unittest import mock
 
 import numpy as np
 
+import barrier_vocab as bv
 import decor_layer as dl
 import land_use
 import street_furniture as sf
@@ -979,7 +980,7 @@ class ShelfFencePlacementTest(unittest.TestCase):
     def test_other_barrier_kinds_are_unchanged(self):
         item = {'id': 'h', 'role': 'barrier', 'kind': 'hedge', 'height': 1, 'cells': [[10, 20]]}
         found, rows, _ = self._place(item)
-        self.assertEqual(set(found.values()), {dl.dplan.HEDGE_BLOCK})
+        self.assertEqual(set(found.values()), {bv.HEDGE_BLOCK})
         self.assertNotIn('facing', rows[0])
 
 

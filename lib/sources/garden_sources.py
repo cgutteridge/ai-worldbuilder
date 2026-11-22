@@ -34,19 +34,13 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
+import barrier_vocab as bv  # noqa: E402
 import cellmath  # noqa: E402
-import decor_plan  # noqa: E402
-from tree_species import DEFAULT_LEAVES  # noqa: E402
 import land_use  # noqa: E402
 import district_profiles  # noqa: E402
 
 GARDENS = ROOT / 'site' / 'gardens'
 DISTRICTS = ROOT / 'site' / 'districts'
-HEDGE_BLOCK = DEFAULT_LEAVES
-DEFAULT_BLOCK = {'hedge': HEDGE_BLOCK, 'brick_wall': 'brick_wall', 'fence': 'spruce_fence',
-                 'iron_bars': 'iron_bars'}
-DEFAULT_HEIGHT = {'hedge': 2, 'brick_wall': 1, 'fence': 2, 'iron_bars': 1}
-PLANK_HEIGHT = 1         # close-boarded panel runs (a fence whose block is a plank) are one block high
 HEDGE_SHARE = 0.6        # share of a segment's columns that must read dark green to call it a hedge
 SIDE_DEPTH = 40          # side boundaries only run this far behind the front line unless told
 
@@ -166,13 +160,13 @@ def role_spec(conv: dict | None, number: str, role: str, cls: str = 'residential
     if not spec or res['open']:
         return None
     t = spec['type']
-    if t not in DEFAULT_BLOCK:                       # unknown type: keep it so the plan can report it
+    if t not in bv.CONVENTION_BLOCK:              # unknown type: keep it so the plan can report it
         return {'type': t, 'block': spec.get('block') or '',
                 'height': int(spec.get('height') or 1), 'depth': spec.get('depth')}
-    block = spec.get('block') or DEFAULT_BLOCK[t]
-    plank = decor_plan.barrier_kind(t, block) == 'plank_fence'
+    block = spec.get('block') or bv.CONVENTION_BLOCK[t]
+    plank = bv.barrier_kind(t, block) == 'plank_fence'
     return {'type': t, 'block': block,
-            'height': int(spec.get('height') or (PLANK_HEIGHT if plank else DEFAULT_HEIGHT[t])),
+            'height': int(spec.get('height') or (bv.PLANK_HEIGHT if plank else bv.CONVENTION_HEIGHT[t])),
             'depth': spec.get('depth')}
 
 
@@ -1272,7 +1266,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
         share = hedge_share(near, rgb, canopy=canopy) if len(near) >= 4 else 0.0
         src = ({'class': 'class default', 'district': 'district profile'}.get(res['layer'], 'convention')) if spec else 'none'
         if share >= HEDGE_SHARE and len(cells) >= 4 and not vetoed and not property_role:
-            spec, src = {'type': 'hedge', 'block': HEDGE_BLOCK, 'height': 2, 'depth': None}, 'aerial hedge'
+            spec, src = {'type': 'hedge', 'block': bv.HEDGE_BLOCK, 'height': 2, 'depth': None}, 'aerial hedge'
         elif share >= HEDGE_SHARE and len(cells) >= 4 and vetoed:
             src = 'aerial hedge vetoed'
         if spec and spec.get('depth') and role.startswith('side'):
@@ -1305,7 +1299,7 @@ def garden_barriers(cell: tuple[int, int], rgb: dict | None = None, report: dict
                 source=supplied.get('source', source) if property_role else source,
                 confidence=supplied.get('confidence', 'low' if from_district else 'medium'),
                 evidence_ids=evidence_ids, unresolved_reason=supplied.get('unresolved_reason', ''))
-            items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': decor_plan.barrier_kind(spec['type'], spec['block']),
+            items.append({'id': f'garden-{i}-{role}', 'role': 'barrier', 'kind': bv.barrier_kind(spec['type'], spec['block']),
                           'block': spec['block'], 'height': spec['height'],
                           'cells': [list(q) for q in cols], 'boundary_role': role,
                           'scope': {'street': meta['street'], 'property': number, 'layer': layer, 'land_use': cls},
