@@ -22,9 +22,10 @@ import os
 import sys
 from pathlib import Path
 
+from block_store import block_id
 from script_env import ROOT  # noqa: E402
 
-from ground_layer import bare, ignored_builds, plan_name  # noqa: E402
+from ground_layer import ignored_builds, plan_name  # noqa: E402
 from pass_mask import PASSES, mask_path, mask_placements, read_mask, shared_positions, verify_integrity  # noqa: E402
 from site_kit import Plan, World, apply, same, undo, warm_reads  # noqa: E402
 
@@ -103,7 +104,7 @@ def run(cell: tuple[int, int], pass_name: str, live: bool, skip_changed: bool = 
         if live_block and same(expected, live_block):
             to_air.append(pos)
         else:
-            conflicts.append((pos, expected, bare(live_block)))
+            conflicts.append((pos, expected, block_id(live_block, policy='read')))
     print(f'{pass_name} {tx},{tz}: mask {mask["count"]} blocks, undo {len(to_air)}, left (shared with another mask) {len(shared)}, conflicts {len(conflicts)}')
     for pos, want, got in conflicts[:10]:
         print(f'  CONFLICT {pos}: mask says {want}, live is {got}')

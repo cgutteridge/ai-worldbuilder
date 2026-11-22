@@ -16,13 +16,15 @@ sys.path.insert(0, str(_TOOL / 'scripts'))
 import script_env  # noqa: E402
 
 script_env.ensure_import_paths()
-from site_kit import World  # noqa: E402
+from site_kit import AIR_IDS, World  # noqa: E402
+
+_AIR_EXTRAS = ('light',)
 
 
 def is_air(w, p):
     """@returns: True for air and foliage (open to the weather)"""
     b = (w.block(*p) or 'minecraft:air').split('[')[0][10:]
-    return b in ('air', 'cave_air', 'void_air', 'light') or 'leaves' in b or 'fern' in b or 'flower' in b or (
+    return b in (*AIR_IDS, *_AIR_EXTRAS) or 'leaves' in b or 'fern' in b or 'flower' in b or (
         'grass' in b and b != 'grass_block')
 
 

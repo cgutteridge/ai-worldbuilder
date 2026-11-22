@@ -318,3 +318,24 @@ try:
 except Exception:
     CELL = _DEFAULT_CELL_SIZE
     HOME_CELL = _DEFAULT_HOME
+
+
+def segment_distance(point, a, b, *, along: bool = False):
+    """Distance to segment a-b, plus the nearest point (or distance along it).
+
+    ``along=True`` retains the ground rasterizer's hypot arithmetic and its tiny
+    denominator for zero-length segments. The default retains footprint callers'
+    Euclidean distance to the projected foot, including their rounding behaviour.
+    """
+    px, pz = point
+    ax, az = a
+    bx, bz = b
+    dx, dz = bx - ax, bz - az
+    length_sq = dx * dx + dz * dz
+    if along:
+        length_sq = dx ** 2 + dz ** 2 or 1e-9
+        t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / length_sq))
+        return math.hypot(px - ax - t * dx, pz - az - t * dz), t * math.sqrt(length_sq)
+    t = 0 if dx == dz == 0 else max(0, min(1, ((px - ax) * dx + (pz - az) * dz) / length_sq))
+    foot = (ax + t * dx, az + t * dz)
+    return math.dist(point, foot), foot

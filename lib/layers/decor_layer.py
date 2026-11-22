@@ -29,9 +29,9 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ground_layer import (AIRS, BLOCK_KIND, bare, cell_contains, ignored_builds,  # noqa: E402
+from ground_layer import (AIRS, BLOCK_KIND, cell_contains, ignored_builds,  # noqa: E402
                           is_air, neighbour_owned, load_masked_positions, probe_y_range)
-from block_store import SCAN_VOLUME_CAP  # noqa: E402
+from block_store import SCAN_VOLUME_CAP, block_id  # noqa: E402
 from pass_mask import build_mask, clip_to_cell  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 import barrier_vocab as bv  # noqa: E402
@@ -233,7 +233,7 @@ def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
         for p in list(nodes):
             for d in NEIGHBOURS:
                 q = (p[0] + d[0], p[1] + d[1], p[2] + d[2])
-                if q not in found and bare(live(q)) == f'minecraft:{mat}':
+                if q not in found and block_id(live(q), policy='read') == f'minecraft:{mat}':
                     nodes.add(q)
         parent = {p: p for p in nodes}
 
@@ -758,7 +758,7 @@ def _tree_solid(block: str | None) -> bool:
     """
     if not block or is_air(block):
         return False
-    name = bare(block)
+    name = block_id(block, policy='read')
     short = name.split(':')[-1]
     return '_log' in short or 'leaves' in short or short.endswith('_wood')
 
@@ -847,7 +847,7 @@ def plan_woodland_decor(
         if p in protected or p in found:
             return False
         block = live(p)
-        return block is not None and bare(block) in AIRS
+        return block is not None and block_id(block, policy='read') in AIRS
 
     for q in sorted(columns):
         if q in blocked or not cell_contains(cell, *q):
@@ -859,7 +859,7 @@ def plan_woodland_decor(
             report['skipped'] += 1
             continue
         gy, ground = top
-        if _tree_solid(ground) or bare(ground).endswith('water'):
+        if _tree_solid(ground) or block_id(ground, policy='read').endswith('water'):
             report['skipped'] += 1
             continue
         cid = columns[q]
@@ -1017,7 +1017,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
             if top:
                 for i in range(1, int(item.get('height') or 1) + 1):
                     pos = (q[0], top[0] + i, q[1])
-                    if bare(world.block(*pos)) == f'minecraft:{mat}':
+                    if block_id(world.block(*pos), policy='read') == f'minecraft:{mat}':
                         present[pos] = mat
 
     furniture, furniture_report, furniture_unplaced = place_furniture(

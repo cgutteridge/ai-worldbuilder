@@ -70,13 +70,71 @@ def canonical_state(state: str) -> str:
     return f'{name}[{",".join(props)}]' if props else name
 
 
-def block_id(state: str) -> str:
-    """Namespaced block id without properties.
+def block_id(state: str | None, *, policy: str = 'namespaced') -> str:
+    """Block id without properties, with an explicit saved-read compatibility policy.
 
-    @param state: block state string
-    @returns: e.g. ``minecraft:stone``
+    ``namespaced`` adds ``minecraft:`` when absent; None still raises and an empty
+    string becomes ``minecraft:``, as in the public ``site_kit.bid`` contract.
+    ``read`` preserves the input namespace and treats None/empty reads as air.
     """
-    return canonical_state(state).split('[')[0]
+    if policy == 'read':
+        return (state or 'minecraft:air').split('[', 1)[0]
+    if policy != 'namespaced':
+        raise ValueError(f'unknown block id policy: {policy}')
+    name = state.split('[', 1)[0]
+    return 'minecraft:' + name if ':' not in name else name
+
+
+def _state_pairs(state: str, syntax: str) -> list[tuple[str, str]]:
+    """Parse ordered pairs, retaining duplicate properties in scan text."""
+    if syntax not in ('strict', 'exact', 'scan', 'argument', 'filtered'):
+        raise ValueError(f'unknown property syntax: {syntax}')
+    if '[' not in state:
+        return []
+    start = state.index('[') + 1
+    if syntax == 'scan':
+        body = state[start:].rstrip(']')
+    elif syntax == 'argument':
+        body = state[start:state.rindex(']')]
+    else:
+        body = state[start:-1]
+    pairs = body.split(',')
+    if syntax in ('strict', 'exact', 'filtered'):
+        parsed = [tuple(pair.split('=') if syntax == 'exact' else pair.split('=', 1))
+                  for pair in pairs if syntax != 'filtered' or '=' in pair]
+        dict(parsed)  # strict readers have always rejected missing/extra values
+        return parsed
+    props = []
+    for pair in pairs:
+        if not pair and syntax == 'scan':
+            continue
+        key, _, value = pair.partition('=')
+        if syntax == 'argument':
+            key, value = key.strip(), value.strip()
+        props.append((key, value))
+    return props
+
+
+def state_props(state: str, *, syntax: str = 'strict') -> dict[str, str]:
+    """Read properties, preserving the input contracts of existing block readers.
+
+    ``strict`` parses bracket pairs, splitting on the first equals sign; malformed
+    pairs raise ValueError. ``exact`` also rejects extra equals signs. ``scan``
+    accepts MCP scan fragments with missing values and repeated closing brackets.
+    ``argument`` requires a closing bracket and strips surrounding whitespace.
+    ``filtered`` ignores pairs without equals signs.
+    """
+    return dict(_state_pairs(state, syntax))
+
+
+def state_prop(state: str, key: str) -> str | None:
+    """First word value for ``key`` anywhere in a legacy block-state string.
+
+    This intentionally accepts unbracketed input and key suffixes, as the old
+    floater lookup did; full-map readers should use :func:`state_props` instead.
+    """
+    match = re.search(rf'{key}=(\w+)', state)
+    return match.group(1) if match else None
 
 
 # Props the game re-derives after placement (skipped by same_state).
@@ -125,9 +183,8 @@ def same_state(planned: str, actual: str | None) -> bool:
         return False
     if '[' not in want_state:
         return True
-    want = dict(kv.split('=') for kv in want_state[want_state.index('[') + 1:-1].split(','))
-    got = (dict(kv.split('=') for kv in actual[actual.index('[') + 1:-1].split(','))
-           if '[' in actual else {})
+    want = state_props(want_state, syntax='exact')
+    got = state_props(actual, syntax='exact')
     skip = {'waterlogged'} | _game_derives_connections(block_id(want_state))
     return all(got.get(k) == v for k, v in want.items() if k not in skip)
 
@@ -268,7 +325,7 @@ def format_block_scan_text(blocks: Mapping[Pos, str]) -> str:
     lines = [f'[{len(blocks)}]:']
     for (x, y, z), state in blocks.items():
         st = canonical_state(state)
-        name, _, rest = st.partition('[')
+        name = block_id(st)
         lines.append('  - position:')
         lines.append(f'    x: {x}')
         lines.append(f'    y: {y}')
@@ -279,16 +336,12 @@ def format_block_scan_text(blocks: Mapping[Pos, str]) -> str:
         lines.append('      hardness: 0')
         lines.append('      hasBlockEntity: false')
         lines.append('      properties:')
-        if rest:
-            for kv in rest.rstrip(']').split(','):
-                if not kv:
-                    continue
-                k, _, v = kv.partition('=')
-                # Match live quirks: booleans often quoted, enums often bare.
-                if v in ('true', 'false'):
-                    lines.append(f'        {k}: "{v}"')
-                else:
-                    lines.append(f'        {k}: {v}')
+        for k, v in _state_pairs(st, 'scan'):
+            # Match live quirks: booleans often quoted, enums often bare.
+            if v in ('true', 'false'):
+                lines.append(f'        {k}: "{v}"')
+            else:
+                lines.append(f'        {k}: {v}')
     return '\n'.join(lines)
 
 

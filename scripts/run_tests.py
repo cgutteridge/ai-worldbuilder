@@ -37,13 +37,13 @@ import fcntl
 import importlib.util
 import io
 import os
-import subprocess
 import sys
 import unittest
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
+from shared_git import git_output
 import pre_commit_checks as pcc
 from unit_test_world import unit_test_world
 
@@ -132,14 +132,7 @@ def git_common_dir(repo_root: Path) -> Path:
     @param repo_root: repository root or linked worktree root
     @returns: absolute path to the common ``.git`` directory
     """
-    result = subprocess.run(
-        ['git', 'rev-parse', '--git-common-dir'],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    raw = result.stdout.strip()
+    raw = git_output(repo_root, 'rev-parse', '--git-common-dir')
     path = Path(raw)
     if not path.is_absolute():
         path = (repo_root / path).resolve()

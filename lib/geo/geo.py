@@ -37,6 +37,7 @@ from world_frame import osgb_to_wgs84, wgs84_to_osgb  # noqa: E402
 from osgb import load_offsets, to_mc, to_osgb  # noqa: E402
 from ref_manifest import mc_tiles_for_bbox  # noqa: E402
 from world_frame import deg2num, wm_tile_bbox_mc  # noqa: E402
+from site_kit import AIR_IDS
 from surface_probe import PLANTS, short_id
 
 # |dx|:|dz| in {0, 1:4, 1:3, 1:2, 1:1} and the swapped mirrors, signs applied later.
@@ -72,7 +73,9 @@ def snap_slope(dx: float, dz: float) -> tuple[int, int]:
     return best
 
 
-SKIP_LIDAR_TOP = ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
+# This is a substring filter: the first air token already matches cave/void_air.
+_LIDAR_TOP_EXTRAS = ('leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower')
+SKIP_LIDAR_TOP = AIR_IDS[:1] + _LIDAR_TOP_EXTRAS
 
 SURVEY_PRESETS = {
     'house': {'pad_w': 28, 'pad_e': 28, 'pad_n': 35, 'pad_s': 55, 'radius_m': 120},

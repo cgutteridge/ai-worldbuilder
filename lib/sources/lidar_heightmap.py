@@ -42,8 +42,10 @@ import statistics
 import numpy as np
 
 import cellmath
+from block_store import block_id
+from site_kit import AIR_IDS, full
 from script_env import ROOT  # noqa: E402
-from surface_probe import PLANTS, short_id
+from surface_probe import LIDAR_PLANT_PATTERNS, PLANTS, short_id
 
 TOP = 140
 MIN_COLUMNS = 12                    # ignore slivers (bin stores, small sheds)
@@ -53,15 +55,10 @@ RIDGE_BASE = 3                      # ridge height above ground minus this, / ST
                                     # map building:levels on 54 single-building lumps in touched cells: 57% exact, 89%
                                     # within one level (eave height is useless: ~4 above ground whatever the levels)
 GROUND, ROOF, TREE, TREE_OVER_ROOF, STRUCTURE = 0, 1, 2, 3, 4
-_AIRS = ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:light')
+_AIR_EXTRAS = ('minecraft:light',)   # invisible light blocks do not raise lidar columns
+_AIRS = tuple(full(name) for name in AIR_IDS) + _AIR_EXTRAS
 _TREE = ('leaves', '_log', '_wood')
-_PLANT = ('short_grass', 'tall_grass', 'fern', 'flower', 'tulip', 'poppy', 'dandelion', 'bush', 'vine', 'daisy',
-          'bluet', 'orchid', 'allium', 'cornflower', 'lily', 'sugar_cane', 'mushroom', 'azure', 'peony', 'rose',
-          'lilac', 'sunflower', 'dead_bush', 'petals', 'seagrass', 'kelp', '_sign')
 
-
-def _id(b) -> str:
-    return (b or 'minecraft:air').split('[')[0]
 
 
 def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
@@ -82,8 +79,8 @@ def column(world, x: int, z: int, top: int = TOP) -> tuple[int, int, int, int]:
         if skip is not None and skip(x, y, z, _AIRS):
             y = ((y >> 4) << 4) - 1
             continue
-        b = _id(world.block(x, y, z))
-        if b in _AIRS or short_id(b) in PLANTS or any(k in b for k in _PLANT):
+        b = block_id(world.block(x, y, z), policy='read')
+        if b in _AIRS or short_id(b) in PLANTS or any(k in b for k in LIDAR_PLANT_PATTERNS):
             pass
         elif b.endswith('_carpet'):
             roof = roof or y

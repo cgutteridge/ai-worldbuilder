@@ -9,14 +9,17 @@ Feet cell passable if feet and head are non-solid and the block below is solid
 import sys
 from collections import deque
 
-from site_kit import World, warm_reads
+from site_kit import AIR_IDS, World, warm_reads
 from surface_probe import PLANTS
 
-OPEN_EXACT = {
-    'air', 'cave_air', 'light', 'water', 'lantern', 'soul_lantern', 'end_rod', 'iron_chain',
+# Preserve the walkability policy: void_air is not passable here.
+_AIR_EXCLUSIONS = frozenset({'void_air'})
+_OPEN_EXTRAS = {
+    'light', 'water', 'lantern', 'soul_lantern', 'end_rod', 'iron_chain',
     'torch', 'wall_torch', 'rail', 'vine', 'short_grass', 'tall_grass', 'fern', 'large_fern',
     'moss_carpet', 'flower_pot', 'ladder', 'lever', 'tripwire',
-} | set(PLANTS)
+}
+OPEN_EXACT = (set(AIR_IDS) - _AIR_EXCLUSIONS) | _OPEN_EXTRAS | set(PLANTS)
 OPEN_SUFFIX = (
     '_door', '_sign', '_button', '_carpet', '_torch', '_rail', '_pressure_plate', '_banner',
     '_sapling', '_tulip',

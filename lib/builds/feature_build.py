@@ -153,6 +153,7 @@ from pathlib import Path
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view as _sw
 
+from block_store import state_props
 from script_env import ROOT, TOOL_ROOT  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
@@ -166,18 +167,25 @@ import facade_plan as facade_plan_mod  # noqa: E402
 import land_use  # noqa: E402
 import provenance as provenance_mod  # noqa: E402
 from site_kit import (  # noqa: E402
-    Plan, apply, bid, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs,
+    AIR_IDS, Plan, apply, bid, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs,
     interior_ground_clears, is_bottom_half_slab, nearest_preview_colour, preview,
 )
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
-from cellmath import DIRS, N4, N8  # noqa: E402
+from cellmath import DIRS, N4, N8, segment_distance  # noqa: E402
 import stoop  # noqa: E402
 from stoop import FACE, GROUND  # noqa: E402
 FASCIA_COLOURS = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
 # Light bands need black lettering; the rest stay white so the name reads against the bar.
 LIGHT_FASCIA = frozenset({'cyan', 'orange', 'lime', 'yellow', 'white', 'pink'})
+
+
+# Existing facade-exposure checks intentionally omit void_air; volume checks do not.
+_OUTSIDE_AIR_EXCLUSIONS = frozenset({'void_air'})
+_OUTSIDE_AIRS = tuple('minecraft:' + name for name in AIR_IDS if name not in _OUTSIDE_AIR_EXCLUSIONS)
+_AIRS = tuple('minecraft:' + name for name in AIR_IDS)
+_OPENING_EXTRAS = ('water', 'lava', 'iron_bars')
 
 
 def fascia_colour(key: str) -> str:
@@ -1594,7 +1602,7 @@ class Build:
         st = self.p.cells.get((x, y, z))
         if st is None:
             st = self.live.block(x, y, z)
-        return bool(st) and bid(st)[10:] not in ('air', 'cave_air', 'void_air')
+        return bool(st) and bid(st)[10:] not in AIR_IDS
 
     def kset(self, x, y, z, st):
         """Set a stoop/step cell; with keep_edits it survives the earlier-build clash filter."""
@@ -1938,7 +1946,7 @@ class Build:
         for (x, z), state in states.items():
             if '_stairs[' not in state:
                 continue
-            props = dict(kv.split('=', 1) for kv in state.split('[', 1)[1][:-1].split(','))
+            props = state_props(state)
             facing = props['facing']
             shape = props.get('shape', 'straight')
             # A straight stair's upper half fills its facing side. Inner
@@ -2723,7 +2731,7 @@ class Build:
                 if outside is None:
                     outside = self.live.block(*pos)
                 wall = self.p.cells.get((cell[0], sign_y, cell[1]))
-                if wall == bid(fascia) and outside in ('minecraft:air', 'minecraft:cave_air'):
+                if wall == bid(fascia) and outside in _OUTSIDE_AIRS:
                     self.set(*pos, f'oak_wall_sign[facing={FACE[face_of[cell]]}]')
                     self.p.sign(
                         pos, textwrap.wrap(name, width=rule['sign_wrap'])[:4],
@@ -2741,7 +2749,7 @@ class Build:
                 outside = self.p.cells.get(pos)
                 if outside is None:
                     outside = self.live.block(*pos)
-                if outside not in ('minecraft:air', 'minecraft:cave_air'):
+                if outside not in _OUTSIDE_AIRS:
                     continue
                 hinge = hinge_for[face_of[cell]]
                 self.set(*pos, f'oak_trapdoor[facing={hinge},half=top,open=false]')
@@ -2840,7 +2848,7 @@ class Build:
                 if outside is None:
                     outside = self.live.block(*pos)
                 if (self.p.cells.get((c[0], y, c[1])) == bid(fascia) and
-                        outside in ('minecraft:air', 'minecraft:cave_air')):
+                        outside in _OUTSIDE_AIRS):
                     self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[c]]}]')
                     self.p.sign(pos, textwrap.wrap(name, width=15)[:4], colour='white', glow=True)
                     break
@@ -2875,7 +2883,7 @@ class Build:
             available = []
             for x, z in ray:
                 if ((x, z) in self.by_no_all_cells or any(
-                        osm_footprints._seg_dist((x + 0.5, z + 0.5), a, b)[0] <= half
+                        segment_distance((x + 0.5, z + 0.5), a, b)[0] <= half
                         for a, b, half in roads)):
                     break
                 # Ground is beneath the opening; use local surface height on slopes.
@@ -2886,7 +2894,7 @@ class Build:
                     if state is None:
                         state = self.live.block(x, y, z)
                     state = state or 'minecraft:air'
-                    if state not in ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'):
+                    if state not in _AIRS:
                         if (bid(state)[10:] in paving and
                                 not any(self._is_solid(x, y + dy, z) for dy in (1, 2))):
                             surface = (x, y, z)
@@ -3382,7 +3390,7 @@ class Build:
             tops: dict[tuple[int, int], int] = {}
             for (x, y, z), state in self.p.cells.items():
                 if ((x, z) in f.cells and y > tops.get((x, z), -10 ** 9)
-                        and bid(state)[10:] not in ('air', 'cave_air', 'void_air')):
+                        and bid(state)[10:] not in AIR_IDS):
                     tops[(x, z)] = y
             for row in rows:
                 x0, z0, x1, z1 = row['box']
@@ -3434,7 +3442,7 @@ class Build:
             edge = f.roof.get('edge') or {}
             block = bid(edge.get('block') or 'air')[10:]
             if not block.endswith(('_carpet', '_trapdoor', '_wall', '_fence', '_pane')):
-                if block not in ('air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars'):
+                if block not in (*AIR_IDS, *_OPENING_EXTRAS):
                     support_names.add(block)
         roof_cells = {
             pos for pos, state in self.p.cells.items()

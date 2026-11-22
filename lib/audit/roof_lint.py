@@ -26,29 +26,29 @@ import argparse
 import sys
 from pathlib import Path
 
+from block_store import state_props
 from roof_geometry import ROOF_DELTA, stair_shape_from_neighbours  # noqa: E402
 from script_env import ROOT  # noqa: E402
+from site_kit import AIR_IDS, full
 from surface_probe import PLANTS, short_id
 OUT = ROOT / 'verification/site'
 
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
 _UP = {'east': ('x', 1), 'west': ('x', -1), 'south': ('z', 1), 'north': ('z', -1)}
-_SKIP = ('minecraft:air', 'minecraft:light', 'minecraft:cave_air')
+# Roof lint historically skips air/cave_air, but treats void_air as a column.
+_AIR_EXCLUSIONS = frozenset({'void_air'})
+_AIR_EXTRAS = ('minecraft:light',)
+_ROOF_AIRS = tuple(full(name) for name in AIR_IDS if name not in _AIR_EXCLUSIONS)
+_SKIP = _ROOF_AIRS[:1] + _AIR_EXTRAS + _ROOF_AIRS[1:]
 _THIN = ('pane', 'pot', 'potted', 'torch', 'lantern', 'sign', 'button', 'fence', 'wall', 'bars',
          'door', 'carpet', 'leaves', 'flower', 'sapling', 'grass[', 'short_grass', 'fern')
-
-
-def _props(state: str) -> dict:
-    if '[' not in state:
-        return {}
-    return dict(kv.split('=', 1) for kv in state[state.index('[') + 1:-1].split(','))
 
 
 def _stair_facing_half(state: str) -> tuple[str, str] | None:
     """Parse stair facing/half from a block state, or None if not a bottom/top stair."""
     if '_stairs' not in state:
         return None
-    p = _props(state)
+    p = state_props(state)
     facing = p.get('facing')
     half = p.get('half', 'bottom')
     if facing not in ROOF_DELTA or half not in ('bottom', 'top'):
@@ -69,7 +69,7 @@ def stair_shape_mismatches(cells: dict) -> list[dict]:
         fh = _stair_facing_half(s)
         if fh is None:
             continue
-        by_pos[(x, y, z)] = (s, fh[0], fh[1], _props(s).get('shape', 'straight'))
+        by_pos[(x, y, z)] = (s, fh[0], fh[1], state_props(s).get('shape', 'straight'))
 
     out = []
     for (x, y, z), (state, facing, half, planned) in by_pos.items():
@@ -107,7 +107,7 @@ def _slope(top: dict, x: int, z: int):
     t = top.get((x, z))
     if not t or '_stairs' not in t[1]:
         return None
-    p = _props(t[1])
+    p = state_props(t[1])
     return p.get('facing') if p.get('half', 'bottom') == 'bottom' else None
 
 

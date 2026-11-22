@@ -48,6 +48,7 @@ except ImportError:
 _DECOMPRESS_ERRORS: tuple[type[Exception], ...] = (EOFError, zlib.error) + (
     (_zstd.ZstdError,) if _zstd is not None else ())
 
+from site_kit import AIR_IDS as _AIR_SHORT_IDS, full
 import cellmath
 from block_store import BlockStore, Pos, block_id, same_state
 
@@ -74,8 +75,12 @@ NOTE_KINDS = ('marker', 'hold', 'coverage', 'coverage-dismiss', 'review', 'issue
 APPROVAL_LAYERS = ('ghost', 'buildings', 'ground', 'trees', 'decor', 'dressing', 'labels')
 DRIFT_KINDS = ('in-flight', 'missing', 'foreign', 'mismatched', 'ghost-missing')
 AIR = 'minecraft:air'
-CANCEL = frozenset({'minecraft:air', 'minecraft:light'})   # same rule as the old ownership merge
-AIR_IDS = frozenset({'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'})
+# Cancellation is an exact sentinel policy, not the volume definition of air.
+_CANCEL_AIR_EXCLUSIONS = frozenset({'cave_air', 'void_air'})
+_CANCEL_EXTRAS = frozenset({'minecraft:light'})
+CANCEL = (frozenset(full(name) for name in _AIR_SHORT_IDS if name not in _CANCEL_AIR_EXCLUSIONS)
+          | _CANCEL_EXTRAS)
+AIR_IDS = frozenset(full(name) for name in _AIR_SHORT_IDS)
 DEFAULT_RING = 2
 # Begin-line schema: 1 = legacy (no ``schema`` key), 2 = adds ``schema`` and, on feature builds,
 # optional provenance in meta (builder_name, builder_sha, spec_hash). Older lines load unchanged.

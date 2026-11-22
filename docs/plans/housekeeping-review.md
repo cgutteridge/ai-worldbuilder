@@ -184,16 +184,16 @@ These are worse than plain dead code: a test or a rule gives false assurance.
   - **They have drifted:** `clear()` in houses still lays the margin stone shelf that task 115 removed from features (`house_build.py:166` vs `feature_build.py:1798`).
 - **Air-like block sets:** about 20 spellings, e.g. `ground_layer:70`, `road_labels:44`, `lidar_heightmap:56`, `osm_footprints:79`, `floaters.py:12`, `cell_journal.py:78`, `cell_marker.py:49`. `site_kit.AIR_IDS` (`:464`) is the natural base.
 - **Block-state and id helpers:**
-  - `ground_layer.bare` (`:140`) is the same as `lidar_heightmap._id` (`:63`).
-  - `osm_footprints._bid` (`:85`) copies `site_kit.bid` (`:75`).
-  - Block-state property parsing is written four times: `roof_lint._props` (`:43`), `floaters.prop` (`:22`), and inline at `block_store.py:69,128-129,283`.
+  - Ground and lidar duplicated raw-read ID extraction. T11 now selects `block_store.block_id(..., policy="read")`, preserving namespaces and missing-to-air defaults.
+  - Footprint and kit namespaced ID extraction now use `block_store.block_id`; `site_kit.bid` remains its public import alias.
+  - T11 consolidates full-map property parsing into `block_store.state_props` with named compatibility syntaxes. Its sibling `state_prop` preserves the floater checks’ single-property regex lookup.
 - **Others:**
-  - Plant-name substrings in three lists: `lidar_heightmap._PLANT`, `surface_probe.PLANTS`, `ground_layer.shades_grass`.
-  - Two point-to-segment distance helpers, `ground_sources.seg_dist` and `osm_footprints._seg_dist`; the private one is imported across modules.
+  - Plant recognition policies now live together in `surface_probe`: `PLANTS`, `LIDAR_PLANT_PATTERNS` and `GRASS_LIGHT_PATTERNS`, retaining their distinct membership and ordering.
+  - Ground and footprint segment distance callers now use `cellmath.segment_distance`; the explicit `along` policy retains each former return contract and arithmetic.
   - The int-but-not-bool check is spelled out about 8 times in `feature_build` (`:1137,1143,1410,1451,1459…`), while `facade_plan._is_int` (`:339`) already exists.
   - Builder names `('house_build', 'feature_build')` are typed out in `builder_registration.py:42,57` and `feature_reapply.py:35-41`.
   - `builder_provenance.py:10` recomputes `TOOL_ROOT` instead of importing it.
-  - Three small `_git` helpers (`pre_commit_checks.py:262`, `ship_branch.py:92-124`, `run_tests.py:116`). Only ship_branch cleans hook environment variables.
+  - Git subprocesses now share `scripts/shared_git.py`. Branch shipping opts into hook-environment scrubbing; pre-commit staged-index checks and test-lock lookup retain their inherited environment.
 
 ### 1.11 Small shims and vendor leftovers (V)
 

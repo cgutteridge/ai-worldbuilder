@@ -28,14 +28,18 @@ sweep never deletes or merges code on its own.
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-
+from functools import partial
+from shared_git import git_output, git_run
 import run_tests as run_tests_mod
+
+# Shipping targets explicit repositories, including subprocesses from git hooks.
+git = partial(git_run, scrub_hook_env=True)
+git_out = partial(git_output, scrub_hook_env=True)
 
 RunTestsFn = Callable[[Path], int]
 PromptFn = Callable[[str], bool]
@@ -66,62 +70,6 @@ _FULL_SUITE_FORCE_PATHS = frozenset(
 )
 
 
-def _git_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Environment for git that honours ``cwd`` over inherited hook vars.
-
-    Pre-commit and other git hooks set ``GIT_DIR`` / ``GIT_WORK_TREE``, which
-    would otherwise ignore an explicit ``repo_root`` passed as ``cwd``.
-
-    @param base: starting environment (default: ``os.environ``)
-    @returns: copy with git-directory overrides removed
-    """
-    env = dict(base if base is not None else os.environ)
-    for key in (
-        'GIT_DIR',
-        'GIT_WORK_TREE',
-        'GIT_COMMON_DIR',
-        'GIT_INDEX_FILE',
-        'GIT_OBJECT_DIRECTORY',
-        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    ):
-        env.pop(key, None)
-    return env
-
-
-def _git(
-    repo_root: Path,
-    *args: str,
-    check: bool = True,
-    capture_output: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    """Run a git command in ``repo_root``.
-
-    @param repo_root: repository root (or linked worktree root)
-    @param args: git arguments after ``git``
-    @param check: raise CalledProcessError on non-zero exit
-    @param capture_output: capture stdout/stderr as text
-    @returns: completed process
-    """
-    return subprocess.run(
-        ['git', *args],
-        cwd=repo_root,
-        check=check,
-        capture_output=capture_output,
-        text=True,
-        env=_git_env(),
-    )
-
-
-def _git_out(repo_root: Path, *args: str) -> str:
-    """Return stripped stdout from a git command.
-
-    @param repo_root: repository root
-    @param args: git arguments after ``git``
-    @returns: stripped stdout
-    """
-    return _git(repo_root, *args).stdout.strip()
-
-
 def default_repo_root() -> Path:
     """Repository root assumed when the CLI omits ``--repo-root``.
 
@@ -137,7 +85,7 @@ def branch_exists(repo_root: Path, branch: str) -> bool:
     @param branch: local branch name
     @returns: True when ``refs/heads/<branch>`` exists
     """
-    result = _git(
+    result = git(
         repo_root,
         'show-ref',
         '--verify',
@@ -155,7 +103,7 @@ def current_branch(repo_root: Path) -> str:
     @returns: branch name or empty string
     """
     try:
-        return _git_out(repo_root, 'symbolic-ref', '--short', 'HEAD')
+        return git_out(repo_root, 'symbolic-ref', '--short', 'HEAD')
     except subprocess.CalledProcessError:
         return ''
 
@@ -167,7 +115,7 @@ def worktree_path_for_branch(repo_root: Path, branch: str) -> Path | None:
     @param branch: local branch name
     @returns: worktree path, or None when no such worktree is listed
     """
-    out = _git_out(repo_root, 'worktree', 'list', '--porcelain')
+    out = git_out(repo_root, 'worktree', 'list', '--porcelain')
     current_path: Path | None = None
     want = f'refs/heads/{branch}'
     for line in out.splitlines():
@@ -402,11 +350,11 @@ def plan_tip_tests(paths: Sequence[str], repo_root: Path) -> TipTestPlan:
     return TipTestPlan('full', ())
 
 def _checkout(repo_root: Path, ref: str) -> None:
-    _git(repo_root, 'checkout', ref)
+    git(repo_root, 'checkout', ref)
 
 
 def _merge_no_ff(repo_root: Path, branch: str) -> None:
-    _git(
+    git(
         repo_root,
         'merge',
         '--no-ff',
@@ -431,12 +379,12 @@ def _remove_worktree_if_present(repo_root: Path, branch: str) -> Path | None:
         return None
     if path.resolve() == repo_root.resolve():
         return None
-    _git(repo_root, 'worktree', 'remove', '--force', str(path))
+    git(repo_root, 'worktree', 'remove', '--force', str(path))
     return path
 
 
 def _delete_branch(repo_root: Path, branch: str) -> None:
-    _git(repo_root, 'branch', '-d', branch)
+    git(repo_root, 'branch', '-d', branch)
 
 
 def resolve_push_target(
@@ -453,7 +401,7 @@ def resolve_push_target(
     @param branch: local branch to publish
     @returns: ``(remote, remote_branch)``, or None when nowhere to push
     """
-    result = _git(
+    result = git(
         repo_root,
         'rev-parse',
         '--abbrev-ref',
@@ -466,7 +414,7 @@ def resolve_push_target(
             remote, remote_branch = upstream.split('/', 1)
             if remote and remote_branch:
                 return remote, remote_branch
-    remotes = [line for line in _git_out(repo_root, 'remote').splitlines() if line]
+    remotes = [line for line in git_out(repo_root, 'remote').splitlines() if line]
     if 'origin' in remotes:
         return 'origin', branch
     if len(remotes) == 1:
@@ -492,7 +440,7 @@ def push_branch(repo_root: Path, branch: str) -> int:
     remote, remote_branch = target
     print(f'ship_branch: pushing {branch!r} to {remote}/{remote_branch}…')
     try:
-        _git(repo_root, 'push', remote, f'{branch}:{remote_branch}')
+        git(repo_root, 'push', remote, f'{branch}:{remote_branch}')
     except subprocess.CalledProcessError as exc:
         err = (exc.stderr or exc.stdout or str(exc)).strip()
         print(
@@ -749,7 +697,7 @@ def list_unmerged_branches(repo_root: Path, main_branch: str = 'main') -> list[s
     @param main_branch: integration branch
     @returns: branch names (short), excluding ``main_branch``
     """
-    out = _git_out(repo_root, 'branch', '--no-merged', main_branch)
+    out = git_out(repo_root, 'branch', '--no-merged', main_branch)
     names: list[str] = []
     for line in out.splitlines():
         # Current branch is marked '*'; a branch checked out in another
@@ -769,7 +717,7 @@ def commits_ahead(repo_root: Path, branch: str, main_branch: str = 'main') -> in
     @param main_branch: integration branch
     @returns: commit count in ``main_branch..branch``
     """
-    out = _git_out(repo_root, 'rev-list', '--count', f'{main_branch}..{branch}')
+    out = git_out(repo_root, 'rev-list', '--count', f'{main_branch}..{branch}')
     return int(out) if out else 0
 
 
@@ -785,7 +733,7 @@ def changed_files_vs_main(
     @param main_branch: integration branch
     @returns: path strings (as reported by git)
     """
-    out = _git_out(
+    out = git_out(
         repo_root,
         'diff',
         '--name-only',
@@ -823,7 +771,7 @@ def list_leftover_worktrees(repo_root: Path) -> list[LinkedWorktree]:
     @param repo_root: any worktree of the repository (used only for git cwd)
     @returns: leftover linked worktrees
     """
-    out = _git_out(repo_root, 'worktree', 'list', '--porcelain')
+    out = git_out(repo_root, 'worktree', 'list', '--porcelain')
     entries: list[LinkedWorktree] = []
     current_path: Path | None = None
     current_head: str | None = None

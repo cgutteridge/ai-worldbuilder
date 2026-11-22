@@ -10,6 +10,7 @@ import math
 from collections import deque
 from dataclasses import dataclass
 
+from block_store import state_props
 from cellmath import FACING, N4, N8
 from roof_material import family_variants
 
@@ -66,7 +67,7 @@ def _stair_facing_half(state: str) -> tuple[str, str, str] | None:
     """
     if '_stairs' not in state or '[' not in state or not state.endswith(']'):
         return None
-    props = dict(kv.split('=', 1) for kv in state[state.index('[') + 1:-1].split(',') if '=' in kv)
+    props = state_props(state, syntax='filtered')
     facing = props.get('facing')
     half = props.get('half', 'bottom')
     if facing not in ROOF_DELTA or half not in ('bottom', 'top'):

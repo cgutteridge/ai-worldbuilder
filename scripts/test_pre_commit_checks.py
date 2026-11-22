@@ -66,7 +66,7 @@ class CheckoutBranchNamesTest(unittest.TestCase):
         with mock.patch.object(pcc, 'current_branch', return_value='main'):
             with mock.patch.object(
                 pcc,
-                '_git',
+                'git_output',
                 return_value='main\ntask/70-foo\ntask/71-bar',
             ) as git_mock:
                 names = pcc.checkout_branch_names(root)
@@ -87,7 +87,7 @@ class CheckoutBranchNamesTest(unittest.TestCase):
             raise AssertionError(f'unexpected git args: {args!r}')
 
         with mock.patch.object(pcc, 'current_branch', return_value=''):
-            with mock.patch.object(pcc, '_git', side_effect=fake_git):
+            with mock.patch.object(pcc, 'git_output', side_effect=fake_git):
                 names = pcc.checkout_branch_names(root)
         self.assertEqual(names, ['task/70-foo', 'task/71-bar'])
         self.assertEqual(
@@ -103,7 +103,7 @@ class CheckoutBranchNamesTest(unittest.TestCase):
             'current_branch',
             return_value='task/79-tracker-hook-points-at-head',
         ):
-            with mock.patch.object(pcc, '_git') as git_mock:
+            with mock.patch.object(pcc, 'git_output') as git_mock:
                 names = pcc.checkout_branch_names(root)
         self.assertEqual(names, ['task/79-tracker-hook-points-at-head'])
         git_mock.assert_not_called()
@@ -393,14 +393,14 @@ class TrackerModelFlagsTest(unittest.TestCase):
             if flag != 'missing':
                 task['builderTask'] = flag
             with self.subTest(flag=flag), mock.patch.object(
-                pcc, '_git', return_value=json.dumps({'tasks': [task]})
+                pcc, 'git_output', return_value=json.dumps({'tasks': [task]})
             ):
                 self.assertEqual(
                     pcc.invalid_tracker_files(Path('/tmp/repo'), ['tasks/index.json']),
                     ['tasks/index.json'],
                 )
         for flag in (True, False):
-            with mock.patch.object(pcc, '_git', return_value=json.dumps(
+            with mock.patch.object(pcc, 'git_output', return_value=json.dumps(
                 {'tasks': [{'builderTask': flag}]}
             )) as staged:
                 self.assertEqual(pcc.invalid_tracker_files(
@@ -411,7 +411,7 @@ class TrackerModelFlagsTest(unittest.TestCase):
         for task, expected in (({}, []), ({'builderTask': True}, []),
                                ({'builderTask': False}, []),
                                ({'builderTask': 'false'}, ['tasks/done.json'])):
-            with mock.patch.object(pcc, '_git', return_value=json.dumps({'tasks': [task]})):
+            with mock.patch.object(pcc, 'git_output', return_value=json.dumps({'tasks': [task]})):
                 self.assertEqual(pcc.invalid_tracker_files(
                     Path('/tmp/repo'), ['tasks/done.json']), expected)
 
@@ -419,7 +419,7 @@ class TrackerModelFlagsTest(unittest.TestCase):
         for skip_tests in (False, True):
             with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']), \
                     mock.patch.object(pcc, 'staged_paths', return_value=['tasks/index.json', 'scripts/foo.py']), \
-                    mock.patch.object(pcc, '_git', return_value='{"tasks":[{"builderTask":"true"}]}'), \
+                    mock.patch.object(pcc, 'git_output', return_value='{"tasks":[{"builderTask":"true"}]}'), \
                     mock.patch.object(pcc, 'run_unit_tests') as tests, \
                     mock.patch('builtins.print'):
                 self.assertEqual(pcc.run_pre_commit(Path('/tmp/repo'), skip_tests=skip_tests), 1)

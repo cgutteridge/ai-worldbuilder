@@ -161,5 +161,24 @@ class ComponentsTest(unittest.TestCase):
         self.assertEqual(C.components(cells, C.N8), C.components(reversed(cells), C.N8))
 
 
+class SegmentDistanceContracts(unittest.TestCase):
+    """Footprint projection and ground rasterization retain their distinct results."""
+    def test_projection_and_distance_along_share_the_segment(self):
+        from cellmath import segment_distance
+        for point, distance, foot, along in (
+            ((3, 4), 4.0, (3.0, 0.0), 3.0),
+            ((-2, 0), 2.0, (0, 0), 0.0),
+            ((12, 0), 2.0, (10, 0), 10.0),
+        ):
+            with self.subTest(point=point):
+                self.assertEqual(segment_distance(point, (0, 0), (10, 0)), (distance, foot))
+                self.assertEqual(segment_distance(point, (0, 0), (10, 0), along=True), (distance, along))
+
+    def test_degenerate_segment_keeps_the_point_and_zero_along(self):
+        from cellmath import segment_distance
+        self.assertEqual(segment_distance((3, 4), (0, 0), (0, 0)), (5.0, (0, 0)))
+        self.assertEqual(segment_distance((3, 4), (0, 0), (0, 0), along=True), (5.0, 0.0))
+
+
 if __name__ == '__main__':
     unittest.main()

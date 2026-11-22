@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 
+from site_kit import AIR_IDS
 from cellmath import DIRS  # noqa: E402
 FACING_FACE = {'north': 'N', 'south': 'S', 'west': 'W', 'east': 'E'}   # door facing = outward
 SCAN_DOWN = 5          # steps/landings are looked for this far below the door's floor
@@ -99,7 +100,7 @@ def entrances_from_blocks(blocks, footprint=()):
             if col in fp:
                 break
             ys = [yy for yy, bb in column.get(col, ()) if y - 1 - SCAN_DOWN <= yy <= y and bb and
-                  not re.match(r'(?:minecraft:)?(air|cave_air|void_air)\b', bb)]
+                  not re.match(rf'(?:minecraft:)?({"|".join(AIR_IDS)})\b', bb)]
             if not ys:
                 break
             approach.append(col)
