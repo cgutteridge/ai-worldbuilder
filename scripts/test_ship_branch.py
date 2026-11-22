@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 import ship_branch as sb
 
@@ -319,6 +320,40 @@ class TipTestPlanMappingTest(unittest.TestCase):
     def test_plan_full_when_code_but_no_mapped_tests(self) -> None:
         plan = sb.plan_tip_tests(['scripts/bar.py'], self.root)
         self.assertEqual(plan.kind, 'full')
+        self.assertFalse(plan.include_bakeoff)
+
+    def test_bakeoff_change_opts_in_without_joining_the_default_suite(self) -> None:
+        bakeoff = self.root / 'bakeoff'
+        bakeoff.mkdir()
+        (bakeoff / 'model_bakeoff.py').write_text('x = 1\n', encoding='utf-8')
+        (bakeoff / 'test_model_bakeoff.py').write_text(
+            'import unittest\n', encoding='utf-8'
+        )
+        plan = sb.plan_tip_tests(['bakeoff/model_bakeoff.py'], self.root)
+        self.assertEqual(plan.kind, 'only')
+        self.assertEqual(plan.modules, ('test_model_bakeoff',))
+        self.assertTrue(plan.include_bakeoff)
+        self.assertTrue(
+            sb.modules_require_bakeoff(('test_model_bakeoff',), self.root)
+        )
+        self.assertFalse(sb.modules_require_bakeoff(('test_foo',), self.root))
+
+        script = self.root / 'scripts' / 'run_tests.py'
+        script.write_text('# runner\n', encoding='utf-8')
+        with mock.patch.object(sb.subprocess, 'call', return_value=0) as call:
+            code = sb.run_unit_tests(
+                self.root,
+                only=plan.modules,
+                include_bakeoff=plan.include_bakeoff,
+            )
+            full = sb.run_unit_tests(self.root)
+        self.assertEqual(code, 0)
+        opted = call.call_args_list[0].args[0]
+        default = call.call_args_list[1].args[0]
+        self.assertIn('--bakeoff', opted)
+        self.assertIn('--only', opted)
+        self.assertIn('test_model_bakeoff', opted)
+        self.assertNotIn('--bakeoff', default)
 
 
 class ShipBranchSweepTest(unittest.TestCase):

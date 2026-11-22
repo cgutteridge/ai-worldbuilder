@@ -1,6 +1,6 @@
 # Model bake-offs
 
-> **Closed 2026-10-26.** The current `config/build-roles.json` (Opus 5.5 low designs, Sonnet 5.5 medium builds) is the final choice. No further sittings are planned; this folder is kept as the record.
+> **Historical.** Closed 2026-10-26 and frozen in place. This folder is the record of that experiment, not current build guidance. No further sittings. The files and [PROTOCOL.md](PROTOCOL.md) stay. The default test suite does not collect `bakeoff/`; opt in with `python3 scripts/run_tests.py --bakeoff`.
 
 Framework for comparing bulk-work models on place design/review. Each sitting
 names a **designer** and a **builder** (defaults: `config/build-roles.json`;
@@ -26,7 +26,7 @@ python3 bakeoff/model_bakeoff.py --world bakeoff score R-001 --overall pass --ax
 python3 bakeoff/model_bakeoff.py --world bakeoff usage R-001 --input 12000 --output 3000 --source cursor-ui
 ```
 
-Sitting sequence: [`sitting_steps` in config.json](config.json). Rules / pad fairness: [PROTOCOL.md](PROTOCOL.md), [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md). Skill: `.agents/skills/model-bakeoff` (Claude discovers it through the stub in `.claude/skills/model-bakeoff`).
+Sitting sequence: [`sitting_steps` in config.json](config.json). Rules / pad fairness: [PROTOCOL.md](PROTOCOL.md), [packs/v1/FAIRNESS.md](packs/v1/FAIRNESS.md). Skill: `.agents/skills/model-bakeoff` is historical (Claude stub: `.claude/skills/model-bakeoff`).
 
 Active tiers for now: **low** and **mid** only. High / non-bulk models are catalogued with `--no-bulk` and never scheduled.
 

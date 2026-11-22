@@ -2,15 +2,17 @@
 """Run stdlib unit tests for this repository (no Minecraft required).
 
   python3 scripts/run_tests.py
-  python3 scripts/run_tests.py --only test_model_bakeoff
   python3 scripts/run_tests.py --only test_run_tests --only test_ship_branch
+  python3 scripts/run_tests.py --bakeoff
+  python3 scripts/run_tests.py --bakeoff --only test_model_bakeoff
 
-``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``,
-``lib/<category>/test_foo.py``, or ``bakeoff/test_foo.py``), not a path. Repeat
-the flag (or pass it multiple times) to select several modules. With no
-``--only`` flags the runner discovers the full ``test_*.py`` suite under
-``scripts/``, each ``lib/<category>/``, and ``bakeoff/``. An unknown stem fails
-with a clear error.
+``--only`` takes a unittest module stem (``test_foo`` for ``scripts/test_foo.py``
+or ``lib/<category>/test_foo.py``), not a path. Repeat the flag (or pass it
+multiple times) to select several modules. With no ``--only`` flags the runner
+discovers the full ``test_*.py`` suite under ``scripts/`` and each
+``lib/<category>/``. The closed bake-off under ``bakeoff/`` is left out of that
+default suite; ``--bakeoff`` opts in (alone, or with ``--only`` for a stem such
+as ``test_model_bakeoff``). An unknown stem fails with a clear error.
 
 Full discover (no ``--only``) takes a fail-fast advisory flock on
 ``<git-common-dir>/ai-worldbuilder-full-suite.lock`` (shared across worktrees).
@@ -63,12 +65,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the test runner.
 
     @param argv: argument vector without the program name (default: ``sys.argv[1:]``)
-    @returns: namespace with ``only`` and ``parent_holds_lock``
+    @returns: namespace with ``only``, ``bakeoff`` and ``parent_holds_lock``
     """
     parser = argparse.ArgumentParser(
         description=(
-            'Run stdlib unit tests under scripts/, lib/*/, and bakeoff/. '
-            'Optional --only selects module stems (test_foo).'
+            'Run stdlib unit tests under scripts/ and lib/*/. '
+            'Optional --only selects module stems (test_foo). '
+            '--bakeoff also collects the closed bake-off tests.'
         )
     )
     parser.add_argument(
@@ -78,9 +81,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest='only',
         default=None,
         help=(
-            'unittest module stem under scripts/, lib/*/, or bakeoff/ '
-            '(e.g. test_model_bakeoff); repeatable. Default: discover all '
-            'test_*.py modules.'
+            'unittest module stem under scripts/ or lib/*/ '
+            '(and bakeoff/ when --bakeoff is set); repeatable. '
+            'Default: discover test_*.py modules, excluding bakeoff/.'
+        ),
+    )
+    parser.add_argument(
+        '--bakeoff',
+        action='store_true',
+        dest='bakeoff',
+        default=False,
+        help=(
+            'Opt in to bakeoff/test_*.py. The closed bake-off is omitted '
+            'from the default suite.'
         ),
     )
     parser.add_argument(
@@ -201,13 +214,12 @@ def load_suite(
 
     @param scripts_dir: primary directory containing ``test_*.py`` modules
     @param only: module stems to load; None discovers all ``test_*.py`` files
-    @param extra_dirs: additional roots (e.g. ``bakeoff/``) searched after
-        ``scripts_dir`` for discover and ``--only``
+    @param extra_dirs: additional roots searched with ``scripts_dir`` for
+        discover and ``--only`` (``lib/<category>/``, and ``bakeoff/`` only
+        when the caller opted in)
     @returns: loaded suite
     @raises UnknownTestModule: when a named stem has no ``<stem>.py`` file
     """
-    # Prefer bakeoff/ ahead of scripts/ so real modules win over thin shims
-    # if unittest.discover reorders sys.path.
     extras = [d for d in (extra_dirs or ()) if d.is_dir()]
     dirs = [*extras, scripts_dir] if extras else [scripts_dir]
     for directory in dirs:
@@ -330,11 +342,35 @@ def lib_test_dirs(repo_root: Path) -> list[Path]:
     )
 
 
+def discover_extra_dirs(
+    repo_root: Path,
+    *,
+    include_bakeoff: bool = False,
+) -> list[Path]:
+    """Roots searched besides ``scripts/`` when building the suite.
+
+    ``lib/<category>/`` is always included. ``bakeoff/`` is the closed
+    experiment and is included only when ``include_bakeoff`` is true
+    (CLI ``--bakeoff``).
+
+    @param repo_root: tool repository root
+    @param include_bakeoff: opt in to ``bakeoff/test_*.py``
+    @returns: extra discover roots (existing directories only)
+    """
+    extras = lib_test_dirs(repo_root)
+    if include_bakeoff:
+        bakeoff = repo_root / 'bakeoff'
+        if bakeoff.is_dir():
+            extras.append(bakeoff)
+    return extras
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Discover and run ``test_*.py`` under ``scripts/``, ``lib/*/``, ``bakeoff/``.
+    """Discover and run ``test_*.py`` under ``scripts/`` and ``lib/*/``.
 
     With ``--only``, runs only the named module stems (no full-suite lock).
-    Without flags, discovers the full suite under the advisory flock.
+    Without flags, discovers the default suite under the advisory flock.
+    ``bakeoff/`` is collected only when ``--bakeoff`` is set.
 
     @param argv: optional CLI args (without program name)
     @returns: 0 success, 1 test failure / unknown module,
@@ -343,13 +379,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     scripts = Path(__file__).resolve().parent
     root = scripts.parent
-    bakeoff = root / 'bakeoff'
     shims = root / 'shims'
     lib_dirs = lib_test_dirs(root)
     # Put lib/* ahead of scripts/ so bare imports hit libraries, not CLI wrappers.
     # Do NOT import script_env / site_kit here: unit_test_world() selects the
     # disposable checkout first, then the suite imports world-aware modules.
-    for path in (scripts, shims, *reversed(lib_dirs), bakeoff):
+    for path in (scripts, shims, *reversed(lib_dirs)):
         if path.is_dir():
             _ensure_on_path(path)
     for path in reversed(lib_dirs):
@@ -357,9 +392,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     def _load_and_run() -> int:
         with unit_test_world():
-            extras = list(lib_dirs)
-            if bakeoff.is_dir():
-                extras.append(bakeoff)
+            extras = discover_extra_dirs(
+                root, include_bakeoff=bool(args.bakeoff)
+            )
             try:
                 suite = load_suite(
                     scripts,

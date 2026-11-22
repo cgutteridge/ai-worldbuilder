@@ -13,10 +13,10 @@ python3 scripts/build_roles.py --world <world> show
 python3 scripts/build_roles.py --world <world> resolve --tool cursor --builder composer --json
 ```
 
-Override per task (orchestrator / redo prompt) or bake-off `open --designer` /
-`--model`. When the tool matches the config tool and designer is omitted, the
-config designer is used. When the tool differs, omitted designer equals the
-builder so both roles stay named without borrowing another host's models.
+Override per task (orchestrator / redo prompt). When the tool matches the
+config tool and designer is omitted, the config designer is used. When the
+tool differs, omitted designer equals the builder so both roles stay named
+without borrowing another host's models.
 
 ## Behaviour
 
@@ -74,8 +74,9 @@ hand-off. Fold these into that pass — they are not a separate step:
   XY from the aerial / photo. Omit `details` (or leave it empty) only when
   none are visible — say so in `notes`.
 
-Bake-off sittings use the same defaults on `open` when `--designer` is omitted;
-hybrid scoring and ghost baseline stay bake-off-only
+The closed bake-off used these same defaults on `open` when `--designer` was
+omitted. Hybrid scoring and the ghost baseline stayed bake-off-only. That
+experiment is historical
 ([bakeoff/PROTOCOL.md](../bakeoff/PROTOCOL.md)).
 
 ## Guard refusals and what a builder may change

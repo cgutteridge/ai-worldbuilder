@@ -9,7 +9,10 @@ Branch-gate policy: code lands on ``task/*`` branches and always ends merged.
 ``merge`` maps ``main...branch`` paths to ``run_tests --only`` modules on the
 tip (skip for docs/tracker/skill-only; full suite when mapping is empty but
 code changed, or when the runner / pre-commit / ship_branch / git hooks
-changed). After tip tests pass it takes the full-suite flock; if busy it
+changed). The full suite is default discovery and does not collect the
+frozen ``bakeoff/`` tests. When a mapped ``--only`` stem lives only under
+``bakeoff/``, tip tests pass ``--bakeoff``. After tip tests pass it takes
+the full-suite flock; if busy it
 refuses the merge. Under the lock it merges ``--no-ff``, runs the full suite
 on main with ``--parent-holds-lock``, then cleans up. After the lock releases,
 it pushes main to its upstream (or ``origin``). Main test failures leave the
@@ -181,12 +184,18 @@ def run_unit_tests(
     *,
     only: Sequence[str] | None = None,
     parent_holds_lock: bool = False,
+    include_bakeoff: bool = False,
 ) -> int:
     """Run ``scripts/run_tests.py`` in ``repo_root``.
+
+    The default command is the default suite, which does not collect
+    ``bakeoff/``. Pass ``include_bakeoff`` only for an explicit opt-in
+    (mapped ``--only`` stems that live under that tree).
 
     @param repo_root: repository root whose tip is under test
     @param only: optional module stems for ``--only`` (repeatable)
     @param parent_holds_lock: pass ``--parent-holds-lock`` (merge under flock)
+    @param include_bakeoff: pass ``--bakeoff`` so frozen bake-off tests load
     @returns: process exit code (0 success)
     """
     script = repo_root / 'scripts' / 'run_tests.py'
@@ -197,6 +206,8 @@ def run_unit_tests(
         )
         return 1
     cmd: list[str] = [sys.executable, str(script)]
+    if include_bakeoff:
+        cmd.append('--bakeoff')
     if only:
         for stem in only:
             cmd.extend(['--only', stem])
@@ -276,6 +287,10 @@ def map_changed_paths_to_modules(
     only when the matching test module exists under ``scripts/`` or ``bakeoff/``.
     Docs/skills/tasks/rules/providers/worlds are ignored.
 
+    A stem that exists only under ``bakeoff/`` still maps here, but the
+    default suite does not discover that tree. Callers pass ``--bakeoff``
+    for those stems (see :func:`modules_require_bakeoff`).
+
     @param paths: changed paths relative to the repo root
     @param repo_root: checkout used to probe for ``scripts/test_*.py`` /
         ``bakeoff/test_*.py``
@@ -322,16 +337,48 @@ def map_changed_paths_to_modules(
     return sorted(found)
 
 
+def modules_require_bakeoff(modules: Sequence[str], repo_root: Path) -> bool:
+    """Whether ``--only`` stems need ``--bakeoff`` to load.
+
+    A stem under ``scripts/`` or ``lib/`` loads on the default suite path.
+    A stem that exists only under ``bakeoff/`` does not: that tree is opt-in.
+
+    @param modules: ``run_tests --only`` stems
+    @param repo_root: checkout used to probe for test files
+    @returns: True when the runner must be passed ``--bakeoff``
+    """
+    scripts = repo_root / 'scripts'
+    lib_root = repo_root / 'lib'
+    bakeoff = repo_root / 'bakeoff'
+    lib_dirs: list[Path] = []
+    if lib_root.is_dir():
+        lib_dirs = [
+            p for p in lib_root.iterdir()
+            if p.is_dir() and not p.name.startswith('.')
+        ]
+    for stem in modules:
+        if (scripts / f'{stem}.py').is_file():
+            continue
+        if any((category / f'{stem}.py').is_file() for category in lib_dirs):
+            continue
+        if (bakeoff / f'{stem}.py').is_file():
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class TipTestPlan:
     """How tip tests should run before a merge.
 
     ``kind`` is ``skip`` (docs/tracker/skill-only), ``only`` (``--only``
-    modules), or ``full`` (default discover suite).
+    modules), or ``full`` (default discover suite, which skips ``bakeoff/``).
+    ``include_bakeoff`` is set only for an ``only`` plan whose stems need
+    the bake-off opt-in. Full-suite plans leave it false.
     """
 
     kind: str
     modules: tuple[str, ...]
+    include_bakeoff: bool = False
 
 
 def plan_tip_tests(paths: Sequence[str], repo_root: Path) -> TipTestPlan:
@@ -347,7 +394,11 @@ def plan_tip_tests(paths: Sequence[str], repo_root: Path) -> TipTestPlan:
         return TipTestPlan('full', ())
     modules = map_changed_paths_to_modules(paths, repo_root)
     if modules:
-        return TipTestPlan('only', tuple(modules))
+        return TipTestPlan(
+            'only',
+            tuple(modules),
+            include_bakeoff=modules_require_bakeoff(modules, repo_root),
+        )
     return TipTestPlan('full', ())
 
 def _checkout(repo_root: Path, ref: str) -> None:
@@ -481,10 +532,16 @@ def _run_tip_tests(
         return 0
     if plan.kind == 'only':
         joined = ', '.join(plan.modules)
+        bakeoff_flag = ' --bakeoff' if plan.include_bakeoff else ''
         print(
             f'ship_branch: tip tests on {branch!r} with --only {joined}'
+            f'{bakeoff_flag}'
         )
-        return run_unit_tests(tip_checkout, only=plan.modules)
+        return run_unit_tests(
+            tip_checkout,
+            only=plan.modules,
+            include_bakeoff=plan.include_bakeoff,
+        )
     print(f'ship_branch: tip tests on {branch!r} (full suite)')
     return run_unit_tests(tip_checkout)
 

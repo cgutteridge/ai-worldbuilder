@@ -1,45 +1,18 @@
 ---
 name: model-bakeoff
 description: >-
-  Run or continue a model bake-off sitting (feature_design pilot). Use when the
-  user says bake-off, model bake-off, open a round, score a round, or regenerate
-  the bake-off ghost.
+  Historical record of the closed model bake-off. Use when the user says
+  bake-off, model bake-off, open a round, score a round, or regenerate the
+  bake-off ghost: say the experiment is frozen and point at bakeoff/OVERVIEW.md.
 ---
 
-Every sitting names designer + builder (`open --model <builder> [--designer …]`).
-Defaults from `config/build-roles.json` when `--designer` is omitted (see
-`rules/build-roles.md`). Different ids → hybrid sitting; same id → one session.
-Records under `bakeoff/`. CLI: `python3 bakeoff/model_bakeoff.py --world bakeoff`.
+The model bake-off is a closed historical record (frozen in place; the last
+choice was recorded on 2026-10-26). The files and `bakeoff/PROTOCOL.md` stay
+as that record.
 
-## Active world
+When this skill matches, tell the user the experiment is closed and point at
+`bakeoff/OVERVIEW.md` and `bakeoff/PROTOCOL.md`. Leave the world, the ghost
+baseline and the round files as they are.
 
-Bake-offs use `worlds/bakeoff/` (Minecraft save `bakeoff`). Agent shells do not keep
-exports between calls, so **prefix every** bake-off command with
-`--world bakeoff` on every bake-off command. Example:
-
-```bash
-python3 bakeoff/model_bakeoff.py --world bakeoff status
-python3 bakeoff/model_bakeoff.py --world bakeoff open --tool cursor --model composer
-```
-
-`open` and `repair` refuse if the active world is not `bakeoff`.
-
-vector_map footprints come from `worlds/bakeoff/reference/vector_map/` (same
-download → cache → project reference story as any world; see
-`lib/sources/vector_map_clips.py`). Never pass `osm_root=` pointing at
-`southampton-build` or another world. If clips are missing, copy a populated
-`reference/vector_map/` into bakeoff (real files) — recovery only, not a live
-symlink or cross-world read.
-
-## Before acting
-
-1. Read `bakeoff/PROTOCOL.md` and the pack brief + `bakeoff/packs/v1/FAIRNESS.md`.
-2. Prefix as above, then `python3 bakeoff/model_bakeoff.py --world bakeoff status` (or `show R-NNN`).
-
-## Sitting sequence
-
-Canonical steps live in `bakeoff/config.json` (`sitting_steps`). `open` / `show`
-render them onto the round checklist and sitting card — do not copy the list here.
-World prefix as above; no region restore (ADR 004).
-
-Do not score without the interview. Do not invent token counts.
+The CLI remains `python3 bakeoff/model_bakeoff.py`. Tests under `bakeoff/`
+stay out of the default suite; `python3 scripts/run_tests.py --bakeoff` opts in.

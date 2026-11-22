@@ -736,18 +736,23 @@ class TestBakeoffWorldGuard(unittest.TestCase):
             TOOL_ROOT / '.agents' / 'skills' / 'model-bakeoff' / 'SKILL.md'
         ).read_text(encoding='utf-8')
         protocol = (TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md').read_text(encoding='utf-8')
-        for text, name in ((skill, 'SKILL.md'), (protocol, 'PROTOCOL.md')):
-            self.assertIn(BAKEOFF_WORLD_FLAG, text, msg=name)
-            self.assertNotRegex(
-                text,
-                r'(?i)AI_WORLDBUILDER_WORLD_ROOT',
-                msg=f'{name} must not mention the retired env var',
-            )
+        self.assertIn(BAKEOFF_WORLD_FLAG, protocol, msg='PROTOCOL.md')
+        self.assertNotRegex(
+            protocol,
+            r'(?i)AI_WORLDBUILDER_WORLD_ROOT',
+            msg='PROTOCOL.md must not mention the retired env var',
+        )
+        # The skill is a historical pointer, not a live command list.
+        self.assertIn('historical', skill.lower(), msg='SKILL.md')
+        self.assertNotRegex(
+            skill,
+            r'(?i)AI_WORLDBUILDER_WORLD_ROOT',
+            msg='SKILL.md must not mention the retired env var',
+        )
 
     def test_docs_link_sitting_steps_instead_of_copying(self):
         """Operator docs must point at config.json sitting_steps, not duplicate them."""
         paths = [
-            TOOL_ROOT / '.agents' / 'skills' / 'model-bakeoff' / 'SKILL.md',
             TOOL_ROOT / 'bakeoff' / 'PROTOCOL.md',
             TOOL_ROOT / 'bakeoff' / 'README.md',
             TOOL_ROOT / 'bakeoff' / 'OVERVIEW.md',
@@ -760,6 +765,11 @@ class TestBakeoffWorldGuard(unittest.TestCase):
                 text,
                 msg=f'{name} must link to config sitting_steps',
             )
+        skill = (
+            TOOL_ROOT / '.agents' / 'skills' / 'model-bakeoff' / 'SKILL.md'
+        ).read_text(encoding='utf-8')
+        self.assertIn('bakeoff/OVERVIEW.md', skill)
+        self.assertNotIn('sitting_steps', skill)
 
     def test_cli_subprocess_status_imports(self):
         """Running the script as ``python3 bakeoff/model_bakeoff.py`` must find active_world."""
