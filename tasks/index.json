@@ -205,16 +205,7 @@
       "builderTask": true,
       "notes": "GOAL. Design and build the first level crossing feature, in game, with the owner: the crossing near MC 6980,-4343 (cell 54,-34). Claude chooses the gates, lights and colours from OSM tags and Street View, then builds it using the crossing mechanism.\n\nREAD FIRST: AGENTS.md; docs/plans/railway.md (\"Owner decisions\" 7, 9, 10, 11); docs/plans/bridges-and-tunnels.md (\"Already decided\"); docs/agents/model-and-effort.md (builderTask gate; owner present); the crossing feature module and schema from the crossing mechanism ticket (lib/builds/, rules/feature-builds.md); the `snag` skill; rules/build-roles.md.\n\nEVIDENCE ALREADY FOUND (OSM, node on each of the two tracks about 4 blocks apart, near 50.92340 N, 1.38633 W): `railway=level_crossing`, `crossing:barrier=double_half`, `crossing:light=yes`, `crossing:bell=yes`, `crossing:activation=remote`, description \"Manually Controlled Barriers monitored with Closed-Circuit Television (MCB-CCTV)\". The branch line crosses a road here; read the road data for the surface and width.\n\nDECISIONS TO HONOUR: the rail feature trumps the road; the crossing feature lays the road surface across the rails itself; gates, lights and bell exist only because the OSM tags say so (barrier double_half, light yes, bell yes); their STYLE and COLOURS come from Street View, chosen in this build, with the frame ids recorded as evidence; no default style and no separate survey. The crossing is built after both abutting line features exist and joins their recorded levels.\n\nSTEPS:\n1. Check the dispatch gate and that the line features either side of the gap exist (the real-stretch trial ticket builds them). If not, stop and report; do not build the line here.\n2. Get Street View frames: `python3 shims/streetview_sample.py --world southampton-build sample --cell 54,-34` (optional `--grid` and `--yaws`; it has no dry-run flag, so before running it tell the owner the source (Google Street View thumbnails), the cell, the number of frames and that they save under instance/streetview/, and wait for a yes; see config/system-providers.json for the licence note: do not commit the frames). Read the sheet. Note the barrier arms, lamps, signs, colours, and anything the OSM tags missed.\n3. Record the evidence with scripts/decision_record.py (`evidence add`, `phase add`), write the crossing spec in site/builds/, choose valid block ids for bars, posts and lamps (iron bars and the other colour variants available in this game version; check lib/blocks/block_reference.py), dry-run, apply under the site lock, read back.\n4. Judge it in game with the owner: does it read as that crossing, are the colours right, does a cart pass through. Fix by editing the spec and re-applying; file snags in the world repo, not as tasks.\n5. Add a short Crossing section to docs/plans/railway.md: what Street View showed, choices made and why, what looked right or wrong, cost (minutes, session tokens, method), and the owner's verdict. Say whether the same approach should be repeated for other crossings.\n\nACCEPTANCE: the crossing spec and its evidence record exist in the world repo; the crossing is built, read back and judged in game by the owner; the railway findings file has the Crossing section with a Cost heading and the owner's verdict.\n"
     },
-    {
-      "id": 387,
-      "title": "Remove the legacy requiresClaude fallback from tasks.mjs and the pre-commit hook",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "GOAL. Remove the temporary support for the old task flag `requiresClaude`, now that tasks/index.json and tasks/done.json use `builderTask` (migrated in 9d42185, task #386).\n\nDO: (1) scripts/tasks.mjs: delete the `isBuilderTask` fallback to `task.requiresClaude`, make `isBuilderTask` read only `builderTask`, drop the `requiresClaude` validator line, and keep the `--requires-claude` rejection message for one more release (it points people at `--builder-task`). (2) scripts/pre_commit_checks.py: delete the legacy `requiresClaude` branch in `invalid_tracker_files`. (3) Update the tests that cover the fallback: remove \"reads a legacy requiresClaude flag only when builderTask is absent\" in scripts/tasks.test.mjs and the legacy-key case in scripts/test_pre_commit_checks.py; keep the rename-rejection test. (4) Check `grep -rn requiresClaude` outside tasks/done.json history text and the glossary _Avoid_ line finds nothing in scripts/ or lib/.\nACCEPTANCE: `node --test scripts/tasks.test.mjs` and `python3 scripts/run_tests.py` pass; a task with only the old key is rejected by the hook and ignored by check-run.\nWORKFLOW: task/* branch, ship-branch skill (merge pushes: confirm with the owner). builderTask false.\n"
-    },
+    
     
     {
       "id": 389,
@@ -229,7 +220,7 @@
     {
       "id": 390,
       "title": "Pitched roof stair shape: West plan disagrees with the game's neighbour rule at 6189,61,-5608",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
