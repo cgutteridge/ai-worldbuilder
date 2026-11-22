@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 419,
+  "nextTaskId": 427,
   "tasks": [
     
     
@@ -235,7 +235,7 @@
     {
       "id": 411,
       "title": "Move place history out of tool rules, skills and templates",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
@@ -243,6 +243,86 @@
       ],
       "builderTask": false,
       "notes": "Housekeeping review ticket T21. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T21' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: l (splittable per file)\n- Scope:\n  - 1.16 and 1.15 items 7-8.\n  - Rename `rules/terrace-builds.md` to `house-builds.md`.\n  - Cut the history in `handoff-layered-passes.md` and move its decisions into an ADR.\n  - Move the university register, campus and dated review notes into southampton-build.\n  - Make the acceptance fixture generic.\n  - Delete the six template redirect stubs and `ISSUES.txt`.\n- Check: `git grep -niE \"highfield|portswood|broadlands|oakdene|susu|university\" rules .agents templates` returns only deliberate generic examples, and the moved text exists in the world repo.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T20 (#410) because it both rewrite rules files."
+    },
+    {
+      "id": 419,
+      "title": "Remove default player UUID and structure namespace; fail early and fill from player_list_online",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
+    },
+    {
+      "id": 420,
+      "title": "Fix prepare's DEFAULT_PBF crash and stale extractor arguments",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5"
+    },
+    {
+      "id": 421,
+      "title": "Make new-world-build's clip folder count in clip_coverage",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "The skill says to use the place name for the clip folder, but _query_bbox only counts clips whose name encodes the extent. Have the extractor encode the extent, or change the skill example. Check: following the skill gives 100% clip_coverage for the home cell. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/6"
+    },
+    {
+      "id": 422,
+      "title": "Aerial coverage: stop dark pixels counting as missing and report the uncovered count",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "samples() skips pixels under 1% brightness and the blocker prints a rounded percentage (100.0% when one column is missing). Use an explicit no-data mask or alpha, or a small window, and print the uncovered column count. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/8"
+    },
+    {
+      "id": 423,
+      "title": "Include the home cell in new-world-build's first ghost",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "The first-ghost command uses --ring 1 but --include-focus is off, so it ghosts 8 cells not 9 and --ring 0 ghosts nothing. Add --include-focus to the skill commands or default it on for apply. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/7"
+    },
+    {
+      "id": 424,
+      "title": "Add matplotlib to pyproject.toml dependencies",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10"
+    },
+    {
+      "id": 425,
+      "title": "lidar_extremes: print the fitting y_offset range, not the fixed margin sentence",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Print offset_min..offset_max (already returned) with the suggestion instead of implying place headroom. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/11"
+    },
+    {
+      "id": 426,
+      "title": "Docs: cell-orchestrator prepare round trips and instance-doc ports and GDAL noise",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Two doc fixes. cell-orchestrator per-task steps: note the re-prepare after raising the marker and prepare --cell <neighbour> --apply --evidence-only for edge-crossing features (and find which evidence fact the marker raise changes if it is a real invalidation bug). Instance doc: only port 8766 listens at the title screen, and Arch GDAL plugin 'ERROR 1' lines are harmless. Two GitHub issues to close when this task closes: GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/9 and GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/12"
     }
   ]
 }
