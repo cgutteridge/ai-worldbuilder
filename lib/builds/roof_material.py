@@ -14,6 +14,11 @@ flat(ish)-only concrete rows are the solid colour blocks (black, gray,
 light gray, white). Terracotta and those concretes have neither slab nor
 stairs. ``smooth_stone`` has a slab only.
 
+Roof types (``types`` in the catalogue) name the common real roofs a designer
+meets: each maps to a recommended family plus one or two alternates, chosen
+against real roof colours and the vanilla textures. ``roof_type_blocks`` returns
+the blocks. Types are generic and UK-wide, never tied to a place.
+
 Names outside the catalogue are not judged. Callers that still need a
 full/slab/stairs triple keep the historical prefix (``brick`` -> ``bricks`` is
 catalogue data; ``granite`` stays ``granite`` / ``granite_slab`` /
@@ -148,6 +153,51 @@ def family_variants(material: str, *, catalogue: dict | None = None) -> dict[str
         out['slab'] = slab
     if isinstance(stairs, str) and stairs:
         out['stairs'] = stairs
+    return out
+
+
+def roof_type_names(*, catalogue: dict | None = None) -> list[str]:
+    """Names of the catalogue's roof types, in catalogue order.
+
+    @param catalogue: optional loaded catalogue
+    @returns: type names
+    """
+    return list((catalogue or load_catalogue()).get('types', {}))
+
+
+def roof_type_blocks(type_name: str, *, catalogue: dict | None = None) -> dict:
+    """Recommended blocks for a named roof type.
+
+    Pitched types return a triad (full block, slab and stairs); a flatish type
+    returns its full block and slab where it has them. Alternates come back in
+    the same shape, best first.
+
+    @param type_name: a name from ``roof_type_names``
+    @param catalogue: optional loaded catalogue
+    @returns: ``type``, ``slope``, ``family``, ``full``, ``slab``, ``stairs``,
+        ``alternates`` (list of the same keys, per family) and ``note``
+    @raises ValueError: when ``type_name`` is not a roof type
+    """
+    cat = catalogue or load_catalogue()
+    types = cat.get('types', {})
+    row = types.get(type_name)
+    if row is None:
+        raise ValueError(
+            f'roof type {type_name!r} is not known; types: {", ".join(types) or "none"}'
+        )
+
+    def entry(family_id: str) -> dict:
+        got = roof_blocks(family_id, row['slope'], catalogue=cat)
+        return {
+            'family': family_id,
+            'full': got['full'],
+            'slab': got['slab'],
+            'stairs': got['stairs'],
+        }
+
+    out = {'type': type_name, 'slope': row['slope'], **entry(row['family'])}
+    out['alternates'] = [entry(alt) for alt in row.get('alternates', [])]
+    out['note'] = row.get('note', '')
     return out
 
 
@@ -336,3 +386,35 @@ def _validate_catalogue(data: dict, path: Path) -> None:
             raise ValueError(
                 f'{path}: families[{family_id!r}].triad must be {has_triad}'
             )
+    _validate_types(data.get('types', {}), families, path)
+
+
+def _validate_types(types: object, families: dict, path: Path) -> None:
+    """Refuse roof types that name unknown families or break the slope rule.
+
+    @param types: parsed ``types`` section (may be empty)
+    @param families: validated family table
+    @param path: source path, named in errors
+    @raises ValueError: on a missing or inconsistent field
+    """
+    if not isinstance(types, dict):
+        raise ValueError(f'{path}: types must be an object')
+    for type_id, row in types.items():
+        where = f'{path}: types[{type_id!r}]'
+        if not isinstance(row, dict):
+            raise ValueError(f'{where} must be an object')
+        extra = set(row) - {'slope', 'family', 'alternates', 'note'}
+        if extra:
+            raise ValueError(f'{where} has unknown keys {sorted(extra)}')
+        slope = row.get('slope')
+        if slope not in ('flatish', 'pitched'):
+            raise ValueError(f'{where}.slope must be flatish or pitched')
+        alternates = row.get('alternates', [])
+        if not isinstance(alternates, list):
+            raise ValueError(f'{where}.alternates must be a list')
+        for family_id in [row.get('family'), *alternates]:
+            family = families.get(family_id) if isinstance(family_id, str) else None
+            if family is None:
+                raise ValueError(f'{where} names unknown family {family_id!r}')
+            if slope == 'pitched' and not family['triad']:
+                raise ValueError(f'{where} is pitched but {family_id!r} is not a triad')
