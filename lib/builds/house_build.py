@@ -35,24 +35,14 @@ from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
 from roof_geometry import edge_distance_field, pitched_roof_states, roof_block_y, stair_shape_from_neighbours  # noqa: E402
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
-from site_kit import Plan, apply, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+import stoop  # noqa: E402
+from stoop import FACE, GROUND, TOWARD, stair  # noqa: E402
+from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
-# Same list as feature_build.GROUND, incl. the lidar ghost tops (task 286).
-GROUND = ('minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite', 'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block', 'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite',
-          'minecraft:gray_concrete', 'minecraft:black_concrete')
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
 from cellmath import DIRS, N8, OPP  # noqa: E402
 from entrance_approach import entrance_approach, entrances_from_blocks  # noqa: E402,F401  (read-only; #240)
-FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
-TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}       # facing of a stair that rises toward the house
-
-
-def stair(mat, facing, half='bottom', shape=None):
-    """Stair state using shared material names; optional explicit corner shape."""
-    block = family_variants(mat)['stairs']
-    corner = f',shape={shape}' if shape is not None else ''
-    return f'{block}[facing={facing},half={half}{corner}]'
 
 
 def load_spec(path):
@@ -179,8 +169,7 @@ class Build:
                 top = b + TOP
                 rng = range(b, top + 1)
             else:
-                if (self.live.block(x, b, z) or 'minecraft:air') == 'minecraft:air':
-                    self.set(x, b, z, 'stone')
+                # Margin: clear only, no stone shelf at floor level (#115); door stoops come from step_out.
                 rng = range(b + 1, b + TOP + 1)
             for y in rng:
                 if own or (self.live.block(x, y, z) or 'minecraft:air').split('[')[0] not in GROUND:
@@ -277,7 +266,7 @@ class Build:
         cells = [(c0[0] + ix * d, c0[1] + iz * d) for d in (2, 3, 4)]
         if all(c in h.inner for c in cells):
             for i, c in enumerate(cells):
-                self.set(c[0], b + 1 + i, c[1], stair('spruce', {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}[f]))
+                self.set(c[0], b + 1 + i, c[1], stair('spruce', TOWARD[f]))
             for c in cells[:2]:
                 self.set(c[0], b + 3, c[1], 'air')
         # rear door
@@ -324,7 +313,7 @@ class Build:
         dx, dz = DIRS[d]
         x, z = door[0] - dx, door[1] - dz
         if bd > b:
-            self.stoop_set(x, b + 1, z, stair('spruce', {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}[d]))
+            self.stoop_set(x, b + 1, z, stair('spruce', FACE[d]))
             lo = b + 2
         else:
             lo = b + 1
@@ -332,46 +321,10 @@ class Build:
             self.stoop_set(x, y, z, 'air')
 
     def top_solid(self, x, z, near):
-        # natural ground only (ignores roof fringe slabs and earlier steps of this build)
-        for y in ground_scan_range(near):
-            n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
-            if n in GROUND and n != 'minecraft:stone_stairs':
-                return y
-        return None
+        return stoop.top_solid(self.live, x, z, near)
 
     def step_out(self, st, d, b):
-        # walk outward from the stoop to the road: ground ABOVE the floor in the way (old import ledge) is
-        # lowered to the floor level; at the first column BELOW the floor a stair rises toward the house
-        # (a 1-block hop is not walkable in site_walk)
-        dx, dz = DIRS[d]
-        facing = TOWARD[d]
-        for k in range(1, self.spec['step_max'] + 1):
-            n = (st[0] + dx * k, st[1] + dz * k)
-            if n in self.owner or n in self.foreign:
-                continue
-            g = self.top_solid(*n, b)
-            if g is None:
-                continue
-            if self.spec['ledge_stair'] and g == b + 1 and k > 4:
-                # lowered ground ends at a 1-block ledge: stair rising away from the house onto it
-                self.stoop_set(n[0], g, n[1], stair('stone', FACE[d]))
-                print('ledge stair at', n)
-                return
-            if g > b + 1 or (g > b and k > 4):
-                return  # real slope/terrace: leave it
-            if g > b:
-                self.stoop_set(n[0], b, n[1], 'stone')
-                for y in range(b + 1, g + 1):
-                    self.stoop_set(n[0], y, n[1], 'air')
-                continue
-            if g < b:
-                self.stoop_set(n[0], b, n[1], stair('stone', facing))
-                for y in range(g + 1, b):
-                    self.stoop_set(n[0], y, n[1], 'stone')
-                for y in range(b + 1, b + 4):
-                    self.stoop_set(n[0], y, n[1], 'air')
-                print('step at', n, 'ground', g, 'floor', b)
-                return
+        stoop.step_out(self, st, d, b, self.stoop_set, log=print)
 
     def windows(self, k, h):
         """Apply the shared bounded-opening policy to the house's pier rhythm."""
@@ -529,7 +482,7 @@ def build(spec):
 
 def run(spec_path, do_apply=False, overwrite=False):
     """Preview or apply a world-relative spec; replacing a live build requires an override."""
-    from builder_provenance import resolve_builder_path, provenance
+    from builder_provenance import HOUSE_BUILDER, resolve_builder_path, provenance
     from cell_registry import view_registry
     spec_path = resolve_builder_path(spec_path)
     spec = load_spec(spec_path)
@@ -550,7 +503,7 @@ def run(spec_path, do_apply=False, overwrite=False):
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
     result = apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']), strict=True,
-                   meta=provenance('house_build', spec_path))
+                   meta=provenance(HOUSE_BUILDER, spec_path))
     if result is not None:
         print(f'readback: {result["planned"]} planned, {result["mismatches"]} mismatches')
     return plan

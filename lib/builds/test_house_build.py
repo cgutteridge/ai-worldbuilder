@@ -328,10 +328,16 @@ class StoopKeepTest(unittest.TestCase):
         b.set.assert_called_once_with(5, 38, 7, 'minecraft:air')
 
     def test_step_out_cells_are_kept(self):
-        import inspect
-        src = inspect.getsource(H.Build.step_out)
-        self.assertNotIn('self.kset(', src)
-        self.assertIn('self.stoop_set(', src)
+        b = H.Build.__new__(H.Build)
+        b.spec = {'keep_edits': False, 'step_max': 4, 'ledge_stair': False}
+        b.owner, b.foreign, b.keep = {}, set(), set()
+        b.set = mock.Mock()
+        b.live = mock.Mock()
+        b.live.block.side_effect = lambda x, y, z: 'minecraft:stone' if y <= 47 else 'minecraft:air'
+        with redirect_stdout(io.StringIO()):
+            b.step_out((5, 5), 'S', 50)
+        self.assertTrue(b.keep)
+        self.assertEqual(b.keep, {c.args[:3] for c in b.set.call_args_list})
 
     def test_plan_receives_keep_set(self):
         import inspect
@@ -472,6 +478,51 @@ class EntranceApproachTest(unittest.TestCase):
         a = H.entrance_approach(None, 'S')
         self.assertIsNone(a['connection'])
         self.assertIn('unavailable', a['reason'])
+
+
+class MarginShelfTest(unittest.TestCase):
+    """Task 115 (T18): the margin around a house is cleared, not filled with a stone shelf at floor level."""
+
+    def plan(self, ground):
+        cells = {(x, z) for x in range(10, 17) for z in range(20, 27)}
+        index = mock.Mock()
+        index.cells.return_value = {c: 0 for c in cells}
+        index.buildings = [(None, {'osm_way_id': 99})]
+        spec = {'name': 'margin_house', 'ways': {'99': 'A'}, 'roofs': {'A': 'brick'},
+                'groups': [{'nos': ['A'], 'front': 'S'}], 'floor_min': 50}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'house.json'
+            path.write_text(json.dumps(spec))
+            spec = H.load_spec(path)
+
+        class Live:
+            def block(self, x, y, z):
+                g = ground(x, z)
+                return 'minecraft:stone' if y < g else 'minecraft:grass_block' if y == g else 'minecraft:air'
+
+        with mock.patch.object(H.osm_footprints, 'OSMIndex', return_value=index), \
+                mock.patch.object(H.osm_footprints, 'guard', return_value={'outside': {}}), \
+                mock.patch.object(H, 'fresh_planning_world', return_value=Live()), \
+                mock.patch('floor_reference.floor_reference', return_value=50), \
+                mock.patch('floor_reference.outside_ground', side_effect=lambda ps: {q: ground(*q) for q in ps}), \
+                mock.patch('site_kit.interior_ground_clears', return_value=set()), \
+                mock.patch('cell_registry.view_registry', return_value=mock.Mock(owned=lambda *a, **k: {})), \
+                redirect_stdout(io.StringIO()):
+            return plan_cells(H.build(spec)), cells
+
+    def test_margin_gets_no_stone_outside_the_footprint_except_stoops(self):
+        # ground falls away toward the street (south), so a filled shelf would show at floor level
+        cells_by_slope, footprint = self.plan(lambda x, z: 49 - min(3, max(0, z - 26)))
+        stone = [(x, y, z) for (x, y, z), st in cells_by_slope.items()
+                 if st == 'minecraft:stone' and y == 50 and (x, z) not in footprint]
+        # stoop and step_out cells sit in the column outside the front door, a few blocks out
+        door_columns = {x for (x, y, z), st in cells_by_slope.items() if '_door' in st}
+        loose = [q for q in stone if not (abs(q[0] - min(door_columns)) <= 1 and q[2] >= 27)]
+        self.assertEqual(loose, [], f'stone shelf outside footprint: {loose[:10]}')
+
+
+def plan_cells(plan):
+    return dict(plan.cells)
 
 
 class InteriorGroundTest(unittest.TestCase):

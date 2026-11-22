@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from script_env import TOOL_ROOT, add_world_arg, activate_world_from_args
-from builder_provenance import describe_builder, resolve_builder_path
+from builder_provenance import BUILDER_NAMES, FEATURE_BUILDER, HOUSE_BUILDER, describe_builder, resolve_builder_path
 
 
 def prepare(name: str, registry=None) -> list[str]:
@@ -32,13 +32,13 @@ def builder_command(name: str, builder: dict) -> list[str]:
     if not builder['available']:
         raise SystemExit(f'{name}: recorded {builder["kind"]} missing: {path}; restore or correct the recorded builder before reapply. Nothing undone.')
     if builder['kind'] == 'spec':
-        builder_name = builder.get('name') or 'feature_build'
-        if builder_name not in ('feature_build', 'house_build'):
+        builder_name = builder.get('name') or FEATURE_BUILDER
+        if builder_name not in BUILDER_NAMES:
             raise SystemExit(f'{name}: recorded builder {builder_name!r} is unavailable or unsupported; refusing undo')
         command = TOOL_ROOT / 'scripts' / f'{builder_name}.py'
         if not command.is_file():
             raise SystemExit(f'{name}: recorded builder missing: {command}; refusing undo')
-        if builder_name == 'house_build':
+        if builder_name == HOUSE_BUILDER:
             from house_build import load_spec
         else:
             from feature_build import load_spec

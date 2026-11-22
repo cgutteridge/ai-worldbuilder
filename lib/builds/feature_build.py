@@ -172,16 +172,9 @@ from site_kit import (  # noqa: E402
 from world_frame import metres_aod_to_y  # noqa: E402
 
 STOREY_H = 3
-# Ground blocks the margin clear keeps and step_out lands on. gray_/black_concrete are the lidar
-# ghost's DSM-DTM tops (gray_concrete is also real tarmac): features build on ghost ground before
-# the cell's real ground (task 286), so margin clearing must not hole it.
-GROUND = (
-    'minecraft:stone', 'minecraft:gray_terracotta', 'minecraft:polished_granite',
-    'minecraft:polished_diorite', 'minecraft:light_gray_concrete', 'minecraft:grass_block',
-    'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite',
-    'minecraft:gray_concrete', 'minecraft:black_concrete',
-)
 from cellmath import DIRS, N4, N8  # noqa: E402
+import stoop  # noqa: E402
+from stoop import FACE, GROUND  # noqa: E402
 FASCIA_COLOURS = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
 # Light bands need black lettering; the rest stay white so the name reads against the bar.
 LIGHT_FASCIA = frozenset({'cyan', 'orange', 'lime', 'yellow', 'white', 'pink'})
@@ -312,8 +305,6 @@ def _straight_run(cells: set, fronts: dict) -> dict:
     return {'face': face, 'line': line, 'fill': fill, 'sources': set(cells)}
 
 
-FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
-TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})
 EDGE_WHERE = frozenset({'outer', 'all'})
 ZONE_FROM = frozenset({'lidar'})
@@ -925,17 +916,6 @@ def mask_to_cells(mask: np.ndarray, x0: int, z0: int) -> set:
     """
     zs, xs = np.nonzero(mask)
     return {(int(x0 + x), int(z0 + z)) for z, x in zip(zs, xs)}
-
-
-def stair(mat: str, facing: str, half: str = 'bottom') -> str:
-    """Stair block state.
-
-    @param mat: stair material prefix (e.g. ``stone``, ``spruce``)
-    @param facing: facing direction name
-    @param half: ``bottom`` or ``top``
-    @returns: stair block state string
-    """
-    return f'{mat}_stairs[facing={facing},half={half}]'
 
 
 def _bottom_slab_or_full(mat: str) -> str:
@@ -1980,41 +1960,10 @@ class Build:
                     self.set(*pos, self.wall)
 
     def top_solid(self, x, z, near):
-        for y in ground_scan_range(near):
-            n = (self.live.block(x, y, z) or 'minecraft:air').split('[')[0]
-            if n in GROUND and n != 'minecraft:stone_stairs':
-                return y
-        return None
+        return stoop.top_solid(self.live, x, z, near)
 
     def step_out(self, st, d, b):
-        dx, dz = DIRS[d]
-        facing = TOWARD[d]
-        cols = [(st[0] + dx * k, st[1] + dz * k) for k in range(1, self.spec['step_max'] + 1)]
-        self._prefetch_live((x, y, z) for x, z in cols for y in ground_scan_range(b))
-        for k in range(1, self.spec['step_max'] + 1):
-            n = (st[0] + dx * k, st[1] + dz * k)
-            if n in self.owner or n in self.foreign:
-                continue
-            g = self.top_solid(*n, b)
-            if g is None:
-                continue
-            if self.spec['ledge_stair'] and g == b + 1 and k > 4:
-                self.kset(n[0], g, n[1], stair('stone', FACE[d]))
-                return
-            if g > b + 1 or (g > b and k > 4):
-                return
-            if g > b:
-                self.kset(n[0], b, n[1], 'stone')
-                for y in range(b + 1, g + 1):
-                    self.kset(n[0], y, n[1], 'air')
-                continue
-            if g < b:
-                self.kset(n[0], b, n[1], stair('stone', facing))
-                for y in range(g + 1, b):
-                    self.kset(n[0], y, n[1], 'stone')
-                for y in range(b + 1, b + 4):
-                    self.kset(n[0], y, n[1], 'air')
-                return
+        stoop.step_out(self, st, d, b, self.kset, prefetch=self._prefetch_live)
 
     def doors(self, k: int, f: Feature):
         """Place doors from ``facade_plan`` entrances for this feature's label.
@@ -3559,7 +3508,7 @@ def run(
     @param landmark_override: non-empty reason skips the landmark street-level image gate
     @returns: Plan
     """
-    from builder_provenance import resolve_builder_path, builder_record, provenance
+    from builder_provenance import FEATURE_BUILDER, resolve_builder_path, builder_record, provenance
     spec_path = resolve_builder_path(spec_path)
     spec = load_spec(spec_path)
     if do_apply and not overwrite:
@@ -3587,7 +3536,7 @@ def run(
     preview(plan, out, scale=4)
     print(json.dumps(plan.summary())[:600])
     apply(plan, dry=not do_apply, modifies=tuple(spec['modifies']),
-          meta={'builder': builder_record('spec', spec_path), **provenance('feature_build', spec_path)})      # ghost owners yield in the journal
+          meta={'builder': builder_record('spec', spec_path), **provenance(FEATURE_BUILDER, spec_path)})      # ghost owners yield in the journal
     return plan
 
 

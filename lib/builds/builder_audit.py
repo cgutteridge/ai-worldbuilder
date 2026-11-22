@@ -22,7 +22,8 @@ import argparse
 import subprocess
 import sys
 
-from builder_provenance import TOOL_ROOT, provenance_status, resolve_builder_path, spec_hash
+from builder_provenance import provenance_status, resolve_builder_path, spec_hash
+from script_env import TOOL_ROOT
 
 
 def landed_feature_entries(entries) -> list:
