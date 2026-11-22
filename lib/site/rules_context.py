@@ -102,8 +102,8 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
 
     if any(k in b for k in ('BUILD_CELL_FOLIAGE', 'FOLIAGE LAST', 'FOLIAGE PASS', 'FOLIAGE.')):
         return WorkContext.FOLIAGE, 'foliage-last cell pass'
-    if any(k in b for k in ('TERRACE.PY', 'TERRACE-BUILDS', 'BROADLANDS_RD', ' BROADLANDS ')):
-        return WorkContext.TERRACE, 'terrace generator / Broadlands'
+    if any(k in b for k in ('TERRACE-BUILDS', 'BROADLANDS_RD', ' BROADLANDS ')):
+        return WorkContext.TERRACE, 'terrace house builds / Broadlands'
     if any(k in b for k in ('FAÇADE', 'FACADE', 'FRONTAGE SURVEY', 'WHOLE PROPERTY', 'OSM_FOOTPRINTS.PY FRONTAGE')):
         return WorkContext.PROPERTY, 'whole-property / frontage survey'
 
@@ -242,7 +242,7 @@ _DONE_HINTS: dict[WorkContext, str] = {
     WorkContext.PROPERTY: (
         'Whole property on vector-map footprint; osm_footprints check; photo + aerial contact views.'
     ),
-    WorkContext.TERRACE: 'terrace.py generator; re-apply same build name; no _b geometry patches.',
+    WorkContext.TERRACE: 'house_build spec per terrace; re-apply same build name; no _b geometry patches.',
     WorkContext.SESSION: 'Lock + handoff only.',
 }
 

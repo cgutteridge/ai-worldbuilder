@@ -13,7 +13,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
 import geo  # noqa: E402
-from terrace import BROADLANDS_N_SLOPE  # noqa: E402
 
 
 class ConvertMcTest(unittest.TestCase):
@@ -29,7 +28,17 @@ class ConvertMcTest(unittest.TestCase):
 class SlopeTest(unittest.TestCase):
     def test_bearing_broadlands(self):
         rec = geo.slope_from_bearing(22)
-        self.assertEqual(tuple(rec['slope'].values()), BROADLANDS_N_SLOPE)
+        self.assertEqual(tuple(rec['slope'].values()), (1, -3))
+
+    def test_snap_broadlands_is_one_in_three(self):
+        # OSM long edge, about 22° east of north.
+        self.assertEqual(geo.snap_slope(4.5, -11.1), (1, -3))
+
+    def test_snap_axes_and_diagonals(self):
+        self.assertEqual(geo.snap_slope(0, -10), (0, -1))
+        self.assertEqual(geo.snap_slope(10, -10), (1, -1))
+        self.assertEqual(geo.snap_slope(10, -1), (1, 0))
+        self.assertEqual(geo.snap_slope(-1, -4), (-1, -4))
 
     def test_points_rear_to_front(self):
         rec = geo.slope_from_points(7100, -5500, 7103, -5509)

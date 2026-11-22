@@ -1,9 +1,9 @@
 {
   "comment": "Frozen provider-name violations (#28). Fail CI on keys not listed here.",
   "keys": [
-    "docs/plans/land-use-classes.md:122",
-    "docs/plans/land-use-classes.md:204",
-    "docs/plans/land-use-classes.md:206",
+    "docs/plans/seam-rationalisation-review.md:72",
+    "docs/plans/seam-rationalisation-review.md:81",
+    "docs/plans/seam-rationalisation-review.md:84",
     "docs/specs/lidar-provider-contract.md:19",
     "docs/specs/lidar-provider-contract.md:24",
     "docs/specs/lidar-provider-contract.md:26",
