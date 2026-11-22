@@ -170,6 +170,12 @@ None of these may be lost when the tickets are written. Each ticket should quote
 12. **Trial corridor removed.** The 14 backup tiles were loaded back and checked; the corridor cells keep ghost ground.
 13. **Bridges and tunnels are general work** ([bridges-and-tunnels](bridges-and-tunnels.md)). File one decisions
     ticket now; write the evidence, planner and integration tickets after it closes.
+15. **Bridges over rail are not gaps.** A road or path bridge over the line is tagged on the road, not the rails (example:
+    the viaduct near MC 1901,-3299, `bridge=viaduct`, with many rails under it). The line runs under it at ground level.
+    The evidence ticket (#379) returns these overhead spans; the planner (#381) keeps bushes and slope changes off the
+    deck columns and fails if the profile would leave under 5 blocks of clearance. The complex area at about
+    50.91436,-1.45871 (MC 1901,-3299) is a yard of 17 sidings, 3 crossovers, 2 spurs and 20 switches with only 2
+    through ways, so it suits the unfiled decor sidings ticket and a junction stress test, not trial D.
 14. **Not filed yet:** decor sidings, yards and spurs. Note it in D's ticket as the next step and file it once D has
     shown what a real line looks like.
 
