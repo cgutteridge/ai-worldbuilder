@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generic vector-map footprint house builder (house only: walls, floors, doors, windows, flatish or pitched roofs).
 
-One module for every "house only" run (layered pass 1: Granby Grove, Merton Rd, Ripstone and Blenheim Gardens
-q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json instead of a 390-line script copy:
+One module for every house-only run. A run is a small JSON spec in site/builds/<name>.json
+instead of a script copy:
 
   name           plan name (also the cell journal plan / feature id)
   notes          provenance: map ways, aerial/streetlevel evidence, date, queue item (free text, never read by code)
@@ -38,6 +38,7 @@ import sys
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
+import place_config  # noqa: E402
 import osm_footprints  # noqa: E402
 from roof_geometry import (edge_distance_field, pitched_roof_states, roof_block_y,  # noqa: E402
                            align_stair_shapes, rotated_hip_depth, stair_effect_lines, stair_shape_from_neighbours)
@@ -182,7 +183,7 @@ class Build:
             if (x, z) in self.foreign or (x, z) in self.shared:
                 continue
             own = (x, z) in self.owner
-            for y in range(37, b):
+            for y in range(place_config.base_y(), b):
                 self.set(x, y, z, 'stone')
             if own:
                 top = b + TOP

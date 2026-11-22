@@ -17,10 +17,10 @@ def _square(x0, z0, x1, z1):
 
 class TestCellFeatures(unittest.TestCase):
     def test_layer_builds_are_not_features(self):
-        for n in ('highfield_49_m43_ground', 'highfield_48_m44_trees_undo',
-                  'highfield_grounds_mc', 'cell_marker_48_m44', 'highfield_48_m45_foliage'):
+        for n in ('cell_49_m43_ground', 'cell_48_m44_trees_undo',
+                  'cell_grounds_mc', 'cell_marker_48_m44', 'cell_48_m45_foliage'):
             self.assertFalse(cf.is_feature_build(n), n)
-        for n in ('highfield_b35', 'highfield_engineering', 'chamberlain_rd_8_58'):
+        for n in ('campus_b35', 'campus_engineering', 'chamberlain_rd_8_58'):
             self.assertTrue(cf.is_feature_build(n), n)
 
     def test_split_runs_joins_neighbours_only(self):

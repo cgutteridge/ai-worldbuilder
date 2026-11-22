@@ -13,13 +13,13 @@ from pathlib import Path
 import site_archive as sa
 
 QUEUE = """\
-SOUTHAMPTON REFINE — QUEUE
+WORLDBUILDER — QUEUE
 Mark [x] when done.
 
 [x] Q-001  SETUP: done thing.
            more detail.
 
-[ ] Q-040  BROADLANDS: open thing
+[ ] Q-040  EXAMPLE: open thing
            detail.
 [-] Q-023  PAUSED thing
            detail.
@@ -30,7 +30,7 @@ BACKLOG (do not block setup)
 """
 
 ISSUES = """\
-SOUTHAMPTON REFINE — ISSUES
+WORLDBUILDER — ISSUES
 Format: I-nnn  sev  place  status  summary
 
 ------------------------------------------------------------------------
@@ -44,12 +44,12 @@ I-002  L  SETUP  open  Still open
 I-028  M  TOOL fixed  view_capture 429
   detail.
 
-I-005  L  PORTSWOOD  sched  Scheduled
+I-005  L  RIVERSIDE  sched  Scheduled
   detail.
 """
 
 REVIEWS = """\
-SOUTHAMPTON REFINE — REVIEWS
+WORLDBUILDER — REVIEWS
 One dated line per review.
 
 ------------------------------------------------------------------------

@@ -35,7 +35,7 @@ def structure_file_path(save_root: Path | str, namespaced: str) -> Path:
     """On-disk path for a namespaced structure id under a world save.
 
     @param save_root: Minecraft save directory (contains ``generated/``)
-    @param namespaced: e.g. ``southampton_refine:before_house``
+    @param namespaced: e.g. ``worldbuilder:before_house``
     @returns: ``…/generated/<ns>/structures/<local>.nbt``
     """
     ns, _, local = namespaced.partition(':')

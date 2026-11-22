@@ -66,7 +66,7 @@ MIN_COLUMNS = 12      # ignore slivers (kiosks, bin stores)
 
 LAYER_BUILD = re.compile(
     r'(_ground|_trees|_decor|_foliage|_canopy|_undo|_grounds_\w+)$|^cell_marker_|^clear_floating|'
-    r'^highfield_grounds_|_grounds$|^ghost_')
+    r'_grounds$|^ghost_')
 
 
 
@@ -133,9 +133,14 @@ def clip_coverage(cell: tuple[int, int]) -> float:
 def is_feature_build(name: str) -> bool:
     """Whether a build name is a feature rather than a layer pass.
 
+    Grounds-marker plans use the world's plan prefix (``<prefix>_grounds_``).
+
     @param name: build (plan) name
     @returns: True for features
     """
+    from place_config import grounds_prefix
+    if name.startswith(grounds_prefix()):
+        return False
     return not LAYER_BUILD.search(name)
 
 

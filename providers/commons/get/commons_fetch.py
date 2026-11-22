@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Wikimedia Commons geotagged photos near an MC point: list, fetch + log (with licence).
 
-Most Highfield campus interiors-of-blocks have no KartaView (roads only); Commons carries
-many Geograph uploads (CC BY-SA) of named campus buildings.
+Places with no street-imagery coverage on the roads still often have Commons
+photos (CC BY-SA) of named buildings.
 
   python3 shims/commons_fetch.py list --at 6435,-5543 [--radius-m 250] [--grep chem]
-  python3 shims/commons_fetch.py get 12345,67890 --place UNI --dir photos/highfield-campus
+  python3 shims/commons_fetch.py get 12345,67890 --place UNI --dir photos/campus
 
 `list` prints pageid, distance, camera MC point (if geotagged) and title. `get` saves a
 1280 px thumbnail as commons-<pageid>.jpg and appends a manifest row whose notes carry
@@ -27,7 +27,7 @@ from world_frame import mc_to_wgs84 as mc_to_ll, wgs84_batch_to_mc as ll_to_mc  
 
 REF = ROOT / 'reference'
 API = 'https://commons.wikimedia.org/w/api.php'
-UA = {'User-Agent': 'SouthamptonRefine/commons_fetch (local build reference; University of Southampton)'}
+UA = {'User-Agent': 'worldbuilder/commons_fetch (local build reference)'}
 
 
 def _get(params):

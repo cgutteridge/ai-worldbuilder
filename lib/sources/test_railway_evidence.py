@@ -1,6 +1,6 @@
 """Railway evidence: class, chains, pairs, crossings and spans (#379).
 
-Fixtures are a trimmed copy of the Southampton trial extract
+Fixtures are a trimmed copy of a trial railway extract
 (``rail_trial_256``), OpenStreetMap contributors, ODbL. See ATTRIBUTION.txt.
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ def _way(osm_id: str, points, **tags) -> rv.Way:
 
 
 def _line_feature(points, **tags) -> dict:
-    """A WGS84 line feature that round-trips through the Southampton frame."""
+    """A WGS84 line feature that round-trips through the trial frame."""
     coords = []
     for x, z in points:
         east, north = wf.mc_to_osgb(x, z, FRAME)

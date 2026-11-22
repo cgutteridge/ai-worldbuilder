@@ -19,7 +19,7 @@ from unittest import mock
 import world_frame as wf
 
 # Independent fixtures (not derived from this module's transform).
-# Southampton O.S.O. Fundamental Bench Mark (bench-marks.org.uk/bm1150):
+# O.S.O. Fundamental Bench Mark (bench-marks.org.uk/bm1150):
 # published OSGB36 E 442070 N 112800 with WGS84 50.91313038, -1.40294699.
 # With OSTN15 these agree to centimetres; Helmert fallback is ~metre-level.
 FBM_LAT = 50.91313038
@@ -90,7 +90,7 @@ class YOffsetTest(unittest.TestCase):
 
 class WebMercatorTest(unittest.TestCase):
     def test_deg2num_num2deg_roundtrip_corner(self):
-        # Known Southampton-ish point; integer tile of NW corner maps back.
+        # Known point near 50.9 N; integer tile of NW corner maps back.
         lat, lon = 50.935, -1.396
         z = 18
         tx, ty = wf.deg2num(lat, lon, z)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Human-readable progress for Southampton Refine: what is done, what happened since X, and a run log.
+"""Human-readable progress for the active world: what is done, what happened since X, and a run log.
 
 Read-only except `log`, which appends to site/RUN-LOG.md. Progress comes from the cell
 journal (ADR 004): every journal entry is shown as a stage record of its primary cell

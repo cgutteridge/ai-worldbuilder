@@ -44,7 +44,7 @@ class VectorMapClipRoot(unittest.TestCase):
             preferred.mkdir(parents=True)
             (preferred / 'survey').mkdir()
             legacy = root / 'reference' / 'osm'
-            _write_clip(legacy, 'highfield')
+            _write_clip(legacy, 'campus')
             self.assertEqual(vmc.vector_map_clip_root(root), legacy)
 
     def test_missing_tree_is_error(self):
@@ -70,8 +70,8 @@ class VectorMapReferenceContract(unittest.TestCase):
                 root / 'downloads' / 'hampshire-latest.pbf',
             )
             self.assertEqual(
-                vmc.place_clip_dir('portswood', root),
-                root / 'reference' / 'vector_map' / 'portswood',
+                vmc.place_clip_dir('riverside', root),
+                root / 'reference' / 'vector_map' / 'riverside',
             )
 
     def test_pbf_and_place_reject_path_traversal(self):

@@ -649,7 +649,7 @@ class TestEmptyDecorApply(unittest.TestCase):
     def test_apply_cell_records_empty_pass_instead_of_exiting(self):
         plan = mock.Mock()
         plan.cells = {}
-        plan.name = 'highfield_0_0_decor'
+        plan.name = 'cell_0_0_decor'
         world = mock.Mock()
         mask = {'pass': 'decor', 'cell': [0, 0], 'plan': plan.name, 'count': 0, 'sha256': 'x'}
         apply_calls = []
@@ -894,7 +894,7 @@ class TestReporting(unittest.TestCase):
                 mock.patch('layer_reports.write_report', side_effect=lambda n, r, **kw: write_report(n, r, Path(tmp), **kw)), \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(dl.run((0, 0)), 0)
-            saved = json.loads((Path(tmp) / 'highfield_0_0_decor-dry-report.json').read_text())
+            saved = json.loads((Path(tmp) / 'cell_0_0_decor-dry-report.json').read_text())
             self.assertEqual(saved['stats']['unplaced_items'], items)
         self.assertIn("'feature above terrain': 40", output.getvalue())
         self.assertIn('full report:', output.getvalue())
@@ -1047,7 +1047,8 @@ class TestDryRunUndo(unittest.TestCase):
             self.assertGreater(len(expected), 0)
             write_mask(build_mask('decor', (0, 0), 'old', expected, lambda p: True), masks)
             built = Ground({p: 'minecraft:' + b for p, b in expected.items()})
-            name = dl.plan_name(0, 0)
+            from place_config import plan_name
+            name = plan_name((0, 0), 'decor')
             originals = {directory / f'{name}-{suffix}': b'last apply' for suffix in ('report.json', 'preview.png')}
             for path, data in originals.items():
                 path.write_bytes(data)

@@ -22,11 +22,11 @@ class ConvertMcTest(unittest.TestCase):
 
 
 class SlopeTest(unittest.TestCase):
-    def test_bearing_broadlands(self):
+    def test_bearing_one_in_three(self):
         rec = geo.slope_from_bearing(22)
         self.assertEqual(tuple(rec['slope'].values()), (1, -3))
 
-    def test_snap_broadlands_is_one_in_three(self):
+    def test_snap_is_one_in_three(self):
         # OSM long edge, about 22° east of north.
         self.assertEqual(geo.snap_slope(4.5, -11.1), (1, -3))
 

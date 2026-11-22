@@ -76,7 +76,7 @@ def unit_test_world() -> Iterator[Path]:
         (config / 'world.json').write_text(json.dumps({
             'gameworld_id': 'unit-test',
             'save_path': str(root / 'save'),
-            'structure_namespace': 'southampton_refine',
+            'structure_namespace': 'worldbuilder',
         }))
         (config / 'world-frame.json').write_text(json.dumps({
             'place': 'Unit test fixture',

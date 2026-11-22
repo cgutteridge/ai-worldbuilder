@@ -930,7 +930,7 @@ class ReadinessTest(unittest.TestCase):
     def test_neighbour_map_extract_does_not_stale_this_cell_readiness_or_plan(self):
         """Task 232: unrelated neighbouring evidence must not invalidate readiness or an unapplied plan.
 
-        Diagnosis (Portswood 53,-42 on 2026-10-31): readiness was re-accepted solely after neighbour
+        Diagnosis (cell 53,-42 on 2026-10-31): readiness was re-accepted solely after neighbour
         54,-42 prepares, with no local plan-identity change. Notes predating #289 omit revision_parts;
         the code path that fits is world-wide source_revision picking up the neighbour's prepared-*
         extract, which #289 would report as evidence facts changed.

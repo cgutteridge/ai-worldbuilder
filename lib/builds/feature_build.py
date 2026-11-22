@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generic vector-map footprint builder for non-house building features.
 
-Use for odd masses (SU, halls, sheds, campus lumps) — not for houses/terraces
+Use for odd masses (halls, sheds, large footprints) — not for houses/terraces
 (those stay on ``house_build.py``). Shares ``site_kit`` preview/apply.
 
 A run is a JSON spec in ``site/builds/<name>.json``:
@@ -155,6 +155,7 @@ from numpy.lib.stride_tricks import sliding_window_view as _sw
 
 from block_store import state_props
 from script_env import ROOT, TOOL_ROOT  # noqa: E402
+import place_config  # noqa: E402
 import footprint_overlap  # noqa: E402
 import osm_footprints  # noqa: E402
 from chimney import chimney_layers, validate_chimney
@@ -1811,7 +1812,7 @@ class Build:
         self._prefetch_live(need)
         for x, z, b, own in work:
             if own:
-                for y in range(37, b):
+                for y in range(place_config.base_y(), b):
                     self.set(x, y, z, 'stone')
                 rng = range(b, top_clear + 1)
             else:

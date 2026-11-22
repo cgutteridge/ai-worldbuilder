@@ -54,7 +54,7 @@ class PlanRefsTest(unittest.TestCase):
 
     def test_name_is_the_fallback_when_no_refs_are_stored(self):
         self.assertEqual(PR.plan_refs(self.root, 'west_w34391673'), ({'w34391673'}, 'name'))
-        self.assertEqual(PR.plan_refs(self.root, 'susu_r55'), ({'r55'}, 'name'))
+        self.assertEqual(PR.plan_refs(self.root, 'hall_r55'), ({'r55'}, 'name'))
         self.spec('west_w9')                                   # a spec with no ways says nothing
         self.assertEqual(PR.plan_refs(self.root, 'west_w9'), ({'w9'}, 'name'))
 
@@ -185,7 +185,7 @@ class PlanRefsTest(unittest.TestCase):
 
     def test_two_plans_with_different_refs_are_not_duplicates(self):
         self.plan('west_w1')
-        self.plan('susu_w2')
+        self.plan('hall_w2')
         self.assertEqual(CR.duplicate_plans(self.reg), [])
 
 

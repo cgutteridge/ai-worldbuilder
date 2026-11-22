@@ -307,7 +307,7 @@ class TestUndoMatchesBeforeStructure(ElementUndoCase):
         before = f'{site_kit.STRUCTURE_NS}:before_house'
         snap = dict(FakePaced.structures[before])
 
-        g = site_kit.Plan('highfield_48_m44_ground')
+        g = site_kit.Plan('cell_48_m44_ground')
         g.set(X0 + 5, 60, Z0, 'minecraft:stone')
         self.run_apply(g, stage='ground-layer', cell=CELL)
 

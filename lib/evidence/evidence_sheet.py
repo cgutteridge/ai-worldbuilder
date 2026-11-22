@@ -5,9 +5,9 @@ One command: portal-facing client cameras, top-down over the footprint, aerial c
 writes ``verification/site/<name>-contact.png`` and records the path on
 ``verification/site/<name>-result.json`` as ``contact_sheet``.
 
-  python3 scripts/evidence_sheet.py susu_42
-  python3 scripts/evidence_sheet.py susu_42 --from-dir verification/site/susu_42-shots
-  python3 scripts/evidence_sheet.py susu_42 --no-minecraft   # aerial + portal photos only
+  python3 scripts/evidence_sheet.py feature_42
+  python3 scripts/evidence_sheet.py feature_42 --from-dir verification/site/feature_42-shots
+  python3 scripts/evidence_sheet.py feature_42 --no-minecraft   # aerial + portal photos only
 
 Tiles (labelled by stem): each portal client view (and portal photo when on disk),
 top-down over the footprint, aerial crop of the footprint bbox.

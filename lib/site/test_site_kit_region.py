@@ -49,17 +49,17 @@ class TestGameworldFromRegion(unittest.TestCase):
         )
         self.assertEqual(site_kit.gameworld_id_from_region(region), 'bakeoff')
 
-    def test_southampton_ai(self):
+    def test_example_save(self):
         region = Path(
-            '/instance/saves/SouthamptonAI/dimensions/minecraft/overworld/region'
+            '/instance/saves/ExampleSave/dimensions/minecraft/overworld/region'
         )
-        self.assertEqual(site_kit.gameworld_id_from_region(region), 'SouthamptonAI')
+        self.assertEqual(site_kit.gameworld_id_from_region(region), 'ExampleSave')
 
 
 class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
     def test_refuses_when_open_world_differs(self):
         region = Path(
-            '/instance/saves/SouthamptonAI/dimensions/minecraft/overworld/region'
+            '/instance/saves/ExampleSave/dimensions/minecraft/overworld/region'
         )
         with mock.patch.object(
             site_kit, 'mcp_reported_gameworld', return_value='bakeoff'
@@ -68,7 +68,7 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
                 site_kit.ensure_region_matches_open_world(region)
         msg = str(ctx.exception)
         self.assertIn('bakeoff', msg)
-        self.assertIn('SouthamptonAI', msg)
+        self.assertIn('ExampleSave', msg)
         self.assertIn('--world', msg)
         self.assertNotIn('AI_WORLDBUILDER_REGION', msg)
 
@@ -88,7 +88,7 @@ class TestEnsureRegionMatchesOpenWorld(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             saves = Path(d) / 'saves'
             bakeoff = saves / 'bakeoff'
-            other = saves / 'SouthamptonAI'
+            other = saves / 'ExampleSave'
             region = bakeoff / 'dimensions' / 'minecraft' / 'overworld' / 'region'
             region.mkdir(parents=True)
             other.mkdir(parents=True)

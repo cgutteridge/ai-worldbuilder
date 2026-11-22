@@ -62,6 +62,7 @@ from tree_species import DEFAULT_LEAVES  # noqa: E402
 from bay_lines import mark_car_park_bays  # noqa: E402
 from cell_marker import is_marker_wool  # noqa: E402
 from pass_mask import MASK_DIR, mask_placements, masked_overlaps, read_mask  # noqa: E402
+from place_config import grounds_prefix, plan_name, retired_ground_passes  # noqa: E402
 from site_kit import AIR_IDS, Plan, World, full  # noqa: E402
 from surface_probe import (GRASS_LIGHT_PATTERNS, PLANTS, is_tree_or_plant_block, is_water, probe_floor, short_id,  # noqa: E402,F401
                            surface_y)
@@ -111,19 +112,6 @@ STEP_STAIR = 'polished_andesite_stairs'   # outdoor step riser beside light_gray
 # facing of a stair that climbs toward +axis / -axis (Minecraft: east +x, south +z)
 STEP_FACING = {('x', 1): 'east', ('x', -1): 'west', ('z', 1): 'south', ('z', -1): 'north'}
 
-# Earlier ground and foliage passes. Their blocks are what this layer replaces, so they are not
-# owners. (Records of them stay in verification/site; only this ownership test forgets them.)
-RETIRED_GROUND_PASSES = frozenset({
-    'highfield_q050_opens', 'highfield_q050_clears', 'highfield_q051_ur', 'highfield_q053_paths',
-    'highfield_q054_micro', 'highfield_q061_stragglers', 'highfield_q063_m45_edge',
-})
-
-
-def plan_name(tx: int, tz: int, layer: str = 'ground') -> str:
-    """Build name, e.g. highfield_48_m44_ground."""
-    return f"highfield_{tx}_{'m' if tz < 0 else ''}{abs(tz)}_{layer}"
-
-
 def shades_grass(above: str | None) -> bool:
     """True when the block directly above a grass top is opaque, so grass would decay to dirt (#242).
 
@@ -158,10 +146,12 @@ def ignored_builds(cell: tuple[int, int]) -> frozenset:
     """
     from lidar_ghost import ghost_owners_for
 
-    own = {plan_name(*cell, layer) for layer in ('ground', 'trees', 'decor', 'foliage')}
+    own = {plan_name(cell, layer) for layer in ('ground', 'trees', 'decor', 'foliage')}
     own |= set(ghost_owners_for(cell))
-    return RETIRED_GROUND_PASSES | own | {n for n in _all_build_names()
-                                          if n.startswith(('highfield_grounds_', 'cell_marker_'))}
+    # Earlier ground passes are place data (``retired_ground_passes``). Their blocks are what
+    # this layer replaces, so they are not owners. Grounds markers are the same kind of name.
+    return retired_ground_passes() | own | {n for n in _all_build_names()
+                                            if n.startswith((grounds_prefix(), 'cell_marker_'))}
 
 
 def _all_build_names() -> set:
@@ -1881,8 +1871,7 @@ def _fresh_world(strict: bool = False) -> World:
 
 def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     """Dry-run one cell. Returns the number of conflicts (0 means it is safe to apply)."""
-    tx, tz = cell
-    name = plan_name(tx, tz)
+    name = plan_name(cell, 'ground')
     plan = Plan(f'{name}-dry', input_cells=[cell])
     world = _fresh_world()
     masked = load_masked_positions()
@@ -1991,8 +1980,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     if not os.environ.get('SITE_OWNER'):
         raise SystemExit('SITE_OWNER is not set; claim the lock first (scripts/site_lock.py claim <owner> ...)')
     from readiness_evidence import require_ready
-    tx, tz = cell
-    name = plan_name(tx, tz)
+    name = plan_name(cell, 'ground')
     require_ready([cell], 'ground', redoing=(name,))    # a re-apply may pass its own mismatch (#284)
     plan = Plan(name, input_cells=[cell])
     world = _fresh_world(strict=True)

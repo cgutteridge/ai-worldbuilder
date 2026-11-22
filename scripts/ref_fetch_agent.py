@@ -8,11 +8,12 @@ This process binds 127.0.0.1 only (on NO_PROXY) so a sandboxed agent can
 pull bytes while the sidecar uses the host network. Start it only if you
 want agent-driven downloads; never as a per-session chore.
 
-  python3 scripts/ref_fetch_agent.py              # optional, external Terminal
-  python3 scripts/ref_fetch_agent.py --health
-  python3 scripts/ref_fetch_agent.py --get URL [-o PATH]
+  python3 scripts/ref_fetch_agent.py --world <name>
+  python3 scripts/ref_fetch_agent.py --world <name> --health
+  python3 scripts/ref_fetch_agent.py --world <name> --get URL [-o PATH]
 
   from ref_fetch_agent import fetch_bytes          # used by aerial_mosaic
+                                                   # (that caller has already selected a world)
 
 Env:
   REF_FETCH_PORT   listen / client port (default 18765)
@@ -32,12 +33,11 @@ from typing import Mapping
 from urllib.parse import urlparse
 
 DEFAULT_PORT = 18765
-DEFAULT_UA = 'SouthamptonRefine/ref_fetch_agent (+local build reference)'
+DEFAULT_UA = 'worldbuilder/ref_fetch_agent (+local build reference)'
 
-# Only these hosts may be fetched (SSRF guard).
+# National hosts the sidecar may fetch (SSRF guard). A world adds its own
+# tile hosts under ``fetch_hosts`` in config/world.json.
 ALLOWED_HOSTS = frozenset({
-    'tiles.maps.southampton.ac.uk',
-    'maps.southampton.ac.uk',
     'api.openstreetcam.org',
     'openstreetcam.org',
     'www.openstreetcam.org',
@@ -68,8 +68,26 @@ def listen_port() -> int:
     return int(os.environ.get('REF_FETCH_PORT', DEFAULT_PORT))
 
 
+def _place_config():
+    """Import place config once library paths are on ``sys.path``.
+
+    The sidecar process starts with ``scripts/`` on the path and does not
+    select a world. A caller that has already selected one (``fetch_bytes``
+    from aerial mosaic) keeps that world; this does not choose one.
+
+    @returns: the ``place_config`` module
+    """
+    import script_env
+    script_env.ensure_import_paths()
+    import place_config
+    return place_config
+
+
 def host_allowed(url: str) -> bool:
     """Return whether url's host is on the allowlist.
+
+    National hosts are always allowed. A bound world's ``fetch_hosts`` are
+    allowed as well. With no world selected, only the national list applies.
 
     @param url: absolute http(s) URL
     @returns: True if fetch is permitted
@@ -81,7 +99,8 @@ def host_allowed(url: str) -> bool:
     if parsed.scheme not in ('http', 'https'):
         return False
     host = (parsed.hostname or '').lower()
-    return host in ALLOWED_HOSTS
+    extra = _place_config().extra_fetch_hosts()
+    return host in ALLOWED_HOSTS or host in extra
 
 
 def looks_like_sandbox_proxy_error(exc: BaseException) -> bool:
@@ -283,19 +302,35 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, 'application/octet-stream')
 
 
+def _probe_request() -> tuple[str, dict[str, str]] | None:
+    """URL and headers for the world's configured connectivity probe.
+
+    @returns: ``(url, headers)``, or None when ``fetch_probe`` is unset
+    """
+    probe = _place_config().fetch_probe()
+    if probe is None:
+        return None
+    headers = {'User-Agent': DEFAULT_UA}
+    if probe['referer']:
+        headers['Referer'] = probe['referer']
+    return probe['url'], headers
+
+
 def probe_host_network() -> tuple[bool, str]:
-    """Probe whether this process can reach Hampshire Hub (not sandboxed).
+    """Probe whether this process can reach the world's configured tile host.
+
+    Worlds without ``fetch_probe`` skip the check.
 
     @returns: (ok, detail)
     """
-    url = 'https://tiles.maps.southampton.ac.uk/aer/18/130063/87836.png'
+    request = _probe_request()
+    if request is None:
+        return True, 'no fetch_probe configured'
+    url, headers = request
     try:
         data = direct_fetch(
             url,
-            {
-                'User-Agent': DEFAULT_UA,
-                'Referer': 'https://maps.southampton.ac.uk/',
-            },
+            headers,
             timeout=20.0,
         )
         if len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n':
@@ -314,13 +349,13 @@ def serve() -> int:
     ok, detail = probe_host_network()
     if not ok:
         print(
-            'ERROR: this process cannot reach tiles.maps.southampton.ac.uk\n'
+            'ERROR: this process cannot reach the configured fetch probe\n'
             f'  ({detail})\n'
             'You started the sidecar inside the Cursor agent sandbox.\n'
             'Stop it, then start from macOS Terminal / iTerm instead:\n'
-            '  open scripts/start-ref-fetch.command\n'
+            '  scripts/start-ref-fetch.command <world>\n'
             'or:\n'
-            '  python3 scripts/ref_fetch_agent.py\n',
+            '  python3 scripts/ref_fetch_agent.py --world <name>\n',
             file=sys.stderr,
             flush=True,
         )
@@ -330,7 +365,7 @@ def serve() -> int:
         f'ref_fetch_agent listening on http://127.0.0.1:{port}  (Ctrl+C to stop)\n'
         f'host network: {detail}\n'
         f'health: curl -s http://127.0.0.1:{port}/health\n'
-        f'or double-click: scripts/start-ref-fetch.command',
+        f'or: scripts/start-ref-fetch.command <world>',
         flush=True,
     )
     try:
@@ -348,18 +383,21 @@ def main(argv: list[str] | None = None) -> int:
     @param argv: args without program name
     @returns: exit code
     """
+    import script_env
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    script_env.add_world_arg(p)
     p.add_argument('--health', action='store_true', help='check sidecar and exit')
     p.add_argument(
         '--probe',
         action='store_true',
-        help='test whether THIS process can reach Hampshire Hub (no server)',
+        help='test whether THIS process can reach the configured fetch probe (no server)',
     )
     p.add_argument('--get', metavar='URL', help='fetch URL (via sidecar if needed) to stdout or -o')
     p.add_argument('-o', '--output', help='write --get bytes to this path')
     p.add_argument('--direct', action='store_true', help='with --get, force process-direct fetch')
     p.add_argument('--port', type=int, help=f'override listen/client port (default {DEFAULT_PORT})')
     args = p.parse_args(argv)
+    script_env.activate_world_from_args(args)
     if args.port:
         os.environ['REF_FETCH_PORT'] = str(args.port)
 
@@ -374,26 +412,25 @@ def main(argv: list[str] | None = None) -> int:
         detail = 'sidecar down'
         if ok:
             # Sidecar may be "up" but sandboxed — probe via a real fetch.
-            try:
-                data = sidecar_fetch(
-                    'https://tiles.maps.southampton.ac.uk/aer/18/130063/87836.png',
-                    {
-                        'User-Agent': DEFAULT_UA,
-                        'Referer': 'https://maps.southampton.ac.uk/',
-                    },
-                    timeout=20.0,
-                )
-                usable = len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n'
-                detail = f'{len(data)} byte PNG' if usable else 'bad body'
-            except Exception as exc:  # noqa: BLE001
-                detail = str(exc)
+            request = _probe_request()
+            if request is None:
+                usable = True
+                detail = 'no fetch_probe configured'
+            else:
+                url, headers = request
+                try:
+                    data = sidecar_fetch(url, headers, timeout=20.0)
+                    usable = len(data) > 100 and data[:8] == b'\x89PNG\r\n\x1a\n'
+                    detail = f'{len(data)} byte PNG' if usable else 'bad body'
+                except Exception as exc:  # noqa: BLE001
+                    detail = str(exc)
         print(json.dumps({
             'ok': ok,
             'usable': usable,
             'base': base_url(),
             'detail': detail,
             'hint': None if usable else (
-                'Start outside Cursor: open scripts/start-ref-fetch.command'
+                'Start outside Cursor: scripts/start-ref-fetch.command <world>'
             ),
         }, indent=2))
         return 0 if usable else 1

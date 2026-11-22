@@ -82,6 +82,16 @@ def _tag_override(blob: str) -> WorkContext | None:
         return None
 
 
+def _extra_keywords(kind: str) -> tuple[str, ...]:
+    """Place-specific queue keywords from world config, uppercased.
+
+    @param kind: work-context name (``terrace``, ``ground``, …)
+    @returns: keywords to match against the uppercased blob
+    """
+    from place_config import work_context_keywords
+    return tuple(str(word).upper() for word in work_context_keywords().get(kind, ()))
+
+
 def detect_context(item: dict) -> tuple[WorkContext, str]:
     """Guess primary work context from queue item text.
 
@@ -102,8 +112,8 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
 
     if any(k in b for k in ('FOLIAGE LAST', 'FOLIAGE PASS', 'FOLIAGE.')):
         return WorkContext.FOLIAGE, 'foliage-last cell pass'
-    if any(k in b for k in ('TERRACE-BUILDS', 'BROADLANDS_RD', ' BROADLANDS ')):
-        return WorkContext.TERRACE, 'terrace house builds / Broadlands'
+    if any(k in b for k in ('TERRACE-BUILDS',) + _extra_keywords('terrace')):
+        return WorkContext.TERRACE, 'terrace house builds'
     if any(k in b for k in ('FAÇADE', 'FACADE', 'FRONTAGE SURVEY', 'WHOLE PROPERTY', 'OSM_FOOTPRINTS.PY FRONTAGE')):
         return WorkContext.PROPERTY, 'whole-property / frontage survey'
 
@@ -111,8 +121,8 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
         if any(k in b for k in (
             'GROUNDS', 'TIDY', 'OPENS', 'CLEARS', 'PATH', 'FOOTWAY', 'GAP', 'MICRO',
             'SURFACE', 'FINISH', 'PARCEL', 'SIGNOFF', 'COVERAGE.PY', 'ROAD:', 'PROP:',
-            'Q-05', 'HIGHFIELD_Q', 'GROUND_',
-        )):
+            'Q-05', 'GROUND_',
+        ) + _extra_keywords('ground')):
             return WorkContext.GROUND, 'cell ground / parcel batch'
         return WorkContext.GROUND, 'CELL item (default ground, not property)'
 

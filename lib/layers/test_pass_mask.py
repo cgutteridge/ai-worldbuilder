@@ -93,7 +93,7 @@ class TestBuildAndVerify(unittest.TestCase):
 
     def test_build_fields(self):
         """Mask carries the documented fields and a valid digest."""
-        mask = pm.build_mask('trees', (48, -44), 'highfield_48_m44_trees', self.placements, _air,
+        mask = pm.build_mask('trees', (48, -44), 'cell_48_m44_trees', self.placements, _air,
                              created='2026-10-14T00:00:00+00:00')
         self.assertEqual(mask['count'], 3)
         self.assertEqual(mask['bbox'], [6150, 70, -5600, 6151, 71, -5600])

@@ -25,7 +25,7 @@ class Client:
         result = self.request("initialize", {
             "protocolVersion": "2025-03-26",
             "capabilities": {},
-            "clientInfo": {"name": "southampton-refine-check", "version": "1.0"},
+            "clientInfo": {"name": "worldbuilder-check", "version": "1.0"},
         })
         self.headers["MCP-Protocol-Version"] = result["protocolVersion"]
         self.request("notifications/initialized", {}, notification=True)

@@ -112,7 +112,7 @@ class TestProbeFloor(unittest.TestCase):
     """Low ground (river valleys, coasts) must be seen: the floor comes from the world, not Y 30."""
 
     def test_floor_is_sea_level_less_the_margin(self):
-        with bound_world(11):                                    # southampton-build
+        with bound_world(11):                                    # y_offset 11
             self.assertEqual(sp.probe_floor(), 11 - sp.LOW_GROUND_MARGIN_M)
         with bound_world(64):
             self.assertEqual(sp.probe_floor(), 64 - sp.LOW_GROUND_MARGIN_M)

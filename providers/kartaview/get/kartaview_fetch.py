@@ -5,8 +5,8 @@ API: https://api.openstreetcam.org/2.0/photo/ (no token; see reference/SOURCES.t
 
   python3 shims/kartaview_fetch.py list --at 6435,-5543 --radius-m 80
   python3 shims/kartaview_fetch.py get 1519868249,1519868121 --place UNI \
-      --dir photos/highfield-campus [--notes "..."]
-  python3 shims/kartaview_fetch.py sheet photos/highfield-campus/kartaview-1.jpg,... out.png
+      --dir photos/campus [--notes "..."]
+  python3 shims/kartaview_fetch.py sheet photos/campus/kartaview-1.jpg,... out.png
 
 `list` prints id, camera MC x,z, heading (deg, 0 = north = -Z), date and distance, nearest
 first, one per sequence position so a pass along a road is easy to pick from. `get` skips
@@ -26,7 +26,7 @@ from world_frame import mc_to_wgs84, wgs84_batch_to_mc  # noqa: E402
 
 REF = ROOT / 'reference'
 API = 'https://api.openstreetcam.org/2.0/photo/'
-UA = {'User-Agent': 'SouthamptonRefine/kartaview_fetch (+local build reference)'}
+UA = {'User-Agent': 'worldbuilder/kartaview_fetch (+local build reference)'}
 
 
 def mc_to_ll(x, z):

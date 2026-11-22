@@ -4,7 +4,7 @@ Owns cell size, home cell, bounds, cell→region mapping, ring order, directions
 connected components, ``parse_cell``,
 canonical id format ``tx,tz``, and sparse MC tile ids. Home cell and cell size
 come from the active world's ``config/world-frame.json`` (``cell.size``,
-``cell.home``); defaults match Southampton (128 / 48,-44) when absent.
+``cell.home``); defaults are 128 and home (48, -44) when the frame omits them.
 
 A cell ``(tx, tz)`` covers blocks x in ``[tx*size, tx*size+size-1]``,
 z in ``[tz*size, tz*size+size-1]``. North is −Z. Pure functions aside from

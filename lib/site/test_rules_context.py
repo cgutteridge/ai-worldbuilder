@@ -25,7 +25,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertNotIn('rules/frontage-and-evidence.md', paths)
 
     def test_ground_paths(self) -> None:
-        it = self._item('CELL 48,-44 path/footway stragglers. build_highfield_q053_paths')
+        it = self._item('CELL 48,-44 path/footway stragglers. build_q053_paths')
         ctx, _ = detect_context(it)
         self.assertEqual(ctx, WorkContext.GROUND)
         plan = plan_for_item(it)
@@ -36,7 +36,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertNotIn('rules/geocraft-accuracy.md', paths)
 
     def test_terrace(self) -> None:
-        it = self._item('TERRACE Broadlands terrace-builds broadlands_rd_14_24')
+        it = self._item('TERRACE example terrace-builds example_rd_14_24')
         ctx, _ = detect_context(it)
         self.assertEqual(ctx, WorkContext.TERRACE)
         plan = plan_for_item(it)

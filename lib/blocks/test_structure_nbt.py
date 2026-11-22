@@ -115,8 +115,8 @@ class TestReadStructureFile(unittest.TestCase):
     def test_structure_file_path(self):
         root = Path('/save')
         self.assertEqual(
-            structure_file_path(root, 'southampton_refine:before_house'),
-            root / 'generated' / 'southampton_refine' / 'structures' / 'before_house.nbt',
+            structure_file_path(root, 'worldbuilder:before_house'),
+            root / 'generated' / 'worldbuilder' / 'structures' / 'before_house.nbt',
         )
 
 

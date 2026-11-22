@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Audit every door the builds placed against the live world: a door needs a jamb each side and a lintel.
 
-  .venv/bin/python scripts/door_audit.py --world southampton-build
-  .venv/bin/python scripts/door_audit.py --world southampton-build --list
+  .venv/bin/python scripts/door_audit.py --world my-world
+  .venv/bin/python scripts/door_audit.py --world my-world --list
 
-  .venv/bin/python scripts/door_audit.py --world southampton-build --plans 'houses_sherborne_road*' ...
+  .venv/bin/python scripts/door_audit.py --world my-world --plans 'houses_example_road*' ...
 
 ``--plans [GLOB ...]`` reads each landed feature plan's doors from its recorded blocks (read-only, via
 ``entrance_approach.entrances_from_blocks``) and checks them against the world, one line per failing door:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Southampton Refine handoff helpers: session brief, view, agent hooks.
+"""Handoff helpers: session brief, view, agent hooks.
 
 Progress SoT is ``cell_registry.py next`` (cell journal), not a world queue file.
 
@@ -1060,7 +1060,7 @@ def starter_text(item, owner_placeholder='<unique-owner>'):
     cell = _cell_for_item(item)
     cell_rel = str(sources_path(*cell).relative_to(ROOT)) if cell else None
     rules_line = format_starter_rules_line(plan_for_item(item, cell_rel))
-    return f"""You are refining the Southampton world in {ROOT}.
+    return f"""You are refining the active world in {ROOT}.
 
 Accuracy to the real place only — no regions, themes or whimsy. Use the SESSION
 BRIEF below (from `{NEXT_CHAT_CMD}`) instead of reading every site file.
@@ -1088,7 +1088,7 @@ When the item is done: release the lock, then hand off with a short session
 summary and a creative-mode view of the main change (site_handoff end helpers
 if useful). Open a new chat and run `cell_registry.py next` again.
 {CHAIN_RULE}
-Needs: Minecraft open with Southampton2023 + Fabric MCP (F3+P), sole MCP client.
+Needs: Minecraft open on this world's save + Fabric MCP (F3+P), sole MCP client.
 """.strip() + '\n'
 
 
@@ -1513,7 +1513,7 @@ def cmd_hook_stop(_argv):
         sess = pend.get('session_summary') or ''
         sess_bit = f' Session did: {sess}' if sess else ''
         out['followup_message'] = (
-            f'Southampton Refine handoff: {done} is done.{sess_bit} '
+            f'Worldbuilder handoff: {done} is done.{sess_bit} '
             f'Confirm the user heard "ready for handoff" and is looking at the change in creative. '
             f'Then open a NEW chat. Show the NEXT CHAT copy box from `site_handoff.py end` '
             f'output (between >>> COPY and <<< COPY) as a markdown fenced code block — '
@@ -1539,7 +1539,7 @@ def cmd_hook_start(_argv):
     if item:
         summary = item['text'][:180].rstrip('.')
         out['additional_context'] = (
-            f'Southampton Refine handoff: top open QUEUE item is {item["id"]} — {summary}. '
+            f'Worldbuilder handoff: top open QUEUE item is {item["id"]} — {summary}. '
             f'Accuracy only (no fictional districts). Run `{NEXT_CHAT_CMD}` once; '
             f'follow RULES READING in the SESSION BRIEF (rules/rules-context.md). '
             f'Do not read the whole rules/process.md. '

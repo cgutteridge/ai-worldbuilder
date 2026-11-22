@@ -188,34 +188,34 @@ def building_land_use(idx: OSMIndex, rings, props: dict, classes: dict | None = 
                                       checked=idx.layer_covered('landuse', cx, cz), ref=osm_ref(props))
 
 
-# Builds whose work was undone (I-009: façade shells on the pavement, reverted by
-# broadlands_facade_revert + region snap I-009-revert).
-REVERTED = frozenset({
-    'portswood_x_broadlands_terrace_facade_1', 'portswood_x_broadlands_terrace_facade_1b',
-    'portswood_x_broadlands_terrace_facade_2', 'portswood_x_broadlands_terrace_facade_2b',
-    'portswood_x_broadlands_terrace_facade_2c', 'broadlands_facade_revert',
-})
 TOUCH_PASSES = ('feature', 'ground', 'trees', 'decor', 'other')
 
 
 def touch_excluded(name: str) -> bool:
     """Whether a build's columns are omitted from touched-column evidence.
 
+    Reverted builds come from the world's ``reverted_builds`` list.
+
     @param name: plan name
     @returns: True if the build should not count as touched ground
     """
-    return name in REVERTED or name.startswith('cell_marker_')
+    from place_config import reverted_builds
+    return name in reverted_builds() or name.startswith('cell_marker_')
 
 
-def touched_by_build(exclude=REVERTED) -> dict:
+def touched_by_build(exclude=None) -> dict:
     """Columns covered by each build's latest recorded plan in the cell journal.
 
     Ghost massing does not count as touched ground.
 
-    @param exclude: build names to ignore (default: REVERTED); also skips cell_marker_*
+    @param exclude: build names to ignore (default: the world's ``reverted_builds``);
+        also skips cell_marker_*
     @returns: {build name: set of (x, z)}
     """
     from cell_registry import view_registry
+    from place_config import reverted_builds
+    if exclude is None:
+        exclude = reverted_builds()
     return {name: cols for name, cols in view_registry().touched(TOUCH_PASSES).items()
             if name not in exclude and not touch_excluded(name)}
 

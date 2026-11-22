@@ -16,8 +16,8 @@ coordinate-conversion implementation.
   python3 scripts/geo.py probe --bbox 7080,-5560,7120,-5500
   python3 scripts/geo.py view --at 7097,35,-5521 --heading 22
   python3 scripts/geo.py survey --at 7097,-5521 --preset terrace
-  python3 scripts/geo.py party --bbox 7040,-5560,7140,-5500 --street "Broadlands Road"
-  python3 scripts/geo.py place --name "Broadlands 20-22" --mc 7097,-5521
+  python3 scripts/geo.py party --bbox 7040,-5560,7140,-5500 --street "Example Road"
+  python3 scripts/geo.py place --name "Example 20-22" --mc 7097,-5521
   python3 scripts/geo.py tiles --bbox 7040,-5560,7140,-5500 --zoom 18 --mosaic 3
 
 WGS84 paths use in-process pyproj via world_frame. MC ↔ OSGB uses

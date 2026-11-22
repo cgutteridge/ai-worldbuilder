@@ -44,7 +44,7 @@ class RidgeJogTest(unittest.TestCase):
         self.assertEqual(ridge_jogs(gable({}, 10, 0, 8)), [])
 
     def test_stepped_segments_jog(self):
-        # broadlands_rd_56_62: one pair squared as segments whose ridge moves 2 east
+        # one pair squared as segments whose ridge moves 2 east
         cells = gable(gable({}, 10, 0, 4), 12, 5, 9)
         jogs = ridge_jogs(cells)
         self.assertEqual(len(jogs), 1)

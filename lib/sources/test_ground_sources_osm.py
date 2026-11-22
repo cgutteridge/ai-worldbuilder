@@ -452,7 +452,7 @@ class WayLinesForFurnitureTest(unittest.TestCase):
 
 
 # Carriageways the map clips omit. This is the table that used to live in ground_sources;
-# southampton-build keeps the same rows in reference/supplement-roads.json.
+# A world may keep the same rows in reference/supplement-roads.json.
 _MIGRATED_ROADS = [
     ((50, -42),
      [(6396, -5294), (6460, -5266), (6500, -5248), (6531, -5235)],

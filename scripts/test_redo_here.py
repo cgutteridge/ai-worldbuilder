@@ -119,16 +119,16 @@ class TestScriptFor(unittest.TestCase):
     def test_direct_build_name_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
-            path = d / 'build_highfield_demo.py'
-            path.write_text("NAME = 'highfield_demo'\n", encoding='utf-8')
-            self.assertEqual(rh.script_for('highfield_demo', d), path)
+            path = d / 'build_campus_demo.py'
+            path.write_text("NAME = 'campus_demo'\n", encoding='utf-8')
+            self.assertEqual(rh.script_for('campus_demo', d), path)
 
     def test_name_match_when_filename_differs(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
             path = d / 'build_something_else.py'
-            path.write_text("NAME = 'highfield_odd'\n", encoding='utf-8')
-            self.assertEqual(rh.script_for('highfield_odd', d), path)
+            path.write_text("NAME = 'campus_odd'\n", encoding='utf-8')
+            self.assertEqual(rh.script_for('campus_odd', d), path)
 
     def test_missing(self):
         with tempfile.TemporaryDirectory() as tmp:

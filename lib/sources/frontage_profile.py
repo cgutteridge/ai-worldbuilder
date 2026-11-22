@@ -8,7 +8,7 @@ forecourt classes paving, gravel, lawn, planting. Kerb = last road sample before
 run; forecourt = pavement edge to the first footprint column. Reads aerial_coverage samples and
 footprints only; no ground change, no world write.
 
-  python3 scripts/frontage_profile.py --world <name> --cell 53,-43 [--street "Kitchener Road"]
+  python3 scripts/frontage_profile.py --world <name> --cell 53,-43 [--street "Example Road"]
 """
 from __future__ import annotations
 

@@ -9,13 +9,13 @@ converted to MC X/Z with osgb.py. Optional ``root=`` / ``osm_root=`` is a test
 seam for alternate trees — not a cross-world production path.
 
 Why this exists (I-009, 11 Oct 2026): façade builds placed a brick front wall
-on the pavement of Broadlands Road because the "street edge" was guessed from
-surface blocks. Real houses sat ~6 blocks back behind front gardens. The
-house front line comes from these footprints, not from block surveys.
+on the pavement because the "street edge" was guessed from surface blocks.
+Real houses sat ~6 blocks back behind front gardens. The house front line
+comes from these footprints, not from block surveys.
 
   # which street am I on, where are the fronts, how deep are the gardens?
   python3 scripts/osm_footprints.py frontage --bbox 7040,-5560,7140,-5500
-  python3 scripts/osm_footprints.py frontage --street "Broadlands Road" --bbox ...
+  python3 scripts/osm_footprints.py frontage --street "Example Road" --bbox ...
   # audit cells (a build's archive, or every live kit-owned cell)
   python3 scripts/osm_footprints.py check --build <build_name>
   python3 scripts/osm_footprints.py check --all

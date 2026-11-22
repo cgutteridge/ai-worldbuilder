@@ -4,8 +4,8 @@
 Uses the structure recorded with the first cell journal entry of that build (site_kit.apply).
 Restoring blocks bypasses the journal: follow it with a journal Undo or a re-apply.
 
-  python3 scripts/restore_structure_backup.py highfield_48_m44_foliage
-  SITE_OWNER=you python3 scripts/restore_structure_backup.py highfield_48_m44_foliage --apply
+  python3 scripts/restore_structure_backup.py cell_48_m44_foliage
+  SITE_OWNER=you python3 scripts/restore_structure_backup.py cell_48_m44_foliage --apply
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def load_structure(name: str, origin, m=None) -> str:
 
     The caller holds the lock. Raises if the server reports a failure.
 
-    @param name: structure id, e.g. southampton_refine:before_<plan>
+    @param name: structure id, e.g. worldbuilder:before_<plan>
     @param origin: [x, y, z] the structure was saved from
     @param m: optional Paced-like client (tests)
     @returns: the server's reply text
@@ -72,7 +72,7 @@ def restore(build: str, *, apply: bool) -> None:
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('build', help='plan name, e.g. highfield_48_m44_foliage')
+    ap.add_argument('build', help='plan name, e.g. cell_48_m44_foliage')
     ap.add_argument('--apply', action='store_true')
     args = ap.parse_args()
     restore(args.build, apply=args.apply)

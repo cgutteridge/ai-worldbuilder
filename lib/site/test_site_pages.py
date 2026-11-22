@@ -10,15 +10,15 @@ class TestSitePages(unittest.TestCase):
     def test_find_media_links_only_existing_matching_images(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            for n in ['highfield_47_m45_ground-preview.png', 'highfield_47_m45_ground-kinds.png', 'cmp-47_m45-strip.png',
-                      'other.png', 'cell_marker_47_m45-preview.png', 'highfield_47_m45_notes.txt', 'extra.png',
-                      'highfield_48_m44_ground-preview.png']:
+            for n in ['cell_47_m45_ground-preview.png', 'cell_47_m45_ground-kinds.png', 'cmp-47_m45-strip.png',
+                      'other.png', 'cell_marker_47_m45-preview.png', 'cell_47_m45_notes.txt', 'extra.png',
+                      'cell_48_m44_ground-preview.png']:
                 (d / n).write_bytes(b'x')
-            sts = {'ground-layer': {'plan': 'highfield_47_m45_ground'}}
+            sts = {'ground-layer': {'plan': 'cell_47_m45_ground'}}
             got = {f.name: g for g, f in sp.find_media((47, -45), sts, d, {'extra.png': ['47,-45']})}
-            self.assertEqual(set(got), {'highfield_47_m45_ground-preview.png', 'highfield_47_m45_ground-kinds.png',
+            self.assertEqual(set(got), {'cell_47_m45_ground-preview.png', 'cell_47_m45_ground-kinds.png',
                                         'cmp-47_m45-strip.png', 'extra.png'})
-            self.assertEqual(got['highfield_47_m45_ground-kinds.png'], 'highfield_47_m45_ground')
+            self.assertEqual(got['cell_47_m45_ground-kinds.png'], 'cell_47_m45_ground')
             self.assertEqual(got['cmp-47_m45-strip.png'], 'Comparisons and extras')
             self.assertEqual(sp.find_media((47, -45), sts, d / 'missing'), [])
 
