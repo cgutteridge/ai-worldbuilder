@@ -403,7 +403,7 @@ class TrackerModelFlagsTest(unittest.TestCase):
         for flag in ('missing', None, 'true', 1, [], {}):
             task = {'id': 1}
             if flag != 'missing':
-                task['requiresClaude'] = flag
+                task['builderTask'] = flag
             with self.subTest(flag=flag), mock.patch.object(
                 pcc, '_git', return_value=json.dumps({'tasks': [task]})
             ):
@@ -413,16 +413,27 @@ class TrackerModelFlagsTest(unittest.TestCase):
                 )
         for flag in (True, False):
             with mock.patch.object(pcc, '_git', return_value=json.dumps(
-                {'tasks': [{'requiresClaude': flag}]}
+                {'tasks': [{'builderTask': flag}]}
             )) as staged:
                 self.assertEqual(pcc.invalid_tracker_files(
                     Path('/tmp/repo'), ['tasks/index.json']), [])
                 staged.assert_called_once_with(Path('/tmp/repo'), 'show', ':tasks/index.json')
 
+    def test_legacy_requires_claude_key_is_not_the_flag(self) -> None:
+        # The renamed flag: an active task with only the old key is refused, and a non-boolean old key is refused too.
+        for task in ({'id': 1, 'requiresClaude': True}, {'id': 1, 'builderTask': True, 'requiresClaude': 'x'}):
+            with self.subTest(task=task), mock.patch.object(
+                pcc, '_git', return_value=json.dumps({'tasks': [task]})
+            ):
+                self.assertEqual(
+                    pcc.invalid_tracker_files(Path('/tmp/repo'), ['tasks/index.json']),
+                    ['tasks/index.json'],
+                )
+
     def test_archive_accepts_legacy_tasks_and_checks_present_flags(self) -> None:
-        for task, expected in (({}, []), ({'requiresClaude': True}, []),
-                               ({'requiresClaude': False}, []),
-                               ({'requiresClaude': 'false'}, ['tasks/done.json'])):
+        for task, expected in (({}, []), ({'builderTask': True}, []),
+                               ({'builderTask': False}, []),
+                               ({'builderTask': 'false'}, ['tasks/done.json'])):
             with mock.patch.object(pcc, '_git', return_value=json.dumps({'tasks': [task]})):
                 self.assertEqual(pcc.invalid_tracker_files(
                     Path('/tmp/repo'), ['tasks/done.json']), expected)
@@ -431,7 +442,7 @@ class TrackerModelFlagsTest(unittest.TestCase):
         for skip_tests in (False, True):
             with mock.patch.object(pcc, 'checkout_branch_names', return_value=['main']), \
                     mock.patch.object(pcc, 'staged_paths', return_value=['tasks/index.json', 'scripts/foo.py']), \
-                    mock.patch.object(pcc, '_git', return_value='{"tasks":[{"requiresClaude":"true"}]}'), \
+                    mock.patch.object(pcc, '_git', return_value='{"tasks":[{"builderTask":"true"}]}'), \
                     mock.patch.object(pcc, 'run_unit_tests') as tests, \
                     mock.patch('builtins.print'):
                 self.assertEqual(pcc.run_pre_commit(Path('/tmp/repo'), skip_tests=skip_tests), 1)

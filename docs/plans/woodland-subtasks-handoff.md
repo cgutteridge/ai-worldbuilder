@@ -1,6 +1,6 @@
 # Handoff: ship the woodland subtasks (#347-#351) on worktrees
 
-For any agentic AI that can run shell commands and git worktrees (Cursor, Claude Code, Codex, others). You are the **orchestrator**. You launch one worker per task, review and merge each returned branch, and alone update the tracker. Nobody needs a particular model for this wave: every task here is `requiresClaude: false`.
+For any agentic AI that can run shell commands and git worktrees (Cursor, Claude Code, Codex, others). You are the **orchestrator**. You launch one worker per task, review and merge each returned branch, and alone update the tracker. Nobody needs a particular model for this wave: every task here is `builderTask: false`.
 
 Written 2026-11-21. Read the live tracker before acting; this file may be out of date.
 
@@ -62,7 +62,7 @@ For each ready task: branch `task/<id>-<short-slug>` from current `main`, add a 
 > You are a worker on task #<id> in the ai-worldbuilder repo, in this worktree on branch `task/<id>-<slug>`.
 >
 > 1. Run `node scripts/tasks.mjs show <id>` and read the notes. They are the spec. Read `AGENTS.md` and `CODING_STANDARDS.md`.
-> 2. Model gate: this task has `requiresClaude: false`, host `<tool>`, model `<model>`. If you discover the task needs a world build step (a live dry run or apply, reading the live world, judging a real cell), stop and hand back; do not do it.
+> 2. Model gate: this task has `builderTask: false`, host `<tool>`, model `<model>`. If you discover the task needs a world build step (a live dry run or apply, reading the live world, judging a real cell), stop and hand back; do not do it.
 > 3. Write the change and its tests. Tests are colocated (`lib/<category>/test_*.py`) and use synthetic data only. Run only what your diff needs: `python3 scripts/run_tests.py --only <stem>`. Do not run live-world commands, `site_lock.py`, or any `--apply`.
 > 4. Put shares, thresholds and palettes in config or named constants as the notes say; never magic numbers in code. Everything seeded per cell and column so reruns are identical.
 > 5. Commit **code only** on your branch with clear messages. Never edit `tasks/index.json` or `tasks/done.json`. Never merge, never review, never push.

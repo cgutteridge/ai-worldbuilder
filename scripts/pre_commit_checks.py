@@ -182,11 +182,11 @@ def is_administrative_only_paths(paths: Iterable[str]) -> bool:
 
 
 def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
-    """Return staged tracker files with invalid JSON or Claude requirement flags.
+    """Return staged tracker files with invalid JSON or builderTask flags.
 
     @param repo_root: repository root
     @param paths: staged file paths relative to the repo root
-    @returns: sorted tracker paths that fail JSON or model-flag validation
+    @returns: sorted tracker paths that fail JSON or builderTask validation
     """
     bad: list[str] = []
     for path in sorted(set(paths) & TRACKER_PATHS):
@@ -196,8 +196,9 @@ def invalid_tracker_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
             tasks = data['tasks']
             if not isinstance(tasks, list) or any(
                 not isinstance(task, dict)
-                or (path == 'tasks/index.json' or 'requiresClaude' in task)
-                and type(task.get('requiresClaude')) is not bool
+                or (path == 'tasks/index.json' or 'builderTask' in task)
+                and type(task.get('builderTask')) is not bool
+                or 'requiresClaude' in task and type(task['requiresClaude']) is not bool
                 for task in tasks
             ):
                 bad.append(path)
@@ -388,7 +389,7 @@ def run_pre_commit(repo_root: Path, *, skip_tests: bool = False) -> int:
     bad = invalid_tracker_files(repo_root, paths)
     if bad:
         print(
-            'pre-commit: staged tracker has invalid JSON or requiresClaude flags:\n  '
+            'pre-commit: staged tracker has invalid JSON or builderTask flags (every task in tasks/index.json needs an explicit true or false):\n  '
             + '\n  '.join(bad),
             file=sys.stderr,
         )

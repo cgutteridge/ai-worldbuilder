@@ -34,6 +34,14 @@ _Avoid_: tooling queue, world-queue files (for system work)
 That world’s cell registry (next work + issues). Never holds system engineering tasks.
 _Avoid_: TODO.txt, retired world queue files, system tasks in the world registry
 
+**Builder task**:
+A system task (`builderTask: true`) whose process uses an AI model as the builder: a model interprets place evidence into a build design or spec, runs a representative build, or judges the built result in game. Includes spikes and trials. Runs on the same models and effort as real build runs, because it tests the model's decisions, not just the code. Rule: `docs/agents/model-and-effort.md`; sizing: `docs/agents/issue-tracker.md#sizing-tasks`.
+_Avoid_: Claude task, requiresClaude, AI task
+
+**Non-builder task**:
+A system task (`builderTask: false`): no AI model is used in the process. It may still touch Minecraft (a scripted apply, a read-back scan, a live check with no model decision). Any model can do it; fixtures and unit tests are enough to finish it. A task with a lot of non-builder work and some builder work is split in two, builder task blocked by non-builder task.
+_Avoid_: offline task (it can use the live world), coding task
+
 ## Cells and registry
 
 **Cell**:

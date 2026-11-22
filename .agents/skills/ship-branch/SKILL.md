@@ -23,7 +23,7 @@ Everything else in this skill is automatic once invoked. Ask the owner before
 using Opus or any other high-cost model; default models need no ask.
 
 Before resuming a task builder or dispatching a fixer, read the ticket's
-`requiresClaude` flag and follow the dispatch gate in
+`builderTask` flag and follow the dispatch gate in
 [`docs/agents/model-and-effort.md`](../../../docs/agents/model-and-effort.md#task-model-requirement).
 This applies to the fixer defaults below too: a flagged task needs an eligible
 Claude runner, including confirmed external-model budget when hosted in Cursor.

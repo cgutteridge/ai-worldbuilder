@@ -4,22 +4,31 @@ Leading words: **stretch** (a task that needs more model or effort than the defa
 
 ## Task model requirement
 
-Every active system task carries a boolean `requiresClaude`. Set it explicitly
+Every active system task carries a boolean `builderTask`. Set it explicitly
 when creating a task and reassess it whenever its scope or acceptance checks change.
 Keep it through status changes and archival. Completed legacy tasks may omit it.
 
-Set `true` when any required work performs a world build step: interpreting place
-evidence into a build design/spec, running a representative build dry run or apply,
-or evaluating the built result in game. This includes spikes, prototypes and trials,
-even when most of the task is tool code. Set `false` for tool engineering that can
-be completed with synthetic fixtures, code review or source research alone.
-Running unit tests of build code does not itself perform a world build step.
-If scope grows to include one, set the flag before that work starts; removing it
-requires a recorded reason explaining why build work is no longer needed.
+**Builder task** (`builderTask: true`): the task's process uses an AI model as the
+builder. That means any required work where a model interprets place evidence into a
+build design or spec, runs a representative build dry run or apply, or judges the built
+result in game. This includes spikes, prototypes and trials, even when most of the task
+is tool code. Builder tasks use the same models and effort as real build runs (see
+`scripts/build_roles.py` and `rules/build-roles.md`), because they test the model's
+decisions, not just the code.
+
+**Non-builder task** (`builderTask: false`): no AI model is used in the process. It
+may still touch Minecraft (a scripted apply, a read-back scan, a live check with no model
+decision), and any model can do the coding. Tool engineering that can be completed with
+synthetic fixtures, code review or source research alone is non-builder. Running unit
+tests of build code does not make a task a builder task.
+
+If scope grows to include builder work, set the flag before that work starts; clearing
+it requires a recorded reason explaining why no AI model is used any more. Sizing rules
+for splitting tasks by this flag are in [issue-tracker](issue-tracker.md#sizing-tasks).
 
 **Dispatch gate — single task, wave, retry and unattended run.** Read the current
-ticket before claiming it, creating its worktree or starting/resuming its builder.
-For `requiresClaude: true`, establish access to the selected Claude Sonnet or Opus
+ticket before claiming it, creating its worktree or starting or resuming its worker.
+For `builderTask: true`, establish access to the selected Claude Sonnet or Opus
 model. Claude Code can run it directly. Cursor can also take the task when Claude
 access and sufficient **external-model budget for the planned work** are confirmed.
 Record the model, host and current budget evidence in the dispatch brief/run log;
