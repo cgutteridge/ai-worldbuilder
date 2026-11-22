@@ -68,11 +68,11 @@ from pathlib import Path
 from typing import Any
 
 import cellmath
+from cellmath import N8
 import provenance as prov
 from water_level import LevelSegment, level_at_distance
 from site_kit import Plan, apply, preview  # noqa: E402
 
-N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
 DEFAULT_DEPTH = 1
 DEFAULT_FLOOR = 'dirt'
 DEFAULT_BANK_WIDTH = 1
@@ -452,24 +452,6 @@ def bank_columns_in_cell(
     return {q for q in ring if cellmath.cell_of(*q) == key}
 
 
-def _components(cells: set[tuple[int, int]]) -> list[set[tuple[int, int]]]:
-    """8-connected components of a column set."""
-    left, out = set(cells), []
-    while left:
-        seed = left.pop()
-        comp, todo = {seed}, [seed]
-        while todo:
-            q = todo.pop()
-            for dx, dz in N8:
-                n = (q[0] + dx, q[1] + dz)
-                if n in left:
-                    left.discard(n)
-                    comp.add(n)
-                    todo.append(n)
-        out.append(comp)
-    return out
-
-
 def water_body_components(
     water: Iterable[tuple[int, int]],
     *,
@@ -497,7 +479,7 @@ def water_body_components(
     @returns: list of candidate dicts (``kind`` ``water_body``)
     """
     out: list[dict[str, Any]] = []
-    for comp in sorted(_components(set(water)), key=lambda c: (min(c), len(c))):
+    for comp in sorted(cellmath.components(water, N8), key=lambda c: (min(c), len(c))):
         if len(comp) < min_columns:
             continue
         xs = [x for x, _ in comp]

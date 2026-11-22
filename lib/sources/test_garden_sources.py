@@ -77,7 +77,7 @@ class TestDesignerVeto(unittest.TestCase):
                 mock.patch.object(gs, 'hedge_share', return_value=1.0), \
                 mock.patch.object(gs, 'straighten', side_effect=lambda c: c), \
                 mock.patch('ground_sources.aerial_rgb', return_value=rgb), \
-                mock.patch('ground_sources.cell_box', return_value=(0, 0, 9, 9)), \
+                mock.patch('cellmath.bounds', return_value=(0, 0, 9, 9)), \
                 mock.patch.object(gs, 'tree_canopy_columns', return_value=set()):
             out = gs.garden_barriers(cell, rgb=rgb)
         self.assertEqual(out, [])
@@ -587,13 +587,13 @@ class OverlayAerialSourceTest(unittest.TestCase):
             Image.new('RGB', (4000, 4000), (30, 90, 30)).save(tile)
             mosaic = aerial_coverage.Mosaic(tile, 19, 0, 0)
             png = Path(tmp) / 'out.png'
-            with mock.patch('ground_sources.cell_box', return_value=(1000, 1000, 1003, 1003)), \
+            with mock.patch('cellmath.bounds', return_value=(1000, 1000, 1003, 1003)), \
                     mock.patch.object(aerial_coverage.Mosaic, 'pixels',
                                       lambda self, pts: {p: (p[0] + .5, p[1] + .5) for p in pts}), \
                     mock.patch.object(aerial_coverage, 'mosaics', return_value=[mosaic]):
                 gs.overlay((0, 0), [{'kind': 'fence', 'cells': [(1001, 1001)]}], png)
                 self.assertTrue(png.is_file())
-            with mock.patch('ground_sources.cell_box', return_value=(1000, 1000, 1003, 1003)), \
+            with mock.patch('cellmath.bounds', return_value=(1000, 1000, 1003, 1003)), \
                     mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
                 with self.assertRaises(aerial_coverage.CoverageError):
                     gs.overlay((0, 0), [], Path(tmp) / 'no.png')
@@ -785,7 +785,7 @@ class TestClassDefaultBoundaryIsLabelled(unittest.TestCase):
                 mock.patch.object(gs, 'straighten', side_effect=lambda c: c), \
                 mock.patch.object(lu, 'defaults', return_value=row), \
                 mock.patch('ground_sources.aerial_rgb', return_value={}), \
-                mock.patch('ground_sources.cell_box', return_value=(0, 0, 9, 9)), \
+                mock.patch('cellmath.bounds', return_value=(0, 0, 9, 9)), \
                 mock.patch.object(gs, 'tree_canopy_columns', return_value=set()):
             out = gs.garden_barriers((0, 0), rgb={})
         (item,) = out

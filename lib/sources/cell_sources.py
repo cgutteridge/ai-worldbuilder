@@ -31,16 +31,15 @@ from script_env import (  # noqa: E402
 )
 
 from coverage import (  # noqa: E402
-    cell_bbox,
-    cell_of,
     load_areas,
     load_signoffs,
     stats,
     touched_by_build,
     union,
 )
+from cellmath import cell_bbox, cell_of, mc_tile_for_cell  # noqa: E402
 from geo import tiles_for_bbox  # noqa: E402
-from ground_sources import cell_coverage, mc_tile_for_cell, references_for_cell  # noqa: E402
+from ground_sources import cell_coverage, references_for_cell  # noqa: E402
 from osgb import to_osgb  # noqa: E402
 from osm_footprints import OSMIndex  # noqa: E402
 import vector_map_clips as vmc  # noqa: E402

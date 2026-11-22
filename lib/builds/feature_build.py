@@ -178,7 +178,7 @@ GROUND = (
     'minecraft:dirt', 'minecraft:coarse_dirt', 'minecraft:gravel', 'minecraft:andesite',
     'minecraft:gray_concrete', 'minecraft:black_concrete',
 )
-DIRS = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+from cellmath import DIRS, N4, N8  # noqa: E402
 FASCIA_COLOURS = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
 # Light bands need black lettering; the rest stay white so the name reads against the bar.
 LIGHT_FASCIA = frozenset({'cyan', 'orange', 'lime', 'yellow', 'white', 'pink'})
@@ -309,8 +309,6 @@ def _straight_run(cells: set, fronts: dict) -> dict:
     return {'face': face, 'line': line, 'fill': fill, 'sources': set(cells)}
 
 
-N8 = [(dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz]
-N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 FACE = {'S': 'south', 'N': 'north', 'W': 'west', 'E': 'east'}
 TOWARD = {'S': 'north', 'N': 'south', 'W': 'east', 'E': 'west'}
 ROOF_KINDS = frozenset({'flat', 'pitched'})

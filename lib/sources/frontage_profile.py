@@ -129,10 +129,10 @@ def summarise(rows) -> list:
 
 def cell_rows(cell, street_filter=''):
     import aerial_coverage as aerial
-    from ground_sources import cell_box
+    import cellmath
     from garden_sources import plots_for
 
-    box = cell_box(cell)
+    box = cellmath.bounds(cell)
     owner, info, _street, idx = plots_for(box)
     fp = idx.cells()
     rgb = aerial.sample_rgb(cell, margin=int(MAX_REACH))

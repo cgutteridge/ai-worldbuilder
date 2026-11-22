@@ -33,10 +33,11 @@ import json
 import math
 import re
 import sys
-from collections import deque
 from pathlib import Path
 
 import numpy as np
+
+import cellmath
 
 ROW_MIN_M = 1.0          # shortest PV row pitch looked for (metres = blocks)
 ROW_MAX_M = 2.2          # longest
@@ -84,29 +85,6 @@ def period_score(profile, lo: int, hi: int) -> tuple[float, int]:
         if r > best:
             best, lag = r, k
     return best, lag
-
-
-def components(cells) -> list[set]:
-    """4-connected groups of (x, z) cells.
-
-    @param cells: iterable of (x, z)
-    @returns: list of sets
-    """
-    left = set(cells)
-    out = []
-    while left:
-        seed = left.pop()
-        comp = {seed}
-        q = deque([seed])
-        while q:
-            x, z = q.popleft()
-            for n in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)):
-                if n in left:
-                    left.remove(n)
-                    comp.add(n)
-                    q.append(n)
-        out.append(comp)
-    return out
 
 
 def _trim_box(comp: set) -> tuple[int, int, int, int] | None:
@@ -300,7 +278,7 @@ def derive(rgb, A, footprint, *, shift=(0, 0), pitch: int = 2, threshold: float 
         if min(score_rx[c], score_rz[c]) >= threshold and colour[c][2] - colour[c][0] >= blue_margin
     }
     cores = []
-    for comp in components(pv):
+    for comp in cellmath.components(pv):
         if len(comp) < min_cells:
             continue
         box = _trim_box(comp)

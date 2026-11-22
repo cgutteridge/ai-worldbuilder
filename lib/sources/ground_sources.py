@@ -155,9 +155,8 @@ def poly_cells(rings_list) -> set:
     return out
 
 
-def cell_box(cell: tuple[int, int], margin: int = 0) -> tuple[int, int, int, int]:
-    """Inclusive x0, z0, x1, z1 of a 128² cell, grown by ``margin``."""
-    return cellmath.bounds(cell, margin)
+# trees_layer (edited by another task) still imports this name; delete the alias once it uses cellmath.bounds.
+cell_box = cellmath.bounds
 
 
 # --- vector_map ---------------------------------------------------------------------------
@@ -172,7 +171,7 @@ def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict
     from osm_footprints import cached_geojson_paths
     from world_frame import osgb_to_mc
     mc = lambda c: osgb_to_mc(c[0], c[1])
-    x0, z0, x1, z1 = cell_box(cell, margin)
+    x0, z0, x1, z1 = cellmath.bounds(cell, margin)
     seen, out = set(), []
     for path in cached_geojson_paths():
         for f in json.loads(path.read_text())['features']:
@@ -387,7 +386,7 @@ class OSMGround:
         self._load(feats)
 
     def _put(self, cells, kind: str, pri: int, feat: int | None = None) -> None:
-        x0, z0, x1, z1 = cell_box(self.cell, MARGIN)
+        x0, z0, x1, z1 = cellmath.bounds(self.cell, MARGIN)
         for q in cells:
             if x0 <= q[0] <= x1 and z0 <= q[1] <= z1 and pri >= self.pri.get(q, -1):
                 self.kind[q], self.pri[q] = kind, pri
@@ -426,7 +425,7 @@ class OSMGround:
         elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey', 'rooftop'):
             # surface car park: tarmac (#338; a narrow exception to #158, which keeps land use out of ground paint)
             cs = poly_cells(polys)
-            x0, z0, x1, z1 = cell_box(self.cell, MARGIN)
+            x0, z0, x1, z1 = cellmath.bounds(self.cell, MARGIN)
             self.parking_areas.append({q for q in cs if x0 <= q[0] <= x1 and z0 <= q[1] <= z1})
             self._put(cs, 'tarmac', PRI['parking'])
             self.soft |= {q for q in cs if self.pri.get(q) == PRI['parking']}
@@ -564,7 +563,7 @@ def aerial_rgb(cell: tuple[int, int], margin: int = MARGIN) -> dict:
     The mosaic gives a 5x5 pixel mean; registered columns are RegRGB (see ``aerial_class``).
     """
     from aerial_coverage import sample_rgb
-    x0, z0, x1, z1 = cell_box(cell, margin)
+    x0, z0, x1, z1 = cellmath.bounds(cell, margin)
     pts = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)]
     out = sample_rgb(cell, margin=margin)
     out.update(registered_rgb(pts))                      # sharper, truer colour wins where it exists
@@ -635,17 +634,6 @@ def majority(grid: dict, free: set, passes: int = 2, need: int = 5) -> dict:
 
 
 # --- reference manifest ---------------------------------------------------------------------
-def mc_tile_for_cell(tx: int, tz: int, size: int | None = None) -> str:
-    """Sparse manifest tile id for a coverage cell index (delegates to cellmath).
-
-    @param tx: cell X index (same as coverage tx)
-    @param tz: cell Z index
-    @param size: tile size in blocks
-    @returns: e.g. ``128:48:-44``
-    """
-    return cellmath.mc_tile_for_cell(tx, tz, size=size)
-
-
 def cell_coverage(row: dict, tx: int, tz: int, size: int = 128) -> float:
     """Fraction of a coverage cell's area inside a manifest row's ``bbox_mc`` (0 when it has none).
 
@@ -680,7 +668,7 @@ def references_for_cell(
     @param useful_only: omit ``useful=no`` rows
     @returns: matching manifest rows (may be empty)
     """
-    tile = mc_tile_for_cell(tx, tz)
+    tile = cellmath.mc_tile_for_cell(tx, tz)
     rows = load_manifest()
     out: list[dict] = []
     for r in rows:

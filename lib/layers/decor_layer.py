@@ -730,13 +730,14 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
     """
     import land_use
     from coverage import scan_polygon
-    from ground_sources import MARGIN, cell_box
+    import cellmath
+    from ground_sources import MARGIN
     from ground_layer import LAWN_TAGS
     from osm_footprints import osm_tags
 
     if classes is None:
         from coverage import area_classes
-        classes = area_classes(idx, cell_box(cell, MARGIN))
+        classes = area_classes(idx, cellmath.bounds(cell, MARGIN))
     rules = {}
     for cid in land_use.CLASSES:
         rule = land_use.woodland_decor(cid)
@@ -744,7 +745,7 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
             rules[cid] = rule
     if not rules:
         return {}
-    bbox = cell_box(cell, MARGIN)
+    bbox = cellmath.bounds(cell, MARGIN)
     lawn: set = set()
     wood: set = set()
     scrub: set = set()
@@ -986,9 +987,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         from lidar_heightmap import reference_world
 
         lidar_hm = reference_world().heightmap(cell)
-        from ground_sources import cell_box
+        import cellmath
 
-        land_classes = dplan.land_class_columns(idx, cell_box(cell, 12))
+        land_classes = dplan.land_class_columns(idx, cellmath.bounds(cell, 12))
         wood_columns = woodland_decor_columns(cell, idx, land_classes)
         decor = dplan.build_decor_plan(
             cell,
@@ -998,7 +999,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
             photo_observations=sf.designer_observations(cell),
             lidar_hm=lidar_hm,
             footprint={q for q in fp if cell_contains(cell, *q)},
-            outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cell_box(cell)),
+            outbuilding_footprints=ob.mapped_outbuilding_footprints(idx, cellmath.bounds(cell)),
             lidar_rise=ob.lidar_rise(cell),
             building_columns=set(fp),
             road_lines=vmap.road_lines,

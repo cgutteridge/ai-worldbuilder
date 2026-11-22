@@ -54,7 +54,7 @@ import json
 import math
 import re
 import sys
-from collections import Counter, deque
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
@@ -62,7 +62,8 @@ from script_env import ROOT  # noqa: E402
 from osm_footprints import OSMIndex, _addr, _seg_dist, grow_plots, osm_tags  # noqa: E402
 import land_use  # noqa: E402
 
-from cellmath import CELL, cell_of as _cellmath_cell_of, cell_bbox as _cellmath_cell_bbox  # noqa: E402,F401
+# cell_bbox is also imported from here by lib/layers/foliage.py (edited elsewhere); repoint it to cellmath there.
+from cellmath import CELL, N4, N8, cell_bbox, cell_of, components  # noqa: E402,F401
 REACH = 45            # garden growth from a footprint (same default as osm_footprints plots)
 MARGIN = 48           # grid margin round the area's cells; > REACH so edge properties stay whole
 SLIVER = 5            # residual components this small join a neighbour (ParcelBuilder.residual)
@@ -98,32 +99,9 @@ UMBRELLA = {'landuse': ('residential', 'retail', 'commercial', 'industrial', 'ed
                         'religious', 'railway', 'military'),
             'amenity': ('university', 'school', 'college', 'hospital', 'kindergarten')}
 OPEN_KEYS = ('landuse', 'leisure', 'amenity', 'natural', 'man_made', 'highway', 'place', 'surface')
-from cellmath import N4  # noqa: E402,F401
 
 
-# --- geometry (cell grid owned by cellmath) ----------------------------------------------
-def cell_of(x: int, z: int) -> tuple[int, int]:
-    """128-cell key of a column (delegates to cellmath).
-
-    @param x: MC block x
-    @param z: MC block z
-    @returns: (tx, tz)
-    """
-    return _cellmath_cell_of(x, z)
-
-
-def cell_bbox(tx0: int, tz0: int, tx1: int, tz1: int) -> tuple[int, int, int, int]:
-    """Inclusive block bbox of a rectangle of cells (delegates to cellmath).
-
-    @param tx0: first cell x
-    @param tz0: first cell z
-    @param tx1: last cell x (inclusive)
-    @param tz1: last cell z (inclusive)
-    @returns: (x0, z0, x1, z1) inclusive block bounds
-    """
-    return _cellmath_cell_bbox(tx0, tz0, tx1, tz1)
-
-
+# --- geometry ----------------------------------------------
 def scan_polygon(rings, bbox):
     """Columns whose centre lies inside a polygon, by even-odd scanline over all rings.
 
@@ -166,30 +144,6 @@ def line_band(pts, half: float, bbox):
                     yield x, z, d
 
 
-def components(cells: set, connect=N4) -> list:
-    """Connected components of a column set.
-
-    @param cells: {(x, z), ...}
-    @param connect: neighbour offsets (default 4-connected)
-    @returns: list of sets, largest first, ties by smallest column
-    """
-    left, out = set(cells), []
-    while left:
-        seed = min(left)
-        comp, todo = {seed}, deque([seed])
-        left.discard(seed)
-        while todo:
-            x, z = todo.popleft()
-            for dx, dz in connect:
-                n = (x + dx, z + dz)
-                if n in left:
-                    left.discard(n)
-                    comp.add(n)
-                    todo.append(n)
-        out.append(comp)
-    return sorted(out, key=lambda c: (-len(c), min(c)))
-
-
 def find_seams(bbox, touched: set, max_width: int = 3) -> list:
     """Untouched strips 1..max_width columns wide with touched columns on both sides.
 
@@ -217,8 +171,7 @@ def find_seams(bbox, touched: set, max_width: int = 3) -> list:
                 if prev is not None and 1 <= z - prev - 1 <= max_width:
                     seam.update((x, u) for u in range(prev + 1, z))
                 prev = z
-    n8 = tuple((dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if dx or dz)
-    return components(seam, n8)
+    return components(seam, N8)
 
 
 # --- vector-map classification ------------------------------------------------------------

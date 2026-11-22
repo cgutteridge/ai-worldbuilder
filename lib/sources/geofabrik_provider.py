@@ -173,11 +173,12 @@ def extractor_main(config_path: Path, argv: list[str] | None = None) -> int:
         if args.bbox_wgs84:
             bbox = parse_bbox(args.bbox_wgs84)
         else:
+            import cellmath
             import world_frame as wf
             if args.at:
                 x, z = map(float, args.at.split(','))
                 if args.cell:
-                    x0, z0, x1, z1 = wf.cell_bounds(wf.cell_of(math.floor(x), math.floor(z)))
+                    x0, z0, x1, z1 = cellmath.bounds(cellmath.cell_of(math.floor(x), math.floor(z)))
                 else:
                     if not math.isfinite(args.radius_m) or args.radius_m <= 0:
                         raise ValueError('radius must be finite and positive')

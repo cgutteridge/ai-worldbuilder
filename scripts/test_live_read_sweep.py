@@ -156,9 +156,10 @@ class MaskUndoPrefetchTest(unittest.TestCase):
 class CellMarkerPrefetchTest(unittest.TestCase):
     def test_perimeter_band_clear_positions_bounds_scans(self):
         import cell_marker as cm
+        import cellmath
 
         tx, tz = 0, 0
-        x0, z0, x1, z1 = cm.cell_bounds(tx, tz)
+        x0, z0, x1, z1 = cellmath.bounds((tx, tz))
         base = 50
         y_ring = base + cm.HEIGHT_ABOVE
         blocks = {}

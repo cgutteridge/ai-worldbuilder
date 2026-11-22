@@ -22,6 +22,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+import cellmath
 import outbuildings as ob
 import provenance as prov
 
@@ -125,7 +126,6 @@ def aerial_building_border_hedges(
     @returns: hedge barrier items (resolved and unresolved)
     """
     from ground_sources import aerial_class
-    from garden_sources import components
 
     skip = canopy or set()
     shade: set[tuple[int, int]] = set()
@@ -140,7 +140,7 @@ def aerial_building_border_hedges(
         return []
 
     out: list[dict[str, Any]] = []
-    for i, group in enumerate(sorted(components(shade), key=lambda g: (min(g), len(g)))):
+    for i, group in enumerate(sorted(cellmath.components(shade, cellmath.N8), key=lambda g: (min(g), len(g)))):
         cells = sorted(group)
         item: dict[str, Any] = {
             'id': _item_id('hedge-border', i, cells[0][0], cells[0][1]),
@@ -236,13 +236,12 @@ def aerial_free_hedges(
     @returns: resolved hedge barrier items
     """
     from ground_sources import aerial_class
-    from garden_sources import components
 
     skip = (canopy or set()) | (taken or set()) | footprint
     shade = {q for q, c in rgb.items() if q not in skip and aerial_class(c) == 'shade'}
     use_lidar = bool(lidar_hm) and 'terrain' in lidar_hm
     out: list[dict[str, Any]] = []
-    for group in sorted(components(shade), key=min):
+    for group in sorted(cellmath.components(shade, cellmath.N8), key=min):
         xs, zs = [q[0] for q in group], [q[1] for q in group]
         length = max(max(xs) - min(xs), max(zs) - min(zs)) + 1
         if length < min_cells or len(group) / length > max_width:
@@ -350,10 +349,9 @@ def _designer_source(item: Mapping[str, Any]) -> tuple[str, str]:
 
 def _footprint_columns(cell: tuple[int, int]) -> set[tuple[int, int]]:
     """Building footprint columns that touch the cell (live OSM index)."""
-    from ground_sources import cell_box
     from osm_footprints import OSMIndex
 
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     return {
         q for q in OSMIndex().cells()
         if x0 <= q[0] <= x1 and z0 <= q[1] <= z1
@@ -362,7 +360,6 @@ def _footprint_columns(cell: tuple[int, int]) -> set[tuple[int, int]]:
 
 def _lidar_components(hm, footprint, canopy) -> list[list[tuple[int, int]]]:
     """Connected DSM-above-DTM columns outside footprints, canopy, trees and roofs."""
-    from garden_sources import components
     from lidar_heightmap import TREE, TREE_OVER_ROOF, ROOF
 
     if not hm or 'terrain' not in hm:
@@ -375,7 +372,7 @@ def _lidar_components(hm, footprint, canopy) -> list[list[tuple[int, int]]]:
                 continue
             if hm['terrain'][i, j] > 0 and hm['h'][i, j] > hm['terrain'][i, j]:
                 columns.add(q)
-    return sorted(components(columns), key=min)
+    return sorted((sorted(g) for g in cellmath.components(columns, cellmath.N8)), key=min)
 
 
 def _group_height(hm, group) -> int:
@@ -563,7 +560,7 @@ def build_decor_plan(
         cols = map_barriers.get(key) or set()
         if not cols:
             continue
-        for group in gs.components(cols):
+        for group in sorted(map(sorted, cellmath.components(cols, cellmath.N8)), key=min):
             for q in group:
                 seen_barrier.add(q)
             items.append(_barrier_item(
@@ -927,12 +924,11 @@ def infer_street_furniture(
     @returns: ``(items, summary)``; summary has ``lamps``, ``benches``, ``candidates``, ``dropped``
         (reason: count), ``ways_skipped`` (reason: count), ``lit_tags`` and ``spacing_layers``
     """
-    from ground_sources import cell_box
     import garden_sources as gs
     import street_furniture as sf
 
     profile = gs.load_district(cell) if profile is None else profile
-    x0, z0, x1, z1 = cell_box(cell)
+    x0, z0, x1, z1 = cellmath.bounds(cell)
     taken = {tuple(i['cell']) for i in observed}
     seen_kind = {}
     for item in observed:
@@ -1040,7 +1036,6 @@ def _outbuilding_items(
     Mapped water columns never take a lidar blob (#324): the placer refuses them, so a blob
     there (a boat or pontoon on a river) would only show as an unresolved item.
     """
-    from ground_sources import cell_box
 
     mapped_cols = {tuple(c) for f in footprints for c in f['cells']}
     houses = set(building_columns) - mapped_cols
@@ -1049,7 +1044,7 @@ def _outbuilding_items(
     ring = {(x + a, z + b) for x, z in building_columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
     mapped = ob.mapped_items(footprints, evidence_ids=evidence_ids, root=root, **common)
     lidar = ob.lidar_items(
-        rise, exclude=ring | taken | set(water), canopy=canopy, rgb=rgb, cell_box=cell_box(cell),
+        rise, exclude=ring | taken | set(water), canopy=canopy, rgb=rgb, cell_box=cellmath.bounds(cell),
         evidence_ids=evidence_ids, root=root, targets=targets, plot_owner=plot_owner)
     traced = ob.designer_items(
         [r for r in designer if r.get('kind') in ob.DESIGNER_KINDS],

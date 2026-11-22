@@ -1435,7 +1435,7 @@ class SyntheticGroundBox:
               'lidar_maps': SimpleNamespace(get=lambda x, z, field='h': self.lidar(x, z))}
         plan = Plan('steps-test')
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set(fp))), \
-                mock.patch.object(gl, 'cell_box', side_effect=box), \
+                mock.patch.object(gl.cellmath, 'bounds', side_effect=box), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0):
             owned = set(owned) | set(owned_states or {})
             owned_air = {q for q, b in (owned_states or {}).items() if gl.bare(b) in gl.AIRS}
@@ -1757,7 +1757,7 @@ class TestFloatingSurface(SyntheticGroundBox, unittest.TestCase):
               'unmapped_paving': {}, 'path_widen': {}, 'frontages': [], 'plots': ({}, {}, {}, SimpleNamespace(cells=lambda: {})), 'segments': {},
               'lidar_maps': SimpleNamespace(get=lambda a, b, field='h': 49)}
         with mock.patch('osm_footprints.OSMIndex', return_value=SimpleNamespace(cells=lambda: set())), \
-                mock.patch.object(gl, 'cell_box', side_effect=lambda c, m=0: (x0 - m, z0 - m, x1 + m, z1 + m)), \
+                mock.patch.object(gl.cellmath, 'bounds', side_effect=lambda c, m=0: (x0 - m, z0 - m, x1 + m, z1 + m)), \
                 mock.patch.object(gl, 'stitch_seams', return_value=0), \
                 mock.patch.object(gl, 'owned_air_ceilings', return_value=(set(), {})):
             stats, *_ = gl.plan_cell((0, 0), {}, owned_air, Plan('t'), self.world(), evidence=ev)

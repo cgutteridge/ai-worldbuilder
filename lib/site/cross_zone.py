@@ -12,8 +12,8 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 
-from coverage import cell_bbox, load_area, load_signoffs, stats, touched_by_build, union  # noqa: E402
-from cellmath import CELL  # noqa: E402,F401
+from coverage import load_area, load_signoffs, stats, touched_by_build, union  # noqa: E402
+from cellmath import CELL, cell_bbox  # noqa: E402,F401
 DEFAULT_MARGIN = 8
 
 

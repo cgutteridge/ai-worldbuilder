@@ -2,6 +2,7 @@
 import unittest
 from unittest import mock
 
+import cellmath
 import cell_marker as cm
 
 
@@ -54,7 +55,7 @@ class TestCellMarker(unittest.TestCase):
     def test_clear_positions_sweeps_orphan_corner_wool(self):
         """Perimeter wool outside the registry (legacy Y) is still cleared."""
         tx, tz = 48, -44
-        x0, z0, _, _ = cm.cell_bounds(tx, tz)
+        x0, z0, _, _ = cellmath.bounds((tx, tz))
         base = 60
         y_ring = base + cm.HEIGHT_ABOVE
         y_legacy = y_ring + 2

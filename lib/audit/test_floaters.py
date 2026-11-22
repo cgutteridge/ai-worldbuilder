@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import coverage as cov  # noqa: E402
+import cellmath  # noqa: E402
 import floaters as fl  # noqa: E402
 import floater_scan as fs  # noqa: E402
 
@@ -106,9 +106,9 @@ class TestFloaterScanCli(unittest.TestCase):
         self.assertEqual(fs.cell_output_stem(48, -44), '48_m44')
 
     def test_cell_matches_coverage_bbox(self):
-        """--cell XZ bounds match coverage.cell_bbox."""
+        """--cell XZ bounds match cellmath.cell_bbox."""
         tx, tz = 48, -44
-        x0, z0, x1, z1 = cov.cell_bbox(tx, tz, tx, tz)
+        x0, z0, x1, z1 = cellmath.cell_bbox(tx, tz, tx, tz)
         self.assertEqual((x0, z0, x1, z1), (6144, -5632, 6271, -5505))
 
 

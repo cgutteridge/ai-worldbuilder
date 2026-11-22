@@ -174,11 +174,6 @@ class HelpersTest(unittest.TestCase):
         noise = np.random.default_rng(1).normal(size=40)
         self.assertLess(R.period_score(noise, 4, 10)[0], 0.5)
 
-    def test_components_are_four_connected(self):
-        cells = {(0, 0), (1, 0), (5, 5), (6, 6)}
-        got = sorted(sorted(c) for c in R.components(cells))
-        self.assertEqual(got, [[(0, 0), (1, 0)], [(5, 5)], [(6, 6)]])
-
     def test_membrane_colour_is_the_dominant_surface_not_the_median(self):
         light = [(200, 202, 210)] * 50
         mixed = [(60, 60, 70)] * 30 + [(120, 125, 140)] * 15 + light
