@@ -44,7 +44,7 @@ class RulesContextTests(unittest.TestCase):
         self.assertIn('rules/terrace-builds.md', paths)
 
     def test_rules_tag_override(self) -> None:
-        it = self._item('RULES: tooling  coverage.py build only')
+        it = self._item('RULES: tooling  coverage.py write only')
         ctx, note = detect_context(it)
         self.assertEqual(ctx, WorkContext.TOOLING)
         self.assertIn('RULES:', note)

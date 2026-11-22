@@ -13,9 +13,8 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  rules/process.md       this file (tool repo): cadence, reviews, checklists
  rules/rules-context.md which rules/ and docs/ to read per work context (anti-reread)
  rules/*.md             craft and process rules in the tool repo (AGENTS.md entry)
- site/COVERAGE.txt      radial focus + generated rollup (coverage.py write;
-                        registry-native + optional parcel tables)
- config/coverage-areas.json    areas tracked by scripts/coverage.py
+ site/COVERAGE.txt      generated registry rollup (coverage.py write;
+                        cell/layer status and holds)
  registry/issues.json   live snags / issues (scripts/issues.py; never block a cell)
  registry/issues-closed.json   archived confirmed/wontfix issues; pictures in issues/img-closed/
  site/REVIEWS.txt       review log
@@ -117,25 +116,17 @@ BUILT plan in place to “fix” the world.
  rules/radial-good-enough.md. When a session ends mid-cell, leave IN FLIGHT in
  COVERAGE.txt.
 
- PARCEL COVERAGE (Q-038, scripts/coverage.py): every block column of an
- area (config/coverage-areas.json) is exactly one parcel — property (vector-map
- footprint + grown garden), road, path (rear lanes / alleys / twittens),
- open (landuse / leisure / amenity polygons), gap (residual: verges,
- corners, unlabelled ground, edges of special areas), no_osm (no clip).
- Touched = columns in verification/site/*-cells.json (reverted I-009
- builds excluded). DONE = registry marks the cell DONE (layers + features + no open warnings),
- or for parcel tables 100% columns touched. Sign-offs are retired (#31).
- Leftover unowned structure (carpet roof, exposed stone band / undercroft, stock
- pavement in gardens, or any exposed block above the build floor that no build
- wrote) still blocks a clean parcel row — write it in the plan to keep on purpose.
-   After every build:  coverage.py write                 (registry + parcels)
-                       coverage.py gaps --area <a>       (gaps + 1-3 wide seams)
+ REGISTRY COVERAGE (scripts/coverage.py): the cell registry is the progress
+ source of truth. A cell is DONE when its layers and features are complete and
+ no open coverage warnings remain. Holds stay visible as status=held until
+ cleared through cell_registry.py; a generated rollup never grants completion.
+
+   After builds:       python3 scripts/coverage.py --world <world> write
    Before planning:    cell_registry.py next / status --cell tx,tz
-                       coverage.py status --cell tx,tz --list
-                       .venv/bin/python scripts/coverage.py map --area <a>
-   New ground / map:   coverage.py build [--area A --cells tx0,tz0,tx1,tz1]
+                       python3 scripts/coverage.py --world <world> status --cell tx,tz
  The generated block in COVERAGE.txt is written by coverage.py — never hand-edit
- it. Chat memory is not enough; the registry + rollup prove what was processed.
+ it. Handwritten notes outside its markers are preserved. No area register or
+ separate completion ledger is needed.
 
  Revisits of processed ground: see rules/radial-good-enough.md.
 
@@ -183,7 +174,7 @@ BUILT plan in place to “fix” the world.
     (paths, roads, hedges, canopy), so first check neighbours' registry status, masks
     and the aerial across the edge for continuity.
       cell_registry.py status --cell tx,tz
-      coverage.py status --cell tx,tz --list ; coverage.py gaps --area <a>
+      python3 scripts/coverage.py --world <world> status --cell tx,tz
     Light character pass: note distinctive local features as snags (`scripts/issues.py`).
  3. Plan — `cell_registry.py next` picks the next layer or feature (snags never steer next).
  4. Features — each its own build, normal cadence (§2); registry marks built on clean apply.
@@ -208,10 +199,7 @@ BUILT plan in place to “fix” the world.
  the cell bbox outer edge, ~30 blocks above the highest ground sampled in the cell
  (alternating like hazard tape). Raise replaces air only. Teardown clears the marker journal plan
  plus any black/yellow wool still on the cell perimeter. Never a wool colour fill.
- Markers are excluded from coverage touched stats (cell_marker_* builds).
-
- Before builds in cells outside config/coverage-areas.json:
-   coverage.py build --area highfield --cells tx,tz,tx,tz
+ Markers are excluded from touched-column evidence (cell_marker_* builds).
 
 ------------------------------------------------------------------------
 2d. GOOD ENOUGH — see rules/radial-good-enough.md (the one home for this rule)
@@ -365,5 +353,5 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
  - Review views through the contact sheet; open full-size only for detail.
  - Batch anything only the user can do into ONE request; do not poll.
  - Good enough: rules/radial-good-enough.md.
- - End of build work: coverage.py status --write (never hand-edit
-   PROCESSED CELLS). Parcels are done at 100% touched; coverage sign-offs are retired.
+ - End of build work: python3 scripts/coverage.py --world <world> write
+   (never hand-edit the generated rollup). Completion and holds live in the registry.

@@ -12,7 +12,8 @@ only what the brief / task needs.
    another context (e.g. you start planning a whole house after a ground-only
    item — then read PROPERTY rules before plan).
  - Do not read whole rules/process.md. Grep the § slices below.
- - Do not run coverage.py --help. Use `coverage.py write` / status cheatsheet.
+ - Coverage is a registry view: `coverage.py write` / `status`; use
+   `python3 scripts/coverage.py --world <world> --help` for its command reference.
  - Imagery: read site/cells/*-SOURCES.txt (or manifest grep) before fetch/Read;
    do not re-Read assets marked useful=no; one contact sheet before full-size.
  - After a rule file is read, grep/sed targeted sections later — do not re-Read

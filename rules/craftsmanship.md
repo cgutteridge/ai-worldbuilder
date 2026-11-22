@@ -139,7 +139,7 @@ rule-file copy.
  Roads are boring: no aerial crops, colour profiles or per-column surveys
  unless a street plainly breaks these rules. Live ground/street apply is
  scripts/ground_layer.py (preview + --apply via site_kit). The rules below
- are the palette and corridor rules; parcel ids come from the vector map / cell sources.
+ are the palette and corridor rules; plot references come from the vector map / cell sources.
   - Keep the mapped road corridor (route is trusted; house builds already sit against
     footprint edges). Every column at lidar ground Y (`lidar_query` / DTM).
   - Stock gray_terracotta → gray_concrete; a terracotta cell with any

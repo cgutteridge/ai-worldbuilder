@@ -25,7 +25,7 @@ _PATH = re.compile(
 )
 _PLACEHOLDER = re.compile(r'[<>*?{}\[\]]')
 _WORLD_CONFIG = {'config/world.json', 'config/world-frame.json',
-                 'config/local-providers.json', 'config/coverage-areas.json'}
+                 'config/local-providers.json'}
 
 
 @dataclass(frozen=True)

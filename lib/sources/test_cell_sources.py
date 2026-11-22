@@ -30,6 +30,22 @@ class TestCellSources(unittest.TestCase):
         self.assertEqual(p.parent.name, 'cells')
 
 
+class TestRegistrySummary(unittest.TestCase):
+    def test_summary_reads_registry_status_and_holds(self):
+        row = {'cell': (-1, 2), 'status': 'held', 'ground': 'generated',
+               'trees': True, 'decor': False, 'hold': 'need survey', 'left': ['decor']}
+        with mock.patch.object(cs, 'registry_rollup_rows', return_value=[row]):
+            self.assertEqual(cs.registry_summary(-1, 2),
+                             ['  status=held ground=generated trees=yes decor=no',
+                              '  hold: need survey', '  left: decor'])
+            self.assertEqual(cs.registry_summary(0, 0), ['  (cell not registered)'])
+
+    def test_cross_cell_hints_need_no_parcels(self):
+        lines = cs._cross_zone_lines(0, 0)
+        self.assertTrue(any('neighbor cells:' in line for line in lines))
+        self.assertFalse(any('unavailable' in line for line in lines))
+
+
 class TestAttempts(unittest.TestCase):
     """Attempt ledger blocks blind repeats."""
 

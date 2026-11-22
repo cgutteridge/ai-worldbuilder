@@ -1,6 +1,6 @@
 # Radial cadence and the good-enough bar
 
-Read before choosing, planning or signing off build work.
+Read before choosing, planning or reviewing build work.
 
 ## Good enough (the one home for this rule)
 - Hit the done-bar (`site/NOTES.txt` §8) and move on. This is a big city.
@@ -18,8 +18,8 @@ Read before choosing, planning or signing off build work.
 - Coverage + registry rollup: `rules/process.md` §2c. The record is
   `coverage.py write` + `cell_registry.py`, never chat, and never hand-edit the
   generated COVERAGE block.
-- Prefer registry DONE over retired parcel sign-offs. Where an area
-  already has builds (Broadlands), keep them unless a snag reopens work.
+- Use registry DONE for completion. Where an area already has builds,
+  keep them unless a snag reopens work.
 - Revisits: file a snag (or redo) for the layer/feature;
   dry-run before re-apply (I-043). Code/tooling fixes beat new cells.
 - Distinctive local features → `snag` skill / `scripts/issues.py` (PROCESS §2e).

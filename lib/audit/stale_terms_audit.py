@@ -29,6 +29,10 @@ BANNED_TERMS: tuple[str, ...] = (
     'scripts/terrace.py',
     'block_family_variants',
     'oakdene_court',
+    'coverage-areas.json',
+    'coverage.py build',
+    'coverage.py gaps',
+    'coverage.py map',
 )
 
 SCAN_DIRS: tuple[str, ...] = (
