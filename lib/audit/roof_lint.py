@@ -168,8 +168,9 @@ def _ridges(top: dict, axis: str) -> dict:
     A ridge is where a run of >= 2 stairs rising in + direction meets (directly or across a
     1-4 block cap of non-stair blocks) a run of >= 2 stairs rising in - direction.
 
-    @returns: {row: [(pos2, y, party), ...]} with pos2 = twice the ridge midpoint (integer)
-        and party = True when the cap is a party-wall parapet (see _party_cap)
+    @returns: {row: [(pos2, y, party), ...]} with pos2 = twice the midpoint of the crest-height
+        blocks between the two stair runs (integer) and party = True when the cap is a
+        party-wall parapet (see _party_cap)
     """
     rise, fall = ('east', 'west') if axis == 'x' else ('south', 'north')
     key = (lambda c: (c[1], c[0])) if axis == 'x' else (lambda c: (c[0], c[1]))
@@ -191,7 +192,12 @@ def _ridges(top: dict, axis: str) -> dict:
                         all(face.get(p + i) not in (rise, fall) and (p + i) in poss
                             for i in range(1, cap + 1)):
                     y = max(top[at(row, i)][0] for i in range(p, q + 1))
-                    out.setdefault(row, []).append((p + q, y, _party_cap(top, at, row, p, q)))
+                    # Midpoint of the crest-height blocks, not of the stair ends: on a diagonal
+                    # ridge the crest edge is a stair in one row and a corner slab in the next,
+                    # which moved the stair-end midpoint a block with no change in the roof.
+                    crest = [i for i in range(p, q + 1) if top[at(row, i)][0] == y]
+                    out.setdefault(row, []).append(
+                        (min(crest) + max(crest), y, _party_cap(top, at, row, p, q)))
                     break
     return out
 
