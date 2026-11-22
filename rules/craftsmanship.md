@@ -32,7 +32,7 @@ rule-file copy.
   - Skip one-block map dents that make holes or knife-edge zigzags.
 
  Wiki note: non-axis buildings only look convincing at large scale. For
- Broadlands-sized semis, square the mass; do not diamond-trace the raw polygon.
+ Ordinary semis, square the mass; do not diamond-trace the raw polygon.
 
  site_kit footprint guard still blocks pavement builds. It is not a licence
  to demand pixel-perfect footprint walls.
@@ -52,7 +52,7 @@ rule-file copy.
     wall is 1 thick, still keep solid flanks and a coherent surround.
   - No glass as a corner block; no 1-wide glass strip with air beside it.
 
- Window rhythm (user steering, Oakdene Court, 2026-10-16):
+ Window rhythm (user steering, 2026-10-16):
   - Count the blocks on the face and write the bay rhythm from the photo, e.g. an 8-cell front = WW_BB_WW
     (W window 2 wide x 1 high, B balcony 2 wide, _ brick pier 1 wide; the corner cells are the end piers).
     Windows are 2x1 pairs, never single-block panes.
@@ -72,7 +72,7 @@ rule-file copy.
   - A blank flank at each run end is wasted: the corner cell already is the pier.
 
  Doors: solid surround, facing the numbered street, walkable stoop.
- University buildings: place every portal in ``facade_plan`` entrances (or declare it
+ Registered entrances: place every portal in ``facade_plan`` entrances (or declare it
  unresolved); build reads that plan only (see ENTRANCES below).
 
  Depth (good-enough, not decoration chase):
@@ -94,14 +94,14 @@ rule-file copy.
   2:1     ~63°             Full block + stair per column (steep; rare here)
 
  Which pitch (one rule):
-  - Victorian/Edwardian terraces and semis (Broadlands Rd type): slate at
+  - Victorian/Edwardian terraces and semis: slate at
     ~40°, built as 45° `deepslate_tile_stairs`, ridge parallel to the street.
-    Build them with `house_build` (rules/terrace-builds.md); do not
+    Build them with `house_build` (rules/house-builds.md); do not
     hand-roll roofs.
   - Genuinely shallow roofs (modern, ~22°): 1:2 slab courses, no stairs on
     the skin.
   - Anything else: pick the ratio from the aerial and LIDAR rise÷run.
-  The old "default to 1:2 slabs" rule read as flat roofs on Broadlands and is
+  The old "default to 1:2 slabs" rule read as flat roofs on those terraces and is
   withdrawn for the terraces above.
 
  Hard rules:
@@ -154,7 +154,7 @@ rule-file copy.
     over the whole parcel, no kerb; asphalt alley → gray_concrete within width/2 +
     verge; highway=path dirt → coarse_dirt / dirt_path within 1 + grass. Check the
     tags first — most "lanes" near flats and shops are driveways.
-  - Same gray_concrete tarmac for campus car parks (map amenity=parking, bay markings
+  - Same gray_concrete tarmac for mapped car parks (map amenity=parking, bay markings
     white_concrete), parking aisles, and access roads — scripts/ground_layer.py
     (the live ground pass; this section is its palette).
   - A column whose live top is not ground (carpet over brick / standing structure)
@@ -196,7 +196,7 @@ rule-file copy.
   ✗ Roof flush with walls (no overhang)
   ✗ Single-layer stair skin with sky visible through gaps
   ✗ Floating or unflanked glass
-  ✗ Glass (or any block) set on a bottom-half slab: the slab leaves a half-block gap and it floats. Put a full block under it (Oakdene lantern)
+  ✗ Glass (or any block) set on a bottom-half slab: the slab leaves a half-block gap and it floats. Put a full block under it (a glass lantern)
   ✗ Relying on ``block_fill`` to place bottom-half slabs as a roof membrane — fills often leave those cells air. Prefer full blocks for membranes. ``site_kit.apply`` rewrites bottom-half slabs to full blocks unless the cell is in ``plan.keep_slab_cells`` (roof cells set through ``Build._set_roof`` are, and ``McpWriter`` places them one at a time after the fills) or ``plan.keep_bottom_half_slabs`` is set
   ✗ Chimney sitting on top of the roof without cutting through
   ✗ Sapling blocks anywhere (rules/foliage.md)
@@ -218,7 +218,7 @@ rule-file copy.
  trapdoor gutters either. Readable massing + sealed shell + correct street
  character is the default.
 
-BUILD PATHS: houses → rules/terrace-builds.md; non-house features → rules/feature-builds.md.
+BUILD PATHS: houses → rules/house-builds.md; non-house features → rules/feature-builds.md.
 Write each spec from this run's evidence. List earlier builds in modifies;
 site_kit.apply refuses unlisted owners.
 
@@ -272,11 +272,11 @@ BUILDING PICTURES (optional building_register catalogue role)
  When configured, the building register supplies names, photos and independent outlines.
  Use `python3 shims/buildings.py --world <world> cell tx,tz | building N | near x,z`.
  cell_features.py prints pictures for each footprint; without the role it returns no registered pictures.
-  - Look at the photo once, before planning a campus building: walls (material, bay rhythm), openings (glazing, doors),
+  - Look at the photo once, before planning a non-house building: walls (material, bay rhythm), openings (glazing, doors),
     storeys, roof edge and colour. Write what it shows in the build docstring next to the source id.
-  - Storeys: the photo is a photo (rules/evidence-order.md), so it ranks above map levels and lidar for campus buildings.
+  - Storeys: the photo is a photo (rules/evidence-order.md), so it ranks above map levels and lidar when a register photo exists.
   - The outline is a cross-check on the footprint map (a missing wing, a wrong corner). Disagreement is a note, not an
     override: lidar columns and the aerial sheet decide, and heights are always lidar.
-  - Many buildings have no photo and several photos show one face or a later extension (the Union has a 2025 shot): say
+  - Many buildings have no photo and several photos show one face or a later extension: say
     which face you saw. A missing photo is not evidence of anything.
 

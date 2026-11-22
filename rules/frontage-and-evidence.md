@@ -18,8 +18,8 @@ the house only, built on every side:
   per-street convention `site/gardens/<street>.json`, then aerial hedge strip,
   then marked inference), read by `decor_layer.py`.
 
-Why whole houses: I-009, five façade builds put a brick shell on the pavement
-of Broadlands Road, about 6 blocks in front of the real houses. Readback, walk
+Why whole houses: I-009, five façade builds put a brick shell on the pavement,
+about 6 blocks in front of the real houses. Readback, walk
 and patrol all passed. All five were reverted.
 
 ## Land-use class (#253)
@@ -236,7 +236,7 @@ plot counts as inside it). To get a shed where lidar finds none, trace it: a `sh
   `addr:street` + number, front-wall MC x,z, setback, surface profile to the road.
 - `python3 scripts/osm_footprints.py plots --bbox …`: a first-guess plot per
   house (JSON + PNG). Plot sides continue the party walls.
-- Name builds by real street + numbers, e.g. `broadlands_rd_20_22`.
+- Name builds by real street + numbers, e.g. `example_rd_20_22`.
 - Work a whole run of adjacent houses per build (a terrace between two gaps),
   so neighbours meet cleanly at party walls and roof steps.
 
@@ -266,8 +266,8 @@ Readback, walk and patrol prove the blocks match the plan, not that the plan
 matches the real place. Done needs:
 - `osm_footprints.py check --build <name>` passes.
 - A client view from the reference photo's camera (manifest `bbox_mc`) beside
-  the photo, and a top-down view beside the aerial sheet (`google_aerial.py`; the university aerial too where it
-  helps), in the contact sheet.
+  the photo, and a top-down view beside the aerial sheet (`google_aerial.py`; a second aerial
+  the world configures, where it covers the building), in the contact sheet.
 - 3 concrete matches or mismatches written in REVIEWS.
 
 ## 5. Stop instead of patching

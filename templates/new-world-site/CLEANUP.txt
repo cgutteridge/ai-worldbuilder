@@ -1,5 +1,0 @@
-Moved to ai-worldbuilder rules/cleanup.md
-(cleanup policy for site_cleanup.py).
-
-Edit the tool-repo file. This stub exists so old site/ paths still resolve.
-World memory: registry/journal.jsonl (views), site/ISSUES NOTES COVERAGE REVIEWS, LOCK, archive. Progress via cell_registry.py (next / reconcile).

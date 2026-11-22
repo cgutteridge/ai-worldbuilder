@@ -28,7 +28,7 @@ only what the brief / task needs.
  GROUND        Layered passes: ground_layer, trees_layer, decor_layer; no new house shells.
  FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
  PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
- TERRACE       Broadlands-type row; house_build specs (rules/terrace-builds.md).
+ TERRACE       Terraced row; house_build specs (rules/house-builds.md).
  ISSUE         Snag / issue work (`snag` skill; scripts/issues.py). Never blocks a cell.
 
 ------------------------------------------------------------------------
@@ -46,7 +46,7 @@ only what the brief / task needs.
  Always (any live world edit):
    rules/radial-good-enough.md
 
- AERIAL COVERAGE: never assume the z19 tiles cover the whole cell (47,-43 is black west of ~x6058).
+ AERIAL COVERAGE: never assume the z19 tiles cover the whole cell (one side of a cell can be black).
    Check, and for any gap use the zoomed-out z18 mosaic that covers that cell (ref_manifest.py find --xz, else geo.py tiles).
    Not tied to any one place or folder.
 
@@ -57,7 +57,7 @@ only what the brief / task needs.
    + committed site/cells/<tx>_<tz>-SOURCES.txt when CELL is set
 
  GROUND:
-   rules/handoff-layered-passes.md §1 (who clears volume) and §10 (ground step)
+   rules/handoff-layered-passes.md §1 (who clears volume) and docs/adr/010-layered-pass-decisions.md (ground step)
    rules/craftsmanship.md §3a (palette) + good-enough only
    rules/foliage.md — skim; full read only for FOLIAGE context
    site/cells/*-SOURCES.txt — GROUND FINISH block when present for active cell
@@ -77,7 +77,7 @@ only what the brief / task needs.
      `python3 scripts/build_roles.py --world <world> show` (ghosts ignore this)
 
  TERRACE (includes PROPERTY list):
-   rules/terrace-builds.md
+   rules/house-builds.md
 
  TOOLING / SESSION:
    (no rules file unless you touch imagery or apply)

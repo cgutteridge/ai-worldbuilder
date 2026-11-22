@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ground layer for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 2) and §10.
+"""Ground layer for one 128² cell — HANDOFF-LAYERED-PASSES §1 (pass 2) and ADR 010.
 
 Written from first principles. It knows nothing about any one place: no zones, no campus
 polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks three questions.
@@ -19,7 +19,7 @@ polygon, no hand-placed rectangles, no earlier ground pass. Per column it asks t
                           floor (podzol, coarse dirt, moss) at the same lidar height, keeping grass
                           within the configured reach of the polygon edge (#348).
 
-Then, per §10: the top block becomes the surface block, dirt fills beneath it down to solid
+Then, per ADR 010: the top block becomes the surface block, dirt fills beneath it down to solid
 ground (never just down to a live top that itself floats over air; a plan whose surface would
 still float is refused, task 296: scripts/ground_float_audit.py lists them across a world), and
 everything above the surface is cleared except blocks a neighbour owns or a tree/decor mask holds.
@@ -929,7 +929,7 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                 plan.set(x, y, z, RAISE_FILL)
                 stats['cavity_filled'] += 1
                 cavity_cols.add(q)
-        for y in range(gy + 1, lc.SCAN_TOP + 1):             # above the surface: clear (§10)
+        for y in range(gy + 1, lc.SCAN_TOP + 1):             # above the surface: clear (ADR 010)
             pos = (x, y, z)
             b = world.block(x, y, z)
             if block_id(b, policy='read') in lc.AIRS:
@@ -1080,7 +1080,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     for pos, want, why in overlaps[:10]:
         print(f'    OVERLAP {pos}: planned {want}, masked by {why}')
     if conflicts or overlaps:
-        print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/element_undo.py; HANDOFF-LAYERED §3, §10).')
+        print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/element_undo.py; HANDOFF-LAYERED §3, ADR 010).')
     report_floating(floating)
     report_journal_floats(cell, plan)
     out = artifact_path(name, 'kinds.png', dry=True)
@@ -1166,7 +1166,7 @@ def apply_cell(cell: tuple[int, int]) -> int:
     print('  skipped: ' + ', '.join(f'{k} {v}' for k, v in skipped.most_common()))
     overlaps = lc.mask_plan_overlaps(plan.cells)
     if conflicts or overlaps:
-        print(f'REFUSED: {len(conflicts) + len(overlaps)} mask conflict(s); undo the masks first (§3, §10)')
+        print(f'REFUSED: {len(conflicts) + len(overlaps)} mask conflict(s); undo the masks first (§3, ADR 010)')
         return 1
     if floating:
         report_floating(floating)

@@ -2,7 +2,7 @@
 
 One loop for every feature (building, water body, anything with a `site/builds/<name>.json`).
 It joins the pieces already in `build-roles.md`, `feature-builds.md`, `building-review.md` and
-the `redo` skill. Learned 2026-10-29 (SUSU cover + pond): the failures were in the order, not the specs.
+the `redo` skill. A roof cover and a pond failed because the steps were out of order, not because the specs were wrong.
 
 ## Loop
 

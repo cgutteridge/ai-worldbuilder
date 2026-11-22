@@ -11,13 +11,13 @@ below the first row `hint` or `estimate`.
 
 | Question | Best | Then | Last resort |
 | --- | --- | --- | --- |
-| Footprint, plan | `vector_map` polygon, and lidar roof columns where they agree (`poi_register` campus outline cross-checks) | `aerial` roof outline | other `aerial` |
+| Footprint, plan | `vector_map` polygon, and lidar roof columns where they agree (`building_register` outline cross-checks) | `aerial` roof outline | other `aerial` |
 | Top height, roof surface Y | `lidar` (`lidar_query.py` / heightmap) | none: do not guess | |
-| Storeys | `streetlevel` (walk photos, listing exteriors, campus building photo, other-side photos) | `vector_map` `building:levels` | `lidar` estimate (label it) |
+| Storeys | `streetlevel` (walk photos, listing exteriors, `building_register` photo, other-side photos) | `vector_map` `building:levels` | `lidar` estimate (label it) |
 | Roof form, ridge axis | `aerial` (look at the roof) | `lidar` interior columns, wide buildings only | same-terrace hint |
 | Roof colour, material | `aerial` | `streetlevel` | hint (default tile) |
 | Roof edge (parapet / coping / flat fringe) | `aerial` (is there an edge? which block? outer only or zone steps too?) | `streetlevel` when the cap shows | none: leave `roofs[].edge` absent |
-| Walls, openings, doors, bays | `streetlevel` (incl. campus building photo) | `aerial` (wall colour, wings) | same-terrace hint |
+| Walls, openings, doors, bays | `streetlevel` (incl. `building_register` photo) | `aerial` (wall colour, wings) | same-terrace hint |
 | Where a building's entrances are, and their names | optional `entrance_register` role (`shims/portals.py`), exact position | portal photo / `streetlevel` | `vector_map` `entrance` nodes, same-building hint |
 | Ground surface: lawn, paving, drive, car park, path | `aerial` | other `aerial`, `vector_map` surface/landuse | same-terrace / nearby hint |
 | Trees, canopy cover | `aerial` cover + `lidar` tree columns (kind 2, 3) | other `aerial` | none: never invent crowns |

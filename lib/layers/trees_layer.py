@@ -8,7 +8,7 @@ live top block, so a roof is not ground (#301). The block at terrain Y must be s
 ('no ground at terrain' otherwise) and no feature-owned block may stand in the trunk's own column up to
 the crown top ('feature above terrain'); the tree is never moved onto the roof. Where terrain is missing
 the live surface is used as before and the report counts it.
-Trees go only where the live block is air (or a grass stem / flower, as in §10), so the
+Trees go only where the live block is air (or a grass stem / flower, as in ADR 010), so the
 mask undo is exact. A crown voxel that is not air (roof, wall, a neighbour's block) is
 dropped; leaves may fill air beside or above a feature, but a feature's own blocks and margin air
 (``owned``) are never used. The tree is skipped if too much of it would be dropped or the trunk is blocked.

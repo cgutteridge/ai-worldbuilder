@@ -10,7 +10,7 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
  site/, registry/ and reference/; shared craft and process rules stay in this repo.
 
 Naming: builds are <street>_<numbers>_<thing> for properties (e.g.
-broadlands_rd_20_22), <place>_<thing> otherwise. Modifications
+example_rd_20_22), <place>_<thing> otherwise. Modifications
 of a built thing get a new name and declare `modifies=()`. Never edit a
 BUILT plan in place to “fix” the world.
 
@@ -78,9 +78,8 @@ BUILT plan in place to “fix” the world.
 ------------------------------------------------------------------------
  Rebuild ALL of an area. Do not leave weird unprocessed holes.
 
- Origin (current focus): Highfield campus centre — see site/COVERAGE.txt
- (OSGB E442400 N115200 → MC X6152 Z-5592; home cell tx=48 tz=-44).
- Expand outward in Chebyshev rings.
+ Origin: the world's home cell, from its world frame and the focus note in
+ site/COVERAGE.txt. Expand outward in Chebyshev rings.
 
  128×128 MC cells (aligned with sparse mc_tiles), ring order per
  rules/radial-good-enough.md. When a session ends mid-cell, leave IN FLIGHT in

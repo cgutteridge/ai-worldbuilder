@@ -6,7 +6,7 @@ START HERE
 - python3 scripts/cell_registry.py next  (from tool repo; this world active)
 - registry/ (journal + issues.json + issues-closed.json) — world progress (tool work → ai-worldbuilder tasks/)
 - Craft/process rules: ai-worldbuilder rules/ (process, craftsmanship, foliage,
-  handoff-layered-passes, rules-context, cleanup). Stubs under site/ point there.
+  handoff-layered-passes, rules-context, cleanup).
 
 WORLD
 - config/world.json + config/world-frame.json — save paths and CRS/offsets
