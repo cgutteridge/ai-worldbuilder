@@ -26,6 +26,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from roof_geometry import ROOF_DELTA, stair_shape_from_neighbours  # noqa: E402
 from script_env import ROOT  # noqa: E402
 from surface_probe import PLANTS, short_id
 OUT = ROOT / 'verification/site'
@@ -33,10 +34,7 @@ OUT = ROOT / 'verification/site'
 # facing -> (axis the slope rises along, +1/-1 uphill direction on that axis)
 _UP = {'east': ('x', 1), 'west': ('x', -1), 'south': ('z', 1), 'north': ('z', -1)}
 # Facing-word keys (like garden_sources.DIRS), not cellmath.DIRS's N/S/W/E letters, so this table stays.
-_STAIR_DELTA = {'east': (1, 0), 'west': (-1, 0), 'south': (0, 1), 'north': (0, -1)}
-_STAIR_LEFT = {'east': 'north', 'west': 'south', 'south': 'east', 'north': 'west'}
-_STAIR_RIGHT = {'east': 'south', 'west': 'north', 'south': 'west', 'north': 'east'}
-_STAIR_OPP = {'east': 'west', 'west': 'east', 'south': 'north', 'north': 'south'}
+_STAIR_DELTA = ROOF_DELTA
 _SKIP = ('minecraft:air', 'minecraft:light', 'minecraft:cave_air')
 _THIN = ('pane', 'pot', 'potted', 'torch', 'lantern', 'sign', 'button', 'fence', 'wall', 'bars',
          'door', 'carpet', 'leaves', 'flower', 'sapling', 'grass[', 'short_grass', 'fern')
@@ -46,42 +44,6 @@ def _props(state: str) -> dict:
     if '[' not in state:
         return {}
     return dict(kv.split('=', 1) for kv in state[state.index('[') + 1:-1].split(','))
-
-
-def stair_shape_from_neighbours(
-    facing: str,
-    half: str,
-    adjacent: dict[str, tuple[str, str] | None],
-) -> str:
-    """Vanilla stair ``shape`` from same-Y cardinal stair neighbours.
-
-    Matches ``StairBlock.getStairsShape`` / ``canTakeShape``: only neighbours that
-    are stairs with the same ``half`` participate. Outer corners look at the
-    neighbour in the facing direction; inner corners look behind. A conflicting
-    stair on the check side forces ``straight``.
-
-    @param facing: this stair's facing
-    @param half: ``bottom`` or ``top``
-    @param adjacent: ``{north|south|east|west: (facing, half) | None}`` for the
-        four same-Y neighbours (``None`` = missing, non-stair, or other half)
-    @returns: ``straight`` / ``outer_left`` / ``outer_right`` / ``inner_left`` /
-        ``inner_right``
-    """
-    front = adjacent.get(facing)
-    if front is not None and front[1] == half:
-        ff = front[0]
-        if ff in (_STAIR_LEFT[facing], _STAIR_RIGHT[facing]):
-            other = adjacent.get(_STAIR_OPP[ff])
-            if not (other is not None and other[0] == facing and other[1] == half):
-                return 'outer_left' if ff == _STAIR_LEFT[facing] else 'outer_right'
-    behind = adjacent.get(_STAIR_OPP[facing])
-    if behind is not None and behind[1] == half:
-        bf = behind[0]
-        if bf in (_STAIR_LEFT[facing], _STAIR_RIGHT[facing]):
-            other = adjacent.get(bf)
-            if not (other is not None and other[0] == facing and other[1] == half):
-                return 'inner_left' if bf == _STAIR_LEFT[facing] else 'inner_right'
-    return 'straight'
 
 
 def _stair_facing_half(state: str) -> tuple[str, str] | None:

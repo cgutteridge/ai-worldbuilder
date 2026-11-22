@@ -33,6 +33,7 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
+from roof_geometry import edge_distance_field, pitched_roof_states, roof_block_y, stair_shape_from_neighbours  # noqa: E402
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 from site_kit import Plan, apply, fresh_planning_world, ground_scan_range, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
@@ -404,9 +405,6 @@ class Build:
 
     def roof(self):
         """Plan shared or individual roof skins, solid underlays and through-chimneys."""
-        from feature_build import pitched_roof_states, roof_block_y
-        from roof_lint import stair_shape_from_neighbours
-
         done = {}
         todo = []
         for g in self.groups:
@@ -417,27 +415,7 @@ class Build:
                 todo.extend(([h], h.cells) for h in hs)
         chim = []
         for hs, own in todo:
-            rs = set(own)
-            for (x, z) in own:
-                for dx, dz in N8:
-                    n = (x + dx, z + dz)
-                    if n not in self.owner and n not in self.foreign and n not in self.shared:
-                        rs.add(n)
-            # chebyshev distance to outside of rs
-            dist = {}
-            front = [c for c in rs if any((c[0] + dx, c[1] + dz) not in rs for dx, dz in N8)]
-            for c in front:
-                dist[c] = 0
-            q = list(front)
-            while q:
-                nq = []
-                for c in q:
-                    for dx, dz in N8:
-                        n = (c[0] + dx, c[1] + dz)
-                        if n in rs and n not in dist:
-                            dist[n] = dist[c] + 1
-                            nq.append(n)
-                q = nq
+            dist = edge_distance_field(own, set(self.owner) | self.foreign | self.shared)
             b = hs[0].b
             rm = self.spec['roofs'][hs[0].no]
             pitch = self.spec.get('roof_pitch', {}).get(hs[0].no, 0.5)
