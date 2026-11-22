@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 434,
+  "nextTaskId": 438,
   "tasks": [
     
     
@@ -365,6 +365,46 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found in trial #257 (parade, Portswood Road). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but their primary cell is 52,-37. The builder then refuses them with \"feature plan absent from cell plan 52,-37\", and `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere. Dismissing the plans on 51,-37 did not make 52,-37 pick them up, so they now have a plan in no cell (parade left at 17 of 19; the unbuilt two and the dismissal are described in docs/plans/typology-buildings.md under Cell edges).\n\nDeliverable: a feature that crosses a cell edge is planned and recorded in its primary cell (the cell holding its main footprint or entrance, say which rule), whichever cell's plans were recorded first; `propose-features` for a cell lists features whose primary cell it is even when an edge cell already recorded them; recording or dismissing a plan on the other cell does not strand the feature. Fixture-only: synthetic two-cell footprint, a plan recorded in the wrong cell, then propose-features and apply preflight on the primary cell. No live world work. Acceptance: tests show the straddling feature is proposed and applies from its primary cell, and that the two-cell plan record is recoverable without a manual registry edit. After it lands, the two parade shops can be built (a separate world step, owner OK).\n"
+    },
+    {
+      "id": 434,
+      "title": "feature_build roofs: octant fit or fixed stair rotation for pitched feature roofs",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 parade snag S-105 (issue I-022, docs/plans/typology-buildings.md \"Parade verdict\"). The owner saw poor stair rotation on the roof of Xionqi Hotpot (w122706803, hand full spec built by feature_build) and asked whether it used the octant roof system. It does not: octant exists only as house_build's roof_fit option (default columns, #415); feature_build has no octant code and its pitched roofs come from pitched_roof_states. Deliverable: decide and implement how feature_build pitched roofs get the same quality as house_build's octant fit: either accept an octant fit per roof label in the feature spec (reusing lib/builds/roof_octant.py: fit_octant_roof, block_states) or fix the stair shape and facing of pitched_roof_states against neighbours so the owner's S-105 view no longer has bad rotation; state which in the notes and why. Stretch (changes roof geometry that spans builders): ask before raising model or effort. Non-builder: fixtures that a pitched feature roof of the hotpot's footprint shape has no mismatched stair corners (compare against house_build octant output where both apply) and a validated spec option; no live world work. Acceptance: tests; roof stair rotation on that footprint verified offline; the owner reviews S-105 in game after a rebuild (a separate world step).\n"
+    },
+    {
+      "id": 435,
+      "title": "Shop signs placed illegally fall off: validate support face and write order",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 parade snag S-106 (new issue I-058, \"Shop signs missing or loose: placed where they can't stay\"). The owner saw some shop signs that \"seem to have fallen off due to illegal placement\". Not yet diagnosed: signs and entities are written after the fills (McpWriter), so a wall sign whose support face is air, not solid, or overwritten by an awning or fascia block at that cell drops as an item. Deliverable: find which sign placements are illegal in the parade shops (rule-built and hand specs: w122706795 area, cell 51,-37), then make facade_plan sign placement in lib/builds/feature_build.py (and house_build if it places signs) validate the support face and the written block order: refuse or move a sign whose backing block is not solid at placement, and place signs after the blocks they hang on and after awnings. Non-builder: synthetic-footprint fixtures that every emitted sign has a solid backing block and survives the write order; a read-only live check of the parade signs is allowed to pick the cases. No live apply here. Acceptance: tests, a list of the failing parade signs with cause, and a validator that would have refused them.\n"
+    },
+    {
+      "id": 436,
+      "title": "Parade shop doors sit one level too low: diagnose and fix door floor",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 parade snag S-107 (existing issue I-017, \"Doors placed at the wrong height\"). The owner saw shop doors \"one level too low\" on the Portswood Road parade (rule-built and hand-specced shops, cell 51,-37, element w122706795 area): door bottoms sit one block below the pavement. The earlier I-017 fix (#145/#146) sets the door floor against outside ground in the facade plan; this is a new case, one block not four. Deliverable: diagnose it. Read-only: for several parade shops compare the door's floor Y, the stoop/entrance step, the outside ground (lidar terrain and the live surface) and the footprint's ground level, and say which input is one block off (the facade plan's door floor, the stoop helper from #407, the ground layer's level at the shopfront, or a lowered shop floor); then fix it in the builder and add a fixture that catches it. Possible link to the ghost-ground or pavement height at shopfronts. Non-builder: no live apply, a read-only world check is allowed. Acceptance: a stated cause with numbers, a fix, and tests; the owner confirms S-107 in game after a rebuild (a separate world step).\n"
+    },
+    {
+      "id": 437,
+      "title": "Builder sign options: wood, text colour, fascia colour and a contrast rule",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 parade snags S-108 (signs always default oak, no colour palette) and S-109 (sign text colour clashes with its background), issue I-059, and S-112 (fascia colours). The builder side of the sign options. Deliverable: in lib/builds/feature_build.py facade_plan, let a sign name its wood (sign and hanging-sign block families) and its text colour, plus a fascia colour option, and add a contrast rule: given the sign wood and the fascia, choose the text colour with enough contrast (a small colour table of block map colours; reuse the roof-material catalogue pattern of I-057 and block_store/ map colours where they exist) and refuse low-contrast pairs. No palette values here: where a district profile or the typology recipe (task 431) supplies colours, it feeds these options; defaults stay as today. Tied to 431 (the class recipe carries the palette) and 333; land this builder option first so the recipe has something to name. Non-builder: fixtures that the options validate, emit the chosen sign block and glow/ink colour, and that contrast refuses the owner's \"Tidal vape\" case (grey text on pale oak). No live apply. Acceptance: tests, docs in rules/feature-builds.md, and a spec example.\n"
     }
   ]
 }
