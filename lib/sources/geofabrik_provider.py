@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from script_env import TOOL_ROOT
 from osm_cell_extract import cell_extract_layers_csv
-from osm_extraction import LAYER_PRESETS, osm_schema, run_ogr2ogr
+from osm_extraction import LAYER_PRESETS, osm_schema, out_filename, run_ogr2ogr
 from vector_map_clips import default_pbf_path, place_clip_dir
 
 INDEX_URL = 'https://download.geofabrik.de/index-v1.json'
@@ -148,6 +148,60 @@ def main(argv=None):
     return package
 
 
+def _query_bbox_mc(args: argparse.Namespace) -> tuple[tuple[int, int, int, int], tuple[float, float, float, float]]:
+    """Resolve Minecraft query bounds for filenames and the WGS84 spat for GDAL.
+
+    ``clip_coverage`` / ``_query_bbox`` only trust extents encoded in the clip
+    name (``…-cell-…``, ``…-rNm-at-…``, ``…-bbox-…``). The place folder stays a
+    human place slug; the query box must land in the filename.
+
+    @param args: parsed extractor CLI
+    @returns: (inclusive MC bbox for naming, WGS84 spat west,south,east,north)
+    @raises ValueError: when spatial args are malformed
+    """
+    import cellmath
+    import world_frame as wf
+
+    if args.bbox_wgs84:
+        spat = parse_bbox(args.bbox_wgs84)
+        west, south, east, north = spat
+        corners = [
+            wf.wgs84_to_mc(south, west),
+            wf.wgs84_to_mc(south, east),
+            wf.wgs84_to_mc(north, west),
+            wf.wgs84_to_mc(north, east),
+        ]
+        xs = [c[0] for c in corners]
+        zs = [c[1] for c in corners]
+        return (min(xs), min(zs), max(xs), max(zs)), spat
+    if args.at:
+        x, z = map(float, args.at.split(','))
+        if args.cell:
+            mc_bbox = cellmath.bounds(cellmath.cell_of(math.floor(x), math.floor(z)))
+        else:
+            if not math.isfinite(args.radius_m) or args.radius_m <= 0:
+                raise ValueError('radius must be finite and positive')
+            radius = int(round(args.radius_m))
+            cx, cz = int(round(x)), int(round(z))
+            mc_bbox = (cx - radius, cz - radius, cx + radius, cz + radius)
+    else:
+        x0, z0, x1, z1 = map(float, args.bbox_mc.split(','))
+        if not all(math.isfinite(v) for v in (x0, z0, x1, z1)) or x0 >= x1 or z0 >= z1:
+            raise ValueError('bbox-mc needs ordered finite x0,z0,x1,z1')
+        mc_bbox = (int(round(x0)), int(round(z0)), int(round(x1)), int(round(z1)))
+        # Spat follows the caller's floats so rounding for the filename does not
+        # shrink or grow the GDAL query relative to the previous behaviour.
+        corners = [wf.mc_to_wgs84(x, z) for x in (x0, x1) for z in (z0, z1)]
+        spat = (min(lon for lat, lon in corners), min(lat for lat, lon in corners),
+                max(lon for lat, lon in corners), max(lat for lat, lon in corners))
+        return mc_bbox, spat
+    x0, z0, x1, z1 = mc_bbox
+    corners = [wf.mc_to_wgs84(x, z) for x in (x0, x1) for z in (z0, z1)]
+    spat = (min(lon for lat, lon in corners), min(lat for lat, lon in corners),
+            max(lon for lat, lon in corners), max(lat for lat, lon in corners))
+    return mc_bbox, spat
+
+
 def extractor_main(config_path: Path, argv: list[str] | None = None) -> int:
     """Run GDAL extraction from a world-local PBF; never download implicitly."""
     ap = argparse.ArgumentParser(description='Extract active-world OSM clips (requires ogr2ogr).')
@@ -170,26 +224,9 @@ def extractor_main(config_path: Path, argv: list[str] | None = None) -> int:
             raise FileNotFoundError(f'download {config["pbf_url"]} to {pbf} first (owner approval required)')
         if shutil.which('ogr2ogr') is None:
             raise RuntimeError('ogr2ogr missing: install GDAL with its OSM driver (see docs/minecraft-instance-setup.md)')
-        if args.bbox_wgs84:
-            bbox = parse_bbox(args.bbox_wgs84)
-        else:
-            import cellmath
-            import world_frame as wf
-            if args.at:
-                x, z = map(float, args.at.split(','))
-                if args.cell:
-                    x0, z0, x1, z1 = cellmath.bounds(cellmath.cell_of(math.floor(x), math.floor(z)))
-                else:
-                    if not math.isfinite(args.radius_m) or args.radius_m <= 0:
-                        raise ValueError('radius must be finite and positive')
-                    x0, z0, x1, z1 = x-args.radius_m, z-args.radius_m, x+args.radius_m, z+args.radius_m
-            else:
-                x0, z0, x1, z1 = map(float, args.bbox_mc.split(','))
-                if not all(math.isfinite(v) for v in (x0, z0, x1, z1)) or x0 >= x1 or z0 >= z1:
-                    raise ValueError('bbox-mc needs ordered finite x0,z0,x1,z1')
-            corners = [wf.mc_to_wgs84(x, z) for x in (x0, x1) for z in (z0, z1)]
-            bbox = (min(lon for lat, lon in corners), min(lat for lat, lon in corners),
-                    max(lon for lat, lon in corners), max(lat for lat, lon in corners))
+        mc_bbox, bbox = _query_bbox_mc(args)
+        cell_extract = bool(args.at and args.cell)
+        radius_for_name = None if (cell_extract or args.bbox_mc or args.bbox_wgs84) else float(args.radius_m)
         jobs = [(args.gdal_layer, args.gdal_layer, args.where, [])] if args.gdal_layer else [
             (name if len(LAYER_PRESETS[name]) == 1 else f'{name}-{i}', *job)
             for name in args.layers.split(',') for i, job in enumerate(LAYER_PRESETS[name])]
@@ -197,12 +234,14 @@ def extractor_main(config_path: Path, argv: list[str] | None = None) -> int:
         output.mkdir(parents=True, exist_ok=True)
         schema = osm_schema(config_path.with_name('osmconf.ini'))
         for name, layer, where, _tags in jobs:
-            name = f'{name}.geojson'
+            filename = out_filename(
+                [name], mc_bbox, cell=cell_extract, radius_m=radius_for_name,
+            )
             # Temporary output prevents failed GDAL jobs replacing good evidence.
             with tempfile.TemporaryDirectory(dir=output) as tmp:
-                target = Path(tmp) / name
+                target = Path(tmp) / filename
                 run_ogr2ogr(pbf, target, layer, where, bbox, schema=schema, clip=True)
-                target.replace(output / name)
+                target.replace(output / filename)
         print(output)
         return 0
     except (ValueError, KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as exc:
