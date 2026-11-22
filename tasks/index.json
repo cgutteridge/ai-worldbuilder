@@ -131,17 +131,6 @@
       "blockedBy": [],
       "requiresClaude": true,
       "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nrequiresClaude true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game."
-    },
-    
-    {
-      "id": 377,
-      "title": "Aerial sources: one discovery and sampling path for mosaics and registered images",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "requiresClaude": false,
-      "notes": "- Scope: in `lib/evidence/`, give mosaics (`aerial_coverage.Mosaic`) and registered images (`aerial_registered`) one shared small interface (`pixels(points)`, `image()`), with one discovery function for each kind. Move `registered_aerials` and `registered_rgb` out of `ground_sources.py:511-566` to use it (`ground_sources.aerial_rgb` keeps its mosaic-then-registered layering by calling it). `evidence_sheet.py:187-205` drops its own glob. Rewrite `aerial_annot` as a function-based tool on `covering_mosaic` and `Mosaic.pixels`: no import-time `sys.argv`, no hard-coded Portswood path, with a test. Leave `bakeoff/` alone (closed).\n- Check: synthetic 2x2-tile PNG mosaic and a synthetic `.registration.json` fixture; `git grep -n \"registration.json\" lib` shows the glob in exactly one place; `ground_sources.aerial_rgb` returns the same colours as before on the fixture (registered wins where it covers); `aerial_annot` crop is produced for a fixture bbox with no default mosaic path in the source; `python3 scripts/run_tests.py` is green.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356). Written before tasks A, B, C, E, G landed; re-check line numbers."
     }
   ]
 }

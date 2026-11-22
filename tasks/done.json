@@ -3430,5 +3430,16 @@
       "requiresClaude": false,
       "notes": "- Scope: move `roof_block_y`, `regularise_roof_half_heights`, `RoofRidgeRun`, `roof_ridge_runs`, `pitched_roof_states` and the `_roof_stair` / `_roof_slab` state helpers (`feature_build.py:959-1300`) into `lib/builds/roof_geometry.py`, together with the stair-corner rule from `roof_lint.stair_shape_from_neighbours` (the audit then imports it from there). Add one `edge_distance_field(own, blocked)` that replaces the two copies of the ring-grow and Chebyshev flood (`feature_build.py:3379-3400`, `house_build.py:428-442`). `house_build` stops importing the builder module (`house_build.py:409`). Behaviour must not change; `feature_build` keeps thin imports only where tests need them.\n- Check: golden plans for a feature roof (pitched, with zones) and a house roof (flatish, pitched square, L-shape, group) recorded before the move are byte-identical after; `grep -n \"from feature_build import\" lib/builds/house_build.py` returns nothing; `roof_lint` tests still pass; `python3 scripts/run_tests.py --only test_house_build`, `--only test_feature_build` and `--only test_roof_lint` pass.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356). Written before tasks A, B, C, E, G landed; re-check line numbers.\n\nClosed at 1d2976178fadbe2993ae4da8050147d53fef64db: Roof geometry now lives in roof_geometry.py; house_build no longer imports feature_build; golden plans unchanged.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 377,
+      "title": "Aerial sources: one discovery and sampling path for mosaics and registered images",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "requiresClaude": false,
+      "notes": "- Scope: in `lib/evidence/`, give mosaics (`aerial_coverage.Mosaic`) and registered images (`aerial_registered`) one shared small interface (`pixels(points)`, `image()`), with one discovery function for each kind. Move `registered_aerials` and `registered_rgb` out of `ground_sources.py:511-566` to use it (`ground_sources.aerial_rgb` keeps its mosaic-then-registered layering by calling it). `evidence_sheet.py:187-205` drops its own glob. Rewrite `aerial_annot` as a function-based tool on `covering_mosaic` and `Mosaic.pixels`: no import-time `sys.argv`, no hard-coded Portswood path, with a test. Leave `bakeoff/` alone (closed).\n- Check: synthetic 2x2-tile PNG mosaic and a synthetic `.registration.json` fixture; `git grep -n \"registration.json\" lib` shows the glob in exactly one place; `ground_sources.aerial_rgb` returns the same colours as before on the fixture (registered wins where it covers); `aerial_annot` crop is produced for a fixture bbox with no default mosaic path in the source; `python3 scripts/run_tests.py` is green.\n\nFrom docs/plans/seam-rationalisation-review.md (task #356). Written before tasks A, B, C, E, G landed; re-check line numbers.\n\nClosed at e6db5639ac4bb5dc405558c91b45ca3021ecaa8c: Mosaics and registered images share pixels()/image(); one registration.json glob (aerial_registered); aerial_annot rewritten on it, no import-time argv.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
