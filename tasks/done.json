@@ -3572,5 +3572,16 @@
       "builderTask": false,
       "notes": "Housekeeping review ticket T2. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T2' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: s\n- Scope: 1.2. Add an optional world file read by `load_osm`, migrate the rows into southampton-build, and delete the constant.\n- Check: a fixture world without the file gets no extra roads. With the file, the features are the same as before.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 3324ab855b0f4a4c4d7299ad11622045c2d68f36: Merged 3324ab8. Southampton rows are in worlds/southampton-build 711897a as reference/supplement-roads.json; load_osm reads that file only when it is present. Full suite green. Follow-up, not blocking: housekeeping-review.md section 1.2 still names SUPPLEMENT_ROADS, and the file format is not yet in layout.md.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 397,
+      "title": "Delete plain dead code",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T7. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T7' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s\n- Scope:\n  - Every item in 1.6. Rewrite `test_decor_layer`'s baseline without `warm_decor_columns`.\n  - Drop `roof_material`'s module-level `site_kit` import if nothing else needs it.\n  - `tree_lines_trial` goes with its plan (T14 archives the plan).\n- Check: checklist item 1 for each name.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 746dd1e93e041af8ac9d842f86609d9ca6dcde3b: Merged 746dd1e: deleted the unreferenced helpers in housekeeping section 1.6, including ShipBranchError, and removed the tree-lines trial script. Full suite green. Section 1.6 inventory still names the old symbols on purpose. test_tree_review's lone-stem failure is pre-existing and filed separately.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
