@@ -1,6 +1,6 @@
 # #337 spike: does the aerial separate PV rows from a light flat roof? (2026-11-21)
 
-Source: [industrial-commercial.md](industrial-commercial.md) section 9 item 13 (trial #258). Owner fault: Westquay
+Source: [industrial-commercial.md](../plans/industrial-commercial.md) section 9 item 13 (trial #258). Owner fault: Westquay
 South's roof shows long PV rows on a flat light roof; the trial prototype's central grid of detectors did not
 match.
 

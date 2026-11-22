@@ -162,6 +162,18 @@ The existing panel helpers join steps and neighbouring fronts with cross shelves
 openings and ownership. `JOINABLE` covers older barrier kinds; panel joining is separate. Normal
 slatted/picket runs use fence blocks. This format does not change either builder path.
 
+Owner decisions for front boundaries (task #244, reviewed in world on 2026-11-12 and 2026-11-14):
+
+- The default fence material is a close-boarded timber panel: `type: fence` with `oak_planks` at
+  height 1 (about 1 m). A slatted or picket run uses the normal fence block. Use another tone from
+  the table above only where that street's evidence shows a distinct tone.
+- Front side dividers are open by default. A convention sets `side_front` to `{"type": "none"}`
+  unless a house number carries its own `side_front` override or a `side_passage` opening applies.
+  A divider on the street-facing side reads as a sideways stub off the front line. The evidenced
+  front boundary is the street line.
+- Shelf panels keep their open slots. That slatted look is accepted: do not add a back layer or
+  full planks at fence height. Reopen only if a later review objects.
+
 ## Residential frontage (shared description)
 `garden_sources.frontage` (formerly `residential_frontage`) gives ground and decor one description per
 property: private frontage `extent`, `boundary` segments, entrance `opening`, `route` to

@@ -1,6 +1,6 @@
 # Housekeeping review: bloat, dead code and stale docs
 
-Follow-up to the seam review (`docs/plans/seam-rationalisation-review.md`, task 356). Those eight follow-ups (371–378) have all landed, so this pass looks wider: dead code, retired subsystems still in the tree, place names in tool code, oversized modules, stale and duplicated docs, and repo weight. Read-only, 2026-11-22. Filed after owner review on 2026-11-22 (section 3 maps letters to ticket ids).
+Follow-up to the seam review (`docs/archive/seam-rationalisation-review.md`, task 356). Those eight follow-ups (371–378) have all landed, so this pass looks wider: dead code, retired subsystems still in the tree, place names in tool code, oversized modules, stale and duplicated docs, and repo weight. Read-only, 2026-11-22. Filed after owner review on 2026-11-22 (section 3 maps letters to ticket ids).
 
 ## How this was made
 
@@ -57,7 +57,7 @@ V means verified by grep; J means a judgement call.
   - `rules/handoff-layered-passes.md:214,245`
   - `cell_sources.py:379`
   - `templates/new-world-site/COVERAGE.txt`
-  - `docs/plans/land-use-classes.md:294`
+  - `docs/adr/006-land-use-classes.md:291`
 - `.agents/skills/cell-orchestrator/SKILL.md:18` calls sign-offs retired.
 - Verdict: owner decision. Retire the parcel half and keep the rollup, or restore an areas file.
 
@@ -147,7 +147,7 @@ These are worse than plain dead code: a test or a rule gives false assurance.
   - Code: `lib/geo/geo.py:517`, `lib/sources/cell_sources.py:725`, `scripts/ref_fetch_agent.py:4,207`, `scripts/start-ref-fetch.command:3`
   - Rules: `rules/process.md:331`, `building-review.md:13,91`, `craftsmanship.md:243,274`, `evidence-order.md:21`, `rules-context.md:71`
   - Skill: `redo/SKILL.md:106`
-  - Plan: `docs/plans/world-cli-arg.md:84`
+  - Plan: `docs/archive/world-cli-arg.md:84`
   - World config: southampton-build `local-providers.json` lines 26/46/66/86/106; ventnor-build line 27
 
 ### 1.9 Leftovers from the seam follow-ups and the `scripts/`→`lib/` move (V)
@@ -228,8 +228,8 @@ Left alone (J):
 | `lib/README.md:13-14` | "foliage" and "terrace" (retired in 375, deleted in 373) |
 | `rules/handoff-layered-passes.md:220, 245`; `test_pass_mask.py:1` | `scripts/pass_mask.py` |
 | `reference/TYPES.txt:21`; `model-bakeoff/SKILL.md:29`; `new-world-build/SKILL.md:119`; `bakeoff/PROTOCOL.md:101` | `scripts/vector_map_clips.py` |
-| `docs/specs/lidar-provider-contract.md:59,73,89`; lidar provider modules `:347`/`:167`; `shims/lidar_tiles.py:5`, `lidar_world.py:5` | `scripts/lidar_provider.py` and friends; the spec's §0 and §4 describe the pre-262 state |
-| `docs/specs/pyproj-gdal-point-validation.md:85`; `docs/specs/cell-journal-interface.md:3-5`; `lib/audit/test_floaters.py:1,3`; `test_roof_lint.py:4` | old `scripts/` paths of modules now in `lib/` |
+| `docs/archive/lidar-provider-contract.md:59,73,89`; lidar provider modules `:347`/`:167`; `shims/lidar_tiles.py:5`, `lidar_world.py:5` | `scripts/lidar_provider.py` and friends; the spec's §0 and §4 describe the pre-262 state |
+| `docs/archive/pyproj-gdal-point-validation.md:85`; `docs/archive/cell-journal-interface.md:3-5`; `lib/audit/test_floaters.py:1,3`; `test_roof_lint.py:4` | old `scripts/` paths of modules now in `lib/` |
 | `rules/building-review.md:42`; `rules/craftsmanship.md:152`; `rules/terrace-builds.md:37` | one-off place scripts; `scripts/legacy/` |
 | `rules/process.md:18,121,213` | `config/coverage-areas.json` (1.1) |
 | `rules/process.md:55,125,202,209,282,347`; `rules/foliage.md:20`; `rules/cleanup.md:15,32`; `rules/building-review.md:79` (`--marks cells.json`); `purge/SKILL.md:43`; `site_cleanup.py:15` | retired `*-cells.json` build records (ADR 004; `registry_verify.py:67` flags any left over) |
@@ -239,8 +239,8 @@ Left alone (J):
 | `rules/foliage.md:111-112` | tombstone for the retired tree planner scripts |
 | `lib/site/rules_context.py:209,245` | `terrace-builds.md` labelled "generator mandatory" |
 | `new-world-build/SKILL.md:121` | says to copy "ISSUES", which the template calls a retired mirror |
-| `docs/audits/region-block-reads.md` (about 10 lines) | ten scripts that no longer exist (historical: archive it) |
-| `docs/plans/land-use-classes.md:34`; `lib/evidence/test_aerial_sources.py:20` | `nonresidential_building`, `registered_rgb` |
+| `docs/archive/region-block-reads.md` (about 10 lines) | ten scripts that no longer exist (historical: archive it) |
+| `docs/adr/006-land-use-classes.md:36`; `lib/evidence/test_aerial_sources.py:20` | `nonresidential_building`, `registered_rgb` |
 | Usage text missing the required `--world`: `feature_build.py:127,131`, `footprint_overlap.py:12-13`, `water_body.py:58`, `roof_lint.py:17-18`, `floater_scan.py:9-12`, `mc_player.py:5-6`, `rules/feature-builds.md:216,250` | every wrapper calls `prepend_world_activation` |
 | `build_roles` and `stale_terms_audit`: tool-level, but their wrappers require `--world` | docs disagree: no `--world` in `rules/build-roles.md:12-13`, `feature-builds.md:233`, `rules-context.md:76`, `purge/SKILL.md:69`; `--world` in `cell-orchestrator/SKILL.md:114`, `redo/SKILL.md:97,214`, `docs/agents/model-and-effort.md:53` |
 | `feature_build.py:89-90` docstring | leaves out the `chimney` detail kind |

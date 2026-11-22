@@ -24,10 +24,10 @@ class ScanTest(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertEqual(S._find_terms(f'Run {term} now'), [(1, term)])
 
-    def test_allows_adr_and_audit_history(self):
+    def test_allows_adr_plan_and_archive_history(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            for rel in ('docs/adr', 'docs/audits', 'docs/plans', 'docs/archive', 'docs/snags'):
+            for rel in ('docs/adr', 'docs/plans', 'docs/archive'):
                 p = root / rel
                 p.mkdir(parents=True)
                 (p / 'old.md').write_text('QUEUE.txt and restore-ghost and STAGES.json\n')

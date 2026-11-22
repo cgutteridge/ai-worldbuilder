@@ -298,7 +298,7 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
    mismatched, re-apply the plan (`reapply_feature.py <plan> --apply`, or `redo_layer.py`
    for a layer). A plan's redo or undo may pass its own mismatch; other plans stay
    blocked until it lands. A mismatch wholly superseded by later landed plans blocks
-   nothing. Rule: docs/plans/284-preflight-blocker-commands.md.
+   nothing. Rule: docs/archive/284-preflight-blocker-commands.md.
  - Work comes from `cell_registry.py next` (issues, then layers/features). Finish the
    task, release the lock.
  - Offline work may run in parallel (design, photo markup, previews of

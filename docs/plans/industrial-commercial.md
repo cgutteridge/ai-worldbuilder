@@ -3,7 +3,7 @@
 Status: findings from a supervised spike in `southampton-build`, for the owner and the orchestrator.
 Verdicts: industrial defaults accepted; big-box base accepted (roof fault); shop defaults improved but
 not yet accepted. Follow-ups: section 9.
-Plan: [vibe-at-scale.md](vibe-at-scale.md) section 6. Classes: [land-use-classes.md](land-use-classes.md) (#253).
+Plan: [vibe-at-scale.md](vibe-at-scale.md) section 6. Classes: [land-use classes](../adr/006-land-use-classes.md) (#253).
 Owner decisions (2026-11-20, relayed by the orchestrator session): world `southampton-build`; three empty
 study cells may be overwritten; z19 aerial authorised for those cells; later the same day the owner
 approved three neighbour cells (51,-36, 50,-35, 42,-16) for aerial, lidar ghost and cross-cell buildings.
@@ -294,7 +294,7 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
     exception to the #158 "land use never paints surfaces" rule, so it is the owner's call.
     Done (#338): the rule already existed in `ground_sources`; the grass came from `classify` turning aerial
     lawn, brick, shade and tinted paving inside the polygon to grass. That override now needs a sharp registered
-    aerial; recorded as the narrow #158 exception in `rules/craftsmanship.md` and `docs/plans/land-use-classes.md`.
+    aerial; recorded as the narrow #158 exception in `rules/craftsmanship.md` and `docs/adr/006-land-use-classes.md`.
 12. **Shop rule v2 faults** (owner, section 8): anchor awnings and signs to the wall on non-axis fronts
     (depends on 6); frame doors on stepped faces; apply shop fronts only to the street face, never to side
     or alley walls.

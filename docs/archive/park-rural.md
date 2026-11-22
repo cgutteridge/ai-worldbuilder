@@ -1,7 +1,7 @@
 # #259 trial: park and rural patch (findings)
 
-Spike, 2026-11-20, world `southampton-build` (save `SouthamptonAI`). Plan: [vibe-at-scale.md section 6](vibe-at-scale.md#6-owner-trials-spikes).
-Classes and row shape: [land-use-classes.md section 3](land-use-classes.md#3-defaults-table), `config/land-use-classes.json`.
+Spike, 2026-11-20, world `southampton-build` (save `SouthamptonAI`). Plan: [vibe-at-scale.md section 6](../plans/vibe-at-scale.md#6-owner-trials-spikes).
+Classes and row shape: [land-use-classes.md section 3](../adr/006-land-use-classes.md#3-defaults-table), `config/land-use-classes.json`.
 No tool code changed on main. Prototype code stayed in the session scratchpad (described under "Variant B" so it can be rebuilt).
 
 ## Summary
@@ -237,7 +237,7 @@ Values for `config/land-use-classes.json` and the ground and trees passes.
    - Scope by land-use class, UK-wide.
 3. **Trees on open grass.** The texture-only crown detector and dense fill plant meadow and pasture as forest. Gate crowns on open land to mapped trees, wood or scrub polygons, or lidar standing height (variant B rule).
 4. **Woodland treatment** (filed as #318 and split on 2026-11-21; the prototype's woodland floor is the owner-accepted starting palette).
-   - Split by layer: plant vocabulary #347 (the probe must know the 26.2 plants), ground floor blocks #348, trees #349 (lidar crowns) and #350 (species mix), decor understorey and ground cover #351. #318 keeps the tuning against the aerial, the ground then trees redo on cells 63,-45 and 46,-46, the 8-minute build budget (flag at 8, kill at 12) and the owner verdict. The code tasks do not need Claude; see `docs/plans/woodland-subtasks-handoff.md`.
+   - Split by layer: plant vocabulary #347 (the probe must know the 26.2 plants), ground floor blocks #348, trees #349 (lidar crowns) and #350 (species mix), decor understorey and ground cover #351. #318 keeps the tuning against the aerial, the ground then trees redo on cells 63,-45 and 46,-46, the 8-minute build budget (flag at 8, kill at 12) and the owner verdict. The code tasks do not need Claude; see `docs/archive/woodland-subtasks-handoff.md`.
    - Owner snags on the existing planner are issue I-055 (too sparse, grass floor, one species).
    - Open for the owner: the #319 step places grass tufts, tall grass and flowers from the ground layer, which the ownership rule above would put in decor.
 5. **Rough grass and mottled ground on non-lawn grass**, gated by tag and class as in the proposal above, placed from aerial texture, removable through the masks.

@@ -11,7 +11,7 @@ If it is unclear whether work is tool or world, ask (ADR 002).
 
 ## When a skill says "publish to the issue tracker"
 
-For tool work, add a task to `tasks/index.json` through the `task-index-manager` skill. Put a specification in `docs/specs/` or `docs/plans/` and link it from the task notes. Do not create ticket files.
+For tool work, add a task to `tasks/index.json` through the `task-index-manager` skill. Put a specification in `docs/specs/` or `docs/plans/` and link it from the task notes. Do not create ticket files. When that ticket is done and no open ticket still cites the file, move it to `docs/archive/` (history, not current guidance). Place history, including a world's snags and dry-run notes, belongs in that world repo.
 
 ## When a skill says "fetch the relevant ticket"
 

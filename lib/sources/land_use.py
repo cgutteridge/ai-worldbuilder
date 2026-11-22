@@ -4,7 +4,7 @@ Pure module: tags in, class out. Rasterising polygons onto columns lives in
 ``coverage.area_classes``. The mapping and the defaults live together in
 ``config/land-use-classes.json`` so a new class or tag is one edit. The class never paints
 surfaces and never authorises a fence: every shipped boundary default is null.
-Design: ``docs/plans/land-use-classes.md``.
+Design: ``docs/adr/006-land-use-classes.md``.
 
 Every classified thing is ``{'class', 'reason', 'ref'}``. Known classes carry the evidence that
 decided them (``building_tag``, ``use_polygon``, ``cover_polygon``, ``house_number``); ``unknown``

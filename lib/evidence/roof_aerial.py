@@ -14,7 +14,7 @@ colour is the dominant (modal) colour of the non-PV columns, so plant, shadow
 and edge cladding do not darken it, snapped to a flat-roof material.
 
 Needs 2.5 aerial pixels a block (0.4 m/px) or finer to resolve rows; a
-coarser aerial is refused rather than guessed (spike: docs/plans/bigbox-roof-aerial.md).
+coarser aerial is refused rather than guessed (spike: docs/archive/bigbox-roof-aerial.md).
 Any aerial type works: a ``<image>.registration.json`` (``aerial_registered``)
 or a Web Mercator mosaic named by its zoom and top-left tile.
 

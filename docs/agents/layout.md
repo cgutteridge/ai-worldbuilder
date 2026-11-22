@@ -20,6 +20,8 @@ Read this when you need to find where a tool, config or record is kept. `AGENTS.
 | Skills | `.agents/skills/` (canonical); `.claude/skills/` holds generated pointer stubs for Claude Code. After adding or renaming a skill run `node scripts/check-skill-stubs.mjs --write` |
 | Closed model bake-off (historical) | `bakeoff/` ([OVERVIEW.md](../../bakeoff/OVERVIEW.md), [PROTOCOL.md](../../bakeoff/PROTOCOL.md)); skill `model-bakeoff` is historical. Default tests skip this tree (`python3 scripts/run_tests.py --bakeoff` opts in) |
 | Lidar ghost v2 + dry-run reset | [docs/specs/lidar-ghost-v2-and-dryrun-reset.md](../specs/lidar-ghost-v2-and-dryrun-reset.md) |
+| Accepted decisions | `docs/adr/` (ADR 006 is the land-use class design) |
+| Archived plans, specs and audits | `docs/archive/` — history, not current guidance ([README](../archive/README.md)) |
 | Decision record | `scripts/decision_record.py` (`evidence add`, `phase add`): per-phase references available / consulted → `registry/decisions/`, `registry/evidence/`; `site_pages.py` renders element, evidence and cell pages on every write |
 | Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / reconcile; mess in a cell → `reconcile [--fix]`; interrupted apply → `site_recover.py`; ADR 004) |
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; erases the registry so the journal starts fresh; also clears leftover retired progress files) |

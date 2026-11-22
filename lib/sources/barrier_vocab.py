@@ -47,7 +47,7 @@ CONVENTION_BLOCK = {
 PLANK_HEIGHT = DEFAULT_HEIGHT['plank_fence']
 
 # Close-boarded timber panels: oak is the default tone; the others only where evidence shows a
-# distinct tone (docs/plans/244-boundary-evidence-findings.md). Block names are from memory and
+# distinct tone (rules/frontage-and-evidence.md). Block names are from memory and
 # not yet confirmed in-world.
 PLANK_TONES = {
     'oak': ('oak_planks',),
