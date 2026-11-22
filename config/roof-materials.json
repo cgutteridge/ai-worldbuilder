@@ -253,6 +253,68 @@
       "colour": [125, 125, 125],
       "texture": "smooth",
       "triad": true
+    },
+    "exposed_cut_copper": {
+      "full": "exposed_cut_copper",
+      "slab": "exposed_cut_copper_slab",
+      "stairs": "exposed_cut_copper_stairs",
+      "colour": [90, 160, 140],
+      "texture": "smooth",
+      "triad": true
+    },
+    "weathered_cut_copper": {
+      "full": "weathered_cut_copper",
+      "slab": "weathered_cut_copper_slab",
+      "stairs": "weathered_cut_copper_stairs",
+      "colour": [90, 160, 140],
+      "texture": "smooth",
+      "triad": true
+    },
+    "oxidized_cut_copper": {
+      "full": "oxidized_cut_copper",
+      "slab": "oxidized_cut_copper_slab",
+      "stairs": "oxidized_cut_copper_stairs",
+      "colour": [90, 160, 140],
+      "texture": "smooth",
+      "triad": true
+    }
+  },
+  "types": {
+    "red_clay_tile": {
+      "slope": "pitched",
+      "family": "brick",
+      "alternates": ["mud_brick"],
+      "note": "Red or orange-red clay tile or pantile; mud_brick for an older, browner tile."
+    },
+    "grey_slate": {
+      "slope": "pitched",
+      "family": "deepslate_tile",
+      "alternates": ["deepslate_brick", "polished_deepslate"],
+      "note": "Dark blue-grey natural or fibre-cement slate in neat courses."
+    },
+    "grey_tile": {
+      "slope": "pitched",
+      "family": "stone_brick",
+      "alternates": ["andesite", "tuff"],
+      "note": "Mid to light grey concrete tile or weathered slate; paler than grey_slate."
+    },
+    "brown_tile": {
+      "slope": "pitched",
+      "family": "mud_brick",
+      "alternates": ["spruce", "dark_oak"],
+      "note": "Brown, weathered or moss-darkened tile; dark_oak for the darkest."
+    },
+    "weathered_copper": {
+      "slope": "pitched",
+      "family": "weathered_cut_copper",
+      "alternates": ["oxidized_cut_copper", "cut_copper"],
+      "note": "Green copper or zinc-like sheet; oxidized_cut_copper for a bluer verdigris, cut_copper for new orange copper. Generic: never tied to a place."
+    },
+    "flat_deck": {
+      "slope": "flatish",
+      "family": "smooth_stone",
+      "alternates": ["light_gray_concrete", "gray_concrete"],
+      "note": "Flat or near-flat membrane, felt or gravel deck. No triad needed. Thatch has no vanilla triad and is left out."
     }
   }
 }

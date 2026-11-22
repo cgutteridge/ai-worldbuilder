@@ -1,7 +1,11 @@
 """Roof-material catalogue and the flat(ish) / pitched rule (#355)."""
 from __future__ import annotations
 
+import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import roof_material as RM
 
@@ -127,3 +131,84 @@ class RoofCatalogueTest(unittest.TestCase):
             'kind': 'pitched',
             'material': 'brick',
         }), [])
+
+
+class RoofTypeTest(unittest.TestCase):
+    """Seam: a named roof type resolves to catalogue families and blocks (#357)."""
+
+    NAMES = (
+        'red_clay_tile', 'grey_slate', 'grey_tile',
+        'brown_tile', 'weathered_copper', 'flat_deck',
+    )
+
+    def setUp(self):
+        self.catalogue = RM.load_catalogue()
+        self.ids = RM.block_id_names()
+
+    def test_the_ticket_types_are_all_named(self):
+        self.assertEqual(set(RM.roof_type_names()), set(self.NAMES))
+
+    def test_every_type_resolves_to_catalogue_families(self):
+        for name in RM.roof_type_names():
+            row = self.catalogue['types'][name]
+            for family_id in [row['family'], *row['alternates']]:
+                with self.subTest(type=name, family=family_id):
+                    self.assertIn(family_id, self.catalogue['families'])
+            self.assertTrue(1 <= len(row['alternates']) <= 3)
+
+    def test_every_pitched_type_family_and_alternate_is_a_triad(self):
+        for name in RM.roof_type_names():
+            row = self.catalogue['types'][name]
+            if row['slope'] != 'pitched':
+                continue
+            for family_id in [row['family'], *row['alternates']]:
+                with self.subTest(type=name, family=family_id):
+                    self.assertTrue(self.catalogue['families'][family_id]['triad'])
+
+    def test_lookup_returns_the_triad_for_a_pitched_type(self):
+        got = RM.roof_type_blocks('red_clay_tile')
+        self.assertEqual(got['slope'], 'pitched')
+        self.assertEqual(got['family'], 'brick')
+        self.assertEqual(
+            (got['full'], got['slab'], got['stairs']),
+            ('bricks', 'brick_slab', 'brick_stairs'),
+        )
+        for name in RM.roof_type_names():
+            with self.subTest(type=name):
+                blocks = RM.roof_type_blocks(name)
+                for entry in [blocks, *blocks['alternates']]:
+                    self.assertIn(entry['full'], self.ids)
+                    if blocks['slope'] == 'pitched':
+                        self.assertIn(entry['slab'], self.ids)
+                        self.assertIn(entry['stairs'], self.ids)
+
+    def test_flat_deck_is_flatish_and_needs_no_stairs(self):
+        got = RM.roof_type_blocks('flat_deck')
+        self.assertEqual(got['slope'], 'flatish')
+        self.assertEqual(got['full'], 'smooth_stone')
+        self.assertIsNone(got['stairs'])
+        self.assertTrue(got['alternates'])
+
+    def test_unknown_type_names_the_known_ones(self):
+        with self.assertRaises(ValueError) as caught:
+            RM.roof_type_blocks('thatch')
+        self.assertIn('red_clay_tile', str(caught.exception))
+
+    def test_catalogue_refuses_a_pitched_type_with_a_non_triad_family(self):
+        bad = copy.deepcopy(self.catalogue)
+        bad['types']['grey_slate']['family'] = 'smooth_stone'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'roof-materials.json'
+            path.write_text(json.dumps(bad), encoding='utf-8')
+            with self.assertRaises(ValueError) as caught:
+                RM.load_catalogue(path)
+        self.assertIn('not a triad', str(caught.exception))
+
+    def test_catalogue_refuses_a_type_with_an_unknown_family(self):
+        bad = copy.deepcopy(self.catalogue)
+        bad['types']['grey_tile']['alternates'] = ['no_such_family']
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'roof-materials.json'
+            path.write_text(json.dumps(bad), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                RM.load_catalogue(path)
