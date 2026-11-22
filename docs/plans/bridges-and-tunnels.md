@@ -52,6 +52,14 @@ What the code does with them now:
 
 ## Decisions needed before any build task
 
+### Owner interview in progress (2026-11-22, task #380)
+
+Provisional answers, awaiting confirmation of the complete design:
+
+- One structure feature type with `kind: bridge|tunnel` (owner chose option 1).
+
+The remaining questions below are still open; this is not an accepted design.
+
 1. **One feature type or two.** Bridge and tunnel share the carrier and the cross-cell handling but differ in what they
    dig and what they leave above. Leaning one type with a `kind`.
 2. **The open pass-order rule** (crown versus yield) above. Settle it in the glossary and rules, not in code.
