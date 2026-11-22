@@ -7,9 +7,10 @@ cell is written, including air (so excavation is explicit). apply():
   2. saves one structure template of the plan's bounding box (+1 margin)
      as southampton_refine:before_<name> (the first time; timestamped afterwards),
   3. journals the plan 'begun' in the cell journal (registry/journal.jsonl, ADR 004),
-  4. writes merged boxes with block_fill_batch (<= 8000 entries/call),
-     solid blocks first and attachable blocks (doors, signs, torches...) after,
-     then sign text and entities,
+  4. writes merged boxes with block_fill_batch (<= FILL_BATCH entries/call),
+     skipping cells the journal begin snapshot already matches, solids first
+     and attachable blocks (doors, signs, torches...) after, then sign text
+     and entities,
   5. saves the world, reads every planned cell back through the BlockStore and finishes the
      journal entry, then runs the journal follow-ups (frontier ghost ground).
 Guard and readback reports land in verification/site/<name>-*.json.
@@ -315,10 +316,18 @@ class Plan:
         return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
 
     # --- compression into boxes ------------------------------------------
-    def boxes(self):
-        """Greedy merge: x-runs, then along z, then along y. Returns [(lo, hi, state)]."""
+    def boxes(self, cells=None):
+        """Greedy merge of ``cells`` into axis-aligned boxes.
+
+        Runs along x, then z, then y. Air is first, then solids bottom-up, then
+        attachables, so a clear is never placed under a block still to be removed.
+
+        @param cells: ``{pos: state}`` to merge; default is every cell in the plan
+        @returns: ``[(lo, hi, state)]``
+        """
+        src = self.cells if cells is None else cells
         rows = {}
-        for (x, y, z), s in self.cells.items():
+        for (x, y, z), s in src.items():
             rows.setdefault((y, z), []).append((x, s))
         runs = []
         for (y, z), xs in rows.items():
@@ -860,13 +869,41 @@ def _block_arg(state: str) -> dict:
     return {'id': bid(st), 'properties': props}
 
 
+# Minecraft's block_fill_batch accepts at most this many box fills per call.
+FILL_BATCH = 8000
+
+
+def cells_to_fill(cells, observed):
+    """Positions the begin snapshot does not already accept as the plan.
+
+    ``observed is None`` (undo, recovery, or a writer with no snapshot) sends
+    every position. A known state that :func:`same` accepts is left out — the
+    same comparison readback uses, so a door left open or a stair shape the
+    game derived is not sent again. Unknown (``None``) and positions missing
+    from the snapshot are sent. Callers merge the subset with :meth:`Plan.boxes`,
+    so a box goes out only when it still contains a cell that must change.
+
+    @param cells: planned ``{pos: state}``
+    @param observed: begin snapshot ``{pos: state | None}``, or None
+    @returns: the subset to merge into fill boxes
+    """
+    if observed is None:
+        return cells
+    return {
+        p: s for p, s in cells.items()
+        if p not in observed or observed[p] is None or not same(s, observed[p])
+    }
+
+
 class McpWriter:
     """``apply`` callable for :class:`cell_journal.CellRegistry`: writes ``Writes.cells`` over MCP.
 
     Boxes are merged with :meth:`Plan.boxes` (air first, attachables last) and sent with
-    ``block_fill_batch`` (<= 8000 per call). Signs and entities come from ``Writes`` (journalled
-    on begin) or, for a live apply, from a :class:`Plan` payload. The player is hopped over far
-    builds so their chunks load (:func:`_bring_player`).
+    ``block_fill_batch`` (<= :data:`FILL_BATCH` per call). When ``observed`` is set from
+    the journal begin snapshot, cells that snapshot already accepts are left out and
+    the rest are merged again. Signs and entities come from ``Writes`` (journalled
+    on begin) or, for a live apply, from a :class:`Plan` payload. The player is hopped
+    over far builds so their chunks load (:func:`_bring_player`).
 
     @param m: MCP client (default: a new ``mc_paced.Paced``)
     """
@@ -875,6 +912,10 @@ class McpWriter:
         self.m = m
         self.fill_results: list = []
         self.entities: list = []
+        # One-shot begin snapshot. apply() sets this from ticket.prewrite()
+        # immediately before the call; __call__ clears it so a later ensure()
+        # does not skip against a stale map.
+        self.observed = None
 
     @staticmethod
     def _check_slab(pos, res) -> None:
@@ -893,6 +934,8 @@ class McpWriter:
 
     def __call__(self, writes) -> None:
         from mc_paced import Paced, xyz
+        observed = self.observed
+        self.observed = None
         m = self.m = self.m or Paced()
         payload = getattr(writes.intent, 'payload', None)
         plan = payload if isinstance(payload, Plan) and writes.kind == 'build' else None
@@ -900,6 +943,22 @@ class McpWriter:
             plan = Plan(writes.plan)
             plan.cells = {tuple(p): full(s) for p, s in writes.cells.items()}
         if not plan.cells:
+            return
+        pending = cells_to_fill(plan.cells, observed)
+        boxes = plan.boxes(pending)
+        # block_fill leaves bottom-half slab cells as air: any bottom-half slab that survived the
+        # apply rewrite (pitched-roof steps, #207) is placed one by one, unless the snapshot
+        # already accepts it.
+        slabs = [pos for pos, st in sorted(plan.cells.items())
+                 if is_bottom_half_slab(st) and pos in pending]
+        signs = writes.signs or (plan.signs if plan is payload else ())
+        entities = writes.entities or (plan.entities if plan is payload else ())
+        if observed is not None and len(pending) != len(plan.cells):
+            print(
+                f'fill: left {len(plan.cells) - len(pending)} already-correct '
+                f'cells unsent ({len(boxes)} boxes)'
+            )
+        if not boxes and not slabs and not signs and not entities:
             return
         lo, hi = plan.bounds()
         label = getattr(plan, 'name', None) or writes.plan
@@ -917,22 +976,17 @@ class McpWriter:
             tell_player(why, m=m)
         try:
             with timed_stage('fills, slabs, signs and entities'):
-                boxes = plan.boxes()
-                for i in range(0, len(boxes), 8000):
-                    chunk = boxes[i:i + 8000]
+                for i in range(0, len(boxes), FILL_BATCH):
+                    chunk = boxes[i:i + FILL_BATCH]
                     res = m.text('block_fill_batch', {'dimension': D, 'fills': [
                         {'from': list(a), 'to': list(b), 'block': s} for a, b, s in chunk]})
                     self.fill_results.append(res)
                     print('fill:', res.replace('\n', '; ')[:300])
-                # block_fill leaves bottom-half slab cells as air: any bottom-half slab that survived the
-                # apply rewrite (pitched-roof steps, #207) is placed one by one
-                for pos, st in sorted(plan.cells.items()):
-                    if is_bottom_half_slab(st):
-                        res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
-                                                         'block': _block_arg(st)})
-                        self._check_slab(pos, res)
-                signs = writes.signs or (plan.signs if plan is payload else ())
-                entities = writes.entities or (plan.entities if plan is payload else ())
+                for pos in slabs:
+                    st = plan.cells[pos]
+                    res = m.call('block_set_state', {'dimension': D, 'position': xyz(pos),
+                                                     'block': _block_arg(st)})
+                    self._check_slab(pos, res)
                 for pos, lines, col, glow in signs:
                     nbt = ('{is_waxed:1b,front_text:{messages:[' + ','.join(json.dumps(t) for t in lines) +
                            f'],color:"{col}",has_glowing_text:{1 if glow else 0}b}},back_text:{{messages:[' +
@@ -1283,13 +1337,15 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     except (InFlight, Clash, Refused) as exc:
         raise _journal_refusal(plan.name, exc) from exc
     from layer_reports import apply_counts
-    # Begin already read these positions; reuse its observations instead of probing
-    # an evicted live cache a second time just to produce diagnostics.
+    # Begin already read these positions. Reuse that snapshot for the report and
+    # so the writer can skip cells it already accepts, instead of probing an
+    # evicted live cache a second time.
     before = ticket.prewrite()
     if dict(ticket.writes.cells) != plan.cells:
         raise SystemExit(f'{plan.name}: journal writes differ from final guarded plan; nothing written; '
                          f'entry {ticket.seq} left begun (python scripts/site_recover.py status)')
     writer = McpWriter(m)
+    writer.observed = before
     with timed_stage('writer total', timings):
         writer(ticket.writes)
     mark = getattr(blocks, 'mark_written', None)
@@ -1313,7 +1369,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         rep['accounting_error'] = accounting_error
     rep['count_semantics'] = (
         'Counts are unique block positions. Already-correct positions (compared with observations made '
-        'at journal begin, with unknown states counted separately) remain journal writes. Fill results count transport requests/changed blocks and '
+        'at journal begin, with unknown states counted separately) remain journal writes but are left '
+        'out of the fill batch. Fill results count transport requests/changed blocks and '
         'are not an independent planned-position total. Readback verifies every final plan position.'
     )
     rep['timings_seconds'] = timings
