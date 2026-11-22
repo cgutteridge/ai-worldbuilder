@@ -235,15 +235,18 @@ class BuildTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.spec(**bad)
 
-    def test_bank_clear_above_clears_over_bank_cells_only_when_asked(self):
-        plan = W.build(self.spec(bank_clear_above=2, edge=None))
+    def test_clear_to_removes_only_ground_above_the_surface_per_column(self):
+        # (10, 20) is water at 55, (9, 20) a bank cell at 55: clear up to each column's own ground height
+        plan = W.build(self.spec(edge=None, clear_to=[[10, 20, 57], [9, 20, 56], [9, 21, 55], [100, 100, 60]]))
+        self.assertEqual([plan.get(10, y, 20) for y in (56, 57)], ['minecraft:air'] * 2)
+        self.assertIsNone(plan.get(10, 58, 20))
         self.assertEqual(plan.get(9, 56, 20), 'minecraft:air')
-        self.assertEqual(plan.get(9, 57, 20), 'minecraft:air')
-        self.assertIsNone(plan.get(9, 58, 20))
-        self.assertEqual(plan.get(9, 55, 20), 'minecraft:coarse_dirt')
+        self.assertIsNone(plan.get(9, 57, 20))
+        self.assertIsNone(plan.get(9, 56, 21))          # ground at or below the surface: nothing cleared
+        self.assertIsNone(plan.get(100, 56, 100))       # a column the body does not build is ignored
         self.assertIsNone(W.build(self.spec(edge=None)).get(9, 56, 20))
         with self.assertRaises(SystemExit):
-            self.spec(bank_clear_above=-1)
+            self.spec(clear_to=[[1, 2]])
 
     def test_summary_counts_water(self):
         plan = W.build(self.spec())
