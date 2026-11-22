@@ -963,10 +963,9 @@ class TestPlanting(unittest.TestCase):
         row = self.planting(masked={pos: 'decor 0,0'})[0]
         self.assertEqual(row['items'][0]['position'], [2, 51, 11])
 
-    def test_ground_rerun_is_idempotent_and_redo_strips_planting(self):
+    def test_ground_rerun_is_idempotent(self):
         from block_store import MemoryBlocks
-        from site_kit import Plan, World
-        from foliage import is_refine_foliage, strip_foliage_above_surface
+        from site_kit import World
         first, stats = self.ground_plan(self.world)
         self.assertGreater(stats['shrubs'], 0)
         self.assertGreater(stats['flowers'], 0)
@@ -975,14 +974,6 @@ class TestPlanting(unittest.TestCase):
         second, again = self.ground_plan(after)
         self.assertEqual(first.cells, second.cells)
         self.assertEqual(stats['planting'], again['planting'])
-        strip = Plan('redo-strip-test')
-        strip_foliage_above_surface(strip, after, self.lawn)
-        leaves = {p for p, b in first.cells.items() if 'leaves' in b}
-        flowers = {tuple(item['position']) for row in stats['planting'] for item in self.items(row, 'flowers')}
-        cover = {tuple(item['position']) for row in stats['planting'] for item in self.items(row, 'cover')}
-        self.assertEqual(set(strip.cells), leaves | flowers | cover)
-        self.assertTrue(all(b == 'minecraft:air' for b in strip.cells.values()))
-        self.assertTrue(all(is_refine_foliage(first.cells[p]) for p in leaves | flowers | cover))
 
 
 class TestGroundTexture(unittest.TestCase):
@@ -1031,7 +1022,7 @@ class TestGroundTexture(unittest.TestCase):
         self.assertTrue(all('#319' in item['label'] for item in report['items']))
 
     def test_meadow_flowers_reuse_refine_plants_vocabulary(self):
-        from foliage import REFINE_PLANTS
+        from surface_probe import REFINE_PLANTS
         meadow = {(x, z) for x, z in self.cols if z >= 8}
         # Even green so bare mottling does not consume every column before flowers.
         rgb = {q: (0.42, 0.48, 0.30) for q in self.cols}

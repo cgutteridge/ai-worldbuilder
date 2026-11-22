@@ -15,7 +15,7 @@ class RulesContextTests(unittest.TestCase):
 
     def test_foliage_cell(self) -> None:
         it = self._item(
-            'CELL 48,-44 foliage last. build_cell_foliage.py --cell 48,-44; sign all affected parcels',
+            'CELL 48,-44 foliage last. trees pass --cell 48,-44; sign all affected parcels',
         )
         ctx, _ = detect_context(it)
         self.assertEqual(ctx, WorkContext.FOLIAGE)

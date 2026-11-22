@@ -173,7 +173,7 @@ def validate_table(doc: dict) -> dict:
             raise TableError(f'{cid}: this class allows no inference')
         planting = row['planting']
         if planting is not None:
-            from foliage import REFINE_PLANTS
+            from surface_probe import REFINE_PLANTS
 
             if not fr['inference']:
                 raise TableError(f'{cid}: this class allows no planting inference')
@@ -194,7 +194,7 @@ def validate_table(doc: dict) -> dict:
                     raise TableError(f'{cid}: flowers share must be above 0 and at most 0.2')
                 if not isinstance(kinds, list) or not 1 <= len(kinds) <= 2 or any(
                         not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds):
-                    raise TableError(f'{cid}: flowers kinds must be 1-2 names from foliage.REFINE_PLANTS')
+                    raise TableError(f'{cid}: flowers kinds must be 1-2 names from surface_probe.REFINE_PLANTS')
             cover = planting['cover']
             if cover is not None:
                 if not isinstance(cover, dict) or set(cover) != {'share', 'kinds'}:
@@ -204,7 +204,7 @@ def validate_table(doc: dict) -> dict:
                     raise TableError(f'{cid}: cover share must be above 0 and at most 0.3')
                 if not isinstance(kinds, list) or not 1 <= len(kinds) <= 3 or any(
                         not isinstance(k, str) or k not in REFINE_PLANTS for k in kinds) or len(set(kinds)) != len(kinds):
-                    raise TableError(f'{cid}: cover kinds must be 1-3 different names from foliage.REFINE_PLANTS')
+                    raise TableError(f'{cid}: cover kinds must be 1-3 different names from surface_probe.REFINE_PLANTS')
             if planting['pond'] is not None:
                 raise TableError(f'{cid}: planting pond must stay null')
         furniture = row['furniture']
@@ -338,7 +338,7 @@ def ground_texture(cls: str) -> dict | None:
     (#319) enable placement on gated OSM tags (farmland, meadow, grassland, heath, scrub,
     nature_reserve); lawns never. ``wood`` (#348) is the woodland floor mix for ``natural=wood``
     and ``landuse=forest`` (scrub only when ``wood.scrub`` is true). Does not use ``planting``
-    (null when ``frontage.inference`` is false). Flower kinds reuse ``foliage.REFINE_PLANTS``.
+    (null when ``frontage.inference`` is false). Flower kinds reuse ``surface_probe.REFINE_PLANTS``.
 
     @param cls: class id; unknown ids use the ``unknown`` row
     @returns: palette map, or None
@@ -424,7 +424,7 @@ def _validate_open_grass(cid: str, name: str, palette) -> None:
     @param palette: the palette value
     @returns: None
     """
-    from foliage import REFINE_PLANTS
+    from surface_probe import REFINE_PLANTS
 
     if not isinstance(palette, dict) or set(palette) != set(GROUND_TEXTURE_KEYS):
         raise TableError(f'{cid}: ground_texture.{name} must have keys {sorted(GROUND_TEXTURE_KEYS)}')
@@ -448,7 +448,7 @@ def _validate_open_grass(cid: str, name: str, palette) -> None:
             or len(set(kinds)) != len(kinds)):
         raise TableError(
             f'{cid}: ground_texture.{name}.flowers kinds must be 1-3 different names '
-            f'from foliage.REFINE_PLANTS')
+            f'from surface_probe.REFINE_PLANTS')
 
 
 def _validate_ground_texture(cid: str, texture) -> None:
