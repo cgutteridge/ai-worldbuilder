@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 415,
+  "nextTaskId": 416,
   "tasks": [
     
     
@@ -417,6 +417,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Housekeeping review ticket T22. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T22' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s\n- Scope: delete the dead `lib/shims` path inserts and the redundant `sys.path.insert` calls in `lib` tests, and move misplaced tests (`test_door_frames` to `lib/site/`, `EntranceApproachTest` to `test_entrance_approach.py`). The roof-test moves happen in T13.\n- Check: the test count is unchanged, and `git grep -n \"parent.parent / 'shims'\" lib` returns nothing.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process."
+    },
+    {
+      "id": 415,
+      "title": "Stairs: shape every stair against all neighbouring stairs, any material (all stair writers)",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Owner requirement (2026-11-22, #358 review of the pitched Burgess Road roofs): a stair's presentation depends on neighbouring stairs on the same level. A stair rotated 90 degrees directly in front of or behind another stair turns it into an outer or inner corner. This must be baked into every part of the code that places stairs so the result is smooth. Any stair can change any other: material does not matter (unlike fences), only same Y, same half and facing.\n\nWhat exists (read-only check): roof_geometry.stair_shape_from_neighbours is material-agnostic and matches vanilla getStairsShape. house_build.roof applies it only among that roof's own stairs (cells in `facings` at the same Y), roof_lint.stair_shape_mismatches checks the planned cells, and the 0.75 Burgess Road plan reported 0 mismatches and 0 readback mismatches. Stairs written elsewhere carry no shape and do not look at neighbours: stoop.stair uses (door steps, ledge stair, the raised-door inner stair), the interior spruce stairs in house_build.doors, and any other builder or layer that writes `_stairs[` states. Stairs from neighbouring plans, other builds or the live world at the same Y are not consulted by the roof pass. The owner's in-game view of the rebuilt roofs still looks patchy at stair joins (cause not yet established; needs the live block states under the crosshair compared with the plan).\n\nScope: (1) one shared helper, working over the final plan cells plus a live-world reader, that resolves the shape of every stair against every stair neighbour at the same Y and half, any material, in both directions (plan wins over live for cells the plan writes), and is the only way stairs get their shape; (2) use it as a last pass in house_build, feature_build, stoop and any other stair writer, so a stair next to an earlier build's stair or a stoop stair is shaped too, and report cells where a neighbour stair outside the plan would change a planned stair's shape; (3) extend roof_lint to compare plan against live read-back after apply for shape, not just plan against plan; (4) find the cause of the patchy joins in the rebuilt Burgess Road roofs by comparing live states with the plan, and fix facing choices if the shape rule is not the cause.\n\nNot in scope: the world rebuild and the I-056 S-103 verdict, which stay with #358.\n\nbuilderTask false: synthetic fixtures and a live read-back; the owner's in-game check stays with #358.\n"
     }
   ]
 }
