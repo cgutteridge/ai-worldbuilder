@@ -177,6 +177,14 @@
       "texture": "rough",
       "triad": true
     },
+    "tuff_brick": {
+      "full": "tuff_bricks",
+      "slab": "tuff_brick_slab",
+      "stairs": "tuff_brick_stairs",
+      "colour": [99, 100, 93],
+      "texture": "rough",
+      "triad": true
+    },
     "black_concrete": {
       "full": "black_concrete",
       "colour": [25, 25, 30],
@@ -288,9 +296,9 @@
     },
     "grey_slate": {
       "slope": "pitched",
-      "family": "deepslate_tile",
-      "alternates": ["deepslate_brick", "polished_deepslate"],
-      "note": "Dark blue-grey natural or fibre-cement slate in neat courses."
+      "family": "tuff_brick",
+      "alternates": ["deepslate_tile", "deepslate_brick", "polished_deepslate"],
+      "note": "Dark blue-grey natural or fibre-cement slate in neat courses, shown as tuff brick for its cool grey brick-course look (owner choice: by look, not by name); deepslate_tile or deepslate_brick for a darker slate."
     },
     "grey_tile": {
       "slope": "pitched",

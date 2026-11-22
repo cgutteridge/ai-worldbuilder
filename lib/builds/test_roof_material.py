@@ -190,6 +190,12 @@ class RoofTypeTest(unittest.TestCase):
             ('cut_copper', 'cut_copper_slab', 'cut_copper_stairs'),
         )
         self.assertEqual([a['family'] for a in got['alternates']], ['brick', 'mud_brick'])
+        slate = RM.roof_type_blocks('grey_slate')
+        self.assertEqual(slate['family'], 'tuff_brick')
+        self.assertEqual((slate['full'], slate['slab'], slate['stairs']),
+                         ('tuff_bricks', 'tuff_brick_slab', 'tuff_brick_stairs'))
+        self.assertEqual([a['family'] for a in slate['alternates']],
+                         ['deepslate_tile', 'deepslate_brick', 'polished_deepslate'])
         for name in RM.roof_type_names():
             with self.subTest(type=name):
                 blocks = RM.roof_type_blocks(name)
