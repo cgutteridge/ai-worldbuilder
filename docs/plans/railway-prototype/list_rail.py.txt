@@ -1,0 +1,14 @@
+import json,sys,collections
+sys.path.insert(0,'.')
+from pyproj import Transformer
+p='worlds/southampton-build/reference/vector_map/rail_trial_256/railway-bbox-6650--4800-7500--3800.geojson'
+d=json.load(open(p))
+t=Transformer.from_crs('EPSG:4326','EPSG:27700',always_xy=True)
+def mc(lon,lat):
+    e,n=t.transform(lon,lat); return (round(e-436248),round(-(n-109608)))
+for f in d['features']:
+    pr=f['properties']; g=f['geometry']
+    cs=g['coordinates'] if g['type']=='LineString' else None
+    if not cs: print('geom',g['type']);continue
+    a,b=mc(*cs[0]),mc(*cs[-1])
+    print(pr.get('osm_id'),pr.get('railway'),pr.get('service'),pr.get('usage'),pr.get('tunnel'),pr.get('bridge'),pr.get('name'),len(cs),a,b,pr.get('other_tags','')[:80])

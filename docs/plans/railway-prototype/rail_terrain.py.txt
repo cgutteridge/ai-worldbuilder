@@ -1,0 +1,29 @@
+"""Cache lidar DTM terrain for the corridor cells into one npz (x0,z0,grid[x,z])."""
+import sys, glob, json
+T = '/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0] = [T, T + '/scripts', T + '/lib'] + glob.glob(T + '/lib/*')
+import numpy as np
+import script_env  # noqa
+from active_world import set_world
+set_world('southampton-build')
+import lidar_provider as lp
+import lidar_heightmap as lh
+
+R = sys.argv[1]
+cells = [tuple(c) for c in json.load(open(R + '/cells.json'))]
+w = lp.composite_world()
+xs = [c[0] for c in cells]; zs = [c[1] for c in cells]
+x0 = min(xs) * 128; z0 = min(zs) * 128
+W = (max(xs) - min(xs) + 1) * 128; L = (max(zs) - min(zs) + 1) * 128
+terr = np.zeros((W, L), dtype=np.int16)
+dsm = np.zeros((W, L), dtype=np.int16)
+have = np.zeros((W, L), dtype=bool)
+for c in cells:
+    m = lh.heightmap(w, c)
+    ox = m['x0'] - x0; oz = m['z0'] - z0
+    terr[ox:ox + 128, oz:oz + 128] = np.asarray(m['terrain'])
+    dsm[ox:ox + 128, oz:oz + 128] = np.asarray(m['h'])
+    have[ox:ox + 128, oz:oz + 128] = True
+    print('cell', c, flush=True)
+np.savez(R + '/terrain.npz', x0=x0, z0=z0, terrain=terr, h=dsm, have=have)
+print('saved', terr.shape, x0, z0)

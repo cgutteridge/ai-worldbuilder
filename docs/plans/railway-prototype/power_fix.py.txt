@@ -1,0 +1,16 @@
+import glob, json, sys
+T='/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0]=[T,T+'/scripts',T+'/lib']+glob.glob(T+'/lib/*')
+import script_env
+from active_world import set_world
+set_world('southampton-build')
+from mc_paced import Paced
+R=sys.argv[1]
+v=json.load(open(R+'/power_verify.json'))
+plan=json.load(open(R+'/plan.json'))
+cells={(x,y,z):sh for x,y,z,sh,t in plan['rails']}
+m=Paced(); D='minecraft:overworld'
+tor=[{'from':[k[0],k[1]-2,k[2]],'to':[k[0],k[1]-2,k[2]],'block':'minecraft:redstone_torch'} for k in map(tuple,v['missing_t'])]
+if tor: print('torches',m.text('block_fill_batch',{'dimension':D,'fills':tor})[:80])
+fills=[{'from':list(k),'to':list(k),'block':f'minecraft:powered_rail[shape={cells[tuple(k)]},powered=true]'} for k in map(tuple,v['missing_rail'])]
+print('rails',len(fills),m.text('block_fill_batch',{'dimension':D,'fills':fills})[:80])

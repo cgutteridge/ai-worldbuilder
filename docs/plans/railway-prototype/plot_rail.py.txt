@@ -1,0 +1,22 @@
+import json
+R='/private/tmp/claude-507/-Users-cjg--claude-spares-spare-5MOaRv/b148406b-99c9-4458-b93d-0cd90763b3ce/scratchpad/rail'
+from pyproj import Transformer
+import matplotlib; matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+p='worlds/southampton-build/reference/vector_map/rail_trial_256/railway-bbox-6650--4800-7500--3800.geojson'
+d=json.load(open(p)); t=Transformer.from_crs('EPSG:4326','EPSG:27700',always_xy=True)
+fig,ax=plt.subplots(figsize=(11,11))
+out=[]
+for f in d['features']:
+    pr=f['properties']
+    if pr.get('railway')!='rail': continue
+    cs=[(round(e-436248,1),round(-(n-109608),1)) for e,n in (t.transform(*c) for c in f['geometry']['coordinates'])]
+    tags=pr.get('other_tags','') or ''
+    br='bridge' in tags and '"bridge"=>"yes"' in tags
+    ax.plot([c[0] for c in cs],[c[1] for c in cs],'r-' if br else 'b-',lw=1)
+    out.append({'id':pr['osm_id'],'name':pr.get('name'),'bridge':br,'tags':tags,'pts':cs})
+for n,(x,z) in {'A':(6747,-3892),'B':(7418,-4103),'C':(7026,-4670)}.items():
+    ax.plot(x,z,'go'); ax.annotate(n,(x,z))
+ax.set_aspect('equal'); ax.invert_yaxis(); ax.grid(True); ax.set_xlim(6600,7550); ax.set_ylim(-3800,-4850)
+fig.savefig(R+'/rail.png',dpi=80)
+json.dump(out,open(R+'/rail_mc.json','w'))

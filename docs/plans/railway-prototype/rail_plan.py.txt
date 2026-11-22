@@ -1,0 +1,331 @@
+"""Railway trial planner (task 256): tracks -> rail-legal path -> level profile -> corridor columns.
+
+Usage: python3 -I rail_plan.py RDIR [MINRUN]
+Writes RDIR/plan.json and RDIR/plan.png and prints stats.
+"""
+import json, math, sys
+import numpy as np
+
+R = sys.argv[1]
+MINRUN = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+ZMAX_MAIN = -4400          # main line clipped north of here (z more negative is north)
+
+ways = {int(w['id']): w for w in json.load(open(R + '/rail_mc.json'))}
+tz = np.load(R + '/terrain.npz')
+TX0, TZ0 = int(tz['x0']), int(tz['z0'])
+TERR = tz['terrain']; HAVE = tz['have']
+
+
+def ground(x, z):
+    i, j = x - TX0, z - TZ0
+    if 0 <= i < TERR.shape[0] and 0 <= j < TERR.shape[1] and HAVE[i, j]:
+        return int(TERR[i, j])
+    return None
+
+
+def chain(spec):
+    pts = []
+    for wid, rev in spec:
+        p = [tuple(q) for q in ways[wid]['pts']]
+        if rev:
+            p.reverse()
+        pts.extend(p if not pts else p[1:])
+    return pts
+
+
+TRACKS = {
+    'main_P': ([(236574344, False)], 'main'),
+    'main_Q': ([(237029734, True), (510881165, False)], 'main'),
+    'branch_U': ([(880996761, False), (19071533, False), (236572196, False), (236572197, False)], 'branch'),
+    'branch_V': ([(880996762, False), (236572191, True), (236572195, True), (236572190, True)], 'branch'),
+}
+PARTNER = {'main_P': 'main_Q', 'main_Q': 'main_P', 'branch_U': 'branch_V', 'branch_V': 'branch_U'}
+
+
+def clip_main(pts):
+    out = []
+    for i, p in enumerate(pts):
+        if p[1] < ZMAX_MAIN:
+            # interpolate the crossing point then stop
+            q = pts[i - 1]
+            t = (ZMAX_MAIN - q[1]) / (p[1] - q[1])
+            out.append((q[0] + t * (p[0] - q[0]), ZMAX_MAIN))
+            break
+        out.append(p)
+    return out
+
+
+def densify(pts, step=0.25):
+    out = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1]) / step))
+        for k in range(1, n + 1):
+            out.append((a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n))
+    return out
+
+
+def snap(pts):
+    """Polyline -> 4-connected cell path with no backtracks or revisits."""
+    d = densify(pts)
+    cells = []
+    prev = None
+    for (x, z) in d:
+        c = (math.floor(x), math.floor(z))
+        if c == prev:
+            continue
+        if prev is not None and abs(c[0] - prev[0]) == 1 and abs(c[1] - prev[1]) == 1:
+            a = (c[0], prev[1]); b = (prev[0], c[1])
+            da = math.hypot(a[0] + .5 - x, a[1] + .5 - z)
+            db = math.hypot(b[0] + .5 - x, b[1] + .5 - z)
+            cells.append(a if da <= db else b)
+        cells.append(c)
+        prev = c
+    # remove revisits (loops) and immediate backtracks
+    out = []
+    pos = {}
+    for c in cells:
+        if c in pos:
+            k = pos[c]
+            for dead in out[k + 1:]:
+                pos.pop(dead, None)
+            out = out[:k + 1]
+        else:
+            pos[c] = len(out)
+            out.append(c)
+    for a, b in zip(out, out[1:]):
+        assert abs(a[0] - b[0]) + abs(a[1] - b[1]) == 1, (a, b)
+    return out
+
+
+def eligible(path, i):
+    """Ascending rail at i needs i-1, i, i+1 collinear."""
+    if i < 1 or i + 2 > len(path) - 1:
+        return False
+    a, b, c = path[i - 1], path[i], path[i + 1]
+    return (b[0] - a[0], b[1] - a[1]) == (c[0] - b[0], c[1] - b[1])
+
+
+def nearest_idx(path, c):
+    best, bi = 1e9, 0
+    for i, p in enumerate(path):
+        d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2
+        if d < best:
+            best, bi = d, i
+    return bi
+
+
+paths = {}
+for name, (spec, kind) in TRACKS.items():
+    pts = chain(spec)
+    if kind == 'main':
+        pts = clip_main(pts)
+    paths[name] = snap(pts)
+
+# target ground per cell (pair-averaged to keep paired tracks in step)
+targets = {}
+for name, path in paths.items():
+    other = paths[PARTNER[name]]
+    t = []
+    for c in path:
+        g = ground(*c)
+        o = other[nearest_idx(other, c)]
+        go = ground(*o)
+        gs = [v for v in (g, go) if v is not None]
+        t.append(sum(gs) / len(gs) if gs else None)
+    # fill gaps, then light smoothing (moving median over 9)
+    vals = [v for v in t if v is not None]
+    fill = vals[0] if vals else 0
+    t2 = []
+    for v in t:
+        fill = v if v is not None else fill
+        t2.append(fill)
+    arr = np.array(t2, dtype=float)
+    k = 4
+    sm = np.array([np.median(arr[max(0, i - k):i + k + 1]) for i in range(len(arr))])
+    targets[name] = sm
+
+# shared start level at the junction: mean of the four start targets
+start_level = int(round(np.mean([targets[n][0] for n in paths])))
+
+
+def solve(path, target, start):
+    n = len(path)
+    lo = int(math.floor(target.min())) - 4
+    hi = int(math.ceil(target.max())) + 4
+    levels = list(range(lo, hi + 1))
+    nl = len(levels)
+    INF = 1e18
+    # state: (level index, run since last step capped at MINRUN)
+    cost = np.full((nl, MINRUN + 1), INF)
+    s = start - lo
+    cost[s, MINRUN] = abs(levels[s] - target[0])
+    back = []
+    for i in range(1, n):
+        new = np.full((nl, MINRUN + 1), INF)
+        bk = np.zeros((nl, MINRUN + 1, 2), dtype=np.int32)
+        el = eligible(path, i - 1)  # step happens between cell i-1 and i
+        for l in range(nl):
+            for r in range(MINRUN + 1):
+                c0 = cost[l, r]
+                if c0 >= INF:
+                    continue
+                nr = min(MINRUN, r + 1)
+                # no step
+                v = c0 + abs(levels[l] - target[i])
+                if v < new[l, nr]:
+                    new[l, nr] = v; bk[l, nr] = (l, r)
+                if el and r >= MINRUN:
+                    for dl in (-1, 1):
+                        l2 = l + dl
+                        if 0 <= l2 < nl:
+                            v = c0 + abs(levels[l2] - target[i]) + 3.0
+                            if v < new[l2, 0]:
+                                new[l2, 0] = v; bk[l2, 0] = (l, r)
+        cost = new
+        back.append(bk)
+    l, r = np.unravel_index(np.argmin(cost), cost.shape)
+    seq = [0] * n
+    for i in range(n - 1, -1, -1):
+        seq[i] = levels[l]
+        if i > 0:
+            l, r = back[i - 1][l, r]
+    return seq
+
+
+levels = {n: solve(paths[n], targets[n], start_level) for n in paths}
+
+
+def shape_for(path, i, lv):
+    n = len(path)
+    p = path[i]
+    prv = path[i - 1] if i > 0 else None
+    nxt = path[i + 1] if i + 1 < n else None
+    if prv is None:
+        prv = (2 * p[0] - nxt[0], 2 * p[1] - nxt[1])
+    if nxt is None:
+        nxt = (2 * p[0] - prv[0], 2 * p[1] - prv[1])
+    dirs = set()
+    for q in (prv, nxt):
+        dx, dz = q[0] - p[0], q[1] - p[1]
+        dirs.add({(1, 0): 'east', (-1, 0): 'west', (0, 1): 'south', (0, -1): 'north'}[(dx, dz)])
+    # ascending: the next cell is one higher (or the previous is) along a straight run
+    if dirs in ({'east', 'west'}, {'north', 'south'}):
+        axis_ns = dirs == {'north', 'south'}
+        y = lv[i]
+        up = None
+        if i + 1 < n and lv[i + 1] == y + 1:
+            up = nxt
+        elif i > 0 and lv[i - 1] == y + 1:
+            up = prv
+        if up is not None:
+            dx, dz = up[0] - p[0], up[1] - p[1]
+            d = {(1, 0): 'east', (-1, 0): 'west', (0, 1): 'south', (0, -1): 'north'}[(dx, dz)]
+            return 'ascending_' + d
+        return 'north_south' if axis_ns else 'east_west'
+    for a, b in (('south', 'east'), ('south', 'west'), ('north', 'west'), ('north', 'east')):
+        if dirs == {a, b}:
+            return f'{a}_{b}'
+    raise ValueError(dirs)
+
+
+rails = []     # (x, y, z, shape, track)
+beds = {}      # (x,z) -> (level F, track idx)
+steps = {}
+for name, path in paths.items():
+    lv = levels[name]
+    ns = 0
+    for i, c in enumerate(path):
+        if i + 1 < len(path) and lv[i + 1] != lv[i]:
+            ns += 1
+        sh = shape_for(path, i, lv)
+        # rail y: formation level F is the top of the ballast block, rail sits on F+1.
+        # An ascending rail at level L (support block at L) rises to L+1 east end; the next
+        # cell's support block is L+1 (next level) so its rail is at L+2: fine.
+        rails.append((c[0], lv[i] + 1, c[1], sh, name))
+    steps[name] = ns
+
+# corridor bed: columns within BED_R of any track cell take the level of the nearest track cell
+BED_R = 2.3
+allcells = [(c, levels[n][i]) for n, p in paths.items() for i, c in enumerate(p)]
+bed = {}
+r = int(math.ceil(BED_R))
+for (c, lvl) in allcells:
+    for dx in range(-r, r + 1):
+        for dz in range(-r, r + 1):
+            d = math.hypot(dx, dz)
+            if d <= BED_R:
+                k = (c[0] + dx, c[1] + dz)
+                if k not in bed or d < bed[k][1] - 1e-9 or (abs(d - bed[k][1]) < 1e-9 and lvl > bed[k][0]):
+                    bed[k] = (lvl, d)
+
+# side slopes: ratio 2 horizontal per 1 vertical, out to SLOPE_MAX columns beyond the bed
+RATIO = 2.0
+SLOPE_MAX = 40
+columns = {}
+bed_keys = list(bed.keys())
+bx = np.array([k[0] for k in bed_keys]); bz = np.array([k[1] for k in bed_keys]); bl = np.array([bed[k][0] for k in bed_keys])
+minx, maxx = int(bx.min()) - SLOPE_MAX, int(bx.max()) + SLOPE_MAX
+minz, maxz = int(bz.min()) - SLOPE_MAX, int(bz.max()) + SLOPE_MAX
+bedset = set(bed_keys)
+stats = dict(cut=0, fill=0, cut_max=0, fill_max=0, cut_cols=0, fill_cols=0, missing=0)
+for x in range(minx, maxx + 1):
+    for z in range(minz, maxz + 1):
+        if (x, z) in bedset:
+            lvl = bed[(x, z)][0]
+            kind = 'bed'
+            d = 0
+        else:
+            m = (np.abs(bx - x) <= SLOPE_MAX) & (np.abs(bz - z) <= SLOPE_MAX)
+            if not m.any():
+                continue
+            dd = np.hypot(bx[m] - x, bz[m] - z)
+            j = int(np.argmin(dd))
+            d = float(dd[j])
+            if d > SLOPE_MAX:
+                continue
+            lvl = int(bl[m][j])
+            kind = 'slope'
+        g = ground(x, z)
+        if g is None:
+            stats['missing'] += 1
+            continue
+        if kind == 'bed':
+            surf = lvl
+        elif g > lvl:   # cutting: surface rises from lvl at the bed edge
+            surf = min(g, lvl + int(d / RATIO))
+        else:           # embankment: surface falls from lvl
+            surf = max(g, lvl - int(d / RATIO))
+        if surf == g and kind == 'slope':
+            continue
+        if surf == g and kind == 'bed':
+            pass
+        columns[(x, z)] = (g, surf, kind)
+        if surf < g:
+            stats['cut'] += g - surf; stats['cut_cols'] += 1; stats['cut_max'] = max(stats['cut_max'], g - surf)
+        elif surf > g:
+            stats['fill'] += surf - g; stats['fill_cols'] += 1; stats['fill_max'] = max(stats['fill_max'], surf - g)
+
+plan = dict(
+    minrun=MINRUN, start_level=start_level,
+    paths={n: p for n, p in paths.items()},
+    levels=levels,
+    rails=[list(r_) for r_ in rails],
+    columns=[[x, z, g, s, k] for (x, z), (g, s, k) in columns.items()],
+    stats=stats, steps=steps,
+)
+json.dump(plan, open(R + '/plan.json', 'w'))
+
+print('start level', start_level, 'MINRUN', MINRUN)
+for n in paths:
+    lv = levels[n]
+    print(n, 'cells', len(paths[n]), 'levels', min(lv), '..', max(lv), 'steps', steps[n],
+          'corners', sum(1 for r_ in rails if r_[4] == n and r_[3] not in ('north_south', 'east_west') and not r_[3].startswith('asc')),
+          'asc', sum(1 for r_ in rails if r_[4] == n and r_[3].startswith('asc')))
+print(stats, 'columns', len(columns), 'bed', len(bed))
+# paired level difference
+for a, b in (('main_P', 'main_Q'), ('branch_U', 'branch_V')):
+    diffs = []
+    for i, c in enumerate(paths[a]):
+        j = nearest_idx(paths[b], c)
+        diffs.append(abs(levels[a][i] - levels[b][j]))
+    print('pair', a, b, 'max level diff', max(diffs), 'cells diff>0:', sum(1 for d in diffs if d > 0), 'of', len(diffs))

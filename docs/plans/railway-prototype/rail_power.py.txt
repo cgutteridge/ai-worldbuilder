@@ -1,0 +1,30 @@
+"""Upgrade straight rail cells (incl. ascending) to powered rail with a redstone torch two blocks below the rail
+(rail y, ground y-1, torch y-2). Corners stay plain rail. Run under the site lock; --dry counts only."""
+import glob, json, sys, time
+T='/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0]=[T,T+'/scripts',T+'/lib']+glob.glob(T+'/lib/*')
+import script_env
+from active_world import set_world
+set_world('southampton-build')
+from mc_paced import Paced
+R=sys.argv[1]; DRY='--dry' in sys.argv
+plan=json.load(open(R+'/plan.json'))
+cells={}
+for x,y,z,sh,t in plan['rails']:
+    cells[(x,y,z)]=sh            # last writer wins, as in the first apply
+STRAIGHT=('north_south','east_west')
+def straight(sh): return sh in STRAIGHT or sh.startswith('ascending_')
+torches=[];rails=[];plain=0
+for (x,y,z),sh in cells.items():
+    if straight(sh):
+        torches.append({'from':[x,y-2,z],'to':[x,y-2,z],'block':'minecraft:redstone_torch'})
+        rails.append({'from':[x,y,z],'to':[x,y,z],'block':f'minecraft:powered_rail[shape={sh},powered=true]'})
+    else: plain+=1
+print('powered',len(rails),'plain corners',plain,'torches',len(torches))
+if DRY: sys.exit(0)
+m=Paced(); D='minecraft:overworld'; t0=time.time()
+for i in range(0,len(torches),2000):
+    print('torches',i,m.text('block_fill_batch',{'dimension':D,'fills':torches[i:i+2000]})[:80],flush=True)
+for i in range(0,len(rails),2000):
+    print('rails',i,m.text('block_fill_batch',{'dimension':D,'fills':rails[i:i+2000]})[:80],flush=True)
+print('done',round(time.time()-t0,1),'s')

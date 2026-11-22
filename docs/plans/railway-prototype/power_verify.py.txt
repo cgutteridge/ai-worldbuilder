@@ -1,0 +1,36 @@
+import glob, json, re, sys
+T='/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0]=[T,T+'/scripts',T+'/lib']+glob.glob(T+'/lib/*')
+import script_env
+from active_world import set_world
+set_world('southampton-build')
+from mc_paced import Paced, box
+R=sys.argv[1]
+plan=json.load(open(R+'/plan.json'))
+cells={}
+for x,y,z,sh,t in plan['rails']: cells[(x,y,z)]=sh
+STR=lambda s: s in ('north_south','east_west') or s.startswith('ascending_')
+want={k:s for k,s in cells.items() if STR(s)}
+xs=[k[0] for k in cells];zs=[k[2] for k in cells];ys=[k[1] for k in cells]
+x0,x1,z0,z1=min(xs),max(xs),min(zs),max(zs);y0,y1=min(ys)-3,max(ys)+1
+m=Paced(interval=0.3)
+pr={};tor=set();plain={}
+S=60
+for x in range(x0,x1+1,S):
+    for z in range(z0,z1+1,S):
+        if not any(x<=k[0]<x+S and z<=k[2]<z+S for k in cells): continue
+        b=box([x,y0,z],[min(x+S-1,x1),y1,min(z+S-1,z1)])
+        t=m.text('block_scan_region',{'dimension':'minecraft:overworld','box':b,'match_block_id':'minecraft:powered_rail','limit':65536})
+        for chunk in t.split('- position:')[1:]:
+            xm=re.search(r'x: (-?\d+)\s+y: (-?\d+)\s+z: (-?\d+)',chunk)
+            sh=re.search(r'shape: (\w+)',chunk); po=re.search(r'powered: "?(\w+)"?',chunk)
+            pr[(int(xm[1]),int(xm[2]),int(xm[3]))]=(sh[1],po[1] if po else '?')
+        t=m.text('block_scan_region',{'dimension':'minecraft:overworld','box':b,'match_block_id':'minecraft:redstone_torch','limit':65536})
+        for g in re.finditer(r'x: (-?\d+)\s+y: (-?\d+)\s+z: (-?\d+)',t): tor.add((int(g[1]),int(g[2]),int(g[3])))
+missing_rail=[k for k in want if k not in pr]
+unpowered=[k for k,v in pr.items() if v[1]!='true']
+wrong=[(k,want[k],pr[k][0]) for k in want if k in pr and pr[k][0]!=want[k]]
+missing_t=[k for k in want if (k[0],k[1]-2,k[2]) not in tor]
+print('wanted',len(want),'powered rails found',len(pr),'missing',len(missing_rail),'unpowered',len(unpowered),'wrong shape',len(wrong),'torches found',len(tor),'missing torches',len(missing_t))
+print('missing rail sample',missing_rail[:6]);print('unpowered sample',unpowered[:6]);print('missing torch sample',missing_t[:6])
+json.dump({'missing_rail':missing_rail,'unpowered':unpowered,'missing_t':missing_t,'wrong':wrong},open(R+'/power_verify.json','w'))

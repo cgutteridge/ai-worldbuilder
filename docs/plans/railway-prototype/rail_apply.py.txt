@@ -1,0 +1,102 @@
+"""Apply the railway trial plan (task 256) to the live world.
+
+Run under the site lock:
+  python3 scripts/site_lock.py --world southampton-build run claude "rail trial 256" -- \
+      python3 -I RDIR/rail_apply.py RDIR [--dry] [--no-backup]
+Backups: structure tiles southampton_refine:before_rail256_<n> (128x128 footprint).
+Writes RDIR/apply_log.json (tile manifest, counts, timings).
+"""
+import glob, json, sys, time
+T = '/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0] = [T, T + '/scripts', T + '/lib'] + glob.glob(T + '/lib/*')
+import script_env  # noqa
+from active_world import set_world
+set_world('southampton-build')
+from mc_paced import Paced, box
+
+R = sys.argv[1]
+DRY = '--dry' in sys.argv
+NO_BACKUP = '--no-backup' in sys.argv
+D = 'minecraft:overworld'
+NS = 'southampton_refine'
+plan = json.load(open(R + '/plan.json'))
+cols = plan['columns']
+
+# ---- fills ----
+bycol = {}
+for x, z, g, s, kind in cols:
+    bycol[(x, z)] = (g, s, kind)
+runs = []
+for (x, z) in sorted(bycol):
+    g, s, k = bycol[(x, z)]
+    if runs and runs[-1][0] == x and runs[-1][2] == z - 1 and runs[-1][3:] == [g, s, k]:
+        runs[-1][2] = z
+    else:
+        runs.append([x, z, z, g, s, k])
+fills = []
+for x, z0, z1, g, s, k in runs:
+    def add(y0, y1, block):
+        if y0 <= y1:
+            fills.append({'from': [x, y0, z0], 'to': [x, y1, z1], 'block': block})
+    if k == 'bed':
+        add(s + 1, max(g, s) + 4, 'minecraft:air')
+        if s > g:
+            add(g + 1, s - 1, 'minecraft:dirt')
+        add(s, s, 'minecraft:gravel')
+    else:
+        if s < g:
+            add(s + 1, g, 'minecraft:air')
+            add(s - 2, s - 1, 'minecraft:dirt')
+        else:
+            add(g + 1, s - 1, 'minecraft:dirt')
+        add(s, s, 'minecraft:grass_block')
+rails = [{'from': [x, y, z], 'to': [x, y, z], 'block': f'minecraft:rail[shape={sh}]'}
+         for x, y, z, sh, _t in plan['rails']]
+
+# ---- backup tiles ----
+tiles = {}
+for x, z, g, s, k in cols:
+    key = (x // 128, z // 128)
+    t = tiles.setdefault(key, [x, z, x, z, 999, 0])
+    t[0] = min(t[0], x); t[1] = min(t[1], z); t[2] = max(t[2], x); t[3] = max(t[3], z)
+    t[4] = min(t[4], s, g); t[5] = max(t[5], s, g)
+for x, y, z, sh, _t in plan['rails']:
+    t = tiles.setdefault((x // 128, z // 128), [x, z, x, z, 999, 0])
+    t[4] = min(t[4], y); t[5] = max(t[5], y)
+manifest = []
+for i, (key, t) in enumerate(sorted(tiles.items())):
+    manifest.append({'name': f'{NS}:before_rail256_{key[0]}_{key[1]}',
+                     'from': [t[0] - 1, t[4] - 4, t[1] - 1], 'to': [t[2] + 1, t[5] + 6, t[3] + 1]})
+
+print('fill entries', len(fills), 'rail entries', len(rails), 'backup tiles', len(manifest))
+if DRY:
+    for m in manifest:
+        print(m)
+    sys.exit(0)
+
+m = Paced()
+t0 = time.time()
+log = {'manifest': manifest, 'timings': {}}
+if not NO_BACKUP:
+    for mt in manifest:
+        res = m.text('structure_save_from_world', {'name': mt['name'], 'dimension': D, 'box': box(mt['from'], mt['to'])})
+        if 'saved' not in res:
+            raise SystemExit('Backup failed: ' + res)
+        print('backup', mt['name'], res[:80], flush=True)
+log['timings']['backup_s'] = time.time() - t0
+json.dump(log, open(R + '/apply_log.json', 'w'))
+
+t1 = time.time()
+BATCH = 2000
+for i in range(0, len(fills), BATCH):
+    res = m.text('block_fill_batch', {'dimension': D, 'fills': fills[i:i + BATCH]})
+    print('fills', i, res[:100], flush=True)
+log['timings']['fills_s'] = time.time() - t1
+t2 = time.time()
+for i in range(0, len(rails), BATCH):
+    res = m.text('block_fill_batch', {'dimension': D, 'fills': rails[i:i + BATCH]})
+    print('rails', i, res[:100], flush=True)
+log['timings']['rails_s'] = time.time() - t2
+log['timings']['total_s'] = time.time() - t0
+json.dump(log, open(R + '/apply_log.json', 'w'))
+print('done', log['timings'])

@@ -1,0 +1,27 @@
+import glob, json, re, sys
+T='/Users/cjg/Projects/ai-worldbuilder'
+sys.path[:0]=[T,T+'/scripts',T+'/lib']+glob.glob(T+'/lib/*')
+import script_env
+from active_world import set_world
+set_world('southampton-build')
+from mc_paced import Paced, box
+R=sys.argv[1]
+plan=json.load(open(R+'/plan.json'))
+exp={(x,y,z):sh for x,y,z,sh,_ in plan['rails']}
+xs=[k[0] for k in exp]; zs=[k[2] for k in exp]; ys=[k[1] for k in exp]
+x0,x1,z0,z1=min(xs),max(xs),min(zs),max(zs); y0,y1=min(ys)-1,max(ys)+1
+m=Paced(interval=0.3)
+found={}
+S=60
+for x in range(x0,x1+1,S):
+    for z in range(z0,z1+1,S):
+        if not any(x<=k[0]<x+S and z<=k[2]<z+S for k in exp): continue
+        t=m.text('block_scan_region',{'dimension':'minecraft:overworld','box':box([x,y0,z],[min(x+S-1,x1),y1,min(z+S-1,z1)]),'match_block_id':'minecraft:rail','limit':65536})
+        for blk in re.finditer(r'x: (-?\d+)\s+y: (-?\d+)\s+z: (-?\d+).*?shape: (\w+)',t,re.S):
+            found[(int(blk[1]),int(blk[2]),int(blk[3]))]=blk[4]
+missing=[k for k in exp if k not in found]
+wrong=[(k,exp[k],found[k]) for k in exp if k in found and found[k]!=exp[k]]
+extra=[k for k in found if k not in exp]
+print('expected',len(exp),'found',len(found),'missing',len(missing),'wrong shape',len(wrong),'extra rails',len(extra))
+print('wrong sample',wrong[:10]); print('missing sample',missing[:5]); print('extra sample',extra[:5])
+json.dump({'missing':missing,'wrong':wrong,'extra':extra},open(R+'/verify.json','w'))
