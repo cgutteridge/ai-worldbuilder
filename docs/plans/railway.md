@@ -27,7 +27,7 @@ that are built as ordinary embankment.
 
 ## Method (what worked)
 
-1. **Lines.** The `railway` preset already exists in `shims/osm_extract.py` but is not in `CELL_EXTRACT_LAYERS`.
+1. **Lines.** The `railway` preset already exists in `shims/osm_extract.py`. It was not in `CELL_EXTRACT_LAYERS` during the trial; #379 added it.
    One-off extract: `shims/osm_extract.py --bbox-mc 6650,-4800,7500,-3800 --layers railway --dir rail_trial_256`
    gave 53 lines from the Hampshire PBF. Double track is two separate ways, so each way chain is its own track.
 2. **Rail-legal snap.** Densify each polyline to 0.25 blocks, take the block cell under each point, and where two
@@ -115,7 +115,7 @@ and note the location, not try a switch.
 
 The trial wrote to the world directly under the site lock. It was not a journalled feature build: the cell journal
 had no entry for the corridor, no feature owned its blocks, `cell_registry.py` does not propose railway features, and
-`railway` is not in `CELL_EXTRACT_LAYERS`. A later real ground, trees or decor pass over these cells was free to
+`railway` was not in `CELL_EXTRACT_LAYERS` until #379. A later real ground, trees or decor pass over these cells was free to
 overwrite the corridor.
 
 **The trial corridor has been removed (2026-11-22, owner's call, so other things can be built there before the real

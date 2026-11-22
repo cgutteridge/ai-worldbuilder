@@ -109,7 +109,7 @@ a diagonal run is a staircase of corners.
 Proposed method (to be proven by #256):
 1. Take the map centreline, smooth it, and snap it to a rail-legal path: long cardinal runs joined by
    90-degree corners; gentle bends become staircase corners. Where the lines come from needs settling:
-   `railway` is not in `CELL_EXTRACT_LAYERS` today.
+   `railway` is in `CELL_EXTRACT_LAYERS` since #379. The line planner is still a later ticket.
 2. Take a ground profile along the path from lidar, smooth it, and clamp it to a gentle gradient (real
    railways are far flatter than roads; the exact figure is to be taken from a source, not assumed): level
    the corridor, cut or fill with grass side slopes, one ascending rail where a step is needed.
