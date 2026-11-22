@@ -11,7 +11,7 @@ changed; every relaxation below lives in a scratch emitter outside the repo.
    the terrace street and 0 of 42 on the parade street produced a spec. Every footprint was refused as
    `odd footprint`: the generator accepts only filled axis-aligned rectangles, and real streets are rotated.
 2. **With six relaxations the rules covered all three street types** (14 estate houses, 20 terrace houses,
-   15 parade shops built): the output is the same minimal-spec shape the builders already read. The owner
+   17 parade shops built): the output is the same minimal-spec shape the builders already read. The owner
    judged the estate and the terrace "read as the real streets and are good", with two defects that point at
    the builders and the terrace recipe, not at the rules (roof layer, single terrace chimney).
 3. **Cost per building falls to about one to two minutes of build time and almost no authoring tokens**,
@@ -48,7 +48,7 @@ changed; every relaxation below lives in a scratch emitter outside the repo.
 | --- | --- | --- | --- | --- |
 | Begonia Road | semi-detached houses (tag `house`) | 18 on street, 16 in cell | 14 (6 semis, 2 detached) | 2 dropped for cell edge; no `building:levels` or `roof:shape` tag on any |
 | Northcote Road (west) | terrace houses (tag `house`) | 42 both sides, 21 on the west side | 20 | one group, one roof over all 20; 1 dropped for cell edge |
-| Portswood Road | shops (`retail`, `shop=*`) | 42 on street | 15 in cell 51,-37 | 4 more are in cell 52,-37, which has no map clip, so apply refused them |
+| Portswood Road | shops (`retail`, `shop=*`) | 42 on street, 19 chosen | 17 of 19 (15 in cell 51,-37, 2 in cell 52,-37) | the other 4 sit in cell 52,-37; after its map extract, mosaic and prepare, 2 landed and 2 are still unbuilt (Cell edges) |
 
 Tag coverage on these streets: `building:levels` present on 0 of 42 terrace houses and 0 of 18 estate
 houses, and on 6 of 42 parade buildings. `roof:shape` present on 0 of 42 and 0 of 18, and 1 of 42 on the
@@ -94,7 +94,8 @@ itself was written once.
 | Rule | Begonia Road (west side, 7) | 7 | 25.4 (17.6 min of it in journal follow-ups) | 3.6 | under 1k (batch) |
 | Rule | Begonia Road (east side, 7) | 7 | 7.4 | 1.1 | under 1k (batch) |
 | Rule | Northcote Road west (one spec) | 20 | 17.8 | 0.9 | under 1k (batch) |
-| Rule | Portswood Road shops (15 specs) | 15 | 18.9 for 19 attempted, 4 refused; the first took 4.4 | about 1.0 | under 1k (batch) |
+| Rule | Portswood Road shops (15 specs, cell 51,-37) | 15 | 18.9 for 19 attempted, 4 refused; the first took 4.4 | about 1.0 | under 1k (batch) |
+| Rule | Portswood Road shops (2 specs, cell 52,-37) | 2 | 3.4 and 0.9 (the first straddles a cell edge) | 2.1 | under 1k (batch) |
 | Hand full spec | parade shop, small hairdresser (w122706815) | 1 | 0.7 build, 0.4 undo | 0.7 | about 6k |
 | Hand full spec | parade shop, retail unit (w122706803) | 1 | 1.2 build, 0.3 undo | 1.2 | about 6k |
 | Hand full spec | parade shop, convenience store (w122706797) | 0 | undo refused (stale neighbour cell 51,-36) | n/a | about 6k authored, not built |
@@ -183,6 +184,17 @@ and an undo refused for a shop that straddles 51,-36 ("plan identity changed"). 
 neighbour cells instead of preparing them. Whole streets cross edges, so a rule route has to plan across
 cells.
 
+Four parade shops sit in cell 52,-37. With the owner's approval I cut its map extract, fetched its aerial
+mosaic and prepared it (62.6% aerial coverage before). Two of the four landed (ways 149855647 and 167071532,
+readbacks clean). The other two (149855650 and 167071535) are **not built**: they were planned under cell
+51,-37 when I recorded that cell's plans, but their primary cell is 52,-37, and the builder refuses a feature
+whose plan is absent from its primary cell ("feature plan absent from cell plan"). `propose-features` for 52,-37
+then reported no candidates for them, because they were already planned elsewhere. I dismissed the two plans on
+51,-37 (reason recorded) hoping 52,-37 would propose them, but it still does not, so they now have no plan in
+any cell. That needs a decision on how cell-edge shops are assigned to a primary cell; I did not force it.
+Before this the shop at way 122706797 could not be rebuilt from its hand spec, because undo was refused for a
+stale neighbouring cell (51,-36).
+
 ## Recommendation
 
 1. **Relax the generator.** In order of effect: (a) accept any footprint and let the builder fit it
@@ -201,8 +213,20 @@ cells.
    boxes and the hand-built unit. Roof detail needs the builder fixes first (roof layer, chimney per stack).
 6. **Keep a designer** for landmarks, odd footprints, mixed roof forms and buildings across cell edges.
 
-Implementation tasks from these findings are not filed here; per the task they are filed after the owner has
-read this page.
+Implementation tasks filed from these findings (owner approved 2026-11-22), none started:
+
+| Task | What | Builder task |
+| --- | --- | --- |
+| 427 | Generator: accept rotated and irregular footprints, rows by adjacency, front from the nearest street | no |
+| 428 | Generator: default storeys from the profile, lidar check advisory, class-default fallback without a profile | no |
+| 429 | `house_build`: roof underlay block sits in the wall's top course (roof material one layer low) | no |
+| 430 | `house_build`: domestic chimney option (stack per house, pair or party wall) | no |
+| 431 | Generator: glazing and facade detail as a class recipe | no |
+| 432 | Terrace recipe trial on Northcote Road (blocked by 427 to 430) | yes |
+
+Task 333 (shop typology) was pointed at this page and keeps per-side storeys, dormers, bay windows and pitched
+roofs. The district profile file for Southampton is world work, not a tool task: the world has no
+`site/districts/*.json`. Cell-edge handling relates to the existing blocked tasks 232 and 234.
 
 ## Scratch effects (world repo `southampton-build`)
 
@@ -212,9 +236,11 @@ read this page.
 - Registry: `plan_feature` notes recorded for every candidate group in cells 49,-48 and 51,-37 (including
   Iris Road, Honeysuckle Road and the parade's other shops) and the cell 54,-41 plans, plus evidence-only
   prepares of 49,-49 and 51,-36.
-- Local data fetched, with owner approval: vector-map extracts for cells 54,-41 and 51,-37
-  (`reference/vector_map/typology-trial/`, 53,288 and 45,184 bytes, cut from the vector-map file on disk), three
-  aerial sheets under `instance/google-aerial/` (2,295,220, 1,716,190 and 2,381,596 bytes) and three
-  Hampshire Hub mosaics under `reference/aerial/typology-trial/` (about 1 MB each).
+- Local data fetched, with owner approval: vector-map extracts for cells 54,-41, 51,-37 and 52,-37
+  (`reference/vector_map/typology-trial/`, 53,288, 45,184 and 15,576 bytes, cut from the vector-map file on disk), three
+  aerial sheets under `instance/google-aerial/` (2,295,220, 1,716,190 and 2,381,596 bytes) and four
+  Hampshire Hub mosaics under `reference/aerial/typology-trial/` (about 1 MB each; the fourth,
+  `mosaic-z18-3x3-centre-130059-87845.png`, 1,013,863 bytes, covers cell 52,-37).
+- Dismissed feature plans w149855650 and w167071535 on cell 51,-37 (see Cell edges).
 - A first terrace apply aborted because a parallel `site_lock.py run` with the same owner name released the
   lock; use a distinct owner per command when running two at once.
