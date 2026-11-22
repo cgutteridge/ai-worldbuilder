@@ -3473,5 +3473,16 @@
       "builderTask": false,
       "notes": "Housekeeping review ticket T6. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T6' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s\n- Scope: 1.8. Repoint every listed doc, code string and world JSON line to `shims/`, then delete the stubs.\n- Check: no `scripts/<stub>.py` path appears in the tool repo or any world.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at e45155d48a2bdd6d202f845faa1fc95edfcc15a8: Merged locally after owner-authorized Codex review (reviewer override for this wave); focused, tip and post-merge full suites passed. World commits: southampton-build b6a29de1e3d23d851ae48f9430313825645d6e80; ventnor-build 26bff862c490699e4a65cc8a47762327abed09de. No remote push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 393,
+      "title": "World-provider shims: resolve by catalogue role, and make tool imports optional",
+      "status": "done",
+      "priority": "high",
+      "complexity": "l",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Housekeeping review ticket T3. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T3' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: high; complexity: m–l\n- Scope:\n  - 1.3: the four shims, `cell_features.py:4,51-52,636`, `site_handoff.py:357,400` (or gone with T17), `evidence_sheet.py:174,256,404`, `world_provider.py:4,8,34`, `scripts/test_redo_here.py:52,68`.\n  - Rules: `building-review.md:13,91`, `craftsmanship.md:243,245,274`, `evidence-order.md:21`, `rules-context.md:71`.\n  - Skill: `redo/SKILL.md:106`.\n  - World `local-providers.json` rows gain a role.\n- Check: in a fixture world with no such providers, `import cell_features` succeeds and `cell_registry.py next` runs without the import failure. Southampton behaviour is unchanged on a fixture.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nClosed at 10e4f624aaf3559dfbe1f9368cf350998eba7fe3: Merged locally after owner-authorized Codex review; focused 91-test selection, commit-hook full suite and post-merge full suite passed. Rebased to preserve code-only tracker ownership; approved provider files unchanged. Southampton role config commit 0d14c1c20019cc066a6c646bdb44f5f26208c84a. No remote push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
