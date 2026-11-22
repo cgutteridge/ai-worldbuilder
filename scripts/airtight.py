@@ -58,12 +58,12 @@ def leak(w, box, outside, inside):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-script_env.add_world_arg(ap)
+    script_env.add_world_arg(ap)
     ap.add_argument('box')
     ap.add_argument('--outside', required=True)
     ap.add_argument('--inside', required=True)
     a = ap.parse_args()
-script_env.activate_world_from_args(a)
+    script_env.activate_world_from_args(a)
     t = lambda s: tuple(int(v) for v in s.split(','))
     path = leak(World(), t(a.box), t(a.outside), t(a.inside))
     print('AIRTIGHT' if path is None else f'LEAK: {len(path)} cells, inside -> outside: {path[:8]} ... {path[-3:]}')
