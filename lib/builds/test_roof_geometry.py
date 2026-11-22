@@ -23,20 +23,21 @@ HIP_FOOTPRINTS = {
     'ring_hole': [(x, z) for x in range(9) for z in range(9) if not (3 <= x <= 5 and 3 <= z <= 5)],
 }
 
-# Recorded on the pre-change code; see module docstring.
+# Recorded on the pre-change code; see module docstring. The pitched entries (0.75, 1) were
+# re-recorded for #414 (eave edge starts a slab or stair high); the None and 0.5 flatish entries are unchanged.
 HOUSE_GOLDEN = {
     'square:None': '38acbd50986d4f988349ed6a39ce1f73b7a0e7161fad51b975b82adb3bc4878b',
     'square:0.5': '38acbd50986d4f988349ed6a39ce1f73b7a0e7161fad51b975b82adb3bc4878b',
-    'square:0.75': '5b73fb17262c6cc4c2764cef27bfeafc6a2a8ead645a2b236c7a52a94044fe52',
-    'square:1': '97488d5998a2ed09902443c506a27497031335ee9385823499e9b1f6f8c93908',
+    'square:0.75': 'e4df67bdcd17c1e8098f5b114845b8af7f90a27718b241dc44a5ee0a42e034d5',
+    'square:1': '64762aabf1150483b2e6f841ced09236e310576946ecdb4f2e68916a54a2e0a9',
     'L:None': '049b1ee6ce86d5f6dbad4c119bee30dc3408232ef1bdc6087c818ab7515d644a',
     'L:0.5': '049b1ee6ce86d5f6dbad4c119bee30dc3408232ef1bdc6087c818ab7515d644a',
-    'L:0.75': 'af6e3843a65fad8052f9b4193778ebd3118e0e6b3c01f2557514e41220b7df91',
-    'L:1': '4254cd0b23bc0a86fd760be273fde9c589069ce75a71ac62bb8f69f9481a7628',
+    'L:0.75': '95ee0749a6515b256a18025835669efe8db1e80081c53608221edbca5bf0f8ee',
+    'L:1': 'c32a9eb67c4c5e24ec28e8340cc96516d98373e259edc760b23191360167eeb7',
     'group:None': 'd1feb694bc096d0bc5bb6f6d0ec82b33225c30ae715e7abf261d32d82e88e91b',
     'group:0.5': 'd1feb694bc096d0bc5bb6f6d0ec82b33225c30ae715e7abf261d32d82e88e91b',
-    'group:0.75': 'f5d862a50b90cfe834c8591f45214f8e93b925b6368fc9a6846c7d401dc1a9e5',
-    'group:1': 'fcc76ff44468d239a48e4eb637ededc7040ac2cd94256f50c17625bd9de47d5b',
+    'group:0.75': '4328076590b56048dcbdf616c7e2f7b49e021db827b84e053bf24b6fc6db2fbb',
+    'group:1': 'ac7b826c8b292fad3af61a0318a873f4ff33d557344dd38d488f6133106d0f03',
 }
 HIP_GOLDEN = {
     'square5': (

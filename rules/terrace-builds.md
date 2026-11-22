@@ -21,7 +21,9 @@ docstring):
   Missing labels default to 0.5. At or below 0.5 the existing half-block slab
   rings remain unchanged; above 0.5 the roof rises inward at the supplied ratio,
   snapped down to half-block heights, with stairs, explicit corner shapes,
-  solid underlay and slab or opposed-stair ridge caps. Full-only flatish
+  solid underlay and slab or opposed-stair ridge caps. The overhanging eave
+  ring starts at wall-top level as a bottom slab (shallow pitch) or a stair
+  (steep pitch), with no full block under it. Full-only flatish
   materials use full blocks instead of inventing a slab variant. Pitched
   materials without a catalogue triad are refused with shared suggestions.
   `mode: group` labels must have equal effective pitches; the first label's
