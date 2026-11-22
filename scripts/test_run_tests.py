@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import subprocess
@@ -113,6 +114,123 @@ class ModuleSelectionTest(unittest.TestCase):
             self._write_pair(scripts)
             suite = run_tests.load_suite(scripts, only=None)
             self.assertEqual(suite.countTestCases(), 2)
+
+
+def _write_test_module(directory: Path, stem: str) -> None:
+    """Write a one-test module named ``stem`` under ``directory``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f'{stem}.py').write_text(
+        'import unittest\n'
+        'class T(unittest.TestCase):\n'
+        '    def test_ok(self):\n'
+        '        self.assertTrue(True)\n',
+        encoding='utf-8',
+    )
+
+
+def _case_ids(suite: unittest.TestSuite) -> set[str]:
+    """Module stems loaded in ``suite`` (discover nests a suite per module)."""
+    found: set[str] = set()
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            found.update(_case_ids(item))
+            continue
+        found.add(item.id().split('.')[0])
+    return found
+
+
+class BakeoffDiscoveryTest(unittest.TestCase):
+    """Default discovery skips the closed bake-off; ``--bakeoff`` collects it."""
+
+    def tearDown(self) -> None:
+        stale = [
+            name
+            for name in list(sys.modules)
+            if name.startswith('test_bake_disc_')
+        ]
+        for name in stale:
+            sys.modules.pop(name, None)
+
+    def test_default_suite_skips_bakeoff_until_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scripts = root / 'scripts'
+            bakeoff = root / 'bakeoff'
+            token = f'{os.getpid()}_{id(root)}'
+            scripts_stem = f'test_bake_disc_scripts_{token}'
+            bake_stem = f'test_bake_disc_bake_{token}'
+            _write_test_module(scripts, scripts_stem)
+            _write_test_module(bakeoff, bake_stem)
+
+            default_extras = run_tests.discover_extra_dirs(
+                root, include_bakeoff=False
+            )
+            self.assertFalse(any(path.name == 'bakeoff' for path in default_extras))
+            default_suite = run_tests.load_suite(
+                scripts, only=None, extra_dirs=tuple(default_extras)
+            )
+            self.assertEqual(_case_ids(default_suite), {scripts_stem})
+
+            with self.assertRaises(run_tests.UnknownTestModule):
+                run_tests.load_suite(
+                    scripts,
+                    only=[bake_stem],
+                    extra_dirs=tuple(default_extras),
+                )
+
+            opted_extras = run_tests.discover_extra_dirs(
+                root, include_bakeoff=True
+            )
+            self.assertTrue(
+                any(path.resolve() == bakeoff.resolve() for path in opted_extras)
+            )
+            opted_suite = run_tests.load_suite(
+                scripts, only=None, extra_dirs=tuple(opted_extras)
+            )
+            self.assertEqual(_case_ids(opted_suite), {scripts_stem, bake_stem})
+            only_bake = run_tests.load_suite(
+                scripts, only=[bake_stem], extra_dirs=tuple(opted_extras)
+            )
+            self.assertEqual(_case_ids(only_bake), {bake_stem})
+
+    def test_real_repo_default_extras_omit_bakeoff_dir(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        default_extras = run_tests.discover_extra_dirs(
+            root, include_bakeoff=False
+        )
+        opted_extras = run_tests.discover_extra_dirs(
+            root, include_bakeoff=True
+        )
+        self.assertFalse(any(path.name == 'bakeoff' for path in default_extras))
+        self.assertTrue(any(path.name == 'bakeoff' for path in opted_extras))
+
+    def test_cli_flag_is_the_opt_in(self) -> None:
+        self.assertFalse(run_tests.parse_args([]).bakeoff)
+        self.assertTrue(run_tests.parse_args(['--bakeoff']).bakeoff)
+
+        captured: list[tuple[Path, ...]] = []
+
+        def _capture(*_args: object, **kwargs: object) -> unittest.TestSuite:
+            extra = kwargs.get('extra_dirs')
+            self.assertIsInstance(extra, tuple)
+            captured.append(tuple(extra))
+            return unittest.TestSuite()
+
+        @contextlib.contextmanager
+        def _cm(*_args: object, **_kwargs: object):
+            yield None
+
+        with mock.patch.object(run_tests, 'unit_test_world', _cm):
+            with mock.patch.object(run_tests, 'full_suite_lock', _cm):
+                with mock.patch.object(run_tests, '_run_suite', return_value=0):
+                    with mock.patch.object(
+                        run_tests, 'load_suite', side_effect=_capture
+                    ):
+                        self.assertEqual(run_tests.main([]), 0)
+                        self.assertEqual(run_tests.main(['--bakeoff']), 0)
+        self.assertEqual(len(captured), 2)
+        self.assertFalse(any(path.name == 'bakeoff' for path in captured[0]))
+        self.assertTrue(any(path.name == 'bakeoff' for path in captured[1]))
 
 
 class WorldIsolationTest(unittest.TestCase):

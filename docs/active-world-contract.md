@@ -48,8 +48,9 @@ Offsets live only in the world frame. The system config does not duplicate them;
 1. Pass `--world <dirname>` for the other checkout under `worlds/` (e.g. `--world bakeoff`).
 2. Confirm: `python3 -c "from active_world import set_world, gameworld_id; print(set_world('bakeoff'), gameworld_id())"`.
 
-The bake-off **framework** (CLI, rounds, skill) lives under tool-repo `bakeoff/`;
-the bake-off **world checkout** stays at `worlds/bakeoff/` and is selected via
+The bake-off **framework** is a closed historical record under tool-repo `bakeoff/`
+(`PROTOCOL.md` kept; the `model-bakeoff` skill is historical). The bake-off
+**world checkout** stays at `worlds/bakeoff/` and is selected via
 `--world bakeoff` like any other world.
 
 Retired: the environment variable `AI_WORLDBUILDER_WORLD_ROOT` is no longer read.

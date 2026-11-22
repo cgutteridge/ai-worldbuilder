@@ -16,11 +16,13 @@ API.
 | Live site | `site_views.py`, `site_patrol.py`, `site_audit.py`, `site_index.py`, `redo_here.py` |
 | Feature builds | `house_build.py`, `feature_build.py`, `reapply_feature.py`, `register_builder.py`, `builder_audit.py`, `roof_aerial.py` (flat-roof colour + PV rows from an aerial) |
 | Audits | `lidar_audit.py`, `tree_review.py`, `door_audit.py`, `airtight.py` |
-| Bake-off shims | `model_bakeoff.py`, `feature_selection_check.py` → `bakeoff/` |
 | Bootstrap | `script_env.py` (path preamble; import this, do not move it) |
 
 World-provider shims (`buildings`, `portals`, `osm_extract`, `aerial_mosaic`,
 `tpo_fetch`) live under `shims/`; invoke them as `python3 shims/<name>.py --world <world> …`.
+
+The closed bake-off CLIs stay in `bakeoff/` (`model_bakeoff.py`,
+`feature_selection_check.py`), not under `scripts/`.
 
 ## Path bootstrap
 
