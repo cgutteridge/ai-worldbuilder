@@ -113,6 +113,54 @@ class RailwayPlannerTest(unittest.TestCase):
         self.assertIn((45, 2), {(c[0], c[1]) for c in p['columns']})
         self.assertIn((55, 2), {(c[0], c[1]) for c in p['columns']})
 
+    def test_boundary_corner_uses_the_actual_outside_neighbour(self):
+        g = ground(x0=-100, z0=-20, width=1450, depth=160)
+        evidence = line(((0, 0), (1087, 0), (1087, 100), (1200, 100)))
+        p = self.plan(evidence, g)
+        self.assertEqual(p['failures'], [])
+        boundary = next(r for r in p['rails'] if (r[0], r[2]) == (1087, 100))
+        self.assertEqual(boundary[3], 'north_east')
+        self.assertEqual(boundary[4], 'minecraft:rail[shape=north_east]')
+        continuation = self.plan(evidence, g, tuple(p['joins'][0]['cell']), p['joins'])
+        self.assertEqual(continuation['failures'], [])
+        boundary[3:] = ['north_south', 'minecraft:powered_rail[shape=north_south,powered=true]']
+        with self.assertRaises(AssertionError):
+            R.validate_plan(p)
+
+    def test_incoming_join_direction_is_entry_not_the_onward_direction(self):
+        g = ground(x0=-100, z0=-20, width=1450, depth=160)
+        evidence = line(((0, 0), (1088, 0), (1088, 100)))
+        first = self.plan(evidence, g)
+        self.assertEqual(first['failures'], [])
+        join = first['joins'][0]
+        second = self.plan(evidence, g, tuple(join['cell']), [join])
+        self.assertEqual(second['failures'], [])
+        self.assertEqual(second['rails'][0][3], 'south_west')
+
+    def test_both_box_cuts_have_usable_outgoing_joins(self):
+        g = ground(x0=-2100, z0=-20, width=4250, depth=45)
+        evidence = line(((-2000, 0), (2000, 0)))
+        p = self.plan(evidence, g)
+        self.assertEqual(p['failures'], [])
+        self.assertEqual({j['direction'] for j in p['joins']}, {'west', 'east'})
+        for join in p['joins']:
+            continuation = self.plan(evidence, g, tuple(join['cell']), [join])
+            self.assertEqual(continuation['failures'], [])
+            self.assertEqual(continuation['rails'][0][1], join['level'])
+            if join['direction'] == 'west':
+                self.assertLess(max(r[0] for r in continuation['rails']), min(r[0] for r in p['rails']))
+            else:
+                self.assertGreater(min(r[0] for r in continuation['rails']), max(r[0] for r in p['rails']))
+
+    def test_overlapping_crossing_gaps_fail_clearly_instead_of_recording_unbuilt_ends(self):
+        crossings = tuple(LevelCrossing(str(x), 'fixture-line', 0, (x, 0), x,
+                                       None, None, None, None, None) for x in (50, 55))
+        p = self.plan(line(((0, 0), (100, 0)), crossings=crossings),
+                      crossing_roads={str(x): {'width': '6'} for x in (50, 55)})
+        self.assertTrue(p['failures'])
+        self.assertIn('gap', p['failures'][0]['reason'])
+        self.assertEqual(p['rails'], [])
+
     def test_bridge_and_tunnel_are_gaps_without_a_guessed_design(self):
         for kind in ('bridge', 'tunnel'):
             span = RailSpan(kind, 'fixture-line', 'yes' if kind == 'bridge' else None,

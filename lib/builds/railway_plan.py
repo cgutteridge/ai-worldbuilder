@@ -17,8 +17,11 @@ Torch supports are explicit [x,y,z] solid-fill requirements for integration.
 ``tracks`` includes the continuous profiles through gaps; only ``rails`` and
 the other placement lists omit gaps. A join's ``at`` is the final inside
 rail column; ``next`` is the adjacent column to start the next feature,
-``level`` is rail Y, and ``run`` carries step spacing across the boundary.
-Pass the entire outgoing join back as ``incoming``. Gap ``ends`` describe
+``level`` is rail Y, ``side`` identifies the start or end cut, and ``run``
+carries step spacing across the boundary. ``direction`` enters ``next``
+from ``at``; the track may turn immediately at next. Pass the selected
+outgoing join back as ``incoming``. Profiles retain ``before`` and ``after``
+neighbours so boundary corners keep their actual shape. Gap ``ends`` describe
 the two abutting rail cells, with rail Y, direction and track index.
 """
 from __future__ import annotations
@@ -109,10 +112,10 @@ def _direction(a, b):
     return next(word for word, offset in cellmath.FACING.items() if offset == vector)
 
 
-def _shape(path, levels, i):
+def _shape(path, levels, i, before=None, after=None):
     p = path[i]
-    before = path[i - 1] if i else (2 * p[0] - path[1][0], 2 * p[1] - path[1][1])
-    after = path[i + 1] if i + 1 < len(path) else (2 * p[0] - before[0], 2 * p[1] - before[1])
+    before = path[i - 1] if i else before or (2 * p[0] - path[1][0], 2 * p[1] - path[1][1])
+    after = path[i + 1] if i + 1 < len(path) else after or (2 * p[0] - before[0], 2 * p[1] - before[1])
     directions = {_direction(p, before), _direction(p, after)}
     straight = before[0] == p[0] == after[0] or before[1] == p[1] == after[1]
     if straight:
@@ -131,31 +134,46 @@ def _nearest_indices(path, reference):
 
 def _clip(path, box, entry, centre):
     """One connected visit to the box, pointed along an incoming join if any."""
+    incoming_before = None
     if entry:
         at = tuple(entry['next'])
         if at not in path:
-            return [], None, 'incoming join is not on this track'
+            return [], None, None, 'incoming join is not on this track'
+        if not _inside(at, box):
+            return [], None, None, 'incoming join is outside the planning box'
         i = path.index(at)
         desired = cellmath.FACING[entry['direction']]
-        if i + 1 < len(path) and (path[i + 1][0] - at[0], path[i + 1][1] - at[1]) == desired:
+        previous = tuple(entry.get('at', (at[0] - desired[0], at[1] - desired[1])))
+        if (at[0] - previous[0], at[1] - previous[1]) != desired:
+            return [], None, None, 'incoming join direction disagrees with its entry cells'
+        if i and path[i - 1] == previous:
             path = path[i:]
-        elif i and (path[i - 1][0] - at[0], path[i - 1][1] - at[1]) == desired:
+        elif i + 1 < len(path) and path[i + 1] == previous:
             path = list(reversed(path[:i + 1]))
+        elif previous not in path and i == 0:
+            path = path[i:]
+        elif previous not in path and i == len(path) - 1:
+            path = list(reversed(path))
         else:
-            return [], None, 'incoming join direction cannot connect'
-    runs, current = [], []
+            return [], None, None, 'incoming join direction cannot connect'
+        incoming_before = previous
+    runs, start = [], None
     for i, p in enumerate(path):
         if _inside(p, box):
-            current.append(p)
-        elif current:
-            runs.append((current, p))
-            current = []
-    if current:
-        runs.append((current, None))
+            if start is None:
+                start = i
+        elif start is not None:
+            runs.append((start, i))
+            start = None
+    if start is not None:
+        runs.append((start, len(path)))
     if not runs:
-        return [], None, 'track does not enter the planning box'
-    chosen = min(runs, key=lambda r: min(math.dist(p, centre) for p in r[0])) if not entry else runs[0]
-    return chosen[0], chosen[1], None
+        return [], None, None, 'track does not enter the planning box'
+    a, b = (min(runs, key=lambda r: min(math.dist(p, centre) for p in path[r[0]:r[1]]))
+            if not entry else runs[0])
+    before = path[a - 1] if a else incoming_before
+    after = path[b] if b < len(path) else None
+    return path[a:b], before, after, None
 
 
 def _gaps(line, paths, roads):
@@ -206,6 +224,14 @@ def _gaps(line, paths, roads):
             if selected:
                 result[ti].append({'kind': span.kind, 'source': span.bridge_ref,
                                    'start': min(selected), 'end': max(selected)})
+    for ti, intervals in enumerate(result):
+        ordered = sorted((g for g in intervals if 'error' not in g), key=lambda g: (g['start'], g['end']))
+        for a, b in zip(ordered, ordered[1:]):
+            if b['start'] <= a['end'] + 1:
+                result[ti] = [{'where': list(paths[ti][b['start']]),
+                               'error': 'overlapping or adjacent gap spans need a combined structure: '
+                                        f'{a["source"] or a["kind"]}, {b["source"] or b["kind"]}'}]
+                break
     return result
 
 
@@ -370,14 +396,14 @@ def plan_line(
                 fail(start_cell, 'conflicting incoming join records')
                 return plan
             entries[ti] = track
-    paths, next_cells = [], []
+    paths, previous_cells, next_cells = [], [], []
     for ti, poly in enumerate(line.tracks):
         try:
             snapped = snap_track(poly)
         except ValueError as exc:
             fail(start_cell, str(exc))
             snapped = []
-        path, nxt, error = _clip(snapped, box, entries.get(ti), centre)
+        path, before, nxt, error = _clip(snapped, box, entries.get(ti), centre)
         if error or len(path) < 2:
             fail(path[0] if path else start_cell, error or 'track needs at least two rail cells')
             path = []
@@ -385,6 +411,7 @@ def plan_line(
             fail(path[0], 'path is not 4-connected after repair')
             path = []
         paths.append(path)
+        previous_cells.append(before)
         next_cells.append(nxt)
     gaps = _gaps(line, paths, crossing_roads or {})
     heights = []
@@ -406,6 +433,7 @@ def plan_line(
     # Structure evidence outside mapped deck polygons is still excluded.
     for ti in valid:
         path = paths[ti]
+        before, after = previous_cells[ti], next_cells[ti]
         targets = np.asarray(heights[ti], dtype=float)
         for other in valid:
             if other != ti:
@@ -454,7 +482,7 @@ def plan_line(
                 if ceiling is None or ceiling - (level + 1) < RAIL_CLEARANCE:
                     blocked = (p, 'overhead deck leaves less than 5 blocks rail clearance')
                     break
-            shape = _shape(path, levels, i)
+            shape = _shape(path, levels, i, before, after)
             powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
             if powered and not _sample(ground, 'solid', p, True):
                 blocked = (p, 'torch support below the formation is not solid')
@@ -465,12 +493,14 @@ def plan_line(
         if first_profile is None:
             first_profile, first_path = levels, path
         profile = {'track_index': ti, 'path': [list(p) for p in path], 'levels': levels,
-                   'gap': gap_mask, 'initial_run': initial_run}
+                   'gap': gap_mask, 'initial_run': initial_run,
+                   'before': list(before) if before is not None else None,
+                   'after': list(after) if after is not None else None}
         plan['tracks'].append(profile)
         for i, (p, level) in enumerate(zip(path, levels)):
             if gap_mask[i]:
                 continue
-            shape = _shape(path, levels, i)
+            shape = _shape(path, levels, i, before, after)
             powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
             block = (f'minecraft:powered_rail[shape={shape},powered=true]' if powered
                      else f'minecraft:rail[shape={shape}]')
@@ -487,15 +517,23 @@ def plan_line(
                                  'direction': _direction(path[index], neighbour)})
             plan['gaps'].append({**gap, 'track_index': ti, 'ends': ends,
                                  'columns': [list(p) for p in path[gap['start']:gap['end'] + 1]]})
-        nxt = next_cells[ti]
-        if nxt is not None:
-            steps = [i for i in range(1, len(path)) if levels[i] != levels[i - 1]]
-            run = len(path) - 1 - steps[-1] if steps else initial_run + len(path) - 1
-            record = {'track_index': ti, 'at': list(path[-1]), 'next': list(nxt),
-                      'level': levels[-1] + 1, 'direction': _direction(path[-1], nxt),
+        steps = [i for i in range(1, len(path)) if levels[i] != levels[i - 1]]
+        for side, index, nxt in (('end', len(path) - 1, after), ('start', 0, before)):
+            if nxt is None or _inside(nxt, box) or side == 'start' and entry:
+                continue
+            if gap_mask[index]:
+                fail(path[index], 'planning box cuts a structure gap without an abutting rail')
+                continue
+            if side == 'end':
+                run = len(path) - 1 - steps[-1] if steps else initial_run + len(path) - 1
+            else:
+                run = steps[0] - 1 if steps else min_step_run
+            record = {'track_index': ti, 'side': side, 'at': list(path[index]), 'next': list(nxt),
+                      'level': levels[index] + 1, 'direction': _direction(path[index], nxt),
                       'run': min(min_step_run, run)}
             plan['joins'].append({'line_id': line.id, 'cell': list(cellmath.cell_of(*nxt, size=size)),
-                                  'level': levels[-1] + 1, 'direction': record['direction'], 'tracks': [record]})
+                                  'side': side, 'level': levels[index] + 1,
+                                  'direction': record['direction'], 'tracks': [record]})
     # Reject overlapping paired tracks: a last-writer-wins crossing is not a junction solution.
     positions = [(x, z) for x, _y, z, _s, _b in plan['rails']]
     if len(set(positions)) != len(positions):
@@ -529,6 +567,11 @@ def validate_plan(plan: Mapping) -> None:
     expected, expected_torches = set(), set()
     for track in plan['tracks']:
         path, levels, gaps = track['path'], track['levels'], track['gap']
+        before, after = track['before'], track['after']
+        if before is not None:
+            assert (path[0][0] - before[0], path[0][1] - before[1]) in cellmath.N4
+        if after is not None:
+            assert (after[0] - path[-1][0], after[1] - path[-1][1]) in cellmath.N4
         assert len(path) == len(levels) == len(gaps)
         assert len({tuple(p) for p in path}) == len(path), 'revisited rail column'
         previous_step = None
@@ -540,7 +583,7 @@ def validate_plan(plan: Mapping) -> None:
                 if delta:
                     assert not gaps[i - 1] and not gaps[i], 'step inside gap'
                     low, high = (i - 1, i) if delta > 0 else (i, i - 1)
-                    assert _shape(path, levels, low) == 'ascending_' + _direction(path[low], path[high]), 'step on a corner'
+                    assert _shape(path, levels, low, before, after) == 'ascending_' + _direction(path[low], path[high]), 'step on a corner'
                     if previous_step is not None:
                         assert i - previous_step >= plan['min_step_run'], 'steps too close'
                     else:
@@ -552,7 +595,7 @@ def validate_plan(plan: Mapping) -> None:
             expected.add(tuple(p))
             rail = rails[tuple(p)]
             assert rail[1] == levels[i] + 1
-            shape = _shape(path, levels, i)
+            shape = _shape(path, levels, i, before, after)
             assert rail[3] == shape, 'shape does not connect neighbours'
             if shape in ('north_south', 'east_west') or shape.startswith('ascending_'):
                 assert rail[4] == f'minecraft:powered_rail[shape={shape},powered=true]'
@@ -592,8 +635,11 @@ def validate_plan(plan: Mapping) -> None:
     for join in plan['joins']:
         for record in join['tracks']:
             track = profiles[record['track_index']]
-            assert record['at'] == track['path'][-1]
-            assert record['level'] == track['levels'][-1] + 1
+            index = 0 if record['side'] == 'start' else len(track['path']) - 1
+            assert record['at'] == track['path'][index]
+            assert record['level'] == track['levels'][index] + 1
+            assert tuple(record['at']) in rails, 'join has no abutting rail'
+            assert record['next'] == track['before' if record['side'] == 'start' else 'after']
             assert not _inside(record['next'], plan['box'])
             assert record['direction'] == _direction(record['at'], record['next'])
             assert 0 <= record['run'] <= plan['min_step_run']
