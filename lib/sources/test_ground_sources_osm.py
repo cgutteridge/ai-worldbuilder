@@ -451,5 +451,109 @@ class WayLinesForFurnitureTest(unittest.TestCase):
         self.assertIsNone(paths['path']['lit'])                                        # absent stays None
 
 
+# Carriageways the map clips omit. This is the table that used to live in ground_sources;
+# southampton-build keeps the same rows in reference/supplement-roads.json.
+_MIGRATED_ROADS = [
+    ((50, -42),
+     [(6396, -5294), (6460, -5266), (6500, -5248), (6531, -5235)],
+     {'highway': 'residential', 'surface': 'asphalt',
+      'name': 'road S of Welbeck Ave houses (unmapped in map clip)', 'width': '9'}),
+    ((49, -42),
+     [(6350, -5322), (6351, -5314), (6355, -5297), (6360, -5282), (6365, -5263), (6370, -5246)],
+     {'highway': 'residential', 'surface': 'asphalt',
+      'name': 'University Rd south of the junction (unmapped in map clip)', 'width': '9'}),
+    ((49, -42),
+     [(6352, -5322), (6362, -5316), (6372, -5311), (6385, -5304), (6399, -5298)],
+     {'highway': 'residential', 'surface': 'asphalt',
+      'name': 'road E from the junction toward Welbeck Ave (unmapped in map clip)', 'width': '9'}),
+]
+
+
+def _supplement_document() -> dict:
+    """JSON object ``load_osm`` reads, built from :data:`_MIGRATED_ROADS`."""
+    doc: dict = {}
+    for cell, pts, tags in _MIGRATED_ROADS:
+        doc.setdefault(f'{cell[0]},{cell[1]}', []).append({
+            'points': [list(p) for p in pts],
+            'tags': dict(tags),
+        })
+    return doc
+
+
+def _lines_for(cell: tuple[int, int]) -> list:
+    """``load_osm`` line features for ``cell`` from :data:`_MIGRATED_ROADS`."""
+    return [(dict(tags), 'line', list(pts)) for owner, pts, tags in _MIGRATED_ROADS if owner == cell]
+
+
+class SupplementRoadsFileTest(unittest.TestCase):
+    """Extra carriageways come only from the active world's optional file."""
+
+    def setUp(self):
+        import active_world
+        self._previous = active_world.WORLD_ROOT
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(self._restore_world)
+        active_world.set_world_root(self.root)
+
+    def _restore_world(self):
+        import active_world
+        active_world.WORLD_ROOT = self._previous
+
+    def _write_file(self, data) -> None:
+        path = self.root / 'reference' / 'supplement-roads.json'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(data))
+
+    def _load(self, cell):
+        with mock.patch.object(OF, 'cached_geojson_paths', return_value=[]):
+            return GS.load_osm(cell)
+
+    def test_world_without_the_file_gets_no_extra_roads(self):
+        self.assertEqual(self._load((49, -42)), [])
+        self.assertEqual(self._load((50, -42)), [])
+
+    def test_file_returns_the_same_lines_as_the_old_table(self):
+        self._write_file(_supplement_document())
+        self.assertEqual(self._load((49, -42)), _lines_for((49, -42)))
+        self.assertEqual(self._load((50, -42)), _lines_for((50, -42)))
+        self.assertEqual(self._load((0, 0)), [])
+
+    def test_no_selected_world_gets_no_extra_roads(self):
+        import active_world
+        self._write_file(_supplement_document())
+        active_world.WORLD_ROOT = None
+        self.assertEqual(self._load((49, -42)), [])
+        self.assertEqual(self._load((50, -42)), [])
+
+    def test_cache_lines_stay_ahead_of_the_file(self):
+        self._write_file(_supplement_document())
+        cache = self.root / 'cache.geojson'
+        cache.write_text(json.dumps({
+            'type': 'FeatureCollection',
+            'features': [{
+                'type': 'Feature',
+                'properties': {'osm_id': '1', 'highway': 'residential', 'name': 'Mapped Road'},
+                'geometry': {'type': 'LineString', 'coordinates': [[6300.0, -5300.0], [6320.0, -5300.0]]},
+            }],
+        }))
+        with mock.patch.object(OF, 'cached_geojson_paths', return_value=[cache]), \
+                mock.patch('world_frame.osgb_to_mc', side_effect=lambda e, n: (e, n)):
+            feats = GS.load_osm((49, -42))
+        self.assertEqual(feats[0][0]['name'], 'Mapped Road')
+        self.assertEqual(feats[1:], _lines_for((49, -42)))
+
+    def test_file_that_is_not_an_object_is_refused(self):
+        self._write_file([])
+        with self.assertRaises(ValueError):
+            self._load((49, -42))
+
+    def test_cell_entry_that_is_not_a_list_is_refused(self):
+        self._write_file({'49,-42': {'points': []}})
+        with self.assertRaises(ValueError):
+            self._load((49, -42))
+
+
 if __name__ == '__main__':
     unittest.main()

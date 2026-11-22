@@ -11,6 +11,8 @@ Two sources, both read-only, neither tied to any one place:
          paving / shade-or-canopy. It only fills columns the map does not describe.
 
 Nothing here reads the Minecraft world, an earlier ground pass, a zone, or a campus polygon.
+An optional ``reference/supplement-roads.json`` in the active world adds carriageway
+centrelines the clips omit. No selected world, or no such file, adds nothing.
 
 Kinds (the vocabulary the ground layer works in):
   grass  tarmac  paving  brick  gravel  dirt  water
@@ -24,6 +26,7 @@ from collections import Counter
 import numpy as np
 
 from ref_manifest import load_manifest
+from script_env import ROOT, world_bound
 import cellmath  # noqa: E402
 
 # vector-map surface=* → ground kind. 'paving' is split brick / light by the aerial.
@@ -157,13 +160,49 @@ cell_box = cellmath.bounds
 
 
 # --- vector_map ---------------------------------------------------------------------------
+# Optional world file: {"tx,tz": [{"points": [[x, z], ...], "tags": {...}}, ...]}.
+_ROAD_SUPPLEMENT = ROOT / 'reference' / 'supplement-roads.json'
+
+
+def _supplement_road_lines(cell: tuple[int, int]) -> list[tuple[dict, str, list]]:
+    """Carriageway lines for ``cell`` from ``reference/supplement-roads.json``, or none.
+
+    No selected world, a missing file, or no entry for this cell yields ``[]``.
+    Each present row becomes ``(tags, 'line', [(x, z), ...])`` in file order.
+
+    @param cell: ``(tx, tz)``
+    @returns: line features to append after the vector-map cache
+    @raises ValueError: when the file is not an object, or this cell's entry is not a list
+    """
+    if not world_bound():
+        return []
+    spec = _ROAD_SUPPLEMENT
+    if not spec.is_file():
+        return []
+    data = json.loads(spec.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f'{spec} must be a JSON object keyed by cell')
+    key = f'{cell[0]},{cell[1]}'
+    rows = data.get(key, [])
+    if not rows:
+        return []
+    if not isinstance(rows, list):
+        raise ValueError(f'{spec} entry {key} must be a list')
+    out = []
+    for row in rows:
+        pts = [(p[0], p[1]) for p in row['points']]
+        out.append((dict(row['tags']), 'line', pts))
+    return out
+
+
 def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict, str, list]]:
     """Vector-map features touching the cell: [(tags, 'poly'|'line'|'point', geometry in MC)].
 
     Reads the OSGB cache via ``osm_footprints.cached_geojson_paths`` (reprojects
     clips not yet cached). poly geometry is [[outer, hole, ...], ...]; line is
     [(x, z), ...]; point is (x, z). Duplicates across extracts (same map id and
-    tags) are dropped.
+    tags) are dropped. Lines for this cell from ``reference/supplement-roads.json``
+    are appended when that file is present.
     """
     from osm_footprints import cached_geojson_paths
     from world_frame import osgb_to_mc
@@ -192,25 +231,8 @@ def load_osm(cell: tuple[int, int], margin: int = MARGIN + 8) -> list[tuple[dict
                     out.append((t, 'line', [mc(c[:2]) for c in ln]))
             elif g['type'] == 'Point':
                 out.append((t, 'point', mc(g['coordinates'][:2])))
-    for cx, cz, pts, tags in SUPPLEMENT_ROADS:
-        if (cx, cz) == tuple(cell):
-            out.append((dict(tags), 'line', list(pts)))
+    out.extend(_supplement_road_lines(tuple(cell)))
     return out
-
-
-# Real carriageways missing from the map clips (aerial + the existing road surface show them).
-# (cell tx, tz, centreline in MC, tags). Added so the ground pass lays tarmac, not paving.
-SUPPLEMENT_ROADS = [
-    (50, -42, [(6396, -5294), (6460, -5266), (6500, -5248), (6531, -5235)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road S of Welbeck Ave houses (unmapped in map clip)',
-      'width': '9'}),
-    (49, -42, [(6350, -5322), (6351, -5314), (6355, -5297), (6360, -5282), (6365, -5263), (6370, -5246)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'University Rd south of the junction (unmapped in map clip)',
-      'width': '9'}),
-    (49, -42, [(6352, -5322), (6362, -5316), (6372, -5311), (6385, -5304), (6399, -5298)],
-     {'highway': 'residential', 'surface': 'asphalt', 'name': 'road E from the junction toward Welbeck Ave (unmapped in map clip)',
-      'width': '9'}),
-]
 
 
 def _tag_negative(raw: str | None) -> bool:
