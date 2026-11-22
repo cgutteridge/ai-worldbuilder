@@ -70,6 +70,7 @@ The checked layer redo and feature reapply wrappers use this discovery check bef
 
 - Do not put a save inside a world checkout or this repo, and do not symlink saves.
 - Open one world at a time; both the tool and the mod assume ports 8765 / 8766.
+- At the title screen (no world loaded) only port **8766** (the read-only view client) listens. Port **8765** (world/write bridge) comes up only after a save is open. `which_world` and live write paths need 8765, so they cannot identify or build against a title-screen session.
 - Reading is fine with the world open (planning reads of region files, MCP queries). Only commands that write, delete or replace region files need the world closed: leave the world (exit to the title screen) and pass `--confirm-logged-out`. The game itself can stay open.
 
 ## Tool platforms and dependencies
@@ -105,6 +106,10 @@ GDAL tools. Install your platform's GDAL package (for example `gdal-bin` on
 Debian/Ubuntu/WSL or `gdal` with Homebrew), then check `ogr2ogr --version` in the
 same shell before extracting. Follow the selected provider's README for its
 additional dependencies and data downloads.
+
+On Arch Linux, GDAL may print `ERROR 1: ...` lines while loading optional format
+plugins that are not installed. Those lines are harmless noise when `ogr2ogr`
+still exits 0 and writes the expected clip; they are not extraction failures.
 
 For accurate British National Grid conversions, install the OSTN15 grid
 `uk_os_OSTN15_NTv2_OSGBtoETRS.tif` in a PROJ data directory. The tool checks common

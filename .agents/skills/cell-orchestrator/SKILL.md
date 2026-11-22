@@ -107,6 +107,19 @@ ground stale (task 285) until the ground is redone.
    clear the marker under the world lock, then verify effective completion. Recheck readiness
    before each apply; direct builders also enforce the shared policy.
 1. Raise the marker for the target cell if needed (`python3 scripts/cell_marker.py --world <world> --raise tx,tz` under SITE_OWNER) — `next` does not.
+1b. **Re-prepare after raise.** Marker raise ensures the lidar-ghost frontier (neighbours; the focus cell is excluded). That lands `ghost-ground` builds, which change `planning_revision` / `journal_revision` (ghost geometry is part of that hash). It does **not** change readiness `revision_parts.evidence` (settings / map clips / lidar tile identities). Still re-run prepare so the focus cell gets its ghost and a fresh readiness note before build:
+
+   ```bash
+   python3 scripts/cell_registry.py --world <world> prepare --cell <tx,tz> --apply
+   ```
+
+   Edge-crossing features: each touched neighbour needs current evidence only (no feature plans). After the home cell is prepared, run:
+
+   ```bash
+   python3 scripts/cell_registry.py --world <world> prepare --cell <neighbour> --apply --evidence-only
+   ```
+
+   for every neighbour the feature touches. A plan stamped before raise can still refuse with `stale plan: journal geometry or planning assumptions changed` (re-plan); that is not an evidence-facts bug.
 2. **Build roles** (features, trees, decor — not ghosts): resolve designer + builder before spawning anyone:
 
    ```bash
