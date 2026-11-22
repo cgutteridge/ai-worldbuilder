@@ -30,7 +30,8 @@ def reason_summary(reasons) -> dict[str, int]:
 def apply_counts(plan: dict, writes: dict, before: dict, actual: dict) -> dict[str, int]:
     """Account for final positions, not unlike candidate-item or request counts.
 
-    Already-correct positions are still journalled/written by this implementation.
+    Already-correct positions stay in the journal write list and in readback.
+    The fill writer omits them from the transport when the begin snapshot matches.
     A transport's number of fill calls is deliberately not a block count.
     """
     from block_store import same_state
