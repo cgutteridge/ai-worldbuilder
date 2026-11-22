@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 439,
+  "nextTaskId": 440,
   "tasks": [
     
     
@@ -397,6 +397,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 parade snags S-108 (signs always default oak, no colour palette) and S-109 (sign text colour clashes with its background), issue I-059, and S-112 (fascia colours). The builder side of the sign options. Deliverable: in lib/builds/feature_build.py facade_plan, let a sign name its wood (sign and hanging-sign block families) and its text colour, plus a fascia colour option, and add a contrast rule: given the sign wood and the fascia, choose the text colour with enough contrast (a small colour table of block map colours; reuse the roof-material catalogue pattern of I-057 and block_store/ map colours where they exist) and refuse low-contrast pairs. No palette values here: where a district profile or the typology recipe (task 431) supplies colours, it feeds these options; defaults stay as today. Tied to 431 (the class recipe carries the palette) and 333; land this builder option first so the recipe has something to name. Non-builder: fixtures that the options validate, emit the chosen sign block and glow/ink colour, and that contrast refuses the owner's \"Tidal vape\" case (grey text on pale oak). No live apply. Acceptance: tests, docs in rules/feature-builds.md, and a spec example.\n"
+    },
+    {
+      "id": 439,
+      "title": "CLI task tree report with blockers and claim",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Add node scripts/tasks.mjs tree (easy one-liner from the repo root) that prints the active task dependency tree.\n\nOne line per task, indented under each blocker parent:\n#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER\n\nRules:\n- Roots: active tasks with no blockedBy entries, sorted by id.\n- Children: active tasks that list the parent id in blockedBy, indented two spaces per level, sorted by id.\n- If a child has other blockers besides the parent shown, append (also blocked by #…, #…) for those ids (sorted).\n- A task with several blockers appears under each of them (DAG as a forest), with also-blocked-by listing the others.\n- claimed by only when claimedBy is set; display Cursor/Claude/Codex.\n- Always show BUILDER or NO-BUILDER from builderTask.\n- Guard cycles (skip already-seen ids on a path).\n- Docs: issue-tracker Task CLI section. Tests in tasks.test.mjs.\n\nCheck: tree exits 0; fixture with multi-blocker prints also-blocked-by; builder and claim suffixes present; indentation matches depth."
     }
   ]
 }
