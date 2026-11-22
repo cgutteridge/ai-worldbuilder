@@ -248,7 +248,7 @@
     {
       "id": 391,
       "title": "Docs: fix every stale path, name and flag, and add a path audit test",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
@@ -298,7 +298,7 @@
     {
       "id": 396,
       "title": "Delete the five deprecated scripts/ provider stubs",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
@@ -398,7 +398,7 @@
     {
       "id": 405,
       "title": "Small geo and vendor shims",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
