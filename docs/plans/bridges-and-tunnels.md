@@ -57,6 +57,14 @@ What the code does with them now:
 Provisional answers, awaiting confirmation of the complete design:
 
 - One structure feature type with `kind: bridge|tunnel` (owner chose option 1).
+- Structures retain ownership through later passes. Ground may exist underneath a
+  bridge or above a tunnel; later passes preserve the structure and its clearance.
+- Tunnels extend below the ground layer, with entrances and approaches potentially
+  partly above it. Protect the empty bore as well as its structural blocks.
+- Ordinary structures use evidence-driven recipes; Claude designs landmarks and
+  unusual structures. This replaces the earlier per-structure Claude default.
+- One named feature spans all touched cells. Its whole 3D footprint, excavation
+  and required clear air share one backup and whole-structure undo.
 
 The remaining questions below are still open; this is not an accepted design.
 
