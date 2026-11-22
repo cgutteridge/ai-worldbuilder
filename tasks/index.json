@@ -208,7 +208,7 @@
     {
       "id": 387,
       "title": "Remove the legacy requiresClaude fallback from tasks.mjs and the pre-commit hook",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
@@ -240,7 +240,7 @@
     {
       "id": 392,
       "title": "Move Southampton supplement roads out of ground_sources into world data",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
@@ -272,7 +272,7 @@
     {
       "id": 397,
       "title": "Delete plain dead code",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
