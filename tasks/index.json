@@ -296,16 +296,6 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found during #399 verification and independently reproduced on current main: compiling scripts/airtight.py raises IndentationError at line 60. The script_env.add_world_arg(ap) and script_env.activate_world_from_args(a) lines are outside the __main__ block while adjacent statements remain indented. Restore the existing CLI indentation, verify the module parses and fixture-based argument handling can reach help without a live world. This is a separate follow-up, outside wave 395/399/401. builderTask false: source correction and synthetic CLI validation only; no AI build design or world apply. Use a task branch and normal ship-branch review/test path."
-    },
-    {
-      "id": 418,
-      "title": "Roof catalogue: red clay tile uses cut copper by look; fix copper family colours",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Owner decision 2026-11-22 (Burgess Road roofs, I-057 S-104): the roof catalogue picks by how a material looks, not by name. Red clay tile should map to fresh cut copper (orange-red, smooth), not brick.\n\nScope: (1) config/roof-materials.json: type red_clay_tile uses family cut_copper, alternates brick then mud_brick, note updated; (2) fix the family colours for copper: all four copper families share the teal (90, 160, 140), which is oxidized copper, so colour matching (roof_material similarity, evidence/roof_aerial palette) can never choose fresh cut copper. Set approximate texture averages: cut_copper 192,107,80; exposed_cut_copper 161,125,103; weathered_cut_copper 109,145,107; oxidized_cut_copper 82,162,132 (from memory of the textures, not measured; replace with measured values if the assets are available); (3) tests: type lookup returns the cut_copper triad, copper family colours are distinct and ordered orange to teal; (4) docs: rules/feature-builds.md and rules/terrace-builds.md wording (red_clay_tile is cut copper by look; remove 'Cut copper ... never a default for a street' contradiction or reword it); (5) note other family colours that look like placeholders (red_sandstone, sandstone and stone all 125,125,125) as a follow-up, do not change them here.\n\nWorld side (separate): houses_burgess_road.json roofs family brick -> cut_copper for B584, B585, B590 and B332, then undo and re-apply the build; owner reviews in game.\n\nbuilderTask false: catalogue data, tests and docs; the in-game look is the owner's check on the world apply.\n"
     }
   ]
 }
