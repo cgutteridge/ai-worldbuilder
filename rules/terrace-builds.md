@@ -7,8 +7,8 @@ Read before any house or Broadlands-type terrace build. Roof and fabric rules:
 
 Every house feature apply uses **`scripts/house_build.py`** with a JSON spec at
 `site/builds/<name>.json`. Dry run unless `--apply`. Non-house building masses
-(SU, halls, sheds, campus lumps) use **`scripts/feature_build.py`** instead —
-see `rules/feature-builds.md`. Spec keys (full list in the `house_build` module
+(SU, halls, sheds, campus lumps) follow `rules/feature-builds.md`.
+Spec keys (full list in the `house_build` module
 docstring):
 
 - `name` — plan / cells-record name

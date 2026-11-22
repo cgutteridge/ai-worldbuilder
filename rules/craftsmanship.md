@@ -218,10 +218,9 @@ rule-file copy.
  trapdoor gutters either. Readable massing + sealed shell + correct street
  character is the default.
 
-HOUSE-ONLY RUNS (vector-map footprints, slab roofs): scripts/house_build.py + site/builds/<name>.json is the only house feature apply path (spec keys in its docstring). List earlier builds in modifies; site_kit.apply refuses unlisted owners.
-Never copy a peer spec or a per-run build script. Write the spec from this run's evidence.
-
-NON-HOUSE FEATURE RUNS (campus / halls / sheds / odd masses): scripts/feature_build.py + site/builds/<name>.json is the only non-house building feature apply path (spec keys in its docstring; rules/feature-builds.md). Explicit storeys + flat|pitched roof. Do not extend house_build for odd shapes. List earlier builds in modifies.
+BUILD PATHS: houses → rules/terrace-builds.md; non-house features → rules/feature-builds.md.
+Write each spec from this run's evidence. List earlier builds in modifies;
+site_kit.apply refuses unlisted owners.
 
 LIDAR HEIGHT REPORT: scripts/lidar_heightmap.py --cell tx,tz — national lidar composite DTM/DSM where cached
 (`rules/evidence-order.md`), never the live world. Diagnostic lump rows are not a queue driver (ADR 003).

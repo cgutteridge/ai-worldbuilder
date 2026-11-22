@@ -4,18 +4,9 @@ The ai-worldbuilder side of the `parallel-task-wave` skill (installed from the `
 
 ## Model gate before launch
 
-Before selecting workers or creating worktrees, apply
-[task model requirement](model-and-effort.md#task-model-requirement) to each
-frontier task. Run `tasks.mjs check-run` with the intended worker's actual
-model/host and confirmed budget. A builder task can run in Cursor with
-Claude access and sufficient external-model budget. Leave ineligible tasks
-pending, report the reasons, and continue with eligible tasks. Recheck on retries,
-handoffs, scope changes and before resuming existing `doing` tasks.
-
-Copy the current `builderTask` value, selected model/host, budget evidence,
-and the model-policy link into each worker brief. Require workers to stop and
-hand back if newly discovered build work needs a missing flag or their runner
-loses eligibility. The orchestrator updates scope/flags on main before resuming.
+Apply the [task model requirement](model-and-effort.md#task-model-requirement)
+before each dispatch, including retries and handoffs. Copy its required ticket
+flag, model/host, budget evidence and policy link into the worker brief.
 
 ## Gate before each merge
 

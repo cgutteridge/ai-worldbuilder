@@ -6,7 +6,7 @@ description: >-
   refining an existing place's cell registry.
 ---
 
-Bootstrap only. Use the platform setup in `docs/minecraft-instance-setup.md` (Windows: WSL). Sound cues are optional; skip them when agent-soundboard is not installed. Do not invent CRS math beyond `world_frame`. Stop with `need-you` when a prerequisite is missing. Starting order: home location, projection, offsets 0/0, home cell, blank save, spawn, lidar, Y offset.
+Bootstrap only. Use the platform setup in `docs/minecraft-instance-setup.md` (Windows: WSL). Execution: `rules/slow-commands.md#execution`. Optional cues: `docs/agents/world-and-live-commands.md#sound-cues`. Do not invent CRS math beyond `world_frame`. Stop when a prerequisite is missing. Starting order: home location, projection, offsets 0/0, home cell, blank save, spawn, lidar, Y offset.
 
 ## 0. Home and defaults
 
@@ -94,13 +94,13 @@ python3 shims/lidar_extremes.py --world <name> --bbox-mc x0,z0,x1,z1 --fetch
 4. Show the user the arithmetic, not just the tool's answer: DTM min + `y_offset` ≥ −64 and DSM max + `y_offset` ≤ 319, with the actual numbers. The tool suggests an integer offset with lowest ground at or above −50 and highest surface at or below 315, aiming ground near 64 when it fits. If `suggested_y_offset` is null, its `y_offset_fit` explains that no offset fits those margins; shrink the survey area or discuss the margins before choosing an offset. Lock only after they confirm.
 5. Write `y_offset` into `world-frame.json`.
 
-Play `need-you` and **stop** until the user confirms the offset. Do not apply world edits before that.
+**Stop** until the user confirms the offset. Do not apply world edits before that.
 
 ## 2b. First ghost at the home cell
 
 Once `y_offset` is locked, give the world its first ground: lidar ghost around the home cell, so the user has real terrain to look at (the Y fit, jitter, and where home is) instead of bare bedrock.
 
-1. Run it live under the site lock, in the background (ground pass about 25-55 s a cell; ring 1 is 9 cells, so roughly 5-9 minutes; relay progress):
+1. Run it with checked execution (timings: `rules/slow-commands.md`; relay progress):
 
 ```bash
 python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py --world <name> apply --cell <home cell> --ring 1
@@ -130,10 +130,10 @@ Run this once at the end, instead of repeating open items in every message:
 
 1. `python3 scripts/world_frame.py --world <name> info` and `python3 scripts/check_instance.py --world <name>` pass.
 2. The world repo is committed and has the `.gitignore` from `templates/new-world-repo/` for `downloads/` and other caches.
-3. Every tool gap or workaround met during the run is filed in `tasks/index.json` via the `task-index-manager` skill (tool gaps only; never world work), or the user has said not to.
+3. Every tool gap or workaround met during the run is filed in `tasks/index.json` via the `worldbuilder-tasks` skill (tool gaps only; never world work), or the user has said not to.
 4. List anything still open (e.g. the user's check at home) in one short list and ask once.
 
 ## Out of scope (stop)
 
 - A CRS outside the recommended table or beyond what `world_frame.transform_epsg` (pyproj) already does — ask the user; do not invent a new projection stack.
-- Elevation backends other than the default national plugin — document the gap and `need-you`.
+- Elevation backends other than the default national plugin — document the gap and stop for the owner.

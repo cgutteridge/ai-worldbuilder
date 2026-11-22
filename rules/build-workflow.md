@@ -18,8 +18,8 @@ the `redo` skill. Learned 2026-10-29 (SUSU cover + pond): the failures were in t
      columns, so undoing a build can leave a hole the door logic then reads);
    - dry run on the CURRENT world: door floors, covers and clashes match lidar levels.
    A failure is fixed (ground pass, tool fix) before step 4, never by guessing `floor_offset`.
-4. **Apply** (builder, only `SITE_OWNER`). One `site_lock.py run`: undo old, dry run again,
-   apply, readback 0. If readback is not 0, stop and resolve the journal entry before anything else.
+4. **Apply** (builder). Follow `rules/slow-commands.md#execution`: undo old, dry run again,
+   apply, readback 0. Resolve any mismatched journal entry before continuing.
 5. **Review** (server-side, never move the player): top + iso `block_render_region` beside the
    aerial, plus numbers (live vs lidar, door y, footprint). Name each mismatch.
 6. **Fix = respin the spec** and loop from step 2. Never patch on top; never stack `_b` builds.

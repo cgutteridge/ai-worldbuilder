@@ -138,9 +138,9 @@ def _process_slices(ctx: WorkContext) -> tuple[str, ...]:
     @param ctx: primary work context
     @returns: human-readable slice labels
     """
-    base = ('§2 cadence', '§2a undo (no region backups)', '§6–§7 session/handoff')
+    base = ('§2 cadence', '§2a undo (no region backups)', '§6 cell-orchestrator')
     if ctx == WorkContext.TOOLING:
-        return ('§2c coverage CLI', '§6–§7 if closing a stage')
+        return ('§2c coverage CLI', '§6 if closing a stage')
     if ctx == WorkContext.SOURCES:
         return ('§2b refs', '§2e step 1b sources', 'reference/LOGGING.txt §8')
     if ctx in (WorkContext.GROUND, WorkContext.FOLIAGE):

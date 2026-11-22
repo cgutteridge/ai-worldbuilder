@@ -25,21 +25,16 @@ Stages can be revisited: a review that fails, a new snag or a new finding sends 
 1. **Orient.** Name the thread 🔍. `issues.py digest`, `list`, then `show` the issues in play. Regressions (reopened issues, snags flagged REGRESSION) come first.
 2. **Find causes.** For each `open` issue without a cause: read the code path named by the stage, the plan, the evidence. State the cause plainly, with the evidence that supports it and what you could not verify. Propose it via `issues.py diagnose --cause ... --stage ...`. Stages are free text (e.g. "feature windows", "ground classify"). The proposal waits for stage 2.
 
-### Ask Mycroft
+### Escalation
 
-When investigation exposes a specific reasoning difficulty, consider asking **Mycroft**: a stronger model for a bounded investigation. Grounds include competing causes that survive the relevant checks, interacting systems you cannot confidently trace, observations your diagnosis cannot explain, or a substantive reasoning flaw found by the independent reviewer. Explain the expected benefit; escalation is a recommendation, not a promise that another model will solve it.
-
-Distinguish a reasoning difficulty from missing evidence. Collect available evidence first; if a capture, reproduction or measurement is needed, name that next step. A stronger model cannot replace it.
-
-Make the request begrudgingly, in one short Holmes aside, then give the owner a plain, self-contained proposal:
-
-> I fear we must ask Mycroft. He will be insufferable about it.
->
-> **[Case title] ([issue ID]):** I checked [evidence] and established [findings]. [Hypotheses or unexplained observations] remain unresolved because [specific reasoning difficulty]. I recommend [model and reasoning level] to answer [bounded question], with success judged by [observable result]. May we ask Mycroft?
-
-Recommend a model and reasoning level supported by the current environment; state uncertainty about availability. Await the owner's approval before switching models or dispatching the investigation. Use the available mechanism after approval; if switching requires the owner, give the exact requested selection and a copyable investigation brief. Keep the thread at 🔍 and continue independent issues while the request is pending; leave the dependent diagnosis unresolved.
-
-The brief carries the question, issue and snag text, evidence and code paths checked, established findings, competing hypotheses, failed checks and success criterion. Assess Mycroft's returned reasoning against the evidence before proposing a diagnosis through the usual owner review. Preserve the skill's investigation-only scope and existing write permissions.
+When available evidence still leaves competing causes or an unexplained result,
+follow `docs/agents/model-and-effort.md` before requesting a stronger model.
+Give the owner the checked evidence, unresolved question, proposed model/effort,
+cost and observable success criterion. Await approval; continue independent
+issues while the diagnosis remains unresolved. Missing evidence calls for the
+capture or measurement first. The investigation brief carries the issue/snags,
+code paths, findings, hypotheses and failed checks; check returned reasoning
+against the evidence before proposing a diagnosis.
 
 ## 2. 🔧 Housekeeping: snags, issues and tasks
 
@@ -50,7 +45,7 @@ Switch the thread to 🔧 as soon as you have proposals. Take them to the owner 
 - **Fixes logged and tasks landed:** a task now merged whose fix is not yet logged on its issue: **log it yourself, no approval** (`fix` with the merge time, the ticket, and a check line per snag, including agent notes). It only records that the issue was waiting on the task before a rebuild and the owner's recheck; it changes no build and settles nothing, so do not spend the owner's time on it. Report what you logged in one line each. Ask only if the task's link to the issue is unclear. A fix logged but the element not redesigned since: say which element needs a `redo`/`refine` (the gate's rebuild list, stage 4).
 - **Tasks:** for causes with no fix yet, draft system-tracker tasks (title, cause, which snags/issue they cover, the check line per snag). Review the open task list for stale, duplicate or unblocked tasks. Tool tasks go to `tasks/`; place work does not.
 
-  **Independent review before the owner sees a draft.** Every new or changed task is reviewed by a fresh subagent that has not seen your reasoning, before you put it to the owner. Give it only the draft, the issue and snag text, and the paths to read (`tasks/index.json`, `tasks/done.json`, the code the cause names, the rules and skills it would touch); do not hand it your conclusion. Ask it to check: the cause is stated from evidence, and what is not verified is marked as such; the deliverable is specific and testable, one task not several; scope and files named, with cleanup of old paths included where the task replaces something; no duplicate of or conflict with an open or archived task (`blockedBy` right); the check line per snag is observable in game or by a named command; size and priority fit; wording is plain, title first. It returns a verdict (ready / revise) with concrete edits. Apply the edits, say what the reviewer changed, and then put the revised draft to the owner. If it finds the premise wrong, say so and drop or reshape the task. Add or change with `task-index-manager` only when the owner says yes to the reviewed draft.
+  **Independent review before the owner sees a draft.** Every new or changed task is reviewed by a fresh subagent that has not seen your reasoning, before you put it to the owner. Give it only the draft, the issue and snag text, and the paths to read (`tasks/index.json`, `tasks/done.json`, the code the cause names, the rules and skills it would touch); do not hand it your conclusion. Ask it to check: the cause is stated from evidence, and what is not verified is marked as such; the deliverable is specific and testable, one task not several; scope and files named, with cleanup of old paths included where the task replaces something; no duplicate of or conflict with an open or archived task (`blockedBy` right); the check line per snag is observable in game or by a named command; size and priority fit; wording is plain, title first. It returns a verdict (ready / revise) with concrete edits. Apply the edits, say what the reviewer changed, and then put the revised draft to the owner. If it finds the premise wrong, say so and drop or reshape the task. Add or change with `worldbuilder-tasks` only when the owner says yes to the reviewed draft.
 
 Apply each accepted change. Commit nothing yet beyond what Close the case says.
 

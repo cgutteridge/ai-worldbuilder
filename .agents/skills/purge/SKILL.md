@@ -22,7 +22,7 @@ Done when the user has said yes to a counted scope.
 
 ## 1. Erase blocks, deepest first
 
-Claim the lock for every live step: `python3 scripts/site_lock.py run <owner> "purge <scope>" -- <cmd>`. Dry run first when the command has one. Order is the reverse of the build order, and a later pass never outlives its base:
+Follow `rules/slow-commands.md#execution` for every live step: `python3 scripts/site_lock.py --world <world> run <owner> "purge <scope>" -- <cmd>`. Dry run first when the command has one. Order is the reverse of the build order, and a later pass never outlives its base:
 
 - **Element:** one pass or plan — `element_undo.py --world <name> --cell tx,tz --pass decor|trees|ground --apply`, or `element_undo.py --world <name> <plan> --apply` for a feature.
 - **Cell:** one command undoes everything above ghost in fixed order (decor → trees → features → ground); it stops at the first refusal and reports what is left (#134):

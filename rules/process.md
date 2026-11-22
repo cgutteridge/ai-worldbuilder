@@ -6,40 +6,8 @@ Goal: real-world accuracy. Place memory stays in the active world's site/.
 ------------------------------------------------------------------------
 1. WHERE THINGS LIVE
 ------------------------------------------------------------------------
- registry/journal.jsonl  cell journal (SoT); progress/ghost/ownership are views
- scripts/cell_registry.py  next / status / hold / verify / reconcile
- site/NOTES.txt         overview, accuracy rules (active world; read first)
- site/ (optional legacy lump-notes file when the world has one; not the live lidar path; heights = national composite)
- rules/process.md       this file (tool repo): cadence, reviews, checklists
- rules/rules-context.md which rules/ and docs/ to read per work context (anti-reread)
- rules/*.md             craft and process rules in the tool repo (AGENTS.md entry)
- site/COVERAGE.txt      generated registry rollup (coverage.py write;
-                        cell/layer status and holds)
- registry/issues.json   live snags / issues (scripts/issues.py; never block a cell)
- registry/issues-closed.json   archived confirmed/wontfix issues; pictures in issues/img-closed/
- site/REVIEWS.txt       review log
- site/archive/          closed notes / older reviews
- site/LOCK.json         who holds the live world (scripts/site_lock.py)
- scripts/site_kit.py    plan / preview / apply / readback (journals via CellRegistry)
- scripts/site_recover.py  land or roll back ONE interrupted apply
- scripts/world_frame.py CRS / OSGB / WGS84 / MC / cells / WM tiles (canonical)
- scripts/osgb.py        thin wrapper → world_frame (legacy OFFSET_* shape)
- scripts/geo.py         WGS84 + probe Y + slopes + survey bboxes (see README)
- verification/site/     <build>-backup/-result/-preview, views/, audits/
- reference/photos/      ground photos (local, gitignored content)
- reference/aerial/      aerial / ortho crops (local, gitignored content)
- reference/LOGGING.txt  how to log refs (dedupe, token budget, privacy)
- reference/manifest.jsonl  append-only index of every fetched asset
- config/world.json      gameworld_id + save_path (save lives in the standalone Minecraft instance; read-only to the tool)
- config/world-frame.json         CRS, offsets, Y offset, bounds (sole home; not in the save)
- config/views.json      optional cameras for scripts/site_views.py.
-                        Each name maps to eye and look (three numbers each).
-                        No file means no views. Captures: verification/site/views/.
-
- Retired progress files (do not recreate; `cell_registry.py verify` fails if
- present): old queue / focus / holds / retired coverage-done files / aerial-review /
- handoff pending files under site/. Wipe via:
- python3 scripts/dryrun_reset.py --confirm-logged-out
+ File inventory: docs/agents/layout.md. Place memory is in the active world's
+ site/, registry/ and reference/; shared craft and process rules stay in this repo.
 
 Naming: builds are <street>_<numbers>_<thing> for properties (e.g.
 broadlands_rd_20_22), <place>_<thing> otherwise. Modifications
@@ -53,7 +21,7 @@ BUILT plan in place to “fix” the world.
                      plots; describe photo + aerial in 3–5 lines) → plan → preview → dry-run
                      guards (footprint + roof ridge-jog on the plan in site_kit.apply)
                      → apply → readback → walk → osm_footprints.py check →
-                     python3 scripts/roof_lint.py --all (recorded journal plans;
+                     python3 scripts/roof_lint.py --world <world> --all (recorded journal plans;
                      must exit 0 after pitched-roof builds) → client view from the
                      photo's camera beside the photo + top-down beside the aerial
                      (contact sheet) → notes.
@@ -142,7 +110,7 @@ BUILT plan in place to “fix” the world.
  Build order (#286): `next` builds a cell's planned features first (by id) on the lidar ghost ground, then the ground once, fitted around them (ground surfaces a feature's air-only margin below that air), then trees and decor; a cell with no planned features gets its ground first.
  Cross-cell features (#288): a feature is one build whatever cell lines it crosses (water bodies are the exception, built per cell: see rules/water-body-builds.md, #321); it is proposed and planned once, whole, in its home cell (most columns; a tie goes to the lowest tx,tz), and the other cells it touches count it as accounted for, planned or dismissed in any cell. Its apply needs only each touched neighbour's evidence current (#292): `prepare --cell <neighbour> --apply --evidence-only` records that check and writes no feature plans; the neighbour's own feature groups wait for its own full `prepare --cell <neighbour> --apply` when that cell is started.
  Stale ground (#285): a feature landed after the cell's last ground makes the ground stale; `next` offers `ground-redo` with the cause and `clear:` command (redo_layer), never runs it, and the cell is not DONE until it lands.
- Next work: `python3 scripts/cell_registry.py next` (issues beat layers).
+ Next work: `python3 scripts/cell_registry.py --world <world> next` (snags never steer next).
 
  Lidar ghosts: docs/specs/lidar-ghost-v2-and-dryrun-reset.md. After
  `cell_marker --raise`, ring-2 frontier cells get **ghost ground** only (DTM), with
@@ -280,11 +248,9 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
 ------------------------------------------------------------------------
 5. MANY THREADS, ONE WORLD
 ------------------------------------------------------------------------
- - ONE builder at a time. Claim site/LOCK.json with scripts/site_lock.py
-   before any world change or player-moving capture. site_kit.apply()
-   refuses without it (env SITE_OWNER must match). Stale after 90 min.
+ - Live execution and lock ownership: rules/slow-commands.md#execution.
  - Player moves: import `mc_player.move_player(why=…)` from scripts, or
-   `python3 scripts/mc_player.py move --why "…" …` from an agent. Why is
+   `python3 scripts/mc_player.py --world <world> move --why "…" …` from an agent. Why is
    required and is spoken in Minecraft as `[AI-builder] …` before the
    hop. No raw MCP player teleport.
  - Apply path: site_kit.apply() journals `begun` before any live write and
@@ -301,58 +267,19 @@ Outcome: each finding → a snag on an issue (`scripts/issues.py` / `snag` skill
    for a layer). A plan's redo or undo may pass its own mismatch; other plans stay
    blocked until it lands. A mismatch wholly superseded by later landed plans blocks
    nothing. Rule: docs/archive/284-preflight-blocker-commands.md.
- - Work comes from `cell_registry.py next` (issues, then layers/features). Finish the
-   task, release the lock.
+ - Work selection and dispatch: the cell-orchestrator skill (below).
  - Offline work may run in parallel (design, photo markup, previews of
    region files) but must not apply builds.
  - The files are the memory. Leave nothing important only in a chat.
 
 ------------------------------------------------------------------------
-6. SESSION START / END
+6. RUNNING THE CELL REGISTRY
 ------------------------------------------------------------------------
- Start  User message: "Follow the instructions given by running:
-        python3 scripts/cell_registry.py next". The agent runs that command, then
-        begins the task immediately; that message is the go-ahead, so do not ask
-        "start?". Then site_lock.py status/claim; read rules/rules-context.md
-        for the matching context. Check server status and sole MCP client.
-        Reference imagery: use files already on disk (manifest). Do NOT ask the user
-        to start a fetch daemon at handoff. If a needed Hub tile is missing, either
-        continue on street/local refs or give ONE Terminal one-liner
-        (`aerial_mosaic.py … --add`), never a chore every session.
- New chat first?  Before a new registry task or live build: if this thread already
-        finished an item (lock released) or is dominated by prior build/debug, do not
-        silently continue. Tell the user briefly that a new chat is wiser and start
-        with `cell_registry.py next`. Stay in-thread only for a short same-item
-        follow-up (one patrol fix right after a build they just asked for).
-        Chain rule (§7) is the exception.
- Need help  When you don't trust your own judgement (an unclear geometry call, a
-        result that does not match the photo or aerial, a risky live edit you can't
-        verify), call the user in rather than looping on retries: run `say "I need
-        help"` outside any command sandbox, say in one or two lines what needs
-        deciding, then stop. Do not chain further attempts.
- End    release the lock; save the world; update ISSUES / REVIEWS / COVERAGE;
-        python3 scripts/site_cleanup.py due (if it prints CLEANUP DUE: rules/cleanup.md);
-        python3 scripts/run_tests.py (stdlib unit tests, including roof-lint fixtures); then TOKEN NOTES
-        (2–5 lines in REVIEWS or place CHANGE LOG: what wasted tokens
-        this stage, what to change next — reference/LOGGING.txt §8);
-        then hand off: summary in chat + creative viewpoint of the main change
-        (`site_handoff.py` view helpers if useful). Open a new chat and start with
-        `cell_registry.py next` — that is the progress source, not a retired queue.
+ Use .agents/skills/cell-orchestrator/SKILL.md for `next`, dispatch, stop limits,
+ unattended runs and end-of-run records. It builds each task in a fresh session.
+ Read rules/rules-context.md for the task's context and use existing reference
+ files through the manifest (rules/reference-token-budget.md).
 
-------------------------------------------------------------------------
-7. TOKEN BUDGET
-------------------------------------------------------------------------
- - Chain rule (the one home): if an item is done, needs no user check (readback/patrol
-   clean, nothing for human eyes, no "awaiting user visual check") and context is under
-   ~100K tokens, release the lock and run `cell_registry.py next` in the same chat
-   instead of `end`. Otherwise one item per chat: if context passes ~250K tokens or a
-   user check is needed, write progress into the files and hand off (site_handoff.py end).
- - Delegate research-heavy or bounded subtasks (cell source-finding and neighbour
-   review, audits across many files) to a helper that returns a short brief, so the
-   main context stays small. Subtasks write results to repo files and return a
-   one-line summary.
- - Review views through the contact sheet; open full-size only for detail.
- - Batch anything only the user can do into ONE request; do not poll.
- - Good enough: rules/radial-good-enough.md.
- - End of build work: python3 scripts/coverage.py --world <world> write
-   (never hand-edit the generated rollup). Completion and holds live in the registry.
+ At the end of a build, release the lock and save the world; record reviews and
+ token lessons in place memory. Run `python3 scripts/site_cleanup.py --world <world> due` (rules/cleanup.md), then refresh the coverage rollup with
+ `python3 scripts/coverage.py --world <world> write`.
