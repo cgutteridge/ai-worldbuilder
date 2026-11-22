@@ -25,8 +25,9 @@ from typing import Any
 import cellmath
 import outbuildings as ob
 import provenance as prov
+from tree_species import DEFAULT_LEAVES
 
-HEDGE_BLOCK = 'oak_leaves[persistent=true]'
+HEDGE_BLOCK = DEFAULT_LEAVES
 DEFAULT_HEIGHT = {
     'hedge': 2,
     'brick_wall': 1,

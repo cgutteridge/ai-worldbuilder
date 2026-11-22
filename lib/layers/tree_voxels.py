@@ -1,7 +1,7 @@
 """Tree and bush voxel generators: static log + persistent-leaf massing for the trees and decor passes.
 
-``tree_voxels`` builds one tree (round, plane, birch or dark_oak style) and ``bush_voxels`` a low leaf
-clump. Both are pure: they return ``{(x, y, z): block}`` and touch no world. Placement, clearance and
+``tree_voxels`` builds one tree (a round or plane crown, or a species silhouette from the
+``tree_species`` table) and ``bush_voxels`` a low leaf clump. Both are pure: they return ``{(x, y, z): block}`` and touch no world. Placement, clearance and
 planning live in ``trees_layer`` and ``decor_layer``.
 """
 from __future__ import annotations
@@ -9,47 +9,43 @@ from __future__ import annotations
 import math
 import random
 
-LEAVES = 'oak_leaves[persistent=true]'
-RNG_SEED = 48045
+from tree_species import DEFAULT_LEAVES, SPECIES, has_silhouette
 
-SPECIES = {
-    'oak': ('oak_log', 'oak_leaves[persistent=true]'),
-    'birch': ('birch_log', 'birch_leaves[persistent=true]'),
-    'spruce': ('spruce_log', 'spruce_leaves[persistent=true]'),
-    'dark_oak': ('dark_oak_log', 'dark_oak_leaves[persistent=true]'),
-    'cherry': ('cherry_log', 'cherry_leaves[persistent=true]'),
-    'acacia': ('acacia_log', 'acacia_leaves[persistent=true]'),
-}
+RNG_SEED = 48045
 PLANE_SPECIES = 'oak'  # leaves; trunk is mottled oak with birch patches (see tree_voxels)
-# Species silhouettes used by the trees-layer mix (#350); the existing round/plane paths stay exact.
-SPECIES_CROWN_RADII = {'birch': (2.0, 3.0), 'dark_oak': (4.0, 2.0)}  # horizontal, vertical
-SPECIES_TRUNK_WIDTH = {'birch': 1, 'dark_oak': 2}
 
 
 def tree_voxels(x: int, z: int, ground_y: int, *, height: int | None = None,
                 species: str | None = None, style: str | None = None,
                 rng: random.Random | None = None) -> dict[tuple[int, int, int], str]:
-    """Parameterised tree: height, species (optional), style.
+    """Parameterised tree: height, species (optional), crown style (optional).
 
     @param x: trunk X
     @param z: trunk Z
     @param ground_y: surface Y under the trunk
     @param height: trunk height in blocks; default picked by style
-    @param species: key of SPECIES; default by style (oak round, birch plane)
-    @param style: 'round' (sphere crown), 'plane' (English plane: tall clean trunk, open
-        irregular crown of overlapping lobes high up), 'birch' (narrow/tall crown), or
-        'dark_oak' (broad/flat crown and two-block-wide trunk); default plane when height >= 8
+    @param species: key of ``tree_species.SPECIES`` (blocks, and the silhouette for that style); default
+        by style (oak)
+    @param style: crown shape, independent of species: 'round' (sphere crown), 'plane' (English
+        plane: tall clean trunk, open irregular crown of overlapping lobes high up), or 'silhouette'
+        (the species' own crown radii and trunk width; the species must have them); default plane
+        when height >= 8, else round
     @param rng: random source for lobes
     @returns: voxel map
     """
     rnd = rng or random.Random(x * 73856093 ^ z * 19349663)
+    if style not in (None, 'round', 'plane', 'silhouette'):
+        raise ValueError(f'style must be round, plane or silhouette, not {style!r}')
+    if style == 'silhouette' and not (species in SPECIES and has_silhouette(species)):
+        raise ValueError(f'species {species!r} has no silhouette (crown and heights) in tree_species.SPECIES')
     if style is None:
         style = 'plane' if (height is None or height >= 8) else 'round'
     if height is None:
         height = rnd.choice((9, 10, 11)) if style == 'plane' else rnd.choice((4, 5, 6))
     if species is None:
         species = PLANE_SPECIES if style == 'plane' else 'oak'
-    log, leaves = SPECIES[species]
+    row = SPECIES[species]
+    log, leaves = row.log, row.leaves
     out: dict[tuple[int, int, int], str] = {}
     for i in range(1, height + 1):
         block = log
@@ -57,13 +53,13 @@ def tree_voxels(x: int, z: int, ground_y: int, *, height: int | None = None,
             # plane bark is mottled: oak base with pale birch patches
             block = 'birch_log' if (i * 7 + x * 3 + z * 5) % 4 == 0 else 'oak_log'
         out[(x, ground_y + i, z)] = block
-    if style in SPECIES_CROWN_RADII:
-        width = SPECIES_TRUNK_WIDTH[style]
+    if style == 'silhouette':
+        width = row.trunk_width
         for dx in range(width):
             for dz in range(width):
                 for i in range(1, height + 1):
                     out[(x + dx, ground_y + i, z + dz)] = log
-        horizontal, vertical = SPECIES_CROWN_RADII[style]
+        horizontal, vertical = row.crown
         reach, rise = math.ceil(horizontal), math.ceil(vertical)
         centre = (width - 1) / 2
         for dx in range(-reach, reach + width):
@@ -111,7 +107,7 @@ def bush_voxels(x: int, z: int, ground_y: int) -> dict[tuple[int, int, int], str
     @param ground_y: lawn surface Y
     @returns: voxel map
     """
-    out = {(x, ground_y + 1, z): LEAVES, (x, ground_y + 2, z): LEAVES}
+    out = {(x, ground_y + 1, z): DEFAULT_LEAVES, (x, ground_y + 2, z): DEFAULT_LEAVES}
     for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        out[(x + dx, ground_y + 1, z + dz)] = LEAVES
+        out[(x + dx, ground_y + 1, z + dz)] = DEFAULT_LEAVES
     return out

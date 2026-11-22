@@ -40,11 +40,11 @@ class TreeVoxelsGoldenTest(unittest.TestCase):
 
     def test_birch(self):
         self.check('birch', tv.tree_voxels(
-            10, 20, 50, height=8, style='birch', species='birch', rng=random.Random(4)))
+            10, 20, 50, height=8, style='silhouette', species='birch', rng=random.Random(4)))
 
     def test_dark_oak(self):
         self.check('dark_oak', tv.tree_voxels(
-            10, 20, 50, height=7, style='dark_oak', species='dark_oak', rng=random.Random(5)))
+            10, 20, 50, height=7, style='silhouette', species='dark_oak', rng=random.Random(5)))
 
     def test_bush(self):
         self.check('bush', tv.bush_voxels(10, 20, 50))

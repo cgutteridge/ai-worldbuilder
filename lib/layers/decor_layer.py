@@ -682,12 +682,7 @@ def furniture_by_provenance(decor: Mapping[str, Any], report: list[dict], unplac
     }
 
 
-# Woodland understorey (#351): OSM tags that take woodland_decor when the class ships it.
-WOODLAND_DECOR_TAGS = frozenset({
-    ('natural', 'wood'),
-    ('natural', 'scrub'),
-    ('landuse', 'forest'),
-})
+# Woodland understorey (#351): land_use.WOOD_TAGS and SCRUB_TAGS take woodland_decor when the class ships it.
 # Exclusive roll order after bushes; shares come from config/land-use-classes.json.
 WOODLAND_PLANT_ROLL = (
     'fern', 'large_fern', 'short_grass', 'short_dry_grass', 'tall_dry_grass', 'leaf_litter',
@@ -758,9 +753,9 @@ def woodland_decor_columns(cell: tuple[int, int], idx, classes: dict | None = No
         if any(pair in LAWN_TAGS for pair in pairs):
             lawn.update(scan_polygon(rings, bbox))
             continue
-        if any(pair in WOODLAND_DECOR_TAGS and pair != ('natural', 'scrub') for pair in pairs):
+        if any(pair in land_use.WOOD_TAGS for pair in pairs):
             wood.update(scan_polygon(rings, bbox))
-        if ('natural', 'scrub') in pairs:
+        if any(pair in land_use.SCRUB_TAGS for pair in pairs):
             scrub.update(scan_polygon(rings, bbox))
     wood -= lawn
     scrub -= lawn

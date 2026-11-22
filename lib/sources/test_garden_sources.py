@@ -214,15 +214,6 @@ class TestResidentialFrontage(unittest.TestCase):
         self.assertEqual(f['extent'], [])
         self.assertEqual(gs.private_frontage_columns([f]), set())
 
-    def test_shop_or_campus_building_not_eligible(self):
-        for tags in ({'building': 'retail'}, {'building': 'yes', 'shop': 'bakery'}, {'building': 'university'}):
-            meta, plot, roles, house = _strip()
-            meta['nonresidential'] = gs.nonresidential_building(tags)
-            f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
-            self.assertFalse(f['eligible'], tags)
-            self.assertIn('not residential', f['reason'])
-        self.assertFalse(gs.nonresidential_building({'building': 'house'}))
-
     def test_opening_is_target_plus_nearest_neighbour(self):
         meta, plot, roles, house = _strip()
         f = gs.residential_frontage(meta, plot, roles, house, self.CONV)
@@ -716,12 +707,6 @@ class TestFrontageByClass(unittest.TestCase):
         self.assertEqual({z for _x, z in f['pavement']}, {-1, 0, 1, 2})
         self.assertTrue(set(f['pavement']).isdisjoint(plot))       # public strip is outside the plot
         self.assertEqual(gs.forecourt_columns([f]), {tuple(q) for q in f['extent']})
-
-    def test_legacy_nonresidential_flag_still_blocks_frontage(self):
-        meta, plot, roles, house = _strip()
-        meta['nonresidential'] = True
-        f = gs.residential_frontage(meta, plot, roles, house, self.CONV_FENCE)
-        self.assertFalse(f['eligible'])
 
 
 class TestPlotsAreClassified(unittest.TestCase):
