@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 427,
+  "nextTaskId": 433,
   "tasks": [
     
     
@@ -59,7 +59,7 @@
       "blockedBy": [
         257
       ],
-      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here."
+      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial."
     , "builderTask": true},
     
     
@@ -290,6 +290,71 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Two doc fixes. cell-orchestrator per-task steps: note the re-prepare after raising the marker and prepare --cell <neighbour> --apply --evidence-only for edge-crossing features (and find which evidence fact the marker raise changes if it is a real invalidation bug). Instance doc: only port 8766 listens at the title screen, and Arch GDAL plugin 'ERROR 1' lines are harmless. Two GitHub issues to close when this task closes: GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/9 and GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/12"
+    },
+    {
+      "id": 427,
+      "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257, findings in docs/plans/typology-buildings.md (sections \"Where the shipped generator stops\" and Recommendation 1). The #413 generator refused every real footprint as \"odd footprint\": 0 of 18 estate, 42 terrace and 42 parade buildings produced a spec, because _box accepts only filled axis-aligned rectangles and real streets are rotated (bounding-box fill 0.29 to 0.94). house_build already fits rotated rectangles (#415) and feature_build takes the footprint as drawn. Change lib/builds/typology_spec.py: (a) accept any footprint of a minimum area and leave the fit to the builder, still reporting a needs-designer reason for slivers and multi-part shapes; (b) form rows from footprints within one block of each other, not a full shared side (_relation, _mark_partial, _components); (c) choose a front from the nearest street when the two axes are close (_front, the shop parade sits on a diagonal road), reporting no-clear-front only when no street is within reach. Colocated tests with fixtures cut from the real Begonia Road, Northcote Road and Portswood Road footprints (record them as small JSON fixtures). Non-builder: synthetic fixtures and unit tests only. Does not touch the district profile or tag defaults (see the tag-defaults task).\n"
+    },
+    {
+      "id": 428,
+      "title": "Typology generator: default storeys from the profile, lidar check advisory, class-default fallback for a missing district profile",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 1 and 2). On the study streets building:levels was present on 0 of 18 estate and 0 of 42 terrace buildings and 6 of 42 parade buildings, roof:shape on 0, 0 and 1. The generator refuses on missing building:levels, then on the lidar agreement check, then on no district profile. Change lib/builds/typology_spec.py so a missing building:levels takes the profile class storeys (default from storeys.min when min and max agree, else needs-designer with a clear reason), the lidar height check is advisory (reported in the spec notes, never a refusal, and missing lidar is not a refusal), and a missing district profile falls back to the land-use class default (ADR 006) with the fallback named in the spec note. Observed tags still win. Non-builder: fixtures and unit tests. Independent of the footprint-gates task. The world itself still needs real district profile files (site/districts/*.json) before a rule route gives a district palette: that is world work (profile from the aerial), not a tool task, and the world currently has none.\n"
+    },
+    {
+      "id": 429,
+      "title": "house_build: roof underlay block sits in the wall's top course (roof material one layer low)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n"
+    },
+    {
+      "id": 430,
+      "title": "house_build: domestic chimney option (stack per house, pair or party wall) instead of one per roof unit",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Chimneys\"). house_build.roof() plans one chimney per roof unit (chim.append((best, b)): the deepest column nearest the unit's centre) and the spec has no chimney option; a terrace spec in mode group is one roof unit, so 20 houses got one chimney in the middle (owner: wrong for a terrace). feature_build's details kind chimney is only an industrial hollow stack (base_diameter at least 3), so the hand path has no domestic stack either. Add an optional per-label spec key, for example chimneys: {\"<label>\": \"per_house\" | \"per_pair\" | \"party_walls\" | [{at}] | \"none\"}, default per roof unit so existing specs are unchanged, placing a one-by-one brick stack on the ridge at each chosen position (party walls: where two adjacent footprints in a group share a wall line). Reuse the existing stack-through-the-roof code (WALL column to ridge + 2, flower_pot cap). Tests with synthetic fixtures: a three-house terrace and a semi. Non-builder.\n"
+    },
+    {
+      "id": 431,
+      "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 4 and 5). Rule-built shops came out as plain brick boxes with the builder's default entrance and awning; the hand specs that added a facade_plan (ground storey glazed_h 3 pier 1, upper storeys glazed_h 2 pier 3, entrance with awning_like) read much closer to real shopfronts. Make glazing and facade detail (I-006) a class recipe in the typology spec generator: a small per-class table (glazing rows per storey, pier width, rhythm, entrance awning, roof edge) under the district profile or the land-use class table, emitted into the generated feature_build spec's facade_plan and roofs.edge. Houses keep the house_build windows. The recipe is a default that a profile can override, and a class with no recipe stays as today. Non-builder: fixtures and tests that the generated spec validates in feature_build (dry run on a synthetic footprint). Overlaps task 333 (shop typology: shopfront ground floor, dormers, bay windows): do the class-recipe table here and leave per-side storeys, dormers and bays to 333.\n"
+    },
+    {
+      "id": 432,
+      "title": "Terrace recipe trial: per-house or per-pair roofs and party-wall chimneys on Northcote Road",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [
+        427,
+        428,
+        429,
+        430
+      ],
+      "builderTask": true,
+      "notes": "Builder task. After the footprint-gates, tag-defaults, roof-layer and chimney-option tasks land, rebuild the Northcote Road west terrace (cell 54,-41, 20 houses; trial #257, docs/plans/typology-buildings.md) from a terrace recipe: one roof per house or per pair rather than mode group across the whole row, one stack per party wall or pair, and alternating roof colour per pair where the aerial shows it (54_-41.png: red tile and grey slate in pairs). The owner judged the trial terrace good except the central chimney and (pending comment) the single continuous roof. Method as trial #257: rule-built spec through the existing builders under the site lock, state minutes and session tokens with the measurement method, owner verdict in game recorded in the findings. Builder task, stretch: do not raise model or effort without asking.\n"
     }
   ]
 }
