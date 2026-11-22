@@ -213,27 +213,18 @@
     
     
     
-    {
-      "id": 395,
-      "title": "Coverage parcels: retire the parcel workflow, keep the registry rollup",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T5. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T5' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: m\n- Scope:\n  - 1.1. Delete areas, build, gaps, signoff, map, the parcel registers, the sign-off leftovers, `AREAS_FILE` and their tests.\n  - Make `load_signoffs` callers in `cross_zone` and `cell_sources` stop depending on it.\n  - Keep the rollup and holds.\n  - Rewrite the rules listed in 1.1, the cheatsheet and the docstring, and decide what happens to `templates/new-world-site/COVERAGE.txt`.\n- Check: `coverage.py --help` lists only live subcommands, and no rule teaches one that is gone.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\n\nRun coordination and takeover checkpoints: docs/plans/wave-395-399-401.md. Tracker remains the task-state source of truth.\n"
-    },
+    
     
     
     
     {
       "id": 399,
       "title": "Finish the cellmath move and drop compatibility re-exports",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        395
+        
       ],
       "builderTask": false,
       "notes": "Housekeeping review ticket T9. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T9' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: s–m\n- Scope:\n  - The 1.9 \"aliases and re-exports\" and \"duplicates of cellmath\" items, including the `cell_registry` cell-id copies and pass-throughs.\n  - Before swapping each component finder, check whether its callers depend on order.\n  - Repoint the two rules that say `house_build.entrance_approach`.\n- Check: component sets match on 4- and 8-connected fixtures. No `noqa: F401` re-export of a moved name remains.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T5 (#395) because it both edit coverage.py.\n\nRun coordination and takeover checkpoints: docs/plans/wave-395-399-401.md. Tracker remains the task-state source of truth.\n"
