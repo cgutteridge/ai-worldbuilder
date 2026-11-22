@@ -65,6 +65,8 @@ Provisional answers, awaiting confirmation of the complete design:
   unusual structures. This replaces the earlier per-structure Claude default.
 - One named feature spans all touched cells. Its whole 3D footprint, excavation
   and required clear air share one backup and whole-structure undo.
+- Prefer a rough fallback over skipping a structure when the preferred design
+  fails. Which constraints that fallback may relax is still being clarified.
 
 The remaining questions below are still open; this is not an accepted design.
 
