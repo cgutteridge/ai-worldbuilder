@@ -14,9 +14,10 @@ changing scope or dispatching work, follow its model-policy pointer.
 1. Read `tasks/index.json`; use `tasks/done.json` for completed-task checks.
    These JSON files are the source of truth, rather than Markdown reflections.
 2. Use `node scripts/tasks.mjs` for operations it supports. Workers may run
-   read-only `list`, `show` and `check-run`; mutations belong to the orchestrator
-   on `main`, committed immediately after each change. See the guide for command
-   arguments, claim fields (`--app`, `--working-in`) and the dispatch gate.
+   read-only `list`, `show`, `tree` and `check-run`; mutations belong to the
+   orchestrator on `main`, committed immediately after each change. See the
+   guide for command arguments, claim fields (`--app`, `--working-in`) and the
+   dispatch gate.
 3. For direct edits (priority/blockers), preserve unknown fields and both
    `_comment` keys. IDs are immutable; `nextTaskId` stays above every active or
    archived ID and is never lowered. New tasks start `todo`.

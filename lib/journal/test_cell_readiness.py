@@ -746,7 +746,7 @@ class ReadinessTest(unittest.TestCase):
         evidence = LocalEvidence(root)
         policy = ReadinessPolicy(self.world.reg, evidence)
         with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
-                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'coverage_counts', return_value=(16384, 0)), \
                 mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
             before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
             self.assertFalse(policy.check((0, 0))['validated'])
@@ -782,7 +782,7 @@ class ReadinessTest(unittest.TestCase):
         specs = root / 'site' / 'builds'
         specs.mkdir(parents=True)
         with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
-                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'coverage_counts', return_value=(16384, 0)), \
                 mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
             policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
             policy.validate((0, 0))
@@ -952,7 +952,7 @@ class ReadinessTest(unittest.TestCase):
         self.world.seed((0, 0), ghost_ground=True)
         self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
         with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
-                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'coverage_counts', return_value=(16384, 0)), \
                 mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
             policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
             home_report = policy.validate((0, 0))
@@ -994,7 +994,7 @@ class ReadinessTest(unittest.TestCase):
         clip.write_text('{"type":"FeatureCollection","features":[],"rev":1}')
         self.world.seed((0, 0), ghost_ground=True)
         with mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])), \
-                mock.patch.object(aerial_coverage, 'coverage', return_value=1.), \
+                mock.patch.object(aerial_coverage, 'coverage_counts', return_value=(16384, 0)), \
                 mock.patch.object(aerial_coverage, 'mosaics', return_value=[]):
             policy = ReadinessPolicy(self.world.reg, LocalEvidence(root), require_plan_identity=True)
             stamped = policy.validate((0, 0))
@@ -1091,7 +1091,7 @@ class ReadinessTest(unittest.TestCase):
         self.addCleanup(restore_world)
         patches = (
             mock.patch.object(LocalEvidence, 'lidar_status', return_value=([], [])),
-            mock.patch.object(aerial_coverage, 'coverage', return_value=1.),
+            mock.patch.object(aerial_coverage, 'coverage_counts', return_value=(16384, 0)),
             mock.patch.object(aerial_coverage, 'mosaics', return_value=[]),
         )
         for p in patches:
