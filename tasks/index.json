@@ -212,7 +212,7 @@
     {
       "id": 400,
       "title": "Place names out of tool code",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
@@ -262,16 +262,7 @@
       "builderTask": false,
       "notes": "Housekeeping review ticket T13. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T13' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: l; blockedBy: T18\n- Scope:\n  - The 1.12 rows for `feature_build` and its test file, plus the misplaced roof tests from 1.9.\n  - Behaviour-preserving: record golden plans first for each fixture family.\n  - Keep one copy of the spec text (rule or docstring).\n- Check: golden plans are byte-identical. `feature_build.py` is under about 1,200 lines. `house_build` imports nothing private from it.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T18 (#407) because it shares feature_build and test files with the builder-helper ticket."
     },
-    {
-      "id": 409,
-      "title": "Tidy the site_* and undo CLIs",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T19. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T19' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: low; complexity: s–m\n- Scope: 1.14. Fix `site_views` (world-config views, output under `ROOT`, reject flags), and fold or delete `site_audit` and `site_index`. Delete the `mask_undo` CLI and repoint its docs to `element_undo`.\n- Check: `site_views --help` prints help, and no doc names a removed CLI.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process."
-    },
+    
     {
       "id": 410,
       "title": "Agent guidance: one home per rule, and resolve the contradictions",
