@@ -21,15 +21,7 @@
     
     
     
-    {
-      "id": 257,
-      "title": "Trial: rule-built typology buildings versus per-building specs (study locations selected)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "SPLIT (2026-11-22, owner agreed): the generator code moved to #413; this ticket now holds only the builder steps (baseline full specs, rule-built builds, cost measurement, in-game verdict, findings). STUDY LOCATIONS SELECTED (2026-11-21): terrace, estate and shop-parade locations are recorded in worlds/southampton-build/site/task-257-typology-trial.md. REBUILD AUTHORIZED (2026-11-21): the owner explicitly confirmed that the selected railway corridor and the three building groups may be rebuilt for trials #256 and #257; permission is recorded with the world selections. Plan: docs/plans/vibe-at-scale.md sections 2 and 6. Today houses use scripts/house_build.py (already a rule-based footprint builder with a small spec) and non-house buildings use a full hand-written spec in site/builds/<name>.json built by feature_build.py. Question: how much of a real district can rules cover well, using footprint, lidar height, OSM tags (building, building:levels, roof:shape) and a small per-district choice of palette and roof form. This is a spike. The prototype is the rule-based spec generator from #413, which generates minimal specs for the existing builders (house_build and feature_build); it does not add a third builder. Baseline is house_build with a minimal spec versus a full feature_build spec for the same buildings. Study streets: a terrace, a semi-detached or detached estate street, a shop parade. Build about 20 buildings per street with the prototype and compare with the current path, noting minutes and session tokens per building (method stated) and what the player sees from the street. Pitched roofs use pitched_roof_states as it is today. Deliver findings in docs/plans/typology-buildings.md: which building classes the rules cover, what still needs a designer, cost per building under each path, and a recommendation, including whether roof and facade detail (I-006) and glazing become class recipes. File implementation tasks from the findings, not before. Scratch effects and snags go to the named world's repo. Check: findings file has a Cost heading and table rows; the owner's in-game verdict on whether the rule-built streets read as the real ones is recorded in it.\n\nSequencing: this ticket follows #413 (non-builder spec generator), which must land first. If the trial needs changes to the builders themselves, land #407 (shared stoop/ground helpers) and #408 (feature_build split) first, so that code lands in the split modules."
-    , "builderTask": true},
+    
     
     
     
@@ -57,7 +49,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
-        257
+        
       ],
       "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial.\n\nPointer (2026-11-22, parade snag S-111/S-113): the owner's street view of 233 Portswood Road shows the typology: a two-storey brick building with a pitched roof behind and a one-storey flat shopfront roof added in front; the real run is mostly black fascias. Footprints that belong to one building (Kovan & Ramo's belongs to its neighbour) cannot come from the map tags and are needs-designer. Builder tasks from the same snags: 434 (feature roof stairs/octant), 435 (signs falling off), 436 (doors one level low), 437 (sign and fascia options)."
     , "builderTask": true},
