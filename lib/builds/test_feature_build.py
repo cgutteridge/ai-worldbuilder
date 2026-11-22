@@ -710,6 +710,17 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                 else:
                     self.assertEqual([p[1] for p in lower], [expected_y])
 
+    def test_the_final_stair_pass_reads_the_world_and_reports_stairs_it_will_change(self):
+        from unittest import mock
+        class StairWorld:
+            def block(self, x, y, z):
+                return 'minecraft:stone' if y <= 49 else 'minecraft:air'
+        with mock.patch.object(F, 'align_stair_shapes', wraps=F.align_stair_shapes) as aligned:
+            plan, out = self.build_plan([_entrance_row()], world=StairWorld())
+        self.assertTrue(callable(aligned.call_args.args[1]))
+        self.assertGreaterEqual(aligned.call_count, 1)
+        self.assertNotIn('already in the world will change shape', out)       # an empty world: nothing earlier to retarget
+
     def test_door_finds_live_ground_on_low_lying_cell(self):
         class LowWorld:
             def block(self, x, y, z):

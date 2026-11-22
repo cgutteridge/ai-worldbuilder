@@ -17,6 +17,12 @@ docstring):
   The same flat(ish)/pitched rule as features: rise/run up to 1 in 2 may be
   any full block or slab in `config/roof-materials.json`; steeper than that
   needs a triad (full block, slab and stairs). See `rules/feature-builds.md`.
+- Stair shapes: every stair in a house or feature plan, a roof stair or a step, is given its
+  shape at the end of the build from the stairs beside it at the same height in the plan and in
+  the world, whatever their material (`roof_geometry.align_stair_shapes`). The dry run names
+  earlier stairs in the world that this plan's stairs will retarget. The apply readback ignores
+  stair `shape` because the game rewrites it, so after an apply check the world with
+  `python3 scripts/roof_lint.py --world <w> --live <build>`.
 - `roof_fit` — optional `{label: "columns"|"octant"}` (default `columns`). `octant`
   designs a pitched roof over a rectangular footprint as a solid volume of half-block
   cells (each block is 2 x 2 x 2), with the surface a plane through the footprint's fitted
