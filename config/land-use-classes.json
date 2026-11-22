@@ -296,7 +296,7 @@
    "planting": null,
    "furniture": {"bench_per_100m": 1.5},
    "surface": {"unmapped_paving": "dirt", "path_widen": 3},
-   "trees": {"sources": ["mapped", "wood", "lidar", "lines"], "species_weights": {"oak": 100}, "cover": "shade"},
+   "trees": {"sources": ["mapped", "wood", "lidar", "lines"], "species_weights": {"oak": 60, "birch": 25, "dark_oak": 15}, "cover": "shade"},
    "ground_texture": {
     "pasture": {"tufts": [0.08, 0.30], "tall_grass": [0.01, 0.07], "bare": true, "flowers": null},
     "meadow": {"tufts": [0.08, 0.30], "tall_grass": [0.01, 0.07], "bare": true,
@@ -357,7 +357,7 @@
    "planting": null,
    "furniture": null,
    "surface": {"unmapped_paving": "grass"},
-   "trees": {"sources": ["mapped", "wood", "lidar", "lines"], "species_weights": {"oak": 100}, "cover": "shade"},
+   "trees": {"sources": ["mapped", "wood", "lidar", "lines"], "species_weights": {"oak": 60, "birch": 25, "dark_oak": 15}, "cover": "shade"},
    "ground_texture": {
     "pasture": {"tufts": [0.08, 0.30], "tall_grass": [0.01, 0.07], "bare": true, "flowers": null},
     "meadow": {"tufts": [0.08, 0.30], "tall_grass": [0.01, 0.07], "bare": true,

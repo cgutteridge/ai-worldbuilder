@@ -523,7 +523,9 @@ class TestLineSource(unittest.TestCase):
         self.assertEqual(inputs.crowns, again.crowns)
         self.assertEqual(inputs.crowns, [(30, 36, 4.0), (30, 30, 4.0), (2, 70, 4.0)])
         self.assertEqual({(x, z) for x, z, _r in inputs.source_rejections}, {(30, 22), (100, 100), (10, 110)})
+        # The class mix is shipped config; pin oak so this test checks line crowns, not the mix.
         with mock.patch.object(tl, 'warm_surface_probe'), \
+                mock.patch('land_use.tree_species_weights', return_value={'oak': 1}), \
                 mock.patch.object(tl, 'surface_y', return_value=(60, 'grass_block')):
             _placed, report = tl.plan_cell((0, 0), types.SimpleNamespace(set=lambda *a: None), FakeWorld(), inputs)
         self.assertEqual([tuple(row['position']) + (row['species'], row['class']) for row in report['tree_species']],
