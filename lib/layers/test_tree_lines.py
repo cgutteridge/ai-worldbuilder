@@ -1,16 +1,13 @@
 """Synthetic tests for the spike #323 tree-line evidence (no world data)."""
 from __future__ import annotations
 
-import sys
 import unittest
-from unittest import mock
 from types import SimpleNamespace
-from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import tree_lines as tln  # noqa: E402
+import tree_lines as tln
 
 N = 40
 BOUNDS = (0, 0, N - 1, N - 1)

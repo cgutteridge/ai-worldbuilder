@@ -1,19 +1,13 @@
 """Unit tests for cell_features and handoff ring order."""
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / 'scripts'))
-sys.path.insert(0, str(ROOT / 'shims'))
-
-import cell_features as cf  # noqa: E402
+import cell_features as cf
 import cellmath
-import water_body as W  # noqa: E402
+import water_body as W
 
 
 def _square(x0, z0, x1, z1):

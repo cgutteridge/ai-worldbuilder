@@ -11,15 +11,12 @@ from __future__ import annotations
 import io
 import json
 import math
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import world_frame as wf  # noqa: E402
+import world_frame as wf
 
 # Independent fixtures (not derived from this module's transform).
 # Southampton O.S.O. Fundamental Bench Mark (bench-marks.org.uk/bm1150):

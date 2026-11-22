@@ -8,16 +8,13 @@ Temp SITE dir only; the real site/ is never touched, no Minecraft, no OSM.
 import contextlib
 import io
 import json
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import site_handoff as H  # noqa: E402
+import site_handoff as H
 
 QUEUE_TEXT = '''SOUTHAMPTON REFINE — QUEUE
 

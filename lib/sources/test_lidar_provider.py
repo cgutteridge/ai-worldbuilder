@@ -2,19 +2,11 @@
 """Tests for the type-facing lidar / vector-map seams (no live tiles required)."""
 from __future__ import annotations
 
-import sys
 import types
 import unittest
-from pathlib import Path
 from unittest import mock
 
-_ROOT = Path(__file__).resolve().parent.parent
-for _p in (_ROOT / 'shims', _ROOT / 'scripts'):
-    _s = str(_p)
-    if _s not in sys.path:
-        sys.path.insert(0, _s)
-
-import lidar_provider as lp  # noqa: E402
+import lidar_provider as lp
 
 
 class ResolveLidarRow(unittest.TestCase):

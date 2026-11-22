@@ -1,14 +1,9 @@
 """Unit tests for osm_footprints.guard — synthetic index + ground, no live world."""
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-
-import osm_footprints as OF  # noqa: E402
+import osm_footprints as OF
 
 
 class _FlatGround:

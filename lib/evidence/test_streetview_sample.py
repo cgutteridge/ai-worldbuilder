@@ -1,17 +1,13 @@
 """Unit tests for streetview_sample contact-sheet maths (no network)."""
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-
-import streetview_sample as sv  # noqa: E402
+import streetview_sample as sv
 
 
 class TestFrameUrl(unittest.TestCase):

@@ -15,14 +15,10 @@ report (not recomputed here).
 """
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import world_frame as wf  # noqa: E402
+import world_frame as wf
 
 
 def _frame(crs: str, easting: float, northing: float) -> wf.WorldFrame:

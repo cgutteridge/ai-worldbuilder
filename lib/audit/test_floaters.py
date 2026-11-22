@@ -2,15 +2,11 @@
 
   python3 scripts/run_tests.py --only test_floaters
 """
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import cellmath  # noqa: E402
-import floaters as fl  # noqa: E402
-import floater_scan as fs  # noqa: E402
+import cellmath
+import floaters as fl
+import floater_scan as fs
 
 
 class FakeWorld:

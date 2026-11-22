@@ -2,19 +2,12 @@
 """Tests for vector-map download/cache/reference contract (no network)."""
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-_ROOT = Path(__file__).resolve().parent.parent
-for _p in (_ROOT / 'shims', _ROOT / 'scripts'):
-    _s = str(_p)
-    if _s not in sys.path:
-        sys.path.insert(0, _s)
-
-import vector_map_clips as vmc  # noqa: E402
+import vector_map_clips as vmc
 
 
 def _write_clip(tree: Path, place: str = 'survey', name: str = 'buildings.geojson') -> Path:

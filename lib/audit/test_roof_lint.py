@@ -3,17 +3,14 @@
 
   python3 scripts/run_tests.py --only test_roof_lint
 """
+import io
 import sys
 import unittest
-import io
 from contextlib import redirect_stdout
 from unittest import mock
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-from roof_geometry import stair_shape_from_neighbours  # noqa: E402
-from roof_lint import (  # noqa: E402
+from roof_geometry import stair_shape_from_neighbours
+from roof_lint import (
     live_rule_mismatches,
     live_stair_cells,
     main as lint_main,

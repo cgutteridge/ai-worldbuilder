@@ -1,13 +1,9 @@
 """Block reference colour grouping (no extracted Minecraft assets required)."""
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
-import block_reference as br  # noqa: E402
+import block_reference as br
 
 class TestGroups(unittest.TestCase):
     def test_woodland_plants_are_partial_but_solid_mushrooms_are_not(self):
