@@ -1,7 +1,8 @@
 """Local XYZ aerial mosaics: coverage, selection and sampling through the world frame.
 
 Discover both centre-named mosaics and legacy northwest-named mosaics. Images
-are never fetched here. Black/no-data pixels do not establish evidence coverage.
+are never fetched here. Exact black fill (and RGBA transparent pixels composited
+to black by ``load_rgb``) marks no-data; dark real evidence still counts.
 """
 from __future__ import annotations
 
@@ -133,6 +134,8 @@ def samples(points, sources, *, radius=0):
     """Best-resolution usable sample per column as ``(mosaic, px, py, RGB)``.
 
     Multiple mosaics may jointly cover a cell. Later sources only fill gaps.
+    A column is no-data only when every pixel in its sample window is exact
+    black fill (``radius`` widens that window); dark non-black evidence counts.
     """
     out = {}
     for mosaic in sorted(sources, key=lambda m: (-m.zoom, str(m.path))):
@@ -146,9 +149,9 @@ def samples(points, sources, *, radius=0):
             ix, iy = int(px), int(py)
             win = rgb[max(0, iy - radius):iy + radius + 1,
                       max(0, ix - radius):ix + radius + 1]
-            colour = tuple(win.reshape(-1, 3).mean(0) / 255)
-            if sum(colour) / 3 < .01:
+            if win.size == 0 or not win.any():
                 continue
+            colour = tuple(win.reshape(-1, 3).mean(0) / 255)
             out[p] = mosaic, px, py, colour
     return out
 
@@ -171,20 +174,52 @@ def covering_mosaic(points, sources=None):
     return None
 
 
+def coverage_counts(cell, sources=None):
+    """Covered and uncovered column counts for a named cell.
+
+    @param cell: ``(tx, tz)`` cell address
+    @param sources: mosaics to sample; default every local mosaic
+    @returns: ``(covered, uncovered)`` integer column counts
+    """
+    points = cell_columns(cell)
+    covered = len(samples(points, mosaics() if sources is None else sources))
+    return covered, len(points) - covered
+
+
+def coverage_fraction_text(covered: int, uncovered: int) -> str:
+    """Fraction label that does not round a near-miss up to ``100.0%``.
+
+    @param covered: columns with usable aerial evidence
+    @param uncovered: columns still missing evidence
+    @returns: percentage string for blockers and reports
+    """
+    total = covered + uncovered
+    if not total:
+        return '0.0%'
+    fraction = covered / total
+    text = f'{fraction:.1%}'
+    if uncovered and text == '100.0%':
+        return f'{fraction:.4%}'
+    return text
+
+
 def coverage(cell, sources=None):
     """Fraction of the cell's columns covered by the union of usable local mosaics."""
-    points = cell_columns(cell)
-    return len(samples(points, mosaics() if sources is None else sources)) / len(points)
+    covered, uncovered = coverage_counts(cell, sources)
+    total = covered + uncovered
+    return covered / total if total else 0.0
 
 
 def require_coverage(cell, sources=None):
-    """Return selected sources or raise with the actual fraction; never download."""
+    """Return selected sources or raise with uncovered count and fraction; never download."""
     sources = mosaics() if sources is None else sources
-    fraction = coverage(cell, sources)
-    if fraction < 1:
-        raise CoverageError(f'needs-prep: aerial coverage {fraction:.1%} for cell '
-                            f'{cell[0]},{cell[1]}; a locally cached mosaic covering the rest is required '
-                            '(no implicit download)')
+    covered, uncovered = coverage_counts(cell, sources)
+    if uncovered:
+        raise CoverageError(
+            f'needs-prep: aerial coverage {uncovered} uncovered columns '
+            f'({coverage_fraction_text(covered, uncovered)}) for cell '
+            f'{cell[0]},{cell[1]}; a locally cached mosaic covering the rest '
+            f'is required (no implicit download)')
     return sources
 
 
