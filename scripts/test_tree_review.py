@@ -10,7 +10,11 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'shims'))
+import script_env  # noqa: E402
+
+# Lib dirs must stay ahead of scripts/. Otherwise this file imports the CLI
+# wrapper, which has no TREE, whenever nothing else has loaded the library yet.
+script_env.ensure_import_paths()
 import lidar_heightmap as L  # noqa: E402
 import tree_review as T  # noqa: E402
 
