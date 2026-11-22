@@ -217,16 +217,7 @@
       "builderTask": false,
       "notes": "From the 2026-11-21 B35 rebuild thread. The same plan applied four times: fill stage took 122 s with 1 rate-limit retry, 605 s with 10, 485 s with 7, 125 s with 0 (each retry is a fixed 'Minecraft rate limit: retrying in 60s' wait). Unknown what triggers it. One unverified guess: other Minecraft MCP calls (teleport, scan, capture) from a parallel session while an apply runs. Spike: log request timestamps and the server's limit response during an apply, run once with no other calls and once with background calls, and record the limit, whether it is per second or per window, and whether the writer's pacing (see McpWriter, the paced MCP interval in rules/slow-commands.md) can stay under it. Output: a short finding in docs/ with numbers, and either a tuned pacing constant or a filed fix. Acceptance: the finding states the limit and the cause with measurements."
     },
-    {
-      "id": 390,
-      "title": "Pitched roof stair shape: West plan disagrees with the game's neighbour rule at 6189,61,-5608",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "roof_lint on recorded west_w34391673 reports 1 stair-shape mismatch: (6189,61,-5608) facing=north planned=inner_right expected=straight. It predates the 2026-11-22 rebuild, so it comes from pitched_roof_states, not the roof-jog work. Reproduce from the recorded plan with python3 scripts/roof_lint.py --world southampton-build west_w34391673, add a synthetic fixture of the neighbouring stairs around that cell, and fix the shape choice so the planned shape equals stair_shape_from_neighbours for the final skin (same approach as #169 and the house_build chimney handling). Acceptance: the fixture fails before and passes after, roof_lint on west_w34391673 reports 0 mismatches after a rebuild, other recorded builds' lint output unchanged (compare scripts/roof_lint.py --all before and after)."
-    },
+    
     
     
     
@@ -413,7 +404,7 @@
     {
       "id": 416,
       "title": "test_tree_review fails when run on its own",
-      "status": "todo",
+      "status": "doing",
       "priority": "low",
       "complexity": "s",
       "blockedBy": [],
