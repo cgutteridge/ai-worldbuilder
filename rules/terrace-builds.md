@@ -81,7 +81,7 @@ planting DECOR.
   `brown_tile`, `weathered_copper`, `flat_deck`); `roof_type_blocks(<type>)` in
   `lib/builds/roof_material.py` gives the family and alternates (see
   `rules/feature-builds.md`). The catalogue maps a type to blocks by how they look:
-  `red_clay_tile` is fresh cut copper (orange-red), `weathered_copper` is the green
+  `red_clay_tile` is cinnabar brick (deep red), `weathered_copper` is the green
   oxidised copper. Copper is a choice from the aerial, never a default for a street.
 - Find terrace ends first: `.venv/bin/python scripts/aerial_annot.py x0,z0,x1,z1 out.png`.
 - Plot angle: `python3 scripts/geo.py slope --bearing …` or `--points x0,z0,x1,z1`

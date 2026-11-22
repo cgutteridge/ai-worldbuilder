@@ -184,12 +184,12 @@ class RoofTypeTest(unittest.TestCase):
     def test_lookup_returns_the_triad_for_a_pitched_type(self):
         got = RM.roof_type_blocks('red_clay_tile')
         self.assertEqual(got['slope'], 'pitched')
-        self.assertEqual(got['family'], 'cut_copper')
+        self.assertEqual(got['family'], 'cinnabar_brick')
         self.assertEqual(
             (got['full'], got['slab'], got['stairs']),
-            ('cut_copper', 'cut_copper_slab', 'cut_copper_stairs'),
+            ('cinnabar_bricks', 'cinnabar_brick_slab', 'cinnabar_brick_stairs'),
         )
-        self.assertEqual([a['family'] for a in got['alternates']], ['brick', 'mud_brick'])
+        self.assertEqual([a['family'] for a in got['alternates']], ['cut_copper', 'brick', 'mud_brick'])
         slate = RM.roof_type_blocks('grey_slate')
         self.assertEqual(slate['family'], 'tuff_brick')
         self.assertEqual((slate['full'], slate['slab'], slate['stairs']),

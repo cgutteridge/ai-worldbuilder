@@ -37,7 +37,7 @@
       "full": "cut_copper",
       "slab": "cut_copper_slab",
       "stairs": "cut_copper_stairs",
-      "colour": [192, 107, 80],
+      "colour": [191, 107, 81],
       "texture": "smooth",
       "triad": true
     },
@@ -181,7 +181,15 @@
       "full": "tuff_bricks",
       "slab": "tuff_brick_slab",
       "stairs": "tuff_brick_stairs",
-      "colour": [99, 100, 93],
+      "colour": [98, 103, 95],
+      "texture": "rough",
+      "triad": true
+    },
+    "cinnabar_brick": {
+      "full": "cinnabar_bricks",
+      "slab": "cinnabar_brick_slab",
+      "stairs": "cinnabar_brick_stairs",
+      "colour": [148, 56, 54],
       "texture": "rough",
       "triad": true
     },
@@ -266,7 +274,7 @@
       "full": "exposed_cut_copper",
       "slab": "exposed_cut_copper_slab",
       "stairs": "exposed_cut_copper_stairs",
-      "colour": [161, 125, 103],
+      "colour": [155, 122, 101],
       "texture": "smooth",
       "triad": true
     },
@@ -274,7 +282,7 @@
       "full": "weathered_cut_copper",
       "slab": "weathered_cut_copper_slab",
       "stairs": "weathered_cut_copper_stairs",
-      "colour": [109, 145, 107],
+      "colour": [109, 145, 108],
       "texture": "smooth",
       "triad": true
     },
@@ -282,7 +290,7 @@
       "full": "oxidized_cut_copper",
       "slab": "oxidized_cut_copper_slab",
       "stairs": "oxidized_cut_copper_stairs",
-      "colour": [82, 162, 132],
+      "colour": [80, 154, 126],
       "texture": "smooth",
       "triad": true
     }
@@ -290,9 +298,9 @@
   "types": {
     "red_clay_tile": {
       "slope": "pitched",
-      "family": "cut_copper",
-      "alternates": ["brick", "mud_brick"],
-      "note": "Red or orange-red clay tile or pantile, shown as fresh cut copper for its orange-red look (owner choice: by look, not by name); brick for a darker red tile, mud_brick for an older, browner one."
+      "family": "cinnabar_brick",
+      "alternates": ["cut_copper", "brick", "mud_brick"],
+      "note": "Red or orange-red clay tile or pantile, shown as cinnabar brick for its deep red brick-course look (owner choice: by look, not by name); cut_copper for a brighter orange tile, brick for a duller red one, mud_brick for an older, browner one."
     },
     "grey_slate": {
       "slope": "pitched",
