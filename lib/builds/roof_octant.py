@@ -9,6 +9,10 @@ it from same-height neighbouring stairs, so the fit evaluates every stair with t
 ``roof_geometry.stair_shape_from_neighbours`` gives it in the current arrangement and adjusts
 facings until that settles. A stair is a stair whatever its material.
 
+The rim (eave columns outside the footprint with an open side) is held to one first-layer block that
+is air, a bottom slab or a stair, so the roof edge is never a thick full-block lip (#414); columns
+elsewhere, including notches of a staircase outline, are fitted freely.
+
 Cell patterns, per block, for a bottom stair facing ``f`` (the tall side is the ``f`` side):
 
 * bottom layer: all four cells;
