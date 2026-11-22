@@ -389,16 +389,7 @@
       "builderTask": false,
       "notes": "From trial #257 parade snags S-108 (signs always default oak), S-109 (sign text colour clashes with its background) and S-112 (fascia colours not the real ones); issue I-059. Checked 2026-11-22: the sign block is hard-coded oak_wall_sign in lib/builds/feature_facade.py (about lines 579 and 696) and lib/builds/feature_details.py:201. Fascia colour comes from FASCIA_COLOURS, six bright colours picked by hash (fascia_colour), with no black, grey or teal and no per-building override. Text colour is chosen against the fascia by contrasting_sign_colour (black or white), but the board is always pale oak, so grey text on the oak board clashes (the owner's \"Tidal vape\" sign); one sign path (about line 697) forces white glowing text. Not verified: the contrast on every parade sign.\n\nDeliverable: (1) a spec key for sign wood (the wall-sign and hanging-sign families), default oak as today; (2) a spec key for fascia colour that overrides the hash, default unchanged; (3) text colour computed against the sign board, not only the fascia, using block map colours, and a refusal of low-contrast pairs (reuse the catalogue pattern of I-057); (4) the second sign path honours the same keys. No palette values here: task 431 (the class recipe) and world data supply the values, so land this before 431. Non-builder: fixtures that the keys validate and emit the chosen blocks, and that the \"Tidal vape\" case (grey text on pale oak) is refused or recoloured. Acceptance: tests, a note in rules/feature-builds.md, a spec example, and the owner reviews S-108, S-109 and S-112 in game after a rebuild.\n"
     },
-    {
-      "id": 439,
-      "title": "CLI task tree report with blockers and claim",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Add node scripts/tasks.mjs tree (easy one-liner from the repo root) that prints the active task dependency tree.\n\nOne line per task, indented under each blocker parent:\n#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER\n\nRules:\n- Roots: active tasks with no blockedBy entries, sorted by id.\n- Children: active tasks that list the parent id in blockedBy, indented two spaces per level, sorted by id.\n- If a child has other blockers besides the parent shown, append (also blocked by #…, #…) for those ids (sorted).\n- A task with several blockers appears under each of them (DAG as a forest), with also-blocked-by listing the others.\n- claimed by only when claimedBy is set; display Cursor/Claude/Codex.\n- Always show BUILDER or NO-BUILDER from builderTask.\n- Guard cycles (skip already-seen ids on a path).\n- Docs: issue-tracker Task CLI section. Tests in tasks.test.mjs.\n\nCheck: tree exits 0; fixture with multi-blocker prints also-blocked-by; builder and claim suffixes present; indentation matches depth."
-    },
+    
     {
       "id": 440,
       "title": "Shop fronts: stop squaring rows that aren't near axis-aligned",

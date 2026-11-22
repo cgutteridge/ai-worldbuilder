@@ -3883,5 +3883,16 @@
       "builderTask": false,
       "notes": "cell_preparation.py reads osm_extract.DEFAULT_PBF, which nothing defines, and passes --dir/--force, which the extractor no longer accepts. Resolve the PBF from the world's vector_map provider and call the extractor with current arguments. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/5\n\nClosed at a0d52c0f614f909709adb479a70bde3ffd31214e: Prepare resolves PBF from vector_map provider.json; extractor uses --place prepared-{tx}-{tz}.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/420-prepare-default-pbf"}
+  ,
+    {
+      "id": 439,
+      "title": "CLI task tree report with blockers and claim",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Add node scripts/tasks.mjs tree (easy one-liner from the repo root) that prints the active task dependency tree.\n\nOne line per task, indented under each blocker parent:\n#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER\n\nRules:\n- Roots: active tasks with no blockedBy entries, sorted by id.\n- Children: active tasks that list the parent id in blockedBy, indented two spaces per level, sorted by id.\n- If a child has other blockers besides the parent shown, append (also blocked by #…, #…) for those ids (sorted).\n- A task with several blockers appears under each of them (DAG as a forest), with also-blocked-by listing the others.\n- claimed by only when claimedBy is set; display Cursor/Claude/Codex.\n- Always show BUILDER or NO-BUILDER from builderTask.\n- Guard cycles (skip already-seen ids on a path).\n- Docs: issue-tracker Task CLI section. Tests in tasks.test.mjs.\n\nCheck: tree exits 0; fixture with multi-blocker prints also-blocked-by; builder and claim suffixes present; indentation matches depth.\n\nClosed at 8a7d2d80088c27941c65555d76d51bcdb665ed39: tree command landed via ship_branch merge of task/439-task-tree-report.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
