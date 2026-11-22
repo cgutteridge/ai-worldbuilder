@@ -37,6 +37,9 @@ A run is a JSON spec in ``site/builds/<name>.json``:
   clear_above    optional int >= 0 (default 0): air placed over the water columns
                  from water_level + 1 up this many layers, so a pond sits below
                  the surrounding paving instead of under a ground lid
+  bank_clear_above  optional int >= 0 (default 0): air placed over every bank cell
+                 from its bank Y + 1 up this many layers, so a ghost or terrain block
+                 standing on the bank does not turn the bank grass to dirt (#318)
   bank           {"material": "<block>", "width"?: 1, "rise"?: 0} shore ring
                  (N8 × width) at water_level + rise; rise lifts the coping to
                  paving height around a sunken pond
@@ -277,6 +280,9 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
     clear_above = spec.get('clear_above', 0)
     if not isinstance(clear_above, int) or isinstance(clear_above, bool) or clear_above < 0:
         _fail(path, 'clear_above must be an int >= 0')
+    bank_clear_above = spec.get('bank_clear_above', 0)
+    if not isinstance(bank_clear_above, int) or isinstance(bank_clear_above, bool) or bank_clear_above < 0:
+        _fail(path, 'bank_clear_above must be an int >= 0')
     bank = _validate_bank(path, spec['bank'])
     edge = _validate_edge(path, spec.get('edge'))
     clip = _validate_clip(path, spec.get('clip'), outline, bank)
@@ -300,6 +306,7 @@ def load_spec_dict(spec: dict, *, path: str | Path | None = None, root: Path | N
         'depth': depth,
         'floor': floor,
         'clear_above': clear_above,
+        'bank_clear_above': bank_clear_above,
         'bank': bank,
         'edge': edge,
         'clip': clip,
@@ -603,6 +610,8 @@ def build(spec: Mapping[str, Any]) -> Plan:
             plan.set(x, bank_y, z, edge_spec['material'])
         else:
             plan.set(x, bank_y, z, bank_spec['material'])
+        for y in range(bank_y + 1, bank_y + int(spec.get('bank_clear_above', 0)) + 1):
+            plan.set(x, y, z, 'air')
     # Stamp against every cell the water body and bank touch (task 232); one cell when clipped.
     plan.capture_inputs()
     return plan

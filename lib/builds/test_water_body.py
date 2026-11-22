@@ -235,6 +235,16 @@ class BuildTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.spec(**bad)
 
+    def test_bank_clear_above_clears_over_bank_cells_only_when_asked(self):
+        plan = W.build(self.spec(bank_clear_above=2, edge=None))
+        self.assertEqual(plan.get(9, 56, 20), 'minecraft:air')
+        self.assertEqual(plan.get(9, 57, 20), 'minecraft:air')
+        self.assertIsNone(plan.get(9, 58, 20))
+        self.assertEqual(plan.get(9, 55, 20), 'minecraft:coarse_dirt')
+        self.assertIsNone(W.build(self.spec(edge=None)).get(9, 56, 20))
+        with self.assertRaises(SystemExit):
+            self.spec(bank_clear_above=-1)
+
     def test_summary_counts_water(self):
         plan = W.build(self.spec())
         summary = plan.summary()
