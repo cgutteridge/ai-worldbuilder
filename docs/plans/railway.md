@@ -176,7 +176,9 @@ None of these may be lost when the tickets are written. Each ticket should quote
     deck columns and fails if the profile would leave under 5 blocks of clearance. The complex area at about
     50.91436,-1.45871 (MC 1901,-3299) is a yard of 17 sidings, 3 crossovers, 2 spurs and 20 switches with only 2
     through ways, so it suits the unfiled decor sidings ticket and a junction stress test, not trial D.
-14. **Not filed yet:** decor sidings, yards and spurs. Note it in D's ticket as the next step and file it once D has
+14. **Not filed yet:** decor sidings, yards and spurs. **Study area chosen by the owner (2026-11-22):** the yard around
+    50.91436,-1.45871 (MC 1901,-3299, cell 23,-32), which also has the viaduct over rail (decision 15). Probe extracts
+    are in the world repo under `reference/vector_map/rail_probe_complex/`. Note it in D's ticket as the next step and file it once D has
     shown what a real line looks like.
 
 ## Ticket plan
