@@ -170,14 +170,26 @@ class RoofTypeTest(unittest.TestCase):
                 with self.subTest(type=name, family=family_id):
                     self.assertTrue(self.catalogue['families'][family_id]['triad'])
 
+    def test_the_copper_families_look_like_their_blocks_not_one_shared_colour(self):
+        """Colour matching reads these; one shared teal meant fresh cut copper could never match an orange roof."""
+        names = ('cut_copper', 'exposed_cut_copper', 'weathered_cut_copper', 'oxidized_cut_copper')
+        colours = [tuple(self.catalogue['families'][n]['colour']) for n in names]
+        self.assertEqual(len(set(colours)), 4)
+        red, green, blue = colours[0]
+        self.assertTrue(red > green > blue and red >= 150, colours[0])            # fresh copper is orange
+        self.assertTrue(colours[3][1] > colours[3][0] and colours[3][2] > colours[3][0], colours[3])   # oxidized is teal
+        reds = [c[0] for c in colours]
+        self.assertEqual(reds, sorted(reds, reverse=True))                         # redder the newer it is
+
     def test_lookup_returns_the_triad_for_a_pitched_type(self):
         got = RM.roof_type_blocks('red_clay_tile')
         self.assertEqual(got['slope'], 'pitched')
-        self.assertEqual(got['family'], 'brick')
+        self.assertEqual(got['family'], 'cut_copper')
         self.assertEqual(
             (got['full'], got['slab'], got['stairs']),
-            ('bricks', 'brick_slab', 'brick_stairs'),
+            ('cut_copper', 'cut_copper_slab', 'cut_copper_stairs'),
         )
+        self.assertEqual([a['family'] for a in got['alternates']], ['brick', 'mud_brick'])
         for name in RM.roof_type_names():
             with self.subTest(type=name):
                 blocks = RM.roof_type_blocks(name)

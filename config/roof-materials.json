@@ -37,7 +37,7 @@
       "full": "cut_copper",
       "slab": "cut_copper_slab",
       "stairs": "cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [192, 107, 80],
       "texture": "smooth",
       "triad": true
     },
@@ -258,7 +258,7 @@
       "full": "exposed_cut_copper",
       "slab": "exposed_cut_copper_slab",
       "stairs": "exposed_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [161, 125, 103],
       "texture": "smooth",
       "triad": true
     },
@@ -266,7 +266,7 @@
       "full": "weathered_cut_copper",
       "slab": "weathered_cut_copper_slab",
       "stairs": "weathered_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [109, 145, 107],
       "texture": "smooth",
       "triad": true
     },
@@ -274,7 +274,7 @@
       "full": "oxidized_cut_copper",
       "slab": "oxidized_cut_copper_slab",
       "stairs": "oxidized_cut_copper_stairs",
-      "colour": [90, 160, 140],
+      "colour": [82, 162, 132],
       "texture": "smooth",
       "triad": true
     }
@@ -282,9 +282,9 @@
   "types": {
     "red_clay_tile": {
       "slope": "pitched",
-      "family": "brick",
-      "alternates": ["mud_brick"],
-      "note": "Red or orange-red clay tile or pantile; mud_brick for an older, browner tile."
+      "family": "cut_copper",
+      "alternates": ["brick", "mud_brick"],
+      "note": "Red or orange-red clay tile or pantile, shown as fresh cut copper for its orange-red look (owner choice: by look, not by name); brick for a darker red tile, mud_brick for an older, browner one."
     },
     "grey_slate": {
       "slope": "pitched",

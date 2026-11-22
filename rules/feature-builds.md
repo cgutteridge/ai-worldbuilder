@@ -79,7 +79,7 @@ Dry run unless `--apply`; `--apply` refuses a plan that already has a landed bui
   `lib/builds/roof_material.py` returns the triad (flatish types return the full
   block and slab) and one to three alternates, from the catalogue's `types`
   section. Types are generic, never tied to a place:
-  `red_clay_tile` (brick; alt mud_brick), `grey_slate` (deepslate_tile; alt
+  `red_clay_tile` (cut_copper, chosen by look; alt brick, mud_brick), `grey_slate` (deepslate_tile; alt
   deepslate_brick, polished_deepslate), `grey_tile` (stone_brick; alt andesite,
   tuff), `brown_tile` (mud_brick; alt spruce, dark_oak), `weathered_copper`
   (weathered_cut_copper; alt oxidized_cut_copper, cut_copper) and `flat_deck`
