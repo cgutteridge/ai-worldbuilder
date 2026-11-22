@@ -12,6 +12,7 @@ q165..q176 and later). A run is a small JSON spec in site/builds/<name>.json ins
   roof_pitch     optional {"<label>": rise_per_run}, finite number 0..1 (default 0.5)
                  <=0.5 keeps legacy slab rings; >0.5 uses stairs/slabs at half-block-snapped heights,
                  the overhanging eave ring starting at wall-top level as a slab or stair (#414)
+                 a footprint that is a rotated rectangle takes heights from its fitted axes (#415)
                  group roofs require equal effective pitches; first label supplies the material
   groups         [{"nos": [labels], "mode": "each"|"group", "front": "N"|"S"|"E"|"W"}]
                  "group" = one roof over several houses sharing a floor level
@@ -34,7 +35,8 @@ from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 import osm_footprints  # noqa: E402
-from roof_geometry import edge_distance_field, pitched_roof_states, roof_block_y, stair_shape_from_neighbours  # noqa: E402
+from roof_geometry import (edge_distance_field, pitched_roof_states, roof_block_y,  # noqa: E402
+                           rotated_hip_depth, stair_shape_from_neighbours)
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 import stoop  # noqa: E402
 from stoop import FACE, GROUND, TOWARD, stair  # noqa: E402
@@ -357,6 +359,17 @@ class Build:
         for line in report_lines(h.no, report):
             print(line)
 
+    @staticmethod
+    def _ridge_jogs(half_heights, states):
+        """Ridge jogs the roof skin would have, judged on its own cells (membrane plus underlay)."""
+        import roof_lint
+        cells = {}
+        for (x, z), state in states.items():
+            y = roof_block_y(half_heights[x, z])
+            cells[x, y, z] = state
+            cells[x, y - 1, z] = 'minecraft:bricks'
+        return roof_lint.ridge_jogs(cells)
+
     def roof(self):
         """Plan shared or individual roof skins, solid underlays and through-chimneys."""
         done = {}
@@ -378,13 +391,27 @@ class Build:
             if not resolved['ok']:
                 raise SystemExit('; '.join(resolved['messages']))
             variants = family_variants(rm)
+            rotated = None
             if pitched:
                 # The outermost eave cell starts half a block below the wall-top level so it is a
                 # bottom slab (shallow pitch) or a stair (steep pitch), as on the flatish ring; an
                 # even start made it a full block (#414).
-                half_heights = {c: 2 * (b + 6) - 1 + math.floor(2 * d * pitch)
-                                for c, d in dist.items()}
-                states = pitched_roof_states(half_heights, dict.fromkeys(dist, rm))
+                # A footprint drawn square to an angled road is a rotated rectangle: take heights from
+                # its fitted axes so the ridge and hips are straight (#415). The eave ring keeps the
+                # start height (#414), and a rotated roof that would jog its ridge falls back to the
+                # grid field, so this never refuses a roof the grid field would plan.
+                materials = dict.fromkeys(dist, rm)
+                rotated = rotated_hip_depth(own, set(dist))
+                if rotated is not None:
+                    half_heights = {c: 2 * (b + 6) - 1 + (0 if dist[c] == 0 else math.floor(2 * d * pitch + 1e-9))
+                                    for c, d in rotated.items()}
+                    states = pitched_roof_states(half_heights, materials)
+                    if self._ridge_jogs(half_heights, states):
+                        rotated = None
+                if rotated is None:
+                    half_heights = {c: 2 * (b + 6) - 1 + math.floor(2 * d * pitch)
+                                    for c, d in dist.items()}
+                    states = pitched_roof_states(half_heights, materials)
             for c, d in dist.items():
                 if pitched:
                     y = roof_block_y(half_heights[c])
@@ -399,7 +426,8 @@ class Build:
                 cur = done.get(c)
                 if cur is None or key > cur[0]:
                     done[c] = (key, b, c in self.owner, rm, state, pitched, dist[c] == 0)
-            best = max(dist, key=lambda c: (dist[c] if c in own else -1, -abs(c[0] - sum(x for x, _ in own) / len(own))))
+            depth = rotated if pitched and rotated is not None else dist
+            best = max(dist, key=lambda c: (depth[c] if c in own else -1, -abs(c[0] - sum(x for x, _ in own) / len(own))))
             chim.append((best, b))
         # Chimneys replace roof stairs, so choose corner states against the final skin.
         chimney_cells = {c for c, _b in chim}

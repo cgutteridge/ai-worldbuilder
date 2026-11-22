@@ -23,7 +23,13 @@ docstring):
   snapped down to half-block heights, with stairs, explicit corner shapes,
   solid underlay and slab or opposed-stair ridge caps. The overhanging eave
   ring starts at wall-top level as a bottom slab (shallow pitch) or a stair
-  (steep pitch), with no full block under it. Full-only flatish
+  (steep pitch), with no full block under it. A footprint that is a rotated
+  rectangle (drawn square to an angled road: at least 3 degrees off the grid and
+  filling 75% of its fitted rectangle) takes its pitched heights from the fitted
+  axes, giving a straight ridge with hips; other shapes use the grid edge
+  distance. If the rotated roof would step its ridge sideways (about one in ten
+  sizes), the roof falls back to the grid distance, so it never refuses a roof the
+  grid distance would plan. Full-only flatish
   materials use full blocks instead of inventing a slab variant. Pitched
   materials without a catalogue triad are refused with shared suggestions.
   `mode: group` labels must have equal effective pitches; the first label's
