@@ -41,7 +41,7 @@ def builder_command(name: str, builder: dict) -> list[str]:
         if builder_name == HOUSE_BUILDER:
             from house_build import load_spec
         else:
-            from feature_build import load_spec
+            from feature_spec import load_spec
         try:
             spec = load_spec(path)
         except (OSError, ValueError, SystemExit, TypeError, KeyError, AttributeError) as exc:

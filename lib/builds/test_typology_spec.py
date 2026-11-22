@@ -15,6 +15,7 @@ from unittest import mock
 import numpy as np
 
 import feature_build as F
+import feature_spec as FS
 import house_build as H
 import typology_spec as T
 
@@ -141,7 +142,7 @@ class TypologySpecs(unittest.TestCase):
         self.assertEqual(spec['wall'], 'bricks')
         self.assertEqual(spec['groups'][0]['mode'], 'each')
         self.assertIn('shop with flats above', spec['notes'])
-        loaded = F.load_spec(write_spec(spec))
+        loaded = FS.load_spec(write_spec(spec))
         footprints = {spec['ways'][row['way_id']]: row['cells'] for row in shops}
         with redirect_stdout(io.StringIO()):
             plan = F.build(loaded, footprints=footprints, world=_StoneWorld())

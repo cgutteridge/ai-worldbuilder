@@ -25,8 +25,8 @@ Filename discovery is labelled inferred and cannot authorize reapply. Missing or
 invalid builders stop before undo; a failed rebuild after undo reports the
 remaining undone/partial state and recovery route.
 
-Dry run unless `--apply`; `--apply` refuses a plan that already has a landed build (`element_undo.py` it first, or `--overwrite`). Spec keys
-(full list in the `feature_build` module docstring):
+Dry run unless `--apply`; `--apply` refuses a plan that already has a landed build (`element_undo.py` it first, or `--overwrite`).
+This file is the spec reference; `lib/builds/feature_spec.py` validates these keys:
 
 - `name` — plan / cells-record name
 - `ways` — `{osm_way_id: label}` footprints to build

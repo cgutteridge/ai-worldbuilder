@@ -81,8 +81,8 @@ class AirFilterContracts(unittest.TestCase):
             ('osm_footprints', 'AIRS', tuple, ('air', 'cave_air', 'light', 'void_air', 'water'), True, '_AIR_EXTRAS', None),
             ('floaters', '_AIR', frozenset, ('air', 'cave_air', 'void_air', 'light'), True, '_AIR_EXTRAS', None),
             ('roof_lint', '_SKIP', tuple, ('air', 'light', 'cave_air'), True, '_AIR_EXTRAS', '_AIR_EXCLUSIONS'),
-            ('feature_build', '_OUTSIDE_AIRS', tuple, ('air', 'cave_air'), True, None, '_OUTSIDE_AIR_EXCLUSIONS'),
-            ('feature_build', '_AIRS', tuple, ('air', 'cave_air', 'void_air'), True, None, None),
+            ('feature_facade', '_OUTSIDE_AIRS', tuple, ('air', 'cave_air'), True, None, '_OUTSIDE_AIR_EXCLUSIONS'),
+            ('feature_facade', '_AIRS', tuple, ('air', 'cave_air', 'void_air'), True, None, None),
             ('cell_journal', 'CANCEL', frozenset, ('air', 'light'), True, '_CANCEL_EXTRAS', '_CANCEL_AIR_EXCLUSIONS'),
         )
         self.assertEqual(AIR_IDS, ('air', 'cave_air', 'void_air'))
@@ -100,7 +100,7 @@ class AirFilterContracts(unittest.TestCase):
                 self.assertEqual(set(actual), base | extras)
 
     def test_structural_and_substring_policies_keep_their_separate_extras(self):
-        import feature_build as feature
+        import feature_details as details
         import geo
         import site_walk
         import window_openings as windows
@@ -109,7 +109,7 @@ class AirFilterContracts(unittest.TestCase):
             'air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars',
             'snow', 'grass', 'short_grass', 'tall_grass', 'vine',
         })
-        self.assertEqual((*AIR_IDS, *feature._OPENING_EXTRAS),
+        self.assertEqual((*AIR_IDS, *details._OPENING_EXTRAS),
                          ('air', 'cave_air', 'void_air', 'water', 'lava', 'iron_bars'))
         self.assertEqual(geo.SKIP_LIDAR_TOP,
                          ('air', 'leaves', '_log', 'vine', 'short_grass', 'tall_grass', 'fern', 'flower'))
