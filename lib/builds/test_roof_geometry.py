@@ -194,3 +194,59 @@ class FinalSkinStairShapeTest(unittest.TestCase):
         self.assertEqual(aligned[(0, 5, 1)], 'minecraft:bricks')
         self.assertEqual(stair_shape_mismatches(aligned), [])
         self.assertIn('shape=inner_right', cells[(0, 5, 0)])
+
+
+def rotated_rect(length, width, degrees, cx=20.0, cz=20.0):
+    """Cells whose centres fall inside a ``length`` x ``width`` rectangle rotated ``degrees``."""
+    import math
+    a = math.radians(degrees)
+    c, s = math.cos(a), math.sin(a)
+    cells = set()
+    for x in range(int(cx - length), int(cx + length) + 1):
+        for z in range(int(cz - length), int(cz + length) + 1):
+            dx, dz = x + 0.5 - cx, z + 0.5 - cz
+            if abs(dx * c + dz * s) <= length / 2 and abs(-dx * s + dz * c) <= width / 2:
+                cells.add((x, z))
+    return cells
+
+
+class RotatedHipFitTest(unittest.TestCase):
+    """#415: a house drawn square to an angled road gets straight ridge and hip lines."""
+
+    def test_fit_finds_the_rotation_of_a_rotated_rectangle(self):
+        from roof_geometry import fit_rotated_rectangle
+        for degrees in (20, 35, 50, 70):
+            with self.subTest(degrees=degrees):
+                fit = fit_rotated_rectangle(rotated_rect(14, 8, degrees))
+                self.assertIsNotNone(fit)
+                # Sides repeat every 90 degrees; accept the long axis or its perpendicular.
+                self.assertTrue(min(abs(fit[0] - degrees % 90), 90 - abs(fit[0] - degrees % 90)) <= 3, fit)
+                self.assertGreaterEqual(fit[5], 0.75)
+
+    def test_square_on_and_irregular_footprints_keep_the_grid_field(self):
+        from roof_geometry import fit_rotated_rectangle, rotated_hip_depth
+        square = {(x, z) for x in range(9) for z in range(6)}
+        ell = {(x, z) for x in range(10) for z in range(10) if x < 5 or z < 5}
+        for name, cells in (('axis-aligned', square), ('L', ell), ('empty', set())):
+            with self.subTest(shape=name):
+                self.assertIsNone(fit_rotated_rectangle(cells))
+                self.assertIsNone(rotated_hip_depth(cells, cells))
+
+    def test_depth_has_a_straight_ridge_and_a_zero_eave_ring(self):
+        import math
+        from roof_geometry import rotated_hip_depth
+        from cellmath import N8
+        own = rotated_rect(14, 8, 30)
+        roof = own | {(x + dx, z + dz) for x, z in own for dx, dz in N8}
+        depth = rotated_hip_depth(own, roof)
+        self.assertEqual(set(depth), roof)
+        self.assertTrue(all(d >= 0 for d in depth.values()))
+        self.assertTrue(any(d == 0 for d in depth.values()))
+        top = max(depth.values())
+        ridge = [c for c, d in depth.items() if d >= top - 0.75]
+        # The ridge cells lie along one line through the centre, along the long axis (30 degrees).
+        a = math.radians(30)
+        across = [-(x + 0.5) * math.sin(a) + (z + 0.5) * math.cos(a) for x, z in ridge]
+        self.assertLess(max(across) - min(across), 2.5)
+        along = [(x + 0.5) * math.cos(a) + (z + 0.5) * math.sin(a) for x, z in ridge]
+        self.assertGreater(max(along) - min(along), 3.0)

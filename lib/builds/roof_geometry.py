@@ -7,6 +7,7 @@ functions over ``{(x, z): ...}`` dicts; no world, plan or builder state.
 """
 from __future__ import annotations
 
+import math
 from collections import deque
 from dataclasses import dataclass
 
@@ -499,3 +500,65 @@ def chebyshev_depth(rs: set) -> dict[tuple[int, int], int]:
                     nq.append(n)
         q = nq
     return dist
+
+
+ROTATED_MIN_FILL = 0.75     # footprint cells / fitted rectangle area below which no rectangle is fitted
+ROTATED_MIN_ANGLE = 3       # degrees from a cardinal axis below which the footprint counts as square-on
+
+
+def fit_rotated_rectangle(own: set) -> tuple[int, float, float, float, float, float] | None:
+    """Minimum-area rectangle around footprint cell centres, when the footprint is a rotated rectangle.
+
+    A house drawn square to an angled road rasterises to a staircase outline whose Chebyshev
+    edge distance wobbles, so a pitch laid on it comes out patchy. Fitting the footprint's own
+    axes gives straight ridge and hip planes instead, quantised to half-block heights. Footprints that are square to the grid, or
+    that do not fill a rectangle well (L shapes, groups), return ``None`` and keep the grid field.
+
+    @param own: owned ``(x, z)`` columns of the roof
+    @returns: ``(angle_deg, u_min, u_max, v_min, v_max, fill)`` in the rotated frame
+        (``u`` along ``(cos a, sin a)``, ``v`` across), or ``None``
+    """
+    if not own:
+        return None
+    pts = [(x + 0.5, z + 0.5) for x, z in own]
+    best = None
+    for deg in range(90):
+        a = math.radians(deg)
+        c, s = math.cos(a), math.sin(a)
+        us = [x * c + z * s for x, z in pts]
+        vs = [-x * s + z * c for x, z in pts]
+        area = (max(us) - min(us) + 1) * (max(vs) - min(vs) + 1)
+        if best is None or area < best[0] - 1e-9:
+            best = (area, deg, min(us), max(us), min(vs), max(vs))
+    area, deg, u0, u1, v0, v1 = best
+    fill = len(own) / area
+    if fill < ROTATED_MIN_FILL or min(deg, 90 - deg) < ROTATED_MIN_ANGLE:
+        return None
+    return deg, u0, u1, v0, v1, fill
+
+
+def rotated_hip_depth(own: set, roof: set, pad: float = 1.0) -> dict[tuple[int, int], float] | None:
+    """Distance of each roof column inside the fitted rectangle's eave outline, for a rotated hip.
+
+    The outline is the rectangle from :func:`fit_rotated_rectangle` grown by ``pad`` cells, so the
+    outermost eave ring sits at 0 and depth rises toward a straight ridge along the long axis
+    with hips at the ends. Heights taken from it are planes, so the ridge has no jogs.
+
+    @param own: owned ``(x, z)`` columns of the roof
+    @param roof: every roof column (footprint plus eave ring)
+    @param pad: eave overhang in cells beyond the outermost footprint centres
+    @returns: ``{(x, z): depth}`` over ``roof`` (float, never negative), or ``None`` when the
+        footprint is not a rotated rectangle
+    """
+    fit = fit_rotated_rectangle(own)
+    if fit is None:
+        return None
+    deg, u0, u1, v0, v1, _fill = fit
+    a = math.radians(deg)
+    c, s = math.cos(a), math.sin(a)
+    out = {}
+    for x, z in roof:
+        u = (x + 0.5) * c + (z + 0.5) * s
+        v = -(x + 0.5) * s + (z + 0.5) * c
+        out[(x, z)] = max(0.0, min(u - (u0 - pad), (u1 + pad) - u, v - (v0 - pad), (v1 + pad) - v))
+    return out

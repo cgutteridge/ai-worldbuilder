@@ -172,6 +172,26 @@ class RoofGeometryTest(unittest.TestCase):
                              for q, state in self.plan(kind, pitch).cells.items()}
                     self.assertEqual(hashlib.sha256(json.dumps(sorted(short.items())).encode()).hexdigest(), digest)
 
+    def test_rotated_rectangle_gets_a_clean_hip(self):
+        """#415: heights come from the fitted axes, so the roof lints clean and reads as one hip."""
+        from roof_lint import ridge_jogs, stair_shape_mismatches
+        from test_roof_geometry import rotated_rect
+        for degrees in (20, 35, 55, 70):
+            for pitch in (0.75, 1):
+                with self.subTest(degrees=degrees, pitch=pitch):
+                    cells = rotated_rect(14, 8, degrees)
+                    p = self.plan(parts=[cells], pitch=pitch, mode='each')
+                    self.assertEqual(ridge_jogs(p.cells), [])
+                    self.assertEqual(stair_shape_mismatches(p.cells), [])
+                    H.guard_roof_jogs(p)
+                    ys = [y for (x, y, z), s in p.cells.items() if y >= 36 and 'brick' in s]
+                    self.assertTrue(3 <= max(ys) - 36 <= 6, max(ys))
+                    stairs = [q for q, s in p.cells.items() if '_stairs[' in s and q[1] >= 36]
+                    self.assertGreaterEqual(len(stairs), 20)
+                    self.assertEqual(sorted({s.split('facing=')[1].split(',')[0]
+                                             for s in (p.cells[q] for q in stairs)}),
+                                     ['east', 'north', 'south', 'west'])
+
     def test_pitched_eave_edge_is_a_slab_or_stair_with_nothing_under_it(self):
         """#414: the overhanging eave ring starts at wall-top level as a slab (shallow) or stair (steep)."""
         for kind in ('square', 'L', 'group'):
