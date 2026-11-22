@@ -11,7 +11,7 @@ description: >-
 
 # Parallel task wave
 
-Part of the core tier of the `local-tasks` kit. Ship a **wave** of local-tracker tickets (`tasks/index.json`) with isolated workers and one **orchestrator**. Pair with `task-index-manager` for all tracker reads/writes.
+Part of the core tier of the `local-tasks` kit. Ship a **wave** of local-tracker tickets (`tasks/index.json`) with isolated workers and one **orchestrator**. Pair with `worldbuilder-tasks` for all tracker reads/writes.
 
 **Project settings.** If `docs/agents/parallel-task-wave.md` exists, read it first. It adds project rules (for example a review-and-merge gate run before each merge, or a project wave-lock command) and wins over this skill where it is stricter.
 
@@ -40,7 +40,7 @@ Workers leave `tasks/index.json` and `tasks/done.json` untouched. The orchestrat
 
 Completion: main checkout is clean enough to branch from, the frontier list is written down, and this chat holds the wave lock.
 
-1. Read the tracker via `task-index-manager`.
+1. Read the tracker via `worldbuilder-tasks`.
 2. Build the **frontier**: status `todo` (or equivalent ready), empty/resolved `blockedBy`, not deferred unless the user said to include deferred.
 3. `git status` on the primary checkout. If unrelated WIP would be missing from worker bases, stop and tell the user — stash/commit/elsewhere first.
 4. **Wave lock** — acquire before launch. If the project settings name a wave-lock command, use it. For example, a repo that ships `scripts/pre_commit_checks.py`:
@@ -73,7 +73,7 @@ When a worker returns:
 
 1. Merge its branch into `main` (merge commit fine; fast-forward fine).
 2. Resolve tracker-file conflicts by **keeping every valid completion** (union of done moves). Resolve real code conflicts so both behaviours survive when both belong.
-3. Via `task-index-manager`, move that task from `index.json` → `done.json` only after the merge landed (`node scripts/tasks.mjs close ID --sha FULL_SHA --note "..."` where the CLI exists).
+3. Via `worldbuilder-tasks`, move that task from `index.json` → `done.json` only after the merge landed (`node scripts/tasks.mjs close ID --sha FULL_SHA --note "..."` where the CLI exists).
 4. Unblock dependents; launch newly unblocked frontier tickets the same way if the user asked to keep going.
 
 If a worker failed, record it as unmerged/failed for the close step; do not archive it.
@@ -130,7 +130,7 @@ When finished, return:
 
 ## Out of scope
 
-- Replacing `task-index-manager` or changing tracker schema.
+- Replacing `worldbuilder-tasks` or changing tracker schema.
 - Auto-resolving semantic merge conflicts.
 - Place/world build queues, site locks, or cell-style orchestrators.
 - A mandatory closer binary (skill steps + git are enough for v1).

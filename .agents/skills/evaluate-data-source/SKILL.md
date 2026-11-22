@@ -45,4 +45,4 @@ Output exactly:
 5. **Why** (3 bullets max)
 6. **Next:** if add → invoke `add-data-source`; else stop
 
-Play `need-you` only if the human must choose between two close candidates.
+Optional cues follow `docs/agents/world-and-live-commands.md#sound-cues`.

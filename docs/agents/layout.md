@@ -7,7 +7,9 @@ Read this when you need to find where a tool, config or record is kept. `AGENTS.
 | Active world pointer | `active_world.py` |
 | World checkouts | `worlds/<name>/` (gitignored; own git repos) |
 | Minecraft instance + saves | standalone, outside this repo; `world.json` `save_path` references the save (read-only to the tool; only `scripts/new_blank_world.py` creates one); setup: [docs/minecraft-instance-setup.md](../minecraft-instance-setup.md), check: `scripts/check_instance.py` |
-| System tracker | `tasks/` |
+| System tracker | `tasks/`; project skill `worldbuilder-tasks` |
+| Place memory | World `site/NOTES.txt` (read first), `site/REVIEWS.txt`, generated `site/COVERAGE.txt`; reference logging in `reference/LOGGING.txt`, assets indexed in `reference/manifest.jsonl` |
+| World views | Optional `config/views.json` eye/look cameras; `scripts/site_views.py` writes `verification/site/views/` |
 | System providers | `config/system-providers.json` + `providers/<id>/` (tool root) |
 | World providers | active world `config/local-providers.json` + `providers/<id>/` |
 | Provider CLIs | `shims/` (system + world-provider entry points); code under each `providers/` tree |

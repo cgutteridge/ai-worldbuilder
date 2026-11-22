@@ -4,14 +4,14 @@ There is one work tracker for tool engineering, and world work has its own.
 
 | Work | Where it is tracked |
 | --- | --- |
-| Tool engineering (scripts, libraries, skills, providers, process) | `tasks/index.json` (active: `todo`, `blocked`, and `doing` if an orchestrator sets it; no skill here requires it) and `tasks/done.json` (completed). Read and change them through the `task-index-manager` skill. |
+| Tool engineering (scripts, libraries, skills, providers, process) | `tasks/index.json` (active: `todo`, `blocked`, and `doing` if an orchestrator sets it; no skill here requires it) and `tasks/done.json` (completed). Read and change them through the `worldbuilder-tasks` skill. |
 | World work (cell registry, issues, place builds) | The active world's own repo under `worlds/` (ADR 002). Never add it to `tasks/`. |
 
 If it is unclear whether work is tool or world, ask (ADR 002).
 
 ## When a skill says "publish to the issue tracker"
 
-For tool work, add a task to `tasks/index.json` through the `task-index-manager` skill. Put a specification in `docs/specs/` or `docs/plans/` and link it from the task notes. Do not create ticket files. When that ticket is done and no open ticket still cites the file, move it to `docs/archive/` (history, not current guidance). Place history, including a world's snags and dry-run notes, belongs in that world repo.
+For tool work, add a task to `tasks/index.json` through the `worldbuilder-tasks` skill. Put a specification in `docs/specs/` or `docs/plans/` and link it from the task notes. Do not create ticket files. When that ticket is done and no open ticket still cites the file, move it to `docs/archive/` (history, not current guidance). Place history, including a world's snags and dry-run notes, belongs in that world repo.
 
 ## When a skill says "fetch the relevant ticket"
 
@@ -21,14 +21,10 @@ Tasks carry no triage label, only a status. Workers on `task/*` branches never e
 
 ## Builder-task flag on creation and updates
 
-Read [task model requirement](model-and-effort.md#task-model-requirement) before
-creating, updating or dispatching a system task. Every active task must have an
-explicit boolean `builderTask`; the pre-commit hook checks staged flags even
-on tracker-only commits. Classify from the whole required scope and acceptance
-checks. Use the CLI's required `--builder-task true|false` on `add` and `update`;
-scope updates must reassess it, not blindly copy the old value. Direct edits to
-priority/blockers must preserve it; direct scope edits must reassess it as well.
-Archival retains it. Clearing a true flag needs a recorded scope reason.
+Follow [task model requirement](model-and-effort.md#task-model-requirement)
+for classification, flag changes and dispatch. The CLI requires
+`--builder-task true|false` on `add` and scope `update`; the pre-commit hook
+validates staged flags, including tracker-only commits.
 
 ## Sizing tasks
 
@@ -63,12 +59,10 @@ node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 Run mutations on `main` only, because the pre-commit hook rejects tracker edits
 on `task/*` branches. Read-only `show`, `list` and `check-run` are also available
 to workers. Priority/blocker edits remain direct edits through the
-`task-index-manager` skill. This tracker has no triage tags, so `list --ready`
+`worldbuilder-tasks` skill. This tracker has no triage tags, so `list --ready`
 lists every `todo` task with no `blockedBy`, marking builder tasks.
 Readiness alone does not establish runner eligibility: run `check-run` before
 dispatch, including when task status is managed without `status doing`.
-
-The kit copy of `task-index-manager` has the same name as the personal one in `~/.claude/skills`; Claude Code may load the personal skill instead of the project one, so the CLI guidance here may not be what an agent sees until the personal skill is removed; check with `/skills`.
 
 The local CLI and its project extensions are tested by `scripts/tasks.test.mjs`,
 run through `scripts/test_tasks_cli.py` in `scripts/run_tests.py`. Keep project

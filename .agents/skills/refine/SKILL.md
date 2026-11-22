@@ -48,7 +48,7 @@ Done when every defect has a class, a one-line why, and a yes/no/maybe on "other
 ## 3. Fix
 
 1. Smallest change that removes the defects: patch the input or generator for the cause class, then re-run the existing path (`feature_build`, the layer script, or a new `modifies=()` build). Prefer fixing the cause over adding a branch for this case.
-2. Dry run first. Then lock and apply: `python3 scripts/site_lock.py run <owner> "refine <name>" -- <cmd>`. Readback clean.
+2. Dry run first. Follow `rules/slow-commands.md#execution`: `python3 scripts/site_lock.py --world <world> run <owner> "refine <name>" -- <cmd>`. Readback clean.
 3. Verify with what already exists: readback, `roof_lint.py --all` after pitched roofs, `osm_footprints.py check`, one `view_capture` against the first one. Writing a new test or fetching new imagery needs a reason the existing checks cannot see this defect.
 4. Hover the player over the target if they are on the server (`mc_player.py move --why …`, as in `redo`).
 
@@ -61,11 +61,11 @@ Builders do not propose or add tool tasks. Diagnosis and tasks are a human step 
 - **General:** names a failure class and the build types it touches; no street names, building ids or coordinates in the title or notes (those go in the issue).
 - **Upstream:** changes a generator, shared `lib/` function, evidence step or rule so the defect cannot recur. Prefer extending an existing check or rule over a new one; a new special case for one building type is a rejection.
 - **Cheap:** its proof is a unit test on `MemoryBlocks` or an existing audit. No new live-world test, no new fetches.
-- **New:** `tasks/index.json` and `tasks/done.json` searched for the same cause first; if found, add a note to that task instead.
+- **New:** `tasks/index.json` and `tasks/done.json` searched for the same cause first; if found, cite the existing task in the issue note.
 
 File up to three lessons, each with: cause class, which build types it helps, how it could be proven. Say "no general lesson" when that is the truth. All of it goes through the `snag` skill (`scripts/issues.py`); do not edit `tasks/`.
 
-Done when each defect is covered by a landed fix, a task, an issue, or "accepted", and any general lesson is filed on its issue.
+Done when each defect is fixed, recorded on an issue (with any existing task linked), or accepted by the owner, and any general lesson is filed on its issue.
 
 ## 5. Check with the human
 

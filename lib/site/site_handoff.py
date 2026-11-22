@@ -46,18 +46,13 @@ NEXT_CHAT_CMD = 'python3 scripts/cell_registry.py next'
 NEXT_CHAT_USER_MSG = (
     f'Follow the instructions given by running: {NEXT_CHAT_CMD}'
 )
-CHAIN_CEILING = '~100K tokens'
 CHAIN_RULE = (
-    'Chain rule: when an item is done and needs no user check (readback/patrol clean, '
-    'nothing for human eyes, no "awaiting user visual check") and context is still small '
-    f'(under {CHAIN_CEILING}), skip `end` and run `{NEXT_CHAT_CMD}` here to continue with '
-    'the next item. Otherwise hand off with `end`.'
+    'Run registry tasks through .agents/skills/cell-orchestrator/SKILL.md; '
+    'each task runs in a fresh session, within the owner-authorized stop limit.'
 )
 AUTO_START_RULE = (
-    'Begin the top queue item immediately in this session: check lock, read '
-    'only PROCESS slices + rule files under RULES READING in the SESSION BRIEF, '
-    'then execute the item end-to-end. Do not ask the user whether to start — '
-    f'running `{NEXT_CHAT_CMD}` (or receiving this starter) is their go-ahead.'
+    'Follow .agents/skills/cell-orchestrator/SKILL.md for task dispatch, '
+    'preflight and stop limits. Read only the task context in rules/rules-context.md.'
 )
 SANDBOX_SAY_HINT = (
     'A command sandbox mutes macOS `say` (exit 0, no audio).\n'

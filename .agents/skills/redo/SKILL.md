@@ -31,35 +31,17 @@ Done when the JSON is in hand.
 
 ## Checked execution (every branch)
 
-For feature redesign, prepare evidence and the feature hand-off before live work.
-Run each manual feature command below (undo, apply or player move) through the
-lock wrapper, from the tool root:
+Follow [locked execution and background runs](../../../rules/slow-commands.md#execution).
+For each manual feature undo, apply or player move, use:
 
 ```bash
 python3 scripts/site_lock.py --world <world> run <owner> "redo <target>" -- <command>
 ```
 
-Layer redos (§2) and reapply (§3) own their sequence locks; call their wrappers directly.
-
-Substitute the complete command from the chosen branch for `<command>`, including
-its own `--world <world>`. The wrapper supplies `SITE_OWNER` and releases the
-lock on success, failure or interrupt. If the lock is refused, stop. Manual feature
-steps acquire a lock per command. The layer wrapper holds one lock across its
-entire sequence; call it directly, without an outer site_lock run.
-
-Start undo/apply commands **in the background from the start**, retaining their
-logs and final exit status; see `rules/slow-commands.md`. Wait for each to finish
-before starting the next step. Background launch is not completion: check the
-process exit status and readback before reporting success.
-
-Keep failures visible: run commands directly, with no `tail`/logging pipeline
-that can replace their exit status. A failed undo, dry run, apply or hover stops
-the remaining steps. Report which steps landed and which remain undone; use
-`python3 scripts/site_recover.py --world <world> status` for a journal entry left
-`begun`, or `python3 scripts/cell_registry.py --world <world> reconcile tx,tz` for
-drift. Neither automatic retry nor `--skip-changed` is part of redo. Cue
-`party-cheer` only after success; a missing sound cue does not change a successful
-build result.
+Include `--world <world>` in the child command. Layer redo (§2) and reapply
+(§3) own their sequence locks. Prepare feature evidence and the hand-off before
+live work. A failed step stops the redo; report what landed and what remains.
+Neither automatic retry nor `--skip-changed` is part of redo.
 
 Done when every step has a checked result and its lock has been released.
 
@@ -97,14 +79,8 @@ Done when they are hovering and looking down at the target.
 3. Resolve build roles (`python3 scripts/build_roles.py --world <world> show` or overrides). Name designer + builder in the session before applying.
 4. Prepare the feature redesign below; only the builder runs live commands when models differ.
 5. **Hover** (above) before the first undo or apply, using checked execution.
-6. **Evidence table first** (`rules/building-review.md` B57 / reflection step 1). Do **not** read the old build’s placed blocks or the old script’s material/geometry choices as reference. Keep only the re-run mechanism. Rewrite `scripts/<script>` (or `site/builds/<name>.json` for `feature_build`) from the table. Every row below must be filled in the script docstring before planning:
-
-   | Fact | Source |
-   | --- | --- |
-   | Footprint | vector map (+ university outline if campus) |
-   | Heights / roof levels | lidar (`scripts/lidar_heightmap.py` / grid), not aerial colour reads |
-   | Walls, openings, doors | street photos; optional `entrance_register` + `building_register` catalogue roles → `facade_plan` entrances (`python3 shims/portals.py --world <world>`, `python3 shims/buildings.py --world <world>`) |
-   | Roof colour + **greeblies** | aerial sheet (`python3 shims/google_aerial.py --world <world>` / `python3 shims/google_window.py --world <world>`) |
+6. **Evidence table first** (`rules/building-review.md` B57 / reflection step 1). Do **not** read the old build’s placed blocks or the old script’s material/geometry choices as reference. Keep only the re-run mechanism. Rewrite `scripts/<script>` (or `site/builds/<name>.json` for `feature_build`) from the table. Fill the evidence table in the script docstring or spec notes using
+   `rules/evidence-order.md`; it owns the source ranking for every fact.
 
    **Greeblies are mandatory** (`rules/craftsmanship.md` GREEBLIES; building-review). From the aerial sheet, list every plant box, capped box vent, louvre, recessed skylight, hollow industrial chimney, solar panel, lift overrun and parapet worth reading at street scale — or write `greeblies: none visible` in the spec `notes`. A shell-only plan is not a finished redo. For `feature_build`, put them in the spec `details` table (`rules/feature-builds.md`); they rebuild with the building. Heights of plinths/plant from lidar; colours and XY from the aerial sheet. Skylight at means roof-top Y and its entire box must be on roof; it replaces one layer. Vents are concrete boxes with trapdoor caps. Chimneys are hollow open rings, round or square and optionally tapered: size from photos and explicit spec dimensions, with lidar only a rough warning. Facade greeblies (drainpipe, sign, canopy, ledge, fascia) come from street photos into the same table.
 
@@ -114,7 +90,7 @@ Done when they are hovering and looking down at the target.
 7. **Readiness check, then clear the old build** (`rules/build-workflow.md` step 3: journal clean, ground and door-front levels match lidar, dry run on the current world). Do not undo before it passes. **Clear the old build first.** If the feature has a landed journal entry (it was built before), `python3 scripts/element_undo.py --world <world> <name> --apply` through the lock wrapper *before* applying. A plain re-apply only writes the new plan's cells, so old roof, stair and edit blocks outside it survive. Use `python3 scripts/cell_registry.py --world <world> query --feature <name>` to establish whether a landed entry needs undo; `redo_here` only locates the target. Skip undo only when no landed entry exists.
 8. Dry run with `python3 scripts/<script> --world <world>` (or `python3 scripts/feature_build.py --world <world> <absolute-spec-path>`), then run the same command with `--apply`. Resolve the spec to its absolute path under the chosen world first. Require exit 0 and readback 0 mismatches.
 9. **Hover** again if the player moved during apply.
-10. Check command completion and lock release as above, then cue `party-cheer`.
+10. Check command completion and lock release as above; optional cues follow `docs/agents/world-and-live-commands.md#sound-cues`.
 
 Done when readback is clean, the docstring has a greeblie list (or explicit none), greeblies are applied, they are hovering looking down, and the lock is released. Say what was rebuilt (name + script).
 
@@ -132,16 +108,14 @@ save identity, readiness and relevant masks; it leaves blocks and the player
 unchanged. This previews operations, not an assertion that a pre-undo geometry
 plan will equal the post-undo plan.
 
-Run the same selection with `--apply`, in the background from the start:
+Run the same selection with `--apply` using checked execution:
 
 ```bash
 python3 scripts/redo_layer.py --world <world> --cell tx,tz --layers trees,decor --apply
 ```
 
-The caller retains the log and final exit status. The wrapper runs its children
-synchronously with streamed output, holds one lock, stops remaining child
-processes before releasing it, and does not detach its own worker. Background
-launch is not completion; wait for the exit status and final JSON.
+The wrapper streams synchronous children and stops them before releasing its
+sequence lock. Wait for its final JSON as well as its exit status.
 
 - Layers apply in `ground -> trees -> decor` order regardless of argument order.
   Trees redo first undoes existing decor, then existing trees. Only requested
@@ -188,8 +162,7 @@ python3 scripts/reapply_feature.py --world <world> <name>
 python3 scripts/reapply_feature.py --world <world> <name> --apply
 ```
 
-Inspect the dry run, then background the entire live command while retaining its
-log and final status. Call directly: the wrapper holds one lock through builder
+Inspect the dry run, then use checked execution. The wrapper holds one lock through builder
 validation, undo, apply and journal outcome verification. Relative spec paths
 belong to the selected world's checkout; absolute paths are supported. It never
 migrates an invalid spec, adds `--overwrite`, or executes journal command text.
@@ -226,4 +199,4 @@ require a designer/builder hand-off.
 - One builder: never apply without a fresh `SITE_OWNER` lock.
 - Fail closed on mask conflicts / readback mismatches (`site_recover.py` if a journal entry is left `begun`; `reconcile` if blocks drifted).
 - Feature redesign never uses the previous build as evidence.
-- Moving the player is allowed for hover (this skill); end cue is always `party-cheer` (`yay` is broken).
+- Moving the player is allowed for hover (this skill).

@@ -103,13 +103,7 @@ hand. Use `--no-push` only when the owner asks to keep the merge local.
 ## Stop (cap or any halt)
 
 Leave the branch **unmerged**. Tell the owner the branch name, last verdict,
-and what is left. Play the optional local cue if installed:
-
-```bash
-if [ -f "$HOME/Projects/agent-soundboard/scripts/play.py" ]; then
-  python3 "$HOME/Projects/agent-soundboard/scripts/play.py" need-you
-fi
-```
+and what is left. Optional cues: `docs/agents/world-and-live-commands.md#sound-cues`.
 
 ## Model policy
 
@@ -133,8 +127,8 @@ Verification performed when authoring:
 
 1. Skill path and frontmatter present under `.agents/skills/ship-branch/` (with a stub in `.claude/skills/`).
 2. Commands named above match the repo (`scripts/run_tests.py`,
-   `scripts/ship_branch.py merge <branch>`, soundboard `need-you`).
+   `scripts/ship_branch.py merge <branch>`).
 3. Review inputs exist: `CODING_STANDARDS.md`, `GLOSSARY.md`, `docs/adr/`.
 4. Mental walk of a trivial noop change: green tests → reviewer APPROVE →
    `ship_branch.py merge` — or CHANGES blockers → fixer (round 1) → re-test →
-   re-review, stopping at round 3 with `need-you` if still blocked.
+   re-review, stopping at round 3 if still blocked.

@@ -37,8 +37,7 @@ whole run on a fresh lock held by another owner, two consecutive failed cells, a
 API/tool error, a repeated patrol flag across features, an ambiguous task, or the stated time/
 cell/item limit. Never touch hand-made cells, commit, or edit shared scripts unattended.
 
-A trees build in this mode is started through the lock runner with an 8 minute budget. The builder
-uses the `SITE_OWNER` that runner sets, and does not claim a different owner:
+Execution follows `rules/slow-commands.md#execution`. A trees build in this mode uses the lock runner with an 8 minute budget:
 
 ```bash
 python3 scripts/site_lock.py --world <world> run <owner> "trees <tx>,<tz>" \

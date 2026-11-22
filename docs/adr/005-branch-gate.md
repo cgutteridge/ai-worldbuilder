@@ -19,7 +19,13 @@ clear merge ritual so “committed on a branch” is not mistaken for “on main
    `don't merge`, or ticket field `review: skip`.
 2. **Tracker and docs on main.** Tracker-only and docs-only edits commit
    straight to `main` under the existing pre-commit checks. Do **not** invent
-   `tracker/*` branches for system-tracker archive hops.
+   `tracker/*` branches for system-tracker archive hops. Eligibility is
+   `ship_branch.is_docs_only_path`: `tasks/`, `docs/`, any `.md`, and the
+   root documentation files listed there. This differs from the hook fast
+   path: markdown under `rules/`, `.agents/` and `.claude/` still runs the
+   unit suite for audits and skill-stub checks. Other docs/tracker-only
+   commits skip it but validate staged tracker JSON; mixed/code commits
+   keep the full checks.
 3. **Sweep on start and done.** Agents run `python3 scripts/ship_branch.py sweep`
    from Start and from the closing-a-thread rule (both in AGENTS.md; the project
    `done` skill that first carried it was removed, see the note below), so unmerged
