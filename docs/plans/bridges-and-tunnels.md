@@ -1,105 +1,144 @@
-# Bridges and tunnels: scope
+# Bridges and tunnels: feature design (#380)
 
-Scoping note, 2026-11-22. Not a design and not a task. It comes out of the railway trial ([railway](railway.md)):
-the owner ruled that bridges and tunnels are not a railway job, because the `bridge` and `tunnel` tags cover roads,
-paths, rail and water carriers, so one general piece of work serves all of them.
+Accepted owner design, 2026-11-22, confirmed after the complete interview. See
+[ADR 009](../adr/009-structure-features.md). Follow-up tickets remain
+drafts and must not be added to the tracker without the owner's instruction.
 
-## Where things stand today
+## Decisions
 
-Bridges and tunnels are already named in the pass order as **major features** with their own build and undo
-(`rules/handoff-layered-passes.md` section 1; "Feature" in `GLOSSARY.md`). Two questions in that rules file are still
-open: whether they need a separate pass type (line 140), and whether the feature keeps the crown rather than yielding to
-it (lines 176 to 177, "to be decided when we do the first bridge").
+- **One structure feature type**, with `kind: bridge|tunnel`. Each mapped structure
+  is its own named major feature; it is not a ground, trees or decor pass.
+- **Three-dimensional ownership.** Its footprint covers every changed structural
+  block, excavation and required clear-air position across all touched cells.
+  A tunnel can run below ground, with entrances and approaches partly above it.
+  Ground can remain under a bridge and over a tunnel; later passes must preserve
+  the structure and its clearance rather than reserve an entire vertical column.
+- **Whole-structure undo.** One feature, one logical backup and one undo across
+  all cells. Large backups may be tiled by the existing structure-backup path.
+  Every affected cell refers to the same feature. These are not mask-only undos.
+- **Ordinary structures use recipes.** Beam road bridges, footbridges, simple rail
+  viaducts, culverts/underpasses and simple tunnels use evidence-driven recipes.
+  Claude designs distinctive landmarks and unusual structures individually.
+- **Usable rough fallback.** If the preferred recipe cannot fit the evidence,
+  simplify appearance, supports and terrain fit. Keep the carried route connected,
+  clearance usable and all writes inside the footprint. Report the fallback and
+  its reasons. If even these limits cannot be met, report the exact location and
+  conflict before writing that structure; independent valid structures may proceed.
+- **Height and crossing evidence.** Use reliable lidar structure columns for deck
+  height, not the terrain beneath a deck. Check mapped carriers/layers and the
+  road, rail or water crossed, plus any abutting railway join levels. Report
+  uncertain heights as inference and use a simpler usable fallback where evidence
+  is incomplete. A tunnel needs a usable bore and sufficient cover outside portals.
+- **Railway joins retain their settled rule.** A line plans its level continuously
+  through a structure span, builds nothing in that gap and records both ends
+  (cell, level, direction, tracks). A rail-carrying structure builds after both
+  abutting line features exist, refuses as not ready until then, and supplies
+  the connecting rails at those recorded levels.
+- **Tree crowns follow the same volume rule.** Preserve crowns outside the
+  structure and required clearance, including above tunnels. Clear intrusions
+  through the normal feature/journal handling and existing neighbour follow-ups.
+  Do not clear a whole vertical column solely because a structure passes through it.
+- **Level crossings remain separate features.** They use the same railway join
+  contract. Gates, lights and bell come from map tags; style and colours come from
+  the crossing's own evidence/design. The bridge/tunnel recipe fallback does not
+  introduce an unspecified crossing style.
 
-What the code does with them now:
+## Current implementation and resulting boundary
 
-- **Nobody builds a deck.** The ground layer leaves a mapped bridge's columns free and puts ground at lidar terrain height
-  under it; the deck is "a structure's, never ground" (`lib/layers/ground_layer.py`, task 298). With no structure
-  builder, a highway tagged as a bridge is not surfaced at all (`ground_sources.py` records its columns as `deck`
-  and returns before laying any road surface), so the road has a gap there. Railways are not extracted yet, so
-  rail bridges are not handled either way.
-- **Tunnels are half handled.** A tunnel is not surfaced as a road, and the ground above it is ground as normal
-  (task 298; `lib/sources/ground_sources.py`). Nothing builds the bore or portals.
-- **Other code already routes round them:** road labels skip tunnels and keep clear of decks
-  (`lib/layers/road_labels.py`), the water-level pass raises short bridge and culvert dips
-  (`lib/builds/water_level.py`), and `lib/layers/ground_float_audit.py` reports bridge columns no real ground owns.
-- **Evidence exists.** The vector map gives `bridge`, `tunnel`, `layer`, `bridge:structure`, `man_made=bridge` and the carrier
-  way. Composite lidar marks tall solid outside any footprint as kind 4 "structure" (`lib/sources/lidar_heightmap.py`),
-  which is usable evidence for deck height.
+Ground already leaves mapped bridge deck columns to a structure and uses lidar
+terrain below; a tunnel's surface remains ordinary ground. There is no general
+bridge deck, tunnel bore or portal builder. Road labels avoid decks/tunnels;
+water profiling already recognises short bridge/culvert dips. Railway evidence
+extraction exists in `lib/sources/railway_evidence.py`; production line integration
+and crossing integration are #382 and #383.
 
-## What a general feature would cover
+Map tags (`bridge`, `tunnel`, `layer`, `bridge:structure`, carrier ways) and lidar
+structure columns are the evidence inputs. A road/path bridge over a railway is
+an overhead structure, not a railway gap. Keep railway clearance usable and do
+not interpret a deck as vegetation. A structure that carries the railway is a gap
+filled by that structure feature.
 
-| Piece | Bridge | Tunnel |
-| --- | --- | --- |
-| Carrier | road, path, rail, canal or aqueduct deck surface | the same carriers, underground |
-| Evidence | tags, deck height from lidar structure columns, what is crossed (road, rail, water, nothing) | tags, portal positions where the way goes underground |
-| Build | deck, parapets or railings, piers and abutments, approach ramps, clearance underneath | portals, cut approaches, a bored tube with a roof; the surface above stays ground |
-| Crossing rule | clearance from what is crossed (road, rail or water level) | cover over the bore |
-| Meets railway | the line feature builds nothing in the gap and records level, direction and tracks at each end; the bridge feature includes the rails across and joins those records | same |
+Domain definitions live in [GLOSSARY.md](../../GLOSSARY.md); pass and ownership
+rules belong in [layered passes](../../rules/handoff-layered-passes.md) section 4.
+Implementation of the decisions is the follow-up work below.
 
-## Already decided (owner, 2026-11-22, from the railway work)
+## Draft follow-up A: bridge and tunnel evidence
 
-- Each bridge, tunnel and level crossing is **its own feature**, Claude-designed from evidence like any feature. It
-  MAY include rail lines, and records which abutting railway features it joins (cell, level, direction, tracks).
-- It is built **after** the abutting line features and refuses ("not ready") until both exist. The line is planned
-  through the span but builds nothing in the gap. Details: [railway](railway.md), decisions 9 and 10.
-- A level crossing's gates, lights and bell come from the map tags; style and colours come from Street View as part of
-  the crossing's own build. No separate survey step.
-- The rail feature trumps the road in its footprint (decision 7 there). The first crossing to build is the one at
-  about 6980,-4343.
-- Only one bridge and tunnel ticket is filed now: the decisions ticket below. Evidence, planner and integration
-  tickets wait for it.
+**builderTask: false.** Depends on #380. Do not file yet.
 
-## Decisions needed before any build task
+**Goal:** a deterministic evidence list for mapped bridges and tunnels, independent
+of route carrier. Read this design, the railway evidence types, vector-map provider
+interfaces and lidar structure-column interpretation first.
 
-### Owner interview in progress (2026-11-22, task #380)
+**Inputs/output:** recorded GeoJSON and recorded height samples to records containing
+stable identity, kind, carrier, crossed routes/water, layers, portal/span geometry,
+touched cells, measured deck heights, uncertainty and evidence references. Keep
+missing or conflicting evidence explicit; choose no real-place build design.
 
-Provisional answers, awaiting confirmation of the complete design:
+**Checks:** synthetic/recorded fixtures cover a road over rail, rail over water,
+footbridge, culvert and tunnel; separate overlapping structures by layers; distinguish
+an overhead span from a rail-carried span; retain missing/ambiguous height evidence;
+use the shared world-frame/cell and provider interfaces. No live build or AI judgement.
 
-- One structure feature type with `kind: bridge|tunnel` (owner chose option 1).
-- Structures retain ownership through later passes. Ground may exist underneath a
-  bridge or above a tunnel; later passes preserve the structure and its clearance.
-- Tunnels extend below the ground layer, with entrances and approaches potentially
-  partly above it. Protect the empty bore as well as its structural blocks.
-- Ordinary structures use evidence-driven recipes; Claude designs landmarks and
-  unusual structures. This replaces the earlier per-structure Claude default.
-- One named feature spans all touched cells. Its whole 3D footprint, excavation
-  and required clear air share one backup and whole-structure undo.
-- Prefer a rough fallback over skipping a structure when the preferred design
-  fails. It may simplify appearance, supports and terrain fit, but must keep the
-  route connected, clearance usable and all writes inside the feature footprint.
-- Bridge deck heights use reliable lidar structure columns, checked against
-  crossed roads, railways or water and any railway join levels. Uncertain heights
-  are labelled inference; incomplete evidence may use a simpler usable fallback.
-- Preserve tree crowns outside the structure and its required clear space,
-  including above tunnels. Clear intrusions through the normal feature/journal
-  handling; do not clear an entire vertical column solely because a structure
-  passes through part of it.
+## Draft follow-up B: structure recipe planner
 
-The remaining questions below are still open; this is not an accepted design.
+**builderTask: false.** Depends on A and #380. Do not file yet.
 
-1. **One feature type or two.** Bridge and tunnel share the carrier and the cross-cell handling but differ in what they
-   dig and what they leave above. Leaning one type with a `kind`.
-2. **The open pass-order rule** (crown versus yield) above. Settle it in the glossary and rules, not in code.
-3. **Rules or per-structure design.** A small set of rule-built types (beam road bridge, footbridge, rail viaduct,
-   culvert or underpass, simple tunnel) with defaults, as the vibe plan does for building typologies, versus a Claude
-   design for each structure. Leaning rules first, per-structure design only for landmarks.
-4. **Multi-cell spans.** Long structures cross cell edges, and these are not mask-undone, so ownership and undo need the
-   same footprint treatment as other big features.
-5. **Failure rule.** Following the railway ruling: best effort, fail with a clear report where a structure cannot be made
-   to work, and leave it for a human.
+**Goal:** a pure deterministic planner turning an evidence record, supplied recipe
+parameters, terrain and optional railway end records into a JSON-able structure plan.
+Read this design, evidence records, shared builder helpers and the railway join
+contract first. A Claude design can supply parameters for an unusual structure;
+this ticket neither selects one from real evidence nor trials it in game.
 
-## Proposed split (owner's rule: Claude only for real build decisions and in-game judgement)
+**Build:** ordinary bridge/footbridge/viaduct/culvert/tunnel recipes, deck/bore/portals,
+supports and approaches; changed blocks, protected clear air, full 3D footprint,
+rail joins, labelled inference, fallback report and explicit failures. Reuse railway
+rail/power rules. Preserve terrain above a tunnel and below a bridge outside that
+volume. Never hide an unusable fallback.
 
-| Task | builderTask | Notes |
-| --- | --- | --- |
-| A. Evidence list: for each mapped bridge or tunnel, carrier kind, what it crosses, cells, length, layer, deck height from lidar | false | Fixtures from recorded GeoJSON and a recorded height sample. |
-| B. Decisions: feature type, pass-order rule, rule-built types, ownership across cells; record in glossary, rules and an ADR | false | Owner conversation, then docs. No build step. |
-| C. Rule-based planner (pure function): deck, parapets, piers, ramps, tunnel bore and portals | false | Synthetic fixtures. Depends on A and B. |
-| D. Feature integration: journal ownership, backup, undo, readback, and the hole in road and rail surfaces closed | false | Depends on C. Includes the hook the railway builder calls. |
-| E. Build trial on real structures, judged in game | **true** | One road bridge over a road or rail, one river bridge, one footbridge, one tunnel. Depends on D. |
+**Checks:** synthetic examples for every recipe; underground bore with partly exposed
+portals; bridge and tunnel crossing a cell boundary; measured deck rather than DTM
+height; connected rail joins; cover/clearance; crowns outside the protected volume;
+usable simplified fallback; unresolvable route/clearance conflict fails before apply;
+repeat input gives identical plan. No MCP, journal writes or representative build.
 
-Candidates for E already extracted: the railway trial area has two mapped rail bridge segments near 7285,-4290 and
-from 7415,-4107 to 7474,-4020 (what each crosses is not yet checked).
+## Draft follow-up C: structure feature integration
 
-Nothing in the tracker covers this today. Do not file A to E until the owner agrees the scope.
+**builderTask: false.** Depends on B and railway/crossing join mechanisms #382/#383.
+Do not file yet.
+
+**Goal:** integrate a validated structure plan into normal feature proposal, readiness,
+apply, ownership and whole-feature undo. Read the journal, feature, site_kit and
+existing element-undo interfaces first; use those paths rather than new writers.
+
+**Build:** validated specs, one feature across all touched cells, tiled structure
+backups, ownership of structural and clear-air positions, the two-neighbour railway
+readiness gate, readback/retry, and complete undo including covered-cell markers.
+Later ground/trees/decor respect the volume while preserving ground/crowns outside
+it; neighbour effects use the existing journal mechanism.
+
+**Checks:** MemoryBlocks/journal fixtures exercise bridge and partly buried tunnel,
+missing neighbours (zero writes), readback miss/retry and persistent failure, no
+out-of-footprint changes, later-pass protection, whole-structure undo restoring
+exactly the previous blocks and ownership. No live world or AI build interpretation.
+
+## Draft follow-up D: real structure build trial
+
+**builderTask: true.** Depends on C. Do not file yet.
+
+**Goal:** interpret real evidence and choose/assess recipes for one road bridge over
+road or rail, one river bridge, one footbridge and one tunnel; trial a bespoke design
+only where the evidence warrants it. Establish eligible Claude models, host and
+budget under the builder dispatch gate; use the configured build roles/efforts.
+
+**Steps:** choose and record proving structures with the owner; store evidence/specs
+and place artefacts in the active world repository; dry-run, obtain any required
+world-operation authorization, apply under the site lock and read back; assess the
+route, approaches, clearance, cover, surroundings and any fallback in game with the
+owner. Existing candidate rail bridge spans near 7285,-4290 and 7415,-4107 to
+7474,-4020 are only candidates, not permission to build them.
+
+**Checks:** record the owner's verdict, failures/snags and coordinates, whether recipes
+or a bespoke design were used, and a Cost table with actual models/efforts, tokens
+and measurement method, elapsed time and build result. Prove no unintended changes
+outside the footprint. Offline fixture success does not replace the in-game verdict.

@@ -76,6 +76,26 @@ _Avoid_: aspect, strand, real pass (as the concept name), layer (as the supercla
 A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches. One **Element**; not a layered pass.
 _Avoid_: layer pass, decor prop, queue item
 
+**Structure feature**:
+A bridge or tunnel carrying a mapped route, including its approaches and the space needed to use it. One feature may span several cells and extend below, through or above ground.
+_Avoid_: bridge layer, tunnel layer, per-cell structure fragment
+
+**Bridge**:
+A structure feature carrying a road, path, railway or waterway above terrain or another route. Its deck and the space underneath belong to the same structure.
+_Avoid_: ground deck, railway-only bridge
+
+**Tunnel**:
+A structure feature carrying a route through the ground, including its bore and entrances. The entrances and approaches may be partly above ground.
+_Avoid_: buried road surface, tunnel ground pass
+
+**Crossing**:
+A feature where a road or path crosses a railway at the same level, including the shared surface and any evidenced crossing equipment.
+_Avoid_: crossing layer, default-style crossing
+
+**Join**:
+A recorded connection between route features at a shared position and level, with the direction and tracks needed to continue the route.
+_Avoid_: guessed connection, visual-only join
+
 **Road-name label**:
 An optional floating `text_display` entity naming a mapped road (#341), placed after decor from the vector map's `name` tags. Not an **Element**: it writes no blocks, has no mask, never appears in the journal as a `Build` intent, and never keeps a cell open. Tagged `wb_label` and `wb_cell_<tx>_<tz>`; undo is `kill @e[tag=wb_label]` (add the cell tag to limit it to one cell). `cell_registry.py approve` can still sign off `labels` as a layer. Spec: [road-name-labels](docs/specs/road-name-labels.md).
 _Avoid_: sign, road sign (blocks), decor (labels are entities, not decor props), layer (as the concept name)
