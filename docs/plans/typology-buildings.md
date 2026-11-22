@@ -224,6 +224,11 @@ whose plan is absent from its primary cell ("feature plan absent from cell plan"
 then reported no candidates for them, because they were already planned elsewhere. I dismissed the two plans on
 51,-37 (reason recorded) hoping 52,-37 would propose them, but it still does not, so they now have no plan in
 any cell. That needs a decision on how cell-edge shops are assigned to a primary cell; I did not force it.
+
+Owner decision (2026-11-22): the parade stays at 17 of 19. The cell-edge planning fix is filed as task 433
+("Cell-edge features: plan each feature in its primary cell"). The two shops (149855650 and 167071535) are not
+built, no plan was recorded by hand, and the dismissal on 51,-37 was left as it is. They can be built after 433
+lands, with the owner's OK then.
 Before this the shop at way 122706797 could not be rebuilt from its hand spec, because undo was refused for a
 stale neighbouring cell (51,-36).
 
@@ -271,6 +276,7 @@ Implementation tasks filed from these findings (owner approved 2026-11-22), none
 | 430 | `house_build`: domestic chimney option (stack per house, pair or party wall) | no |
 | 431 | Generator: glazing and facade detail as a class recipe | no |
 | 432 | Terrace recipe trial on Northcote Road (blocked by 427 to 430) | yes |
+| 433 | Cell-edge features: plan each feature in its primary cell (filed by the owner's session) | no |
 
 Task 333 (shop typology) was pointed at this page and keeps per-side storeys, dormers, bay windows and pitched
 roofs. The district profile file for Southampton is world work, not a tool task: the world has no
