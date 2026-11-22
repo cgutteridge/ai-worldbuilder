@@ -41,7 +41,7 @@ def shades_grass(above: str | None) -> bool:
 
 
 def is_air(block: str | None) -> bool:
-    """Air for the ground step: includes flowers and grass stems (§10); grass BLOCK is not air."""
+    """Air for the ground step: includes flowers and grass stems (ADR 010); grass BLOCK is not air."""
     return block_id(block, policy='read') in AIRS or block_id(block, policy='read') in STEM_OR_FLOWER
 
 

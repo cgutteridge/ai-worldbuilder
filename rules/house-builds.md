@@ -1,13 +1,13 @@
 # Houses and terraces
 
-Read before any house or Broadlands-type terrace build. Roof and fabric rules:
+Read before any house or terrace build. Roof and fabric rules:
 `rules/craftsmanship.md`.
 
 ## Live path
 
 Every house feature apply uses **`scripts/house_build.py`** with a JSON spec at
 `site/builds/<name>.json`. Dry run unless `--apply`. Non-house building masses
-(SU, halls, sheds, campus lumps) follow `rules/feature-builds.md`.
+(halls, sheds and other non-house masses) follow `rules/feature-builds.md`.
 Spec keys (full list in the `house_build` module
 docstring):
 

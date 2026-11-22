@@ -1,8 +1,8 @@
 # Non-house building features
 
-Read before any campus / hall / shed / odd-mass building feature (not houses or
+Read before any hall, shed or odd-mass building feature (not houses or
 terraces). Roof and fabric rules: `rules/craftsmanship.md`. Houses stay on
-`rules/terrace-builds.md` (the house build path).
+`rules/house-builds.md` (the house build path).
 
 ## Live path
 
@@ -165,22 +165,21 @@ Dry run unless `--apply`; `--apply` refuses a plan that already has a landed bui
   height/top against lidar as a rough warning, never a dimension override.
   List what reads at street scale, or leave `details` empty / omit it
   when none are visible.
-  Example: `"details": {"SU": [{"kind": "plant_room", "at": [12, 59, 22],
+  Example: `"details": {"main": [{"kind": "plant_room", "at": [12, 59, 22],
   "size": [3, 2, 2], "source": "aerial NW plant box"}]}`
 - optional `exclude` — per-label boxes cut out of that label's map footprint,
-  `{"JSC": [[x0, z0, x1, z1], ...]}` (inclusive block coords). Use when the
+  `{"wing": [[x0, z0, x1, z1], ...]}` (inclusive block coords). Use when the
   vector outline is larger than the real building (lidar shows open ground, or
   separate houses, inside it). Clips only the named label; clipped cells are
   not treated as another building's footprint. Dry run still prints the
   footprint counts, so check `cover` after clipping.
 - optional `zones` — per-label lidar roof plateaus **within one footprint**
   (one vector way, several roof heights). Use when a single `storeys`
-  count cannot express terraced roofs (e.g. SUSU w33830305 with plateaus at
-  41/45/46/47/48/50 m AOD). Example:
+  count cannot express that. Example:
 
   ```json
   "zones": {
-    "SU": {
+    "main": {
       "from": "lidar",
       "levels": [41, 45, 46, 47, 48, 50],
       "bucket": 4,
@@ -234,10 +233,10 @@ Designer / builder models: name both before writing the spec
 is the hand-off when designer and builder differ; the builder applies with
 `feature_build.py` and does not redesign massing from scratch.
 
-Acceptance fixture: Students' Union `site/builds/susu_42.json` (vector way
-`w33830305`) dry-runs end-to-end via `feature_build` (no `--apply`). For
-multi-plateau SUSU, add a `zones` entry as above and confirm 0 guard
-failures on dry-run.
+Acceptance check: a multi-plateau spec dry-runs end-to-end via `feature_build`
+(no `--apply`). Add a `zones` entry as above and confirm 0 guard failures on
+dry-run. Keep the fixture in tests or in the world repo, not as a named place
+in this rule.
 
 **Lidar ghosts (ground only):** After `cell_marker --raise`, frontier cells show
 ghost ground with DSM−DTM top colours (not volumetric grey columns). Real features

@@ -6,7 +6,7 @@ furniture, each with shared provenance. Barriers sit anywhere but the carriagewa
 sits on paving, never on a path-line column. Building-border hedges from the aerial may sit
 against a footprint; other barriers and furniture stay clear of builds. Items the plan
 cannot resolve are listed, not silently skipped. Placed only where the live block is air
-(or a stem/flower, as in §10) and not owned by a neighbour or by another mask, clipped to
+(or a stem/flower, as in ADR 010) and not owned by a neighbour or by another mask, clipped to
 the cell. Items stand on the true ground: the block at lidar terrain Y (``surface_probe.ground_at``), never
 the live top block, so a roof or deck over the ground is not ground (#301). A column with no solid unowned
 block at terrain Y is unplaced ('no ground at terrain'); an item whose own column holds a feature-owned

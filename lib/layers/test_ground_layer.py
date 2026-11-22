@@ -21,7 +21,7 @@ class TestGroundLayer(unittest.TestCase):
         self.assertEqual(place_config.plan_name((48, 3), 'ground'), 'cell_48_3_ground')
 
     def test_flowers_and_stems_are_air(self):
-        """§10: flowers and grass stems count as air for the ground step."""
+        """ADR 010: flowers and grass stems count as air for the ground step."""
         self.assertTrue(lc.is_air('minecraft:short_grass'))
         self.assertTrue(lc.is_air('minecraft:poppy[half=lower]'))
         self.assertFalse(lc.is_air('minecraft:grass_block'))

@@ -40,7 +40,7 @@ state and place evidence.
 ------------------------------------------------------------------------
 Tree review (every cell redo: I-073 step 4, before the trees pass is called done)
 ------------------------------------------------------------------------
-CAUTION (2026-10-16, checked on 48,-45 x6208..6272 z-5696..-5632 with the lidar/live footprints drawn over aerial): national lidar
+CAUTION (2026-10-16, checked by drawing lidar and live footprints over aerial): national lidar
 tree columns hold only about a third of the real crowns and sit ~3-4 blocks SOUTH of the crown seen in aerial; the live trees match aerial
 crowns poorly too. So lidar is a rough height hint and a cross-check, never the position source and never a complete inventory. Best aerial is the
 position source: read crowns by eye from a cropped, gridded aerial window (64 blocks, 12 px per block) and record them as explicit crowns.
@@ -60,14 +60,14 @@ Decide each MISSING with aerial showing a real tree (check the distance column) 
     the aerial sheet + lidar height), re-run the trees pass for that cell (dry run first, I-043 diff). The lidar height
     gives the crown size (height 13 = r 6+ plane tree; 7-10 = r 3.5-5; 3-5 = bush).
   - invented over non-tree ground: remove at the root (trees_layer detection), not by a one-off hand edit.
-  - lawn where lidar and aerial both show nothing: leave open (Library Square formal lawn, I-060).
+  - lawn where lidar and aerial both show nothing: leave open (a formal lawn is not a missing tree, I-060).
 Record counts and decisions as a journal note on the cell (e.g. "tree review: lidar 12 crowns, 2 missing added, 0 invented over
 non-tree"). Cells whose neighbours' crowns overhang the edge: review them together (--zone across the edge).
 
 ------------------------------------------------------------------------
 Redo from aerial (user, 2026-10-16: the trees pass reads the z19 mosaic; aerial is the position source)
 ------------------------------------------------------------------------
-Done for 48,-45, 48,-44, 49,-45, 49,-44 and 48,-46 (Library Square zone x6150..6349 z-5787..-5583; 2026-10-16). Crowns are read BY EYE from gridded aerial crop PNGs
+Crowns for a reviewed zone are read by eye from gridded aerial crop PNGs
 (`google_window.py`; tiles downloaded, not browser HTML) and stored in reference/trees-aerial-crowns.json:
   {"tx,tz": {"evidence", "zones": [[x0,z0,x1,z1]], "crowns": [{"x","z","r","note"}]}}
 Inside a zone these crowns replace the detector; outside it the detector/dense-fill generation and

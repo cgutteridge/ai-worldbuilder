@@ -1,9 +1,0 @@
-ISSUES — retired text mirror (ticket #121)
-
-Do not use this file for open defects. Snags and issues live in
-registry/issues.json via scripts/issues.py (the snag skill); confirmed/wontfix
-records archive to registry/issues-closed.json and pictures to
-registry/issues/img-closed/. This is separate from legacy site/archive text. They never
-block a cell and never steer cell_registry.py next.
-
-Keep this path only if you want free-form human scratch; prefer the registry.

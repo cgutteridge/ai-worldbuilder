@@ -263,7 +263,7 @@ def masked_overlaps(planned: dict[Pos, str], mask: dict) -> list[Pos]:
     """Planned positions that land on a block this mask owns.
 
     A ground plan normally never does this. If it does, the mask must be undone
-    before that plan applies (HANDOFF-LAYERED-PASSES §10). Sorted for stable output.
+    before that plan applies (ADR 010). Sorted for stable output.
     """
     owned = mask_placements(mask)
     return sorted(p for p in planned if p in owned)

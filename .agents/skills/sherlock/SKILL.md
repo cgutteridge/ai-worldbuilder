@@ -11,7 +11,7 @@ The job is: do everything the AI can do by itself, in this order, then stop and 
 
 ## Stages and thread name
 
-The thread name is always an emoji, a space, then a short plain name for the case (e.g. `🔍 Cell 48,-44 roofs and ghost fixes`). Set it with `set_session_title` and `"self"` (skip quietly where the tool is missing). The emoji is the stage:
+The thread name is always an emoji, a space, then a short plain name for the case (e.g. `🔍 Cell 3,-2 roofs and ghost fixes`). Set it with `set_session_title` and `"self"` (skip quietly where the tool is missing). The emoji is the stage:
 
 - 🔍 **Investigating.** Finding causes. Set it first, when the run starts.
 - 🔧 **Reviewing task and record changes.** Housekeeping of snags and tasks: proposals for diagnoses, moves, merges, wontfix, and for tracker tasks, taken to the owner one at a time.

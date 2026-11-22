@@ -112,7 +112,7 @@ def detect_context(item: dict) -> tuple[WorkContext, str]:
 
     if any(k in b for k in ('FOLIAGE LAST', 'FOLIAGE PASS', 'FOLIAGE.')):
         return WorkContext.FOLIAGE, 'foliage-last cell pass'
-    if any(k in b for k in ('TERRACE-BUILDS',) + _extra_keywords('terrace')):
+    if any(k in b for k in ('HOUSE-BUILDS', 'TERRACE-BUILDS') + _extra_keywords('terrace')):
         return WorkContext.TERRACE, 'terrace house builds'
     if any(k in b for k in ('FAÇADE', 'FACADE', 'FRONTAGE SURVEY', 'WHOLE PROPERTY', 'OSM_FOOTPRINTS.PY FRONTAGE')):
         return WorkContext.PROPERTY, 'whole-property / frontage survey'
@@ -216,7 +216,7 @@ def _readings_for(ctx: WorkContext, cell_sources_rel: str | None) -> tuple[Readi
         add(
             ReadingItem('rules/frontage-and-evidence.md', 'before plan'),
             ReadingItem('rules/craftsmanship.md', 'full'),
-            ReadingItem('rules/terrace-builds.md', 'house spec and build workflow'),
+            ReadingItem('rules/house-builds.md', 'house spec and build workflow'),
             *_IMAGERY,
         )
         if cell_sources_rel:

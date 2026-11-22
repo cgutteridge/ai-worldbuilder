@@ -6,13 +6,14 @@ by the first journal write (templates/new-world-registry/README.txt).
 
 Do not copy craft/process prose here — those files live in ai-worldbuilder
 rules/ (process, craftsmanship, foliage, handoff-layered-passes,
-rules-context, cleanup). Thin stubs below point there.
+rules-context, cleanup).
 
 Keep in the world repo:
   NOTES.txt COVERAGE.txt REVIEWS.txt
   LOCK.json (runtime) cells/ (optional SOURCES notes)
   archive/
-  (ISSUES.txt is optional scratch only; snags → registry/issues.json; closed → registry/issues-closed.json)
+  Snags live in registry/issues.json; closed issues in registry/issues-closed.json.
+  Do not add an ISSUES.txt scratch file.
 
 Progress source of truth is the cell journal (registry/journal.jsonl), driven by
 scripts/cell_registry.py next / hold / reconcile. Snags: scripts/issues.py; archive moves confirmed/wontfix issues and their pictures

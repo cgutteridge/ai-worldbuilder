@@ -36,12 +36,12 @@ class RulesContextTests(unittest.TestCase):
         self.assertNotIn('rules/geocraft-accuracy.md', paths)
 
     def test_terrace(self) -> None:
-        it = self._item('TERRACE example terrace-builds example_rd_14_24')
+        it = self._item('TERRACE example house-builds example_rd_14_24')
         ctx, _ = detect_context(it)
         self.assertEqual(ctx, WorkContext.TERRACE)
         plan = plan_for_item(it)
         paths = [r.path for r in plan.readings]
-        self.assertIn('rules/terrace-builds.md', paths)
+        self.assertIn('rules/house-builds.md', paths)
 
     def test_rules_tag_override(self) -> None:
         it = self._item('RULES: tooling  coverage.py write only')
