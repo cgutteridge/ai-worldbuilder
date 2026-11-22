@@ -42,7 +42,6 @@ from script_env import ROOT, add_world_arg, activate_world_from_args  # noqa: E4
 import numpy as np  # noqa: E402
 
 import cellmath  # noqa: E402
-import cellmath
 import lidar_heightmap as L  # noqa: E402
 
 PEAK_R = 3              # a crown top is the highest tree column within this many blocks
