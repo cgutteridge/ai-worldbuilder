@@ -268,7 +268,7 @@
     {
       "id": 393,
       "title": "World-provider shims: resolve by catalogue role, and make tool imports optional",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
