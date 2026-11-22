@@ -320,10 +320,10 @@ class Table(unittest.TestCase):
             with self.assertRaisesRegex(L.TableError, 'trees'):
                 L.validate_table(self.doc)
 
-    def test_shipped_species_mix_is_placeholder_and_parkland_stays_oak(self):
-        self.assertEqual(L.tree_species_weights('natural'), {'oak': 60, 'birch': 25, 'dark_oak': 15})
-        for cid in ('park', 'rural'):
-            self.assertEqual(L.tree_species_weights(cid), {'oak': 100})
+    def test_shipped_species_mix_covers_every_wood_class(self):
+        # park and rural take the natural mix (#318): a wood mapped under either class is not oak-only.
+        for cid in ('natural', 'park', 'rural'):
+            self.assertEqual(L.tree_species_weights(cid), {'oak': 60, 'birch': 25, 'dark_oak': 15})
         self.assertEqual(L.tree_species_weights('banana'), {'oak': 1})
         weights = L.tree_species_weights('natural')
         weights['oak'] = 0
