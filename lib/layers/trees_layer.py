@@ -41,7 +41,7 @@ from ground_layer import (plan_name as ground_plan_name, bare, ignored_builds, i
                           load_masked_positions, neighbour_owned, warm_surface_probe)
 from surface_probe import ground_at, ground_missing_reason, is_water, raised_over_terrain, short_id, surface_y, terrain_y  # noqa: E402
 from pass_mask import build_mask, cell_bounds, clip_to_cell  # noqa: E402
-from plant_cell_canopy import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
+from tree_voxels import RNG_SEED, bush_voxels, tree_voxels  # noqa: E402
 from cellmath import CELL  # noqa: E402
 from site_kit import Plan, World  # noqa: E402
 
