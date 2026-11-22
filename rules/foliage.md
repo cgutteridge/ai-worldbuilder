@@ -33,7 +33,7 @@ One cell
 
 Check the crown review image and the kinds against the aerial before apply. Undo for
 a re-run: scripts/mask_undo.py --cell tx,tz --pass trees (decor first, then trees).
-python3 scripts/cross_zone.py --world <world> report --cell tx,tz reports cell bounds
+python3 scripts/cross_zone.py --world <world> report --cell tx,tz --json reports cell bounds
 and neighbouring cells. Check cell-edge structures against neighbouring registry
 state and place evidence.
 
