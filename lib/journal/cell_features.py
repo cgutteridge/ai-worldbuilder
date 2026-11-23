@@ -22,8 +22,8 @@ A building is one build whatever cell lines it crosses (task 288): a footprint i
 only in its home cell (:func:`home_cell`), whole, and never in the other cells it touches.
 A water body over cell lines is the exception (#321): each cell it touches proposes and
 builds its own clip (``water_body.clip_candidate``), so a river is planned cell by cell.
-A touching same-tag non-house chain is grouped before that home filter; the whole chain
-uses the home of its lowest-ref member so it is planned once (#328).
+Touching same-tag non-house footprints group only when they share that home cell (#328).
+A neighbour whose own majority cell is different stays its own feature there (task 433).
 
   python3 scripts/cell_features.py --cell 48,-43
 """
@@ -33,7 +33,6 @@ import argparse
 import math
 import re
 import sys
-from collections import Counter
 from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
@@ -98,13 +97,13 @@ def footprint_cells(columns) -> list[tuple[int, int]]:
     """Cells a footprint touches, its home cell first (task 288).
 
     Order: most columns first; a tie goes to the lowest ``(tx, tz)`` so the choice is stable.
+    Each column counts once (:func:`cellmath.cells_by_column_count`).
 
     @param columns: ``(x, z)`` block columns of one whole footprint
     @returns: ``[(tx, tz), ...]``; empty for an empty footprint
     """
     import cellmath
-    counts = Counter(cellmath.cell_of(int(x), int(z)) for x, z in columns)
-    return sorted(counts, key=lambda c: (-counts[c], c))
+    return cellmath.cells_by_column_count(columns)
 
 
 def home_cell(columns) -> tuple[int, int] | None:
@@ -215,6 +214,9 @@ def _single_building_row(s: dict) -> dict:
         'kind': 'building', 'label': s['label'], 'street': None, 'refs': [s['ref']],
         'bbox': s['bbox'], 'area': s['area'], 'portals': s['portals'], 'pictures': s['pictures'],
     })
+    home = _public_home(s)
+    if home is not None:
+        row['home'] = home
     return row
 
 
@@ -246,11 +248,30 @@ def _group_building_row(run: list) -> dict:
         'portals': [q for o in run for q in o['portals']],
         'pictures': [q for o in run for q in o['pictures']],
     })
+    home = _public_home(run[0])
+    if home is not None:
+        row['home'] = home
     return row
 
 
+def _public_home(item: dict) -> list[int] | None:
+    """Home cell for a propose row, JSON-friendly.
+
+    @param item: building item that may carry ``_home``
+    @returns: ``[tx, tz]`` or None
+    """
+    home = item.get('_home')
+    if not home:
+        return None
+    return [int(home[0]), int(home[1])]
+
+
 def _run_home(run: list) -> tuple[int, int] | None:
-    """Home cell of a touching non-house run: home of the lowest-ref member's footprint.
+    """Home cell of a touching non-house run.
+
+    Members are grouped only when they already share a home, so this is that
+    cell (the lowest-ref member's home when a run has one). A footprint whose
+    majority cell differs is not in the run (task 433).
 
     @param run: one or more single items with ``ref`` and ``_home``
     @returns: ``(tx, tz)`` or None when the lead has no home
@@ -284,8 +305,9 @@ def _building_item(rings, p: dict, *, area: int, home: tuple[int, int] | None) -
 def _expand_touching_nonhouses(seeds: list, idx: OSMIndex, covered: set) -> list:
     """Grow ``seeds`` with unbuilt same-tag non-house buildings that touch the set (any cell).
 
-    A chain that crosses a cell line is clustered once; :func:`_package_unbuilt` then
-    keeps it only in the home of the lowest-ref member (#328 / #288).
+    Each member keeps its own home cell. :func:`_package_unbuilt` groups only
+    members that share a home, so a shop whose majority cell is next door is
+    not pulled into this cell (#288 / #433).
 
     @param seeds: unbuilt non-house items overlapping the cell being planned
     @param idx: OSM index
@@ -329,9 +351,10 @@ def _package_unbuilt(singles: list, homes: list, streets,
     """Package uncovered building items into missing-feature / footprint rows.
 
     Non-house items of the same ``building=`` tag whose footprints touch (gap at most
-    TOUCH_GAP) become one ``kind: group``; an ungrouped single stays ``kind: building``.
-    When ``cell`` is set, a non-house run is kept only if the lowest-ref member's
-    footprint home is that cell (so a chain across a cell line is planned once).
+    TOUCH_GAP) and share a home cell become one ``kind: group``; an ungrouped single
+    stays ``kind: building``. A footprint that crosses a cell line keeps the home
+    with most of its columns, even when it touches a same-tag neighbour homed next
+    door (tasks 288, 433). When ``cell`` is set, a run is kept only for that home.
 
     @param singles: non-home items with ref/label/bbox/area/portals/pictures
     @param homes: home items (same shape) still needing a street
@@ -344,11 +367,16 @@ def _package_unbuilt(singles: list, homes: list, streets,
     for s in singles:
         by_tag.setdefault(s['p'].get('building'), []).append(s)
     for tag in sorted(by_tag, key=lambda t: t or ''):
-        for run in sorted(_split_runs(by_tag[tag], gap=TOUCH_GAP),
-                          key=lambda g: min(o['bbox'][:2] for o in g)):
-            if cell is not None and _run_home(run) != cell:
-                continue
-            out.append(_single_building_row(run[0]) if len(run) == 1 else _group_building_row(run))
+        members = by_tag[tag]
+        home_keys = sorted({m.get('_home') for m in members},
+                           key=lambda h: (h is None, h or ()))
+        for home in home_keys:
+            same = [m for m in members if m.get('_home') == home]
+            for run in sorted(_split_runs(same, gap=TOUCH_GAP),
+                              key=lambda g: min(o['bbox'][:2] for o in g)):
+                if cell is not None and _run_home(run) != cell:
+                    continue
+                out.append(_single_building_row(run[0]) if len(run) == 1 else _group_building_row(run))
     by_street: dict = {}
     for h in homes:
         h['street'] = _street_of(h['p'], h['bbox'], streets)
@@ -517,8 +545,8 @@ def footprint_progress(tx: int, tz: int, idx: OSMIndex | None = None, covered: s
 
     Area is the count of building columns that fall inside the cell. An unbuilt building
     whose whole footprint has its home in another cell (:func:`home_cell`) is not listed or
-    counted here unless it joins a touching same-tag non-house group whose lowest-ref
-    member homes here (task 288 / #328). A building is unbuilt when fewer than
+    counted here. Touching same-tag neighbours group only when they share that home
+    (task 288 / #328 / #433). A building is unbuilt when fewer than
     COVERED_FRAC of its full footprint columns are touched by a feature build — the
     same rule as :func:`missing_features`.
 

@@ -492,10 +492,9 @@ class ReadinessPolicy:
             raise Refused('ordinary builds cannot bypass readiness with pass other')
         primary = build.cell
         if primary is None:
-            from collections import Counter
             import cellmath
-            primary = Counter(cellmath.cell_of(x, z, self.reg.cell_size)
-                              for x, _y, z in build.cells).most_common(1)[0][0]
+            # Most distinct columns, tie lowest (tx, tz). Same rule as the journal (task 288).
+            primary = cellmath.majority_cell(build.cells, self.reg.cell_size)
         parent = ((build.meta or {}).get('parent_feature')
                   or getattr(build.payload, 'parent_feature', None))
         required = set(touched)
