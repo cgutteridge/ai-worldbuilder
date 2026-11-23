@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 
 import cellmath
-from railway_plan import PLANNER_BOX, RAIL_CLEARANCE, plan_line, validate_plan
+from railway_plan import PLANNER_BOX, RAIL_CLEARANCE, deck_evidence, plan_line, validate_plan
 from site_kit import Plan
 
 KIND = 'railway'
@@ -324,15 +324,22 @@ def _check_continuations(corridor, incoming, excludes):
                 raise ValueError('first uncovered rail does not connect to its recorded boundary join')
 
 
-def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_surfaces=None) -> dict:
-    """Plan one feature from explicit evidence arrays and immutable through lines."""
+def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_surfaces=None,
+                 structures=None, inferred_deck_usable=None) -> dict:
+    """Plan one feature from explicit evidence arrays and immutable through lines.
+
+    ``structures`` is ``structure_evidence.by_osm_id`` for the overhead decks; unknown
+    deck heights become railway gaps (see ``railway_plan.deck_evidence``).
+    """
     prior = list(active_railways(reg)) if reg is not None else []
     excludes = [box for e in prior for box in e.meta.get('boxes', ())]
     plans = []
     for line in lines:
         joins = _incoming_joins(line, prior, cell) if prior else []
         p = plan_line(line, ground, tuple(cell), joins, crossing_roads=crossing_roads,
-                      road_surfaces=road_surfaces)
+                      road_surfaces=road_surfaces, structures=structures,
+                      inferred_deck_usable=inferred_deck_usable)
+        under, _decks = deck_evidence(line, structures, inferred_deck_usable)
         _check_continuations(p, joins, excludes)
         p['track_way_ids'] = [list(ways) for ways in line.track_way_ids]
         deck = {tuple(q) for span in line.overhead for q in span.deck}
@@ -342,7 +349,9 @@ def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_sur
             h = int(ground['h'][i][j])
             top = max(original, surface + RAIL_CLEARANCE, h)
             if (x, z) in deck or ('kind' in ground and ground['kind'][i][j] == 4):
-                ceiling = int(ground.get('deck_y', ground['h'])[i][j])
+                ceiling = under.get((x, z), None)
+                if ceiling is None:
+                    ceiling = int(ground.get('deck_y', ground['h'])[i][j])
                 top = min(top, ceiling - 1)
             p['clear_to'].append([x, z, top])
         plans.append(p)
@@ -444,8 +453,12 @@ def main(argv=None) -> int:
         for point in points:
             if tuple(point.at) in columns:
                 crossing_roads[point.osm_id] = tags
-    spec = plan_feature(lines, ground_for_box(box), cell, reg=reg,
-                        crossing_roads=crossing_roads, road_surfaces=surfaces)
+    ground = ground_for_box(box)
+    from structure_evidence import build_structures, by_osm_id
+    rail_ways = [{'osm_id': w.osm_id, 'tags': dict(w.tags), 'points': list(w.points)} for w in ways]
+    structures = by_osm_id(build_structures(roads + rail_ways, ground))
+    spec = plan_feature(lines, ground, cell, reg=reg, crossing_roads=crossing_roads,
+                        road_surfaces=surfaces, structures=structures)
     out = Path(script_env.ROOT) / 'site/builds' / (spec['name']+'.json')
     if out.exists():
         raise SystemExit(f'{out} exists; preserve the recorded spec or choose its explicit rebuild path')
