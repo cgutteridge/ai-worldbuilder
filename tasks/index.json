@@ -109,18 +109,7 @@
     
     
     
-    {
-      "id": 445,
-      "title": "Decor picnic tables: find out why the plaza tables are refused as \"path\" (I-008)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Issue I-008, snags S-033 (plaza tables missing) and S-115. Of 7 picnic tables read from the aerial of 48,-44, 5 were refused 'on path/road/water column': rectangular garden table (6176,-5600; blocked column 6177,-5600), round garden table (6174,-5604; blocked 6175,-5604) and the three SUSU plaza tables (6208,-5576; 6211,-5577; 6214,-5577; blocked 6207,-5577; 6212,-5577; 6214,-5578).\nChecked 2026-11-23: place_furniture refuses any multi-block footprint column in `way`, built near lib/layers/decor_layer.py line 952 as set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line). vmap.feat is a dict from column to the id of the mapped line, so `way` holds path and road LINE columns; a pedestrian-area polygon is painted without a feat id and is probably not in `way`. Not verified: what actually covers each blocked column. Most likely a footway line crossing the plaza or the garden path edge; a pedestrian area is the less likely reading.\nDeliverable: step 1, for each refused table read vmap.feat[q] (and the road/water sets) on each blocked column and record the OSM way id and class. Step 2, from that, either allow a table where the blocking line is a one-block crossing line across a plaza (keep refusing real path lines and carriageway) or keep refusing and record why. Change in lib/layers/decor_layer.py; the `way` construction needs extracting into a small testable helper for the test to reach it. Update docs/specs/decor-furniture-footprints.md section 4. Order: after B, because both edit place_furniture, test_decor_layer.py and the same spec, and C's placed or refused set depends on B's slope rule.\nCheck S-033 / I-008: the dry run `python3 scripts/decor_layer.py --world southampton-build --cell 48,-44` places the three plaza tables, or lists each unplaced with its reason string plus blocked_column and the step 1 note naming the blocking way; tests cover a table on a footway-line column (refused) and on a column with no feat id (placed).\n\n\nOwner decision (2026-11-23, grilling): after step 1 finds the blocking way for each refused table, allow a table on a one-block footpath line that crosses a plaza or paved open area. Keep refusing a real footpath, a carriageway and water. If a table is still refused, record the way id and class so the owner can judge it."
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/445-plaza-tables-path"},
+    
     
     {
       "id": 447,
