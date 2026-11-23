@@ -348,12 +348,83 @@ def roof_ridge_runs(
     return runs
 
 
+class SlopeStairRule:
+    """Stairs only on the roof rim or on a real fitted slope (feature roofs, ``stairs: "slope"``, #434).
+
+    Use as ``pitched_roof_states(..., stair_ok=rule)``. A column the heightfield rules would make
+    a stair keeps it when, in this order:
+
+    1. it is on the rim: an N4 neighbour is not a column of this roof (the edge of a roof layer);
+    2. otherwise it is a full block when it is in a flat layer (``flat``);
+    3. or when the column it faces is in another roof volume (a step between volumes);
+    4. it keeps the stair when it has no fitted surface (raw heights: nothing to read);
+    5. otherwise it keeps the stair only when the fitted surface rises toward its facing by at
+       least ``min_rise`` metres per block (a real slope; a gable or plane at an angle to the grid
+       rises toward both of its cardinal components, so diagonal steps keep their stairs).
+
+    The decision reads the fitted shape, not the neighbouring blocks: a neighbour-only test calls
+    every diagonal step of a rotated gable an isolated stair.
+
+    @ivar counts: ``Counter`` of the reason for each decision (``rim``, ``slope``,
+        ``no fitted surface`` kept; ``flat layer``, ``step between volumes``, ``no fitted slope`` made blocks)
+    """
+
+    KEPT = ('rim', 'slope', 'no fitted surface')
+
+    def __init__(self, roof, flat=None, volume=None, rise=None, min_rise: float = 0.15):
+        """
+        @param roof: every ``(x, z)`` column of this roof
+        @param flat: columns of flat roof layers
+        @param volume: ``{(x, z): volume id}``; columns without one count as one volume
+        @param rise: ``rise((x, z), facing) -> metres per block or None`` from the fitted
+            surface (None when the column has no fitted surface)
+        @param min_rise: least fitted rise per block toward the facing that counts as a slope
+        """
+        from collections import Counter
+        self.roof = set(roof)
+        self.flat = set(flat or ())
+        self.volume = volume or {}
+        self.rise = rise
+        self.min_rise = min_rise
+        self.counts = Counter()
+
+    def reason(self, c: tuple[int, int], facing: str) -> str:
+        """Why column ``c`` keeps or loses a stair facing ``facing`` (see the class rules)."""
+        x, z = c
+        if any((x + dx, z + dz) not in self.roof for dx, dz in N4):
+            return 'rim'
+        if c in self.flat:
+            return 'flat layer'
+        dx, dz = ROOF_DELTA[facing]
+        if self.volume.get((x + dx, z + dz)) != self.volume.get(c):
+            return 'step between volumes'
+        rise = self.rise(c, facing) if self.rise is not None else None
+        if rise is None:
+            return 'no fitted surface'
+        return 'slope' if rise >= self.min_rise else 'no fitted slope'
+
+    def __call__(self, c: tuple[int, int], facing: str) -> bool:
+        why = self.reason(c, facing)
+        self.counts[why] += 1
+        return why in self.KEPT
+
+    def summary(self, label: str) -> str:
+        """Dry-run line: stairs kept and made blocks, by reason."""
+        kept = sum(self.counts[k] for k in self.KEPT)
+        dropped = sum(self.counts.values()) - kept
+        parts = lambda keys: ', '.join(f'{k} {self.counts[k]}' for k in keys if self.counts[k])
+        lost = [k for k in self.counts if k not in self.KEPT]
+        return (f'{label} roof stairs slope: kept {kept} stair(s) ({parts(self.KEPT) or "none"}); '
+                f'{dropped} made level blocks ({parts(sorted(lost)) or "none"})')
+
+
 def pitched_roof_states(
     half_heights: dict[tuple[int, int], int],
     materials: dict[tuple[int, int], str],
     warnings: list[str] | None = None,
     levels: dict[tuple[int, int], int] | None = None,
     flat_cells: set[tuple[int, int]] | None = None,
+    stair_ok=None,
 ) -> dict[tuple[int, int], str]:
     """Choose stair / slab / full block states for a pitched-roof heightfield.
 
@@ -385,6 +456,11 @@ def pitched_roof_states(
     @param levels: optional semantic zone levels preserving intentional plateau steps
     @param flat_cells: optional cells classified as flat; keep full decks here,
         allowing only orthogonal stairs toward a higher, different roof zone
+    @param stair_ok: optional ``stair_ok((x, z), facing) -> bool`` asked once for every
+        column the rules above would make a stair (slope, ridge and terrace stairs alike);
+        False leaves that column the block a level column of its height gets (a full block,
+        or a bottom slab on an odd half-height), and the remaining stairs take their shape
+        without it. None keeps every stair (see :class:`SlopeStairRule`)
     @returns: ``{(x, z): block state}`` (place at ``roof_block_y(half_height)`` after
         regularisation)
     """
@@ -500,6 +576,11 @@ def pitched_roof_states(
             facings[c] = opposite[drops[0]]
         else:
             cap_slabs.add(c)
+
+    if stair_ok is not None:
+        for c in sorted(facings):
+            if not stair_ok(c, facings[c]):
+                del facings[c]
 
     # Pass 2: shape from same-Y stair neighbours, including ridge and terrace stairs.
     for (x, z), h in half_heights.items():

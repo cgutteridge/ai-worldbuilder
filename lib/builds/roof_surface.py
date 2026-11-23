@@ -65,6 +65,29 @@ class Surface:
         d = (u if self.ridge_across else v) - r
         return h + np.where(d <= 0, k_low * d, k_high * d)
 
+    def gradient(self, x: float, z: float) -> tuple[float, float]:
+        """Uphill gradient of the surface at world ``(x, z)``, metres per block along x and z.
+
+        A gable's gradient is the slope of the side the point is on (the ridge itself counts as the
+        lower side, rising toward the ridge).
+
+        @param x: world x
+        @param z: world z
+        @returns: ``(dh/dx, dh/dz)``; ``(0, 0)`` for a flat surface
+        """
+        c, s = math.cos(math.radians(self.axis_deg)), math.sin(math.radians(self.axis_deg))
+        if self.kind == 'flat':
+            return 0.0, 0.0
+        if self.kind == 'plane':
+            _a, bu, bv = self.params
+        else:
+            _h, r, k_low, k_high = self.params
+            t = x * c + z * s if self.ridge_across else -x * s + z * c
+            k = k_low if t - r <= 0 else k_high
+            bu, bv = (k, 0.0) if self.ridge_across else (0.0, k)
+        # u = x c + z s and v = -x s + z c, so d/dx = bu c - bv s and d/dz = bu s + bv c
+        return float(bu * c - bv * s), float(bu * s + bv * c)
+
 
 def _frame(xs, zs, axis_deg: float):
     c, s = math.cos(math.radians(axis_deg)), math.sin(math.radians(axis_deg))

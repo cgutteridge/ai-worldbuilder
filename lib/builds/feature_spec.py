@@ -94,6 +94,7 @@ def load_spec(path) -> dict:
     _validate_details(path, spec, labels)
     _validate_signs(path, spec, labels)
     _validate_zones(path, spec, labels)
+    _validate_roof_stairs(path, spec)
     _validate_exclude(path, spec, labels)
     _validate_material_regions(path, spec)
     return spec
@@ -157,6 +158,27 @@ def _validate_flat_tol(path, lab: str, roof: dict) -> None:
     if (isinstance(tol, bool) or not isinstance(tol, (int, float))
             or not math.isfinite(tol) or not 0 <= tol <= 3):
         raise SystemExit(f'{path}: roofs[{lab}].flat_tol_m must be a finite number of metres in [0, 3]')
+
+
+def _validate_roof_stairs(path, spec: dict) -> None:
+    """Validate optional ``roofs[label].stairs`` (absent = the heightfield's own stairs).
+
+    ``"slope"`` keeps stairs only on the roof rim or on a real fitted slope (#434). It reads the
+    zone volumes, so it needs a pitched roof with ``zones[label]``.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded (zones already validated)
+    @raises SystemExit: on an unknown value, a flat roof or a label without zones
+    """
+    for lab, roof in spec['roofs'].items():
+        if 'stairs' not in roof:
+            continue
+        if roof['stairs'] != 'slope':
+            raise SystemExit(f'{path}: roofs[{lab}].stairs must be "slope" when given')
+        if roof.get('kind') != 'pitched':
+            raise SystemExit(f'{path}: roofs[{lab}].stairs only applies to pitched roofs')
+        if lab not in (spec.get('zones') or {}):
+            raise SystemExit(f'{path}: roofs[{lab}].stairs "slope" needs zones[{lab}] (it reads the roof volumes)')
 
 
 def _validate_roof_edge(path, lab: str, roof: dict) -> None:

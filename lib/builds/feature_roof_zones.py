@@ -482,6 +482,7 @@ def fit_clean_heights(
     axis_deg: float,
     regions: list | None,
     label: str,
+    surfaces: dict | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """Replace noisy lidar heights with a fitted flat / plane / gable surface per roof zone.
 
@@ -499,6 +500,8 @@ def fit_clean_heights(
     @param axis_deg: building long-axis degrees
     @param regions: optional aerial polygons (see ``apply_regions``)
     @param label: feature label for the report lines
+    @param surfaces: optional dict that receives ``{(x, z): (zone name, Surface)}`` for every column
+        that took a fitted height (the stair rule ``roofs[label].stairs: "slope"`` reads it)
     @returns: ``(cleaned DSM, dry-run report lines)``
     """
     import roof_surface
@@ -530,6 +533,9 @@ def fit_clean_heights(
             lines.append(f'{label} {name}: surface fit skipped ({why}); raw lidar heights kept')
             continue
         out[member] = surface.height(xs[member], zs[member])
+        if surfaces is not None:
+            for x, z in zip(xs[member].tolist(), zs[member].tolist()):
+                surfaces[(int(x), int(z))] = (name, surface)
         shape = surface.kind
         if surface.kind == 'gable':
             shape += ' ridge across the axis' if surface.ridge_across else ' ridge along the axis'
@@ -1024,13 +1030,14 @@ class RoofZonePlanning:
             pitched = f.roof.get('kind') == 'pitched'
             half_grid = None
             flat_grid = np.zeros(readable.shape, dtype=bool)
+            fitted: dict = {}
             if pitched:
                 # pitched labels read the float DSM (when given) so a half-block rise survives
                 fine = grids.get('dsm_fine')
                 fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
                 if cfg.get('surface') == 'fit':
                     fine, fit_lines = fit_clean_heights(
-                        fine, zone, readable, xs, zs, _axis, cfg.get('regions'), f.no,
+                        fine, zone, readable, xs, zs, _axis, cfg.get('regions'), f.no, surfaces=fitted,
                     )
                     self._zone_pad_lines.extend(fit_lines)
                 half_grid = flatten_half_step_decks(
@@ -1078,6 +1085,9 @@ class RoofZonePlanning:
             f.zone_eave = eaves
             f.zone_roof_half = half_h if pitched else None
             f.zone_flat_cells = flat_cells
+            # roof volume per column: its fitted zone, else its zone level (read by roofs[label].stairs "slope")
+            f.zone_surface = {c: fitted[c][1] for c in roof if c in fitted}
+            f.zone_volume = {c: fitted[c][0] if c in fitted else f'level {zl[c]}' for c in roof}
             f.zone_ground = gy
             f.zone_level = zl
             f.roof_material_level = (

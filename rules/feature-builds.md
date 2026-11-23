@@ -34,7 +34,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   `zones`, this is the facade storey grid count (openings still use
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
-  edge?: {block, where: outer|all},
+  edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope",
   zone_materials?: {<level_m_AOD>: <mat>},
   material_regions?: [{level: <m_AOD>, polygon: [[x,z], ...]}]}}`.
   Absent `edge` = no roof
@@ -243,6 +243,24 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   shape explains (a hip, a stepped roof) or with under 6 readable columns keeps its raw lidar heights and the
   dry run says so. Shallow, noisy gables (about 0.2 m/m) can come out `flat`. Off by default. Dry run prints
   one line per zone: `<label> region <i>: surface <shape>, rms <m> m, kept <n> of <m> columns`.
+
+  `roofs[label].flat_tol_m` with `surface: "fit"`: the default (1.5 m) stays and still applies after the fit.
+  A fitted zone is already one clean shape, so a lower value is rarely needed (on a three-volume shop, 0.8 and
+  the default differ by two columns of 105); lower it only for a fitted plane or gable that rises less than
+  1.5 m, which otherwise builds flat.
+
+  Optional `roofs[label].stairs: "slope"` (pitched roofs with `zones[label]` only; #434): stairs only on the
+  edge of the roof or on a real slope. Every column the heightfield would make a stair keeps it when it is on
+  the rim (a side neighbour is not a column of this roof); otherwise it becomes the level block of its height
+  (a full block, or a bottom slab on a half-block height) when it is in a flat layer, when the column it faces
+  is in another roof volume (a step between volumes: a fitted region, else a zone level), or when the fitted
+  surface rises less than 0.15 m per block toward its facing. Columns without a fitted surface keep their
+  stairs apart from those flat-layer and step cases, so use it with `surface: "fit"`. The test reads the fitted
+  shape, not the neighbouring blocks: on a gable at an angle to the grid the slope rises toward both cardinal
+  directions, so a diagonal step keeps its stair. Heights, walls and other blocks do not change; remaining
+  stairs take their shape from the stairs that stay. Off by default (existing builds and `house_build` roofs
+  are unchanged). Dry run prints `<label> roof stairs slope: kept <n> stair(s) (rim .., slope ..); <m> made
+  level blocks (flat layer .., step between volumes .., no fitted slope ..)`.
 
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
