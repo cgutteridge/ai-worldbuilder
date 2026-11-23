@@ -4123,5 +4123,16 @@
       "builderTask": false,
       "notes": "Apply the owner-approved retro instruction changes only: shared runner-neutral review verdicts reserve CHANGES for blockers and keep nits nonblocking; milestone handoff guidance uses existing tracker state. Put Codex-specific fresh-context, tool-waiting and reasoning economy guidance in /Users/cjg/.codex/AGENTS.md, preserving existing authorization boundaries. Existing model/effort and test gates remain in force; test-receipt, mapping and lint implementation are separate engineering work. Validate shared skill stubs and existing documentation audits, use the normal commit hook. builderTask false: instruction edits and synthetic checks only.\n\nClosed at d36c8b04c3d469fb96b8563dd4c76fbca433fb7f: Instruction-only update committed directly to main under ADR 005. Shared review verdicts reserve CHANGES for blockers, nits stay nonblocking; handoffs use milestone checkpoints and tracker claims. Three Codex-specific economy bullets saved to /Users/cjg/.codex/AGENTS.md with original authorization instructions preserved. Native skill stubs and documentation audits plus normal provider audit/full-suite hook passed. Standalone quick_validate unavailable because PyYAML is missing; frontmatter unchanged. Existing model/test gates unchanged; no runtime tooling changes or push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     }
+  ,
+    {
+      "id": 352,
+      "title": "Itchen join check in game across 62,-45 / 63,-45 / 64,-45",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Live check left over from #321 (per-cell clipped water bodies, merged in 6e33f44). Check: the Itchen reach across 63,-45 joins its neighbours 62,-45 and 64,-45 in game with no seam and no bank wall. Offline, both joins already equal the whole-river build with 0 bank blocks over water. The world still holds the old trial build of 63,-45, which put 36 grass bank blocks on the river at x 8063 and x 8192.\nBlockers (cell_registry check, 2026-11-21):\n- 63,-45: validation stale; needs prepare --apply.\n- 64,-45 and 62,-45: validation required; the river clip is unaccounted for; map query coverage is 0.0%; aerial coverage is 24.6% and 26.2%.\n- Each neighbour needs the owner to supply local aerial data (source, filename and size approved before any download) and either a fix to the map extract or dismiss-clip-coverage with a reason.\nSteps, once those are settled: prepare all three cells, then run the README steps from #321's notes (specs plus make_itchen_clip_specs.py; ask the orchestrator for the path, or regenerate them) under site_lock.py run. Dry-run each cell first. Build 62,-45 too if the bank at x=8063 has to go.\n\n\nClosed at 6c85f7d1cc17243d4d9fef1a5e41e9747e34f5e6: Closed without code: the tool change was #321 (6e33f44). The remaining work is world work (owner aerial data, cell prepare, in-game join look) and now lives in worlds/southampton-build/docs/plans/itchen-join-check.md, committed in the world repo. SHA is the tracker head at closing, not a delivery of this task.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
