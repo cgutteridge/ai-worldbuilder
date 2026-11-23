@@ -31,6 +31,11 @@ instead of a script copy:
                  bay_storey (default 1). Needs roof_pitch above 0.5 and
                  mode each. lib/builds/terrace_body.py derives the numbers from lidar eave and ridge and the class's
                  `body` recipe (config/land-use-classes.json) for the typology generator
+  chimneys       optional {"<label>": "per_house"|"per_pair"|"party_walls"|"none"|[{"at": [x, z]|[x, y, z]}, ...]}
+                 Domestic one-by-one brick stacks through the roof (WALL to ridge+2, flower_pot cap).
+                 Default when omitted: one stack per roof unit (legacy). party_walls / per_pair read
+                 footprint adjacency in this module (see footprint_party_walls). Group roofs require
+                 matching options when more than one label sets chimneys.
 
 Usage: python3 scripts/house_build.py --world <world> site/builds/<name>.json [--apply [--overwrite]]
 Direct apply refuses an existing landed build unless --overwrite is explicit; undo first to remove old blocks.
@@ -58,7 +63,152 @@ from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
 STOREY = terrace_body.STOREY_H
-from cellmath import DIRS, N8, OPP  # noqa: E402
+CHIMNEY_MODES = ('per_house', 'per_pair', 'party_walls', 'none')
+from cellmath import DIRS, N4, N8, OPP  # noqa: E402
+
+
+def footprint_party_walls(footprints):
+    """Party walls from footprint adjacency in this module.
+
+    Two footprints share a party wall when any cell of one is 4-adjacent (N4) to
+    any cell of the other. Wall-line cells are the columns on either side of that
+    shared edge.
+
+    @param footprints: sequence of ``{(x, z), ...}`` footprints
+    @returns: list of ``(i, j, wall_cells)`` with ``i < j`` and wall_cells a set of columns
+    """
+    out = []
+    indexed = list(enumerate(footprints))
+    for i, a in indexed:
+        for j, b in indexed[i + 1:]:
+            wall = set()
+            for x, z in a:
+                for dx, dz in N4:
+                    n = (x + dx, z + dz)
+                    if n in b:
+                        wall.add((x, z))
+                        wall.add(n)
+            if wall:
+                out.append((i, j, wall))
+    return out
+
+
+def _chimney_column(candidates, depth, own, prefer_x):
+    """Deepest column among ``candidates``, preferring ``prefer_x`` (legacy tie-break).
+
+    @param candidates: columns to choose from (iterable)
+    @param depth: depth field (rotated hip depth or edge distance)
+    @param own: columns that count as belonging to the pick region
+    @param prefer_x: X preference for ties (unit or house centre)
+    @returns: chosen ``(x, z)``
+    """
+    return max(candidates, key=lambda c: (
+        depth[c] if c in own and c in depth else -1,
+        -abs(c[0] - prefer_x),
+    ))
+
+
+def _house_axis_order(houses):
+    """Order house indices along a terrace/semi by footprint centroid (x, then z).
+
+    @param houses: house masses under one roof unit
+    @returns: list of indices into ``houses``
+    """
+    def key(i):
+        cells = houses[i].cells
+        return (sum(x for x, _ in cells) / len(cells),
+                sum(z for _, z in cells) / len(cells))
+
+    return sorted(range(len(houses)), key=key)
+
+
+def chimney_sites(option, houses, own, dist, depth):
+    """Column positions for domestic through-chimneys on one roof unit.
+
+    ``option`` None keeps the legacy one-stack-per-roof-unit pick. Mode strings
+    and explicit ``[{"at": ...}]`` lists come from the per-label ``chimneys`` spec.
+
+    @param option: None, a CHIMNEY_MODES string, or an explicit at-list
+    @param houses: houses under this roof unit
+    @param own: roof-unit footprint columns
+    @param dist: edge-distance field (also the candidate column set)
+    @param depth: depth field used for ridge preference
+    @returns: list of ``(x, z)`` stack columns
+    """
+    if option == 'none':
+        return []
+    if isinstance(option, list):
+        sites = []
+        for row in option:
+            at = row['at']
+            sites.append((int(at[0]), int(at[2] if len(at) > 2 else at[1])))
+        return sites
+    if option is None:
+        prefer = sum(x for x, _ in own) / len(own)
+        return [_chimney_column(dist, depth, own, prefer)]
+    party = footprint_party_walls([h.cells for h in houses])
+    if option == 'party_walls':
+        sites = []
+        for _i, _j, wall in party:
+            # Sort so ties on depth/centre keep a stable lower-x column.
+            cand = sorted(c for c in wall if c in dist)
+            if cand:
+                prefer = sum(x for x, _ in cand) / len(cand)
+                sites.append(_chimney_column(cand, depth, own, prefer))
+        return sites
+    if option == 'per_house':
+        sites = []
+        for h in houses:
+            region = h.body or h.cells
+            prefer = sum(x for x, _ in region) / len(region)
+            sites.append(_chimney_column(dist, depth, region, prefer))
+        return sites
+    # per_pair: one stack at the party wall of each consecutive pair along the terrace
+    order = _house_axis_order(houses)
+    by_pair = {(min(i, j), max(i, j)): wall for i, j, wall in party}
+    sites = []
+    idx = 0
+    while idx < len(order):
+        if idx + 1 < len(order):
+            a, b = order[idx], order[idx + 1]
+            wall = by_pair.get((min(a, b), max(a, b)))
+            if wall is not None:
+                cand = sorted(c for c in wall if c in dist)
+                if cand:
+                    prefer = sum(x for x, _ in cand) / len(cand)
+                    sites.append(_chimney_column(cand, depth, own, prefer))
+                idx += 2
+                continue
+        region = houses[order[idx]].body or houses[order[idx]].cells
+        prefer = sum(x for x, _ in region) / len(region)
+        sites.append(_chimney_column(dist, depth, region, prefer))
+        idx += 1
+    return sites
+
+
+def _validate_chimney_option(path, no, opt):
+    """Refuse a bad per-label chimneys value.
+
+    @param path: spec path (for error text)
+    @param no: house label
+    @param opt: chimneys value for that label
+    """
+    if isinstance(opt, str):
+        if opt not in CHIMNEY_MODES:
+            raise SystemExit(f'{path}: chimneys[{no!r}] must be one of {CHIMNEY_MODES} or an at-list')
+        return
+    if isinstance(opt, list):
+        if not opt:
+            raise SystemExit(f'{path}: chimneys[{no!r}] at-list must not be empty (use "none")')
+        for i, row in enumerate(opt):
+            if not isinstance(row, dict) or 'at' not in row:
+                raise SystemExit(f'{path}: chimneys[{no!r}][{i}] needs an "at" coordinate')
+            at = row['at']
+            if (not isinstance(at, (list, tuple)) or len(at) not in (2, 3)
+                    or any(isinstance(v, bool) or not isinstance(v, int) for v in at)):
+                raise SystemExit(f'{path}: chimneys[{no!r}][{i}].at must be [x, z] or [x, y, z] ints')
+        return
+    raise SystemExit(f'{path}: chimneys[{no!r}] must be a mode string or an at-list')
 
 
 def load_spec(path):
@@ -121,6 +271,13 @@ def load_spec(path):
             raise SystemExit(f'{path}: {exc}') from exc
         if roof_class(pitches.get(no, 0.5), 1) != 'pitched':
             raise SystemExit(f'{path}: body[{no!r}] needs a roof_pitch above 0.5 (a pitched body)')
+    chimneys = spec.get('chimneys', {})
+    if not isinstance(chimneys, dict):
+        raise SystemExit(f'{path}: chimneys must be a label-to-option object')
+    for no, opt in chimneys.items():
+        if no not in labels or no not in roofs:
+            raise SystemExit(f'{path}: chimneys label {no!r} needs a way and a roof')
+        _validate_chimney_option(path, no, opt)
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
@@ -131,6 +288,10 @@ def load_spec(path):
             raise SystemExit(f'{path}: roof_fit octant needs mode "each", not a group roof')
         if g['mode'] == 'group' and len({pitches.get(no, 0.5) for no in g['nos']}) > 1:
             raise SystemExit(f'{path}: group roof labels must have equal roof_pitch values')
+        if g['mode'] == 'group':
+            group_chim = [chimneys[no] for no in g['nos'] if no in chimneys]
+            if len(group_chim) > 1 and any(opt != group_chim[0] for opt in group_chim[1:]):
+                raise SystemExit(f'{path}: group chimney options must match')
         for no in g['nos']:
             if no not in labels or no not in spec['roofs']:
                 raise SystemExit(f'{path}: label {no} needs a way and a roof')
@@ -523,6 +684,30 @@ class Build:
         import roof_lint
         return roof_lint.ridge_jogs(cells)
 
+    def _chimney_option(self, hs):
+        """Resolved chimneys value for a roof unit, or None for the legacy default.
+
+        @param hs: houses under the roof unit
+        @returns: mode string, explicit at-list, or None
+        """
+        opts = self.spec.get('chimneys', {})
+        for h in hs:
+            if h.no in opts:
+                return opts[h.no]
+        return None
+
+    def _through_chimney(self, x, z, b, ridge):
+        """One-by-one brick stack through the roof: WALL to ridge+2, flower_pot cap.
+
+        @param x: stack column X
+        @param z: stack column Z
+        @param b: house floor y (eave is b+6)
+        @param ridge: highest roof block y beside the stack
+        """
+        for y in range(b + 6, ridge + 2):
+            self.set(x, y, z, WALL)
+        self.set(x, ridge + 2, z, 'flower_pot')
+
     def roof(self):
         """Plan shared or individual roof skins, solid underlays and through-chimneys."""
         done = {}
@@ -545,13 +730,13 @@ class Build:
             if not resolved['ok']:
                 raise SystemExit('; '.join(resolved['messages']))
             variants = family_variants(rm)
+            chimney_opt = self._chimney_option(hs)
             rotated = None
             if pitched and self.spec.get('roof_fit', {}).get(hs[0].no) == 'octant':
                 # Design the roof as a half-block-cell volume and fit blocks to it (#415).
                 depth = rotated_hip_depth(own, set(dist)) or dist
-                chimney = max(dist, key=lambda c: (depth[c] if c in own else -1,
-                                                   -abs(c[0] - sum(x for x, _ in own) / len(own))))
-                fitted = fit_octant_roof(own, set(dist), pitch, b + 6, {chimney})
+                sites = chimney_sites(chimney_opt, hs, own, dist, depth)
+                fitted = fit_octant_roof(own, set(dist), pitch, b + 6, set(sites))
                 fitted_states = block_states(rm, fitted.blocks) if fitted is not None else None
                 if fitted is None:
                     print(f'{hs[0].no} roof_fit octant: footprint is not close to a rectangle; using columns')
@@ -565,11 +750,10 @@ class Build:
                         self.set(*pos, state)
                         if 'slab' in state and 'type=bottom' in state:
                             self.p.keep_slab_cells.add(pos)
-                    ridge = max(y for (x, y, z) in fitted.blocks
-                                if abs(x - chimney[0]) <= 1 and abs(z - chimney[1]) <= 1)
-                    for y in range(b + 6, ridge + 2):
-                        self.set(chimney[0], y, chimney[1], WALL)
-                    self.set(chimney[0], ridge + 2, chimney[1], 'flower_pot')
+                    for chimney in sites:
+                        ridge = max(y for (x, y, z) in fitted.blocks
+                                    if abs(x - chimney[0]) <= 1 and abs(z - chimney[1]) <= 1)
+                        self._through_chimney(chimney[0], chimney[1], b, ridge)
                     continue
             if pitched:
                 # The outermost eave cell starts half a block below the wall-top level so it is a
@@ -606,8 +790,8 @@ class Build:
                 if cur is None or key > cur[0]:
                     done[c] = (key, b, c in self.owner, rm, state, pitched, dist[c] == 0)
             depth = rotated if pitched and rotated is not None else dist
-            best = max(dist, key=lambda c: (depth[c] if c in own else -1, -abs(c[0] - sum(x for x, _ in own) / len(own))))
-            chim.append((best, b))
+            for site in chimney_sites(chimney_opt, hs, own, dist, depth):
+                chim.append((site, b))
         # Chimneys replace roof stairs, so choose corner states against the final skin.
         chimney_cells = {c for c, _b in chim}
         facings = {c: state.split('facing=', 1)[1].split(',', 1)[0]
@@ -635,9 +819,7 @@ class Build:
                 self.p.keep_slab_cells.add((x, y, z))
         for (x, z), b in chim:
             ridge = max(k[0][0] for (xx, zz), k in done.items() if abs(xx - x) <= 1 and abs(zz - z) <= 1)
-            for y in range(b + 6, ridge + 2):
-                self.set(x, y, z, WALL)
-            self.set(x, ridge + 2, z, 'flower_pot')
+            self._through_chimney(x, z, b, ridge)
 
     def build(self):
         self.foreign = {c for c in self.idx.cells() if c not in self.owner}
