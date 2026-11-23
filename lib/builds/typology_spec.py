@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Rules-only specs for house_build and feature_build.
 
-No model chooses a design. A footprint is a filled rectangle, or it comes back
-as needs-designer. House tags (terrace, semi-detached, detached, or a plain
+No model chooses a design. A footprint of any orientation is taken as drawn
+(the builder fits it); a sliver or a multi-part shape comes back as needs-designer. House tags (terrace, semi-detached, detached, or a plain
 house whose shared walls make the row obvious) become one house_build spec.
 Any other class the building's own tags name becomes a minimal feature_build
 spec, for example a shop with flats above. Missing tags, an odd footprint, or
@@ -24,6 +24,7 @@ This module writes spec JSON only. It never places blocks.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import re
@@ -41,6 +42,13 @@ STOREY_M = 3.0
 # One storey of slack so a pitched roof's median lidar rise still agrees with building:levels.
 LIDAR_TOL_M = 4.0
 FRONT_REACH = 40.0
+# Footprints are taken as drawn; the builder fits them. A house must fill this much of its bounding box
+# (a rotated rectangle fills about half at worst) and a shop only needs this many block columns.
+HOUSE_MIN_FILL = 0.45
+HOUSE_MIN_CELLS = 9
+SHOP_MIN_CELLS = 20
+# Footprints with at most this many empty block columns between them belong to one row.
+ROW_GAP = 1
 PITCHED_RISE = 0.6
 FLAT_RISE = 0.0
 HOUSE_TAGS = frozenset({'house', 'residential', 'terrace', 'semidetached_house', 'detached'})
@@ -72,7 +80,7 @@ def generate(buildings, streets=()) -> dict:
     ``lidar_m`` (median DSM minus DTM, metres, or None) and ``profile`` (a
     validated district document, or None). None, and a profile that omits the
     class, fall back to the land-use class default. ``streets`` is a list of
-    polylines in block coordinates. Buildings that share a full side are one row.
+    polylines in block coordinates. Buildings within one block of each other are one row.
 
     @param buildings: one mapping per footprint
     @param streets: polylines, each a sequence of (x, z) points
@@ -94,15 +102,9 @@ def generate(buildings, streets=()) -> dict:
             prepared.append({'way_id': way_id, 'reason': 'not in the vector map', 'box': None})
             continue
         prepared.append(_prepare(raw, way_id, streets))
-    _mark_partial(prepared)
     groups = _components(prepared)
     specs = []
     for group in groups:
-        if any(row['reason'] for row in group):
-            for row in group:
-                if not row['reason']:
-                    row['reason'] = 'attached building cannot be decided'
-            continue
         reason, axis = _row_reason(group, streets)
         if reason:
             for row in group:
@@ -241,12 +243,9 @@ def _prepare(raw: dict, way_id: str, streets=()) -> dict:
     """One footprint's decision, or the first reason it cannot be decided."""
     cells = _as_cells(raw.get('cells'))
     base = {'way_id': way_id, 'reason': None, 'box': None, 'cells': cells or set(), 'tags': {}}
-    if not cells:
-        base['reason'] = 'odd footprint'
-        return base
-    box = _box(cells)
     tags = dict(raw.get('tags') or {})
-    base.update(cells=cells, box=box, tags=tags)
+    box = _footprint(cells, tags.get('building') in HOUSE_TAGS) if cells else None
+    base.update(box=box, tags=tags)
     if box is None:
         base['reason'] = 'odd footprint'
         return base
@@ -355,15 +354,37 @@ def _body_evidence(cls, tags: dict, raw: dict, streets=()):
     return heights[0], heights[1], params
 
 
-def _box(cells: set[tuple[int, int]]) -> tuple[int, int, int, int] | None:
-    """Inclusive box of a filled rectangle at least 3 by 3, else None."""
+def _footprint(cells: set[tuple[int, int]], house: bool) -> tuple[int, int, int, int] | None:
+    """Bounding box of a footprint the builder can fit, else None (sliver or multi-part shape).
+
+    Any orientation is accepted. A house fills enough of its bounding box; a shop needs enough columns.
+    A footprint in more than one separate part is not one building.
+    """
+    if len(cells) < (HOUSE_MIN_CELLS if house else SHOP_MIN_CELLS) or _parts(cells) != 1:
+        return None
     xs = [x for x, _z in cells]
     zs = [z for _x, z in cells]
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
-    width, depth = x1 - x0 + 1, z1 - z0 + 1
-    if width < 3 or depth < 3 or len(cells) != width * depth:
+    if house and len(cells) < HOUSE_MIN_FILL * (x1 - x0 + 1) * (z1 - z0 + 1):
         return None
     return (x0, z0, x1, z1)
+
+
+def _parts(cells: set[tuple[int, int]]) -> int:
+    """Number of separate pieces, joining columns that touch at a corner."""
+    left = set(cells)
+    parts = 0
+    while left:
+        parts += 1
+        stack = [left.pop()]
+        while stack:
+            x, z = stack.pop()
+            for dx in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if (x + dx, z + dz) in left:
+                        left.remove((x + dx, z + dz))
+                        stack.append((x + dx, z + dz))
+    return parts
 
 
 def _class_of(tags: dict) -> tuple[str | None, str | None]:
@@ -512,21 +533,28 @@ def _material(section: dict) -> tuple[str | None, str | None, str | None]:
     return None, None, 'palette has no roof material'
 
 
-def _mark_partial(prepared: list[dict]) -> None:
-    """A side that is shared only in part is an odd footprint, not a row."""
-    boxed = [row for row in prepared if row.get('box')]
-    for i, left in enumerate(boxed):
-        for right in boxed[i + 1:]:
-            if _relation(left['box'], right['box']) == 'partial':
-                for row in (left, right):
-                    if not row['reason']:
-                        row['reason'] = 'odd footprint'
-
-
 def _components(prepared: list[dict]) -> list[list[dict]]:
-    """Groups joined by a full shared side. Refused footprints stay in the group."""
+    """Rows: decided footprints of one kind within ROW_GAP empty columns of each other.
+
+    A terrace, semi or detached count depends on every neighbour, so a house row that sits next to a
+    refused footprint is refused with it. Shops and bodies are built one by one, so a refused
+    neighbour does not hold them back.
+    """
     boxed = [row for row in prepared if row.get('box')]
-    parent = {row['way_id']: row['way_id'] for row in boxed}
+    by_way = {row['way_id']: row for row in boxed}
+    owner = {}
+    for row in boxed:
+        for cell in row['cells']:
+            owner.setdefault(cell, row['way_id'])
+    reach = range(-ROW_GAP - 1, ROW_GAP + 2)
+    near = {way: set() for way in by_way}
+    for row in boxed:
+        for x, z in row['cells']:
+            for dx, dz in itertools.product(reach, repeat=2):
+                other = owner.get((x + dx, z + dz))
+                if other and other != row['way_id']:
+                    near[row['way_id']].add(other)
+    parent = {row['way_id']: row['way_id'] for row in boxed if not row['reason']}
 
     def find(way_id: str) -> str:
         while parent[way_id] != way_id:
@@ -534,53 +562,37 @@ def _components(prepared: list[dict]) -> list[list[dict]]:
             way_id = parent[way_id]
         return way_id
 
-    for i, left in enumerate(boxed):
-        for right in boxed[i + 1:]:
-            if _relation(left['box'], right['box']) in ('x', 'z'):
-                parent[find(left['way_id'])] = find(right['way_id'])
+    for way in parent:
+        for other in near[way]:
+            if other in parent and by_way[other]['path'] == by_way[way]['path']:
+                parent[find(way)] = find(other)
     groups = defaultdict(list)
-    for row in boxed:
-        groups[find(row['way_id'])].append(row)
-    return list(groups.values())
+    for way in parent:
+        groups[find(way)].append(by_way[way])
+    rows = []
+    for group in groups.values():
+        if group[0]['path'] == 'house' and any(
+                by_way[other]['reason'] for row in group for other in near[row['way_id']]):
+            for row in group:
+                row['reason'] = 'attached building cannot be decided'
+            continue
+        rows.append(group)
+    return rows
 
 
-def _relation(a: tuple, b: tuple) -> str | None:
-    """``x`` or ``z`` when two boxes share a full side, ``partial`` when they do not, else None."""
-    ax0, az0, ax1, az1 = a
-    bx0, bz0, bx1, bz1 = b
-    horizontal = _span(ax0, ax1, bx0, bx1)
-    vertical = _span(az0, az1, bz0, bz1)
-    if horizontal == 'touch' and vertical == 'overlap':
-        return 'x' if (az0, az1) == (bz0, bz1) else 'partial'
-    if vertical == 'touch' and horizontal == 'overlap':
-        return 'z' if (ax0, ax1) == (bx0, bx1) else 'partial'
-    if horizontal == 'overlap' and vertical == 'overlap':
-        return 'partial'
-    return None
-
-
-def _span(a0: int, a1: int, b0: int, b1: int) -> str | None:
-    """How two inclusive ranges meet: touch, overlap, or neither."""
-    if a1 + 1 == b0 or b1 + 1 == a0:
-        return 'touch'
-    if a0 <= b1 and b0 <= a1:
-        return 'overlap'
-    return None
+def _row_axis(group: list[dict]) -> str | None:
+    """``x`` or ``z``, the way the row's footprints are spread (centroids), or None for one building."""
+    if len(group) < 2:
+        return None
+    centres = [_centroid(row['cells']) for row in group]
+    spread_x = max(c[0] for c in centres) - min(c[0] for c in centres)
+    spread_z = max(c[1] for c in centres) - min(c[1] for c in centres)
+    return 'x' if spread_x >= spread_z else 'z'
 
 
 def _row_reason(group: list[dict], streets) -> tuple[str | None, str | None]:
     """Why a clean component still cannot be one spec, and its row axis."""
-    axes = set()
-    for i, left in enumerate(group):
-        for right in group[i + 1:]:
-            rel = _relation(left['box'], right['box'])
-            if rel in ('x', 'z'):
-                axes.add(rel)
-    if len(axes) > 1:
-        return 'odd footprint', None
-    axis = next(iter(axes), None) if len(group) > 1 else None
-    if len(group) > 1 and axis is None:
-        return 'odd footprint', None
+    axis = _row_axis(group)
     if len({row['profile_name'] for row in group}) > 1:
         return 'districts differ', axis
     if len({row['path'] for row in group}) > 1:
@@ -611,26 +623,26 @@ def _house_kind(group: list[dict]) -> str | None:
 
 
 def _front(cells: set[tuple[int, int]], streets, axis: str | None) -> tuple[str | None, str | None]:
-    """Cardinal facing the nearest street, perpendicular to a row."""
+    """Cardinal facing the nearest street; perpendicular to the row when there is one.
+
+    The street's direction from the centroid picks whichever allowed axis it leans on more, so a
+    diagonal road still gives a front. Only no street in reach, or a centroid on the street, has none.
+    """
     hit = _closest(_centroid(cells), streets)
     if hit is None or hit[0] > FRONT_REACH:
         return None, 'no street to face'
     _dist, px, pz = hit
     cx, cz = _centroid(cells)
     dx, dz = px - cx, pz - cz
-    if axis == 'x':
-        if abs(dz) <= abs(dx):
-            return None, 'no clear front'
-        return ('S' if dz > 0 else 'N'), None
-    if axis == 'z':
-        if abs(dx) <= abs(dz):
-            return None, 'no clear front'
-        return ('E' if dx > 0 else 'W'), None
-    if max(abs(dx), abs(dz)) < 1.5 * min(abs(dx), abs(dz)):
+    if axis == 'x' or (axis is None and abs(dz) >= abs(dx)):
+        dx = 0.0
+    else:
+        dz = 0.0
+    if dx == 0 and dz == 0:
         return None, 'no clear front'
-    if abs(dx) >= abs(dz):
-        return ('E' if dx > 0 else 'W'), None
-    return ('S' if dz > 0 else 'N'), None
+    if dz:
+        return ('S' if dz > 0 else 'N'), None
+    return ('E' if dx > 0 else 'W'), None
 
 
 def _centroid(cells: set[tuple[int, int]]) -> tuple[float, float]:
@@ -721,9 +733,10 @@ def _body_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str
 
 def _order(group: list[dict], axis: str | None) -> list[dict]:
     """Left to right, or southwards when the row runs that way."""
-    if axis == 'z':
-        return sorted(group, key=lambda row: (row['box'][1], row['box'][0], row['way_id']))
-    return sorted(group, key=lambda row: (row['box'][0], row['box'][1], row['way_id']))
+    def key(row):
+        cx, cz = _centroid(row['cells'])
+        return (cz, cx, row['way_id']) if axis == 'z' else (cx, cz, row['way_id'])
+    return sorted(group, key=key)
 
 
 def _kind(group: list[dict]) -> tuple[str, str]:
@@ -842,7 +855,7 @@ def _index_records(index) -> list[dict]:
 
 
 def _touching(records: list[dict], selected: set[str]) -> list[dict]:
-    """Selected footprints plus every footprint that touches one of them, by 4-neighbour."""
+    """Selected footprints plus every footprint within ROW_GAP columns of one of them."""
     owner = {}
     for row in records:
         for cell in row['cells']:
@@ -854,7 +867,7 @@ def _touching(records: list[dict], selected: set[str]) -> list[dict]:
         for way_id in frontier:
             cells = next(row['cells'] for row in records if row['way_id'] == way_id)
             for x, z in cells:
-                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                for dx, dz in itertools.product(range(-ROW_GAP - 1, ROW_GAP + 2), repeat=2):
                     other = owner.get((x + dx, z + dz))
                     if other and other not in seen:
                         seen.add(other)
