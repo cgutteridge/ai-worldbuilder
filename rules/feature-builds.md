@@ -338,9 +338,11 @@ through lines are laid by rule (below) and finished by a person.
 The per-cell proposal and preparation paths check the smallest complete railway
 cell extract first. They return immediately when it has no through line or when
 a landed railway box already covers the whole cell. A partially covered boundary
-cell can start the next box. Planning uses whole, unclipped ways for a 2048 by
-2048 box centred on the starting cell, the explicit point and road extracts,
-cached lidar terrain/surface arrays and applicable joins from earlier features.
+cell can start the next box. Planning uses whole, unclipped ways for a 512 by
+512 box centred on the starting cell (`railway_evidence.PLANNER_BOX`; a line longer
+than that is a chain of features, each continuing the last at its recorded join; see
+decision 17 in `docs/plans/railway.md`), the explicit point and road extracts (they must
+cover the box plus 64 blocks), cached lidar terrain/surface arrays and applicable joins from earlier features.
 There are no implicit downloads or live planning reads. Readiness for a railway
 needs map query coverage, the lidar cache and the terrain baseline in every cell it
 touches, but not aerial coverage (the planner reads no aerial); prepare a touched cell
@@ -412,6 +414,17 @@ an overlap covers a box join or a line lies wholly inside the others. `build()` 
 refusing hand-made specs whose plans still share a rail column or write a shared column
 differently. Metadata lists each junction gap under `junctions` (side line, main line,
 `where`, `last`, ends) so a person can find and finish it.
+
+**Box edges (#464).** A join is live until its next column lies inside a landed box; only live
+joins lead a feature, two live joins of one track in one box (a hole between built features) and
+a track that meets an earlier box with no recorded join are refused. A structure gap wholly inside
+the box is recorded as above; one wholly outside is the neighbour's; one that starts at the cut
+after a join is the next feature's, with the earlier feature's last rail as its first end record
+(`from_join`). A gap that straddles the box edge, or ends on the last inside column, fails
+loudly with the edge coordinates, as does a junction over any cut other than an incoming join.
+Choose another start cell (`railway_build.py --cell TX,TZ`; the box is the cell centre plus or
+minus 256) so the box holds the whole gap or junction. A junction gap touching a structure gap is
+one `junction` stretch for a person.
 
 The feature reserves every written footprint column from later ground, trees
 and decor, including cuts below the old terrain. Ground must not refill above

@@ -66,6 +66,31 @@ def reserved_columns(cell, reg=None) -> set:
     return out
 
 
+def _in_boxes(p, boxes) -> bool:
+    return any(a <= p[0] <= c and b <= p[1] <= d for a, b, c, d in boxes)
+
+
+def _unbuilt_in_cell(points, cell, boxes) -> bool:
+    """Whether a way has a block in the cell that no landed box covers yet.
+
+    A cell on the edge of a landed box is only partly covered; a line that runs only
+    through the covered part needs no feature of its own (the earlier feature's join
+    leads the next one on).
+    """
+    if not boxes:
+        return True
+    x0, z0, x1, z1 = cellmath.bounds(cell)
+    for a, b in zip(points, points[1:]):
+        if max(a[0], b[0]) < x0 or min(a[0], b[0]) > x1 + 1 or max(a[1], b[1]) < z0 or min(a[1], b[1]) > z1 + 1:
+            continue
+        n = max(1, int(max(abs(b[0] - a[0]), abs(b[1] - a[1])) * 2))
+        for k in range(n + 1):
+            p = (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+            if x0 <= p[0] < x1 + 1 and z0 <= p[1] < z1 + 1 and not _in_boxes((int(p[0] // 1), int(p[1] // 1)), boxes):
+                return True
+    return False
+
+
 def proposal(cell, reg, *, root=None, source=None, frame=None) -> list:
     """Cheap cell evidence check; no box extract or lidar is opened here.
 
@@ -74,6 +99,7 @@ def proposal(cell, reg, *, root=None, source=None, frame=None) -> list:
     """
     if covered(cell, reg):
         return []
+    boxes = [tuple(b) for entry in active_railways(reg) for b in entry.meta.get('boxes', ())]
     from railway_evidence import THROUGH, cell_has_railway, extract_railway_box
     from world_frame import load_frame
     if root is None:
@@ -111,7 +137,7 @@ def proposal(cell, reg, *, root=None, source=None, frame=None) -> list:
             continue
         frame = frame or load_frame(Path(root) / 'config/world-frame.json')
         refs.update(w.osm_id for w in extract_railway_box(cellmath.bounds(cell), source=path, frame=frame)
-                    if w.kind == THROUGH)
+                    if w.kind == THROUGH and _unbuilt_in_cell(w.points, cell, boxes))
         if refs:
             break
     if not refs:
@@ -267,7 +293,14 @@ def metadata(spec) -> dict:
 
 
 def _incoming_joins(line, prior, cell):
-    """Match constituent tracks and directed boundary segments, never aggregate ids alone."""
+    """Match constituent tracks and directed boundary segments, never aggregate ids alone.
+
+    A join whose next column already lies inside a landed box is spent: another feature
+    went on from it. Only live joins lead a new feature, so a chain of features can grow
+    from either end. Two live joins of one track inside this box (a hole between two
+    built features) cannot both fix the profile and are refused.
+    """
+    spent = [tuple(box) for entry in prior for box in entry.meta.get('boxes', ())]
     from railway_plan import snap_track
     from plan_refs import norm_ref
     x0, z0, x1, z1 = cellmath.bounds(cell)
@@ -282,7 +315,7 @@ def _incoming_joins(line, prior, cell):
             for join in entry.meta.get('joins', ()):
                 for record in join['tracks']:
                     at, nxt = tuple(record['at']), tuple(record['next'])
-                    if not (bx <= nxt[0] <= ex and bz <= nxt[1] <= ez):
+                    if not (bx <= nxt[0] <= ex and bz <= nxt[1] <= ez) or _in_boxes(nxt, spent):
                         continue
                     old_ways = {norm_ref(w) for w in record.get('way_ids', ())}
                     same_track = bool(old_ways & ways) if old_ways else join.get('line_id') == line.id
@@ -303,10 +336,11 @@ def _incoming_joins(line, prior, cell):
                         raise ValueError('prior boundary join lacks matching constituent track identity')
                     distance = (nxt[0]-cx)**2+(nxt[1]-cz)**2
                     candidate = {**record, 'track_index': ti}
-                    if ti not in by_track or distance < by_track[ti][0]:
-                        by_track[ti] = distance, candidate
-                    elif distance == by_track[ti][0] and candidate != by_track[ti][1]:
-                        raise ValueError('conflicting prior boundary joins for one constituent track')
+                    if ti in by_track and candidate != by_track[ti][1]:
+                        raise ValueError('conflicting prior boundary joins for one constituent track: '
+                                         f'{list(by_track[ti][1]["next"])} and {list(nxt)}; '
+                                         'start from a cell whose box holds only one of them')
+                    by_track[ti] = distance, candidate
     return [{'line_id': line.id, 'tracks': [record]} for _distance, record in by_track.values()]
 
 
@@ -324,10 +358,41 @@ def _check_continuations(corridor, incoming, excludes):
             uncovered = [tuple(q) for q in track['path']
                          if tuple(q) in rails and not any(a <= q[0] <= c and b <= q[1] <= d
                                                          for a, b, c, d in excludes)]
-            if (not uncovered or uncovered[0] != tuple(record['next'])
-                    or rails[uncovered[0]] != record['level']
-                    or track['before'] != record['at']):
+            if track['gap'][0]:
+                # The track starts inside a gap (a junction or structure at the cut): the gap's
+                # first end record is the earlier feature's last rail, so check that instead.
+                joined = (tuple(track['path'][0]) == tuple(record['next'])
+                          and track['levels'][0] + 1 == record['level'] and track['before'] == record['at']
+                          and any(e.get('from_join') for g in corridor['gaps'] if g['track_index'] == record['track_index']
+                                  for e in g['ends']))
+            else:
+                joined = (bool(uncovered) and uncovered[0] == tuple(record['next'])
+                          and rails[uncovered[0]] == record['level'] and track['before'] == record['at'])
+            if not joined:
                 raise ValueError('first uncovered rail does not connect to its recorded boundary join')
+
+
+def _check_seams(plan, incoming, excludes):
+    """A track that runs from an earlier box into new ground needs a recorded join.
+
+    Without one the new rails would start at an unrelated level where the old ones
+    stop. The usual cause is a start cell whose box misses the join; start from the
+    cell of that join instead (docs/plans/railway.md decision 17).
+    """
+    if not excludes or plan['failures']:
+        return
+    joined = {r['track_index'] for join in incoming for r in join['tracks']}
+    rails = {(x, z) for x, _y, z, _shape, _block in plan['rails']}
+    for track in plan['tracks']:
+        cells = [tuple(q) for q in track['path']]
+        covered_cells = [q for q in cells if _in_boxes(q, excludes)]
+        if (track['track_index'] not in joined and covered_cells
+                and any(q in rails and not _in_boxes(q, excludes) for q in cells)):
+            at = covered_cells[0]
+            raise ValueError(
+                f'{plan["line_id"]} track {track["track_index"]} meets an earlier railway box at '
+                f'{at[0]},{at[1]} but no recorded join leads into this box; start from the cell of '
+                'the live join (see the join cells in the earlier feature metadata)')
 
 
 def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_surfaces=None,
@@ -358,6 +423,7 @@ def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_sur
         share_footprints(plans)
     for line, joins, p in zip(lines, joined, plans):
         under, _decks = deck_evidence(line, structures, inferred_deck_usable)
+        _check_seams(p, joins, excludes)
         _check_continuations(p, joins, excludes)
         p['track_way_ids'] = [list(ways) for ways in line.track_way_ids]
         deck = {tuple(q) for span in line.overhead for q in span.deck}

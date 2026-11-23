@@ -140,7 +140,8 @@ None of these may be lost when the tickets are written. Each ticket should quote
 2. **Railway planning is part of the normal per-cell workflow**, not a manual extract. A cell with no railway is
    skipped at once. A cell already covered by an earlier railway feature is skipped at once. Otherwise a railway
    feature is planned starting from that cell. (This replaces the earlier idea of a separate corridor extract.)
-3. **Size limit: a 2048 by 2048 box around the starting cell.** It is a rough limiting rule, so keep the maths
+3. **Size limit: a 2048 by 2048 box around the starting cell.** *Superseded by decision 17 (512 by 512); kept for
+   the record.* It is a rough limiting rule, so keep the maths
    simple. A line that leaves the box is cut where it leaves; both features record the join (cell, level, direction,
    tracks) and the next feature starts at the recorded level. Ghost ground is needed across the box (about 16 to 25
    cells; roughly 10 to 15 minutes at the trial's 35 seconds a cell).
@@ -189,6 +190,34 @@ None of these may be lost when the tickets are written. Each ticket should quote
     50.91436,-1.45871 (MC 1901,-3299, cell 23,-32), which also has the viaduct over rail (decision 15). Probe extracts
     are in the world repo under `reference/vector_map/rail_probe_complex/`. Note it in D's ticket as the next step and file it once D has
     shown what a real line looks like.
+17. **Planner box 512 by 512 (#464, owner decision 2026-11-23, replaces decision 3).** Trial D showed a 2048 box
+    makes one feature span 42 cells and about 437,000 columns (apply read-back alone would take about 77 minutes),
+    and needs ghost ground and evidence across all of them. `railway_evidence.PLANNER_BOX` is now 512, centred on
+    the starting cell (the cell centre plus or minus 256, so 3 by 3 cells are fully inside and 5 by 5 are touched).
+    The cut-and-join rule of decision 3 is unchanged, but it is now the normal path: a corridor like trial D (about
+    690 by 510) needs five chained features. Rules, all in `railway_plan` and `railway_feature`:
+    - **Live and spent joins.** A join is spent once its `next` column lies inside any landed box. Only live joins
+      lead a new feature, so a chain grows from either end and a join that is still inside a later box is ignored.
+      Two live joins of one track inside one box (a hole between two built features) are refused with both
+      coordinates; so is a track that runs from an earlier box into new ground with no recorded join (a start cell
+      whose box misses the join). Start from the cell of the live join instead.
+    - **Proposals.** A cell on the edge of a landed box is only partly covered. It is proposed only when a through
+      line has a block in the uncovered part of the cell.
+    - **Gaps are found on the visit plus a 64-block margin** (`railway_plan.EDGE_MARGIN`). A crossing, bridge, tunnel
+      or overhead gap wholly inside the box is recorded as before. One wholly outside belongs to the neighbouring
+      feature. One that starts exactly at the cut is the next feature's: its first end record is the earlier
+      feature's last rail (`from_join: true`, with that rail's cell, level and direction). One that straddles the
+      box edge, or ends on the last inside column with no abutting rail, **fails loudly** with the edge coordinates.
+      A crossing outside the box plus margin is another feature's and needs no road tags; the roads and points
+      extracts must cover the box plus 64 blocks.
+    - **Junctions.** A junction that begins on an incoming join is allowed (same first end record). A junction that
+      covers any other cut fails loudly with coordinates. A junction gap touching or overlapping a structure gap
+      becomes one `junction` stretch (`source` joins both ids, `also` lists the structure kinds) for a person to finish.
+    - **Choosing another start cell.** A failure that names a box edge is cured by moving the box: `railway_build.py
+      --cell TX,TZ` takes any cell whose box (centre plus or minus 256) holds the join's next column and the whole
+      gap or junction; step the start cell by one or two cells away from the edge the message names. In the trial D
+      replay from cell 54,-34, cell 56,-34 failed (a bridge straddled its south edge at 7461,-4033) and cell 56,-35
+      worked.
 
 ## Ticket plan
 
@@ -200,7 +229,7 @@ representative build, or in-game judgement.
 | Ticket | builderTask | Depends on | Scope in one line |
 | --- | --- | --- | --- |
 | #379 A. Railway evidence | false | none | Per-cell "has railway?" test; through line versus decor classification (decision 4); double-track pairing; points for level crossings (with barrier, light, bell tags), bridges, tunnels. Fixtures from the recorded GeoJSON and points. |
-| #381 B. Line planner (pure function) | false | A | Snap, level profile, corridor, ballast, powered rail and torches, lidar planting (decisions 3 to 8); the 2048 box with cut and join records; gaps at crossings, bridges and tunnels with end records (decision 10); fails loudly. Synthetic fixtures. |
+| #381 B. Line planner (pure function) | false | A | Snap, level profile, corridor, ballast, powered rail and torches, lidar planting (decisions 3 to 8); the planning box (2048 then, 512 since decision 17) with cut and join records; gaps at crossings, bridges and tunnels with end records (decision 10); fails loudly. Synthetic fixtures. |
 | #382 C. Line feature integration | false | B | Journal ownership of the footprint, covered-cell marking and the instant skips (decision 2), structure backup, undo, read-back and retry, cell trees and decor skipping the footprint. `MemoryBlocks` tests. |
 | #383 X. Crossing feature: spec and builder | false | C | Spec schema for a crossing (and the shared join records), the "not ready" gate, building the road surface, rails and gates/lights from a spec. Proposed addition: decisions 9 and 10 need this mechanism before Claude can design a crossing. |
 | #384 D. Real-stretch trial | **true** | C | Build the trial corridor with the production builder and judge it in game (ride a cart, list spots for humans). Notes decor sidings as next step. |

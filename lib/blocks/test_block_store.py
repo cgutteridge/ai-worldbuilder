@@ -323,6 +323,27 @@ class TestLiveMcpContract(BlockStoreContract, unittest.TestCase):
             self.assertLessEqual(vol, 65536)
             self.assertEqual(args['limit'], vol)
 
+    def test_read_many_batches_an_unordered_set_by_chunk(self):
+        """A shuffled warm set costs no more scans than a sorted one (#464 note), order kept."""
+        import random
+        from unittest import mock
+        import block_store
+        positions = [(x, y, z) for x in range(0, 512, 16) for z in range(0, 512, 16) for y in range(4)]
+        blocks = {p: STONE for p in positions}
+        loaded = {(cx, cz) for cx in range(32) for cz in range(32)}
+        counts = {}
+        for name, order in (('sorted', sorted(positions)),
+                            ('shuffled', random.Random(7).sample(positions, len(positions)))):
+            mcp = FakeScanMcp(blocks, loaded_chunks=loaded)
+            store = make_store('live', blocks, self.tmp / name, mcp=mcp, loaded_chunks=loaded)
+            with mock.patch.object(block_store, 'MAX_CACHE_BLOCKS', 512):
+                got = store.read_many(order)
+            self.assertEqual(list(got), order)
+            self.assertTrue(all(v == STONE for v in got.values()))
+            counts[name] = len([1 for n, _a in mcp.calls if n == 'block_scan_region'])
+        self.assertEqual(counts['shuffled'], counts['sorted'])
+        self.assertLessEqual(counts['shuffled'], 24)
+
     def test_scan_uses_raised_limit_not_default_1024(self):
         mcp = FakeScanMcp({(0, 64, 0): STONE}, loaded_chunks={(0, 0)})
         store = make_store('live', {(0, 64, 0): STONE}, self.tmp / 'lim',

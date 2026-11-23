@@ -118,12 +118,12 @@ class TestRailwaySpec(unittest.TestCase):
 
     def test_neighbouring_box_resumes_recorded_rail_level(self):
         g = ground(x0=-960, width=4096)
-        evidence = line(((0, 0), (2200, 0)))
+        evidence = line(((0, 0), (700, 0)))
         first = F.plan_feature([evidence], g, (0, 0))
         with JournalWorld() as jw:
             jw.build(first['name'], 'feature', {(0, 30, 0): 'minecraft:gravel'},
                      cell=(0, 0), meta=F.metadata(first))
-            second = F.plan_feature([evidence], g, (8, 0), reg=jw.reg)
+            second = F.plan_feature([evidence], g, (2, 0), reg=jw.reg)
             end = first['plans'][0]['joins'][0]['tracks'][0]
             start = second['plans'][0]['rails'][0]
             self.assertEqual(start[:3], [*end['next'][:1], end['level'], end['next'][1]])
@@ -132,8 +132,8 @@ class TestRailwaySpec(unittest.TestCase):
 
     def test_changed_extract_way_membership_keeps_the_recorded_boundary_level(self):
         from railway_evidence import Way, THROUGH, build_lines
-        w1 = Way('w1', THROUGH, ((0, 0), (1100, 0)), (('railway', 'rail'),))
-        w2 = Way('w2', THROUGH, ((1100, 0), (2200, 0)), (('railway', 'rail'),))
+        w1 = Way('w1', THROUGH, ((0, 0), (400, 0)), (('railway', 'rail'),))
+        w2 = Way('w2', THROUGH, ((400, 0), (800, 0)), (('railway', 'rail'),))
         before_line = build_lines([w1])[0]
         after_line = build_lines([w1, w2])[0]
         self.assertNotEqual(before_line.id, after_line.id)
@@ -146,30 +146,30 @@ class TestRailwaySpec(unittest.TestCase):
                       'minecraft:powered_rail[shape=east_west,powered=true]'},
                      cell=(0, 0), meta=F.metadata(first))
             g['terrain'][:] = g['h'][:] = 35
-            second = F.plan_feature([after_line], g, (8, 0), reg=jw.reg)
+            second = F.plan_feature([after_line], g, (2, 0), reg=jw.reg)
             plan = F.build(second)
             rails = sorted(p for p, state in plan.cells.items() if 'rail[' in state)
             self.assertEqual(rails[0], (end['next'][0], end['level'], end['next'][1]))
 
     def test_changed_extract_cannot_accept_an_unsolvable_ten_block_boundary_jump(self):
         from railway_evidence import Way, THROUGH, build_lines
-        w1 = Way('w1', THROUGH, ((0, 0), (1100, 0)), (('railway', 'rail'),))
-        w2 = Way('w2', THROUGH, ((1100, 0), (2200, 0)), (('railway', 'rail'),))
+        w1 = Way('w1', THROUGH, ((0, 0), (400, 0)), (('railway', 'rail'),))
+        w2 = Way('w2', THROUGH, ((400, 0), (800, 0)), (('railway', 'rail'),))
         g = ground(x0=-960, width=4096)
         first = F.plan_feature(build_lines([w1]), g, (0, 0))
         with JournalWorld() as jw:
-            jw.build(first['name'], 'feature', {(1087, 31, 0):
+            jw.build(first['name'], 'feature', {(319, 31, 0):
                      'minecraft:powered_rail[shape=east_west,powered=true]'},
                      cell=(0, 0), meta=F.metadata(first))
             g['terrain'][:] = g['h'][:] = 40
             with self.assertRaisesRegex(ValueError, 'join|profile'):
-                F.plan_feature(build_lines([w1, w2]), g, (8, 0), reg=jw.reg)
+                F.plan_feature(build_lines([w1, w2]), g, (2, 0), reg=jw.reg)
 
     def test_changed_extract_remaps_paired_track_indices_by_members_and_boundary(self):
         from railway_evidence import Way, THROUGH, build_lines
-        w1 = Way('w1', THROUGH, ((0, 0), (1100, 0)), (('railway', 'rail'),))
-        w2 = Way('w2', THROUGH, ((1100, 0), (2200, 0)), (('railway', 'rail'),))
-        w3 = Way('w3', THROUGH, ((0, 4), (1100, 4)), (('railway', 'rail'),))
+        w1 = Way('w1', THROUGH, ((0, 0), (400, 0)), (('railway', 'rail'),))
+        w2 = Way('w2', THROUGH, ((400, 0), (800, 0)), (('railway', 'rail'),))
+        w3 = Way('w3', THROUGH, ((0, 4), (400, 4)), (('railway', 'rail'),))
         before_line = build_lines([w1, w3])[0]
         after_line = build_lines([w1, w2, w3])[0]
         self.assertIn('w1', before_line.track_way_ids[0])
@@ -178,12 +178,12 @@ class TestRailwaySpec(unittest.TestCase):
         first = F.plan_feature([before_line], g, (0, 0))
         with JournalWorld() as jw:
             jw.build(first['name'], 'feature',
-                     {(1087, 31, z): 'minecraft:powered_rail[shape=east_west,powered=true]'
+                     {(319, 31, z): 'minecraft:powered_rail[shape=east_west,powered=true]'
                       for z in (0, 4)}, cell=(0, 0), meta=F.metadata(first))
             g['terrain'][:] = g['h'][:] = 35
-            second = F.plan_feature([after_line], g, (8, 0), reg=jw.reg)
+            second = F.plan_feature([after_line], g, (2, 0), reg=jw.reg)
             for track in second['plans'][0]['tracks']:
-                self.assertEqual(track['path'][0][0], 1088)
+                self.assertEqual(track['path'][0][0], 320)
                 self.assertEqual(track['levels'][0] + 1, 31)
 
     def test_rail_placement_preserves_a_nonfalling_road_carrier(self):
@@ -222,6 +222,128 @@ class TestRailwaySpec(unittest.TestCase):
             raw['plans'][0]['rails'][0][4] = 'minecraft:air'
             (folder/(raw['name']+'.json')).write_text(json.dumps(raw))
             self.assertTrue(any(r['id'] == 'invalid-spec:'+raw['name'] for r in check_feature_specs(jw.reg, jw.root)))
+
+
+class TestRailwayChain(unittest.TestCase):
+    """A line longer than one 512 box is built by a chain of features (#464)."""
+
+    def setUp(self):
+        self.g = ground(x0=-300, width=1700, depth=110)
+
+    @staticmethod
+    def east(x0, x1, z=0):
+        return Line('east', (((x0, z), (x1, z)),), (('w1',),), (), (), ())
+
+    def land(self, jw, raw):
+        jw.build(raw['name'], 'feature', F.build(raw).cells, cell=tuple(raw['cell']), meta=F.metadata(raw))
+
+    def join_cell(self, raw):
+        return tuple(raw['plans'][0]['joins'][0]['cell'])
+
+    def test_four_features_cover_the_line_once_and_each_continues_the_last(self):
+        evidence = self.east(-100, 1000)
+        specs = []
+        with JournalWorld() as jw:
+            cell = (0, 0)
+            while True:
+                raw = F.plan_feature([evidence], self.g, cell, reg=jw.reg)
+                specs.append(raw)
+                joins = raw['plans'][0]['joins']
+                if not joins:
+                    break
+                self.land(jw, raw)
+                cell = tuple(joins[0]['cell'])
+        self.assertEqual(len(specs), 4)
+        owned = [sorted(x for (x, _y, _z), state in F.build(raw).cells.items() if 'rail[' in state)
+                 for raw in specs]
+        flat = [x for xs in owned for x in xs]
+        self.assertEqual(flat, list(range(-100, 1001)))
+        levels = {r[1] for raw in specs for r in raw['plans'][0]['rails']}
+        self.assertEqual(levels, {31})
+
+    def test_a_spent_join_inside_the_new_box_is_ignored(self):
+        evidence = self.east(-100, 1000)
+        with JournalWorld() as jw:
+            first = F.plan_feature([evidence], self.g, (0, 0), reg=jw.reg)
+            self.land(jw, first)
+            second = F.plan_feature([evidence], self.g, self.join_cell(first), reg=jw.reg)
+            self.land(jw, second)
+            # Cell 3,0 is centred between the first join (x 320, spent) and the second (x 576).
+            third = F.plan_feature([evidence], self.g, (3, 0), reg=jw.reg)
+            end = second['plans'][0]['joins'][0]['tracks'][0]
+            start = third['plans'][0]['rails'][0]
+            self.assertEqual(start[:3], [end['next'][0], end['level'], end['next'][1]])
+
+    def test_a_hole_between_two_built_features_is_refused_with_both_join_coordinates(self):
+        evidence = self.east(-100, 1500)
+        with JournalWorld() as jw:
+            self.land(jw, F.plan_feature([evidence], self.g, (0, 0), reg=jw.reg))
+            far = F.plan_feature([evidence], self.g, (8, 0), reg=jw.reg)
+            self.land(jw, far)
+            with self.assertRaisesRegex(ValueError, r'\[320, 0\] and \[831, 0\]|\[831, 0\] and \[320, 0\]'):
+                F.plan_feature([evidence], self.g, (4, 0), reg=jw.reg)
+
+    def test_a_box_that_meets_an_earlier_one_with_no_recorded_join_is_refused(self):
+        evidence = self.east(-100, 1000)
+        with JournalWorld() as jw:
+            jw.build('railway_0_0', 'feature', {(0, 30, 0): 'minecraft:gravel'}, cell=(0, 0),
+                     meta={'kind': 'railway', 'boxes': [[-192, -192, 319, 319]], 'joins': [], 'gaps': []})
+            with self.assertRaisesRegex(ValueError, 'no recorded join leads into this box'):
+                F.plan_feature([evidence], self.g, (2, 0), reg=jw.reg)
+
+    def test_a_cell_whose_line_lies_only_in_the_covered_strip_is_not_proposed(self):
+        import world_frame as wf
+        frame = wf.WorldFrame({'crs': 'EPSG:27700', 'offsets': {'easting': 440000, 'northing': 110000},
+                               'y_offset': 0, 'cell': {'size': 128, 'home': [0, 0]}})
+
+        def clip(root, name, a, b):
+            coords = []
+            for x, z in (a, b):
+                lat, lon = wf.mc_to_wgs84(x, z, frame)
+                coords.append([lon, lat])
+            path = root / name
+            path.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
+                {'type': 'Feature', 'properties': {'railway': 'rail', 'osm_id': '12'},
+                 'geometry': {'type': 'LineString', 'coordinates': coords}}]}))
+            return path
+        with JournalWorld() as jw:
+            raw = F.plan_feature([self.east(-100, 100)], self.g, (0, 0))
+            jw.build(raw['name'], 'feature', {(0, 30, 0): 'minecraft:gravel'}, cell=(0, 0), meta=F.metadata(raw))
+            self.assertFalse(F.covered((-2, 0), jw.reg))
+            # Cell -2,0 spans x -256..-129; the box covers -192..-129 of it.
+            inside = clip(jw.root, 'in.geojson', (-190, 10), (-140, 10))
+            outside = clip(jw.root, 'out.geojson', (-250, 10), (-140, 10))
+            self.assertEqual(F.proposal((-2, 0), jw.reg, source=inside, frame=frame), [])
+            self.assertEqual([r['id'] for r in F.proposal((-2, 0), jw.reg, source=outside, frame=frame)],
+                             ['railway_m2_0'])
+
+    def test_a_junction_that_begins_on_the_incoming_join_is_the_next_features_with_the_join_as_first_end(self):
+        side = Line('side', (((-100, 4), (1000, 4)),), (('s1',),), (), (), ())
+        main = Line('main', (((320, -40), (320, 40)), ((324, -40), (324, 40))), (('m1',), ('m2',)), (), (), ())
+        with JournalWorld() as jw:
+            first = F.plan_feature([side], self.g, (0, 0), reg=jw.reg)
+            self.land(jw, first)
+            join = first['plans'][0]['joins'][0]
+            self.assertEqual(join['tracks'][0]['next'], [320, 4])
+            second = F.plan_feature([side, main], self.g, tuple(join['cell']), reg=jw.reg)
+            plans = {p['line_id']: p for p in second['plans']}
+            self.assertEqual(plans['main']['gaps'], [])
+            (gap,) = plans['side']['gaps']
+            self.assertEqual((gap['kind'], gap['source'], gap['where']), ('junction', 'main', [320, 4]))
+            self.assertEqual(gap['columns'][-1], [324, 4])
+            joined, after = gap['ends']
+            self.assertEqual((joined['at'], joined['from_join'], joined['direction']), ([319, 4], True, 'east'))
+            self.assertEqual(after['at'], [325, 4])
+            self.assertEqual(plans['side']['rails'][0][0], 325)
+            self.land(jw, second)
+            listed = F.metadata(second)['junctions']
+            self.assertEqual([(j['line_id'], j['where']) for j in listed], [('side', [320, 4])])
+
+    def test_a_junction_over_the_outgoing_cut_fails_loudly_and_says_how_to_move_the_box(self):
+        side = Line('side', (((-100, 4), (1000, 4)),), (('s1',),), (), (), ())
+        main = Line('main', (((319, -40), (319, 40)), ((315, -40), (315, 40))), (('m1',), ('m2',)), (), (), ())
+        with self.assertRaisesRegex(ValueError, r'covers the box join of side at \[319, 4\].*choose a start cell'):
+            F.plan_feature([side, main], self.g, (0, 0))
 
 
 class TestRailwayDeckGap(unittest.TestCase):

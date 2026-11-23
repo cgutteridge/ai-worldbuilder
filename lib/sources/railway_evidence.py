@@ -11,11 +11,11 @@ multipolygon scan. A 128-block cell usually has no railway ways, so the extra
 GeoJSON is small. That cell clip is the index: a second file would only
 repeat it. :func:`cell_has_railway` reads the one cell-evidence path it is
 given. A missing file, or a clip with no railway line, is false and does not
-open the 2048-box extract.
+open the planner-box extract.
 
 **Box extract.** The planner's input is not cell-clipped. The live fetch is
-``shims/osm_extract.py --layers railway`` over a 2048 by 2048 MC box (the
-trial box was smaller). That command uses the railway lines preset with
+``shims/osm_extract.py --layers railway`` over a 512 by 512 MC box (:data:`PLANNER_BOX`,
+decision 17 in docs/plans/railway.md; a longer line is a chain of boxes). That command uses the railway lines preset with
 ``-spat`` and without ``-clipsrc``, so a way that leaves the box comes back
 whole. :func:`extract_railway_box` reads that GeoJSON.
 
@@ -63,7 +63,7 @@ CROSSING_SNAP = 2.0
 # Two rail-bridge pieces are the same span when their middles are this close.
 SPAN_GROUP = 20.0
 # The line planner asks for a square of this edge. The box function takes any box.
-PLANNER_BOX = 2048
+PLANNER_BOX = 512
 
 THROUGH = 'through'
 DECOR = 'decor'
