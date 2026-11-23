@@ -323,6 +323,11 @@ def assign_roof_zones(
     zone = bucket_zones(zone, readable, xs, zs, bucket=bucket, axis_deg=axis_used)
     if regions:
         zone, levels_used = apply_regions(zone, readable, med, xs, zs, regions, levels_used)
+        if levels == 'auto':
+            # The regions replaced the lidar plateaus. An auto plateau no zone uses any more must not
+            # stay in the level list: the ridge logic clips each zone's rise to the next listed level,
+            # which flattened a ridge to the gap to a level nothing sits on.
+            levels_used = sorted({float(v) for v in zone[readable].tolist()})
     return readable, zone, levels_used, axis_used, dropped
 
 

@@ -104,6 +104,26 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn(26.0, levels)
         self.assertIn(eave, levels)
 
+    def test_auto_levels_unused_after_regions_do_not_clip_the_ridge(self):
+        # A 4 m ridge over a 30 m eave. Lidar finds an auto plateau near 33 m (the ridge flank) that the
+        # region then absorbs; that dead level must leave the list or the rise is clipped to the gap to it.
+        outline = np.ones((12, 20), dtype=bool)
+        zz, xx = np.mgrid[0:12, 0:20]
+        dsm = np.full((12, 20), 26.0)
+        front = xx < 10
+        dsm[front] = 30.0 + 4.0 * (1 - np.abs(zz[front] - 5.5) / 6.0)
+        regions = [
+            [(0, 0), (10, 0), (10, 12), (0, 12)],
+            [(10, 0), (20, 0), (20, 12), (10, 12)],
+        ]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        self.assertEqual(sorted(levels), sorted({float(v) for v in zone[readable].tolist()}))
+        half = FZ.zone_ridge_half_steps(dsm, zone, readable, flat_tol_m=0.8, levels=levels)
+        eave = float(zone[readable & front][0])
+        self.assertGreaterEqual(int(half[readable & front].max()), int(2 * (float(dsm[readable & front].max()) - eave)) - 1)
+
     def test_region_levels_are_whole_metres_and_merge_when_equal(self):
         # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
         outline = np.ones((8, 16), dtype=bool)
