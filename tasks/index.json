@@ -31,7 +31,7 @@
     {
       "id": 431,
       "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
@@ -39,7 +39,7 @@
       ],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 4 and 5). Rule-built shops came out as plain brick boxes with the builder's default entrance and awning; the hand specs that added a facade_plan (ground storey glazed_h 3 pier 1, upper storeys glazed_h 2 pier 3, entrance with awning_like) read much closer to real shopfronts. Make glazing and facade detail (I-006) a class recipe in the typology spec generator: a small per-class table (glazing rows per storey, pier width, rhythm, entrance awning, roof edge) under the district profile or the land-use class table, emitted into the generated feature_build spec's facade_plan and roofs.edge. Houses keep the house_build windows. The recipe is a default that a profile can override, and a class with no recipe stays as today. Non-builder: fixtures and tests that the generated spec validates in feature_build (dry run on a synthetic footprint). Overlaps task 333 (shop typology: shopfront ground floor, dormers, bay windows): do the class-recipe table here and leave per-side storeys, dormers and bays to 333.\n\nReview corrections (2026-11-22, parade snags S-108, S-109, S-112): this task keeps the glazing, pier and entrance-awning table and adds a default sign palette (sign wood and text colour) per land-use class. The one home for the recipe is the land-use class table (#253, #254), not a district profile: the world has no district profiles. Per-building fascia colour is NOT part of this task: it is world data from street view (real fascias on the Portswood parade are mostly black, Burga grey and Stravs teal), supplied through the per-building fascia key that task 437 adds, or a district file. It must follow task 437 (sign wood, fascia colour and contrast options): land 437 first, the tracker cannot record the blockedBy here. The shop typology (pitched building behind a flat shopfront) is task 333.\n\nReview corrections (2026-11-23): 437 and 333 have landed. Blocked by 447 (live parade fixes), which changes windows, doors, storeys and the commercial roof default for rule-built shops; re-read this task once 447 lands, since part of the plain-brick-box complaint may be fixed there, and keep only what is left (glazing, pier, entrance-awning and sign-palette table). The recipe lives in config/land-use-classes.json beside the 333 `body` recipe, as new fields on the class row. Task 441 also edits typology_spec.py and the same class table: do not run 431 and 441 in one parallel wave."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/431-glazing-recipe"},
     {
       "id": 432,
       "title": "Terrace recipe trial: per-house or per-pair roofs and party-wall chimneys on Northcote Road",
@@ -77,13 +77,13 @@
     {
       "id": 455,
       "title": "feature_build flat roofs: carpet finish (different roof material, no extra height)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From the Papa John's review (2026-11-23, #447 session). Evidence and prototypes: world site/task-447-papa-johns-read-vs-build.md and site/task-447-papa-johns-staged-test/.\n\nOwner's trick: on a flat roof, a carpet over the wall's top course gives the roof a material different from the walls without raising the height profile (a carpet is about 1/16 of a block). Flat roofs only, never pitched. The old deck row becomes the wall top course (on a shopfront, the coloured fascia) and the carpet sits on top. The owner hand-edited the front strip of Papa John's (way 149814018, plan w149814013) this way: lime concrete fascia at Y 35 (6516,-4572; 6516,-4571; 6515,-4570; 6515,-4569; 6515,-4568) and gray carpet at Y 36 (6516,-4572; 6517,-4572; 6516,-4571; 6515,-4570; 6516,-4570; 6515,-4569), every carpet over a solid block.\n\nNeeded: a flat-roof finish option on roofs[label] (carpet, colour from the roof type: grey_tile -> gray or light_gray carpet); the deck's top course takes the wall or fascia material; carpet needs a solid block below (check support, never place over air); config/roof-materials.json has no carpet today. Check that it clears the dry-run line \"shell too low for a fascia band\" on flat front strips, because the fascia can be that top course.\n\nNon-builder: fixtures and a dry run, no live apply. Acceptance: tests with a flat zone and the support check, dry-run output, and the owner's in-game check after a rebuild.\n\n\nWave handoff (files, order, worker brief, live-world protocol): docs/plans/roof-and-frontage-swarm.md."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/455-flat-roof-carpet"},
     {
       "id": 456,
       "title": "feature_build: add flat volumes outside the OSM way (bin store, rear extensions)",
@@ -112,7 +112,7 @@
     {
       "id": 460,
       "title": "Pitched roof edges on noisy lidar: measure the remaining full-block rises and flat stairs on West and Kiddle",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
@@ -120,7 +120,7 @@
       ],
       "builderTask": false,
       "notes": "Issues I-019 (Pitched roofs built from full blocks, no stairs or slabs; owner marked S-024, S-068 and S-069 not fixed on 2026-11-23, S-086 fixed; new agent snag S-118) and I-048 (Flat roof areas are built with stairs that gain no height; S-088). Records: python3 scripts/issues.py --world southampton-build show I-019 (and I-048).\n\nCause as far as known: pitched_roof_states (lib/builds/roof_geometry.py, from line 351) trims a terrace edge (#309) only when the cell has an even height, is not already a stair, cap or flat cell, has no higher neighbour in any zone, and has exactly one same-zone drop of one block (or two at right angles) with a level same-zone cell behind each drop. Three or more drops, opposing drops, missing backing cells, zone steps and drops larger than one block are never trimmed (a half-block drop gets a slab and is handled). Many edges on noisy lidar steps may fail that test; the share is NOT measured. For I-048, a read-only classification of West's 2026-11-21 plan found 16 of 760 bottom-half roof stairs with no higher cell around them (about 14 new since #311/#314); the rule that adds them was not found (untested candidates, test first: ridge caps #304, then terrace edges #309). NOT verified: whether the ragged brick-to-deepslate edge in S-118 is lidar noise or zone-edge handling; whether the opt-in per-zone surface fit already on main (commits 385bd57, a0d44d1, a7c178f; spec key zones.<label>.surface, read at lib/builds/feature_roof_zones.py about line 1031) gives West and Kiddle clean surfaces if switched on (West's zones have no surface key today, so this is a real test).\n\nScope: measurement and a recommendation only. Read-only: no live apply, no spec change committed, no code change. Non-builder.\n\nDeliverable (a report in the repo, e.g. docs/plans/roof-edge-measurement-<date>.md):\n1. Dry-run West (worlds/southampton-build/site/builds/west_w34391673.json) and Kiddle (w146985470.json) with python3 scripts/feature_build.py (dry run), then python3 scripts/roof_lint.py on both. State the exact commands.\n2. Per roof, a counts table: (a) full-block cells that have a lower orthogonal neighbour, grouped by the trim condition that fails (three or more drops, opposing drops, no level backing, higher neighbour, zone step, drop larger than one block); (b) stairs with no higher cell around them, grouped by the rule that placed them; (c) brick cells on a zone edge with no brick orthogonal neighbour (the S-118 ragged edge), with a picture path.\n3. Repeat (a)-(c) with zones.<label>.surface switched on for West's and Kiddle's zones in a scratch copy of the spec (not committed).\n4. Recommendation: either (i) switch the surface fit on for these roofs (a world spec change, a separate world step, owner OK first) or (ii) a fix task naming the missing trim rules, each with the fixture that would prove it. The same function serves house_build (house_build.py about lines 772 and 778), so any later rule change needs a house dry run and the house_build tests; say so in the recommendation. The fix task is filed after this report, by the orchestrator, with the owner's yes.\n\nCheck lines (after a separate world rebuild step, the owner's in-game look is the snag review): S-024 and S-069 (West slopes and terrace edges): count (a) after the fix is at or below the figure the report states; S-068 (Kiddle SW wing ridge-edge caps): the same count for Kiddle; S-118: count (c) is at or below the report's figure; S-088: the 16 flat stairs of (b) are explained, and S-088 may also close earlier through the owner's review of the #314 check on I-048.\n\nOverlap: blocked by task 434 (octant fit or fixed stair rotation for pitched feature roofs), whose step 2 may edit pitched_roof_states and align_stair_shapes. Task 447 (doing) does not need to land first: the surface fit is already on main.\n"
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/460-roof-edge-measure"},
     {
       "id": 461,
       "title": "Parade live rebuild and owner check: Portswood Road shops, cell 50,-36 (split from #447)",
