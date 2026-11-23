@@ -114,6 +114,8 @@ def _houses_remainder(item, left: list) -> dict:
     if 'area' in item:
         total = max(1, len([r for r in (item.get('refs') or ()) if r]))
         out['area'] = max(1, int(item.get('area') or 0) * n // total)
+    if item.get('home') is not None:
+        out['home'] = item['home']
     return out
 
 
@@ -144,16 +146,22 @@ def uncovered_candidates(item, covered) -> list:
             return []
         if len(left) == len(refs):
             return [item]
-        return [{
-            'kind': 'building',
-            'label': str(item.get('label') or r),
-            'street': None,
-            'refs': [r],
-            'bbox': item.get('bbox', (0, 0, 0, 0)),
-            'area': item.get('area', 0),
-            'portals': list(item.get('portals') or ()),
-            'pictures': list(item.get('pictures') or ()),
-        } for r in left]
+        rows = []
+        for r in left:
+            row = {
+                'kind': 'building',
+                'label': str(item.get('label') or r),
+                'street': None,
+                'refs': [r],
+                'bbox': item.get('bbox', (0, 0, 0, 0)),
+                'area': item.get('area', 0),
+                'portals': list(item.get('portals') or ()),
+                'pictures': list(item.get('pictures') or ()),
+            }
+            if item.get('home') is not None:
+                row['home'] = item['home']
+            rows.append(row)
+        return rows
     return [] if candidate_covered(item, covered) else [item]
 
 

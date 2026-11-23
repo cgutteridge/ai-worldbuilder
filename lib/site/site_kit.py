@@ -825,14 +825,20 @@ def stage_pass(stage: str | None) -> str:
 
 
 def primary_cell(positions) -> tuple[int, int]:
-    """The cell holding most of the given (x, y, z) positions.
+    """The cell that owns a build: most distinct columns, ties lowest ``(tx, tz)``.
+
+    Each ``(x, z)`` counts once, whatever its Y stack. Same rule as
+    ``cell_features.home_cell`` (task 288).
 
     @param positions: iterable of (x, y, z)
     @returns: (tx, tz)
+    @raises ValueError: when ``positions`` is empty
     """
-    from collections import Counter
     import cellmath
-    return Counter(cellmath.cell_of(x, z) for x, _y, z in positions).most_common(1)[0][0]
+    cell = cellmath.majority_cell(positions)
+    if cell is None:
+        raise ValueError('primary cell needs at least one column')
+    return cell
 
 
 def live_blocks():

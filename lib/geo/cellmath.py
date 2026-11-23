@@ -13,7 +13,7 @@ reading the world frame for size/home.
 from __future__ import annotations
 
 import math
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +146,40 @@ def cell_of(x: int, z: int, size: int | None = None) -> tuple[int, int]:
     """
     s = cell_size() if size is None else size
     return x // s, z // s
+
+
+def cells_by_column_count(columns, size: int | None = None) -> list[tuple[int, int]]:
+    """Cells a set of columns touches, most columns first.
+
+    Each ``(x, z)`` counts once, so a tall stack does not outweigh a wider
+    footprint. A tie goes to the lowest ``(tx, tz)`` (task 288).
+
+    @param columns: ``(x, z)`` columns, or ``(x, y, z)`` positions (``y`` ignored)
+    @param size: optional cell edge
+    @returns: ``[(tx, tz), ...]``; empty when ``columns`` is empty
+    """
+    seen: set[tuple[int, int]] = set()
+    for col in columns:
+        if len(col) >= 3:
+            x, z = col[0], col[2]
+        else:
+            x, z = col[0], col[1]
+        seen.add((int(x), int(z)))
+    if not seen:
+        return []
+    counts = Counter(cell_of(x, z, size) for x, z in seen)
+    return sorted(counts, key=lambda c: (-counts[c], c))
+
+
+def majority_cell(columns, size: int | None = None) -> tuple[int, int] | None:
+    """The cell holding most of ``columns``; ties go to the lowest ``(tx, tz)``.
+
+    @param columns: ``(x, z)`` columns, or ``(x, y, z)`` positions (``y`` ignored)
+    @param size: optional cell edge
+    @returns: ``(tx, tz)``, or None when ``columns`` is empty
+    """
+    cells = cells_by_column_count(columns, size)
+    return cells[0] if cells else None
 
 
 def bounds(cell: tuple[int, int], margin: int = 0, size: int | None = None) -> tuple[int, int, int, int]:

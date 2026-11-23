@@ -89,11 +89,15 @@ class TestCellFeatures(unittest.TestCase):
             ('building', ('w7',)),
         ])
 
-    def test_cross_cell_touching_same_tag_forms_one_group_in_lead_home(self):
-        """#328 / #288: a same-tag chain across a cell line is one group in the min-ref home."""
+    def test_cross_cell_touching_same_tag_is_planned_in_each_footprints_home(self):
+        """#288 / #433: touching shops on opposite sides of a cell line stay separate.
+
+        Each footprint is proposed once, in the cell with most of its columns.
+        They are not one group filed in the lowest ref's cell.
+        """
         # Cell line at x=6144: west way homes in 47,-44; east way homes in 48,-44; they touch.
-        west = _square(6124, -5600, 6144, -5580)           # id w10 → group home
-        east = _square(6144, -5600, 6164, -5580)           # id w30
+        west = _square(6124, -5600, 6144, -5580)
+        east = _square(6144, -5600, 6164, -5580)
         idx = SimpleNamespace(
             buildings=[
                 (west, {'building': 'retail', 'name': 'West Shop', 'id': 'w10'}),
@@ -105,11 +109,12 @@ class TestCellFeatures(unittest.TestCase):
              mock.patch('cell_features.pictures_for', return_value=[]), \
              mock.patch('cell_features.osm_ref', side_effect=lambda p: p['id']), \
              mock.patch('cell_features.property_label', side_effect=lambda p: p['name']):
-            home = cf.footprint_progress(47, -44, idx=idx, covered=set())['unbuilt']
-            other = cf.footprint_progress(48, -44, idx=idx, covered=set())['unbuilt']
-        self.assertEqual([(u['kind'], tuple(u['refs'])) for u in home],
-                         [('group', ('w10', 'w30'))])
-        self.assertEqual(other, [])
+            west_cell = cf.footprint_progress(47, -44, idx=idx, covered=set())['unbuilt']
+            east_cell = cf.footprint_progress(48, -44, idx=idx, covered=set())['unbuilt']
+        self.assertEqual([(u['kind'], tuple(u['refs']), tuple(u['home'])) for u in west_cell],
+                         [('building', ('w10',), (47, -44))])
+        self.assertEqual([(u['kind'], tuple(u['refs']), tuple(u['home'])) for u in east_cell],
+                         [('building', ('w30',), (48, -44))])
 
     def test_ring_order(self):
         self.assertEqual(cellmath.ring_cells(1), [(48, -45), (49, -45), (49, -44), (49, -43),
