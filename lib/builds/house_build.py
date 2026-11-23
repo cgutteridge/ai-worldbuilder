@@ -11,7 +11,8 @@ instead of a script copy:
   roofs          {"<label>": "<roof material>"} from config/roof-materials.json
   roof_pitch     optional {"<label>": rise_per_run}, finite number 0..1 (default 0.5)
                  <=0.5 keeps legacy slab rings; >0.5 uses stairs/slabs at half-block-snapped heights,
-                 the overhanging eave ring starting at wall-top level as a slab or stair (#414)
+                 the overhanging eave ring starting at wall-top level as a slab or stair (#414);
+                 the full block under a membrane at that level does not replace the wall's top course (#429);
                  a footprint that is a rotated rectangle takes heights from its fitted axes (#415)
                  group roofs require equal effective pitches; first label supplies the material
   roof_fit       optional {"<label>": "columns"|"octant"} (default columns). octant designs a pitched
@@ -58,7 +59,7 @@ from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
 import terrace_body  # noqa: E402
 import stoop  # noqa: E402
 from stoop import FACE, GROUND, TOWARD, stair  # noqa: E402
-from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
+from site_kit import Plan, apply, fresh_planning_world, full, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
@@ -804,8 +805,11 @@ class Build:
                     self.set(x, yy, z, WALL)
             if pitched:
                 # A two-layer skin seals the stair cutouts; the overhanging eave ring stays one
-                # slab or stair thick, with nothing under it (#414).
-                if not eave:
+                # slab or stair thick, with nothing under it (#414). A membrane at the eave
+                # level (b+6) would put that full block in the wall's top course (b+5). The
+                # wall block already seals the stair, so leave it (#429). Any other column
+                # at that height (no wall there) still gets the roof underlay.
+                if not eave and (y - 1 != b + 5 or self.p.cells.get((x, y - 1, z)) != full(WALL)):
                     self.set(x, y - 1, z, family_variants(rm)['full'])
                 if (x, z) in facings:
                     adjacent = {FACE[face]: (facings[n], 'bottom')
