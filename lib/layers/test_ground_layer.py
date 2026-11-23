@@ -1610,6 +1610,12 @@ class TestBuriedFeatureBlock(SyntheticGroundBox, unittest.TestCase):
         states.update({(tx, y, tz): 'minecraft:bricks' for y in range(40, 53)})
         return states
 
+    def test_railway_cut_column_is_not_refilled_above_buried_rails(self):
+        from unittest import mock
+        with mock.patch.object(lc, 'railway_reserved_columns', return_value={self.STOOP}):
+            plan, _, _, _ = self.run_plan(self.Osm(), owned_states=self.owned())
+        self.assertFalse(any((x, z) == self.STOOP for x, _y, z in plan.cells))
+
     def test_ground_fills_above_a_buried_feature_block(self):
         plan, stats, _, skipped = self.run_plan(self.Osm(), owned_states=self.owned())
         x, z = self.STOOP

@@ -91,6 +91,18 @@ def check_feature_specs(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
                 f'missing-spec:{fid}', sev,
                 f'feature {fid} (status={feat.get("status")}) has no site/builds/{fid}.json',
             ))
+            continue
+        # Typed features validate their saved geometry before a future apply.
+        try:
+            data = json.loads(path.read_text())
+            if fid.startswith('railway_') or isinstance(data, dict) and data.get('kind') == 'railway':
+                from railway_feature import load_spec_dict
+                spec = load_spec_dict(data)
+                if spec['name'] != fid:
+                    raise ValueError('railway spec name differs from its feature id')
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            out.append(_issue(f'invalid-spec:{fid}', SEVERITY_ERROR,
+                              f'feature {fid} has an invalid spec: {exc}'))
     return out
 
 

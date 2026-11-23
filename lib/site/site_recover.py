@@ -224,7 +224,7 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
             res['action'] = 'unsure'
             say('the pass was undone before this apply but the undo snapshot structure is not recorded. Nothing done.')
             return res
-        steps.append(('before-undo', undo.meta['structure'], []))
+        steps.append(('before-undo', undo.meta['structure'], list(reg.cells_at(undo.seq) or {})))
     say('would restore: ' + ' then '.join(f'{n} {s["name"]}' for n, s, *_ in steps))
     if not apply:
         res['action'] = 'would-rolled-back'
@@ -237,7 +237,11 @@ def recover(cell, apply: bool = False, flush=None, world_factory=None, loader=No
             import restore_structure_backup
             loader = restore_structure_backup.load_structure
         for name, struct, _positions in steps:
-            loader(struct['name'], struct['from'])
+            if struct.get('tiles'):
+                from restore_structure_backup import restore_positions
+                restore_positions(struct, _positions)
+            else:
+                loader(struct['name'], struct['from'])
             flush()
             verified.append({'step': name, 'structure': struct['name']})
             say(f'restored {name}: {struct["name"]}')

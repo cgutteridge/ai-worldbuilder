@@ -11,7 +11,8 @@ from script_env import TOOL_ROOT
 
 HOUSE_BUILDER = 'house_build'
 FEATURE_BUILDER = 'feature_build'
-BUILDER_NAMES = (HOUSE_BUILDER, FEATURE_BUILDER)    # the spec builders a registration or reapply may name
+RAILWAY_BUILDER = 'railway_build'
+BUILDER_NAMES = (HOUSE_BUILDER, FEATURE_BUILDER, RAILWAY_BUILDER)    # the spec builders a registration or reapply may name
 
 
 def resolve_builder_path(path: str | Path) -> Path:

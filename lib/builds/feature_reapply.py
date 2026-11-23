@@ -38,7 +38,9 @@ def builder_command(name: str, builder: dict) -> list[str]:
         command = TOOL_ROOT / 'scripts' / f'{builder_name}.py'
         if not command.is_file():
             raise SystemExit(f'{name}: recorded builder missing: {command}; refusing undo')
-        if builder_name == HOUSE_BUILDER:
+        if builder_name == 'railway_build':
+            from railway_feature import load_spec
+        elif builder_name == HOUSE_BUILDER:
             from house_build import load_spec
         else:
             from feature_spec import load_spec
