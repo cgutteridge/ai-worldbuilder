@@ -107,7 +107,7 @@ ground stale (task 285) until the ground is redone.
    clear the marker under the world lock, then verify effective completion. Recheck readiness
    before each apply; direct builders also enforce the shared policy.
 1. Raise the marker for the target cell if needed (`python3 scripts/cell_marker.py --world <world> --raise tx,tz` under SITE_OWNER) — `next` does not.
-1b. **Re-prepare after raise.** Marker raise ensures the lidar-ghost frontier (neighbours; the focus cell is excluded). That lands `ghost-ground` builds, which change `planning_revision` / `journal_revision` (ghost geometry is part of that hash). It does **not** change readiness `revision_parts.evidence` (settings / map clips / lidar tile identities). Still re-run prepare so the focus cell gets its ghost and a fresh readiness note before build:
+1b. **Re-prepare after raise.** Marker raise calls `lidar_ghost.on_cell_focus`, which ghosts the neighbour ring around the focus cell (the focus cell itself is not in that frontier ensure). Those neighbour `ghost-ground` landings change `planning_revision` / `journal_revision` (`cell_journal.planning_revision` hashes landed geometry including `GHOST_PASSES`). They do **not** change readiness `revision_parts.evidence`: that part is `LocalEvidence.facts` / `source_revision` in `lib/journal/readiness_evidence.py` (settings, map clips, lidar tile identities — not journal ghosts). Re-run prepare so the focus cell gets a fresh readiness note against the new planning revision before build:
 
    ```bash
    python3 scripts/cell_registry.py --world <world> prepare --cell <tx,tz> --apply
@@ -119,7 +119,7 @@ ground stale (task 285) until the ground is redone.
    python3 scripts/cell_registry.py --world <world> prepare --cell <neighbour> --apply --evidence-only
    ```
 
-   for every neighbour the feature touches. A plan stamped before raise can still refuse with `stale plan: journal geometry or planning assumptions changed` (re-plan); that is not an evidence-facts bug.
+   for every neighbour the feature touches. A plan stamped before raise can still refuse with `stale plan: journal geometry or planning assumptions changed` (re-plan); that is planning-revision staleness, not an evidence-facts bug.
 2. **Build roles** (features, trees, decor — not ghosts): resolve designer + builder before spawning anyone:
 
    ```bash
