@@ -63,6 +63,11 @@ def decor_columns(decor_items, furniture_items) -> set[tuple[int, int]]:
     cols.update((int(i['x']), int(i['z'])) for i in furniture_items if i.get('kind') not in sf.ROADSIDE_KINDS)
     r = WARM_RING
     out = {(x + a, z + b) for x, z in cols for a in range(-r, r + 1) for b in range(-r, r + 1)}
+    for item in furniture_items:
+        if item.get('kind') in sf.FOOTPRINTS:
+            x, z = int(item['x']), int(item['z'])
+            r = WARM_RING + 1     # footprint radius plus the one-block shift
+            out.update((x + a, z + b) for a in range(-r, r + 1) for b in range(-r, r + 1))
     r = sf.ROADSIDE_REACH + WARM_RING                    # a post moves off the road node, so its neighbourhood is read
     for i in furniture_items:
         if i.get('kind') in sf.ROADSIDE_KINDS:
@@ -270,6 +275,59 @@ def join_pieces(found: dict[tuple[int, int, int], str], live, can_place,
     return added
 
 
+def level_and_shift(attempt, x: int, z: int) -> dict:
+    """Find level support, then try fill at the original anchor (decor #444/#446).
+
+    ``attempt(x, z, support=None)`` checks every guard and returns ``reason``
+    (None on success), ``ground`` (column -> (Y, material)) and ``ground_spread``.
+    Only an uneven-ground failure permits movement. All eight adjacent columns
+    are eligible, nearest first. For a fill retry, this helper supplies level
+    ``tops``, support ``voxels`` and ``ground_fill`` metadata; the callback must
+    check the support voxels as well as its raised recipe before accepting it.
+    """
+    result = attempt(x, z)
+    result['at'] = (x, z)
+    if result['reason'] != 'uneven ground':
+        return result
+    candidates = sf.roadside_candidates(x, z, reach=2)
+    for q in candidates:
+        if max(abs(q[0] - x), abs(q[1] - z)) != 1:
+            continue
+        shifted = attempt(*q)
+        if shifted['reason'] is None:
+            shifted['at'] = q
+            shifted['original_ground_spread'] = result['ground_spread']
+            return shifted
+    if result['ground_spread'] > 2:
+        return result
+    ground = result['ground']
+    level = max(top[0] for top in ground.values())
+    fills = []
+    voxels = {}
+    for q, (y, material) in ground.items():
+        if y < level:
+            fills.append({'column': list(q), 'blocks': level - y, 'block': material})
+            for height in range(y + 1, level + 1):
+                voxels[(q[0], height, q[1])] = material
+    support = {'tops': dict.fromkeys(ground, level), 'voxels': voxels,
+               'ground_fill': {'columns': fills, 'blocks_added': len(voxels),
+                               'max_depth': result['ground_spread']}}
+    result = attempt(x, z, support=support)
+    result['at'] = (x, z)
+    return result
+
+
+def furniture_fill_summary(report: list[dict], unplaced: list[dict]) -> dict:
+    """Cell shares use the final placed-item denominator, including unfilled items."""
+    total = len(report)
+    counts = Counter(r.get('ground_fill', {}).get('max_depth', 0) for r in report)
+    return {'items_placed': total, 'filled_by_1': counts[1], 'filled_by_2': counts[2],
+            'share_1': counts[1] / total if total else 0,
+            'share_2': counts[2] / total if total else 0,
+            'refused_for_cap': sum(r['provenance']['unresolved_reason'] == 'ground fill cell cap'
+                                   for r in unplaced)}
+
+
 def place_furniture(
     cell: tuple[int, int],
     items: list[dict],
@@ -291,7 +349,11 @@ def place_furniture(
     cell (``crosses the cell edge`` when only the anchor is), off path-line columns (``way``), off
     columns against a build (``near1``; ``allow_against_build`` lifts it), off ``keep_clear``
     (route, clearance and entrance-opening columns), off the carriageway (road, marking, kerb) and on
-    lidar ground within one block of the anchor's (``uneven ground``). Each voxel must be air, not
+    level lidar ground (spread 0). On uneven ground try all eight neighbouring anchors, then
+    fill low columns at the original anchor using their local surface material, at most two
+    blocks per column, never cutting. One- and two-block fills have separate cell caps of
+    ceil(30%) and ceil(10%) of final placed items (at least one), smallest fills first.
+    Barriers are excluded. Each voxel, including support fill, must be air, not
     owned or masked, not already taken by another furniture item (``overlaps another furniture
     item``) and, for a multi-block kind, not a planned barrier block (``overlaps a planned barrier``).
     Failed rows are returned as unplaced plan-shaped dicts, with ``blocked_column`` on a multi-block one.
@@ -321,19 +383,32 @@ def place_furniture(
     report: list[dict] = []
     unplaced: list[dict] = []
 
-    def attempt(item, x, z):
-        """Try one anchor column. Returns ``(voxels, tops, columns, None, None)`` or ``(None, None, columns, reason, column)``."""
+    def attempt(item, x, z, support=None):
+        """Check an entire recipe and its support without changing the world."""
         kind = item['kind']
         allow = bool(item.get('allow_against_build'))
         multi = kind in sf.FOOTPRINTS
         rotation = int(item.get('rotation') or 0) % 360 if multi else 0
         rows = sf.footprint(kind, rotation)
         columns = list(dict.fromkeys((x + dx, z + dz) for dx, dz, _dy, _block in rows))
+        result = {'voxels': None, 'tops': {}, 'columns': columns, 'reason': None,
+                  'bad': None, 'ground_spread': None, 'ground_fill': None}
+
+        def refuse(reason, bad=None):
+            result.update(reason=reason, bad=bad)
+            return result
+
         if not cell_contains(cell, x, z):
-            return None, None, columns, 'outside cell', None
+            return refuse('outside cell')
         edge = next((q for q in columns if not cell_contains(cell, *q)), None)
         if edge is not None:
-            return None, None, columns, 'crosses the cell edge', edge
+            return refuse('crosses the cell edge', edge)
+        ground = {q: ground_at(world, lidar_hm, *q, owned, masked) for q in columns}
+        result['ground'] = ground
+        tops = {q: top[0] for q, top in ground.items() if top is not None}
+        result['tops'] = tops
+        if len(tops) == len(columns):
+            result['ground_spread'] = max(tops.values()) - min(tops.values())
         checks = [(lambda q: q in keep_clear, 'entrance opening or route reserved')]
         if kind not in sf.ON_ROAD_KINDS:
             checks.append((lambda q: q in way, 'on path/road/water column'))
@@ -343,18 +418,26 @@ def place_furniture(
         for test, reason in checks:
             bad = next((q for q in columns if test(q)), None)
             if bad is not None:
-                return None, None, columns, reason, bad
-        tops: dict[tuple[int, int], int] = {}
+                return refuse(reason, bad)
         for q in columns:
-            top = ground_at(world, lidar_hm, q[0], q[1], owned, masked)
-            if not top:
-                return None, None, columns, ground_missing_reason(lidar_hm, q[0], q[1], owned), q
-            tops[q] = top[0]
-        if any(abs(tops[q] - tops[(x, z)]) > 1 for q in columns):
-            return None, None, columns, 'uneven ground', next(q for q in columns if abs(tops[q] - tops[(x, z)]) > 1)
+            if ground[q] is None:
+                return refuse(ground_missing_reason(lidar_hm, *q, owned), q)
+        spread = result['ground_spread']
+        low = min(tops, key=tops.get)
+        if spread and support is None:
+            return refuse('uneven ground', low)
         voxels: dict[tuple[int, int, int], str] = {}
+        if support is not None:
+            voxels.update(support['voxels'])
+            result['ground_fill'] = support['ground_fill']
+            result['original_ground_spread'] = spread
+            result['ground_spread'] = 0
+            tops = support['tops']
+            result['tops'] = tops
         for dx, dz, dy, block in rows:
             pos = (x + dx, tops[(x + dx, z + dz)] + dy, z + dz)
+            voxels[pos] = block
+        for pos in voxels:
             why = ''
             if pos in owned:
                 why = 'feature above terrain'              # a feature's own block stands in this column over the ground
@@ -365,34 +448,49 @@ def place_furniture(
             elif not is_air(world.block(*pos)) or pos in masked:
                 why = 'blocked by live or owned block'
             if why:
-                return None, None, columns, why, (pos[0], pos[2])
-            voxels[pos] = block
-        return voxels, tops, columns, None, None
+                # A refused fill still reports the measured, unmodified ground.
+                result['ground_spread'] = spread
+                result['ground_fill'] = None
+                return refuse(why, (pos[0], pos[2]))
+        result['voxels'] = voxels
+        return result
 
-    for item in items:
+    deferred = []
+    accepted = []
+
+    def place(item, allow_fill=False):
         x, z, kind = int(item['x']), int(item['z']), item['kind']
         multi = kind in sf.FOOTPRINTS
         rotation = int(item.get('rotation') or 0) % 360 if multi else 0
-        voxels, tops, columns, why, bad = attempt(item, x, z)
-        at = (x, z)
-        if voxels is None and kind in sf.ROADSIDE_KINDS and why != 'outside cell':
+        result = level_and_shift(lambda a, b, support=None: attempt(item, a, b, support), x, z)
+        if result['reason'] is not None and kind in sf.ROADSIDE_KINDS and result['reason'] != 'outside cell':
             # The mapped node is on the road: stand the post at the nearest column the checks accept.
             for q in sf.roadside_candidates(x, z):
-                voxels, tops, columns, _why, _bad = attempt(item, *q)
-                if voxels is not None:
-                    at = q
+                candidate = attempt(item, *q)
+                if candidate['reason'] is None:
+                    result = {**candidate, 'at': q}
                     break
             else:
-                why, bad = f'no kerbside column within {sf.ROADSIDE_REACH} blocks', None
-        if voxels is None:
+                result.update(reason=f'no kerbside column within {sf.ROADSIDE_REACH} blocks', bad=None)
+        voxels, tops, columns = result['voxels'], result['tops'], result['columns']
+        why, bad, at = result['reason'], result['bad'], result['at']
+        if why is not None:
             row = dplan.mark_unplaced(item, why)
+            row['ground_spread'] = result['ground_spread']
             if multi and bad is not None:
                 row['blocked_column'] = list(bad)
             unplaced.append(row)
-            continue
+            return
+        if result['ground_fill'] and not allow_fill:
+            deferred.append((item, result['ground_fill']))
+            return
         found.update(voxels)
         row = {'x': x, 'z': z, 'kind': kind, 'source': item.get('source', 'map'),
-               'blocks': len(voxels)}
+               'blocks': len(voxels), 'ground_spread': result['ground_spread']}
+        if result['ground_fill']:
+            row['ground_fill'] = result['ground_fill']
+        if 'original_ground_spread' in result:
+            row['original_ground_spread'] = result['original_ground_spread']
         if at != (x, z):
             row['placed_at'] = list(at)                    # x, z stay the mapped node
         if multi:
@@ -408,6 +506,34 @@ def place_furniture(
         if item.get('plan_id'):
             row['plan_id'] = item['plan_id']
         report.append(row)
+        accepted.append((item, row, voxels))
+
+    for item in items:
+        place(item)
+    for item, _fill in sorted(deferred, key=lambda entry: (entry[1]['max_depth'], entry[1]['blocks_added'])):
+        place(item, allow_fill=True)
+
+    # Removing an item shrinks the denominator: recheck both caps until stable.
+    while True:
+        over = []
+        for depth, numerator in ((1, 3), (2, 1)):
+            filled = [entry for entry in accepted if entry[1].get('ground_fill', {}).get('max_depth') == depth]
+            cap = max(1, (len(report) * numerator + 9) // 10)
+            if len(filled) > cap:
+                over.extend(filled)
+        if not over:
+            break
+        entry = max(over, key=lambda e: (e[1]['ground_fill']['max_depth'], e[1]['ground_fill']['blocks_added']))
+        item, row, voxels = entry
+        accepted.remove(entry)
+        report.remove(row)
+        for pos in voxels:
+            del found[pos]
+        refused = dplan.mark_unplaced(item, 'ground fill cell cap')
+        refused['ground_spread'] = row['original_ground_spread']
+        refused['blocked_column'] = row['ground_fill']['columns'][0]['column']
+        refused['required_ground_fill'] = row['ground_fill']
+        unplaced.append(refused)
     return found, report, unplaced
 
 
@@ -1038,6 +1164,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     stats['candidate_items'] = len(decor['items'])
     stats['accepted_barrier_columns'] = len(barrier_report)
     stats['accepted_furniture_items'] = len(furniture_report)
+    stats['furniture_ground_fill'] = furniture_fill_summary(furniture_report, furniture_unplaced)
     stats['barrier_positions'] = barrier_positions
     stats['furniture_positions'] = len(furniture)
     stats['overlap_positions'] = overlap_positions

@@ -147,7 +147,7 @@ LIDAR OBJECTS IN DECOR (#173)
     `docs/specs/decor-furniture-footprints.md`) places its whole footprint centred
     on that column at the optional `rotation` (0, 90, 180 or 270 degrees clockwise
     from above; the label cell is the table's centre): every footprint column
-    must pass the guards, or the whole table is listed unplaced with a named reason. The plan retains lidar_cells and lidar_height for
+    must pass the guards and stand on one level (spread 0). If uneven, try the eight anchors within one block, then fill low columns at the original anchor with local surface material, never cutting and at most 2 blocks per column. Separate per-cell caps are ceil(30%) for 1-block fills and ceil(10%) for 2-block fills, each at least one, using final placed items as denominator and keeping smallest fills first. Report shifts, every fill, shares and refusals; hedges, fences and walls continue to follow terrain. See `docs/specs/decor-furniture-footprints.md` for the shared #444/#446 helper. The plan retains lidar_cells and lidar_height for
     inspection, and map, designer and photo furniture standing on a lump carries
     the same two hints; DSM height does not raise the ground or become a vehicle mesh.
   - Barriers (map, designer, border) whose height is only the kind's default take
