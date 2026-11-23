@@ -224,7 +224,9 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   eave and a flat plateau stays flat (`roofs[label].flat_tol_m` sets the rise below which
   a zone stays flat; default 1.5, lower it for a low hip). Columns outside every region
   keep their lidar zone. An empty polygon (no readable columns) or overlapping polygons
-  refuse. `material_regions[].level` must name a declared or auto plateau.
+  refuse. `material_regions[].level` must name a declared or auto plateau. With `levels: auto` plus `regions`, auto plateaus no region-resolved zone uses are left out of the
+  ridge clip (the rise is limited to the gap to the next used level) so they cannot flatten a ridge; `material_regions`
+  may still name them.
 
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
