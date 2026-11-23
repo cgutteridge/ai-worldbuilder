@@ -29,7 +29,10 @@ Talk to the owner by task **title** first, number second.
 Wave 1 touches disjoint files, so run #434, #457 and #458 in parallel, each in its own worktree. #455 and #456
 both edit `feature_spec.py` and the `rules/feature-builds.md` key list, and #455 shares `feature_build.py` with #434:
 start them only after wave 1 has merged. #459 is large and depends on the others; do not start it in the first wave.
-Leave `task/447-solid-glass-windows` alone: it is an unmerged window-policy change and the owner decides its fate.
+The solid-glass window policy (#447 branch `task/447-solid-glass-windows`) has since merged and #447 is back to todo
+with roof `flat_tol` default, storeys and bay, doors and the live parade left; those overlap this swarm, so read #447's
+notes before dispatch and keep the new tasks from duplicating it. On Papa John's the dry run now selects 26 solid-glass
+windows (30 to 50 per cent per face) where it selected 0, but still says "shell too low for a fascia band".
 
 ## Owner steers (apply to every task)
 
