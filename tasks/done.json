@@ -4099,5 +4099,18 @@
       "builderTask": false,
       "notes": "From trial #257 parade snag S-110 (issue I-060, \"Shop rows that aren't axis-aligned get squared into steps\"). The owner's decision: squaring shop fronts does not work unless the row is close to square anyway, so give up that directive for rows that are not near axis-aligned. Cause (checked 2026-11-22): the shop street-face squaring in lib/builds/feature_facade.py, fit_straight_runs (#332, limited by MAX_SHOP_STEP), turns a diagonal row into steps. It was added so awnings and signs touch the wall, so reversing it brings that problem back. rules/craftsmanship.md also says to axis-align long wall runs and square corners. Not verified: the row angle at which squaring starts to look wrong.\n\nDeliverable: skip the squaring when the row's angle is beyond a named threshold (measure the Portswood parade's angle first and state the threshold in the notes); say how awnings, signs and doors attach to an angled front instead (for example per wall step); change the squaring wording in rules/craftsmanship.md to match. Non-builder: fixtures only, no live apply. Acceptance: a fixture with an angled row shows an unsquared front with awnings and signs still touching the wall; a near-axis-aligned row is squared as today; the owner confirms in game that the parade fronts are no longer stepped (S-110) after a rebuild (a separate world step). Related: #257 findings (docs/plans/typology-buildings.md, Parade verdict) and task 427 (rotated footprints in the generator).\n\n\nClosed at ff88b99980ef1675dfef99fcf6a22a1ce7005129: Merged task/440-shop-front-squaring: skip squaring beyond 15°; notched L-corners still square. Review APPROVE after fixer. Owner in-game S-110 still outstanding.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/440-shop-front-squaring"}
+  ,
+    {
+      "id": 419,
+      "title": "Remove default player UUID and structure namespace; fail early and fill from player_list_online",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3\n\nClosed at 9bf8d45ec5de4bf8a549143aaf34d532ed7af97f: Merged task/419-default-player-uuid: require player_uuid and structure_namespace before journal begin; --fill-player; docs. Review nits only.\n\n[tasks CLI] Delivery evidence recorded; subject to human review.",
+      "claimedBy": "cursor",
+      "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/419-default-player-uuid"
+    }
   ]
 }
