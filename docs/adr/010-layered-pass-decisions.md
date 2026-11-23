@@ -13,7 +13,10 @@ Trees and decor place only into air and record a mask. Ground replaces the surfa
 - Replace the top non-air block in each column with the surface block.
 - Treat flowers and grass stems (short grass, tall grass, fern) as air for this step. Stock stems are not ground surface. A grass block is not air.
 - Then clear the vertical column above the surface of all non-air blocks not owned by a neighbour, except any block that belongs to a neighbouring cell's tree or decor mask. Those positions stay protected even when they overhang this cell's columns. Confirmed reading: remove all non-air blocks not owned by a neighbour above the new surface in this cell's columns, skipping neighbour mask positions. Leave pure air as it is.
-- Ground does not touch any column owned by a major feature.
+- Ground does not touch any column owned by a major feature, except that a bridge
+  or tunnel reserves only its three-dimensional structure and required clear air
+  ([ADR 009](009-structure-features.md)). Ground may remain below a bridge or above
+  a tunnel, including partly exposed entrances; later passes preserve that volume.
 - If this cell's trees and decor already exist, re-run them after the ground step. Ground may therefore replace this cell's trees and decor, and never a neighbour's.
 - Do the work with scripts and checks, not by hand.
 
@@ -29,11 +32,13 @@ Progress and ownership live in the cell journal (`registry/journal.jsonl` via `c
 
 Feature step, in order:
 
-1. Clear the vertical path above its footprint. Non-air blocks not owned by a neighbour are removed. Any block owned by a neighbour's tree or decor mask is left in place and counted.
+1. Clear the vertical path above its footprint. For a bridge or tunnel, limit this to its three-dimensional structure and required clearance (ADR 009), preserving tree crowns outside that volume. Non-air blocks not owned by a neighbour are removed. Any block owned by a neighbour's tree or decor mask is left in place and counted.
 2. Note or issue the neighbour cells whose masks overlap, so trees and decor re-run.
 3. A dependency pass first undoes its own mask, then re-plans with the new feature volume excluded. Its trees and decor never enter a feature volume.
 
-Ground follows the same rule: it skips feature-owned columns, and records a dependency pass for any neighbour-owned block it cannot clear.
+Ground follows the same rule: it skips feature-owned columns (the protected volume
+for a bridge or tunnel), and records a dependency pass for any neighbour-owned
+block it cannot clear.
 
 A feature never removes a neighbour's block. The neighbour's tree or decor pass re-runs and drops the overlapping blocks itself.
 
