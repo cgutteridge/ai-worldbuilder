@@ -54,8 +54,7 @@
    "body": {
     "front_depth": 3,
     "attic_rise_m": 3.0,
-    "min_rise_m": 1.5,
-    "glazed_front": true
+    "min_rise_m": 1.5
    },
    "street_face": {
     "kind": "big_box",

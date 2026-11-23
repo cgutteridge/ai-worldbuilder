@@ -628,7 +628,7 @@ def classify_column(hit: tuple | None, *, checked: bool) -> dict:
     return _unknown('unmapped' if checked else 'not_checked')
 
 
-BODY_KEYS = ('front_depth', 'attic_rise_m', 'min_rise_m', 'glazed_front')
+BODY_KEYS = ('front_depth', 'attic_rise_m', 'min_rise_m')
 
 
 def _validate_body(cid: str, body) -> None:
@@ -636,7 +636,7 @@ def _validate_body(cid: str, body) -> None:
 
     Null or absent means the class builds no pitched body from lidar. A map sets how deep the one-storey
     front strip is (columns), how far the lidar ridge must stand above the eave to leave room for dormers,
-    how far above it to read as pitched at all, and whether the front ground storey is glazed.
+    how far above it to read as pitched at all.
     """
     if body is None:
         return
@@ -649,20 +649,18 @@ def _validate_body(cid: str, body) -> None:
         value = body.get(key, 0)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 20:
             raise TableError(f'{cid}: body.{key} must be a height in metres 0..20')
-    if not isinstance(body.get('glazed_front', False), bool):
-        raise TableError(f'{cid}: body.glazed_front must be true or false')
 
 
 def body_recipe(cls: str) -> dict | None:
     """The class's terrace-house body recipe with defaults filled, or None when it has none.
 
     @param cls: class id; unknown ids use the ``unknown`` row
-    @returns: ``{front_depth, attic_rise_m, min_rise_m, glazed_front}`` or None
+    @returns: ``{front_depth, attic_rise_m, min_rise_m}`` or None
     """
     body = defaults(cls).get('body')
     if body is None:
         return None
-    return {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, 'glazed_front': False, **body}
+    return {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, **body}
 
 
 def _validate_street_face(cid: str, face) -> None:

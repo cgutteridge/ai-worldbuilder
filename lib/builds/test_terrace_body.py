@@ -15,7 +15,7 @@ import terrace_body as S
 import typology_spec as T
 
 FLOOR = 50
-PARAMS = land_use.body_recipe('commercial')   # the shipped class recipe: 3-column front strip, glazed front
+PARAMS = land_use.body_recipe('commercial')   # the shipped class recipe: a 3-column front strip
 FOOTPRINT = {(x, z) for x in range(10, 19) for z in range(20, 34)}   # 9 wide, 14 deep, street to the south
 
 
@@ -41,14 +41,14 @@ class EvidenceTest(unittest.TestCase):
         east = S.recipe(6.0, 8.0, FOOTPRINT, 'S', PARAMS)     # two-storey: little roof above the eave
         self.assertEqual((west['storeys'], west['bay'], west['dormers'] > 0), (2, False, True))
         self.assertEqual((east['storeys'], east['bay'], east['dormers']), (2, True, 0))
-        self.assertEqual((west['front_depth'], west['glazed_front']), (3, True))
+        self.assertEqual(west['front_depth'], 3)
 
     def test_recipe_comes_from_the_class_table_and_degrades_without_one(self):
-        self.assertEqual(PARAMS, {'front_depth': 3, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, 'glazed_front': True})
+        self.assertEqual(PARAMS, {'front_depth': 3, 'attic_rise_m': 3.0, 'min_rise_m': 1.5})
         self.assertIsNone(land_use.body_recipe('residential'))
         self.assertIsNone(land_use.body_recipe('banana'))
-        bare = S.recipe(6.5, 10.0, FOOTPRINT, 'S')   # no recipe: no strip, no glazing, still a body
-        self.assertEqual((bare['front_depth'], bare['glazed_front']), (0, False))
+        bare = S.recipe(6.5, 10.0, FOOTPRINT, 'S')   # no recipe: no strip, still a body
+        self.assertEqual(bare['front_depth'], 0)
         self.assertTrue(S.reads_pitched(6.0, 8.0, PARAMS))
         self.assertFalse(S.reads_pitched(6.0, 7.0, PARAMS))
         self.assertFalse(S.reads_pitched(None, 8.0, PARAMS))
@@ -57,11 +57,58 @@ class EvidenceTest(unittest.TestCase):
         tall = S.recipe(6.5, 10.0, FOOTPRINT, 'S', {**PARAMS, 'attic_rise_m': 4.0})
         self.assertEqual((tall['bay'], tall['dormers']), (True, 0))
 
+    def test_eave_is_read_over_the_body_not_the_front_strip(self):
+        # a 3-column strip at 3.5 m is 3/14 of the footprint: an all-footprint 15th percentile would read it
+        rises = height_field(FOOTPRINT, 'S', 6.5, 10.0, 3.5)
+        low_all = sorted(rises.values())[int(0.15 * (len(rises) - 1))]
+        self.assertLess(low_all, 4.0)
+        self.assertEqual(S.storeys_from_eave(low_all), 1)
+        eave, ridge = S.eave_ridge(rises, FOOTPRINT, 'S', PARAMS)
+        self.assertEqual(S.storeys_from_eave(eave), 2)
+        self.assertGreater(ridge - eave, PARAMS['attic_rise_m'] - 1.0)
+        block = S.recipe(eave, ridge, FOOTPRINT, 'S', PARAMS)
+        self.assertEqual(block['storeys'], 2)
+        # the strip is the one on the named front
+        north = S.eave_ridge(height_field(FOOTPRINT, 'N', 6.5, 10.0, 3.5), FOOTPRINT, 'N', PARAMS)
+        self.assertEqual(S.storeys_from_eave(north[0]), 2)
+        self.assertIsNone(S.eave_ridge({c: 8.0 for c in list(FOOTPRINT)[:3]}, FOOTPRINT, 'S', PARAMS))
+        self.assertIsNone(S.eave_ridge({}, FOOTPRINT, 'S', PARAMS))
+
+    def test_lidar_rises_reads_dsm_minus_dtm_per_column(self):
+        import numpy as np
+        cells = rect(0, 0, 4, 3)
+        dsm = np.arange(12, dtype=float).reshape(4, 3) + 40
+        dtm = np.full((4, 3), 38.0)
+        client = mock.Mock()
+        client.missing.return_value = []
+        with mock.patch('lidar_provider.tile_client', return_value=client), \
+                mock.patch('lidar_provider.mc_box_en', return_value=(0, 0, 1, 1)), \
+                mock.patch('lidar_provider.mc_heights_float', return_value={'dsm': dsm, 'dtm': dtm}):
+            rises = T._lidar_rises(cells)
+        self.assertEqual(rises[(0, 0)], 2.0)
+        self.assertEqual(rises[(3, 2)], 13.0)
+        self.assertEqual(len(rises), 12)
+        client.missing.return_value = ['DSM']
+        with mock.patch('lidar_provider.tile_client', return_value=client), \
+                mock.patch('lidar_provider.mc_box_en', return_value=(0, 0, 1, 1)):
+            self.assertEqual(T._lidar_rises(cells), {})
+
+    def test_a_bay_needs_a_storey_to_stand_on(self):
+        one = S.recipe(3.5, 6.0, FOOTPRINT, 'S', PARAMS)    # eave under 5 m reads one storey, ridge too low for dormers
+        self.assertEqual((one['storeys'], one['bay'], one['dormers']), (1, False, 0))
+        self.assertEqual(S.recipe(6.0, 8.0, FOOTPRINT, 'S', PARAMS)['bay'], True)
+        with self.assertRaisesRegex(ValueError, 'at least two storeys'):
+            S.validate_block('a', {'storeys': 1, 'bay': True})
+        with self.assertRaisesRegex(ValueError, 'at least two storeys'):
+            S.validate_block('a', {'bay': True, 'storeys': 1, 'bay_storey': 1})
+        S.validate_block('a', {'storeys': 1, 'bay': False, 'dormers': 1})
+        S.validate_block('a', {'bay': True})   # default two storeys
+
     def test_class_table_refuses_a_bad_body_recipe(self):
         import json
         doc = json.loads(land_use.TABLE_PATH.read_text())
         row = next(r for r in doc['classes'] if r['id'] == 'residential')
-        for bad in ({'front_depth': 9}, {'colour': 1}, {'glazed_front': 1}, {'min_rise_m': -1}, []):
+        for bad in ({'front_depth': 9}, {'colour': 1}, {'glazed_front': True}, {'min_rise_m': -1}, []):
             with self.subTest(bad=bad), self.assertRaises(land_use.TableError):
                 land_use.validate_table({**doc, 'classes': [
                     {**r, 'body': bad} if r is row else r for r in doc['classes']]})
@@ -99,6 +146,15 @@ class EvidenceTest(unittest.TestCase):
                     {'storeys': 2, 'bay_storey': 2}, {'front_depth': -1}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 S.validate_block('a', bad)
+
+
+def height_field(cells, front, eave, ridge, strip_m, depth=3):
+    """Lidar rise per column: a low flat strip along the front, a gabled body behind it (ridge mid-width)."""
+    strip = S.front_strip(cells, front, depth)
+    xs = [x for x, _ in cells]
+    centre, span = (min(xs) + max(xs)) / 2, (max(xs) - min(xs)) / 2 - 0.5   # eave at the outer columns, ridge at the middle
+    return {c: strip_m if c in strip else eave + (ridge - eave) * (1 - (abs(c[0] - centre) - 0.5) / span)
+            for c in cells}
 
 
 def write_spec(spec):
@@ -180,11 +236,11 @@ class BodyBuildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dormers, cls.dormer_log = plan_cells(shop_spec(
-            {'storeys': 2, 'front_depth': 3, 'glazed_front': True, 'dormers': 2, 'bay': False}))
+            {'storeys': 2, 'front_depth': 3, 'dormers': 2, 'bay': False}))
         cls.bay, cls.bay_log = plan_cells(shop_spec(
-            {'storeys': 2, 'front_depth': 3, 'glazed_front': True, 'dormers': 0, 'bay': True}))
+            {'storeys': 2, 'front_depth': 3, 'dormers': 0, 'bay': True}))
         cls.three, cls.three_log = plan_cells(shop_spec(
-            {'storeys': 3, 'front_depth': 3, 'glazed_front': True, 'dormers': 1, 'bay': False}))
+            {'storeys': 3, 'front_depth': 3, 'dormers': 1, 'bay': False}))
 
     def test_strip_is_one_storey_under_a_flat_bottom_slab_roof(self):
         cells = self.dormers
@@ -203,18 +259,15 @@ class BodyBuildTest(unittest.TestCase):
         self.assertEqual(name(cells[14, FLOOR + 1, 30]), 'air')
         self.assertEqual(name(cells[14, FLOOR + 2, 30]), 'air')
 
-    def test_front_ground_storey_is_glazed_between_piers_and_the_door_stays_framed(self):
-        cells = self.dormers
-        row = {x: name(cells[x, FLOOR + 1, 33]) for x in range(10, 19)}
-        self.assertEqual(row[14], 'spruce_door')
-        self.assertEqual(name(cells[13, FLOOR + 1, 33]), 'bricks')
-        self.assertEqual(name(cells[15, FLOOR + 1, 33]), 'bricks')
-        glass = [x for x, state in row.items() if 'glass' in state]
-        self.assertTrue(glass, 'the body has glazing')
-        for x in glass:
-            self.assertEqual(name(cells[x, FLOOR + 2, 33]), name(cells[x, FLOOR + 1, 33]))
-            self.assertEqual(name(cells[x, FLOOR, 33]), 'bricks')   # a sill under the glass
-            self.assertEqual(name(cells[x, FLOOR + 3, 33]), 'brick_slab')   # a lintel over it
+    def test_no_window_lands_above_the_strip_where_there_is_no_wall(self):
+        for label, cells in (('dormers', self.dormers), ('bay', self.bay), ('three', self.three)):
+            for (x, y, z), state in cells.items():
+                if 'glass' in state and z >= 31 and y > FLOOR + 3:
+                    # strip columns (z 31..33) only carry glass in a bay, one block proud of the wall at z=30
+                    self.assertEqual((label, z), (label if label == 'bay' else None, 31), (x, y, z))
+        # the front ground storey keeps the builder's ordinary window rhythm and door
+        door = [x for x in range(10, 19) if name(self.dormers[x, FLOOR + 1, 33]) == 'spruce_door']
+        self.assertEqual(door, [14])
 
     def test_dormers_stand_on_the_front_wall_row_and_stay_under_the_ridge(self):
         cells = self.dormers
@@ -286,11 +339,12 @@ class BodyGeneratorTest(unittest.TestCase):
     }
     STREET = [[(-20.0, 50.0), (80.0, 50.0)]]
 
-    def shops(self, eave, ridge, tags=None, count=3, **extra):
+    def shops(self, eave, ridge, tags=None, count=3, strip_m=3.5, **extra):
         tags = tags or {'building': 'retail'}
         return [{'way_id': str(i + 1), 'cells': rect(i * 6, 20, 6, 14), 'tags': dict(tags),
                  'lidar_m': (eave + ridge) / 2, 'profile': self.PROFILE,
-                 'eave_m': eave, 'ridge_m': ridge, **extra} for i in range(count)]
+                 'rises': height_field(rect(i * 6, 20, 6, 14), 'S', eave, ridge, strip_m), **extra}
+                for i in range(count)]
 
     def test_pitched_lidar_makes_a_terrace_body_spec_without_building_levels(self):
         report = T.generate(self.shops(6.5, 10.0), self.STREET)
@@ -325,7 +379,7 @@ class BodyGeneratorTest(unittest.TestCase):
                   for row in self.shops(6.0, 9.0)]
         report = T.generate(tagged, self.STREET)
         self.assertEqual(report['specs'][0]['builder'], 'feature_build')
-        bare = [{k: v for k, v in row.items() if k not in ('eave_m', 'ridge_m')} | {
+        bare = [{k: v for k, v in row.items() if k != 'rises'} | {
             'tags': {'building': 'retail', 'building:levels': '2'}, 'lidar_m': 6.0}
             for row in self.shops(6.0, 9.0)]
         self.assertEqual(T.generate(bare, self.STREET)['specs'][0]['builder'], 'feature_build')
@@ -344,11 +398,18 @@ class BodyGeneratorTest(unittest.TestCase):
         report = T.generate([dict(row, profile=profile) for row in office], self.STREET)
         self.assertNotIn('"body"', json.dumps(report['specs']))
 
+    def test_low_eave_with_a_strip_in_the_footprint_still_reads_the_body(self):
+        report = T.generate(self.shops(6.5, 10.0, strip_m=3.5), self.STREET)
+        block = report['specs'][0]['spec']['body']['a']
+        self.assertEqual(block['storeys'], 2)
+        self.assertFalse(block['bay'])
+        self.assertGreater(block['dormers'], 0)
+
     def test_district_default_of_flat_does_not_override_pitched_lidar(self):
         report = T.generate(self.shops(6.5, 10.0), self.STREET)
         self.assertIn('Roof gable', report['specs'][0]['spec']['notes'])
 
-    def test_loader_samples_eave_and_ridge_for_shops_only(self):
+    def test_loader_samples_lidar_rises_for_classes_with_a_recipe_only(self):
         index = mock.Mock()
         cells = {c: i for i, rect_ in enumerate((rect(0, 0, 6, 6), rect(10, 0, 6, 6))) for c in rect_}
         index.cells.return_value = cells
@@ -358,10 +419,10 @@ class BodyGeneratorTest(unittest.TestCase):
         with mock.patch('osm_footprints.osm_tags', side_effect=lambda props: tags[props['osm_way_id']]):
             buildings, _streets = T.load_buildings(
                 index, way_ids=['1', '2'], lidar=lambda c: 5.0, profile_at=lambda cell: None,
-                eave_ridge=lambda c: (6.0, 9.0))
+                rises=lambda c: {cell: 7.0 for cell in c})
         by_way = {row['way_id']: row for row in buildings}
-        self.assertEqual((by_way['1']['eave_m'], by_way['1']['ridge_m']), (6.0, 9.0))
-        self.assertNotIn('eave_m', by_way['2'])
+        self.assertEqual(set(by_way['1']['rises'].values()), {7.0})
+        self.assertNotIn('rises', by_way['2'])
 
     def test_generated_spec_builds(self):
         report = T.generate(self.shops(6.5, 10.0, count=1), self.STREET)

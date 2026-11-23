@@ -12,9 +12,9 @@ dormers; one without gets a bay window on its upper storey. A street where one
 side reads three storeys with a dormer top floor and the other two storeys with a
 bay therefore differs by its own lidar, not by code.
 
-Heights are metres of lidar above ground (DSM minus DTM): ``eave_m`` is the low
-roofline (the 10th percentile, which ignores dormer slivers) and ``ridge_m`` the
-top. One storey is three blocks. Lidar is height truth for the shell; the roof may
+Heights are metres of lidar above ground (DSM minus DTM) over the body columns, not the
+front strip: ``eave_m`` is the low roofline (the 15th percentile, which ignores low
+extensions and the blurred rim) and ``ridge_m`` the top (the 95th, which ignores chimneys). One storey is three blocks. Lidar is height truth for the shell; the roof may
 deviate from it for clean joins, which is why pitch is clamped.
 """
 from __future__ import annotations
@@ -29,7 +29,10 @@ STOREY_H = 3
 MIN_PITCH, MAX_PITCH = 0.6, 1.0
 # Class recipe fallbacks (the land-use table row overrides them): no front strip, and a dormer
 # needs a sill, two panes and a cap (four blocks) of roof above the eave.
-DEFAULTS = {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, 'glazed_front': False}
+DEFAULTS = {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5}
+# Percentiles of body-column lidar that read as eave and ridge.
+EAVE_PERCENTILE, RIDGE_PERCENTILE = 0.15, 0.95
+MIN_SAMPLES = 6
 # A dormer or bay is three columns wide; keep a column of wall each side.
 MARGIN = 2
 SPACING = 4
@@ -74,8 +77,8 @@ def front_strip(cells: set, front: str, depth: int) -> set:
     """Columns of the single-storey front range: the front ``depth`` rows of the footprint.
 
     The strip is measured along the front direction from the footprint's front-most
-    column, so a stepped (rotated) outline gets a strip that follows its front.
-    The body keeps at least ``depth`` columns, or there is no strip.
+    column. The body keeps at least three columns behind the strip, or there is no strip.
+    Axis-aligned footprints are the supported case; rotated footprints are task 427.
 
     @param cells: footprint columns
     @param front: ``N`` ``S`` ``E`` or ``W``, the face onto the street
@@ -101,9 +104,8 @@ def front_row(body: set, front: str) -> set:
 def lateral_runs(row: set, front: str) -> list[list[tuple[int, int]]]:
     """Straight runs of a front row, longest first, each ordered along the front.
 
-    A run is columns on one line across the front, side by side. A stepped front
-    breaks into several short runs, which is how rotated rows keep dormers and bays
-    off the steps.
+    A run is columns on one line across the front, side by side. A front with steps
+    breaks into several runs, and only the longest is used.
 
     @param row: front-row columns
     @param front: face direction
@@ -153,6 +155,28 @@ def dormer_count(front_len: int) -> int:
     return max(1, min(3, round(front_len / 5)))
 
 
+def eave_ridge(rises: dict, cells: set, front: str, params: dict | None = None) -> tuple[float, float] | None:
+    """Eave and ridge height (metres) over the body columns, leaving out the front strip.
+
+    The strip is a lower one-storey roof; counting it would pull the eave down to the strip's
+    height and misread the storeys of the body behind. The strip is the one the recipe would
+    cut for ``front``, so this is the same body the builder will raise.
+
+    @param rises: lidar rise (DSM minus DTM, metres) per footprint column; columns without data are absent
+    @param cells: footprint columns
+    @param front: face direction onto the street
+    @param params: the class's ``body`` recipe; defaults when None
+    @returns: ``(eave_m, ridge_m)``, or None when fewer than ``MIN_SAMPLES`` body columns have data
+    """
+    params = {**DEFAULTS, **(params or {})}
+    body = cells - front_strip(cells, front, params['front_depth'])
+    values = sorted(v for c in body if (v := rises.get(c)) is not None and finite(v))
+    if len(values) < MIN_SAMPLES:
+        return None
+    last = len(values) - 1
+    return values[int(EAVE_PERCENTILE * last)], values[int(RIDGE_PERCENTILE * last)]
+
+
 def reads_pitched(eave_m, ridge_m, params: dict | None = None) -> bool:
     """Whether lidar eave and ridge say a pitched body: both finite and ``min_rise_m`` apart or more."""
     params = {**DEFAULTS, **(params or {})}
@@ -172,7 +196,7 @@ def recipe(eave_m: float, ridge_m: float, cells: set, front: str,
     @param front: face direction onto the street
     @param params: the class's ``body`` recipe (``land_use.body_recipe``); defaults when None
     @param override: keys of the block to force
-    @returns: ``{storeys, front_depth, dormers, bay, glazed_front, roof_pitch}``
+    @returns: ``{storeys, front_depth, dormers, bay, roof_pitch}``
     """
     params = {**DEFAULTS, **(params or {})}
     strip = front_strip(cells, front, params['front_depth'])
@@ -182,14 +206,14 @@ def recipe(eave_m: float, ridge_m: float, cells: set, front: str,
     bz = [z for _, z in body]
     short = min(max(bx) - min(bx), max(bz) - min(bz)) + 1
     attic = (ridge_m - eave_m) >= params['attic_rise_m']
+    storeys = storeys_from_eave(eave_m)
     runs = lateral_runs(front_row(body, front), front)
     longest = len(runs[0]) if runs else 0
     block = {
-        'storeys': storeys_from_eave(eave_m),
+        'storeys': storeys,
         'front_depth': depth,
         'dormers': dormer_count(longest) if attic else 0,
-        'bay': not attic,
-        'glazed_front': params['glazed_front'],
+        'bay': not attic and storeys >= 2,
         'roof_pitch': pitch_from_lidar(eave_m, ridge_m, short),
     }
     block.update(override or {})
@@ -230,7 +254,7 @@ def validate_block(label: str, block: dict) -> None:
     @param block: the block
     @raises ValueError: when a key is unknown or a value is out of range
     """
-    allowed = {'storeys', 'front_depth', 'dormers', 'bay', 'bay_storey', 'glazed_front'}
+    allowed = {'storeys', 'front_depth', 'dormers', 'bay', 'bay_storey'}
     extra = set(block) - allowed
     if extra:
         raise ValueError(f'body[{label!r}]: unknown keys {sorted(extra)}')
@@ -239,9 +263,10 @@ def validate_block(label: str, block: dict) -> None:
             value = block[key]
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
                 raise ValueError(f'body[{label!r}].{key} must be an integer in [{low}, {high}]')
-    for key in ('bay', 'glazed_front'):
-        if key in block and not isinstance(block[key], bool):
-            raise ValueError(f'body[{label!r}].{key} must be true or false')
+    if 'bay' in block and not isinstance(block['bay'], bool):
+        raise ValueError(f'body[{label!r}].bay must be true or false')
+    if block.get('bay') and block.get('storeys', 2) < 2:
+        raise ValueError(f'body[{label!r}].bay needs at least two storeys (the bay stands on an upper storey)')
     if 'bay_storey' in block:
         value = block['bay_storey']
         storeys = block.get('storeys', 2)

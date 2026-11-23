@@ -26,9 +26,9 @@ instead of a script copy:
   door_frame     true (default): doors only where the wall has a wall cell each side, so they are framed on angled walls
   keep_edits     true: stoop/step cells survive the earlier-build clash filter (needed when `modifies` a ground build)
   body           optional {"<label>": {...}} terrace-house body (task #333): storeys (wall storeys, default 2),
-                 front_depth (columns of one-storey flat roof in front of the body, default 0), glazed_front (glaze
-                 the front ground storey between piers), dormers (flush wall dormers on the front slope, 0-3), bay
-                 (upper-storey bay window on the front wall), bay_storey (default 1). Needs roof_pitch above 0.5 and
+                 front_depth (columns of one-storey flat roof in front of the body, default 0), dormers (flush wall
+                 dormers on the front slope, 0-3), bay (upper-storey bay window on the front wall; needs two storeys),
+                 bay_storey (default 1). Needs roof_pitch above 0.5 and
                  mode each. lib/builds/terrace_body.py derives the numbers from lidar eave and ridge and the class's
                  `body` recipe (config/land-use-classes.json) for the typology generator
 
@@ -412,11 +412,8 @@ class Build:
                 if (c[0] if face in 'NS' else c[1]) % 2:
                     continue
                 for dy in rows:
-                    # the glazed front owns the front ground storey (body_details)
-                    if h.recipe and h.recipe.get('glazed_front') and face == h.front and dy < STOREY:
-                        continue
-                    if c in h.upper_row and face == h.front and dy < STOREY:
-                        continue
+                    if c in h.strip and dy >= STOREY:
+                        continue   # the front strip's walls stop under its flat roof: no wall to glaze above it
                     candidates.append(Window((c[0], h.b + dy, c[1]), face, stepped))
         positions = {(w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1])
                      for w in candidates}
@@ -431,7 +428,7 @@ class Build:
             print(line)
 
     def body_details(self, h):
-        """Front-range roof and glazing, upper bay window and roof dormers of a terrace-house body (#333)."""
+        """Front-range roof, upper bay window and roof dormers of a terrace-house body (#333)."""
         from terrace_body import centres, lateral_runs
         b, front = h.b, h.front
         rm = self.spec['roofs'][h.no]
@@ -441,8 +438,6 @@ class Build:
             self.set(x, b + STOREY, z, deck)
             if 'slab' in variants:
                 self.p.keep_slab_cells.add((x, b + STOREY, z))
-        if h.recipe.get('glazed_front'):
-            self.glaze_front(h)
         runs = lateral_runs(terrace_body.front_row(h.body, front), front)
         if h.recipe.get('bay') and runs:
             for centre in centres(runs[0], 1):
@@ -450,41 +445,6 @@ class Build:
         if h.recipe.get('dormers') and runs:
             for centre in centres(runs[0], h.recipe['dormers']):
                 self.dormer(h, centre, variants['full'])
-
-    def glaze_front(self, h):
-        """Glass the ground storey of the front wall between piers, leaving the door framed.
-
-        Pane width, piers and the facade rhythm are the glazing recipe of task 431; this is the
-        minimal default so a glazed-front class does not read as a house with a front door.
-        """
-        from floor_reference import outside_ground
-        from window_openings import Window, choose_windows, report_lines
-        front = h.front
-        lat = 0 if front in 'NS' else 1
-        door = getattr(h, 'door', None)
-        candidates = []
-        for c in sorted(h.walls):
-            if not self.exposed(c, front) or c not in (h.strip or h.body):
-                continue
-            # piers frame the door, then fall every fourth column out from it (every fourth without a door)
-            if door:
-                offset = abs(c[lat] - door[lat])
-                if offset < 2 or (offset - 2) % 4 == 3:
-                    continue
-            elif c[lat] % 4 == 0:
-                continue
-            for dy in (1, 2):
-                candidates.append(Window((c[0], h.b + dy, c[1]), front, False))
-        positions = {(w.pos[0] + DIRS[front][0], w.pos[2] + DIRS[front][1]) for w in candidates}
-        ground = outside_ground(positions)
-        writes, report = choose_windows(
-            candidates, block=lambda x, y, z: self.p.cells.get((x, y, z), 'minecraft:air'),
-            walls=h.walls, exposed=self.exposed, outside_ground=ground,
-            protected={(door[0], h.b + dy, door[1]) for dy in (1, 2)} if door else ())
-        for pos, state in writes.items():
-            self.set(*pos, state)
-        for line in report_lines(f'{h.no} glazed front', report):
-            print(line)
 
     def skin_y(self, x, z, low):
         """Highest planned block in a column at or above ``low`` (the roof skin), or None."""

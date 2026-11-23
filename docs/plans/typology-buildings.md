@@ -306,16 +306,17 @@ One mechanism, no per-street or per-side code. `house_build` takes an optional p
 `config/land-use-classes.json`; `typology_spec` emits it for any class that has a recipe, when lidar reads pitched.
 
 - **Recipe is data:** `body` on a land-use class row sets `front_depth` (columns of one-storey flat front range),
-  `attic_rise_m` (ridge above eave that leaves room for dormers), `min_rise_m` (below it the lidar reads flat) and
-  `glazed_front`. Only `commercial` ships one. A new class gains the typology by adding a row; the table validator
+  `attic_rise_m` (ridge above eave that leaves room for dormers) and `min_rise_m` (below it the lidar reads flat).
+  Only `commercial` ships one. A new class gains the typology by adding a row; the table validator
   refuses a bad row.
-- **Body:** wall storeys from the lidar eave; `roof_pitch` reproduces the lidar ridge, clamped to 0.6 to 1.0 because
+- **Body:** wall storeys from the lidar eave, read over the body columns only (the lower front strip would pull a
+  whole-footprint eave down to one storey); `roof_pitch` reproduces the lidar ridge, clamped to 0.6 to 1.0 because
   `house_build` reads 0.5 and below as slab rings.
 - **Front range:** the front `front_depth` columns are one storey under a flat bottom-slab roof, with the body's upper
-  front wall over it. `glazed_front` glazes the ground front between piers with the door framed (pane width and
-  rhythm are the glazing recipe of task 431; fascia and signs are task 437).
+  front wall over it. The ground floor keeps the builder's ordinary windows and door; the glazing recipe is task 431
+  and fascia and signs are task 437.
 - **Dormer or bay, by evidence:** roof room gives flush wall dormers (one per five front columns, one to three);
-  none gives a square glass bay on a solid base. Streets that differ side to side differ by their own lidar.
+  none gives a square glass bay on a solid base, and only when there are two storeys to stand it on. Streets that differ side to side differ by their own lidar.
 - **Degrades, never crashes:** no recipe, no lidar, a `roof:shape=flat` tag or a low ridge keeps the old path; a
   dormer with no room under the ridge, or a bay whose columns a neighbour owns, is dropped with a log line.
 - **Not done:** rotated footprints and rows by adjacency (427), glazing recipe (431), fascia and signs (437). The lidar
