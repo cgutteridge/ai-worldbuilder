@@ -336,6 +336,7 @@ def _validate_typology(cid: str, row: dict) -> None:
             or storeys['min'] > storeys['max']):
         raise TableError(f'{cid}: storeys must be {{min, max}} integers from 1 to 100 in order')
 
+
 def planting_rule(cls: str, kind: str) -> dict | None:
     """Return the class's planting rule, or None when it allows no inference of this kind."""
     row = defaults(cls)
