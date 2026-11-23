@@ -2,7 +2,8 @@
 """Rules-only specs for house_build and feature_build.
 
 No model chooses a design. A footprint of any orientation is taken as drawn
-(the builder fits it); a sliver or a multi-part shape comes back as needs-designer. House tags (terrace, semi-detached, detached, or a plain
+(the builder fits it); a sliver or a multi-part shape comes back as needs-designer.
+House tags (terrace, semi-detached, detached, or a plain
 house whose shared walls make the row obvious) become one house_build spec.
 Any other class the building's own tags name becomes a minimal feature_build
 spec, for example a shop with flats above. Missing tags, an odd footprint, or
@@ -49,6 +50,10 @@ HOUSE_MIN_CELLS = 9
 SHOP_MIN_CELLS = 20
 # Footprints with at most this many empty block columns between them belong to one row.
 ROW_GAP = 1
+# A footprint must survive this many erosion steps (4-neighbour), so a strip under 3 columns thick is a sliver.
+THIN_STEPS = 1
+# A street whose offset across the facing axis is under this many blocks is beside the end of a row, not in front.
+FRONT_MIN_OFFSET = 1.0
 PITCHED_RISE = 0.6
 FLAT_RISE = 0.0
 HOUSE_TAGS = frozenset({'house', 'residential', 'terrace', 'semidetached_house', 'detached'})
@@ -360,7 +365,8 @@ def _footprint(cells: set[tuple[int, int]], house: bool) -> tuple[int, int, int,
     Any orientation is accepted. A house fills enough of its bounding box; a shop needs enough columns.
     A footprint in more than one separate part is not one building.
     """
-    if len(cells) < (HOUSE_MIN_CELLS if house else SHOP_MIN_CELLS) or _parts(cells) != 1:
+    if len(cells) < (HOUSE_MIN_CELLS if house else SHOP_MIN_CELLS) or _parts(cells) != 1 \
+            or not _eroded(cells, THIN_STEPS):
         return None
     xs = [x for x, _z in cells]
     zs = [z for _x, z in cells]
@@ -368,6 +374,14 @@ def _footprint(cells: set[tuple[int, int]], house: bool) -> tuple[int, int, int,
     if house and len(cells) < HOUSE_MIN_FILL * (x1 - x0 + 1) * (z1 - z0 + 1):
         return None
     return (x0, z0, x1, z1)
+
+
+def _eroded(cells: set[tuple[int, int]], steps: int) -> set[tuple[int, int]]:
+    """Columns left after dropping, ``steps`` times, every column with a 4-neighbour outside the footprint."""
+    for _ in range(steps):
+        cells = {(x, z) for x, z in cells
+                 if all(n in cells for n in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)))}
+    return cells
 
 
 def _parts(cells: set[tuple[int, int]]) -> int:
@@ -595,8 +609,6 @@ def _row_reason(group: list[dict], streets) -> tuple[str | None, str | None]:
     axis = _row_axis(group)
     if len({row['profile_name'] for row in group}) > 1:
         return 'districts differ', axis
-    if len({row['path'] for row in group}) > 1:
-        return 'mixed classes in one row', axis
     if group[0]['path'] == 'house':
         kind = _house_kind(group)
         if kind is None:
@@ -638,7 +650,7 @@ def _front(cells: set[tuple[int, int]], streets, axis: str | None) -> tuple[str 
         dx = 0.0
     else:
         dz = 0.0
-    if dx == 0 and dz == 0:
+    if max(abs(dx), abs(dz)) < FRONT_MIN_OFFSET:
         return None, 'no clear front'
     if dz:
         return ('S' if dz > 0 else 'N'), None

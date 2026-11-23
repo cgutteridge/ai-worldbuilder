@@ -180,7 +180,7 @@ class TypologySpecs(unittest.TestCase):
     def test_slivers_and_multi_part_shapes_are_odd_but_rotated_ones_are_not(self):
         diagonal = {(x, z) for z in range(8) for x in range(z, z + 8)}   # a rotated (sheared) rectangle
         sliver = {(i, i) for i in range(12)}
-        shop_sliver = {(i, 0) for i in range(12)} | {(i, 1) for i in range(12)}   # 24 cells, a shop may be thin
+        shop_sliver = {(i, j) for i in range(8) for j in range(3)}   # 24 cells, a small shop is fine
         house = {'building': 'house', 'building:levels': '2'}
         report = T.generate([
             building('turned', diagonal, house, profile=PINNED),
@@ -191,6 +191,26 @@ class TypologySpecs(unittest.TestCase):
         reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
         self.assertEqual(reasons, {'sliver': 'odd footprint'})
         self.assertEqual(len(report['specs']), 2)
+
+    def test_thin_strips_are_refused_in_either_direction(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        report = T.generate([
+            building('w1', rect(0, 0, 1, 12), house, profile=PINNED),
+            building('w2', rect(10, 0, 2, 10), house, profile=PINNED),
+            building('z2', rect(20, 0, 10, 2), house, profile=PINNED),
+            building('ok', rect(40, 0, 3, 8), house, profile=PINNED),
+        ], [[(-20.0, 20.0), (80.0, 20.0)]])
+        reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
+        self.assertEqual(reasons, {'w1': 'odd footprint', 'w2': 'odd footprint', 'z2': 'odd footprint'})
+        self.assertEqual(len(report['specs']), 1)
+
+    def test_a_street_off_the_end_of_a_row_gives_no_front(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        row = [building(f'r{i}', rect(0, 4 * i, 6, 3), house, profile=PINNED) for i in range(3)]
+        for offset in (0.0, 0.3, -0.3):   # a street beside the end of the row, off by less than a block
+            report = T.generate(row, [[(3.0 + offset, 30.0), (3.0 + offset, 60.0)]])
+            self.assertEqual(report['specs'], [])
+            self.assertEqual({r['reason'] for r in report['needs_designer']}, {'no clear front'})
 
     def test_footprints_one_block_apart_form_a_row_and_wider_gaps_do_not(self):
         house = {'building': 'house', 'building:levels': '2'}
