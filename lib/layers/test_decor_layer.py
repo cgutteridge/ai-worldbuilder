@@ -447,6 +447,59 @@ class TestPicnicFootprints(unittest.TestCase):
             self.assertEqual(found, {}, reason)
             self.assertEqual(self.reasons(unplaced), [reason])
 
+    def test_table_on_a_footway_line_column_is_refused(self):
+        """A real footway (no plaza under it) still refuses the whole table (#445)."""
+        blocked = (11, 21)
+        way = dl.way_columns(
+            feat={blocked: 1},
+            path_lines=[{'highway': 'footway', 'footway': None}],
+        )
+        self.assertIn(blocked, way)
+        found, report, unplaced = self.place([self.table()], way=way)
+        self.assertEqual((found, report), ({}, []))
+        self.assertEqual(self.reasons(unplaced), ['on path/road/water column'])
+        self.assertEqual(unplaced[0]['blocked_column'], [11, 21])
+
+    def test_table_on_a_column_with_no_feat_id_is_placed(self):
+        """Paved open ground with no path-line id is not a path column (#445)."""
+        way = dl.way_columns(
+            feat={},
+            path_lines=[],
+            open_paved={(10, 20), (11, 21)},
+        )
+        self.assertNotIn((10, 20), way)
+        self.assertNotIn((11, 21), way)
+        found, _report, unplaced = self.place([self.table()], way=way)
+        self.assertEqual(unplaced, [])
+        self.assertEqual(len(found), 9)
+
+    def test_table_on_a_footway_crossing_a_plaza_is_placed(self):
+        """A footway line across a paved open area does not refuse the table (#445)."""
+        crossing = (11, 21)
+        way = dl.way_columns(
+            feat={crossing: 1},
+            path_lines=[{'highway': 'footway', 'footway': None}],
+            open_paved={crossing},
+        )
+        self.assertNotIn(crossing, way)
+        found, _report, unplaced = self.place([self.table()], way=way)
+        self.assertEqual(unplaced, [])
+        self.assertEqual(len(found), 9)
+
+    def test_cycleway_sidewalk_and_water_stay_path_columns(self):
+        """A cycleway, a sidewalk and water stay refused on a plaza (#445)."""
+        cycle, walk, wet = (11, 21), (9, 19), (10, 21)
+        way = dl.way_columns(
+            feat={cycle: 1, walk: 2},
+            water={wet},
+            path_lines=[
+                {'highway': 'cycleway', 'footway': None},
+                {'highway': 'footway', 'footway': 'sidewalk'},
+            ],
+            open_paved={cycle, walk, wet},
+        )
+        self.assertEqual(way, {cycle, walk, wet})
+
     def test_allow_against_build_lifts_only_the_near1_filter(self):
         found, _r, unplaced = self.place([self.table(allow_against_build=True)], near1={(11, 20)})
         self.assertEqual((len(found), unplaced), (9, []))
@@ -1181,7 +1234,7 @@ class TestDryRunUndo(unittest.TestCase):
         empty = Ground()
         item = {'id': 'front', 'role': 'barrier', 'kind': 'hedge', 'height': 2, 'cells': [[10, 20], [11, 20]]}
         vmap = types.SimpleNamespace(**{k: set() for k in
-            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks')},
+            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks', 'open_paved')},
             furniture=[], road_lines=[], path_lines=[])
         with tempfile.TemporaryDirectory() as tmp, ExitStack() as stack, redirect_stdout(io.StringIO()):
             directory = Path(tmp)
@@ -1470,7 +1523,7 @@ class TestWoodlandDecorPlanCell(unittest.TestCase):
         item = {'id': 'front', 'role': 'barrier', 'kind': 'hedge', 'height': 2,
                 'cells': [[10, 20], [11, 20]]}
         vmap = types.SimpleNamespace(**{k: set() for k in
-            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks')},
+            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks', 'open_paved')},
             furniture=[], road_lines=[], path_lines=[])
         idx = mock.Mock(cells=lambda: {}, buildings={},
                         areas=[(sq(8, 8, 24, 24), {'natural': 'wood', 'osm_way_id': 'w1'})])

@@ -314,7 +314,7 @@ class TestRailwayDecorReservation(unittest.TestCase):
         wood = {(x, z) for x in range(8, 24) for z in range(8, 24)}
         world = World(store=MemoryBlocks({(x, 64, z): 'minecraft:grass_block' for x, z in wood}, default='air'))
         vmap = SimpleNamespace(**{k: set() for k in
-            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks')},
+            ('road', 'feat', 'water', 'water_line', 'hedge', 'wall', 'fence', 'marks', 'open_paved')},
             furniture=[], road_lines=[], path_lines=[])
         ring = [[(8, 8), (24, 8), (24, 24), (8, 24), (8, 8)]]
         idx = mock.Mock(cells=lambda: {}, buildings={}, areas=[(ring, {'natural': 'wood'})])

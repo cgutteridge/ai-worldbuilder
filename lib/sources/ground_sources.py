@@ -372,6 +372,7 @@ class OSMGround:
         self.marks: set = set()       # centre-line dash columns
         self.water: set = set()       # polygon natural=water only (pond candidates; #163)
         self.water_line: set = set()  # waterway line columns (streams); not pond candidates
+        self.open_paved: set = set()  # pedestrian-area and area:highway columns (plaza / paved open ground)
         self.water_refs: dict = {}    # (x, z) -> 'w<way id>' for polygon water (#163)
         self.bridge: set = set()      # columns of every mapped bridge, tunnel and layer!=0 way (deck | tunnel)
         self.deck: set = set()        # columns under a mapped bridge or raised way: the ground below is ground's (#298)
@@ -428,7 +429,9 @@ class OSMGround:
                 for q in cells:
                     self.water_refs[q] = ref
         elif t.get('highway') == 'pedestrian' or t.get('area:highway'):
-            self._put(poly_cells(polys), SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
+            cells = poly_cells(polys)
+            self.open_paved |= cells
+            self._put(cells, SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
         elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey', 'rooftop'):
             # surface car park: tarmac (#338; a narrow exception to #158, which keeps land use out of ground paint)
             cs = poly_cells(polys)

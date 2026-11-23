@@ -79,6 +79,24 @@ the owner's check.
 
 Run on **every footprint column**, whole item refused on the first failing column (reason as today): `cell_contains` (section 8), `way`, `near1` (unless `allow_against_build`), carriageway (`column_ground_kind in ROAD_KINDS`), ground, and the voxel check (not air, `owned`, `masked`).
 
+`way` is built by `way_columns` (`lib/layers/decor_layer.py`): railway columns, carriageway (`vmap.road`), water polygons, waterway lines, and every path-line column (`vmap.feat`). A column with no feat id is not a path column. Outbuildings, barriers and woodland use that full set.
+
+Furniture uses the same helper with `open_paved` (pedestrian-area and `area:highway` columns, kept on `OSMGround` even where a path line overwrites the surface). A `footway` or `path` line that is not a sidewalk is left out of the furniture set where the column lies in `open_paved`. That is the one-block footpath line across a plaza or paved open area, and a table may stand on it. A footway anywhere else is a real footpath and stays refused. A cycleway, a sidewalk, a carriageway and water stay refused.
+
+Step 1, Southampton cell 48,-44 (2026-11-23). None of the blocked columns is in `vmap.road`, `vmap.water` or `vmap.water_line`. Each is a path line:
+
+| Table anchor | First blocked column | Way id | Class |
+| --- | --- | --- | --- |
+| rectangular 6176,-5600 | 6177,-5600 | 1030214384 | cycleway, surface paved |
+| round 6174,-5604 | 6175,-5604 | 1030214384 | cycleway, surface paved |
+| plaza 6208,-5576 | 6207,-5577 | 1174317556 | footway, no footway role, no surface |
+| plaza 6211,-5577 | 6212,-5577 | 1174317566 | footway, no footway role, no surface |
+| plaza 6214,-5577 | 6214,-5578 | 1174317566 | footway, no footway role, no surface |
+
+The two garden tables sit on cycleway 1030214384, beside grass, not in a pedestrian area, so they stay refused (`blocked_column` 6177,-5600 and 6175,-5604). The three plaza tables sit in pedestrian area 160020739 (name Redbrick). Their blocking columns are footway lines 1174317556 and 1174317566 crossing that area, so furniture no longer treats those columns as path.
+
+Dry run `python3 scripts/decor_layer.py --world southampton-build --cell 48,-44` (2026-11-23): the three plaza tables place (`picnic_table` at 6208,-5576, 6211,-5577 and 6214,-5577, 9 blocks each). The two garden tables stay unplaced, reason `on path/road/water column`, with the blocked columns above. Accepted furniture in the cell is 42, three more than the 39 in the #444 note, which is these three tables.
+
 `reserved_gap` (route, clearance, entrance opening) also applies **per column**, matching outbuildings: a bench over a door opening is as bad as a shed over one. It currently runs at the caller (`plan_cell`, about lines 696-699) on the anchor only. Change: `place_furniture` takes `keep_clear: set = frozenset()`, applies it per column with the existing reason `entrance opening or route reserved`, and `plan_cell` stops pre-splitting `all_furniture`. For single-column kinds the result is identical.
 
 Differences from `place_outbuildings`, and why: no plot rule (furniture carries no plot owner and is not plot-bound); the house test is `near1` (footprints dilated by one, so a table does not stand against a wall) rather than `houses`, unchanged for all furniture.
