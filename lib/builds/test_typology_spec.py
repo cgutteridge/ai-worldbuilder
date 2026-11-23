@@ -293,6 +293,60 @@ class TypologySpecs(unittest.TestCase):
         names = sorted(tuple(sorted(item['spec']['ways'])) for item in report['specs'])
         self.assertEqual(names, [('a0',), ('a1',), ('r0', 'r1', 'r2')])
 
+    def rotated_row(self, streets, count=6):
+        shop = {'building': 'retail', 'building:levels': '2'}
+        # footprints stepping 6 columns east for every 5 south: a row at about 40 degrees to the grid
+        row = [building(f'r{i}', rect(6 * i, 5 * i, 6, 6), shop, profile=PINNED) for i in range(count)]
+        report = T.generate(row, streets)
+        return [item['spec']['groups'][0]['front'] for item in report['specs']], report['needs_designer']
+
+    def test_a_rotated_row_takes_the_side_its_street_is_on(self):
+        # the row's centroid sits abreast of the street, so the whole-row rule finds no front at all
+        fronts, needs = self.rotated_row([[(-20.0, -20.0), (-20.0, 60.0)]])
+        self.assertEqual((fronts, needs), (['W'], []))
+        fronts, needs = self.rotated_row([[(70.0, -20.0), (70.0, 60.0)]])
+        self.assertEqual((fronts, needs), (['E'], []))
+
+    def test_a_rotated_row_follows_most_of_its_footprints(self):
+        # four footprints face the west street, two a short east one; the row centroid has no front
+        streets = [[(-12.0, -20.0), (-12.0, 60.0)], [(52.0, 30.0), (52.0, 40.0)]]
+        self.assertEqual(self.rotated_row(streets), (['W'], []))
+
+    def test_a_tie_between_footprints_is_settled_the_same_way_every_time(self):
+        streets = [[(-12.0, -20.0), (-12.0, 60.0)], [(40.0, 30.0), (40.0, 40.0)]]
+        self.assertEqual(self.rotated_row(streets), (['E'], []))
+        self.assertEqual(self.rotated_row(list(reversed(streets))), (['E'], []))
+
+    def test_a_straight_row_keeps_the_perpendicular_front_for_every_footprint(self):
+        shop = {'building': 'retail', 'building:levels': '2'}
+        row = [building(f'r{i}', rect(7 * i, 0, 7, 6), shop, profile=PINNED) for i in range(4)]
+        # a side street off the east end would pull the end shop east if the axis were not kept
+        streets = [[(-20.0, 20.0), (60.0, 20.0)], [(33.0, -10.0), (33.0, 10.0)]]
+        report = T.generate(row, streets)
+        self.assertEqual([item['spec']['groups'][0]['front'] for item in report['specs']], ['S'])
+
+    def test_a_back_lane_gives_way_to_an_ordinary_street_in_reach(self):
+        lane = T.RearLine([(0.0, 0.0), (0.0, 10.0)])
+        main = [(20.0, 0.0), (20.0, 10.0)]
+        streets = [('Lane', 'service', [(0, 0), (0, 10)]), ('Main Road', 'tertiary', [(20, 0), (20, 10)])]
+        near = T._nearby_streets(streets, [{'cells': {(5, 5)}}])
+        self.assertEqual(near, [lane, main])
+        self.assertIsInstance(near[0], T.RearLine)
+        self.assertNotIsInstance(near[1], T.RearLine)
+        self.assertEqual(T._front({(5, 5)}, near, None), ('W', None))   # lane 5.5 away, main 14.5: lane much nearer
+        self.assertEqual(T._front({(9, 5)}, near, None), ('E', None))   # lane 9.5 away, main 10.5: main wins
+        self.assertEqual(T._front({(12, 5)}, near, None), ('E', None))
+
+    def test_a_row_on_a_service_road_keeps_it_when_the_main_road_is_far(self):
+        shop = {'building': 'retail', 'building:levels': '2'}
+        row = [building(f'm{i}', rect(0, 7 * i, 6, 6), shop, profile=PINNED) for i in range(3)]
+        streets = [T.RearLine([(-4.0, -10.0), (-4.0, 40.0)]), [(35.0, -10.0), (35.0, 40.0)]]
+        report = T.generate(row, streets)
+        self.assertEqual(report['needs_designer'], [])
+        self.assertEqual([item['spec']['groups'][0]['front'] for item in report['specs']], ['W'])
+        only_lane = T.generate(row, streets[:1])
+        self.assertEqual([item['spec']['groups'][0]['front'] for item in only_lane['specs']], ['W'])
+
     def test_front_follows_a_diagonal_street_and_only_a_missing_street_has_none(self):
         shop = {'building': 'retail', 'building:levels': '2'}
         diagonal = [[(0.0, 0.0), (60.0, 60.0)]]
