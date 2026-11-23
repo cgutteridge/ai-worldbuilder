@@ -341,7 +341,9 @@ because an extract can add member ways and change the aggregate line id or track
 ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
 crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
 the line is overhead evidence, not a railway gap; its deck is preserved and does
-not become planting.
+not become planting. Deck heights come from `lib/sources/structure_evidence.py`
+(`measured`, `inferred` or `unknown`; never the terrain beneath or tree columns
+over a deck); see `docs/plans/bridges-and-tunnels.md`.
 
 The feature reserves every written footprint column from later ground, trees
 and decor, including cuts below the old terrain. Ground must not refill above
