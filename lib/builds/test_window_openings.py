@@ -123,11 +123,8 @@ class WindowReportTest(unittest.TestCase):
         _, report = self.select(candidates, blocks, walls, columns)
         self.assertEqual(sum(report['E'].values()), 40)
         self.assertEqual(sum(report['W'].values()), 40)
-        # Stepped faces take full glass on their corner treads, so no tread is lost to the pier rule.
-        self.assertNotIn('corner pier / tread too short', report['E'])
-        self.assertNotIn('corner pier / tread too short', report['W'])
-        self.assertEqual(report['E']['solid-glass'] + report['W']['solid-glass'], 80 - sum(
-            n for face in 'EW' for reason, n in report[face].items() if reason != 'solid-glass'))
+        self.assertEqual(report['E']['corner pier / tread too short'], 22)
+        self.assertEqual(report['W']['corner pier / tread too short'], 22)
         for face in DIRS:
             self.assertEqual(sum(report[face].values()),
                 sum(w.face == face for w in candidates))
@@ -247,6 +244,16 @@ class WindowPolicyTest(unittest.TestCase):
                         self.assertEqual(state, 'minecraft:glass', p)
                 self.assertIn('solid-glass=', report)
                 self.assertTrue(set(plan) <= set(original), 'windows may not enlarge the shell')
+
+    def test_l_shape_corners_stay_opaque_and_straight_runs_stay_framed(self):
+        # A setback makes the face "stepped", but its sharp corners have straight runs: a pier, not a tread.
+        cells = {(x, z) for x in range(10, 22) for z in range(20, 30)} | {(x, z) for x in range(22, 28) for z in range(20, 26)}
+        for kind in ('feature', 'house'):
+            with self.subTest(kind=kind):
+                plan, _, report, b, h = self.run_builder(kind, cells)
+                for p in self.glass(plan):
+                    self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1, p)
+                self.assertIn('corner pier / tread too short', report)
 
     def test_outside_sill_and_unknown_ground_in_both_builders(self):
         for kind in ('feature', 'house'):

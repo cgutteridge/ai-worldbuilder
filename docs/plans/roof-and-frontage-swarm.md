@@ -10,7 +10,7 @@ Talk to the owner by task **title** first, number second.
   `ridge_clip_levels` in `lib/builds/feature_roof_zones.py`) and the opt-in `zones[label].surface: "fit"` key
   (`lib/builds/roof_surface.py`, `fit_clean_heights`; flat, plane or gable per region; documented in
   `rules/feature-builds.md`).
-- Papa John's (OSM way 149814018, plan `w149814013`, cell 50,-36 crossing into 51,-36) is live with those fits and a
+- Papa John's (map way 149814018, plan `w149814013`, cell 50,-36 crossing into 51,-36) is live with those fits and a
   grey tile roof (`stone_brick`). The aerial over its footprint is blue-grey, not red. The owner's hand edits were
   erased on request.
 - Owner verdict on the live roof: notably better; flat front roof looks good; still stairs where blocks belong.
@@ -23,7 +23,7 @@ Talk to the owner by task **title** first, number second.
 | #457 | Typology generator: row front direction wrong on a rotated parade | no | `lib/builds/typology_spec.py`, its tests | 1 |
 | #458 | reapply_feature --apply loses the world lock between undo and rebuild | no | `lib/builds/feature_reapply.py`, `lib/site/site_lock.py`, `scripts/reapply_feature.py`, `rules/slow-commands.md` | 1 |
 | #455 | feature_build flat roofs: carpet finish (different roof material, no extra height) | no | `lib/builds/feature_build.py` (flat deck), `feature_spec.py`, `roof_material.py`, `config/roof-materials.json`, `rules/feature-builds.md` | 2 |
-| #456 | feature_build: add flat volumes outside the OSM way (bin store) | no | `feature_roof_zones.py`, `feature_build.py` footprints, `feature_spec.py`, `rules/feature-builds.md` | 2 (after #455, or one worker does both) |
+| #456 | feature_build: add flat volumes outside the map way (bin store) | no | `feature_roof_zones.py`, `feature_build.py` footprints, `feature_spec.py`, `rules/feature-builds.md` | 2 (after #455, or one worker does both) |
 | #459 | Read step: label roof volumes from image and lidar profile, with cross-source trust checks | **yes** | new module(s), `typology_spec.py` or a read script; uses a model on an image | 3, after #455 to #457 land |
 
 Wave 1 touches disjoint files, so run #434, #457 and #458 in parallel, each in its own worktree. #455 and #456
