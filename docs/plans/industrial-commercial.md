@@ -68,7 +68,7 @@ Two variants per area, compared from the street:
   | industrial | one 4x4 roller shutter (gray concrete) per unit on the yard face; fascia colour band per unit (colour from the company name); yellow loading-bay box in front of each shutter |
   | commercial (shops) | ground-floor glass on the street face; one door; fascia colour band; oak wall sign with the mapped name; trapdoor awning for cafes, restaurants, takeaways and food shops |
   | commercial (big box) | two glazed storeys on the plaza face; fascia band; roof PV arrays (daylight detectors) where the aerial shows them |
-  | parking | white bay lines every 3 blocks in 5-deep rows either side of 6-wide aisles |
+  | parking | white bay lines every 3 blocks in 5-deep rows either side of 6-wide aisles (later: along the aisle, #336; the pitch runs the whole aisle, each aisle marks only the car park it runs through, and a bend that cannot hold a straight row is left blank, #442) |
 
 What a player saw (screenshots kept in the session scratchpad, not committed):
 
@@ -186,7 +186,7 @@ railings is one site's evidence and belongs in a district profile (#255), not th
 | commercial: big box (`building=retail` single way, footprint over about 2,000 columns or lidar over 15 m) | One mass from lidar, plain cladding | Glazed two-storey base on the faces toward pedestrian space or the street, fascia, name sign (trial) | Flat; PV/plant greeblies where the aerial shows them (trial) | `paving` plaza where mapped `highway=pedestrian` | null | benches and bins where mapped | size, lidar, aerial roof, `highway=pedestrian` |
 | commercial: civic/landmark (church, cinema, shopping centre, `building=civic`) | Tier A: street-level check before building (owner: the "church" is a former bingo hall with a facade, steps and a canopy) | from that check | from that check | `paving` | from that check | from that check | street-level imagery (owner-authorised) |
 | parking (`amenity=parking`, surface) | none | none | none | tarmac (trial: the ground pass already paints it) | null | lamps along aisles (inference, untested) | `amenity=parking`, `parking=surface`, `service=parking_aisle` |
-| parking: markings | n/a | n/a | n/a | white bay lines 3 blocks apart in 5-deep rows either side of 6-wide aisles (trial was grid-aligned; bay lines now follow the aisle line, #336; no lines in the wedge outside a bend) | | | `service=parking_aisle` lines |
+| parking: markings | n/a | n/a | n/a | white bay lines 3 blocks apart in 5-deep rows either side of 6-wide aisles (trial was grid-aligned; rows follow the aisle, #336; the pitch runs the whole aisle and each aisle marks only the car park it runs through, #442; no line in the wedge outside a bend, and none where that bend cannot hold a straight row) | | | `service=parking_aisle` lines |
 
 ## 8. Owner verdicts
 
@@ -279,9 +279,11 @@ For the orchestrator to file in `tasks/` (this session did not run `tasks.mjs`).
    (`highway=traffic_signals`, `crossing`), lamps, bollards, bike racks, traffic islands; a density per class.
 9. **Landmark street-level step** (owner). For civic/church/cinema/shopping-centre classes, nominate as tier A
    and require one street-level check (owner-authorised imagery) before the build.
-10. **Car-park markings along the aisle** (parking class, done in #336). Bay rows are oriented to
-    `service=parking_aisle`, not the block grid, and drawn by the ground layer (`lib/layers/bay_lines.py`); each
-    column follows its nearest aisle segment, and the outer wedge of a bend gets no lines.
+10. **Car-park markings along the aisle** (parking class, done in #336, spacing fixed in #442). Bay rows are
+    oriented to `service=parking_aisle`, not the block grid, and drawn by the ground layer
+    (`lib/layers/bay_lines.py`). The pitch is measured along the whole aisle, an aisle marks only a car park its
+    centreline enters, and the outer wedge of a bend — or any step that cannot sit on one straight row — gets
+    no lines.
 11. **Ground-layer dressing needs a ground pass, and approvals name layers** (orchestrator finding,
     section 8). Markings and surfaces refuse on a cell with no landed ground; a cell approval records which
     layers it covers (ghost, buildings crossing in, ground, dressing). Contract (#327): ground-layer

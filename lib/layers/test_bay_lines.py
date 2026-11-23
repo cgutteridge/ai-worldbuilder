@@ -105,11 +105,83 @@ class TestBayLineGeometry(unittest.TestCase):
         lines = bl.bay_line_columns([box(0, 0, 30, 30)], [bend])
         self.assertFalse({(x, z) for x, z in lines if x > 17 and z < 8})   # the outside-corner wedge stays clear
 
+    def test_a_bent_aisle_spaces_rows_along_its_whole_length(self):
+        """The first leg is 10 blocks, not a multiple of the pitch (#442).
+
+        Restarting the phase at the corner would put a row one block after the previous one.
+        Spacing along the whole aisle keeps every pair at least two blocks apart, and each row
+        stays at right angles to the leg it sits on.
+        """
+        pts = [(0.0, 10.0), (10.0, 10.0), (10.0, 28.0)]
+        half = 2.5
+        aisle = {'points': pts, 'half': half}
+        lines = bl.bay_line_columns([box(0, 0, 30, 40)], [aisle])
+        self.assertTrue(lines)
+        self.assertFalse({q for q in lines if _crosses(lines, q)})
+        arcs = _station_arcs(lines, aisle)
+        gaps = [arcs[i + 1] - arcs[i] for i in range(len(arcs) - 1)]
+        self.assertTrue(gaps)
+        self.assertGreaterEqual(min(gaps), 2.0)
+        segs = list(_with_cum(aisle))
+        for x, z in lines:
+            seg, cum = min(segs, key=lambda item: bl._frame(item[0], x, z)[2])
+            along, off, _ = bl._frame(seg, x, z)
+            self.assertGreaterEqual(along, -1e-6, (x, z))
+            self.assertLessEqual(along, seg[3] + 1e-6, (x, z))
+            self.assertGreater(off, half, (x, z))
+            self.assertLessEqual(off, half + bl.BAY_DEPTH + 0.05, (x, z))
+            self.assertLessEqual(_to_pitch(cum + along, bl.BAY_PITCH), 0.5 + 1e-6, (x, z))
+            if cum < 1e-6:                                       # east-west leg: the row runs north-south
+                self.assertTrue(any((x, z + dz) in lines for dz in (-1, 1)), (x, z))
+            else:                                                # north-south leg: the row runs east-west
+                self.assertTrue(any((x + dx, z) in lines for dx in (-1, 1)), (x, z))
+
+    def test_an_aisle_does_not_mark_a_neighbouring_car_park(self):
+        """Bay depth reaches the next polygon; the aisle's centreline does not, so that park stays blank (#442)."""
+        park_a = box(0, 0, 40, 14)
+        park_b = box(0, 15, 40, 30)
+        aisle = {'points': [(0.0, 12.0), (40.0, 12.0)], 'half': 2.5}
+        lines = bl.bay_line_columns([park_a, park_b], [aisle])
+        self.assertTrue(lines)
+        self.assertTrue(lines <= park_a)
+        self.assertFalse(lines & park_b)
+        self.assertEqual(lines, bl.bay_line_columns([park_a], [aisle]))
+
 
 def _crosses(lines, q) -> bool:
     """True when ``q`` has line neighbours on both axes (a '+' where two orientations meet)."""
     x, z = q
     return (((x - 1, z) in lines or (x + 1, z) in lines) and ((x, z - 1) in lines or (x, z + 1) in lines))
+
+
+def _with_cum(aisle):
+    """``(segment, distance from the aisle start)`` for each segment."""
+    cum = 0.0
+    for seg in bl._segments([aisle]):
+        yield seg, cum
+        cum += seg[3]
+
+
+def _to_pitch(arc: float, pitch: int) -> float:
+    """Distance from ``arc`` to the nearest multiple of ``pitch``."""
+    k = arc / pitch
+    return min(abs(arc - math.floor(k) * pitch), abs(arc - math.ceil(k) * pitch))
+
+
+def _station_arcs(lines, aisle) -> list:
+    """One distance-along-the-aisle per bay line, nearest line first."""
+    segs = list(_with_cum(aisle))
+    arcs = []
+    for x, z in lines:
+        seg, cum = min(segs, key=lambda item: bl._frame(item[0], x, z)[2])
+        along, _, _ = bl._frame(seg, x, z)
+        arcs.append(cum + min(max(along, 0.0), seg[3]))
+    arcs.sort()
+    centres = []
+    for arc in arcs:
+        if not centres or arc - centres[-1] > 0.75:
+            centres.append(arc)
+    return centres
 
 
 class TestMarkCarParkBays(unittest.TestCase):
