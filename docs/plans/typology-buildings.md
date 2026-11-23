@@ -339,5 +339,9 @@ Glazing and sign defaults are class data, beside `body`, in `config/land-use-cla
   street-face dressing (glass, door, fascia, sign, awning) and the storey window grid for that label. The
   generator therefore emits `facade_plan` only for a building `land_use.street_face_defaults` does not dress
   (offices, hotels, other commercial); tagged shops keep the street-face front and take only the sign palette.
+- **Second gap, also builder:** glazing rows give no windows on a stair-stepped (rotated) front. Each tread is a
+  one-column run and `facade_roles` puts a pier on both ends of every run, so the row yields no glass where the
+  unevidenced grid does. The generator emits `facade_plan` only when the front has a straight run of
+  `FACADE_MIN_RUN` (5) columns; a stepped front keeps the grid.
   Upper-storey windows on dressed shops need the builder to let glazing rows for storeys above the shopfront coexist
   with the street-face front.
