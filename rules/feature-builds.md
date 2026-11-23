@@ -318,7 +318,11 @@ a landed railway box already covers the whole cell. A partially covered boundary
 cell can start the next box. Planning uses whole, unclipped ways for a 2048 by
 2048 box centred on the starting cell, the explicit point and road extracts,
 cached lidar terrain/surface arrays and applicable joins from earlier features.
-There are no implicit downloads or live planning reads.
+There are no implicit downloads or live planning reads. Readiness for a railway
+needs map query coverage, the lidar cache and the terrain baseline in every cell it
+touches, but not aerial coverage (the planner reads no aerial); prepare a touched cell
+for it with `prepare --cell TX,TZ --apply --evidence-only --feature railway_<tx>_<tz>`
+(see `docs/cell-readiness.md`).
 
 Create a spec from those explicit local inputs:
 

@@ -1891,3 +1891,155 @@ class TestGroundFloatingLines(unittest.TestCase):
         text = format_readiness(report)
         self.assertIn("ground floating: (5,6) y54 is feature hall's -> clear: python3 scripts/reapply_feature.py", text)
         self.assertIn("ground floating: (7,6) y49 is ground's -> clear: python3 scripts/redo_layer.py", text)
+
+
+class RailwayEvidenceTest(unittest.TestCase):
+    """Task 454: a railway feature needs map and lidar evidence, never aerial coverage."""
+
+    PLAN = 'railway_0_0'
+    CELLS = {(1, 65, 1): 'minecraft:rail', (129, 65, 1): 'minecraft:rail'}     # cells 0,0 and 1,0
+
+    def setUp(self):
+        from cell_readiness import ReadinessPolicy
+        self.world = JournalWorld()
+        self.addCleanup(self.world.__exit__)
+        self.world.__enter__()
+        self.evidence = Evidence()
+        self.evidence.aerial = 0.0                       # no aerial anywhere
+        for cell in ((0, 0), (1, 0)):
+            self.world.seed(cell, ghost_ground=True)
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'Railway corridor', self.PLAN))
+        self.policy = ReadinessPolicy(self.world.reg, self.evidence)
+
+    def railway(self, plan=PLAN, cells=None, **kw):
+        return Build(plan, 'feature', cells or self.CELLS, cell=(0, 0), meta={'kind': 'railway'}, **kw)
+
+    def prepare_railway_cells(self):
+        self.policy.validate((0, 0), feature=self.PLAN)
+        self.policy.validate_evidence((1, 0), feature=self.PLAN)
+
+    def test_neighbour_and_primary_without_aerial_pass_the_apply_gate(self):
+        self.prepare_railway_cells()
+        self.world.reg.build_policy = self.policy.enforce
+        self.assertEqual(self.world.reg.change(self.railway(), self.world.apply).status, 'landed')
+        report = self.policy.check((1, 0), 'feature', neighbour=True, feature=self.PLAN)
+        self.assertEqual((report['ready'], report['feature_evidence']), (True, 'railway'))
+
+    def test_apply_refreshes_stale_railway_neighbour_without_aerial(self):
+        self.prepare_railway_cells()
+        self.evidence.revision = 'evidence-2'            # both cells stale; checks still pass
+        self.world.reg.build_policy = self.policy.enforce
+        self.assertEqual(self.world.reg.change(self.railway(), self.world.apply).status, 'landed')
+
+    def test_primary_cell_alone_without_aerial_passes(self):
+        self.policy.validate((0, 0), feature=self.PLAN)
+        self.world.reg.build_policy = self.policy.enforce
+        cells = {(1, 65, 1): 'minecraft:rail', (2, 65, 1): 'minecraft:rail'}
+        self.assertEqual(self.world.reg.change(self.railway(cells=cells), self.world.apply).status, 'landed')
+
+    def test_same_cell_still_blocks_every_other_pass_and_feature_on_aerial(self):
+        self.prepare_railway_cells()
+        for operation in ('build', 'ground', 'feature', 'trees', 'decor'):
+            with self.subTest(operation=operation):
+                report = self.policy.check((1, 0), operation, neighbour=operation == 'feature')
+                self.assertIn('aerial coverage: 0.0%', report['blockers'])
+        self.assertIn('aerial coverage: 0.0%', self.policy.check((0, 0), 'ground')['blockers'])
+        with self.assertRaisesRegex(Refused, 'aerial coverage'):
+            self.policy.validate((1, 0))
+        self.world.reg.build_policy = self.policy.enforce
+        self.world.reg.change(Note((0, 0), 'plan_feature', 'house', 'house'))
+        with self.assertRaisesRegex(Refused, 'aerial coverage'):                     # non-railway feature
+            self.world.reg.begin(Build('house', 'feature', self.CELLS, cell=(0, 0), meta={'kind': 'houses'}))
+        with self.assertRaisesRegex(Refused, 'aerial coverage'):                     # no kind recorded
+            self.world.reg.begin(Build(self.PLAN, 'feature', self.CELLS, cell=(0, 0)))
+
+    def test_railway_identity_needs_name_kind_and_a_journalled_plan(self):
+        from cell_readiness import feature_evidence_kind
+        reg = self.world.reg
+        self.assertEqual(feature_evidence_kind(reg, 'railway_0_0'), 'railway')
+        for plan in (None, 'house', 'railway_0_0x', 'railway_1_0', 'railway_00_0', 'railway_-1_0'):
+            self.assertIsNone(feature_evidence_kind(reg, plan), plan)
+        reg.change(Note((-1, 0), 'plan_feature', 'Railway corridor', 'railway_m1_0'))
+        self.assertEqual(feature_evidence_kind(reg, 'railway_m1_0'), 'railway')
+        # a railway plan name does not waive aerial for a build whose kind is not railway
+        self.world.reg.build_policy = self.policy.enforce
+        self.policy.validate((0, 0), feature=self.PLAN)
+        with self.assertRaisesRegex(Refused, 'aerial coverage'):
+            self.world.reg.begin(Build(self.PLAN, 'feature', self.CELLS, cell=(0, 0), meta={'kind': 'water'}))
+        # and a build that records kind railway under a name the journal does not plan stays strict
+        with self.assertRaisesRegex(Refused, 'aerial coverage'):
+            self.world.reg.begin(self.railway(plan='railway_5_5', cells={(641, 65, 1): 'minecraft:rail'}))
+
+    def test_railway_neighbour_without_map_or_lidar_still_blocks(self):
+        self.evidence.fraction = 0.5
+        report = self.policy.check((1, 0), 'feature', neighbour=True, feature=self.PLAN)
+        self.assertIn('map query coverage: 50.0%', report['blockers'])
+        self.assertNotIn('aerial coverage', ' '.join(report['blockers']))
+        self.evidence.fraction, self.evidence.missing = 1.0, ['tile.tif']
+        report = self.policy.check((1, 0), 'feature', neighbour=True, feature=self.PLAN)
+        self.assertIn('lidar cache: missing local tiles', report['blockers'])
+        self.world.reg.build_policy = self.policy.enforce
+        self.evidence.missing = []
+        with self.assertRaisesRegex(Refused, 'needs-prep 0,0: validation required'):
+            self.world.reg.begin(self.railway())
+        self.policy.validate((0, 0), feature=self.PLAN)
+        self.evidence.fraction = 0.5
+        with self.assertRaisesRegex(Refused, 'needs-prep 0,0: .*map query coverage'):
+            self.world.reg.begin(self.railway())
+
+    def test_evidence_only_prepare_extracts_the_map_for_a_railway_neighbour_without_aerial(self):
+        from cell_preparation import prepare_cell
+        from unittest import mock
+        self.evidence.fraction = 0.25
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        repairs.extract.side_effect = lambda cell: setattr(self.evidence, 'fraction', 1.0)
+        ordinary = prepare_cell(self.world.reg, self.evidence, (1, 0), apply=True, repairs=repairs,
+                                check_lock=lambda: None, evidence_only=True)
+        self.assertFalse(ordinary['ready'])                          # unchanged: stops on aerial
+        repairs.extract.assert_not_called()
+        report = prepare_cell(self.world.reg, self.evidence, (1, 0), apply=True, repairs=repairs,
+                              check_lock=lambda: None, evidence_only=True, feature=self.PLAN)
+        repairs.extract.assert_called_once_with((1, 0))
+        self.assertTrue(report['ready'] and report['evidence_validated'], report['blockers'])
+        self.assertEqual([n['kind'] for n in self.world.reg.notes((1, 0))], ['readiness_evidence'])
+        # a feature that is not a journalled railway keeps the early stop
+        repairs.extract.reset_mock()
+        self.evidence.fraction = 0.25
+        other = prepare_cell(self.world.reg, self.evidence, (1, 0), apply=True, repairs=repairs,
+                             check_lock=lambda: None, evidence_only=True, feature='house')
+        self.assertFalse(other['ready'])
+        repairs.extract.assert_not_called()
+
+    def test_full_prepare_for_a_railway_primary_cell_validates_without_aerial(self):
+        from cell_preparation import prepare_cell
+        from unittest import mock
+        repairs = mock.Mock()
+        repairs.preflight.return_value = {'blockers': [], 'inputs': []}
+        report = prepare_cell(self.world.reg, self.evidence, (0, 0), apply=True, repairs=repairs,
+                              check_lock=lambda: None, feature=self.PLAN)
+        self.assertTrue(report['validated'], report['blockers'])
+
+    def test_clearing_commands_repeat_the_feature_scope_only_for_a_railway(self):
+        self.evidence.revision = 'evidence-2'
+        scoped = self.policy.check((1, 0), 'feature', neighbour=True, feature=self.PLAN)
+        self.assertEqual(scoped['next_actions'], ['prepare --cell 1,0 --apply --evidence-only --feature railway_0_0'])
+        command = next(iter(scoped['clear_with'].values()))
+        self.assertIn('--evidence-only --feature railway_0_0 (records', command)
+        plain = self.policy.check((1, 0), 'feature', neighbour=True)
+        self.assertEqual(plain['next_actions'][0], 'prepare --cell 1,0 --apply --evidence-only')
+        self.assertNotIn('feature_evidence', plain)
+        self.assertTrue(any('aerial' in a for a in plain['next_actions']))
+
+    def test_cli_prepare_refuses_an_unjournalled_feature(self):
+        import contextlib
+        import io
+        from unittest import mock
+        import cell_registry
+        out = io.StringIO()
+        with mock.patch.object(cell_registry, 'activate_world_from_args'), \
+                mock.patch.object(cell_registry, 'view_registry', return_value=self.world.reg), \
+                contextlib.redirect_stderr(out):
+            code = cell_registry.main(['--world', 'unit-test', 'prepare', '--cell', '1,0', '--evidence-only', '--feature', 'house'])
+        self.assertEqual(code, 2)
+        self.assertIn('not a railway feature planned in the journal', out.getvalue())
