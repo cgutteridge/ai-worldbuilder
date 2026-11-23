@@ -76,16 +76,7 @@
     
     
     
-    {
-      "id": 360,
-      "title": "Tree belts: evidence tuning and rural build trial",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "builderTask": true,
-      "notes": "Split 2026-11-21: class-configured hedge/lane/unmapped-belt source integration and its synthetic regression tests are now task #368, which depends on the offline first-return reader task #367. Plan: docs/plans/claude-task-splits-2026-11-21.md. This task retains its existing dependency on #359's completed reader trial as well as the new source implementation.\n\nContext: follow-up from spike #323 (go with conditions; findings in docs/plans/323-unmapped-tree-lines.md, kept until this task closes). The prototype hardcoded gated classes and standing-height policy; aerial darkness admitted a broad shadow band in its first version. #368 replaces those mechanics through the existing class configuration, shared constants, source gate and crown/species representation.\n\nScope here: after the reader trial and source implementation, interpret a representative UK rural cell's mapped hedges/lanes and first-return evidence. Choose/tune source thresholds and class policy against that evidence, recording the rationale in the world repo. Run a normal trees build with the new source, inspect the resulting hedges and belts in game, and review it with the owner. Aerial darkness alone remains insufficient support for this source. Use the site lock and normal world-work authorization.\n\nAcceptance: supported trees follow mapped hedges and lanes and real unmapped belts, shadow bands do not become tree lines, open pasture stays clear, and the trial plus owner verdict are recorded. Completing #368 does not replace this normal-build check.\n\nbuilderTask true: retained work interprets real place evidence, tunes against it, builds and evaluates the result in game.\n\nSequencing (housekeeping review): #402 splits ground_layer's ground-dressing code; do not run this task in parallel with #402."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder"},
+    
     
     {
       "id": 380,
