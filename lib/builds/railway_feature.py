@@ -408,7 +408,7 @@ def run(path, *, do_apply=False) -> Plan:
     plan = build(spec)
     from builder_provenance import builder_record, provenance
     from site_kit import apply
-    apply(plan, dry=not do_apply, stage='feature', cell=spec['cell'],
+    apply(plan, dry=not do_apply, stage='feature-' + spec['name'], cell=spec['cell'],
           modifies=tuple(spec.get('modifies', ())), strict=True, readback_retries=2,
           meta={**metadata(spec), 'builder': builder_record('spec', path), **provenance(BUILDER, path)})
     return plan
