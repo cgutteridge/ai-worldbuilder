@@ -139,7 +139,8 @@ class RoofGeometryTest(unittest.TestCase):
         return [{(x, z) for x in range(lo, hi) for z in range(8)}
                 for lo, hi in ((0, 6), (6, 12))]
 
-    def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None, fit=None):
+    def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None,
+             fit=None, chimneys=None):
         from site_kit import Plan
         parts = parts or self.footprints(kind)
         labels = [str(i) for i in range(len(parts))]
@@ -157,6 +158,11 @@ class RoofGeometryTest(unittest.TestCase):
             b.spec['roof_pitch'] = dict.fromkeys(labels, pitch)
         if fit is not None:
             b.spec['roof_fit'] = fit if isinstance(fit, dict) else dict.fromkeys(labels, fit)
+        if chimneys is not None:
+            if isinstance(chimneys, (str, list)):
+                b.spec['chimneys'] = dict.fromkeys(labels, chimneys)
+            else:
+                b.spec['chimneys'] = chimneys
         b.p = Plan('synthetic_roof')
         b.roof()
         return b.p
@@ -625,6 +631,101 @@ class ChimneyTest(unittest.TestCase):
                 self.assertNotIn((cx, ridge + 3, cz), blocks)
                 adjacent_roof_y = 36 + (width // 2) // 2
                 self.assertTrue(blocks[cx + 1, adjacent_roof_y, cz].startswith('brick_slab['))
+
+
+class ChimneyOptionTest(unittest.TestCase):
+    """#430: optional per-label domestic chimney modes; default stays one per roof unit."""
+
+    @staticmethod
+    def terrace(n=3, width=6, depth=8):
+        """n side-by-side footprints sharing party walls along x."""
+        return [{(x, z) for x in range(i * width, (i + 1) * width) for z in range(depth)}
+                for i in range(n)]
+
+    def pots(self, plan):
+        return sorted((x, z) for (x, y, z), s in plan.cells.items() if 'flower_pot' in s)
+
+    def test_default_group_roof_still_places_one_chimney_per_roof_unit(self):
+        """Existing per-roof-unit default must stay unchanged unless chimneys is set."""
+        parts = self.terrace(3)
+        default = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group')
+        self.assertEqual(len(self.pots(default)), 1)
+        # Same cells as an explicit single-unit footprint (legacy union behaviour).
+        union = RoofGeometryTest().plan(parts=[set.union(*parts)], pitch=1, mode='each')
+        self.assertEqual(default.cells, union.cells)
+
+    def test_three_house_terrace_party_walls_and_per_house(self):
+        parts = self.terrace(3)
+        party = H.footprint_party_walls(parts)
+        self.assertEqual(len(party), 2)
+        for i, j, wall in party:
+            self.assertEqual(j, i + 1)
+            xs = {x for x, _z in wall}
+            self.assertEqual(xs, {max(x for x, _z in parts[i]), min(x for x, _z in parts[j])})
+
+        plan = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group', chimneys='party_walls')
+        pots = self.pots(plan)
+        self.assertEqual(len(pots), 2)
+        # Stable pick prefers the lower-x column of each party wall (5 and 11 for width 6).
+        self.assertEqual([x for x, _z in pots], [5, 11])
+        for _x, z in pots:
+            self.assertTrue(2 <= z <= 5, z)
+
+        per_house = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group', chimneys='per_house')
+        self.assertEqual(len(self.pots(per_house)), 3)
+
+        none = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group', chimneys='none')
+        self.assertEqual(self.pots(none), [])
+
+    def test_semi_party_walls_and_per_pair(self):
+        parts = self.terrace(2)
+        self.assertEqual(len(H.footprint_party_walls(parts)), 1)
+        for mode in ('party_walls', 'per_pair'):
+            with self.subTest(mode=mode):
+                plan = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group', chimneys=mode)
+                pots = self.pots(plan)
+                self.assertEqual(len(pots), 1)
+                x, z = pots[0]
+                self.assertEqual(x, 5)
+                self.assertTrue(2 <= z <= 5, z)
+
+    def test_per_pair_on_four_houses_skips_the_middle_party_wall(self):
+        parts = self.terrace(4)
+        plan = RoofGeometryTest().plan(parts=parts, pitch=1, mode='group', chimneys='per_pair')
+        pots = self.pots(plan)
+        self.assertEqual(len(pots), 2)
+        # Pairs (0,1) and (2,3): walls at x=5 and x=17, not the middle party wall at x=11.
+        self.assertEqual([x for x, _z in pots], [5, 17])
+
+    def test_explicit_at_list_places_named_stacks(self):
+        parts = self.terrace(2)
+        plan = RoofGeometryTest().plan(
+            parts=parts, pitch=1, mode='group',
+            chimneys=[{'at': [3, 4]}, {'at': [9, 3, 4]}])
+        self.assertEqual(self.pots(plan), [(3, 4), (9, 4)])
+
+
+class ChimneySpecTest(unittest.TestCase):
+    write = SpecTest.write
+
+    def spec(self, **changes):
+        return {'name': 'chim', 'ways': {'1': 'A', '2': 'B', '3': 'C'},
+                'roofs': {'A': 'brick', 'B': 'brick', 'C': 'brick'},
+                'groups': [{'nos': ['A', 'B', 'C'], 'front': 'N', 'mode': 'group'}],
+                **changes}
+
+    def test_chimney_modes_and_at_lists_are_checked(self):
+        for mode in H.CHIMNEY_MODES:
+            loaded = H.load_spec(self.write(self.spec(chimneys={'A': mode, 'B': mode, 'C': mode})))
+            self.assertEqual(loaded['chimneys']['A'], mode)
+        H.load_spec(self.write(self.spec(chimneys={'A': [{'at': [1, 2]}]})))
+        for bad in ('per_roof', [], [{'at': [1]}], {'at': [1, 2]}, True, 1):
+            with self.subTest(bad=bad), self.assertRaisesRegex(SystemExit, 'chimneys'):
+                H.load_spec(self.write(self.spec(chimneys={'A': bad})))
+
+    def test_group_chimney_options_must_match(self):
+        with self.assertRaisesRegex(SystemExit, 'group chimney options must match'):
+            H.load_spec(self.write(self.spec(chimneys={'A': 'party_walls', 'B': 'per_house'})))
 
 
 if __name__ == '__main__':
