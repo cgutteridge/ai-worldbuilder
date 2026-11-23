@@ -134,12 +134,40 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   with resolved `photo_read`/`aerial` provenance. This explicit exception uses solid
   glass and never permits a missing sill/lintel or replacing door framing.
   The old top-level table is refused.
+- optional `signs` — per-label shopfront / street-face sign options
+  (`lib/builds/sign_options.py`, catalogue `config/sign-options.json`).
+  Shape: `{"A": {"wood": "dark_oak", "fascia_colour": "black",
+  "text_colour": "white"}}`. `wood` is a wall-sign / hanging-sign family
+  (default `oak`). `fascia_colour` overrides the hashed concrete band
+  (default unchanged; any catalogue dye including black, gray and cyan).
+  `text_colour` is a dye judged against the **board** map colour, not the
+  fascia; omit it to pick the better of black and white. A low-contrast
+  wood/text pair is refused at load (same catalogue gate style as roof
+  materials). Class recipes and world data supply palette values (#431);
+  this key only accepts them. Both the shop and big-box name sign paths
+  honour the same keys. Example:
+
+  ```json
+  "signs": {
+    "A": {
+      "wood": "dark_oak",
+      "fascia_colour": "black",
+      "text_colour": "white"
+    }
+  }
+  ```
+
 - optional `details` — per-label roof and facade greeblies from the aerial
   sheet and street photos (`rules/building-review.md`). Each row is
   `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:
   roof kinds `plant_room`, `vent`, `louvred_vent`, `skylight`,
   `solar_panel`, `lift_overrun`, `chimney`; facade kinds `drainpipe`, `sign`,
-  `awning_like`, `ledge`, `fascia_band` (`face` required). Entrance
+  `awning_like`, `ledge`, `fascia_band` (`face` required). Optional
+  `wood` on `sign` (wall-sign block; the label's `signs.wood` when the
+  row omits it) and `fascia_colour` on `fascia_band` (concrete instead of
+  terracotta; the label's `signs.fascia_colour` when the row omits it).
+  A `text_colour` on a detail `sign` is refused when it clashes with that
+  board. Name lettering stays on the street-face sign. Entrance
   `awning_like` / covered area belongs on `facade_plan` entrances
   (kinds `none` / `awning` / `covered_area` / `porch_roof`; not a tree
   canopy; legacy key `canopy` and kind value `canopy` are refused).

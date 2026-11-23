@@ -41,6 +41,7 @@ class LoadSpecTest(unittest.TestCase):
         self.assertEqual(spec['floor'], 'smooth_stone')
         self.assertEqual(spec['facade_plan'], {})
         self.assertEqual(spec['details'], {})
+        self.assertEqual(spec['signs'], {})
         self.assertNotIn('doors', spec)
         self.assertEqual(spec['zones'], {})
         self.assertEqual(spec['exclude'], {})

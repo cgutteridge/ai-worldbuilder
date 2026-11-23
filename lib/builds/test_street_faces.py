@@ -348,14 +348,64 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertEqual(len(plan.signs), 1)
         pos, lines, colour, glow = plan.signs[0]
         self.assertEqual(pos[1], 54)
-        self.assertEqual(colour, 'black')
+        # Text colour follows the oak board map colour, not the fascia band.
+        self.assertEqual(colour, FF.contrasting_sign_colour(wood='oak'))
+        self.assertIn(colour, ('black', 'white'))
         self.assertFalse(glow)
         self.assertTrue(all(len(line) <= 15 for line in lines))
         self.assertIn('_concrete', plan.cells[(pos[0], pos[1], pos[2] + 1)])
+        self.assertTrue(any(
+            state.startswith('minecraft:oak_wall_sign[') for state in plan.cells.values()
+        ))
         self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
         self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
         self.assertEqual(plan.cells[(15, 51, 29)], 'minecraft:bricks')
         self.assertEqual(plan.cells[(12, 55, 20)], 'minecraft:bricks')
+
+    def test_sign_options_override_wood_fascia_and_text(self):
+        spec = fixtures.build_spec(storeys=2)
+        spec['signs'] = {'A': {
+            'wood': 'dark_oak', 'fascia_colour': 'black', 'text_colour': 'white',
+        }}
+        _, plan = self._shop(shop='books', name='Tidal Vape', spec=spec)
+        self.assertEqual(len(plan.signs), 1)
+        pos, _lines, colour, glow = plan.signs[0]
+        self.assertEqual(colour, 'white')
+        self.assertFalse(glow)
+        self.assertTrue(plan.cells[pos].startswith('minecraft:dark_oak_wall_sign['))
+        self.assertEqual(plan.cells[(pos[0], pos[1], pos[2] + 1)], 'minecraft:black_concrete')
+
+    def test_big_box_sign_path_honours_the_same_keys(self):
+        cells = {(x, z) for x in range(10, 61) for z in range(20, 61)}
+        ground = {'A': {'ground_y': np.full((80, 80), 49), 'x0': 0, 'z0': 0}}
+        spec = fixtures.build_spec(storeys=6)
+        spec['signs'] = {'A': {
+            'wood': 'spruce', 'fascia_colour': 'gray', 'text_colour': 'white',
+        }}
+        builder = F.Build(
+            spec, footprints={'A': cells}, world=fixtures._StoneWorld(),
+            building_tags={'A': {'building': 'retail', 'name': 'Big Store'}},
+            streets=[street(((0, 10), (80, 10)))], zone_data=ground,
+        )
+        with redirect_stdout(io.StringIO()):
+            plan = builder.build()
+        self.assertEqual(len(plan.signs), 1)
+        pos, _lines, colour, glow = plan.signs[0]
+        self.assertEqual(colour, 'white')
+        self.assertTrue(glow)
+        self.assertTrue(plan.cells[pos].startswith('minecraft:spruce_wall_sign['))
+        self.assertEqual(plan.cells[(pos[0], pos[1], pos[2] + 1)], 'minecraft:gray_concrete')
+
+    def test_big_box_text_follows_a_pale_board_instead_of_forced_white(self):
+        """The big-box path used to force white glowing text. A pale board picks black."""
+        spec = fixtures.build_spec(storeys=6)
+        spec['signs'] = {'A': {'wood': 'pale_oak'}}
+        _, plan = self.build('retail', storeys=6, spec=spec)
+        self.assertEqual(len(plan.signs), 1)
+        pos, _lines, colour, glow = plan.signs[0]
+        self.assertEqual(colour, 'black')
+        self.assertTrue(glow)
+        self.assertTrue(plan.cells[pos].startswith('minecraft:pale_oak_wall_sign['))
 
     def test_food_kinds_get_a_continuous_awning_on_the_street_face_only(self):
         for shop in ('cafe', 'restaurant', 'fast_food', 'food'):
