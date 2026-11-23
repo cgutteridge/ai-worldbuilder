@@ -616,7 +616,7 @@ class StreetFaceBuildTest(unittest.TestCase):
 
 
     def test_carpet_finish_makes_the_deck_row_the_fascia_of_a_single_storey_shop(self):
-        spec = fixtures.build_spec(storeys=1)
+        spec = fixtures.build_spec(storeys=1, material='light_gray_concrete')
         spec['roofs']['A']['finish'] = 'carpet'
         builder, plan = self._shop(shop='cafe', storeys=1, spec=spec)
         self.assertNotIn('shell too low for a fascia band', builder.output)

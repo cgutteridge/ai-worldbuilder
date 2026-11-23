@@ -261,9 +261,9 @@ class CarpetFinishBuildTest(PitchedZonesFixture, unittest.TestCase):
             if state.endswith('_carpet'):
                 self.assertNotIn(plan.cells.get((x, y - 1, z), 'minecraft:air'), ('minecraft:air', None))
 
-    def test_unzoned_flat_roof_carpets_every_owned_deck_cell(self):
+    def test_unzoned_full_block_flat_roof_carpets_every_owned_deck_cell(self):
         cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
-        spec = build_spec(storeys=2, kind='flat', material='stone_brick')
+        spec = build_spec(storeys=2, kind='flat', material='gray_concrete')
         spec['roofs']['A']['finish'] = 'carpet'
         spec['roofs']['A']['edge'] = {'block': 'stone_brick', 'where': 'outer'}
         with redirect_stdout(io.StringIO()):
@@ -272,8 +272,52 @@ class CarpetFinishBuildTest(PitchedZonesFixture, unittest.TestCase):
         for x, z in cells:
             self.assertEqual(plan.cells[(x, deck, z)], 'minecraft:bricks')
             self.assertEqual(plan.cells[(x, deck + 1, z)], 'minecraft:gray_carpet')
-        self.assertIn('stone_brick_slab', plan.cells[(9, deck, 22)])
+        self.assertEqual(plan.cells[(9, deck, 22)], 'minecraft:gray_concrete')
         self.assertNotIn('carpet', plan.cells.get((9, deck + 1, 22), ''))
+
+    def test_unzoned_slab_deck_flat_roof_refuses_the_carpet_and_keeps_its_height(self):
+        cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
+        bare_spec = build_spec(storeys=2, kind='flat', material='stone_brick')
+        with redirect_stdout(io.StringIO()):
+            bare = F.build(bare_spec, footprints={'A': cells}, world=_StoneWorld())
+        spec = build_spec(storeys=2, kind='flat', material='stone_brick')
+        spec['roofs']['A']['finish'] = 'carpet'
+        out = io.StringIO()
+        with redirect_stdout(out):
+            plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        self.assertIn('carpet on an unzoned slab-deck flat roof would raise it half a block', out.getvalue())
+        self.assertFalse(any(state.endswith('_carpet') for state in plan.cells.values()))
+        self.assertEqual(plan.cells, bare.cells)
+        self.assertIn('stone_brick_slab', plan.cells[(12, 50 + 2 * 3, 22)])
+
+    def test_carpet_support_is_a_full_solid_cube_only(self):
+        for state in ('minecraft:bricks', 'minecraft:lime_concrete', 'stone_bricks', 'minecraft:stone',
+                      'minecraft:deepslate_tiles', 'minecraft:smooth_quartz', 'minecraft:oak_planks'):
+            with self.subTest(state=state):
+                self.assertTrue(F.carpet_support_ok(state))
+        for state in (None, '', 'minecraft:air', 'minecraft:glass', 'minecraft:glass_pane',
+                      'minecraft:oak_fence', 'minecraft:brick_wall', 'minecraft:oak_trapdoor[half=top]',
+                      'minecraft:oak_wall_sign[facing=west]', 'minecraft:lantern',
+                      'minecraft:oak_door[half=upper]', 'minecraft:stone_brick_slab[type=bottom]',
+                      'minecraft:stone_brick_stairs[facing=east]', 'minecraft:gray_carpet',
+                      'minecraft:light_blue_stained_glass'):
+            with self.subTest(state=state):
+                self.assertFalse(F.carpet_support_ok(state))
+        self.assertTrue(F.carpet_support_ok('minecraft:mossy_cobblestone', {'mossy_cobblestone'}))
+
+    def test_glass_under_a_carpet_is_no_support(self):
+        victim = (14, 22)
+        real = F.Build.street_face
+
+        def glaze_one_deck(builder, f):
+            real(builder, f)
+            if victim in f.carpet_cells:
+                builder.set(victim[0], f.carpet_cells[victim], victim[1], 'glass')
+
+        with mock.patch.object(F.Build, 'street_face', glaze_one_deck):
+            f, plan, out = self._finished('flat', [45, 50], self.flat_zone_data)
+        self.assertEqual(plan.cells[(victim[0], f.carpet_cells[victim] + 1, victim[1])], 'minecraft:air')
+        self.assertIn('dropped 1 without a solid block below', out)
 
 
 class CliDryRunTest(unittest.TestCase):

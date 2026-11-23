@@ -507,6 +507,21 @@ class FacadePlanEntranceBuildTest(unittest.TestCase):
                 self.assertIn(key, b.keep, key)
         self.assertEqual(door_frame_issues(b.p, _StoneWorld().block), [])
 
+    def test_door_clears_keep_a_low_carpeted_deck_and_its_carpet(self):
+        """#455: a deck row at b+2 inside the door keeps its wall top course and the carpet at b+3."""
+        cells = {(x, z) for x in range(10, 17) for z in range(20, 25)}
+        with redirect_stdout(io.StringIO()):
+            b = F.Build(self.spec([]), footprints={'A': cells}, world=_StoneWorld())
+            b.build()
+        f = b.features[0]
+        wall = next(c for c in sorted(f.walls) if b.exposed(c, 'S') and c[1] == 24)
+        inn = (wall[0], wall[1] - 1)
+        b._lay_carpet(f, inn, f.b + 2, 'gray_carpet')
+        b._set_door_leaf(wall, 'S', 'iron_door', 'left', f.b)
+        self.assertEqual(b.p.cells[(inn[0], f.b + 2, inn[1])], 'minecraft:bricks')
+        self.assertEqual(b.p.cells[(inn[0], f.b + 3, inn[1])], 'minecraft:gray_carpet')
+        self.assertEqual(b.p.cells[(inn[0], f.b + 1, inn[1])], 'minecraft:air')
+
     def test_moved_door_prints_distance_from_register(self):
         """#164: when the door cannot sit on the register coordinate, print distance."""
         cells = {(x, z) for x in range(10, 18) for z in range(20, 25)}

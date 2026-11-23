@@ -271,10 +271,14 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   or not); on a pitched roof, which needs `zones[label]`, only its flat columns: a zone the builder judges
   flat whose fitted surface (with `surface: "fit"`) is flat, at a full-block height (a slab-height deck keeps
   its slab). Never a sloped column; an unzoned pitched roof is refused. An `edge` block wins over the carpet
-  on its column, and a flat roof's overhang fringe stays roof slab. On an unzoned flat roof whose material
-  is a slab family the top course is a full block, so that roof stands half a block higher than its slab
-  deck. Support check: after every later step, a carpet without a full solid block under it (air, a slab,
-  a stair or a carpet) is removed; door clears stop under a carpeted deck row. On a rule-built shopfront the
+  on its column, and a flat roof's overhang fringe stays roof slab. An unzoned flat roof with a slab-family
+  material is refused (its deck is a bottom slab, so a full top course would raise it half a block): zone
+  the roof or use a full-block material such as a concrete; a spec dict that skips loading gets a dry-run
+  refusal line and no carpet. Support check: after every later step, a carpet stays only on a full solid
+  cube (the wall or floor material, a catalogue full roof block, concrete, terracotta, wool, planks, bricks,
+  tiles or plain stone types); over anything else (air, glass, panes, fences, walls, trapdoors, signs,
+  lanterns, doors, slabs, stairs, carpet) it is removed. Door clears stop under a carpeted deck row and its
+  carpet. On a rule-built shopfront the
   carpeted deck row is the band's top course: one fascia row (awning and sign row together) may be that
   deck row, so a one-storey flat shop (glass 2, fascia on the deck) dresses instead of printing `shell too
   low for a fascia band`. Off by default. Dry run prints `<label> roof finish <finish>: carpet <n> cells on

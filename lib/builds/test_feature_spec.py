@@ -124,7 +124,7 @@ class LoadSpecTest(unittest.TestCase):
 
     def test_roof_finish_carpet_on_flat_or_zoned_roofs_only(self):
         good = self.good()
-        flat = {'kind': 'flat', 'material': 'smooth_stone', 'finish': 'carpet'}
+        flat = {'kind': 'flat', 'material': 'light_gray_concrete', 'finish': 'carpet'}
         self.assertEqual(
             FS.load_spec(self.write({**good, 'roofs': {'A': flat}}))['roofs']['A']['finish'], 'carpet')
         named = {**flat, 'finish': 'gray_carpet'}
@@ -135,13 +135,19 @@ class LoadSpecTest(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(SystemExit):
                     FS.load_spec(self.write({**good, 'roofs': {'A': {**flat, 'finish': bad}}}))
+        zones = {'A': {'from': 'lidar', 'levels': [41, 45], 'bucket': 4, 'axis_deg': 0}}
         with self.assertRaisesRegex(SystemExit, 'carpet colour'):
-            FS.load_spec(self.write({**good, 'roofs': {'A': {**flat, 'material': 'granite'}}}))
+            FS.load_spec(self.write({**good, 'zones': zones,
+                                     'roofs': {'A': {**flat, 'material': 'granite'}}}))
+        slab_deck = {**flat, 'material': 'smooth_stone'}
+        with self.assertRaisesRegex(SystemExit, 'raise it half a block'):
+            FS.load_spec(self.write({**good, 'roofs': {'A': slab_deck}}))
+        self.assertEqual(FS.load_spec(self.write({**good, 'zones': zones, 'roofs': {'A': slab_deck}}))
+                         ['roofs']['A']['finish'], 'carpet')
         pitched = {'kind': 'pitched', 'material': 'stone_brick', 'finish': 'carpet'}
         with self.assertRaisesRegex(SystemExit, 'flat roof'):
             FS.load_spec(self.write({**good, 'roofs': {'A': pitched}}))
-        zoned = {**good, 'roofs': {'A': pitched},
-                 'zones': {'A': {'from': 'lidar', 'levels': [41, 45], 'bucket': 4, 'axis_deg': 0}}}
+        zoned = {**good, 'roofs': {'A': pitched}, 'zones': zones}
         self.assertEqual(FS.load_spec(self.write(zoned))['roofs']['A']['finish'], 'carpet')
 
 

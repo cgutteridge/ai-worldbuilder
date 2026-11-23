@@ -188,12 +188,13 @@ def _validate_roof_finish(path, spec: dict) -> None:
     ``"carpet"`` (colour from each roof material's catalogue ``carpet``) or ``"<dye>_carpet"``
     lays a carpet over flat deck columns, whose deck row becomes the wall top course (#455).
     Flat roofs only: a pitched roof needs ``zones[label]``, and only its flat columns take it.
+    An unzoned flat roof needs a full-block material (its slab deck would rise half a block).
 
     @param path: spec path (for error text)
     @param spec: feature spec being loaded (zones already validated)
     @raises SystemExit: on a bad value, a material with no carpet colour, or an unzoned pitched roof
     """
-    from roof_material import carpet_block
+    from roof_material import carpet_block, family_variants
 
     for lab, roof in spec['roofs'].items():
         if 'finish' not in roof:
@@ -201,7 +202,13 @@ def _validate_roof_finish(path, spec: dict) -> None:
         finish = roof['finish']
         if not isinstance(finish, str):
             raise SystemExit(f'{path}: roofs[{lab}].finish must be "carpet" or "<dye>_carpet"')
-        if roof['kind'] == 'pitched' and lab not in (spec.get('zones') or {}):
+        zoned = lab in (spec.get('zones') or {})
+        if roof['kind'] == 'flat' and not zoned and 'slab' in family_variants(str(roof['material'])):
+            raise SystemExit(
+                f'{path}: roofs[{lab}].finish: carpet on an unzoned slab-deck flat roof would raise it '
+                f'half a block; zone the roof or use a full-block roof material'
+            )
+        if roof['kind'] == 'pitched' and not zoned:
             raise SystemExit(
                 f'{path}: roofs[{lab}].finish needs a flat roof; a pitched roof takes it only with '
                 f'zones[{lab}], on its flat columns'

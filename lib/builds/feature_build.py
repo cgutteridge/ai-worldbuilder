@@ -39,7 +39,13 @@ from roof_geometry import (
     roof_block_y,
     stair_effect_lines,
 )
-from roof_material import block_id_names, carpet_block, family_variants, roof_material_warnings
+from roof_material import (
+    block_id_names,
+    carpet_block,
+    family_variants,
+    load_catalogue,
+    roof_material_warnings,
+)
 from script_env import ROOT
 from site_kit import (
     AIR_IDS,
@@ -59,6 +65,31 @@ import land_use
 import osm_footprints
 import place_config
 import stoop
+
+
+# Full solid cubes a finish carpet may stand on (#455), besides the catalogue's full roof blocks
+# and the spec's wall and floor. A positive list: glass, panes, fences, walls, trapdoors, signs,
+# lanterns, doors, slabs, stairs and carpets never count.
+CARPET_SUPPORT_SUFFIXES = ('_concrete', '_terracotta', '_wool', '_planks', '_bricks', '_tiles')
+CARPET_SUPPORT_BLOCKS = frozenset({
+    'stone', 'smooth_stone', 'cobblestone', 'terracotta', 'andesite', 'diorite', 'granite',
+    'deepslate', 'tuff', 'sandstone', 'red_sandstone', 'bricks',
+})
+
+
+def carpet_support_ok(state: str | None, extra: frozenset | set = frozenset()) -> bool:
+    """True when a block is a full solid cube a carpet may stand on.
+
+    @param state: block id or state (with or without ``minecraft:``); None is air
+    @param extra: further full-block names (spec wall and floor)
+    @returns: whether the block supports a finish carpet
+    """
+    if not state:
+        return False
+    name = state.removeprefix('minecraft:').split('[', 1)[0]
+    if name in extra or name in CARPET_SUPPORT_BLOCKS or name.endswith(CARPET_SUPPORT_SUFFIXES):
+        return True
+    return name in {family['full'] for family in load_catalogue()['families'].values()}
 
 
 class Feature:
@@ -455,7 +486,7 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         """Drop any finish carpet that no longer stands on a full solid block (#455).
 
         Later steps (street face, prunes, real-owner cells) may change the deck row; a
-        carpet never stays over air, a slab, a stair or another carpet.
+        carpet stays only on a full solid cube (:func:`carpet_support_ok`).
 
         @returns: one dry-run line per feature with a carpet finish
         """
@@ -467,9 +498,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
             for (x, z), deck_y in sorted(f.carpet_cells.items()):
                 if '_carpet' not in self.p.cells.get((x, deck_y + 1, z), ''):
                     continue
-                below = self.p.cells.get((x, deck_y, z)) or self.live.block(x, deck_y, z) or ''
-                name = bid(below)
-                if self._is_solid(x, deck_y, z) and not name.endswith(('_slab', '_stairs', '_carpet')):
+                below = self.p.cells.get((x, deck_y, z)) or self.live.block(x, deck_y, z)
+                if carpet_support_ok(below, {self.wall, self.floor_mat}):
                     kept += 1
                     continue
                 self.set(x, deck_y + 1, z, 'air')
@@ -555,8 +585,9 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         Membrane uses ``roofs[].material`` slabs on owned columns. The one-block
         N8 overhang fringe is built only when ``roofs[].edge`` is present
         (default none). Pitched overhang is unchanged in ``roof_pitched``.
-        With ``roofs[].finish`` each owned deck cell is a wall top course under a
-        carpet (:meth:`_lay_carpet`); the fringe stays roof slab.
+        With ``roofs[].finish`` and a full-block material each owned deck cell is a wall
+        top course under a carpet (:meth:`_lay_carpet`); the fringe stays roof slab. A slab
+        material refuses the finish (it would raise the roof half a block).
 
         @param features: group masses sharing this roof
         @param own: owned (x, z) columns for the roof deck
@@ -564,7 +595,12 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         rm = features[0].roof['material']
         eave = features[0].b + features[0].storeys * STOREY_H
         finish = features[0].roof.get('finish')
-        if finish:
+        if finish and 'slab' in family_variants(rm):
+            # the slab deck tops out half a block lower than a full top course: never raise it
+            self._roof_warnings.append(
+                f'{features[0].no} roof finish {finish}: refused; carpet on an unzoned slab-deck flat roof '
+                f'would raise it half a block; zone the roof or use a full-block roof material')
+        elif finish:
             carpet = carpet_block(rm, finish)
             for f in features:
                 for x, z in f.cells:
