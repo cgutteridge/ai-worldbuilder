@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 448,
+  "nextTaskId": 449,
   "tasks": [
     {
       "id": 352,
@@ -196,6 +196,16 @@
       "blockedBy": [],
       "builderTask": true,
       "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"}
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"},
+    {
+      "id": 448,
+      "title": "Lean shared workflow instructions and Codex execution guidance",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Apply the owner-approved retro instruction changes only: shared runner-neutral review verdicts reserve CHANGES for blockers and keep nits nonblocking; milestone handoff guidance uses existing tracker state. Put Codex-specific fresh-context, tool-waiting and reasoning economy guidance in /Users/cjg/.codex/AGENTS.md, preserving existing authorization boundaries. Existing model/effort and test gates remain in force; test-receipt, mapping and lint implementation are separate engineering work. Validate shared skill stubs and existing documentation audits, use the normal commit hook. builderTask false: instruction edits and synthetic checks only."
+    }
   ]
 }
