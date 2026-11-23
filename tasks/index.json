@@ -78,16 +78,7 @@
     
     
     
-    {
-      "id": 380,
-      "title": "Decide bridge and tunnel feature design (glossary, rules, ADR)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "GOAL. Settle how bridges and tunnels work in this tool, as decisions written into the glossary, the rules and an ADR, so the later bridge and tunnel tickets can be written clearly. No code and no building.\n\nREAD FIRST: AGENTS.md; docs/plans/bridges-and-tunnels.md (current state, \"Already decided\", \"Decisions needed\", proposed split); docs/plans/railway.md (\"Owner decisions\" 9, 10, 13); GLOSSARY.md; rules/handoff-layered-passes.md (open questions at about lines 140 and 176 to 177: do bridges and tunnels need their own pass type, and does the feature keep the crown); the domain-modeling skill; the grilling skill.\n\nTHIS NEEDS THE OWNER: it is an interview, so it cannot run unattended. Use the grilling skill, one question at a time with a recommended answer.\n\nDECIDE (record each answer): (1) one feature type with a `kind`, or two; (2) the pass-order rule (crown versus yield) that the rules file leaves open; (3) rule-built types (beam road bridge, footbridge, rail viaduct, culvert or underpass, simple tunnel) with defaults versus a Claude design per structure, and which landmarks get a design; (4) ownership, footprint and undo for structures that cross cell edges (they are not mask-undone); (5) the failure rule (best effort, fail loudly, humans fix); (6) how deck height is taken from lidar structure columns (kind 4 in lib/sources/lidar_heightmap.py) and what is crossed (road, rail, water); (7) how a bridge or tunnel that carries a railway joins the line features (already decided: line leaves a gap with end records, the structure feature is built after and refuses until both neighbours exist).\n\nDELIVER: GLOSSARY.md entries (Bridge, Tunnel, and Crossing as features, and what a join is); the rules file updated so the open questions are closed; an ADR (see docs/agents/domain.md and the domain-modeling skill for the format and numbering); docs/plans/bridges-and-tunnels.md updated; and DRAFT texts, in that file, of the follow-up tickets (evidence list, rule-based planner, feature integration, and a Claude build trial on real structures) written to the same standard as the railway tickets and flagged with builderTask per docs/agents/model-and-effort.md. Do not file them until the owner says so.\n\nACCEPTANCE: the ADR exists and the glossary and rules agree with it; the two open questions in the rules file are closed; the scope note has no unresolved decision; the four draft follow-up tickets are in the scope note.\nWORKFLOW: docs and tracker only, so commit straight to main (ADR 005). builderTask false.\n"
-    },
+    
     
     {
       "id": 382,
