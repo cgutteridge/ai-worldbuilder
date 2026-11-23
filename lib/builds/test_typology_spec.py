@@ -185,6 +185,7 @@ class TypologySpecs(unittest.TestCase):
         report = T.generate(houses, STREET)
         spec = report['specs'][0]['spec']
         self.assertEqual(set(spec['roofs'].values()), {'brick'})
+
     def test_semi_detached_pair_keeps_separate_roofs(self):
         for tag in ('house', 'semidetached_house'):
             with self.subTest(tag=tag):

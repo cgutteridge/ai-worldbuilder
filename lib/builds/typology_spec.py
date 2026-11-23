@@ -779,6 +779,7 @@ def _terrace_chimneys(ordered: list[dict]) -> dict:
         sites[owner['label']].append({'at': [col[0], col[1]]})
     return {label: entries if entries else 'none' for label, entries in sites.items()}
 
+
 def _body_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
     """A house_build spec for terrace-house bodies: one roof per building, numbers from lidar and the class recipe (#333)."""
     block = {}
