@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 452,
+  "nextTaskId": 453,
   "tasks": [
     
     {
@@ -70,7 +70,7 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [],
+      "blockedBy": [452],
       "builderTask": false,
       "notes": "From trial #257 parade snag S-105 (issue I-022 roof stair rotation; history #169, #310, #390). The owner saw poor stair rotation on the roof of Xionqi Hotpot (w122706803, a hand full spec built by feature_build) and asked whether it uses the octant roof system. It does not: octant is house_build's roof_fit option only (default columns, #415); feature_build has no octant code. But #415 also added align_stair_shapes as a final pass in feature_build (about line 598), so S-105 may predate that and may already be fixed.\n\nStep 1, reproduce (read-only): dry-run the hotpot spec (site/builds/w122706803.json in the world) and count stair shape and facing mismatches with stair_effect_lines and roof_lint. If the count is 0, report that and stop: the owner re-checks in game after a rebuild (a separate world step) and S-105 goes to review. If it is above 0, diagnose which neighbour case produces them.\nStep 2, decide from the diagnosis, and state the rule used: fix pitched_roof_states / align_stair_shapes for that case, or accept an octant fit per roof label in the feature spec by reusing lib/builds/roof_octant.py (fit_octant_roof, block_states). Note the hotpot footprint sits on a rotated diagonal; octant falls back to columns unless the footprint is near a rectangle, so octant alone may not help it.\nStretch (diagnosis, roof geometry across builders): ask before raising model or effort. Non-builder: fixtures and a dry run, no live apply. Acceptance: the reproduction count before and after, tests for the fixed case, and the owner's in-game check of S-105 after a rebuild.\n"
     },
@@ -120,6 +120,16 @@
       "blockedBy": [],
       "builderTask": true,
       "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md.\n\nReturned to todo: Zone regions landed. Left: stair-step windows, roof flat_tol default, storeys/bay, doors, live parade.\n\n[tasks CLI] Status update recorded; subject to human review."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-solid-glass-windows"}
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-solid-glass-windows"},
+    {
+      "id": 452,
+      "title": "Railway planner: junctions keep the main line, side track leaves a gap",
+      "status": "doing",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "GOAL. Railway planning handles junctions between through lines: where two line plans overlap, the main line is laid straight through and only the side track leaves a gap, reported with coordinates as a job for a person (owner decision 1, #384 grilling 2026-11-23; railway.md decision 4: junctions are left to humans). Today each line plans on its own, lines that touch claim the same rail columns, and lib/builds/railway_feature.py build() refuses the whole spec with 'overlapping railway lines need a human'.\n\nEVIDENCE. #384 spec worlds/southampton-build/site/builds/railway_54_m34.json (start cell 54,-34) has 8 line plans with 11 overlapping pairs around the junction at MC 6793..6826, -4103..-4025: plans 0&3 share 14 rail columns (x 6817..6826 z -4103..-4078), plans 2&6 share 33 (x 6793..6807 z -4061..-4027), the rest share one column each (6825,-4088), (6817,-4078), (6807,-4061), (6759,-3908), (6777,-3979), (6797,-4025), (6805,-4047). Reproduce with the recorded evidence (fixtures only in tests; do not depend on the world dir).\n\nREAD FIRST: AGENTS.md; docs/plans/railway.md (Owner decisions 1 to 15, and the #384 decisions); rules/feature-builds.md 'Railway line features'; lib/builds/railway_plan.py; lib/builds/railway_feature.py (build, load_spec_dict, plan_feature, metadata, joins); lib/sources/railway_evidence.py (Line, switch points).\n\nRULE TO IMPLEMENT (state it in the docs). When line plans in one feature overlap in rail columns (or in rail columns plus their torch cells): the MAIN line keeps its rails. Main = the plan with more tracks; tie: more rail columns; tie: lowest line_id. Each other line has its overlapping rail columns, plus any rail that would be orphaned between the overlap and the line's end (a rail run that no longer connects), turned into a gap of kind 'junction' with end records (level, direction, tracks) and a 'where' coordinate, in the same shape as crossing, bridge and overhead gaps. No rails, torches, planting or slope are written on gap columns; the main line's corridor wins in shared footprint columns. If overlap is more complex than the rule can handle (for example three lines in one column, or the main line itself would need a gap), fail loudly with the coordinates instead of guessing. The spec must then build() without the 'need a human' error, and gaps must be reported in the feature metadata so a human can list them.\n\nCHECKS. Synthetic fixtures: a T junction (side track joins a double-track main line), a Y with equal tracks (tie-break), a crossing of two lines, three lines in one column (fails loudly), a one-column touch. Assert the main line's rails are unchanged, the side track has a gap with correct end records, no block is written in the gap, round-trip through load_spec_dict and build, and 'overlapping railway lines need a human' no longer fires for a resolvable junction. Update docs/plans/railway.md and rules/feature-builds.md concisely. No live build.\n"
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/452-railway-junctions"}
   ]
 }
