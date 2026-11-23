@@ -63,7 +63,7 @@ class TestMovePlayer(unittest.TestCase):
 
         for mod_name in (
             'site_patrol', 'site_views', 'evidence_sheet',
-            'site_kit', 'site_handoff', 'mc_player',
+            'site_kit', 'mc_player',
         ):
             spec = importlib.util.find_spec(mod_name)
             self.assertIsNotNone(spec, mod_name)

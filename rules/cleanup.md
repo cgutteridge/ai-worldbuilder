@@ -35,7 +35,7 @@ NEVER TOUCHED
 WHEN
  Due when the last logged apply is 7+ days old, or the SAFE classes would free 1 GB+
  (`site_cleanup.py due` exits 0 with one line, else 1).
- - Session end: after site_archive, run `due`. If due, `apply`, then `report` and settle the
-   REPORT-ONLY and JUDGED lists as one small queue item.
+ - Session end: archive dated reviews with `python3 scripts/site_archive.py --world <world> run`, then run `due`.
+   If due, `apply`, then `report` and settle the REPORT-ONLY and JUDGED lists with the owner.
  - Never while another builder holds site/LOCK.json and is mid-apply.
  - Tuning: constants at the top of scripts/site_cleanup.py.

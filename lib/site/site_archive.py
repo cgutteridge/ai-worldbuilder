@@ -1,22 +1,11 @@
 #!/usr/bin/env python3
-"""Move finished records out of the live site/ files into site/archive/.
+"""Archive dated reviews from site/REVIEWS.txt, retaining the newest entries.
 
-  python3 scripts/site_archive.py run [--dry-run] [--keep-reviews N]
-  python3 scripts/site_archive.py next-id Q|I
+  python3 scripts/site_archive.py --world <world> run [--dry-run] [--keep-reviews N]
 
-Live files stay short so agents only read open work:
-
-  site/QUEUE.txt    ``[x]`` items        -> site/archive/QUEUE-done.txt
-  site/ISSUES.txt   done/fixed issues    -> site/archive/ISSUES-closed.txt
-  site/REVIEWS.txt  all but last N dated -> site/archive/REVIEWS-archive.txt
-
-Nothing is deleted. IDs, wording and order are kept, so
-``grep -rn Q-017 site/`` still finds every record. Each archive is written
-(atomically) before its live file is rewritten, and blocks already present in
-the archive are not appended twice, so an interrupted run can be re-run.
-
-``next-id`` scans live files and archives, so a new Q-/I- number is never
-reused after its predecessor has been archived.
+Review text and order are preserved. Archives are written atomically before the
+live file, and existing blocks are deduplicated on an interrupted run's retry.
+Structured issues are archived by scripts/issues.py.
 """
 from __future__ import annotations
 
@@ -25,26 +14,21 @@ import re
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from script_env import ROOT  # noqa: E402
 SITE = ROOT / 'site'
 ARCHIVE_DIRNAME = 'archive'
 
 DEFAULT_KEEP_REVIEWS = 10
-CLOSED_ISSUE_STATUSES = frozenset({'done', 'fixed', 'closed', 'wontfix', 'stale', 'dup', 'duplicate'})
 
-QUEUE_ITEM_RE = re.compile(r'\[([ xX-])\]\s+(Q-\d+)\b')
-ISSUE_HEAD_RE = re.compile(r'(I-\d+)\s+[HML]\s+\S+\s+(\w+)')
 REVIEW_HEAD_RE = re.compile(r'20\d\d-\d\d-\d\d\b')
-ID_RE = {'Q': re.compile(r'\bQ-(\d+)\b'), 'I': re.compile(r'\bI-(\d+)\b')}
 
 
 @dataclass
 class Block:
     """A run of lines from a site file.
 
-    ``key`` is the record id (Q-nnn / I-nnn / review head line) or ``None``
+    ``key`` is the review head line or ``None``
     for free text (preamble, section headers) that always stays live.
     """
 
@@ -62,35 +46,6 @@ class Spec:
     title: str
     pointer: str
     blocks: list[Block] = field(default_factory=list)
-
-
-def _split(lines, is_head):
-    """Split lines into blocks; a block starts at each line where ``is_head`` is true.
-
-    Lines before the first head, and any later column-0 line that is not a
-    head (e.g. a ``BACKLOG`` header or ``----`` rule), become free-text blocks.
-    Indented and blank lines belong to the block above them.
-
-    @param lines: file lines without newlines
-    @param is_head: callable(line) -> key str or None
-    @returns: list of Block
-    """
-    blocks = []
-    cur = Block([])
-    for line in lines:
-        key = is_head(line)
-        starts_free = (
-            key is None and cur.key is not None and line[:1] not in ('', ' ', '\t')
-        )
-        if key is not None or starts_free:
-            if cur.lines:
-                blocks.append(cur)
-            cur = Block([line], key=key)
-            continue
-        cur.lines.append(line)
-    if cur.lines:
-        blocks.append(cur)
-    return blocks
 
 
 def _split_reviews(lines):
@@ -112,54 +67,6 @@ def _split_reviews(lines):
         cur.lines.append(line)
     if cur.lines:
         blocks.append(cur)
-    return blocks
-
-
-def _queue_head(line):
-    """Return the Q-id when ``line`` opens a queue item, else None.
-
-    @param line: one file line
-    @returns: key string or None
-    """
-    m = QUEUE_ITEM_RE.match(line)
-    return m.group(2) if m else None
-
-
-def _issue_head(line):
-    """Return the I-id when ``line`` opens an issue, else None.
-
-    @param line: one file line
-    @returns: key string or None
-    """
-    m = ISSUE_HEAD_RE.match(line) or re.match(r'(I-\d+)\b', line)
-    return m.group(1) if m else None
-
-
-def plan_queue(text):
-    """Mark ``[x]`` queue items for archiving; ``[ ]`` and ``[-]`` stay live.
-
-    @param text: QUEUE.txt contents
-    @returns: list of Block
-    """
-    blocks = _split(text.splitlines(), _queue_head)
-    for b in blocks:
-        if b.key:
-            m = QUEUE_ITEM_RE.match(b.lines[0])
-            b.archive = m.group(1) in 'xX'
-    return blocks
-
-
-def plan_issues(text):
-    """Mark issues whose status is done/fixed/closed for archiving.
-
-    @param text: ISSUES.txt contents
-    @returns: list of Block
-    """
-    blocks = _split(text.splitlines(), _issue_head)
-    for b in blocks:
-        if b.key:
-            m = ISSUE_HEAD_RE.match(b.lines[0])
-            b.archive = bool(m) and m.group(2).lower() in CLOSED_ISSUE_STATUSES
     return blocks
 
 
@@ -274,40 +181,26 @@ def archive_file(spec, site=SITE, dry=False):
 
 
 def build_specs(site=SITE, keep_reviews=DEFAULT_KEEP_REVIEWS):
-    """Plan all three files; missing live files are skipped.
+    """Plan the reviews archive; a missing live file is skipped.
 
     @param site: site directory
     @param keep_reviews: dated review entries to leave live
     @returns: list of Spec with blocks planned
     """
-    defs = [
-        Spec('QUEUE.txt', 'QUEUE-done.txt',
-             'WORLDBUILDER — QUEUE (archived [x] items, oldest first)',
-             'Done items: site/archive/QUEUE-done.txt (moved by scripts/site_archive.py).'),
-        Spec('ISSUES.txt', 'ISSUES-closed.txt',
-             'WORLDBUILDER — ISSUES (archived done/fixed, oldest first)',
-             'Closed issues: site/archive/ISSUES-closed.txt (scripts/site_archive.py).'),
-        Spec('REVIEWS.txt', 'REVIEWS-archive.txt',
-             'WORLDBUILDER — REVIEWS (archived entries, oldest first)',
-             'Older reviews: site/archive/REVIEWS-archive.txt (scripts/site_archive.py).'),
-    ]
-    planners = {
-        'QUEUE.txt': plan_queue,
-        'ISSUES.txt': plan_issues,
-        'REVIEWS.txt': lambda t: plan_reviews(t, keep_reviews),
-    }
-    out = []
-    for spec in defs:
-        path = site / spec.live
-        if not path.exists():
-            continue
-        spec.blocks = planners[spec.live](path.read_text(encoding='utf-8'))
-        out.append(spec)
-    return out
+    path = site / 'REVIEWS.txt'
+    if not path.exists():
+        return []
+    spec = Spec(
+        'REVIEWS.txt', 'REVIEWS-archive.txt',
+        'WORLDBUILDER — REVIEWS (archived entries, oldest first)',
+        'Older reviews: site/archive/REVIEWS-archive.txt (scripts/site_archive.py).',
+    )
+    spec.blocks = plan_reviews(path.read_text(encoding='utf-8'), keep_reviews)
+    return [spec]
 
 
 def run(site=SITE, dry=False, keep_reviews=DEFAULT_KEEP_REVIEWS, out=sys.stdout):
-    """Archive finished records in every live site file.
+    """Archive older dated reviews from the live reviews file.
 
     @param site: site directory
     @param dry: report only; write nothing
@@ -326,24 +219,6 @@ def run(site=SITE, dry=False, keep_reviews=DEFAULT_KEEP_REVIEWS, out=sys.stdout)
         if dupes:
             print(f'  already archived, dropped from live: {len(dupes)}', file=out)
     return total
-
-
-def next_id(prefix, site=SITE):
-    """Next unused Q-/I- number across live files and archives.
-
-    @param prefix: 'Q' or 'I'
-    @param site: site directory
-    @returns: id string, e.g. 'Q-043'
-    """
-    rx = ID_RE[prefix]
-    live = 'QUEUE.txt' if prefix == 'Q' else 'ISSUES.txt'
-    paths = [site / live, *sorted((site / ARCHIVE_DIRNAME).glob('*.txt'))]
-    best = 0
-    for p in paths:
-        if p.exists():
-            for m in rx.finditer(p.read_text(encoding='utf-8')):
-                best = max(best, int(m.group(1)))
-    return f'{prefix}-{best + 1:03d}'
 
 
 def main(argv=None):
@@ -367,9 +242,6 @@ def main(argv=None):
                 print('--keep-reviews must be >= 0', file=sys.stderr)
                 return 2
         run(dry='--dry-run' in argv, keep_reviews=keep)
-        return 0
-    if cmd == 'next-id' and argv and argv[0] in ID_RE:
-        print(next_id(argv[0]))
         return 0
     print(__doc__.strip(), file=sys.stderr)
     return 2

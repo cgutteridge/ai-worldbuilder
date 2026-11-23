@@ -59,7 +59,9 @@ not interpret a deck as vegetation. A structure that carries the railway is a ga
 filled by that structure feature.
 
 Domain definitions live in [GLOSSARY.md](../../GLOSSARY.md); pass and ownership
-rules belong in [layered passes](../../rules/handoff-layered-passes.md) section 4.
+rules belong in [layered passes](../../rules/handoff-layered-passes.md) sections 4
+and 7, which link to the accepted [layered-pass decisions](../adr/010-layered-pass-decisions.md)
+and their structure-volume exception from ADR 009.
 Implementation of the decisions is the follow-up work below.
 
 ## Draft follow-up A: bridge and tunnel evidence

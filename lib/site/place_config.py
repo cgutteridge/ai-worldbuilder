@@ -190,18 +190,3 @@ def fetch_probe() -> dict | None:
     if not url:
         return None
     return {'url': url, 'referer': str(raw.get('referer') or '')}
-
-
-def work_context_keywords() -> dict[str, tuple[str, ...]]:
-    """Extra queue-classification keywords from ``work_context_keywords``.
-
-    @returns: context name → keywords, as written in config
-    """
-    raw = world_config().get('work_context_keywords') or {}
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, tuple[str, ...]] = {}
-    for key, names in raw.items():
-        if isinstance(names, list):
-            out[str(key)] = tuple(str(name) for name in names)
-    return out

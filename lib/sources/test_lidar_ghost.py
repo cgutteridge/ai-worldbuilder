@@ -346,6 +346,27 @@ class CliDryRun(_Tiny):
         self.assertTrue(rows[(1, 0)]['real_ground'])
         self.assertFalse(rows[(1, 0)]['needs_ghost_ground'])
 
+    def test_ring_defaults_to_including_focus(self):
+        """CLI --ring includes the focus cell unless --no-include-focus (task #423)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / 'h.json'
+            fixture.write_text(json.dumps({'ground_y': [[10, 10], [10, 10]], 'feature': [[0, 1], [2, 0]]}))
+            args = ['--cell', '0,0', '--heights-json', str(fixture)]
+
+            def cells_for(*extra: str) -> set[tuple[int, int]]:
+                out = io.StringIO()
+                with mock.patch('sys.stdout', out), mock.patch('sys.stderr'):
+                    code = lg.main(['plan', *args, *extra])
+                self.assertEqual(code, 0)
+                return {tuple(r['cell']) for r in json.loads(out.getvalue())['reports']}
+
+            self.assertEqual(cells_for('--ring', '1'),
+                             {(x, z) for x in (-1, 0, 1) for z in (-1, 0, 1)})
+            self.assertEqual(cells_for('--ring', '1', '--no-include-focus'),
+                             {(x, z) for x in (-1, 0, 1) for z in (-1, 0, 1)} - {(0, 0)})
+            self.assertEqual(cells_for('--ring', '0'), {(0, 0)})
+            self.assertEqual(cells_for('--ring', '0', '--no-include-focus'), set())
+
 
 class GroundLayerIgnoresGhosts(unittest.TestCase):
     """Real ground pass may overwrite ghost owners."""

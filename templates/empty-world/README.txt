@@ -10,6 +10,6 @@ Minecraft instance's saves/, then run scripts/new_blank_world.py --world <name>
 (it copies this template and sets the in-game name, LevelName, to the folder name; see
 docs/minecraft-instance-setup.md).
 
-Place memory (ISSUES, NOTES, coverage, REVIEWS; progress in registry/journal.jsonl)
+Place memory (NOTES, coverage, REVIEWS; issues and progress in registry/)
 is not this save — scaffold site/ from templates/new-world-site/ into the world
 checkout. Craft/process rules live in ai-worldbuilder rules/, not in the world repo.

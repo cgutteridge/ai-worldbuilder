@@ -27,7 +27,7 @@ In-flight applies are `begun` journal entries; mess-in-a-cell → `cell_registry
  builds cover mapped buildings, ground/trees/decor are applied, and the trees mask follows the
  overhang rule (§6; masks carry rule 'overhang-v1'). Not “no unrefined vendor lump left” — vendor
  lumps alone do not keep a cell open. Road-name labels are optional dressing and do not keep a
- cell open. `cell_registry.py next` / `site_handoff.cell_gaps`
+ cell open. `cell_registry.py next` / `cell_gaps.cell_gaps`
  report missing feature builds, layer passes, and trees-mask currency; a finished cell with an
  old tree mask is reopened for a trees re-run.
 

@@ -19,9 +19,9 @@ Top-block colour encodes DSM − DTM height per column (location check vs real f
 
   Owner:  ghost_<tx>_<tz>_ground   (pass ghost-ground)
 
-  python3 shims/lidar_ghost.py status --cell 48,-44 --ring 2
-  python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2
-  SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 2
+  python3 shims/lidar_ghost.py status --cell 48,-44 --ring 2 --include-focus
+  python3 shims/lidar_ghost.py plan --cell 48,-44 --ring 2 --include-focus
+  SITE_OWNER=<owner> python3 shims/lidar_ghost.py apply --cell 48,-44 --ring 2 --include-focus
 
 ``plan`` / unit tests inject height samples (no live server, no provider download).
 """
@@ -438,8 +438,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument('--ring', type=int, default=None,
                        help=f'Chebyshev neighbour depth (default: single cell; '
                             f'use {DEFAULT_RING} for the usual neighbour ring)')
-        p.add_argument('--include-focus', action='store_true',
-                       help='with --ring, also process the focus cell')
+        p.add_argument('--include-focus', action=argparse.BooleanOptionalAction,
+                       default=None,
+                       help='with --ring, also process the focus cell '
+                            '(default: on when --ring is set; --no-include-focus omits it)')
         p.add_argument('--heights-json', type=Path, default=None,
                        help='fixture: {"ground_y":[[…]],"feature":[[…]]} for the cell box')
         p.add_argument('--force', action='store_true', help='re-plan even if ghosts already applied')
@@ -451,11 +453,14 @@ def main(argv: list[str] | None = None) -> int:
     focus = cellmath.parse_cell(a.cell)
     heights_fn = _mock_or_default(a.heights_json)
     depth = a.ring if a.ring is not None else ring_from_env()
+    # --ring without an explicit flag means the focus cell plus its neighbours
+    # (ring 0 alone is empty otherwise). Library callers keep include_focus=False.
+    include_focus = a.include_focus if a.include_focus is not None else a.ring is not None
 
     if a.cmd == 'status':
         import cell_registry
         reg = cell_registry.open_registry(ghosts=None, ring=depth)
-        cells = targets_for(reg, focus, a.ring, include_focus=a.include_focus)
+        cells = targets_for(reg, focus, a.ring, include_focus=include_focus)
         print(json.dumps({
             'focus': list(focus),
             'ring': depth,
@@ -469,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
         # SIGINT already raises KeyboardInterrupt; SIGTERM would otherwise leave exit 144 unclear.
         signal.signal(signal.SIGTERM, handle_sigterm)
     reg, writer = _session(dry, heights_fn, depth)
-    cells = targets_for(reg, focus, a.ring, include_focus=a.include_focus, frontier_when_seeded=False)
+    cells = targets_for(reg, focus, a.ring, include_focus=include_focus, frontier_when_seeded=False)
     reports = ensure_cells(reg, cells, apply=writer, force=a.force)
     print(json.dumps({'focus': list(focus), 'ring': a.ring, 'dry': dry, 'reports': reports}, indent=2))
     return 0

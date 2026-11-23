@@ -974,11 +974,11 @@ describe("Task dependency tree", () => {
         }),
         { parentId: 10 },
       ),
-      "#23 - Title of task (also blocked by #24, #25) - claimed by Cursor - BUILDER",
+      "#23 - (Cursor) [BUILDER] Title of task (also blocked by #24, #25)",
     )
     assert.equal(
       formatTaskTreeLine(task(7, { title: "Plain" })),
-      "#7 - Plain - NO-BUILDER",
+      "#7 - Plain",
     )
   })
 
@@ -994,11 +994,11 @@ describe("Task dependency tree", () => {
       }),
     ])
     assert.deepEqual(lines, [
-      "#382 - Railway - NO-BUILDER",
-      "  #383 - Crossing mechanism - NO-BUILDER",
-      "    #385 - Level crossing (also blocked by #384) - BUILDER",
-      "  #384 - Corridor trial - BUILDER",
-      "    #385 - Level crossing (also blocked by #383) - BUILDER",
+      "#382 - Railway",
+      "  #383 - Crossing mechanism",
+      "    #385 - [BUILDER] Level crossing (also blocked by #384)",
+      "  #384 - [BUILDER] Corridor trial",
+      "    #385 - [BUILDER] Level crossing (also blocked by #383)",
     ])
   })
 
@@ -1017,14 +1017,14 @@ describe("Task dependency tree", () => {
     )
     await writeFile(join(directory, "done.json"), '{"tasks":[]}\n')
     assert.deepEqual(await listTaskTree(directory), [
-      "#1 - Root - claimed by Codex - NO-BUILDER",
-      "  #2 - Child - BUILDER",
+      "#1 - (Codex) Root",
+      "  #2 - [BUILDER] Child",
     ])
     const result = cli(["--tracker-dir", directory, "tree"], tmpdir())
     assert.equal(result.status, 0, result.stderr)
     assert.equal(
       result.stdout,
-      "#1 - Root - claimed by Codex - NO-BUILDER\n  #2 - Child - BUILDER\n",
+      "#1 - (Codex) Root\n  #2 - [BUILDER] Child\n",
     )
   })
 })

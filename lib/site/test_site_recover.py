@@ -279,17 +279,17 @@ class TestRecover(Aborted):
         self.assertEqual([r['plan'] for r in sr.status()['rolled_back']], ['p'])
 
     def test_rolled_back_is_not_done_and_reappears(self):
-        import site_handoff as H
+        import cell_gaps as gaps
         self.abort(fill_limit=1)
         self.set_lock('alice', age_min=200)
         self.recover(loader=self.loader())
-        self.assertIn('trees', H.cell_gaps(CELL, features=False)['layers'])
-        self.assertEqual(H.cell_gaps(CELL, features=False)['in_flight'], [])
+        self.assertIn('trees', gaps.cell_gaps(CELL, features=False)['layers'])
+        self.assertEqual(gaps.cell_gaps(CELL, features=False)['in_flight'], [])
 
     def test_in_flight_is_listed_by_cell_gaps(self):
-        import site_handoff as H
+        import cell_gaps as gaps
         self.abort(fill_limit=1)
-        self.assertEqual(H.cell_gaps(CELL, features=False)['in_flight'], ['in-flight: p'])
+        self.assertEqual(gaps.cell_gaps(CELL, features=False)['in_flight'], ['in-flight: p'])
 
     def test_dry_run_changes_nothing(self):
         self.abort(fill_limit=1)
