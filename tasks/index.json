@@ -205,16 +205,7 @@
       "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
     },
     
-    {
-      "id": 421,
-      "title": "Make new-world-build's clip folder count in clip_coverage",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "The skill says to use the place name for the clip folder, but _query_bbox only counts clips whose name encodes the extent. Have the extractor encode the extent, or change the skill example. Check: following the skill gives 100% clip_coverage for the home cell. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/6"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/421-clip-folder-coverage"},
+    
     
     {
       "id": 423,
