@@ -66,22 +66,44 @@ class StraightRunTest(unittest.TestCase):
             'fill': set(), 'sources': set(fronts),
         }])
 
-    def test_one_block_step_fills_the_notch_on_the_street_side(self):
-        fronts = {(0, 1): 'N', (1, 0): 'N'}
+    def test_straight_and_vertical_rows_measure_zero(self):
+        self.assertEqual(FF.front_row_angle({(x, 5) for x in range(4)}), 0)
+        self.assertEqual(FF.front_row_angle({(5, z) for z in range(4)}), 0)
+
+    def test_one_block_notch_on_a_straight_row_still_fills(self):
+        fronts = {(x, 0): 'N' for x in range(8)}
+        del fronts[(3, 0)]
+        fronts[(3, 1)] = 'N'
+        self.assertLessEqual(FF.front_row_angle(fronts), FF.SHOP_SQUARE_MAX_ANGLE)
         runs = FF.fit_straight_runs(fronts)
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]['face'], 'N')
-        self.assertEqual(runs[0]['line'], [(0, 0), (1, 0)])
-        self.assertEqual(runs[0]['fill'], {(0, 0)})
+        self.assertEqual(runs[0]['line'], [(x, 0) for x in range(8)])
+        self.assertEqual(runs[0]['fill'], {(3, 0)})
 
-    def test_a_long_diagonal_stays_within_the_step_instead_of_a_street_wedge(self):
-        fronts = {(i, i): 'N' for i in range(9)}
+    def test_a_one_in_five_drift_squares_and_a_one_in_three_stays_stepped(self):
+        # About 11° still squares; about 18° is past the 15° threshold.
+        shallow = {(i, i // 5): 'N' for i in range(20)}
+        steep = {(i, i // 3): 'N' for i in range(15)}
+        self.assertLessEqual(FF.front_row_angle(shallow), FF.SHOP_SQUARE_MAX_ANGLE)
+        self.assertGreater(FF.front_row_angle(steep), FF.SHOP_SQUARE_MAX_ANGLE)
+        shallow_runs = FF.fit_straight_runs(shallow)
+        steep_runs = FF.fit_straight_runs(steep)
+        self.assertGreater(sum(len(run['fill']) for run in shallow_runs), 0)
+        self.assertEqual(sum(len(run['fill']) for run in steep_runs), 0)
+        self.assertEqual({cell for run in steep_runs for cell in run['line']}, set(steep))
+        self.assertEqual([run['face'] for run in steep_runs], ['N'] * len(steep))
+
+    def test_a_long_diagonal_keeps_each_wall_step(self):
+        # 45° is the steep end of the Portswood parade band (36.7°–44.9°).
+        fronts = {(i, i): 'W' if i % 2 else 'N' for i in range(9)}
+        self.assertGreaterEqual(FF.front_row_angle(fronts), 36)
+        self.assertGreater(FF.front_row_angle(fronts), FF.SHOP_SQUARE_MAX_ANGLE)
         runs = FF.fit_straight_runs(fronts)
-        self.assertGreater(len(runs), 1)
-        self.assertLessEqual(sum(len(run['fill']) for run in runs), 9 * FF.MAX_SHOP_STEP)
-        for run in runs:
-            depth = max(z for _x, z in run['sources']) - min(z for _x, z in run['sources'])
-            self.assertLessEqual(depth, FF.MAX_SHOP_STEP)
+        self.assertEqual(
+            [(run['line'][0], run['face'], run['fill']) for run in runs],
+            [((i, i), fronts[(i, i)], set()) for i in range(9)],
+        )
 
     def test_a_west_run_and_a_corner_do_not_fill_the_block(self):
         west = {(5, z): 'W' for z in range(4)}
@@ -95,6 +117,39 @@ class StraightRunTest(unittest.TestCase):
         self.assertLessEqual(sum(len(run['fill']) for run in runs), 2)
         self.assertTrue(any(run['face'] == 'N' for run in runs))
         self.assertTrue(any(run['face'] == 'W' for run in runs))
+
+    def test_a_notched_l_corner_still_squares_and_fills(self):
+        # An 8+8 L measures 45°. One notch drops the row to about 44°, past
+        # the threshold, but each arm is still on axis and the notch is filled.
+        fronts = {(x, 0): 'N' for x in range(8)}
+        fronts.update({(0, z): 'W' for z in range(1, 8)})
+        del fronts[(4, 0)]
+        fronts[(4, 1)] = 'N'
+        self.assertGreater(FF.front_row_angle(set(fronts)), FF.SHOP_SQUARE_MAX_ANGLE)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual({cell for run in runs for cell in run['fill']}, {(4, 0)})
+        self.assertTrue(any(run['face'] == 'N' and len(run['line']) > 1 for run in runs))
+        self.assertTrue(any(run['face'] == 'W' for run in runs))
+
+    def test_a_two_cell_corner_arm_still_squares(self):
+        fronts = {(0, 0): 'N', (1, 0): 'N', (0, 1): 'W'}
+        self.assertEqual(FF.front_row_angle(set(fronts)), 45)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual(runs, [{
+            'face': 'N', 'line': [(0, 0), (1, 0)],
+            'fill': set(), 'sources': set(fronts),
+        }])
+
+    def test_an_orthogonal_stair_keeps_each_wall_step(self):
+        # Pairs along a diagonal are steps, not two wall arms.
+        fronts = {}
+        for i in range(8):
+            fronts[(i, i)] = 'N'
+            fronts[(i + 1, i)] = 'W'
+        self.assertGreater(FF.front_row_angle(set(fronts)), FF.SHOP_SQUARE_MAX_ANGLE)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual(sum(len(run['fill']) for run in runs), 0)
+        self.assertEqual({cell for run in runs for cell in run['line']}, set(fronts))
 
 
 class StreetFaceDefaultsTest(unittest.TestCase):
@@ -438,25 +493,34 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
         self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
 
-    def test_stepped_front_squares_off_so_awning_sign_and_door_touch(self):
+    def test_angled_front_stays_stepped_with_awning_sign_and_door_on_the_wall(self):
         cells = {(x, z) for x in range(10, 30) for z in range(10, 30) if 30 <= x + z <= 43}
         streets = [street(((0, 20), (20, 0)), highway='pedestrian')]
         _, plan = self._shop(shop='cafe', cells=cells, streets=streets)
         front = FP.front_columns(cells, streets)
+        self.assertGreater(FF.front_row_angle(front), FF.SHOP_SQUARE_MAX_ANGLE)
+        fascia = {(x, z) for (x, y, z), state in plan.cells.items() if '_concrete' in state}
+        self.assertTrue(fascia)
+        self.assertTrue(fascia <= set(front))
+        self.assertGreater(len({z for _x, z in fascia}), 1)
+        self.assertGreater(len({x for x, _z in fascia}), 1)
         awnings = [(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state]
         self.assertGreaterEqual(len(awnings), 3)
         self.assertTrue(all(y <= 53 for x, y, z in awnings))
         for x, y, z in awnings:
-            self.assertTrue(any(
-                'concrete' in plan.cells.get((x + dx, y, z + dz), '')
-                or 'bricks' in plan.cells.get((x + dx, y, z + dz), '')
-                for dx, dz in F.N4))
-            self.assertTrue(any(max(abs(x - fx), abs(z - fz)) <= FF.MAX_SHOP_STEP + 1
-                                for fx, fz in front))
+            touched = [
+                (x + dx, z + dz) for dx, dz in F.N4
+                if (x + dx, z + dz) in front and (
+                    'concrete' in plan.cells.get((x + dx, y, z + dz), '')
+                    or 'bricks' in plan.cells.get((x + dx, y, z + dz), '')
+                )
+            ]
+            self.assertTrue(touched, (x, y, z))
         doors = [(x, y, z, state) for (x, y, z), state in plan.cells.items()
                  if 'oak_door' in state and 'half=lower' in state]
         self.assertEqual(len(doors), 1)
         dx, dy, dz, state = doors[0]
+        self.assertIn((dx, dz), front)
         lateral = ((1, 0), (-1, 0)) if ('facing=north' in state or 'facing=south' in state) else ((0, 1), (0, -1))
         for sx, sz in lateral:
             self.assertIn('bricks', plan.cells.get((dx + sx, dy, dz + sz), ''))
@@ -464,8 +528,9 @@ class StreetFaceBuildTest(unittest.TestCase):
         signs = [(x, y, z) for (x, y, z), state in plan.cells.items() if '_wall_sign[' in state]
         self.assertEqual(len(signs), 1)
         sx, sy, sz = signs[0]
-        self.assertTrue(any('_concrete' in plan.cells.get((sx + dx, sy, sz + dz), '')
-                            for dx, dz in F.N4))
+        self.assertTrue(any(
+            (sx + dx, sz + dz) in front and '_concrete' in plan.cells.get((sx + dx, sy, sz + dz), '')
+            for dx, dz in F.N4))
 
     def test_a_door_on_a_recessed_column_moves_onto_the_run(self):
         cells = {(x, z) for x in range(10, 21) for z in range(20, 30)}
@@ -481,6 +546,8 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertEqual((x, y, z), (15, 51, 20))
         self.assertIn('iron_door', state)
         self.assertFalse(any('_door[' in plan.cells.get((15, yy, 21), '') for yy in range(48, 60)))
+        fascia_z = {z for (cx, cy, cz), state in plan.cells.items() if '_concrete' in state}
+        self.assertEqual(fascia_z, {20})
         for jx in (14, 16):
             self.assertIn('bricks', plan.cells[(jx, 51, 20)])
             self.assertIn('bricks', plan.cells[(jx, 52, 20)])
