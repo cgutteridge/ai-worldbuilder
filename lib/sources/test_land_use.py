@@ -353,6 +353,24 @@ class Table(unittest.TestCase):
             self.row('park')['surface'] = {'path_widen': good}
             L.validate_table(self.doc)
 
+    def test_typology_defaults_pin_one_storey_count(self):
+        self.assertEqual(L.typology_defaults('residential'), {
+            'palette': ['bricks'], 'roofs': ['gable'], 'storeys': {'min': 2, 'max': 2},
+        })
+        self.assertEqual(L.typology_defaults('commercial'), {
+            'palette': ['bricks'], 'roofs': ['flat'], 'storeys': {'min': 2, 'max': 2},
+        })
+        self.assertIsNone(L.typology_defaults('civic'))
+        self.assertIsNone(L.typology_defaults('unknown'))
+        self.assertIsNone(L.typology_defaults('not-a-class'))
+        self.row('residential')['storeys'] = {'min': 3, 'max': 1}
+        with self.assertRaisesRegex(L.TableError, 'storeys'):
+            L.validate_table(self.doc)
+        self.row('residential')['storeys'] = {'min': 2, 'max': 2}
+        self.row('unknown')['palette'] = ['bricks']
+        with self.assertRaisesRegex(L.TableError, 'unknown'):
+            L.validate_table(self.doc)
+
     def test_unknown_row_column_refused(self):
         self.row('park')['banana'] = None
         with self.assertRaisesRegex(L.TableError, 'unknown column'):

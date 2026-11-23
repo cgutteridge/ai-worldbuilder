@@ -346,6 +346,22 @@ class BodyGeneratorTest(unittest.TestCase):
                  'rises': height_field(rect(i * 6, 20, 6, 14), 'S', eave, ridge, strip_m), **extra}
                 for i in range(count)]
 
+    def test_body_storeys_outside_the_district_range_are_refused(self):
+        """Eave-derived storeys are refused when they sit outside the district range."""
+        narrow = {
+            'name': 'Fixture',
+            'classes': {'commercial': {'palette': ['bricks'], 'roofs': ['flat'], 'storeys': {'min': 3, 'max': 4}}},
+        }
+        low = T.generate(self.shops(6.5, 10.0, profile=narrow), self.STREET)  # eave is two storeys
+        self.assertEqual(low['specs'], [])
+        self.assertEqual(
+            low['needs_designer'],
+            [{'way_id': w, 'reason': 'storeys outside the district range'} for w in ('1', '2', '3')],
+        )
+        high = T.generate(self.shops(8.0, 12.0, profile=narrow), self.STREET)  # eave is three storeys
+        self.assertEqual(high['needs_designer'], [])
+        self.assertEqual(high['specs'][0]['spec']['body']['a']['storeys'], 3)
+
     def test_pitched_lidar_makes_a_terrace_body_spec_without_building_levels(self):
         report = T.generate(self.shops(6.5, 10.0), self.STREET)
         self.assertEqual(report['needs_designer'], [])
@@ -367,9 +383,10 @@ class BodyGeneratorTest(unittest.TestCase):
 
     def test_a_low_ridge_gets_a_bay_not_dormers(self):
         report = T.generate(self.shops(6.0, 7.2), self.STREET)
-        self.assertEqual(report['specs'], [])   # 1.2 m of roof is a flat commercial box: the feature path
-        self.assertEqual(report['needs_designer'], [{'way_id': w, 'reason': 'missing building:levels'}
-                                                     for w in ('1', '2', '3')])
+        self.assertEqual(report['specs'], [])   # flat box, and the district storey range is not one count
+        self.assertEqual(report['needs_designer'],
+                         [{'way_id': w, 'reason': 'district profile storeys min and max differ'}
+                          for w in ('1', '2', '3')])
         report = T.generate(self.shops(6.0, 8.0), self.STREET)
         block = report['specs'][0]['spec']['body']['a']
         self.assertEqual((block['bay'], block['dormers']), (True, 0))
