@@ -79,7 +79,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   block and slab) and one to three alternates, from the catalogue's `types`
   section. Types are generic, never tied to a place:
   `red_clay_tile` (cinnabar_brick, chosen by look; alt cut_copper, brick, mud_brick), `grey_slate`
-  (tuff_brick, chosen by look; alt deepslate_tile, deepslate_brick,
+  (deepslate_brick, chosen by look; alt deepslate_tile, tuff_brick,
   polished_deepslate), `grey_tile` (stone_brick; alt andesite,
   tuff), `brown_tile` (mud_brick; alt spruce, dark_oak), `weathered_copper`
   (weathered_cut_copper; alt oxidized_cut_copper, cut_copper) and `flat_deck`

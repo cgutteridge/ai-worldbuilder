@@ -363,7 +363,7 @@ class Table(unittest.TestCase):
         self.assertIsNone(L.typology_defaults('civic'))
         self.assertIsNone(L.typology_defaults('unknown'))
         self.assertIsNone(L.typology_defaults('not-a-class'))
-        self.assertEqual(L.terrace_roof_families('residential'), ['cinnabar_brick', 'tuff_brick'])
+        self.assertEqual(L.terrace_roof_families('residential'), ['cinnabar_brick', 'deepslate_brick'])
         self.assertIsNone(L.terrace_roof_families('commercial'))
         self.row('residential')['terrace_roofs'] = ['not_a_type']
         with self.assertRaisesRegex(L.TableError, 'unknown type'):
