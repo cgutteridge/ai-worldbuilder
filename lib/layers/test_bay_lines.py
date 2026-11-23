@@ -1,251 +1,200 @@
-"""Unit tests for car-park bay lines (#336): geometry, the tarmac gate, and the ground pass end to end."""
-import math
+"""Aerial car-park bay lines (#449): copy a thin pale streak, drop specks, refuse a soft picture."""
 import unittest
 from types import SimpleNamespace
+
+import numpy as np
 
 import bay_lines as bl
 from ground_sources import PRI
 from test_ground_layer import SyntheticGroundBox
 
-
-def box(x0, z0, x1, z1) -> set:
-    return {(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
+SCALE = 5
 
 
-class TestBayLineGeometry(unittest.TestCase):
-    AREA = box(0, 0, 30, 20)
-    EAST_WEST = {'points': [(0.0, 10.0), (31.0, 10.0)], 'half': 2.5}
-
-    def test_rows_stand_perpendicular_to_an_east_west_aisle(self):
-        lines = bl.bay_line_columns([self.AREA], [self.EAST_WEST])
-        xs = sorted({x for x, _ in lines})
-        self.assertEqual(xs, list(range(2, 31, 3)))                  # a line every 3 blocks along the aisle
-        for x in xs:                                                 # each line runs straight across the aisle (z only)
-            self.assertEqual(sorted(z for lx, z in lines if lx == x), [2, 3, 4, 5, 6, 13, 14, 15, 16, 17])
-
-    def test_rows_stand_perpendicular_to_a_north_south_aisle(self):
-        aisle = {'points': [(15.0, 0.0), (15.0, 21.0)], 'half': 2.5}
-        lines = bl.bay_line_columns([self.AREA], [aisle])
-        zs = sorted({z for _, z in lines})
-        self.assertEqual(zs, list(range(2, 21, 3)))
-        for z in zs:
-            self.assertEqual(sorted(x for x, lz in lines if lz == z), list(range(7, 12)) + list(range(18, 23)))
-
-    def test_bays_are_five_deep_and_never_touch_the_aisle(self):
-        lines = bl.bay_line_columns([self.AREA], [self.EAST_WEST])
-        offsets = {abs(z + .5 - 10.0) for _, z in lines}
-        self.assertEqual(min(offsets), 3.5)                          # first column past the 2.5 half width
-        self.assertEqual(max(offsets), 7.5)                          # half width + 5
-        self.assertFalse({(x, z) for x, z in lines if 8 <= z <= 11})   # aisle columns stay clear
-
-    def test_diagonal_aisle_lines_keep_the_pitch_along_it(self):
-        a, b = (2.0, 2.0), (28.0, 28.0)
-        aisle = {'points': [a, b], 'half': 2.5}
-        lines = bl.bay_line_columns([self.AREA], [aisle])
-        self.assertTrue(lines)
-        ux = uz = 1 / math.sqrt(2)
-        for x, z in lines:
-            along = (x + .5 - a[0]) * ux + (z + .5 - a[1]) * uz
-            nearest = round(along / bl.BAY_PITCH) * bl.BAY_PITCH
-            self.assertLessEqual(abs(along - nearest), 0.5)
-
-    def test_lines_stay_inside_the_car_park_polygon(self):
-        area = box(10, 5, 20, 15)
-        lines = bl.bay_line_columns([area], [{'points': [(10.0, 10.0), (21.0, 10.0)], 'half': 2.5}])
-        self.assertTrue(lines)
-        self.assertTrue(lines <= area)
-        self.assertIn((12, 13), lines)
-        self.assertNotIn((12, 17), lines)                            # the 5-deep row runs past the polygon edge (z 15)
-
-    def test_no_mapped_aisle_means_no_lines(self):
-        self.assertEqual(bl.bay_line_columns([self.AREA], []), set())
-
-    def test_aisle_outside_the_polygon_marks_nothing(self):
-        far = {'points': [(0.0, 60.0), (31.0, 60.0)], 'half': 2.5}
-        self.assertEqual(bl.bay_line_columns([self.AREA], [far]), set())
-
-    def test_two_neighbouring_aisles_each_own_their_own_rows(self):
-        area = box(0, 0, 30, 40)
-        n = {'points': [(0.0, 10.0), (31.0, 10.0)], 'half': 2.5}
-        s = {'points': [(0.0, 30.0), (31.0, 30.0)], 'half': 2.5}
-        lines = bl.bay_line_columns([area], [n, s])
-        self.assertEqual(lines, bl.bay_line_columns([area], [n]) | bl.bay_line_columns([area], [s]))
-
-    def test_an_aisle_crossing_the_cell_edge_keeps_its_lines_in_the_small_part(self):
-        half_area = box(0, 0, 30, 20)                                # the cell's clipped slice of a larger car park
-        long_aisle = {'points': [(-60.0, 10.0), (31.0, 10.0)], 'half': 2.5}
-        short_aisle = {'points': [(-20.0, 10.0), (31.0, 10.0)], 'half': 2.5}
-        whole = box(-80, 0, 30, 20)                                  # the unclipped car park
-        for aisle, expect in ((long_aisle, range(2, 30, 3)), (short_aisle, range(0, 31, 3))):
-            lines = bl.bay_line_columns([half_area], [aisle])
-            self.assertEqual(sorted({x for x, _ in lines}), list(expect))
-            clipped = {q for q in bl.bay_line_columns([whole], [aisle]) if q in half_area}
-            self.assertEqual(lines, clipped)                         # same lines as the unclipped car park draws here
-
-    def test_a_bend_gives_every_column_to_its_nearest_segment(self):
-        pts = [(0.0, 10.0), (15.0, 10.0), (15.0, 25.0)]
-        half, area = 2.5, box(0, 0, 30, 30)
-        lines = bl.bay_line_columns([area], [{'points': pts, 'half': half}])
-        self.assertTrue(lines)
-        segs = bl._segments([{'points': pts, 'half': half}])
-        for q in lines:
-            dists = [bl._frame(s, *q)[2] for s in segs]
-            owner = segs[dists.index(min(dists))]
-            along, off, _ = bl._frame(owner, *q)
-            self.assertTrue(0.0 <= along <= owner[3], q)             # beside the nearest segment, not past its end
-            self.assertTrue(half < off <= half + bl.BAY_DEPTH, q)
-            self.assertLessEqual(abs(along - round(along / bl.BAY_PITCH) * bl.BAY_PITCH), 0.5, q)
-        # the first leg runs east-west (lines vary in z at a fixed x); the second north-south (vary in x at a fixed z)
-        inner = {(x, z) for x, z in lines if x < 15 and z > 10 or x > 15 and z < 10}
-        self.assertFalse(inner and {q for q in inner if _crosses(lines, q)})
-        self.assertFalse({q for q in lines if _crosses(lines, q)})
-
-    def test_the_outside_of_a_bend_gets_no_wedge_lines(self):
-        bend = {'points': [(0.0, 10.0), (15.0, 10.0), (15.0, 25.0)], 'half': 2.5}
-        lines = bl.bay_line_columns([box(0, 0, 30, 30)], [bend])
-        self.assertFalse({(x, z) for x, z in lines if x > 17 and z < 8})   # the outside-corner wedge stays clear
-
-    def test_a_bent_aisle_spaces_rows_along_its_whole_length(self):
-        """The first leg is 10 blocks, not a multiple of the pitch (#442).
-
-        Restarting the phase at the corner would put a row one block after the previous one.
-        Spacing along the whole aisle keeps every pair at least two blocks apart, and each row
-        stays at right angles to the leg it sits on.
-        """
-        pts = [(0.0, 10.0), (10.0, 10.0), (10.0, 28.0)]
-        half = 2.5
-        aisle = {'points': pts, 'half': half}
-        lines = bl.bay_line_columns([box(0, 0, 30, 40)], [aisle])
-        self.assertTrue(lines)
-        self.assertFalse({q for q in lines if _crosses(lines, q)})
-        arcs = _station_arcs(lines, aisle)
-        gaps = [arcs[i + 1] - arcs[i] for i in range(len(arcs) - 1)]
-        self.assertTrue(gaps)
-        self.assertGreaterEqual(min(gaps), 2.0)
-        segs = list(_with_cum(aisle))
-        for x, z in lines:
-            seg, cum = min(segs, key=lambda item: bl._frame(item[0], x, z)[2])
-            along, off, _ = bl._frame(seg, x, z)
-            self.assertGreaterEqual(along, -1e-6, (x, z))
-            self.assertLessEqual(along, seg[3] + 1e-6, (x, z))
-            self.assertGreater(off, half, (x, z))
-            self.assertLessEqual(off, half + bl.BAY_DEPTH + 0.05, (x, z))
-            self.assertLessEqual(_to_pitch(cum + along, bl.BAY_PITCH), 0.5 + 1e-6, (x, z))
-            if cum < 1e-6:                                       # east-west leg: the row runs north-south
-                self.assertTrue(any((x, z + dz) in lines for dz in (-1, 1)), (x, z))
-            else:                                                # north-south leg: the row runs east-west
-                self.assertTrue(any((x + dx, z) in lines for dx in (-1, 1)), (x, z))
-
-    def test_an_aisle_does_not_mark_a_neighbouring_car_park(self):
-        """Bay depth reaches the next polygon; the aisle's centreline does not, so that park stays blank (#442)."""
-        park_a = box(0, 0, 40, 14)
-        park_b = box(0, 15, 40, 30)
-        aisle = {'points': [(0.0, 12.0), (40.0, 12.0)], 'half': 2.5}
-        lines = bl.bay_line_columns([park_a, park_b], [aisle])
-        self.assertTrue(lines)
-        self.assertTrue(lines <= park_a)
-        self.assertFalse(lines & park_b)
-        self.assertEqual(lines, bl.bay_line_columns([park_a], [aisle]))
+def canvas(x0, z0, x1, z1, colour=0.40):
+    """Flat tarmac image, one block = ``SCALE`` pixels, origin at ``(x0, z0)``."""
+    height = (z1 - z0 + 1) * SCALE
+    width = (x1 - x0 + 1) * SCALE
+    rgb = np.full((height, width, 3), colour, np.float32)
+    yy, xx = np.mgrid[0:height, 0:width]
+    mx = (x0 + xx // SCALE).astype(np.int32)
+    mz = (z0 + yy // SCALE).astype(np.int32)
+    mask = np.ones((height, width), dtype=bool)
+    return rgb, mask, mx, mz
 
 
-def _crosses(lines, q) -> bool:
-    """True when ``q`` has line neighbours on both axes (a '+' where two orientations meet)."""
-    x, z = q
-    return (((x - 1, z) in lines or (x + 1, z) in lines) and ((x, z - 1) in lines or (x, z + 1) in lines))
+def paint_columns(rgb, x0, z0, z, xs, colour):
+    """One-pixel horizontal streak through the middle of column ``z``, over ``xs``."""
+    row = (z - z0) * SCALE + SCALE // 2
+    for x in xs:
+        start = (x - x0) * SCALE
+        rgb[row, start:start + SCALE] = colour
 
 
-def _with_cum(aisle):
-    """``(segment, distance from the aisle start)`` for each segment."""
-    cum = 0.0
-    for seg in bl._segments([aisle]):
-        yield seg, cum
-        cum += seg[3]
+def columns(keep, mx, mz):
+    return bl.columns_of(keep, mx, mz)
 
 
-def _to_pitch(arc: float, pitch: int) -> float:
-    """Distance from ``arc`` to the nearest multiple of ``pitch``."""
-    k = arc / pitch
-    return min(abs(arc - math.floor(k) * pitch), abs(arc - math.ceil(k) * pitch))
+def box_blur(rgb, radius):
+    """Mean of a square window. Edge pixels repeat so the blur does not wrap."""
+    pad = np.pad(rgb, ((radius, radius), (radius, radius), (0, 0)), mode='edge')
+    out = np.zeros_like(rgb)
+    window = (2 * radius + 1) ** 2
+    for dy in range(2 * radius + 1):
+        for dx in range(2 * radius + 1):
+            out += pad[dy:dy + rgb.shape[0], dx:dx + rgb.shape[1]]
+    return out / window
 
 
-def _station_arcs(lines, aisle) -> list:
-    """One distance-along-the-aisle per bay line, nearest line first."""
-    segs = list(_with_cum(aisle))
-    arcs = []
-    for x, z in lines:
-        seg, cum = min(segs, key=lambda item: bl._frame(item[0], x, z)[2])
-        along, _, _ = bl._frame(seg, x, z)
-        arcs.append(cum + min(max(along, 0.0), seg[3]))
-    arcs.sort()
-    centres = []
-    for arc in arcs:
-        if not centres or arc - centres[-1] > 0.75:
-            centres.append(arc)
-    return centres
+class TestThinPaleStreaks(unittest.TestCase):
+    def frame(self, colour=0.40):
+        rgb, mask, mx, mz = canvas(0, 0, 16, 8, colour)
+        return rgb, mask, mx, mz
+
+    def test_a_clean_line_marks_those_columns_and_leaves_the_gap(self):
+        rgb, mask, mx, mz = self.frame()
+        xs = [x for x in range(1, 15) if x != 7]
+        paint_columns(rgb, 0, 0, 4, xs, 0.95)
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        self.assertEqual(columns(keep, mx, mz), {(x, 4) for x in xs})
+
+    def test_a_faint_line_still_counts_when_it_is_paler_than_the_tarmac(self):
+        rgb, mask, mx, mz = self.frame(0.42)
+        paint_columns(rgb, 0, 0, 4, range(1, 15), 0.55)
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        self.assertEqual(columns(keep, mx, mz), {(x, 4) for x in range(1, 15)})
+
+    def test_specks_are_removed(self):
+        rgb, mask, mx, mz = self.frame()
+        for n in range(6):
+            rgb[6 + n * 5, 8] = 0.98
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        self.assertFalse(keep.any())
+        self.assertEqual(columns(keep, mx, mz), set())
+
+    def test_a_soft_park_with_no_line_draws_nothing(self):
+        rgb, mask, mx, mz = self.frame()
+        rgb[12:40, 15:70] = 0.82
+        rgb = box_blur(rgb, 2)
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertTrue(soft)
+        self.assertFalse(keep.any())
+        self.assertEqual(columns(keep, mx, mz), set())
+
+    def test_a_wide_blob_is_not_a_line(self):
+        rgb, mask, mx, mz = self.frame()
+        rgb[10:30, 15:35] = 0.92
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        self.assertFalse(keep.any())
+
+    def test_a_short_streak_alone_draws_nothing_and_is_not_soft(self):
+        rgb, mask, mx, mz = self.frame()
+        paint_columns(rgb, 0, 0, 4, range(1, 4), 0.95)
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        self.assertFalse(keep.any())
+        self.assertEqual(columns(keep, mx, mz), set())
+
+    def test_a_boundary_streak_is_dropped_and_the_interior_line_is_kept(self):
+        rgb, mask, mx, mz = canvas(0, 0, 20, 16)
+        mask[:5, :] = False
+        paint_columns(rgb, 0, 0, 10, range(1, 18), 0.95)
+        rgb[6, 5:90] = 0.95
+        keep, soft = bl.thin_pale_mask(rgb, mask)
+        self.assertFalse(soft)
+        marked = columns(keep, mx, mz)
+        self.assertIn((5, 10), marked)
+        self.assertNotIn((5, 1), marked)
 
 
 class TestMarkCarParkBays(unittest.TestCase):
-    def vmap(self, area, **kw):
-        pri = dict.fromkeys(area, PRI['parking'])
-        return SimpleNamespace(parking_areas=[area], parking_aisles=[TestBayLineGeometry.EAST_WEST], pri=pri, **kw)
+    def line_frame(self):
+        rgb, mask, mx, mz = canvas(0, 0, 16, 8)
+        xs = list(range(1, 15))
+        paint_columns(rgb, 0, 0, 4, xs, 0.95)
+        return bl.AerialFrame(rgb, mask, mx, mz, '0,0..16,8')
 
-    def test_only_tarmac_columns_on_the_car_park_are_marked(self):
-        area = box(0, 0, 30, 20)
-        vmap = self.vmap(area)
+    def test_only_tarmac_inside_the_car_park_is_marked(self):
+        area = {(x, z) for x in range(17) for z in range(9)}
         kind = dict.fromkeys(area, 'tarmac')
-        lawn = {(x, z) for x, z in area if x < 10}                    # aerial shows lawn there
-        kind.update(dict.fromkeys(lawn, 'grass'))
-        for q in box(0, 13, 30, 13):                                   # a mapped path crosses one row
-            vmap.pri[q] = PRI['path']
-        n = bl.mark_car_park_bays(kind, vmap)
+        kind[(3, 4)] = 'grass'
+        kind[(4, 4)] = 'tarmac'
+        outside = (20, 4)
+        kind[outside] = 'tarmac'
+        pri = dict.fromkeys(area, PRI['parking'])
+        pri[(5, 4)] = PRI['service']
+        vmap = SimpleNamespace(parking_areas=[area], bay_frames=[self.line_frame()], pri=pri)
+        result = bl.mark_car_park_bays(kind, vmap)
         marked = {q for q, k in kind.items() if k == 'mark'}
-        self.assertEqual(n, len(marked))
-        self.assertTrue(marked)
-        self.assertFalse(marked & lawn)
-        self.assertFalse({q for q in marked if q[1] == 13})
-        self.assertFalse({q for q in kind if kind[q] == 'grass'} - lawn)
+        self.assertEqual(result.n, len(marked))
+        self.assertNotIn((3, 4), marked)
+        self.assertNotIn((5, 4), marked)
+        self.assertNotIn(outside, marked)
+        self.assertIn((4, 4), marked)
+        self.assertEqual(result.soft, ())
+
+    def test_a_soft_park_is_named_and_not_painted(self):
+        rgb, mask, mx, mz = canvas(0, 0, 16, 8)
+        rgb[12:40, 15:70] = 0.82
+        rgb = box_blur(rgb, 2)
+        area = {(x, z) for x in range(17) for z in range(9)}
+        kind = dict.fromkeys(area, 'tarmac')
+        frame = bl.AerialFrame(rgb, mask, mx, mz, '0,0..16,8')
+        pri = dict.fromkeys(area, PRI['parking'])
+        result = bl.mark_car_park_bays(
+            kind, SimpleNamespace(parking_areas=[area], bay_frames=[frame], pri=pri))
+        self.assertEqual(result.n, 0)
+        self.assertEqual(result.soft, ('0,0..16,8',))
+        self.assertFalse(any(k == 'mark' for k in kind.values()))
 
     def test_evidence_without_car_parks_marks_nothing(self):
         kind = {(0, 0): 'tarmac'}
-        self.assertEqual(bl.mark_car_park_bays(kind, SimpleNamespace(pri={})), 0)
+        self.assertEqual(bl.mark_car_park_bays(kind, SimpleNamespace(pri={})), bl.BayLineResult(0, ()))
         self.assertEqual(kind, {(0, 0): 'tarmac'})
 
 
 class TestGroundPassBayLines(SyntheticGroundBox, unittest.TestCase):
-    """The ground pass writes the lines itself (exempt from the #327 gate), as white_concrete on tarmac."""
+    """The ground pass writes the aerial lines itself, as white_concrete on tarmac."""
 
-    AISLE = {'points': [(0.0, 4.0), (16.0, 4.0)], 'half': 1.0}
-
-    def car_park(self, soft=False):
+    def car_park(self, frame):
         osm = self.Osm()
         x0, z0, x1, z1 = self.BOX
-        area = box(x0, z0, x1, z1)
+        area = {(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1)}
         osm.kind, osm.pri = dict.fromkeys(area, 'tarmac'), dict.fromkeys(area, PRI['parking'])
-        for q in box(0, 3, 15, 4):                                    # the aisle itself is mapped service tarmac
-            osm.pri[q] = PRI['service']
-        osm.parking_areas, osm.parking_aisles = [area], [self.AISLE]
-        osm.soft = set(area) if soft else set()
+        osm.parking_areas = [area]
+        osm.bay_frames = [frame]
         return osm
 
-    def test_bays_are_white_concrete_perpendicular_to_the_aisle(self):
-        plan, stats, kind, _ = self.run_plan(self.car_park())
+    def test_a_painted_line_becomes_white_concrete_and_the_gap_stays_tarmac(self):
+        rgb, mask, mx, mz = canvas(*self.BOX)
+        # The synthetic box is only 8 columns in z (0..7). The line runs along x at z=6.
+        paint_columns(rgb, self.BOX[0], self.BOX[1], 6, [x for x in range(1, 14) if x != 8], 0.95)
+        frame = bl.AerialFrame(rgb, mask, mx, mz, '0,0..15,7')
+        plan, stats, kind, _ = self.run_plan(self.car_park(frame))
         marks = {q for q, k in kind.items() if k == 'mark'}
-        self.assertEqual(stats['how: car park bay line (perpendicular to the mapped aisle)'], len(marks))
-        self.assertEqual({x for x, _ in marks}, {2, 5, 8, 11, 14})   # one line per 3 blocks along the aisle (x)
-        self.assertFalse({q for q in marks if q[1] in (3, 4)})        # clear of the aisle
+        self.assertEqual(stats['how: car park bay line (from the aerial)'], len(marks))
+        self.assertEqual(marks, {(x, 6) for x in range(1, 14) if x != 8})
+        self.assertNotIn('aerial too soft', ' '.join(stats))
         for x, z in marks:
             self.assertEqual(plan.cells[(x, self.lidar(x, z), z)], 'minecraft:white_concrete')
-        self.assertEqual(plan.cells[(3, self.lidar(3, 4), 4)], 'minecraft:gray_concrete')   # aisle stays tarmac
-        self.assertEqual(plan.cells[(3, self.lidar(3, 6), 6)], 'minecraft:gray_concrete')   # between two lines
-        self.assertFalse(plan.ground_layer)                           # ground pass's own plan: exempt, not Plan.ground_marking
+        self.assertEqual(plan.cells[(8, self.lidar(8, 6), 6)], 'minecraft:gray_concrete')
+        self.assertEqual(plan.cells[(3, self.lidar(3, 5), 5)], 'minecraft:gray_concrete')
+        self.assertFalse(plan.ground_layer)
 
-    def test_a_mapped_car_park_the_mosaic_reads_as_lawn_still_gets_lines(self):
-        """#338: the car park stays tarmac against lawn-coloured mosaic, so bay lines draw on it."""
-        plan, stats, kind, _ = self.run_plan(self.car_park(soft=True))
-        marks = {q for q, k in kind.items() if k == 'mark'}
-        self.assertEqual({x for x, _ in marks}, {2, 5, 8, 11, 14})
-        self.assertNotIn('grass', {kind[q] for q in box(0, 0, 15, 7)})
-        self.assertIn('minecraft:white_concrete', plan.cells.values())
+    def test_a_soft_car_park_is_listed_and_stays_tarmac(self):
+        rgb, mask, mx, mz = canvas(*self.BOX)
+        rgb[8:32, 10:60] = 0.82
+        rgb = box_blur(rgb, 2)
+        frame = bl.AerialFrame(rgb, mask, mx, mz, '0,0..15,7')
+        plan, stats, kind, _ = self.run_plan(self.car_park(frame))
+        self.assertNotIn('mark', kind.values())
+        self.assertEqual(stats['how: aerial too soft 0,0..15,7'], 1)
+        self.assertNotIn('minecraft:white_concrete', plan.cells.values())
+
 
 if __name__ == '__main__':
     unittest.main()

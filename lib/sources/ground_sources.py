@@ -382,7 +382,7 @@ class OSMGround:
         self.fence: set = set()
         self.soft: set = set()        # mapped surface car park columns: only a sharp registered aerial lawn overrides tarmac (#338)
         self.parking_areas: list = []  # one column set per surface car park polygon (#336, bay lines)
-        self.parking_aisles: list = []  # {'points', 'half'} per service=parking_aisle centreline (#336)
+        self.parking_aisles: list = []  # mapped service=parking_aisle centrelines; bay lines (#449) do not read them
         self.trees: list = []         # (x, z) natural=tree points
         self.tree_rows: list = []     # natural=tree_row polylines as [(x, z), ...] in MC (#157)
         self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
