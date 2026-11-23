@@ -159,6 +159,12 @@ def load_spec_dict(raw) -> dict:
             if (not isinstance(p['box'], list) or len(p['box']) != 4
                     or any(not isinstance(n, int) or isinstance(n, bool) for n in p['box'])):
                 raise ValueError('invalid railway box')
+            identities = p.get('track_way_ids')
+            if identities is not None and (not isinstance(identities, list)
+                    or len(identities) != len(p['tracks'])
+                    or any(not isinstance(ids, list) or not ids
+                           or any(not isinstance(w, str) or not w for w in ids) for ids in identities)):
+                raise ValueError('invalid constituent track way identities')
             validate_plan(p)
             if not p['rails'] or len(p['box']) != 4:
                 raise ValueError('empty railway plan or invalid box')
@@ -239,10 +245,83 @@ def build(raw) -> Plan:
 
 def metadata(spec) -> dict:
     """Portable railway records for coverage, column ownership and later crossing joins."""
+    joins = []
+    for corridor in spec['plans']:
+        identities = corridor.get('track_way_ids', ())
+        for join in corridor['joins']:
+            tracks = []
+            for record in join['tracks']:
+                ti = record['track_index']
+                ways = identities[ti] if 0 <= ti < len(identities) else []
+                tracks.append({**record, 'way_ids': list(ways)})
+            joins.append({**join, 'tracks': tracks})
     return {'kind': KIND, 'tiled_backup': True, 'boxes': [p['box'] for p in spec['plans']],
-            'line_ids': [p['line_id'] for p in spec['plans']],
-            'joins': [j for p in spec['plans'] for j in p['joins']],
+            'line_ids': [p['line_id'] for p in spec['plans']], 'joins': joins,
             'gaps': [{**g, 'line_id': p['line_id']} for p in spec['plans'] for g in p['gaps']]}
+
+
+def _incoming_joins(line, prior, cell):
+    """Match constituent tracks and directed boundary segments, never aggregate ids alone."""
+    from railway_plan import snap_track
+    from plan_refs import norm_ref
+    x0, z0, x1, z1 = cellmath.bounds(cell)
+    cx, cz = (x0+x1+1)//2, (z0+z1+1)//2
+    bx, bz, ex, ez = cx-PLANNER_BOX//2, cz-PLANNER_BOX//2, cx+PLANNER_BOX//2-1, cz+PLANNER_BOX//2-1
+    by_track = {}
+    for ti, poly in enumerate(line.tracks):
+        path = snap_track(poly)
+        indices = {q: i for i, q in enumerate(path)}
+        ways = {norm_ref(w) for w in line.track_way_ids[ti]}
+        for entry in prior:
+            for join in entry.meta.get('joins', ()):
+                for record in join['tracks']:
+                    at, nxt = tuple(record['at']), tuple(record['next'])
+                    if not (bx <= nxt[0] <= ex and bz <= nxt[1] <= ez):
+                        continue
+                    old_ways = {norm_ref(w) for w in record.get('way_ids', ())}
+                    same_track = bool(old_ways & ways) if old_ways else join.get('line_id') == line.id
+                    if nxt not in indices:
+                        if same_track:
+                            raise ValueError('prior boundary join is not on the current constituent track')
+                        continue
+                    i = indices[nxt]
+                    neighbours = {path[j] for j in (i-1, i+1) if 0 <= j < len(path)}
+                    direction = cellmath.FACING.get(record['direction'])
+                    aligned = ((nxt[0]-at[0], nxt[1]-at[1]) == direction
+                               and (at in neighbours or at not in indices and i in (0, len(path)-1)))
+                    if not aligned:
+                        if same_track:
+                            raise ValueError('prior boundary join direction cannot connect to the current track')
+                        continue
+                    if not same_track:
+                        raise ValueError('prior boundary join lacks matching constituent track identity')
+                    distance = (nxt[0]-cx)**2+(nxt[1]-cz)**2
+                    candidate = {**record, 'track_index': ti}
+                    if ti not in by_track or distance < by_track[ti][0]:
+                        by_track[ti] = distance, candidate
+                    elif distance == by_track[ti][0] and candidate != by_track[ti][1]:
+                        raise ValueError('conflicting prior boundary joins for one constituent track')
+    return [{'line_id': line.id, 'tracks': [record]} for _distance, record in by_track.values()]
+
+
+def _check_continuations(corridor, incoming, excludes):
+    """The first rail remaining after overlap removal must meet the recorded old endpoint."""
+    if corridor['failures']:
+        return  # the normal spec validator reports the precise planner failure
+    profiles = {track['track_index']: track for track in corridor['tracks']}
+    rails = {(x, z): y for x, y, z, _shape, _block in corridor['rails']}
+    for join in incoming:
+        for record in join['tracks']:
+            track = profiles.get(record['track_index'])
+            if track is None:
+                raise ValueError('prior boundary join has no continuation profile')
+            uncovered = [tuple(q) for q in track['path']
+                         if tuple(q) in rails and not any(a <= q[0] <= c and b <= q[1] <= d
+                                                         for a, b, c, d in excludes)]
+            if (not uncovered or uncovered[0] != tuple(record['next'])
+                    or rails[uncovered[0]] != record['level']
+                    or track['before'] != record['at']):
+                raise ValueError('first uncovered rail does not connect to its recorded boundary join')
 
 
 def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_surfaces=None) -> dict:
@@ -251,24 +330,11 @@ def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_sur
     excludes = [box for e in prior for box in e.meta.get('boxes', ())]
     plans = []
     for line in lines:
-        joins = [j for e in prior for j in e.meta.get('joins', ()) if j.get('line_id') == line.id]
-        if joins:
-            x0, z0, x1, z1 = cellmath.bounds(cell)
-            cx, cz = (x0+x1+1)//2, (z0+z1+1)//2
-            bx, bz, ex, ez = cx-PLANNER_BOX//2, cz-PLANNER_BOX//2, cx+PLANNER_BOX//2-1, cz+PLANNER_BOX//2-1
-            by_track = {}
-            for join in joins:
-                for record in join['tracks']:
-                    x, z = record['next']
-                    if bx <= x <= ex and bz <= z <= ez:
-                        distance = (x-cx)**2+(z-cz)**2
-                        ti = record['track_index']
-                        if ti not in by_track or distance < by_track[ti][0]:
-                            by_track[ti] = distance, record
-            joins = [{'line_id': line.id, 'tracks': [record]}
-                     for _distance, record in by_track.values()]
+        joins = _incoming_joins(line, prior, cell) if prior else []
         p = plan_line(line, ground, tuple(cell), joins, crossing_roads=crossing_roads,
                       road_surfaces=road_surfaces)
+        _check_continuations(p, joins, excludes)
+        p['track_way_ids'] = [list(ways) for ways in line.track_way_ids]
         deck = {tuple(q) for span in line.overhead for q in span.deck}
         p['clear_to'] = []
         for x, z, original, surface, _kind in p['columns']:

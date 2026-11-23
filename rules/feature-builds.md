@@ -325,7 +325,10 @@ ballast gravel. `railway_feature.place_rails` is the shared placement seam.
 
 Railway metadata records the boxes, line ids, gap end records and outgoing joins
 on the feature's build entry. A join records rail Y, direction and track index;
-box cuts also record the next cell and step-spacing history. The line leaves
+box cuts also record the next cell, constituent track way ids and step-spacing
+history. Continuations match those members and the directed boundary segment,
+because an extract can add member ways and change the aggregate line id or track
+ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
 crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
 the line is overhead evidence, not a railway gap; its deck is preserved and does
 not become planting.
