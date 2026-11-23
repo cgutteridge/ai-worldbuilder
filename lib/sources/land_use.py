@@ -32,7 +32,7 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
 OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor', 'body',
-                    'palette', 'roofs', 'storeys', 'terrace_roofs')
+                    'palette', 'roofs', 'storeys', 'terrace_roofs', 'facade', 'sign')
 # Building appearance under a district profile (ADR 006, read by typology_spec). Absent means no default.
 TYPOLOGY_ROOFS = ('flat', 'gable', 'hip', 'mansard', 'shed')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
@@ -161,6 +161,8 @@ def validate_table(doc: dict) -> dict:
         fr = row['frontage']
         _validate_street_face(cid, row.get('street_face'))
         _validate_body(cid, row.get('body'))
+        _validate_facade(cid, row.get('facade'))
+        _validate_sign(cid, row.get('sign'))
         _validate_typology(cid, row)
         for col in ('inference', 'requires', 'boundary', 'private_surface', 'opening'):
             if col not in fr:
@@ -744,6 +746,90 @@ def body_recipe(cls: str) -> dict | None:
     if body is None:
         return None
     return {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, **body}
+
+
+def _validate_facade(cid: str, facade) -> None:
+    """Check a class's optional ``facade`` recipe (glazing, pier and entrance awning, #431).
+
+    Shape: ``{front: {ground: {glazed_h, pier}, upper: {glazed_h, pier}}, side: {glazed_h, pier},
+    entrance: {block, leaves, awning: {kind, depth}}}``. Every part is optional. The rows are the
+    ones ``facade_plan`` takes, so they are checked by that module's own validators and a recipe
+    the builder would refuse is refused here.
+    """
+    if facade is None:
+        return
+    allowed = {'front', 'side', 'entrance'}
+    if cid == 'unknown' or not isinstance(facade, dict) or not facade or set(facade) - allowed:
+        raise TableError(f'{cid}: facade must be a non-empty map with keys from {sorted(allowed)}, not on unknown')
+    import facade_plan as plan
+    try:
+        front = facade.get('front')
+        if front is not None:
+            if not isinstance(front, dict) or set(front) != {'ground', 'upper'}:
+                raise TableError(f'{cid}: facade.front must have keys ground and upper')
+            for part in ('ground', 'upper'):
+                _facade_row(front[part], f'{cid}: facade.front.{part}', plan)
+        if facade.get('side') is not None:
+            _facade_row(facade['side'], f'{cid}: facade.side', plan)
+        entrance = facade.get('entrance')
+        if entrance is not None:
+            if not isinstance(entrance, dict) or set(entrance) - {'block', 'leaves', 'awning'} or not {'block', 'leaves'} <= set(entrance):
+                raise TableError(f'{cid}: facade.entrance must have block and leaves, and may have awning')
+            row = {'id': 'recipe', 'face': 'N', 'leaves': entrance['leaves'], 'block': entrance['block'],
+                   'provenance': {'source': 'inference', 'confidence': 'low', 'evidence_ids': [],
+                                  'unresolved_reason': ''}}
+            if entrance.get('awning') is not None:
+                row['awning_like'] = entrance['awning']
+            plan.validate_entrance(row, path=f'{cid}: facade.entrance')
+    except plan.FacadePlanError as exc:
+        raise TableError(f'{cid}: facade {exc}') from exc
+
+
+def _facade_row(row, where: str, plan) -> None:
+    """One ``{glazed_h, pier}`` pair, checked as a glazing row of ``facade_plan``."""
+    if not isinstance(row, dict) or set(row) != {'glazed_h', 'pier'}:
+        raise TableError(f'{where} must be {{glazed_h, pier}}')
+    plan.validate_glazing_rows([{'storey': 1, **row}], n_storeys=1, path=where)
+
+
+def facade_recipe(cls: str) -> dict | None:
+    """The class's glazing, pier and entrance-awning recipe, or None when it has none.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: a copy of the ``facade`` object (``front``, ``side``, ``entrance``; each optional)
+    """
+    facade = defaults(cls).get('facade')
+    return json.loads(json.dumps(facade)) if facade else None
+
+
+def _validate_sign(cid: str, sign) -> None:
+    """Check a class's optional default sign palette: ``{wood, text_colour}`` (#431).
+
+    Both keys are checked against the sign catalogue (``sign_options``), including the contrast of
+    the text dye on the wood board, so the palette is one the builder accepts.
+    """
+    if sign is None:
+        return
+    if cid == 'unknown' or not isinstance(sign, dict) or not sign or set(sign) - {'wood', 'text_colour'}:
+        raise TableError(f'{cid}: sign must be a non-empty map with keys wood, text_colour, not on unknown')
+    import sign_options
+    try:
+        sign_options.validate_sign_row(sign, context=f'{cid}: sign', strict_keys=True)
+    except ValueError as exc:
+        raise TableError(str(exc)) from exc
+
+
+def sign_palette(cls: str) -> dict | None:
+    """The class's default sign wood and text colour, or None when it names none.
+
+    A palette is a default: a per-building ``signs`` row in a spec, or world data, replaces it.
+    Fascia colour is not in the palette; it is per building.
+
+    @param cls: class id
+    @returns: ``{wood?, text_colour?}`` copy, or None
+    """
+    sign = defaults(cls).get('sign')
+    return dict(sign) if sign else None
 
 
 def _validate_street_face(cid: str, face) -> None:

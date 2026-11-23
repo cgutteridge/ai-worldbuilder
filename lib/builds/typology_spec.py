@@ -783,7 +783,74 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         'wall': ordered[0]['wall'],
     }
+    spec.update(_class_facade(ordered, front))
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _class_facade(ordered: list[dict], front: str | None) -> dict:
+    """``signs`` and ``facade_plan`` from each class's shopfront recipe (#431), or ``{}``.
+
+    A class's ``sign`` palette (wood, text colour) goes into ``signs`` for every label. Its ``facade``
+    recipe becomes ``facade_plan`` only for a building the class ``street_face`` recipe does not
+    already dress: the builder drops that dressing (glass, door, fascia, sign, awning) and the storey
+    window grid for any label with an evidenced facade face. A class with neither key adds nothing.
+    Both are defaults; a hand spec replaces a label's row.
+
+    @param ordered: the row's decided buildings with ``label``
+    @param front: the row's front, ``N``/``S``/``E``/``W``
+    @returns: a mapping with ``signs`` and/or ``facade_plan``
+    """
+    signs, plan = {}, {}
+    for row in ordered:
+        palette = land_use.sign_palette(row['cls'])
+        if palette:
+            signs[row['label']] = palette
+        recipe = land_use.facade_recipe(row['cls'])
+        if not recipe or front not in tuple('NSEW'):
+            continue
+        dressed = land_use.street_face_defaults(
+            row['cls'], row['tags'], columns=len(row['cells']), height=row['levels'] * STOREY_M)
+        if not dressed:
+            plan[row['label']] = _facade_plan(recipe, row['levels'], front)
+    extra = {}
+    if signs:
+        extra['signs'] = signs
+    if plan:
+        extra['facade_plan'] = plan
+    return extra
+
+
+def _facade_plan(recipe: dict, storeys: int, front: str) -> dict:
+    """One label's ``facade_plan``: glazing rows on every face and one entrance on the front.
+
+    The front takes the ground row on storey 1 and the upper row above it; the other three faces take
+    the side row (or the upper row when the recipe has no side row) on every storey. A face with no
+    row would get no windows, so a recipe with no glazing at all gives no faces.
+    """
+    front_rows = recipe.get('front')
+    side = recipe.get('side') or (front_rows or {}).get('upper')
+    faces = {}
+    for face in 'NSEW':
+        if face == front and front_rows:
+            rows = [{'storey': 1, **front_rows['ground']}] + [
+                {'storey': n, **front_rows['upper']} for n in range(2, storeys + 1)]
+        elif side:
+            rows = [{'storey': n, **side} for n in range(1, storeys + 1)]
+        else:
+            continue
+        faces[face] = {'glazing': rows}
+    body = {'faces': faces} if faces else {}
+    entrance = recipe.get('entrance')
+    if entrance:
+        door = {
+            'id': 'front', 'face': front, 'leaves': entrance['leaves'], 'block': entrance['block'],
+            'provenance': {'source': 'inference', 'confidence': 'low', 'evidence_ids': [],
+                           'unresolved_reason': ''},
+        }
+        if entrance.get('awning'):
+            door['awning_like'] = dict(entrance['awning'])
+        body['entrances'] = [door]
+    return body
 
 
 def _terrace_spec(

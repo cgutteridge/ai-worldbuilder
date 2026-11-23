@@ -322,3 +322,22 @@ One mechanism, no per-street or per-side code. `house_build` takes an optional p
 - **Not done:** rotated footprints and rows by adjacency (427), glazing recipe (431), fascia and signs (437). The lidar
   percentiles (eave 15th, ridge 95th) and the recipe numbers are first guesses; judge them on the Portswood Road
   parades (cell 50,-36) before trusting them.
+
+## Shopfront recipe (task 431)
+
+Glazing and sign defaults are class data, beside `body`, in `config/land-use-classes.json` (validated by
+`land_use`; accessors `facade_recipe` and `sign_palette`):
+
+- `facade`: `front.ground` and `front.upper` glazing rows `{glazed_h, pier}`, one `side` row for the other three
+  faces, and an `entrance` `{block, leaves, awning: {kind, depth}}`. The generator emits them as
+  `facade_plan[label]` (a row per storey on every face, one entrance with `awning_like` on the row front).
+- `sign`: default `{wood, text_colour}` (the pair must clear the sign contrast floor). Emitted as `signs[label]`.
+  Fascia colour is per building and never in the recipe.
+- Only the `feature_build` path takes them (houses and `house_build` bodies keep their windows). A class with
+  neither key, or a row with no front, is generated as before; a hand spec's label row replaces the default.
+- **Gap, needs a builder change:** the builder treats any `facade_plan` face as evidence and switches off the class
+  street-face dressing (glass, door, fascia, sign, awning) and the storey window grid for that label. The
+  generator therefore emits `facade_plan` only for a building `land_use.street_face_defaults` does not dress
+  (offices, hotels, other commercial); tagged shops keep the street-face front and take only the sign palette.
+  Upper-storey windows on dressed shops need the builder to let glazing rows for storeys above the shopfront coexist
+  with the street-face front.

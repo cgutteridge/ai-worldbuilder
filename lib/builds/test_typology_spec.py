@@ -230,6 +230,98 @@ class TypologySpecs(unittest.TestCase):
             plan = F.build(loaded, footprints=footprints, world=_StoneWorld())
         self.assertTrue(any('slab' in state for state in plan.cells.values()))
 
+    def parade(self, tags, count=3):
+        """Shops side by side on STREET (front S), as ``generate`` gets them."""
+        return [building(i + 1, rect(i * 6, 0, 6, 7), dict(tags), lidar=9.0)
+                for i in range(count)]
+
+    def plan_parade(self, shops, spec):
+        loaded = FS.load_spec(write_spec(spec))
+        footprints = {spec['ways'][row['way_id']]: row['cells'] for row in shops}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            plan = F.Build(
+                loaded, footprints=footprints, world=_StoneWorld(),
+                building_tags={spec['ways'][row['way_id']]: row['tags'] for row in shops},
+                streets=[('residential', STREET[0], {})]).build()
+        return plan, out.getvalue()
+
+    def test_class_recipe_gives_an_undressed_commercial_building_its_glazing_and_entrance(self):
+        shops = self.parade({'building': 'office', 'building:levels': '3'})
+        report = T.generate(shops, STREET)
+        self.assertEqual(report['needs_designer'], [])
+        spec = report['specs'][0]['spec']
+        front = spec['groups'][0]['front']
+        self.assertEqual(front, 'S')
+        plan = spec['facade_plan']['a']
+        self.assertEqual(sorted(plan['faces']), ['E', 'N', 'S', 'W'])
+        self.assertEqual(plan['faces']['S']['glazing'], [
+            {'storey': 1, 'glazed_h': 3, 'pier': 1},
+            {'storey': 2, 'glazed_h': 2, 'pier': 3},
+            {'storey': 3, 'glazed_h': 2, 'pier': 3}])
+        self.assertEqual(plan['faces']['N']['glazing'], [
+            {'storey': n, 'glazed_h': 2, 'pier': 3} for n in (1, 2, 3)])
+        [door] = plan['entrances']
+        self.assertEqual((door['face'], door['leaves'], door['block']), ('S', 1, 'oak_door'))
+        self.assertEqual(door['awning_like'], {'kind': 'awning', 'depth': 1})
+        self.assertEqual(spec['signs']['a'], {'wood': 'dark_oak', 'text_colour': 'white'})
+        built, text = self.plan_parade(shops, spec)       # validates in feature_build and dry-runs
+        states = ' '.join(built.cells.values())
+        self.assertIn('oak_door', states)
+        self.assertIn('glass', states)
+        self.assertIn('cover awning depth 1', text)
+
+    def test_one_storey_building_takes_only_the_ground_row(self):
+        report = T.generate(self.parade({'building': 'office', 'building:levels': '1'}, 1), STREET)
+        rows = report['specs'][0]['spec']['facade_plan']['a']['faces']['S']['glazing']
+        self.assertEqual(rows, [{'storey': 1, 'glazed_h': 3, 'pier': 1}])
+
+    def test_a_building_the_street_face_recipe_dresses_keeps_its_shopfront_and_takes_the_sign_palette(self):
+        # an evidenced face switches the builder's glass, door, fascia, sign and awning off, so none is emitted
+        shops = self.parade({'building': 'retail', 'building:levels': '3', 'name': 'Corner Shop'})
+        spec = T.generate(shops, STREET)['specs'][0]['spec']
+        self.assertNotIn('facade_plan', spec)
+        self.assertEqual(set(spec['signs']), {'a', 'b', 'c'})
+        built, text = self.plan_parade(shops, spec)
+        self.assertIn('street face shop', text)
+        self.assertTrue(any('dark_oak_wall_sign' in state for state in built.cells.values()))
+        self.assertFalse(any(state.startswith('minecraft:oak_wall_sign') for state in built.cells.values()))
+
+    def test_an_evidenced_face_switches_the_street_face_off_which_is_why_dressed_shops_get_none(self):
+        shops = self.parade({'building': 'retail', 'building:levels': '3', 'name': 'Corner Shop'}, 1)
+        spec = T.generate(shops, STREET)['specs'][0]['spec']
+        spec['facade_plan'] = {'a': T._facade_plan(land_use.facade_recipe('commercial'), 3, 'S')}
+        _built, text = self.plan_parade(shops, spec)
+        self.assertNotIn('street face shop', text)
+
+    def test_only_the_undressed_label_in_a_mixed_row_gets_a_facade_plan(self):
+        shops = [building(1, rect(0, 0, 6, 7), {'building': 'retail', 'building:levels': '2'}, lidar=6.0),
+                 building(2, rect(6, 0, 6, 7), {'building': 'office', 'building:levels': '2'}, lidar=6.0)]
+        spec = T.generate(shops, STREET)['specs'][0]['spec']
+        self.assertEqual(list(spec['facade_plan']), ['b'])
+        self.assertEqual(set(spec['signs']), {'a', 'b'})
+
+    def test_a_class_with_no_recipe_is_generated_as_before(self):
+        flats = [building(1, rect(0, 0, 6, 7), {'building': 'apartments', 'building:levels': '2'}, lidar=6.0)]
+        spec = T.generate(flats, STREET)['specs'][0]['spec']
+        self.assertNotIn('facade_plan', spec)
+        self.assertNotIn('signs', spec)
+        with mock.patch.object(land_use, 'facade_recipe', return_value=None), \
+                mock.patch.object(land_use, 'sign_palette', return_value=None):
+            bare = T.generate(self.parade({'building': 'office', 'building:levels': '2'}), STREET)
+        self.assertNotIn('facade_plan', bare['specs'][0]['spec'])
+        self.assertNotIn('signs', bare['specs'][0]['spec'])
+
+    def test_a_row_with_no_front_adds_no_facade_plan_and_a_hand_row_replaces_a_default(self):
+        recipe = land_use.facade_recipe('commercial')
+        self.assertEqual(T._facade_plan({'entrance': recipe['entrance']}, 2, 'N')['entrances'][0]['face'], 'N')
+        self.assertNotIn('faces', T._facade_plan({'entrance': recipe['entrance']}, 2, 'N'))
+        shops = self.parade({'building': 'office', 'building:levels': '2'}, 1)
+        spec = T.generate(shops, STREET)['specs'][0]['spec']
+        spec['facade_plan']['a'] = {'faces': {'S': {'glazing': [{'storey': 1, 'glazed_h': 1, 'pier': 2}]}}}
+        spec['signs']['a'] = {'wood': 'spruce', 'text_colour': 'white'}
+        FS.load_spec(write_spec(spec))                        # a hand override still validates
+
     def test_odd_missing_unknown_and_disagreement_are_not_guessed(self):
         odd = building('odd', rect(0, 0, 3, 3) | rect(10, 0, 3, 3), {'building': 'house', 'building:levels': '2'})
         missing = building('missing', rect(20, 0, 5, 8), {})
